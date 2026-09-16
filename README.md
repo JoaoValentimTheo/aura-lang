@@ -7,7 +7,7 @@ A programming language that transpiles to Python.
 Install the toolchain from a wheel or sdist; this provides the `aura` command:
 
 ```bash
-pip install aura-lang            # once published on PyPI
+pip install aura-py            # once published on PyPI
 # or from a checkout:
 pip install .
 aura run examples/hello.aura
@@ -39,7 +39,7 @@ ships `stdlib.regex`, `stdlib.os` and `stdlib.http`.
 ## Quick Start (from source, no install)
 
 ```bash
-git clone https://github.com/JoaoGVTheodoro/aura-lang.git
+git clone https://github.com/JoaoValentimTheo/aura-lang.git
 cd aura-lang
 python3 main.py run examples/hello.aura
 ```
