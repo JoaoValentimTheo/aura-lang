@@ -74,8 +74,8 @@ class AuraLoader:
 
     def exec_module(self, module):
         from aura.parser.to_ast import parse_file
-        from aura.transpiler.transformer import Transformer
         from aura.transpiler.semantics import MutabilityChecker
+        from aura.transpiler.transformer import Transformer
 
         ast = parse_file(str(self.file_path))
 
@@ -117,8 +117,8 @@ class AuraPackageLoader:
         if not init.is_file():
             return
         from aura.parser.to_ast import parse_file
-        from aura.transpiler.transformer import Transformer
         from aura.transpiler.semantics import MutabilityChecker
+        from aura.transpiler.transformer import Transformer
 
         ast = parse_file(str(init))
         checker = MutabilityChecker()

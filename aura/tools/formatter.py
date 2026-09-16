@@ -39,7 +39,7 @@ KEYWORD_SPACE_AFTER = {
     'for', 'while', 'loop', 'until', 'unless', 'return', 'throw',
     'import', 'from', 'as', 'match', 'case', 'try', 'catch',
     'finally', 'trait', 'module', 'enum', 'async', 'await',
-    'guard', 'else', 'break', 'continue',
+    'guard', 'break', 'continue',
 }
 
 

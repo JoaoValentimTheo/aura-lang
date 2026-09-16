@@ -55,14 +55,14 @@ See [AUDIT.md](AUDIT.md) for the findings and fixes from the code audit.
 
 ### AST Node Types
 
-The AST (`transpiler/ast.py`) defines 83 node types covering:
+The AST (`aura/transpiler/ast.py`) defines the node types covering:
 
-- **Declarations**: `VarDecl`, `ConstDecl`, `FunctionDecl`, `ClassDecl`, `TraitDecl`, `TypeDecl`, `ModuleDecl`
-- **Statements**: `IfStmt`, `WhileStmt`, `ForStmt`, `LoopStmt`, `TryStmt`, `MatchStmt`, `ReturnStmt`, `BreakStmt`, `ContinueStmt`, `AssertStmt`
-- **Expressions**: `BinaryOp`, `UnaryOp`, `CallExpr`, `LambdaExpr`, `PipeExpr`, `TernaryExpr`, `ElvisExpr`, `CoalesceExpr`, `RangeExpr`, `ComprehensionExpr`, `SafeNavExpr`
-- **Literals**: `IntLiteral`, `FloatLiteral`, `StrLiteral`, `BoolLiteral`, `NoneLiteral`, `ListLiteral`, `DictLiteral`, `SetLiteral`, `TupleLiteral`
+- **Declarations**: `VarDecl`, `ConstDecl`, `FunctionDecl`, `ClassDecl`, `TraitDecl`, `TypeDecl`, `EnumDecl`, `Module`
+- **Statements**: `IfStmt`, `UnlessStmt`, `GuardStmt`, `WhileStmt`, `UntilStmt`, `ForStmt`, `LoopStmt`, `TryStmt`, `MatchStmt`, `ReturnStmt`, `BreakStmt`, `ContinueStmt`, `AssertStmt`, `WithStmt`
+- **Expressions**: `BinaryOp`, `UnaryOp`, `CallExpr`, `MemberExpr`, `IndexExpr`, `SliceExpr`, `LambdaExpr`, `PipeExpr`, `CondExpr`, `ElvisExpr`, `CoalesceExpr`, `RangeExpr`, `ComprehensionExpr`, `SafeNavExpr`, `SpreadExpr`, `MatchExpr`, `TryExpr`
+- **Literals**: `IntLiteral`, `FloatLiteral`, `StrLiteral`, `BoolLiteral`, `NoneLiteral`, `FStringLiteral`, `ListLiteral`, `DictLiteral`, `SetLiteral`, `TupleLiteral`
 - **Patterns**: `LiteralPattern`, `IdentifierPattern`, `WildcardPattern`, `ConstructorPattern`, `ListPattern`, `DictPattern`, `OrPattern`, `AsPattern`
-- **Types**: `NamedType`, `FunctionType`, `ListType`, `DictType`, `UnionType`, `OptionalType`, `StructuralType`
+- **Types**: `SimpleType`, `GenericType`, `FunctionType`, `UnionType`, `OptionalType`, `StructuralType`
 
 ### Macro System
 

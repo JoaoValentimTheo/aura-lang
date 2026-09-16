@@ -2,7 +2,8 @@
 Complete recursive descent parser for Aura.
 Handles expressions, control flow, functions, classes, and more.
 """
-import re
+import contextlib
+
 from aura.transpiler.ast import *
 
 # ==============================================================================
@@ -77,7 +78,7 @@ class Tokenizer:
         length = len(self.source)
         while self.pos < length:
             char = self.source[self.pos]
-            
+
             # Whitespace
             if char.isspace():
                 if char == '\n':
@@ -87,7 +88,7 @@ class Tokenizer:
                     self.column += 1
                 self.pos += 1
                 continue
-            
+
             # Comments
             # `//` always starts a single-line comment. Aura has no floor
             # division operator; use integer casting on a float division
@@ -111,14 +112,14 @@ class Tokenizer:
                 if self.pos < length:
                     self.pos += 2  # skip closing */
                 continue
-            
+
             # Identifiers and Keywords
             if char.isalpha() or char == '_':
                 start = self.pos
                 while self.pos < length and (self.source[self.pos].isalnum() or self.source[self.pos] == '_'):
                     self.pos += 1
                 value = self.source[start:self.pos]
-                
+
                 # F-string support (special case: identifier 'f' followed by quote).
                 # Supports escapes, nested braces and triple quotes. The raw
                 # inner text is stored; parsing into parts happens later so
@@ -206,7 +207,7 @@ class Tokenizer:
                         raise SyntaxError(
                             f"Invalid base-{base} integer literal "
                             f"'0{prefix}{digits}' at {self.line}:{self.column}"
-                        )
+                        ) from None
                     self.column += (self.pos - start)
                     self.tokens.append(Token('INT', value, self.line, self.column))
                     continue
@@ -265,7 +266,7 @@ class Tokenizer:
                 self.column += (self.pos - start)
                 self.tokens.append(Token('FLOAT', float(raw), self.line, self.column))
                 continue
-            
+
             # Strings
             if char in ('"', "'"):
                 quote = char
@@ -300,7 +301,7 @@ class Tokenizer:
                 self.column += (self.pos - start + 2)
                 self.tokens.append(Token('STRING', self._decode_escapes(value), self.line, self.column))
                 continue
-            
+
             # Operators involving multiple chars
             # Check 3 chars first
             if self.pos + 2 < length:
@@ -310,7 +311,7 @@ class Tokenizer:
                     self.pos += 3
                     self.column += 3
                     continue
-            
+
             if self.pos + 1 < length:
                 two_chars = self.source[self.pos:self.pos+2]
                 if two_chars in ('==', '!=', '<=', '>=', '->', '=>', '&&', '||', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '<<', '>>', '..', '??', '?:', '|>', '**', '?.', '?['):
@@ -318,12 +319,12 @@ class Tokenizer:
                     self.pos += 2
                     self.column += 2
                     continue
-            
+
             # Single char operators
             self.tokens.append(Token('OP', char, self.line, self.column))
             self.pos += 1
             self.column += 1
-        
+
         self.tokens.append(Token('EOF', '', self.line, self.column))
         return self.tokens
 
@@ -349,13 +350,13 @@ class Parser:
     def __init__(self, tokens):
         self.tokens = tokens
         self.pos = 0
-    
+
     # --- Token Management ---
     def peek(self, offset=0):
         if self.pos + offset < len(self.tokens):
             return self.tokens[self.pos + offset]
         return self.tokens[-1]
-    
+
     def consume(self, expected_type=None, expected_value=None):
         if self.pos >= len(self.tokens):
             raise SyntaxError("Unexpected EOF")
@@ -367,17 +368,17 @@ class Parser:
         if expected_value and token.value != expected_value:
             raise SyntaxError(f"Expected '{expected_value}' but got '{token.value}' at {token.line}:{token.column}")
         return token
-    
+
     def match(self, value):
         token = self.peek()
         if token.value == value:
             self.pos += 1
             return True
         return False
-    
+
     def check(self, value):
         return self.peek().value == value
-    
+
     def check_type(self, type_name):
         return self.peek().type == type_name
 
@@ -396,7 +397,7 @@ class Parser:
         visibility = 'public'
         is_static = False
         is_volatile = False
-        
+
         while self.peek().value in ['public', 'private', 'protected', 'static', 'volatile']:
             val = self.consume().value
             if val in ['public', 'private', 'protected']:
@@ -405,7 +406,7 @@ class Parser:
                 is_static = True
             elif val == 'volatile':
                 is_volatile = True
-        
+
         return visibility, is_static, is_volatile
 
     def parse_statement(self):
@@ -419,10 +420,8 @@ class Parser:
             )
         stmt = self._parse_statement()
         if stmt is not None:
-            try:
+            with contextlib.suppress(AttributeError, TypeError):
                 stmt.line = start_line
-            except (AttributeError, TypeError):
-                pass
         return stmt
 
     def _parse_statement(self):
@@ -431,18 +430,15 @@ class Parser:
         visibility = 'public'
         is_static = False
         is_volatile = False
-        
-        has_prefix = False
-        
+
+
         while True:
             token = self.peek()
             if token.value == 'export':
                 # `export` marks public members inside a module; Python has no
                 # equivalent, so it is simply skipped.
                 self.consume()
-                has_prefix = True
             elif token.value == '@':
-                has_prefix = True
                 # Parse decorators
                 while self.match('@'):
                     dec_name = self.consume(expected_type='IDENT').value
@@ -463,7 +459,6 @@ class Parser:
                         self.consume(expected_value=')')
                     decorators.append(Decorator(dec_name, dec_args, dec_kwargs))
             elif token.value in ['public', 'private', 'protected', 'static', 'volatile']:
-                has_prefix = True
                 v, s, vol = self.parse_modifiers()
                 # Last visibility wins, flags accumulate
                 if v != 'public': visibility = v
@@ -473,7 +468,7 @@ class Parser:
                 break
 
         # Labeled loop: `outer: for x in ... { ... }`.
-        if (self.check_type('IDENT') and self.peek(1).value == ':' 
+        if (self.check_type('IDENT') and self.peek(1).value == ':'
                 and self.peek(2).value in ('for', 'while', 'until', 'loop')):
             label = self.consume().value
             self.consume(expected_value=':')
@@ -483,7 +478,7 @@ class Parser:
             return loop
 
         token = self.peek()
-        
+
         if token.value == 'let':
             return self.parse_var_decl(visibility, is_static, is_volatile)
         elif token.value == 'const':
@@ -540,7 +535,7 @@ class Parser:
                 label = self.consume().value
             if self.check(';'): self.consume()
             return ContinueStmt(label)
-        
+
         elif token.value == 'assert':
             return self.parse_assert_stmt()
 
@@ -555,7 +550,7 @@ class Parser:
              expr = self.parse_expression()
              if self.check(';'): self.consume()
              return ExprStmt(expr)
-             
+
         elif token.value == 'case':
             return self.parse_case_stmt()
 
@@ -563,7 +558,7 @@ class Parser:
             self.consume()
             return None
         # elif token.value == '}' - Let parse_expression failure handle it
-        
+
         # Expression statement
         expr = self.parse_expression()
         expr = self.parse_trailing_tuple(expr)
@@ -637,7 +632,7 @@ class Parser:
                 f"visibility/modifier must come before 'let', not after it "
                 f"(write '{tok.value} let ...') (line {tok.line})"
             )
-        
+
         # Destructuring check (if starts with { or [ or ()
         name = ""
         if self.check('{') or self.check('[') or self.check('('):
@@ -645,38 +640,37 @@ class Parser:
             # Basic balanced consumption
             # This is a heuristic to get the pattern string for Python
             # A full implementation would parse a Pattern node.
-            
+
             stack = []
             start_pos = self.pos
             while True:
-                tok = self.peek() 
+                tok = self.peek()
                 if tok.value in '([{':
                     stack.append(tok.value)
-                elif tok.value in ')]}':
-                    if stack: stack.pop()
-                
+                elif tok.value in ')]}' and stack: stack.pop()
+
                 if (tok.value == ':' or tok.value == '=') and not stack:
                     break
-                
+
                 # Check EOF
                 if tok.type == 'EOF': break
-                
+
                 # Consume
                 self.consume()
-            
+
             # Reconstruct string from tokens range
             # This is tricky because we don't have source slice easily from tokens logic above
             # But we can reconstruct from tokens values
             pat_tokens = self.tokens[start_pos:self.pos]
-            
+
             # Simple spacing reconstruction
             parts = []
-            for i, t in enumerate(pat_tokens):
+            for _i, t in enumerate(pat_tokens):
                 parts.append(str(t.value))
                 # Add heuristic grouping?
                 # Python is picky about spaces? No.
                 # (x,y) is fine.
-                
+
             # If we just join everything, we might get (x,y).
             # But tokens are: '(', 'x', ',', 'y', ')'
             # join -> "(x, y)"
@@ -684,7 +678,7 @@ class Parser:
              # Actually Tokenizer stripped spaces.
              # But ( x , y ) is valid python.
             name = " ".join(t.value for t in pat_tokens)
-            
+
             # Specific replacement for spread operator in list destructuring
             # Aura: *rest or ...rest. Python: *rest.
             name = name.replace("... ", "*")
@@ -701,19 +695,19 @@ class Parser:
              if extra_names:
                  name = "(" + ", ".join([name] + extra_names) + ")"
         type_annotation = None
-        
+
         if self.match(':'):
             type_annotation = self.parse_type()
-        
+
         value = None
         if self.match('='):
             value = self.parse_expression()
             # Tuple assignment: `let a, b = 1, 2`.
             value = self.parse_trailing_tuple(value)
-        
+
         if self.check(';'):
             self.consume()
-            
+
         return VarDecl(name, mutable, type_annotation, value, visibility, is_static, is_volatile)
 
     def parse_const_decl(self):
@@ -722,7 +716,7 @@ class Parser:
         type_annotation = None
         if self.match(':'):
             type_annotation = self.parse_type()
-        
+
         self.consume(expected_value='=')
         value = self.parse_expression()
         if self.check(';'): self.consume()
@@ -760,7 +754,7 @@ class Parser:
                 f"type parameters use brackets, not '<...>' "
                 f"(write 'def {name}[T]') (line {tok.line})"
             )
-        
+
         self.consume(expected_value='(')
         params = []
         if not self.check(')'):
@@ -786,20 +780,20 @@ class Parser:
                 p_type = None
                 if self.match(':'):
                     p_type = self.parse_type()
-                
+
                 default = None
                 if self.match('='):
                     default = self.parse_expression()
-                    
+
                 params.append(Parameter(p_name, p_type, default, is_variadic=is_variadic, is_kwonly=is_kwonly))
                 if not self.match(','):
                     break
         self.consume(expected_value=')')
-        
+
         return_type = None
         if self.match('->'):
             return_type = self.parse_type()
-        
+
         # Handle expression body: fn foo() = expr
         if self.match('='):
              expr = self.parse_expression()
@@ -807,13 +801,13 @@ class Parser:
              body = [ReturnStmt(expr)]
         else:
             body = self.parse_block()
-            
+
         return FunctionDecl(name, params, return_type, body, is_async=is_async, type_params=type_params, decorators=decorators, visibility=visibility, is_static=is_static, is_volatile=is_volatile)
 
     def parse_class_decl(self, decorators=None, visibility='public', is_static=False, is_volatile=False):
         self.consume(expected_value='class')
         name = self.consume(expected_type='IDENT').value
-        
+
         # Generics: Strict [T] only (Zen of Aura)
         type_params = []
         if self.match('['):
@@ -844,10 +838,7 @@ class Parser:
             traits = [self.consume(expected_type='IDENT').value]
             while self.match(','):
                 traits.append(self.consume(expected_type='IDENT').value)
-            if base_class:
-                base_class = ", ".join([base_class] + traits)
-            else:
-                base_class = ", ".join(traits)
+            base_class = ", ".join([base_class] + traits) if base_class else ", ".join(traits)
 
         self.consume(expected_value='{')
         members = []
@@ -855,7 +846,7 @@ class Parser:
             visibility = 'public'
             is_static = False
             is_volatile = False
-            
+
             # Parse modifiers
             while True:
                 if self.match('public'): visibility = 'public'
@@ -944,13 +935,13 @@ class Parser:
                     v = None
                     if self.match('='):
                         v = self.parse_expression()
-                    
+
                     if self.check(';'): self.consume()
                     members.append(VarDecl(field_name, field_mutable, t, v,
                                           visibility=visibility, is_static=is_static, is_volatile=is_volatile))
                 else:
                     raise SyntaxError(f"Unexpected token in class: {self.peek()}")
-        
+
         self.consume(expected_value='}')
         return ClassDecl(name, members, base_class, type_params, decorators, visibility, is_static, is_volatile)
     def parse_module_decl(self):
@@ -990,7 +981,6 @@ class Parser:
         # structural: at depth 0 we stop as soon as the next token cannot
         # continue a type (so `type X = int\nprint(X)` does not swallow the
         # following statement), while nested brackets/braces are tracked.
-        start = self.pos
         type_tokens = self._scan_type_tokens()
         type_text = self._tokens_to_type_text(type_tokens)
 
@@ -1086,7 +1076,7 @@ class Parser:
             )
         token = self.consume()
         t_name = str(token.value)
-        
+
         # Function type: (T) -> R
         if t_name == '(':
              # Parse arg types
@@ -1099,7 +1089,7 @@ class Parser:
              self.consume(expected_value='->')
              ret = self.parse_type()
              return f"({', '.join(str(a) for a in args)}) -> {ret}"
-             
+
         if t_name == '[':
              # Array/List type [T] or [T, U]
              arg = self.parse_type()
@@ -1352,10 +1342,7 @@ class Parser:
         then_body = self.parse_block()
         else_body = None
         if self.match('else'):
-            if self.check('if'):
-                else_body = [self.parse_if_stmt()]
-            else:
-                else_body = self.parse_block()
+            else_body = [self.parse_if_stmt()] if self.check('if') else self.parse_block()
         return IfStmt(cond, then_body, else_body)
 
     def parse_guard_stmt(self):
@@ -1384,10 +1371,7 @@ class Parser:
         body = self.parse_block()
         else_body = None
         if self.match('else'):
-            if self.check('if'):
-                else_body = [self.parse_if_stmt()]
-            else:
-                else_body = self.parse_block()
+            else_body = [self.parse_if_stmt()] if self.check('if') else self.parse_block()
         return UnlessStmt(cond, body, else_body)
 
     def parse_until_stmt(self):
@@ -1407,15 +1391,15 @@ class Parser:
         self.consume(expected_value='for')
         # Check for parenthesis (optional in Aura but good to handle)
         has_paren = self.match('(')
-        
+
         # Supports: for x in ... OR for (i, x) in ...
         targets = []
         if self.check_type('IDENT'):
              targets.append(self.consume().value)
-        
+
         while self.match(','):
              targets.append(self.consume(expected_type='IDENT').value)
-        
+
         if len(targets) == 1:
              pattern = IdentifierPattern(targets[0])
         else:
@@ -1423,14 +1407,14 @@ class Parser:
 
         if has_paren:
              self.consume(expected_value=')')
-        
+
         self.consume(expected_value='in')
         iterable = self.parse_expression()
-        
+
         step = None
         if self.match('step'):
             step = self.parse_expression()
-            
+
         body = self.parse_block()
         return ForStmt(pattern, iterable, body, step)
 
@@ -1469,7 +1453,7 @@ class Parser:
 
             body = self.parse_block()
             catch_clauses.append(CatchClause(exc_type, var_name, body))
-        
+
         finally_body = None
         if self.match('finally'):
             finally_body = self.parse_block()
@@ -1480,7 +1464,7 @@ class Parser:
             )
 
         return TryStmt(try_body, catch_clauses, finally_body)
-    
+
     def parse_with_stmt(self):
         self.consume(expected_value='with')
         items = []
@@ -1490,13 +1474,13 @@ class Parser:
             if self.match('as'):
                 var_name = self.consume(expected_type='IDENT').value
             items.append((expr, var_name))
-            
+
             if not self.match(','):
                 break
-        
+
         body = self.parse_block()
         return WithStmt(items, body)
-    
+
     def parse_match_stmt(self):
         self.consume(expected_value='match')
         expr = self.parse_expression()
@@ -1504,12 +1488,12 @@ class Parser:
         cases = []
         while not self.check('}') and not self.check('EOF'):
              # case pattern { ... } OR pattern -> stmt
-             is_case_kw = self.match('case')
+             self.match('case')
              pat_node = None
-             
+
              # Parse pattern (simplified as expr for now)
              pattern_expr = self.parse_expression()
-             
+
              if isinstance(pattern_expr, Identifier) and pattern_expr.name == '_':
                 pat_node = WildcardPattern()
              elif isinstance(pattern_expr, (IntLiteral, StrLiteral, BoolLiteral)):
@@ -1518,7 +1502,7 @@ class Parser:
                  pat_node = IdentifierPattern(pattern_expr.name)
              elif isinstance(pattern_expr, (TupleLiteral, ListLiteral)):
                  # Convert tuple/list literal to ListPattern for destructuring
-                 
+
                  patterns = []
                  for elem in (pattern_expr.elements if isinstance(pattern_expr.elements, list) else []):
                      if isinstance(elem, Identifier):
@@ -1535,11 +1519,11 @@ class Parser:
                      else:
                          # Fallback/Recurse needed for nested? For now literal fallback
                          patterns.append(LiteralPattern(elem))
-                 
+
                  pat_node = ListPattern(patterns)
              elif isinstance(pattern_expr, CallExpr):
                  # Convert CallExpr to ConstructorPattern (e.g. Some(x), Err(msg))
-                 
+
                  pat_name = pattern_expr.func.name if isinstance(pattern_expr.func, Identifier) else "unknown"
                  subpatterns = []
                  for arg in pattern_expr.args:
@@ -1549,15 +1533,15 @@ class Parser:
                          subpatterns.append(LiteralPattern(arg.value))
                      else:
                          subpatterns.append(LiteralPattern(arg))
-                 
+
                  pat_node = ConstructorPattern(pat_name, subpatterns)
              else:
                 pat_node = LiteralPattern(pattern_expr)
-             
+
              guard = None
              if self.match('if'):
                  guard = self.parse_expression()
-             
+
              body = []
              if self.match('{'):
                  while not self.check('}'):
@@ -1570,9 +1554,9 @@ class Parser:
              else:
                  # Maybe implicit block or just expr?
                  pass
-                 
+
              cases.append(MatchCase(pat_node, guard, body))
-             
+
         self.consume(expected_value='}')
         return MatchStmt(expr, cases)
 
@@ -1582,21 +1566,21 @@ class Parser:
         message = None
         if self.match(','):
             message = self.parse_expression()
-        
+
         # Check for optional semicolon
         if self.check(';'):
             self.consume()
-            
+
         return AssertStmt(condition, message)
 
     def parse_case_stmt(self):
         self.consume(expected_value='case')
         pattern = self.parse_expression()
-        
+
         guard = None
         if self.match('if'):
             guard = self.parse_expression()
-            
+
         body = self.parse_block()
         return MatchCase(pattern, guard, body)
 
@@ -1634,7 +1618,7 @@ class Parser:
             lhs = UnaryOp(op, operand=rhs)
         else:
             lhs = self.parse_primary()
-        
+
         while True:
             pk = self.peek()
             op = None
@@ -1652,7 +1636,7 @@ class Parser:
                 if op == 'is':
                     if self.pos + 1 < len(self.tokens) and self.tokens[self.pos + 1].value == 'not':
                         op = 'is not'
-            
+
             if not op:
                 # `...` is a prefix spread only; seeing it between operands
                 # (e.g. `1...10`) is always a mistake, not a valid operator.
@@ -1672,30 +1656,30 @@ class Parser:
                 )
 
             prec = self.get_precedence(op)
-            
+
             if prec < min_prec or prec == 0:
                 break
-            
+
             # Special case for pipe |>
             if op == '|>':
                 self.consume()
                 rhs = self.parse_expression(prec + 1)
                 lhs = PipeExpr(lhs, rhs)
                 continue
-            
+
             # Special case for range ..
             if op == '..' or op == '..<':
                 self.consume()
                 rhs = self.parse_expression(prec + 1)
-                
+
                 step = None
                 if self.match('step'):
                     step = self.parse_expression(prec + 1)
-                
+
                 exclusive = (op == '..<')
                 lhs = RangeExpr(lhs, rhs, exclusive=exclusive, step=step)
                 continue
-            
+
             # Special case for conditional ternary ? :
             if op == '?':
                 self.consume() # eat ?
@@ -1723,10 +1707,10 @@ class Parser:
             self.consume() # consume first part of op (or whole op)
             if op == 'not in' or op == 'is not':
                 self.consume() # consume 2nd part ('in' or 'not')
-                
+
             rhs = self.parse_expression(prec + 1 if self.is_left_assoc(op) else prec)
             lhs = BinaryOp(lhs, op, rhs)
-            
+
         return lhs
 
     def get_precedence(self, op):
@@ -1755,14 +1739,14 @@ class Parser:
             '.': 12, '[': 12, '(': 12, '?.': 12
         }
         return precedences.get(op, 0)
-        
+
     def is_left_assoc(self, op):
         return op != '**' and op != '=' and op != '??'
 
     def parse_primary(self):
         token = self.peek()
         # print(f"DEBUG: parse_primary peek={token}")
-        
+
         if token.type == 'INT':
             self.consume()
             return self.parse_postfix(IntLiteral(token.value))
@@ -1780,7 +1764,7 @@ class Parser:
             quote, raw = token.value
             node = FStringLiteral(self._parse_fstring_parts(raw), quote=quote)
             return self.parse_postfix(node)
-            
+
         elif token.type == 'IDENT':
             if token.value == 'true':
                 self.consume()
@@ -1797,7 +1781,7 @@ class Parser:
                 self.consume()
                 return NoneLiteral()
             # Lambda is handled via '(' ... '=>' or check special syntax if needed
-            
+
             elif token.value == 'if':
                 return self.parse_if_stmt()
             elif token.value == 'match':
@@ -1806,7 +1790,7 @@ class Parser:
             elif token.value == 'try':
                  stmt = self.parse_try_stmt()
                  return TryExpr(stmt.try_body, stmt.catch_clauses, stmt.finally_body)
-            
+
             self.consume()
             node = Identifier(token.value)
             # Single-parameter lambda without parens: `x => expr`
@@ -1814,7 +1798,7 @@ class Parser:
                 body = self.parse_lambda_body()
                 return LambdaExpr([Parameter(token.value)], body)
             return self.parse_postfix(node)
-            
+
         elif token.value == '[':
             return self.parse_postfix(self.parse_list_literal())
         elif token.value == '{':
@@ -1829,7 +1813,7 @@ class Parser:
                     body = self.parse_lambda_body()
                     return LambdaExpr([], body)
                 return self.parse_postfix(TupleLiteral([]))
-                
+
             expr = self.parse_expression(0)
 
             # Generator expression: `(expr for pattern in iterable ...)`.
@@ -1863,7 +1847,7 @@ class Parser:
                     elements.append(self.parse_expression())
                     if not self.match(','): break
                 self.consume(expected_value=')')
-                
+
                 # Check for arrow function: (x, y) => ...
                 if self.match('=>'):
                     params = []
@@ -1872,12 +1856,12 @@ class Parser:
                             params.append(Parameter(el.name))
                         else:
                             raise SyntaxError("Invalid parameter in lambda")
-                    
+
                     body = self.parse_lambda_body()
                     return LambdaExpr(params, body)
-                
+
                 return self.parse_postfix(TupleLiteral(elements))
-                
+
             self.consume(expected_value=')')
             # Check for arrow function: (Params) => Expr
             if self.match('=>'):
@@ -1889,12 +1873,12 @@ class Parser:
                     for el in expr.elements:
                         if isinstance(el, Identifier):
                             params.append(Parameter(el.name))
-                
+
                 body = self.parse_lambda_body()
                 return LambdaExpr(params, body)
-            
+
             return self.parse_postfix(expr)
-            
+
         raise SyntaxError(f"Unexpected token {token} at {token.line}:{token.column}")
 
     def _parse_fstring_parts(self, raw):
@@ -1992,9 +1976,8 @@ class Parser:
         if not self.check(']') and not self.check(':'):
             stop = self.parse_expression()
         step = None
-        if self.match(':'):
-            if not self.check(']'):
-                step = self.parse_expression()
+        if self.match(':') and not self.check(']'):
+            step = self.parse_expression()
         return SliceExpr(None, start, stop, step)
 
     def parse_postfix(self, node):
@@ -2011,9 +1994,7 @@ class Parser:
                         if self.check('**') or self.check('...'):
                             marker = self.consume().value
                             expr = self.parse_expression()
-                            if marker == '**':
-                                is_dict = True
-                            elif isinstance(expr, DictLiteral):
+                            if marker == '**' or isinstance(expr, DictLiteral):
                                 is_dict = True
                             elif isinstance(expr, (ListLiteral, TupleLiteral)):
                                 is_dict = False
@@ -2038,7 +2019,7 @@ class Parser:
                                 next_val = self.tokens[next_token_idx].value
                                 if next_val in (':', '='):
                                     is_named = True
-                        
+
                         if is_named:
                             key = self.consume().value # Consume IDENT
                             self.consume() # Consume : or =
@@ -2072,7 +2053,7 @@ class Parser:
                                 args.append(ComprehensionExpr(first_arg, comprehensions, expr_type='generator'))
                                 break
                             args.append(first_arg)
-                            
+
                         if not self.match(','):
                             break
                 self.consume(expected_value=')')
@@ -2088,7 +2069,7 @@ class Parser:
                      # Check rhs
                      if isinstance(node.rhs, Identifier) and node.rhs.name[0].isupper():
                          is_struct = True
-                
+
                 if is_struct:
                     self.consume()
                     d = self.parse_dict_body() # parse content and closing '}'
@@ -2121,17 +2102,17 @@ class Parser:
             else:
                 break
         return node
-        
+
     def parse_list_literal(self):
         self.consume(expected_value='[')
         if self.match(']'):
             return ListLiteral([])
-            
+
         if self.match('*') or self.match('...'):
             first = SpreadExpr(self.parse_expression(), is_dict=False)
         else:
             first = self.parse_expression()
-        
+
         # Check for comprehension: [x for x in list]
         if self.match('for'):
              comprehensions = []
@@ -2145,21 +2126,21 @@ class Parser:
                          pats.append(self.parse_expression(7))
                          if not self.match(','): break
                      pattern = TupleLiteral(pats)
-                 
+
                  self.consume(expected_value='in')
                  iterable = self.parse_expression()
                  filters = []
                  while self.match('if'):
                      filters.append(self.parse_expression())
-                 
+
                  comprehensions.append((pattern, iterable, filters))
-                 
+
                  if not self.match('for'):
                      break
-                 
+
              self.consume(expected_value=']')
              return ComprehensionExpr(first, comprehensions, expr_type='list')
-        
+
         elements = [first]
         while self.match(','):
             if self.check(']'): break
@@ -2167,7 +2148,7 @@ class Parser:
                 elements.append(SpreadExpr(self.parse_expression(), is_dict=False))
             else:
                 elements.append(self.parse_expression())
-        
+
         self.consume(expected_value=']')
         return ListLiteral(elements)
 
@@ -2178,7 +2159,7 @@ class Parser:
     def parse_dict_body(self):
         if self.match('}'):
             return DictLiteral([])
-        
+
         # Heuristic: Check for statement keywords -> Block
         tok = self.peek()
         stmt_keywords = ('let', 'const', 'return', 'while', 'for', 'if', 'try', 'match', 'guard', 'unless')
@@ -2210,11 +2191,11 @@ class Parser:
             i += 1
         if not is_literal:
             return self.parse_block_expr_internal(first_stmt=None)
-            
+
         # Parsing logic handles Dict (with spread) vs Set vs Block
         elements = []
         is_dict = False
-        
+
         while not self.check('}'):
             if self.match('**') or self.match('...'):
                 expr = self.parse_expression()
@@ -2240,11 +2221,11 @@ class Parser:
                         return self.parse_set_comp_body(expr)
                     elements.append(expr)
             if not self.match(','): break
-            
+
         self.consume(expected_value='}')
         if is_dict: return DictLiteral(elements)
         else: return SetLiteral(elements)
-            
+
     def parse_dict_comp_body(self, key, val):
         comprehensions = []
         while True:
@@ -2289,17 +2270,17 @@ class Parser:
         statements = []
         if first_stmt:
             statements.append(first_stmt)
-            
+
         while not self.check('}') and not self.check('EOF'):
             stmt = self.parse_statement()
             if stmt: statements.append(stmt)
-            
+
         self.consume(expected_value='}')
         return BlockExpr(statements)
 
 def parse_file(path: str) -> Program:
     """Parse Aura file using recursive descent parser."""
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, encoding='utf-8') as f:
         source = f.read()
     tokenizer = Tokenizer(source)
     tokens = tokenizer.tokenize()

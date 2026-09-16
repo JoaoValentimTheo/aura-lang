@@ -1,6 +1,6 @@
 """Complete AST node definitions for Aura language based on docs."""
-from dataclasses import dataclass, field
-from typing import Optional, List
+from dataclasses import dataclass
+
 
 @dataclass
 class SourceLocation:
@@ -9,15 +9,15 @@ class SourceLocation:
     line: int = 0
     column: int = 0
     length: int = 0
-    
+
     def __str__(self):
         return f"{self.filename}:{self.line}:{self.column}"
 
 class Node:
     """Base AST node with optional source location."""
     def __init__(self):
-        self.location: Optional[SourceLocation] = None
-    
+        self.location: SourceLocation | None = None
+
     def with_location(self, location: SourceLocation) -> 'Node':
         """Attach source location to node."""
         self.location = location
@@ -61,7 +61,7 @@ class ConstDecl(Stmt):
         self.value = value
 
 class FunctionDecl(Stmt):
-    def __init__(self, name, params, return_type=None, body=None, 
+    def __init__(self, name, params, return_type=None, body=None,
                  is_async=False, type_params=None, decorators=None, visibility='public', is_static=False, is_volatile=False):
         self.name = name
         self.params = params or []
@@ -117,7 +117,7 @@ class Parameter(Node):
         self.is_kwonly = is_kwonly
 
 class Method(Node):
-    def __init__(self, name, params, return_type=None, body=None, 
+    def __init__(self, name, params, return_type=None, body=None,
                  is_static=False, is_classmethod=False, is_property=False,
                  visibility='public', is_volatile=False, decorators=None):
         self.name = name

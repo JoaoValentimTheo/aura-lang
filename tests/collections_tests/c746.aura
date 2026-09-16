@@ -1,8 +1,0 @@
-// Collections: Transformations
-let numbers = [1, 17, 15, 8, 19, 19, 8];
-
-let sum = numbers |> reduce(0, (acc, x) => acc + x);
-let product = numbers |> reduce(1, (acc, x) => acc * x);
-
-print(sum);
-print(product);

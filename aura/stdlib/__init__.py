@@ -1,20 +1,11 @@
 """Aura Standard Library initialization."""
 
-__version__ = "0.1.0a3"
+from aura import __version__
+
 __author__ = "Aura Team"
 
 # Core modules
-from . import collections
-from . import itertools
-from . import math
-from . import string
-from . import json
-from . import time
-from . import io
-from . import regex
-from . import os
-from . import http
-from . import python
+from . import collections, http, io, itertools, json, math, os, python, regex, string, time
 
 # Common exports
 __all__ = [
@@ -33,51 +24,84 @@ __all__ = [
 
 # Convenience imports
 from .collections import (
-    list_map,
-    list_filter,
-    list_reduce,
     dict_get,
     dict_keys,
     dict_values,
-    set_union,
+    list_filter,
+    list_map,
+    list_reduce,
     set_intersection,
+    set_union,
 )
-
+from .io import (
+    append,
+    basename,
+    copy,
+    dirname,
+    exists,
+    is_dir,
+    is_file,
+    join,
+    ls,
+    mkdir,
+    read,
+    read_lines,
+    rename,
+    rm,
+    size,
+    touch,
+    write,
+    write_lines,
+)
 from .itertools import (
-    range_iter,
     chain,
     combinations,
-    permutations,
     enumerate_iter,
+    permutations,
+    range_iter,
 )
-
-from .math import (
-    PI, E, TAU,
-    sqrt, pow, exp,
-    sin, cos, tan,
-    log, log10,
-)
-
-from .string import (
-    upper, lower, trim,
-    split, join, replace,
-    starts_with, ends_with,
-)
-
 from .json import (
-    loads, dumps, load, dump, pretty,
-    parse, stringify, is_valid, merge,
+    dump,
+    dumps,
+    is_valid,
+    load,
+    loads,
+    merge,
+    parse,
+    pretty,
+    stringify,
 )
-
+from .math import (
+    PI,
+    TAU,
+    E,
+    cos,
+    exp,
+    log,
+    log10,
+    pow,
+    sin,
+    sqrt,
+    tan,
+)
+from .string import (
+    ends_with,
+    join,
+    lower,
+    replace,
+    split,
+    starts_with,
+    trim,
+    upper,
+)
 from .time import (
-    now, now_ms, sleep, clock,
-    monotonic, perf_counter, strftime,
-    iso, elapsed,
-)
-
-from .io import (
-    read, write, append, exists,
-    is_file, is_dir, mkdir, ls, rm,
-    rename, basename, dirname, join,
-    read_lines, write_lines, copy, size, touch,
+    clock,
+    elapsed,
+    iso,
+    monotonic,
+    now,
+    now_ms,
+    perf_counter,
+    sleep,
+    strftime,
 )

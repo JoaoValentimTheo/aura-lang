@@ -1,9 +1,0 @@
-// Collections: Nested Collections
-let matrix = [[1, 2, 3], [4, 5, 6], [7, 8, 9]];
-let nested_dict = {
-    "group1": [1, 2, 3],
-    "group2": [4, 5, 6]
-};
-
-print(matrix);
-print(nested_dict);

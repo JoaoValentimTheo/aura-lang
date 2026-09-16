@@ -67,7 +67,7 @@ class Base {{
 class Derived(Base) {{
     private let secret: str = "AURA"
     public static volatily let count = 0
-    
+
     def log() {{
         print(self.value); // protected access
         print(self.secret); // private access

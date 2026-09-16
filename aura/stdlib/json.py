@@ -15,7 +15,7 @@ def dumps(obj, indent=None):
 
 def load(path):
     """Read and parse a JSON file."""
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, encoding='utf-8') as f:
         return _json.load(f)
 
 

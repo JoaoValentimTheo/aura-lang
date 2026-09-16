@@ -25,7 +25,6 @@ import urllib.request as _urlrequest
 
 from .collections import AuraDict
 
-
 _ALLOWED_SCHEMES = ('http', 'https')
 
 # Upper bound on a response body (default 32 MiB) so a server cannot exhaust

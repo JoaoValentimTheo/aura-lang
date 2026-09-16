@@ -1,5 +1,0 @@
-// Collections: Set Operations
-let items = [1, 2, 2, 3, 3, 3, 4];
-let unique = [x for x in items if items.index(x) == items.last_index(x)];
-
-print(unique);

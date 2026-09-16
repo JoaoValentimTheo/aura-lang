@@ -5,9 +5,9 @@ are excluded from ordinary pytest collection to keep the default suite fast.
 This module exercises the ones that are valid, executable programs, so the
 syntax/scope/OOP/security surface they cover stays honest.
 
-``collections_tests`` is intentionally skipped: it was generated against a
-different stdlib API contract (e.g. ``reduce(initial, fn)`` and bare
-``sort``/``contains`` helpers) and is not a reliable oracle.
+``collections_tests`` was removed: it was generated against a different stdlib
+API contract (e.g. ``reduce(initial, fn)`` and bare ``sort``/``contains``
+helpers) and was not a reliable oracle.
 """
 import contextlib
 import io
@@ -28,6 +28,7 @@ CORPORA = [
     'secure_aura_tests',
     'speed_aura_tests',
     'integration_tests',
+    'success_tests_aura',
 ]
 
 BASE = Path(__file__).parent

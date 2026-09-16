@@ -1,23 +1,71 @@
 """Complete type system with inference, checking, and narrowing for Aura."""
-from typing import Dict, List, Optional, Set, Tuple, Any
 from dataclasses import dataclass, field
+from typing import Any, Optional
 
 # AST nodes are imported once at module scope (not per visited node) to keep the
 # checker's hot paths fast.
 from aura.transpiler.ast import (
-    Node, Program, Module,
-    VarDecl, ConstDecl, FunctionDecl, ClassDecl, EnumDecl, TypeDecl, TraitDecl,
-    Method,
-    ExprStmt, ReturnStmt, AssertStmt, ThrowStmt,
-    IfStmt, UnlessStmt, GuardStmt, WhileStmt, UntilStmt, ForStmt, LoopStmt,
-    MatchStmt, TryStmt, WithStmt,
-    Identifier, IntLiteral, FloatLiteral, StrLiteral, BoolLiteral, NoneLiteral,
-    FStringLiteral, ListLiteral, SetLiteral, DictLiteral, TupleLiteral,
-    BinaryOp, UnaryOp, CallExpr, MemberExpr, IndexExpr, SafeNavExpr, SpreadExpr,
-    CondExpr, CoalesceExpr, ElvisExpr, RangeExpr, PipeExpr, LambdaExpr, BlockExpr,
-    ComprehensionExpr, MatchExpr, TryExpr,
+    AssertStmt,
+    BinaryOp,
+    BlockExpr,
+    BoolLiteral,
+    CallExpr,
+    ClassDecl,
+    CoalesceExpr,
+    ComprehensionExpr,
+    CondExpr,
+    ConstDecl,
+    DictLiteral,
+    ElvisExpr,
+    EnumDecl,
+    ExprStmt,
+    FloatLiteral,
+    ForStmt,
+    FStringLiteral,
+    FunctionDecl,
+    GenericType,
+    GuardStmt,
+    Identifier,
     IdentifierPattern,
-    SimpleType, GenericType, StructuralType, OptionalType, UnionType,
+    IfStmt,
+    IndexExpr,
+    IntLiteral,
+    LambdaExpr,
+    ListLiteral,
+    LoopStmt,
+    MatchExpr,
+    MatchStmt,
+    MemberExpr,
+    Method,
+    Module,
+    Node,
+    NoneLiteral,
+    OptionalType,
+    PipeExpr,
+    Program,
+    RangeExpr,
+    ReturnStmt,
+    SafeNavExpr,
+    SetLiteral,
+    SimpleType,
+    SpreadExpr,
+    StrLiteral,
+    StructuralType,
+    ThrowStmt,
+    TraitDecl,
+    TryExpr,
+    TryStmt,
+    TupleLiteral,
+    TypeDecl,
+    UnaryOp,
+    UnlessStmt,
+    UntilStmt,
+    VarDecl,
+    WhileStmt,
+    WithStmt,
+)
+from aura.transpiler.ast import (
+    UnionType as AstUnionType,
 )
 
 # Sentinel for "no binding present".
@@ -32,13 +80,13 @@ class Type:
     """Base type class."""
     def __str__(self):
         return self.__class__.__name__
-    
+
     def __eq__(self, other):
         return isinstance(other, self.__class__)
-    
+
     def __hash__(self):
         return hash(self.__class__.__name__)
-    
+
     def is_compatible(self, other: 'Type') -> bool:
         """Check if this type is compatible with another type."""
         return self == other or isinstance(other, AnyType) or isinstance(self, AnyType)
@@ -87,10 +135,10 @@ class BoolType(Type):
 class ListType(Type):
     """List type with element type."""
     element_type: Type = field(default_factory=lambda: AnyType())
-    
+
     def __str__(self):
         return f"[{self.element_type}]"
-    
+
     def is_compatible(self, other: Type) -> bool:
         if isinstance(other, ListType):
             return self.element_type.is_compatible(other.element_type)
@@ -101,13 +149,13 @@ class DictType(Type):
     """Dict type with key and value types."""
     key_type: Type = field(default_factory=lambda: AnyType())
     value_type: Type = field(default_factory=lambda: AnyType())
-    
+
     def __str__(self):
         return f"{{{self.key_type}: {self.value_type}}}"
-    
+
     def is_compatible(self, other: Type) -> bool:
         if isinstance(other, DictType):
-            return (self.key_type.is_compatible(other.key_type) and 
+            return (self.key_type.is_compatible(other.key_type) and
                     self.value_type.is_compatible(other.value_type))
         return super().is_compatible(other)
 
@@ -115,10 +163,10 @@ class DictType(Type):
 class SetType(Type):
     """Set type with element type."""
     element_type: Type = field(default_factory=lambda: AnyType())
-    
+
     def __str__(self):
         return f"{{{self.element_type}}}"
-    
+
     def is_compatible(self, other: Type) -> bool:
         if isinstance(other, SetType):
             return self.element_type.is_compatible(other.element_type)
@@ -127,8 +175,8 @@ class SetType(Type):
 @dataclass(eq=False)
 class TupleType(Type):
     """Tuple type with element types."""
-    element_types: List[Type] = field(default_factory=list)
-    
+    element_types: list[Type] = field(default_factory=list)
+
     def __str__(self):
         types_str = ", ".join(str(t) for t in self.element_types)
         return f"({types_str})"
@@ -136,11 +184,11 @@ class TupleType(Type):
 @dataclass(eq=False)
 class FunctionType(Type):
     """Function type with parameter and return types."""
-    param_types: List[Type] = field(default_factory=list)
+    param_types: list[Type] = field(default_factory=list)
     return_type: Type = field(default_factory=lambda: AnyType())
     is_async: bool = False
     variadic: bool = False
-    type_params: List[str] = field(default_factory=list)
+    type_params: list[str] = field(default_factory=list)
 
     def __str__(self):
         params = ", ".join(str(t) for t in self.param_types)
@@ -153,14 +201,14 @@ class FunctionType(Type):
 class ClassType(Type):
     """Class type with fields and methods."""
     name: str
-    fields: Dict[str, Type] = field(default_factory=dict)
-    methods: Dict[str, FunctionType] = field(default_factory=dict)
+    fields: dict[str, Type] = field(default_factory=dict)
+    methods: dict[str, FunctionType] = field(default_factory=dict)
     parent: Optional['ClassType'] = None
-    type_params: List[str] = field(default_factory=list)
-    
+    type_params: list[str] = field(default_factory=list)
+
     def __str__(self):
         return self.name
-    
+
     def get_field_type(self, field_name: str) -> Type:
         """Get field type with inheritance."""
         if field_name in self.fields:
@@ -168,8 +216,8 @@ class ClassType(Type):
         if self.parent:
             return self.parent.get_field_type(field_name)
         return AnyType()
-    
-    def get_method_type(self, method_name: str) -> Optional[FunctionType]:
+
+    def get_method_type(self, method_name: str) -> FunctionType | None:
         """Get method type with inheritance."""
         if method_name in self.methods:
             return self.methods[method_name]
@@ -180,12 +228,12 @@ class ClassType(Type):
 @dataclass(eq=False)
 class UnionType(Type):
     """Union of multiple types."""
-    types: Set[Type] = field(default_factory=set)
-    
+    types: set[Type] = field(default_factory=set)
+
     def __str__(self):
         types_str = " | ".join(sorted(str(t) for t in self.types))
         return types_str
-    
+
     def is_compatible(self, other: Type) -> bool:
         return any(t.is_compatible(other) for t in self.types)
 
@@ -193,8 +241,8 @@ class UnionType(Type):
 class TypeVariable(Type):
     """Generic type variable (T, U, etc.)."""
     name: str
-    constraints: List[Type] = field(default_factory=list)
-    
+    constraints: list[Type] = field(default_factory=list)
+
     def __str__(self):
         return self.name
 
@@ -466,13 +514,13 @@ class TypeChecker:
 
     def __init__(self):
         self.inference = TypeInference()
-        self.context: Dict[str, Type] = {}
-        self.classes: Dict[str, ClassType] = {}
-        self.functions: Dict[str, FunctionType] = {}
-        self.errors: List[str] = []
-        self._return_stack: List[Any] = []
+        self.context: dict[str, Type] = {}
+        self.classes: dict[str, ClassType] = {}
+        self.functions: dict[str, FunctionType] = {}
+        self.errors: list[str] = []
+        self._return_stack: list[Any] = []
         # Active generic type parameters (name -> TypeVariable).
-        self._type_params: Dict[str, TypeVariable] = {}
+        self._type_params: dict[str, TypeVariable] = {}
 
     # -- public API ---------------------------------------------------------
 
@@ -514,9 +562,7 @@ class TypeChecker:
             self._check_function_decl(node)
         elif isinstance(node, ClassDecl):
             self._check_class_decl(node)
-        elif isinstance(node, EnumDecl):
-            pass
-        elif isinstance(node, (TypeDecl, TraitDecl)):
+        elif isinstance(node, (EnumDecl, TypeDecl, TraitDecl)):
             pass
         elif isinstance(node, (IfStmt, UnlessStmt)):
             self._check_if(node)
@@ -795,9 +841,7 @@ class TypeChecker:
     def _check_for(self, node):
         iter_type = self.inference.infer(node.iterable)
         if isinstance(node.pattern, IdentifierPattern):
-            if isinstance(iter_type, ListType):
-                self.context[node.pattern.name] = iter_type.element_type
-            elif isinstance(iter_type, SetType):
+            if isinstance(iter_type, (ListType, SetType)):
                 self.context[node.pattern.name] = iter_type.element_type
             elif isinstance(iter_type, DictType):
                 self.context[node.pattern.name] = iter_type.key_type
@@ -1019,7 +1063,7 @@ class TypeChecker:
             return self._parse_type_annotation(annotation.name)
         if isinstance(annotation, OptionalType):
             return UnionType({self._parse_type_annotation(annotation.base_type), NoneType()})
-        if isinstance(annotation, UnionType):
+        if isinstance(annotation, AstUnionType):
             return UnionType({self._parse_type_annotation(t) for t in annotation.types})
         if isinstance(annotation, GenericType):
             base = self._parse_type_annotation(annotation.name)

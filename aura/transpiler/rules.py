@@ -19,17 +19,47 @@ conservative: it never reports a problem it cannot prove, so it stays quiet on
 dynamically shaped code.
 """
 
-from aura.transpiler.errors import ErrorCollector, ErrorCode
 from aura.transpiler.ast import (
-    Node, Program, Module,
-    VarDecl, ConstDecl, FunctionDecl, ClassDecl, EnumDecl, TypeDecl, TraitDecl,
-    IfStmt, UnlessStmt, GuardStmt, WhileStmt, UntilStmt, ForStmt, LoopStmt,
-    MatchStmt, TryStmt, WithStmt, ReturnStmt, ExprStmt, ThrowStmt,
-    AssertStmt, BreakStmt, ContinueStmt, Method,
-    Identifier, MemberExpr, IndexExpr, BinaryOp, TupleLiteral, ListLiteral,
-    SpreadExpr, UnaryOp, LambdaExpr,
-    IdentifierPattern, ListPattern,
+    AssertStmt,
+    BinaryOp,
+    BreakStmt,
+    ClassDecl,
+    ConstDecl,
+    ContinueStmt,
+    EnumDecl,
+    ExprStmt,
+    ForStmt,
+    FunctionDecl,
+    GuardStmt,
+    Identifier,
+    IdentifierPattern,
+    IfStmt,
+    IndexExpr,
+    LambdaExpr,
+    ListLiteral,
+    ListPattern,
+    LoopStmt,
+    MatchStmt,
+    MemberExpr,
+    Method,
+    Module,
+    Node,
+    Program,
+    ReturnStmt,
+    SpreadExpr,
+    ThrowStmt,
+    TraitDecl,
+    TryStmt,
+    TupleLiteral,
+    TypeDecl,
+    UnaryOp,
+    UnlessStmt,
+    UntilStmt,
+    VarDecl,
+    WhileStmt,
+    WithStmt,
 )
+from aura.transpiler.errors import ErrorCode, ErrorCollector
 
 ASSIGNMENT_OPS = frozenset({
     '=', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '<<=', '>>=', '??=',
@@ -121,9 +151,7 @@ class RuleChecker:
             self._visit_method(node)
         elif isinstance(node, ClassDecl):
             self._visit_class(node)
-        elif isinstance(node, EnumDecl):
-            self._declare(node.name)
-        elif isinstance(node, TypeDecl):
+        elif isinstance(node, (EnumDecl, TypeDecl)):
             self._declare(node.name)
         elif isinstance(node, TraitDecl):
             self._declare(node.name)
@@ -256,9 +284,8 @@ class RuleChecker:
 
         self._push_scope()
         for param in node.params or []:
-            if getattr(param, 'name', None):
-                if param.name != '*':
-                    self._scope_stack[-1].add(param.name)
+            if getattr(param, 'name', None) and param.name != '*':
+                self._scope_stack[-1].add(param.name)
         self._function_depth += 1
         if getattr(node, 'is_async', False):
             self._async_depth += 1

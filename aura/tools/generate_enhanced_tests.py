@@ -69,7 +69,7 @@ print(f_{i}(20));
 """
 
     def gen_scope_guard_chain(self, i):
-        limit1, limit2, limit3 = i + 5, i + 15, i + 25
+        limit1, limit2, _limit3 = i + 5, i + 15, i + 25
         return f"""// Scope: Guard Chain {i}
 let n_{i} = {i};
 guard n_{i} >= 0 else {{ print("neg"); }}
@@ -252,9 +252,9 @@ def generate_all_enhanced(num=1000):
     """Generate enhanced tests with maximum uniqueness"""
     print("\n🚀 ENHANCED Diverse Test Generator v2")
     print(f"Generating {num} tests per category...")
-    
+
     total = 0
-    
+
     # Scope tests
     print(f"\n[SCOPE] Generating {num} diverse tests...")
     for i in range(num):
@@ -268,7 +268,7 @@ def generate_all_enhanced(num=1000):
         if (i + 1) % 250 == 0:
             print(f"  Generated {i + 1}/{num}")
     print(f"  ✓ Scope: {num} tests")
-    
+
     # Collections tests
     print(f"\n[COLLECTIONS] Generating {num} diverse tests...")
     for i in range(num):
@@ -282,7 +282,7 @@ def generate_all_enhanced(num=1000):
         if (i + 1) % 250 == 0:
             print(f"  Generated {i + 1}/{num}")
     print(f"  ✓ Collections: {num} tests")
-    
+
     print(f"\n{'='*60}")
     print(f"ENHANCED TESTS GENERATED: {total}")
     print(f"  - Scope Tests: {num} (REPLACED)")

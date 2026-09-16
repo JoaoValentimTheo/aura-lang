@@ -17,8 +17,8 @@ class AuraDict(dict):
             raise AttributeError(name)
         try:
             return self[name]
-        except KeyError:
-            raise AttributeError(name)
+        except KeyError as exc:
+            raise AttributeError(name) from exc
 
     def __setattr__(self, name, value):
         self[name] = value
@@ -77,7 +77,7 @@ def list_drop(n, items):
 
 def list_zip(*iterables):
     """Zip lists together."""
-    return list(zip(*iterables))
+    return list(zip(*iterables, strict=False))
 
 def list_flatten(items):
     """Flatten nested list."""

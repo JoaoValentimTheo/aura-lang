@@ -1,7 +1,0 @@
-// Collections: Sorting
-let numbers = [5, 2, 8, 1, 9, 3];
-let sorted_asc = numbers |> sort();
-let sorted_desc = numbers |> sort() |> reverse();
-
-print(sorted_asc);
-print(sorted_desc);

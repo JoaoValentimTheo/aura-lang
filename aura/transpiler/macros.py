@@ -5,7 +5,6 @@ transpiler injects the prelude at the top of the generated Python file only
 when one of the built-in decorators is actually used, so plain programs stay
 clean.
 """
-from typing import List
 
 # Names of the decorators provided by the runtime prelude.
 BUILTIN_MACROS = (
@@ -117,7 +116,7 @@ def prelude_needed(decorator_names) -> bool:
     return any(name in BUILTIN_MACROS for name in decorator_names)
 
 
-def list_macros() -> List[str]:
+def list_macros() -> list[str]:
     return list(BUILTIN_MACROS)
 
 

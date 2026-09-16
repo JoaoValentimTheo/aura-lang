@@ -1,7 +1,9 @@
 """Statement and declaration transformers."""
 import textwrap
+
 from aura.transpiler.ast import *
 from aura.transpiler.transformers.expressions import ExpressionTransformer
+
 
 class StatementTransformer:
     def __init__(self):
@@ -21,18 +23,18 @@ class StatementTransformer:
         # Prelude needs recorded during transformation (enum/labeled loops).
         self.has_enum = False
         self.has_label = False
-    
+
     def transform(self, node):
         if node is None:
             return ""
-        
+
         method_name = f"transform_{node.__class__.__name__}"
         method = getattr(self, method_name, None)
         if method:
             return method(node)
-        
+
         raise NotImplementedError(f"No transformer for {node.__class__.__name__}")
-    
+
     def _indent(self):
         return "    " * self.indent_level
 
@@ -59,7 +61,7 @@ class StatementTransformer:
         if parts:
             return f"@{dec.name}({', '.join(parts)})\n"
         return f"@{dec.name}\n"
-    
+
     def _block(self, statements):
         """Transform a list of statements into indented block.
 
@@ -87,7 +89,7 @@ class StatementTransformer:
                         lines.append(indent + line)
         self.indent_level -= 1
         return '\n'.join(lines)
-    
+
     # ========== Declarations ==========
     def transform_VarDecl(self, node):
         name = node.name
@@ -171,11 +173,11 @@ class StatementTransformer:
 
     def class_field_is_protected(self, name):
         return self.expr_transformer.member_visibilities.get(name) == 'protected'
-    
+
     def transform_ConstDecl(self, node):
         value = self.expr_transformer.transform(node.value)
         return f"{node.name} = {value}  # const"
-    
+
     def transform_FunctionDecl(self, node):
         decorators_code = ""
         # Handle static/volatile
@@ -183,15 +185,15 @@ class StatementTransformer:
             decorators_code += "@staticmethod\n"
         if node.is_volatile:
              decorators_code += "# volatile\n"
-             
+
         for dec in node.decorators:
             decorators_code += self._decorator_line(dec)
-        
+
         name = node.name
         if self.in_class_scope:
             if node.visibility == 'private': name = f"__{name}"
             elif node.visibility == 'protected': name = f"_{name}"
-        
+
         params = []
         for param in node.params:
             if param.name == '*' and not param.is_variadic and not param.is_kwonly:
@@ -205,11 +207,11 @@ class StatementTransformer:
                 params.append(f"{param.name}={default}")
             else:
                 params.append(param.name)
-        
+
         params_str = ", ".join(params)
-        
+
         async_kw = "async " if node.is_async else ""
-        
+
         if node.body is None:
             return f"{decorators_code}{async_kw}def {node.name}({params_str}): pass"
         elif isinstance(node.body, list):
@@ -225,7 +227,7 @@ class StatementTransformer:
             # Expression body
             expr_code = self.expr_transformer.transform(node.body)
             return f"{decorators_code}{async_kw}def {node.name}({params_str}): return {expr_code}"
-    
+
     def transform_ClassDecl(self, node):
         decorators_code = ""
         for dec in node.decorators:
@@ -243,27 +245,27 @@ class StatementTransformer:
             self.uses_oop_prelude = True
         if bases:
             base = f"({', '.join(bases)})"
-        
+
         self.indent_level += 1
         old_in_class = self.in_class_scope
         self.in_class_scope = True
-        
+
         # Populate visibility map for expressions
         current_vis = {}
         # Inherit from base
         if node.base_class in self.class_members:
             current_vis.update(self.class_members[node.base_class])
-        
+
         # Add current members
         for member in node.body:
             if hasattr(member, 'name') and hasattr(member, 'visibility'):
                 current_vis[member.name] = member.visibility
             if isinstance(member, Method):
                 self.expr_transformer.known_method_names.add(member.name)
-        
+
         # Save to global map
         self.class_members[node.name] = current_vis
-        
+
         old_vis = self.expr_transformer.member_visibilities
         self.expr_transformer.member_visibilities = current_vis
 
@@ -298,7 +300,7 @@ class StatementTransformer:
                         f"{self._indent()}    self.{name} = None if {f.name} is _aura_unset else {f.name}"
                     )
             assigns = "\n".join(assign_lines)
-            
+
             match_args = ", ".join([f"'{f.name}'" for f in instance_fields])
             if len(instance_fields) == 1: match_args += ","
             super_line = ""
@@ -346,7 +348,7 @@ class StatementTransformer:
         self.expr_transformer.member_visibilities = old_vis
 
         return f"{decorators_code}class {node.name}{base}:\n{final_body}"
-    
+
     def transform_Method(self, node):
         decorators_code = ""
         if node.is_property:
@@ -361,7 +363,7 @@ class StatementTransformer:
             if dec.name in ('property', 'staticmethod', 'classmethod'):
                 continue
             decorators_code += self._decorator_line(dec)
-        
+
         name = node.name
         # Python protocol methods (dunders) must never be name-mangled; doing so
         # would turn `__str__` into `____str__` and break the protocol.
@@ -369,7 +371,7 @@ class StatementTransformer:
             name = f"__{name}"
         elif node.visibility == 'protected' and not name.startswith('_'):
             name = f"_{name}"
-        
+
         if node.is_static:
             params = []
         elif node.is_classmethod:
@@ -392,9 +394,9 @@ class StatementTransformer:
                 params.append(f"{param.name}={default}")
             else:
                 params.append(param.name)
-        
+
         params_str = ", ".join(params)
-        
+
         if node.body is None:
             return f"{decorators_code}def {name}({params_str}): pass"
         elif isinstance(node.body, list):
@@ -407,7 +409,7 @@ class StatementTransformer:
         else:
             expr_code = self.expr_transformer.transform(node.body)
             return f"{decorators_code}def {name}({params_str}): return {expr_code}"
-    
+
     def transform_TypeDecl(self, node):
         # Aura types are erased at compile time; emit a best-effort Python
         # runtime alias so the name still exists (e.g. `UserId = int`) and
@@ -456,7 +458,7 @@ class StatementTransformer:
         if text.isidentifier():
             return text
         return 'object'
-    
+
     def transform_TraitDecl(self, node):
         # Traits are interfaces. Python has no native traits, so a trait
         # becomes an abstract base class. Methods with a body keep their
@@ -543,7 +545,7 @@ class StatementTransformer:
                 body_lines.append(self._indent() + f"    {member_name} = {next_auto}")
                 next_auto += 1
         return header + "\n" + "\n".join(body_lines)
-    
+
     # ========== Statements ==========
     def transform_AssertStmt(self, node):
         cond = self.expr_transformer.transform(node.condition)
@@ -555,16 +557,16 @@ class StatementTransformer:
     def transform_ExprStmt(self, node):
         if isinstance(node.expr, BlockExpr):
             return "\n".join([self.transform(s) for s in node.expr.statements])
-            
+
         # Check if it's an assignment (BinaryOp with '=')
-        # Aura parsers assignments as BinaryOp expressions. 
+        # Aura parsers assignments as BinaryOp expressions.
         # In Python, assignment is a statement.
         if isinstance(node.expr, BinaryOp) and node.expr.op == '=':
             left = self.expr_transformer.transform(node.expr.left)
             # Remove outer parens from left if present (though usually identifier)
             if left.startswith('(') and left.endswith(')'):
                 left = left[1:-1]
-                
+
             right = self.expr_transformer.transform(node.expr.right)
             return f"{left} = {right}"
         elif isinstance(node.expr, BinaryOp) and node.expr.op in ('+=', '-=', '*=', '/=', '%=', '**=', '&=', '|=', '^=', '<<=', '>>='):
@@ -582,9 +584,9 @@ class StatementTransformer:
                 left = left[1:-1]
             right = self.expr_transformer.transform(node.expr.right)
             return f"{left} = {left} if {left} is not None else {right}"
-            
+
         expr = node.expr
-        
+
         # Safety: unwrap nested ExprStmt if parser wrapped redundantly
         # Use Duck Typing / Name check to avoid class identity issues
         attempts = 0
@@ -593,34 +595,34 @@ class StatementTransformer:
             attempts += 1
             if attempts > 100:
                 raise Exception("Infinite recursion unwrapping ExprStmt")
-            
+
         return self.expr_transformer.transform(expr)
-    
+
     def transform_IfStmt(self, node):
         cond = self.expr_transformer.transform(node.condition)
         then_body = self._block(node.then_body)
-        
+
         result = f"if {cond}:\n{then_body}"
-        
+
         if node.else_body:
             else_body = self._block(node.else_body)
             result += f"\nelse:\n{else_body}"
-        
+
         return result
-    
+
     def transform_UnlessStmt(self, node):
         # unless → if not
         cond = self.expr_transformer.transform(node.condition)
         body = self._block(node.body)
-        
+
         result = f"if not ({cond}):\n{body}"
-        
+
         if node.else_body:
             else_body = self._block(node.else_body)
             result += f"\nelse:\n{else_body}"
-        
+
         return result
-    
+
     def transform_GuardStmt(self, node):
         # guard condition else { ... } → if not condition: ...
         #
@@ -640,7 +642,7 @@ class StatementTransformer:
             ]
             if any(r is not None for r in rewritten):
                 else_body = [r if r is not None else stmt
-                             for r, stmt in zip(rewritten, else_body or [])]
+                             for r, stmt in zip(rewritten, else_body or [], strict=False)]
         return self._block(else_body)
 
     @staticmethod
@@ -656,14 +658,14 @@ class StatementTransformer:
                 return ThrowStmt(CallExpr(Identifier('SystemExit'), [], {}))
             return ThrowStmt(CallExpr(Identifier('SystemExit'), [stmt.value], {}))
         return None
-    
+
     def transform_WhileStmt(self, node):
         cond = self.expr_transformer.transform(node.condition)
         if node.label:
             return self._labeled_loop(node, f"while {cond}:")
         body = self._block(node.body)
         return f"while {cond}:\n{body}"
-    
+
     def transform_UntilStmt(self, node):
         # until condition → while not condition
         cond = self.expr_transformer.transform(node.condition)
@@ -671,7 +673,7 @@ class StatementTransformer:
             return self._labeled_loop(node, f"while not ({cond}):")
         body = self._block(node.body)
         return f"while not ({cond}):\n{body}"
-    
+
     def transform_ForStmt(self, node):
         pattern = self.expr_transformer.transform(node.pattern)
 
@@ -692,7 +694,8 @@ class StatementTransformer:
         * ``a..b`` range expr  -> attach step to the range
         * any other iterable   -> fall back to a Python slice ``items[::step]``
         """
-        from aura.transpiler.ast import CallExpr, Identifier as _Ident, RangeExpr
+        from aura.transpiler.ast import CallExpr, RangeExpr
+        from aura.transpiler.ast import Identifier as _Ident
 
         if isinstance(iterable, CallExpr) and isinstance(iterable.func, _Ident) \
                 and iterable.func.name == 'range':
@@ -756,23 +759,23 @@ class StatementTransformer:
             f"    if _aura_b.label != {label!r}:\n"
             f"        raise"
         )
-    
+
     def transform_LoopStmt(self, node):
         if node.label:
             return self._labeled_loop(node, "while True:")
         body = self._block(node.body)
         return f"while True:\n{body}"
-    
+
     def transform_BreakStmt(self, node):
         if node.label:
             return f"raise _AuraBreak({node.label!r})"
         return "break"
-    
+
     def transform_ContinueStmt(self, node):
         if node.label:
             return f"raise _AuraContinue({node.label!r})"
         return "continue"
-    
+
     def transform_ReturnStmt(self, node):
         if node.value:
             value = self.expr_transformer.transform(node.value)
@@ -790,23 +793,23 @@ class StatementTransformer:
             value = self.expr_transformer.transform(node.value)
             return f"raise {value}"
         return "raise"
-    
+
     def transform_TryStmt(self, node):
         try_body = self._block(node.try_body)
         result = f"try:\n{try_body}"
-        
+
         for catch in node.catch_clauses:
             exc_type = catch.exception_type or "Exception"
             var_name = f" as {catch.var_name}" if catch.var_name else ""
             catch_body = self._block(catch.body)
             result += f"\nexcept {exc_type}{var_name}:\n{catch_body}"
-        
+
         if node.finally_body:
             finally_body = self._block(node.finally_body)
             result += f"\nfinally:\n{finally_body}"
-        
+
         return result
-    
+
     def transform_WithStmt(self, node):
         items = []
         for expr, var_name in node.items:
@@ -815,11 +818,11 @@ class StatementTransformer:
                 items.append(f"{expr_code} as {var_name}")
             else:
                 items.append(expr_code)
-        
+
         items_str = ", ".join(items)
         body = self._block(node.body)
         return f"with {items_str}:\n{body}"
-    
+
     def transform_ImportStmt(self, node):
         # import a, b as c -> import a, b as c
         # import a.b {x, y} -> from a.b import x, y
@@ -867,13 +870,13 @@ class StatementTransformer:
 
     def transform_MatchStmt(self, node):
         expr = self.expr_transformer.transform(node.expr)
-        
+
         # Python 3.10+ match statement
         result = f"match {expr}:\n"
-        
+
         # Increase indent for cases
         self.indent_level += 1
-        
+
         for case in node.cases:
             pattern = self.expr_transformer.transform(case.pattern)
             if case.guard:
@@ -881,17 +884,17 @@ class StatementTransformer:
                 result += f"{self._indent()}case {pattern} if {guard}:\n"
             else:
                 result += f"{self._indent()}case {pattern}:\n"
-            
-            # Block handles its own indent increment usually? 
+
+            # Block handles its own indent increment usually?
             # If _block adds ANOTHER indent... check _block logic.
             # Assuming _block increments, renders, decrements.
             # So calling _block here works for case body relative to case.
             body = self._block(case.body)
             result += body + "\n"
-            
+
         self.indent_level -= 1
         return result
-    
+
     def transform_Module(self, node):
         """Transform a module declaration into a namespaced class.
 
@@ -944,9 +947,9 @@ class StatementTransformer:
         elif isinstance(pattern, DictPattern):
             fields = []
             for name, pat in pattern.field_patterns.items():
-                 # Match Python dict pattern: {key: value} 
+                 # Match Python dict pattern: {key: value}
                  # Python match dict syntax: {"key": value} or {k: v} if k is literal?
-                 # Actually Python 3.10 match items are keys? 
+                 # Actually Python 3.10 match items are keys?
                  # case {"a": 1}:
                  fields.append(f'"{name}": {self._transform_pattern(pat)}')
             if pattern.rest_pattern:
@@ -960,6 +963,6 @@ class StatementTransformer:
         elif isinstance(pattern, OrPattern):
             pats = [self._transform_pattern(p) for p in pattern.patterns]
             return f"({' | '.join(pats)})"
-        
+
         return "_"
 

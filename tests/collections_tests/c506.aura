@@ -1,8 +1,0 @@
-// Collections: Comprehensions
-let squared = [x * x for x in 1..15];
-let filtered = [x for x in squared if x > 10];
-let dict_comp = {x: x * 2 for x in 1..5};
-
-print(squared);
-print(filtered);
-print(dict_comp);

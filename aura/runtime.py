@@ -10,7 +10,6 @@ working, without polluting the global namespace with generic package names.
 import importlib
 import sys
 
-
 _ALIASES = ('stdlib', 'parser', 'transpiler', 'repl', 'tools')
 _installed = False
 

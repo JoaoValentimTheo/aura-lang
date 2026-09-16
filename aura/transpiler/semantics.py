@@ -17,13 +17,39 @@ produces false positives for shadowing in nested scopes.
 """
 
 from aura.transpiler.ast import (
-    Node, Program, Module,
-    VarDecl, ConstDecl, FunctionDecl, ClassDecl, EnumDecl, TypeDecl, TraitDecl,
-    IfStmt, UnlessStmt, GuardStmt, WhileStmt, UntilStmt, ForStmt, LoopStmt,
-    MatchStmt, TryStmt, WithStmt, ReturnStmt, ExprStmt,
-    Identifier, MemberExpr, IndexExpr, BinaryOp, TupleLiteral, ListLiteral,
-    SpreadExpr, IdentifierPattern, ListPattern,
-    LambdaExpr, BlockExpr,
+    BinaryOp,
+    BlockExpr,
+    ClassDecl,
+    ConstDecl,
+    EnumDecl,
+    ExprStmt,
+    ForStmt,
+    FunctionDecl,
+    GuardStmt,
+    Identifier,
+    IdentifierPattern,
+    IfStmt,
+    IndexExpr,
+    LambdaExpr,
+    ListLiteral,
+    ListPattern,
+    LoopStmt,
+    MatchStmt,
+    MemberExpr,
+    Module,
+    Node,
+    Program,
+    ReturnStmt,
+    SpreadExpr,
+    TraitDecl,
+    TryStmt,
+    TupleLiteral,
+    TypeDecl,
+    UnlessStmt,
+    UntilStmt,
+    VarDecl,
+    WhileStmt,
+    WithStmt,
 )
 
 ASSIGNMENT_OPS = frozenset({
@@ -125,10 +151,7 @@ class MutabilityChecker:
         elif isinstance(node, GuardStmt):
             self.visit(node.condition)
             self.visit(node.else_body)
-        elif isinstance(node, WhileStmt):
-            self.visit(node.condition)
-            self.visit(node.body)
-        elif isinstance(node, UntilStmt):
+        elif isinstance(node, (WhileStmt, UntilStmt)):
             self.visit(node.condition)
             self.visit(node.body)
         elif isinstance(node, ForStmt):
@@ -339,10 +362,10 @@ class MutabilityChecker:
             return []
         if isinstance(name, str) and name.startswith('(') and name.endswith(')'):
             inner = name[1:-1]
-            return [n for n in self._split_names(inner)]
+            return list(self._split_names(inner))
         if isinstance(name, str) and name.startswith('[') and name.endswith(']'):
             inner = name[1:-1]
-            return [n for n in self._split_names(inner)]
+            return list(self._split_names(inner))
         return [name]
 
     @staticmethod

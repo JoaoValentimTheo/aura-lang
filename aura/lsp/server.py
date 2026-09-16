@@ -16,10 +16,9 @@ import sys
 import traceback
 from collections import OrderedDict
 
-from aura.parser.to_ast import Tokenizer, Parser
+from aura.parser.to_ast import Parser, Tokenizer
 from aura.transpiler.semantics import MutabilityChecker
 from aura.transpiler.types import TypeChecker
-
 
 KEYWORDS = [
     'let', 'mut', 'const', 'def', 'class', 'trait', 'enum', 'module',
@@ -141,7 +140,7 @@ class AuraLanguageServer:
 
     def _write_message(self, payload):
         body = json.dumps(payload).encode('utf-8')
-        header = f"Content-Length: {len(body)}\r\n\r\n".encode('utf-8')
+        header = f"Content-Length: {len(body)}\r\n\r\n".encode()
         self.writer.write(header + body)
         self.writer.flush()
 

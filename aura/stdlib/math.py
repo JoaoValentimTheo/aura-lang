@@ -125,7 +125,7 @@ def lcm(*numbers):
     """Least common multiple. With no arguments returns 1."""
     if not numbers:
         return 1
-    from math import gcd as gcd_fn, lcm as lcm_fn
+    from math import lcm as lcm_fn
     return _reduce(lcm_fn, numbers)
 
 def factorial(n):

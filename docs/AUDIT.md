@@ -1,5 +1,10 @@
 # Aura Audit Report
 
+> **Historical document.** This report reflects an earlier state of the
+> project. It references files that have since been removed (the ANTLR grammar
+> `parser/aura.g4` and generated parser) and pre-0.1.0a5 paths. The current
+> grammar lives in [GRAMMAR.md](GRAMMAR.md) and the code in `aura/`.
+
 Record of the code audit performed against the documentation. Every item
 below was verified against the ANTLR grammar (`parser/aura.g4`), the
 recursive-descent parser (`parser/to_ast.py`), the transformer

@@ -7,7 +7,6 @@ release workflow and available as ``aura version`` / programmatic API.
 import re
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 PYPROJECT = ROOT / 'pyproject.toml'
 INIT = ROOT / 'aura' / '__init__.py'

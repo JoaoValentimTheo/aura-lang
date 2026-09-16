@@ -25,7 +25,6 @@ def gen_success_basics():
 
 def gen_success_control_flow():
     for i in range(100):
-        indent = "    "
         content = f"// Control Flow Test {i}\nlet x = {i};\n"
         if i % 3 == 0:
             content += "if x % 2 == 0 { print(\"even\"); } else { print(\"odd\"); }\n"
@@ -33,7 +32,7 @@ def gen_success_control_flow():
             content += "unless x > 100 { print(\"small\"); }\n"
         else:
             content += "guard x >= 0 else { return; }\nprint(\"positive\");\n"
-        
+
         content += "let mut j = 0;\nwhile j < 5 { print(j); j = j + 1; }\n"
         content += "for k in 0..3 { print(k); }\n"
         write_aura(SUCCESS_DIR / f"control_{i}.aura", content)
@@ -59,7 +58,7 @@ def gen_success_patterns():
         content = f"// Pattern Match Test {i}\nlet data_{i} = {values[i % len(values)]};\n"
         content += f"match data_{i} {{\n"
         content += f"    case {values[i % len(values)]} {{ print(\"exact\"); }}\n"
-        content += f"    case _ {{ print(\"default\"); }}\n"
+        content += "    case _ { print(\"default\"); }\n"
         content += "}\n"
         write_aura(SUCCESS_DIR / f"pattern_{i}.aura", content)
 

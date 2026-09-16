@@ -4,6 +4,59 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `docs/GRAMMAR.md`: the canonical EBNF grammar, now the single source of truth
+  for Aura's concrete syntax (precedence table, removed spellings, formatting).
+- `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `LICENSE`, and
+  `.editorconfig`.
+- Optional `pqc` extra for a vetted post-quantum cryptography backend.
+
+### Changed
+
+- **Standardized syntax.** One spelling per construct; redundant aliases now
+  raise a clear `SyntaxError`:
+  - `fn` → `def`, `init` → `new`
+  - `!` → `not`, `&&` → `and`, `||` → `or`
+  - `null` → `none`, `volatily` → `volatile`
+  - `<T>` generics → `[T]`
+  - `let private x` → `private let x`
+- Fixed operator precedence: unary `-` now binds looser than `**`
+  (`-2 ** 2 == -4`) and `not` binds looser than comparisons
+  (`not a in b == not (a in b)`), matching Python.
+- `aura lint` exits non-zero when warnings are reported.
+
+### Fixed
+
+- `1...10` no longer silently truncates to `1`; it is a clear error.
+- `try` without `catch`/`finally` is a clear error.
+- `release.bump` no longer crashes on pre-release versions.
+- Latent bug where the AST `UnionType` annotation type shadowed the type
+  system's `UnionType`.
+
+### Security
+
+- HTTP: redirects are re-validated at every hop (SSRF), and response bodies are
+  size-capped (`AURA_HTTP_MAX_BYTES`).
+- `aura install` validates dependency names and rejects pip-option specifiers.
+- `aura_ide` resolves language-feature paths through the workspace sandbox and
+  escapes the project name against TOML injection.
+- LSP bounds open documents and caches.
+
+### Performance
+
+- Removed a redundant full AST walk (`Transformer._scan_ast`); prelude needs
+  are recorded during transformation.
+- Type checker imports AST nodes once at module scope instead of per node.
+- LSP caches diagnostics per document version.
+
+### Removed
+
+- `tests/collections_tests/` (generated against an obsolete stdlib API and not
+  a reliable oracle).
+
 ## [0.1.0a4] - 2026-09-16
 
 A cleanup, hardening and completeness pass: dead weight removed, security bugs

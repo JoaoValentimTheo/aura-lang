@@ -21,12 +21,13 @@ injecting ``input_func``/``output_func``.
 
 from __future__ import annotations
 
-from aura.parser.to_ast import Tokenizer, Parser, parse_file
+import contextlib
+
+from aura.parser.to_ast import Parser, Tokenizer, parse_file
 from aura.transpiler.ast import Program
-from aura.transpiler.transformer import Transformer
 from aura.transpiler.rules import RuleChecker
 from aura.transpiler.semantics import MutabilityChecker
-
+from aura.transpiler.transformer import Transformer
 
 BANNER = (
     "Aura REPL v0.4  •  {}  •  ':help' for commands, ':q' to quit\n"
@@ -378,7 +379,7 @@ class AuraREPL:
     @staticmethod
     def _tail_calls_async(program, async_names):
         """True when the final expression is a bare call to an async function."""
-        from aura.transpiler.ast import ExprStmt, CallExpr, Identifier
+        from aura.transpiler.ast import CallExpr, ExprStmt, Identifier
         statements = getattr(program, 'statements', [])
         if not statements:
             return False
@@ -391,7 +392,7 @@ class AuraREPL:
     @staticmethod
     def _stmt_calls_async(stmt, async_names):
         """True when ``stmt`` is a bare call to a known async function."""
-        from aura.transpiler.ast import ExprStmt, CallExpr, Identifier
+        from aura.transpiler.ast import CallExpr, ExprStmt, Identifier
         if not isinstance(stmt, ExprStmt) or not isinstance(stmt.expr, CallExpr):
             return False
         func = stmt.expr.func
@@ -492,8 +493,13 @@ class AuraREPL:
     def _assigned_names(stmt):
         """Top-level names bound or assigned by ``stmt``."""
         from aura.transpiler.ast import (
-            VarDecl, ConstDecl, ExprStmt, BinaryOp, TupleLiteral, ListLiteral,
+            BinaryOp,
+            ConstDecl,
+            ExprStmt,
             Identifier,
+            ListLiteral,
+            TupleLiteral,
+            VarDecl,
         )
         names = []
 
@@ -593,7 +599,7 @@ class AuraREPL:
 
 
 def _is_bare_expression(stmt):
-    from aura.transpiler.ast import ExprStmt, BinaryOp, TupleLiteral
+    from aura.transpiler.ast import BinaryOp, ExprStmt, TupleLiteral
     if not isinstance(stmt, ExprStmt):
         return False
     expr = stmt.expr
@@ -603,9 +609,7 @@ def _is_bare_expression(stmt):
     ):
         return False
     # A bare tuple used for multi-assignment is not a value either.
-    if isinstance(expr, TupleLiteral):
-        return False
-    return True
+    return not isinstance(expr, TupleLiteral)
 
 
 def _short_repr(value, limit=80):
@@ -654,10 +658,8 @@ the Python interop bridge."""
 
 def main():
     """Console entry point for `python -m aura.repl.engine`."""
-    try:
+    with contextlib.suppress(EOFError):
         AuraREPL().run()
-    except EOFError:
-        pass
     return 0
 
 

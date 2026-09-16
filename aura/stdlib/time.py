@@ -1,7 +1,7 @@
 """Aura Standard Library - Time module."""
 
-import time as _time
 import datetime as _dt
+import time as _time
 
 
 def now():

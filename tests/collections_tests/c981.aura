@@ -1,9 +1,0 @@
-// Collections: Dictionary Operations
-let d_74481 = {
-    "key_0": 36
-};
-let d_25083 = {
-    "key_1": 31
-};
-let merged = {**d_74481, **d_25083, extra: 999};
-print(merged);

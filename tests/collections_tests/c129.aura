@@ -1,9 +1,0 @@
-// Collections: Pipes & Chains
-let data = [24, 12, 14, 21, 29, 3, 25, 29, 21, 21];
-
-let result = data
-    |> filter((x) => x % 2 == 0)
-    |> map((x) => x * 2)
-    |> filter((x) => x > 10);
-
-print(result);

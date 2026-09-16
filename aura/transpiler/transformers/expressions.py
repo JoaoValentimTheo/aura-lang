@@ -1,6 +1,7 @@
 """Expression transformers: convert AST expression nodes to Python code."""
 from aura.transpiler.ast import *
 
+
 class ExpressionTransformer:
     def __init__(self):
         self.member_visibilities = {} # member_name -> visibility
@@ -41,21 +42,21 @@ class ExpressionTransformer:
     def transform(self, node):
         if node is None:
             return "None"
-        
+
         method_name = f"transform_{node.__class__.__name__}"
         method = getattr(self, method_name, None)
         if method:
             return method(node)
-        
+
         raise NotImplementedError(f"No transformer for {node.__class__.__name__}")
-    
+
     # ========== Literals ==========
     def transform_IntLiteral(self, node):
         return str(node.value)
-    
+
     def transform_FloatLiteral(self, node):
         return str(node.value)
-    
+
     def transform_StrLiteral(self, node):
         raw = getattr(node, 'raw_literal', None)
         if raw is not None:
@@ -103,17 +104,17 @@ class ExpressionTransformer:
                 backslashes = 0
             out = ''.join(chars)
         return out
-    
+
     def transform_BoolLiteral(self, node):
         return "True" if node.value else "False"
-    
+
     def transform_NoneLiteral(self, node):
         return "None"
-    
+
     def transform_ListLiteral(self, node):
         items = [self.transform(e) for e in node.elements]
         return f"[{', '.join(items)}]"
-    
+
     def transform_DictLiteral(self, node):
         self.has_dict = True
         items = []
@@ -130,49 +131,49 @@ class ExpressionTransformer:
             else:
                 # Fallback?
                 pass
-                
+
         return "AuraDict({" + ", ".join(items) + "})"
-    
+
     def transform_SetLiteral(self, node):
         return "{" + ", ".join(self.transform(e) for e in node.elements) + "}"
-    
+
     def transform_TupleLiteral(self, node):
         items = [self.transform(e) for e in node.elements]
         if len(items) == 1:
             return f"({items[0]},)"
         return f"({', '.join(items)})"
-    
+
     # ========== Identifiers & Variables ==========
     def transform_Identifier(self, node):
         self.seen_identifiers.add(node.name)
         return node.name
-    
+
     # ========== Expressions ==========
     def transform_BinaryOp(self, node):
         left = self.transform(node.left)
         right = self.transform(node.right)
-        
+
         if node.op == '??':
             return f"({left} if {left} is not None else {right})"
         elif node.op == '?:':
             return f"({left} if {left} else {right})"
         elif node.op == '?.':
             # Safe navigation: left?.right
-            # Right is expected to be an identifier (member identifier). 
+            # Right is expected to be an identifier (member identifier).
             # But the parser returns an Expression (Identifier).
             # We want: (left.right if left is not None else None)
             # BUT if right is NOT just an identifier, e.g. a method call?
             # user?.get_address() -> (user.get_address() if user is not None else None)
             # The parser parsed RHS as expression.
-            # In BinaryOp, RHS is just the expression node. 
+            # In BinaryOp, RHS is just the expression node.
             # If we simply emit left.right, it works if expression stringification handles it.
             # Wait!
             # If the parser parsed `user?.address` as BinaryOp(user, '?.', address).
             # The `right` transformation (self.transform(node.right)) simply returns "address".
             # So `left`="user", `right`="address".
             # Result: `(user.address if user is not None else None)`.
-            # Note: We must ensure we emit `.` between left and right. 
-            # In normal member access `.` is op. 
+            # Note: We must ensure we emit `.` between left and right.
+            # In normal member access `.` is op.
             # Here `?.` is op.
             return f"({left}.{right} if {left} is not None else None)"
         elif node.op == 'as':
@@ -180,7 +181,7 @@ class ExpressionTransformer:
             # right is usually identifier (from parse_type -> Identifier)
             # e.g. int -> int(left)
             return f"{right}({left})"
-            
+
         op_map = {
             '+': '+', '-': '-', '*': '*', '/': '/', '%': '%', '**': '**',
             '&': '&', '|': '|', '^': '^', '<<': '<<', '>>': '>>',
@@ -190,7 +191,7 @@ class ExpressionTransformer:
         }
         py_op = op_map.get(node.op, node.op)
         return f"({left} {py_op} {right})"
-    
+
     # ========== Unary Operations ==========
     def transform_UnaryOp(self, node):
         if node.op == 'yield':
@@ -203,7 +204,7 @@ class ExpressionTransformer:
         }
         py_op = op_map.get(node.op, node.op)
         return f"({py_op} {operand})"
-    
+
     # ========== Function Calls ==========
     def transform_CallExpr(self, node):
         # Aura method conveniences: str.length(), str.is_empty(), str.contains(x),
@@ -286,7 +287,7 @@ class ExpressionTransformer:
         for key, value in node.kwargs.items():
             rendered.append(f"{key}={self.transform(value)}")
         return rendered
-    
+
     # ========== Indexing & Member Access ==========
     def transform_IndexExpr(self, node):
         obj = self.transform(node.obj)
@@ -301,7 +302,7 @@ class ExpressionTransformer:
             step = self.transform(node.step)
             return f"{obj}[{start}:{stop}:{step}]"
         return f"{obj}[{start}:{stop}]"
-    
+
     def _render_object(self, node):
         """Render an expression used as the object of a member access.
 
@@ -327,7 +328,7 @@ class ExpressionTransformer:
         if vis == 'private' and not member.startswith('__'): member = f"__{member}"
         elif vis == 'protected': member = f"_{member}"
         return f"{obj}.{member}"
-    
+
     # ========== Null-Safe Operations ==========
     def transform_SafeNavExpr(self, node):
         # For Python, translate to: (obj.member if obj is not None else None)
@@ -344,7 +345,7 @@ class ExpressionTransformer:
             if vis == 'private' and not member.startswith('__'): member = f"__{member}"
             elif vis == 'protected': member = f"_{member}"
             return f"({obj}.{member} if {obj} is not None else None)"
-    
+
     # ========== Pipe Operator ==========
     def transform_PipeExpr(self, node):
         # left |> right: transpile as right(left)
@@ -360,31 +361,31 @@ class ExpressionTransformer:
             # Simple function: apply it
             right = self.transform(node.right)
             return f"{right}({left})"
-    
+
     # ========== Ternary & Coalescing ==========
     def transform_CondExpr(self, node):
         cond = self.transform(node.condition)
         true_expr = self.transform(node.true_expr)
         false_expr = self.transform(node.false_expr)
         return f"({true_expr} if {cond} else {false_expr})"
-    
+
     def transform_ElvisExpr(self, node):
         # value ?: default → value if value else default
         value = self.transform(node.value)
         default = self.transform(node.default)
         return f"({value} if {value} else {default})"
-    
+
     def transform_CoalesceExpr(self, node):
         # value ?? default → value if value is not None else default
         value = self.transform(node.value)
         default = self.transform(node.default)
         return f"({value} if {value} is not None else {default})"
-        
+
     def transform_IfStmt(self, node):
         # Handle if-expression: if cond { expr } else { expr }
         # This requires extracting the value from the block.
         cond = self.transform(node.condition)
-        
+
         def extract_value(stmts):
             if not stmts: return "None"
             # Return last statement if it's an expression or ExprStmt
@@ -402,9 +403,9 @@ class ExpressionTransformer:
 
         true_val = extract_value(node.then_body)
         false_val = extract_value(node.else_body) if node.else_body else "None"
-        
+
         return f"({true_val} if {cond} else {false_val})"
-    
+
     # ========== Range Expressions ==========
     def transform_RangeExpr(self, node):
         start = self.transform(node.start)
@@ -412,16 +413,13 @@ class ExpressionTransformer:
             # Infinite range: use a large number or itertools.count
             return f"itertools.count({start})"
         end = self.transform(node.end)
-        if node.exclusive:
-            end_val = f"{end}"
-        else:
-            end_val = f"{end} + 1"
-        
+        end_val = f"{end}" if node.exclusive else f"{end} + 1"
+
         if node.step:
             step = self.transform(node.step)
             return f"range({start}, {end_val}, {step})"
         return f"range({start}, {end_val})"
-    
+
     # ========== Lambda ==========
     def transform_LambdaExpr(self, node):
         params = ", ".join(p.name for p in node.params)
@@ -493,7 +491,7 @@ class ExpressionTransformer:
         if not captured:
             return ""
         return "    nonlocal " + ", ".join(sorted(captured))
-    
+
     # ========== Comprehensions ==========
     def transform_ComprehensionExpr(self, node):
         term = ""
@@ -503,7 +501,7 @@ class ExpressionTransformer:
              term = f"{k}: {v}"
         else:
              term = self.transform(node.expr)
-             
+
         generator_parts = []
         for pattern, iterable, filters in node.comprehensions:
             pat_str = self.transform(pattern)
@@ -518,18 +516,16 @@ class ExpressionTransformer:
                 iter_str += ".items()"
 
             part = f"for {pat_str} in {iter_str}"
-            
+
             for cond in filters:
                 part += f" if {self.transform(cond)}"
             generator_parts.append(part)
-            
+
         generators = " ".join(generator_parts)
-        
+
         if node.expr_type == 'list':
             return f"[{term} {generators}]"
-        elif node.expr_type == 'set':
-            return f"{{{term} {generators}}}"
-        elif node.expr_type == 'dict':
+        elif node.expr_type == 'set' or node.expr_type == 'dict':
             return f"{{{term} {generators}}}"
         elif node.expr_type == 'generator':
             return f"({term} {generators})"
@@ -550,9 +546,7 @@ class ExpressionTransformer:
         text = (rendered or '').strip()
         if text.endswith('.items()') or text.endswith('.keys()'):
             return False
-        if text.startswith('AuraDict(') or text.startswith('dict('):
-            return True
-        return False
+        return bool(text.startswith('AuraDict(') or text.startswith('dict('))
 
     # ========== Spread ==========
     def transform_SpreadExpr(self, node):
@@ -561,7 +555,7 @@ class ExpressionTransformer:
             return f"**{expr}"
         else:
             return f"*{expr}"
-    
+
     # ========== Match Expression ==========
     def transform_MatchExpr(self, node):
         """Hoist `match` in expression position into a helper function.
@@ -692,7 +686,7 @@ class ExpressionTransformer:
         fname = f"_aura_block_{self._lambda_counter}"
         self.hoisted_functions.append(f"def {fname}():\n{body}")
         return f"{fname}()"
-    
+
     # ========== Helper: transform pattern for comprehensions ==========
     def _transform_pattern(self, pattern):
         if isinstance(pattern, IdentifierPattern):
@@ -757,7 +751,12 @@ class ExpressionTransformer:
 def _closure_target_names(target):
     """Yield names bound by an assignment target node."""
     from aura.transpiler.ast import (
-        Identifier, MemberExpr, IndexExpr, TupleLiteral, ListLiteral, SpreadExpr,
+        Identifier,
+        IndexExpr,
+        ListLiteral,
+        MemberExpr,
+        SpreadExpr,
+        TupleLiteral,
     )
     if isinstance(target, Identifier):
         yield target.name
@@ -778,10 +777,28 @@ def _collect_closure_names(statements, assigned, declared):
     descended into for *assignments*; their names still count as declared.
     """
     from aura.transpiler.ast import (
-        Node, VarDecl, ConstDecl, FunctionDecl, ClassDecl, ForStmt, WithStmt,
-        TryStmt, MatchStmt, IfStmt, UnlessStmt, GuardStmt, WhileStmt, UntilStmt,
-        LoopStmt, ExprStmt, ReturnStmt, BinaryOp, TupleLiteral, ListLiteral,
-        Identifier, LambdaExpr, BlockExpr,
+        BinaryOp,
+        BlockExpr,
+        ClassDecl,
+        ConstDecl,
+        ExprStmt,
+        ForStmt,
+        FunctionDecl,
+        GuardStmt,
+        IfStmt,
+        LambdaExpr,
+        ListLiteral,
+        LoopStmt,
+        MatchStmt,
+        Node,
+        ReturnStmt,
+        TryStmt,
+        TupleLiteral,
+        UnlessStmt,
+        UntilStmt,
+        VarDecl,
+        WhileStmt,
+        WithStmt,
     )
 
     ASSIGN_OPS = {
@@ -802,9 +819,7 @@ def _collect_closure_names(statements, assigned, declared):
         elif isinstance(node, ConstDecl):
             declared.add(node.name)
             walk(node.value)
-        elif isinstance(node, FunctionDecl):
-            declared.add(node.name)
-        elif isinstance(node, ClassDecl):
+        elif isinstance(node, (FunctionDecl, ClassDecl)):
             declared.add(node.name)
         elif isinstance(node, LambdaExpr):
             # A nested lambda's assignments belong to its own scope.
@@ -878,8 +893,12 @@ def _decl_names(name):
 
 def _pattern_names(pattern):
     from aura.transpiler.ast import (
-        IdentifierPattern, ListPattern, TupleLiteral, ListLiteral,
-        SpreadExpr, Identifier,
+        Identifier,
+        IdentifierPattern,
+        ListLiteral,
+        ListPattern,
+        SpreadExpr,
+        TupleLiteral,
     )
     if pattern is None:
         return []

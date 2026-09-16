@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from aura.parser.to_ast import Tokenizer, Parser
+from aura.parser.to_ast import Parser, Tokenizer
 from aura.transpiler.semantics import MutabilityChecker
 
 

@@ -10,10 +10,10 @@ from aura.runtime import install_runtime_aliases
 install_runtime_aliases()
 
 from aura.parser.to_ast import parse_file
+from aura.transpiler.errors import ErrorCode, ErrorCollector
+from aura.transpiler.semantics import MutabilityChecker
 from aura.transpiler.transformer import Transformer
 from aura.transpiler.types import TypeChecker
-from aura.transpiler.errors import ErrorCollector, ErrorCode
-from aura.transpiler.semantics import MutabilityChecker
 
 
 def _mutability_errors(ast):
@@ -63,7 +63,7 @@ def _install_aura_imports(script_path: str):
         pass
 
 
-def cmd_transpile(path: str, output: str = None, verbose: bool = False) -> int:
+def cmd_transpile(path: str, output: str | None = None, verbose: bool = False) -> int:
     """Transpile Aura file to Python."""
     try:
         ast = parse_file(path)
@@ -83,16 +83,16 @@ def cmd_transpile(path: str, output: str = None, verbose: bool = False) -> int:
     try:
         t = Transformer()
         code = t.transform(ast)
-        
+
         if output:
             Path(output).write_text(code)
             print(f"Transpiled to: {output}")
         else:
             print(code)
-        
+
         if verbose:
             print(f"# AST: {ast}", file=sys.stderr)
-        
+
         return 0
     except Exception as e:
         import traceback
@@ -135,24 +135,24 @@ def cmd_check(path: str, verbose: bool = False) -> int:
     return 1
 
 
-def cmd_format(path: str, output: str = None, width: int = 100) -> int:
+def cmd_format(path: str, output: str | None = None, width: int = 100) -> int:
     """Format Aura source code."""
     try:
         source = Path(path).read_text()
     except FileNotFoundError:
         print(f"Error: File not found: {path}", file=sys.stderr)
         return 2
-    
+
     try:
         from aura.tools.formatter import format_aura
         formatted = format_aura(source, width=width)
-        
+
         if output:
             Path(output).write_text(formatted)
             print(f"Formatted to: {output}")
         else:
             print(formatted)
-        
+
         return 0
     except Exception as e:
         print(f"Error formatting {path}: {e}", file=sys.stderr)
@@ -168,12 +168,12 @@ def cmd_lint(path: str) -> int:
     except FileNotFoundError:
         print(f"Error: File not found: {path}", file=sys.stderr)
         return 2
-    
+
     errors = ErrorCollector(path)
-    
+
     try:
         lines = source.split('\n')
-        
+
         for i, line in enumerate(lines, 1):
             # Check line length
             if len(line) > 100:
@@ -182,14 +182,14 @@ def cmd_lint(path: str) -> int:
                     f"Line {i} is {len(line)} characters (max 100 recommended)",
                     hint="Consider breaking into multiple lines"
                 )
-            
+
             # Check trailing whitespace
             if line.endswith(' ') or line.endswith('\t'):
                 errors.add_warning(
                     ErrorCode.INVALID_SYNTAX,
                     f"Line {i} has trailing whitespace"
                 )
-            
+
             # Check naming conventions
             if line.strip().startswith('let '):
                 var_name = line.strip().split()[1].split('=')[0]
@@ -198,7 +198,7 @@ def cmd_lint(path: str) -> int:
                         ErrorCode.INVALID_SYNTAX,
                         f"Variable '{var_name}' should be snake_case, not UPPER_CASE"
                     )
-        
+
         # Check for common style issues
         if 'def  ' in source:
             errors.add_warning(
@@ -206,7 +206,7 @@ def cmd_lint(path: str) -> int:
                 "Multiple spaces after 'def' keyword",
                 hint="Use a single space: 'def name'"
             )
-        
+
         if errors.errors:
             print(errors.format())
             return 1
@@ -232,7 +232,12 @@ def _await_top_level_async_calls(ast):
     a literal ``"await"`` inside a string does not trigger it.
     """
     from aura.transpiler.ast import (
-        ExprStmt, UnaryOp, CallExpr, Identifier, FunctionDecl, Node,
+        CallExpr,
+        ExprStmt,
+        FunctionDecl,
+        Identifier,
+        Node,
+        UnaryOp,
     )
 
     async_names = set()
@@ -299,7 +304,7 @@ def cmd_run(path: str, verbose: bool = False) -> int:
         code = t.transform(ast)
 
         if verbose:
-            print(f"# Generated Python code:", file=sys.stderr)
+            print("# Generated Python code:", file=sys.stderr)
             print(f"# {'-'*60}", file=sys.stderr)
             for i, line in enumerate(code.split('\n'), 1):
                 print(f"# {i:3d} | {line}", file=sys.stderr)
@@ -317,7 +322,7 @@ def cmd_run(path: str, verbose: bool = False) -> int:
             )
             wrapper = "async def _aura_main():\n" + indented + "\n"
 
-            namespace = {'__name__': '__aura__'}
+            namespace: dict = {'__name__': '__aura__'}
             _install_aura_imports(path)
             exec(compile(wrapper, path, 'exec'), namespace)
             asyncio.run(namespace['_aura_main']())
@@ -340,7 +345,6 @@ def cmd_run(path: str, verbose: bool = False) -> int:
 
 def cmd_test(path: str = ".", verbose: bool = False, pattern: str = "*.aura") -> int:
     """Run .aura test files and report pass/fail."""
-    import glob
     import subprocess
 
     root = Path(path)
@@ -406,7 +410,7 @@ def cmd_test(path: str = ".", verbose: bool = False, pattern: str = "*.aura") ->
     return 1 if failed else 0
 
 
-def cmd_add(package: str, version: str = None, no_install: bool = False) -> int:
+def cmd_add(package: str, version: str | None = None, no_install: bool = False) -> int:
     """Add a Python dependency to aura.toml and install it."""
     from aura.tools.deps import add_package
     return add_package(package, version, install=not no_install)
@@ -430,9 +434,10 @@ def cmd_init(name: str = "app") -> int:
     return init_project(name)
 
 
-def cmd_version(bump: str = None) -> int:
+def cmd_version(bump: str | None = None) -> int:
     """Print the version, or bump/modify and publish it to the metadata."""
-    from aura.tools.release import bump as bump_version, get_version, set_version
+    from aura.tools.release import bump as bump_version
+    from aura.tools.release import get_version, set_version
     if bump:
         if bump in ('major', 'minor', 'patch'):
             print(bump_version(bump))
@@ -466,7 +471,7 @@ def cmd_repl() -> int:
 
 def main(argv=None):
     argv = argv or sys.argv[1:]
-    
+
     p = argparse.ArgumentParser(
         prog='aura',
         description='Aura transpiler - Convert Aura source to Python',
@@ -485,38 +490,38 @@ Examples:
   aura repl                             Start interactive REPL
         """
     )
-    
+
     sub = p.add_subparsers(dest='cmd')
-    
+
     # transpile command
     transp = sub.add_parser('transpile', help='Transpile Aura file to Python')
     transp.add_argument('path', help='Source file (.aura)')
     transp.add_argument('-o', '--output', help='Output file (.py)')
     transp.add_argument('-v', '--verbose', action='store_true', help='Show AST')
-    
+
     # check command
     check = sub.add_parser('check', help='Type check without transpiling')
     check.add_argument('path', help='Source file (.aura)')
     check.add_argument('-v', '--verbose', action='store_true', help='Show inferred types')
-    
+
     # format command
     fmt = sub.add_parser('format', help='Format source code')
     fmt.add_argument('path', help='Source file (.aura)')
     fmt.add_argument('-o', '--output', help='Output file')
     fmt.add_argument('--width', type=int, default=100, help='Max line width (default: 100)')
-    
+
     # lint command
     lnt = sub.add_parser('lint', help='Check style and conventions')
     lnt.add_argument('path', help='Source file (.aura)')
-    
+
     # run command
     run = sub.add_parser('run', help='Run Aura file')
     run.add_argument('path', help='Source file (.aura)')
     run.add_argument('-v', '--verbose', action='store_true', help='Show generated Python code')
-    
+
     # repl command
     sub.add_parser('repl', help='Start interactive REPL')
-    
+
     # test command
     test = sub.add_parser('test', help='Run .aura test files')
     test.add_argument('path', nargs='?', default='.', help='Directory or file to test (default: .)')
@@ -555,7 +560,7 @@ Examples:
     sub.add_parser('lsp', help='Start the language server (stdio)')
 
     args = p.parse_args(argv)
-    
+
     if args.cmd == 'transpile':
         return cmd_transpile(args.path, args.output, args.verbose)
     elif args.cmd == 'check':
