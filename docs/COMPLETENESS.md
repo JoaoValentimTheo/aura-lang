@@ -109,7 +109,7 @@ real multi-file projects". Ratings below 100 % name the concrete gap.
 
 ## What a general developer can do today
 
-* Install with `pip install .` and use the `aura` command (or `pip install aura-py` once published).
+* Install with `pip install .` and use the `aura` command (or `pip install flux-lang` once published).
 * Scaffold a project with `aura init`, add dependencies with `aura add`.
 * Write scripts, CLIs, and multi-file programs with classes, traits, generics,
   closures, pattern matching, and error handling.
