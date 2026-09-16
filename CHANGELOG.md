@@ -4,15 +4,25 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.1.0a5] - 2026-09-16
 
 ### Added
 
 - `docs/GRAMMAR.md`: the canonical EBNF grammar, now the single source of truth
   for Aura's concrete syntax (precedence table, removed spellings, formatting).
+- **Concurrency.** `stdlib.threading` (spawn/join, locks, events, semaphores,
+  pools) and `stdlib.asyncio` (tasks, gather, queues) with a `global`-scope
+  codegen fix so functions can mutate module-level state safely.
+- **Post-quantum cryptography.** `stdlib.crypto` with real SHA-3/SHAKE/HMAC/HKDF
+  primitives and a pluggable ML-KEM/ML-DSA backend (`pqc` extra), falling back
+  to a clearly-labelled non-production reference implementation.
+- **Aura Patterns (AUP).** `docs/AUP.md` and ten runnable `examples/aup/*.aura`
+  programs covering option, builder, strategy, pipeline, errors, memoization,
+  observer, resources, worker pools and hybrid crypto.
 - `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `LICENSE`, and
   `.editorconfig`.
-- Optional `pqc` extra for a vetted post-quantum cryptography backend.
+- CI lint/type/coverage jobs; `ruff`, `mypy`, `pytest-cov` and `pytest-timeout`
+  in the dev extra.
 
 ### Changed
 
@@ -30,11 +40,17 @@ All notable changes to Aura are documented here. The format follows
 
 ### Fixed
 
+- Functions that assign to a module-level binding now emit `global`, fixing
+  `UnboundLocalError` (and making shared-state threading possible).
+- `guard ... else { return }` inside a method returns from the method instead of
+  raising `SystemExit` and killing the program.
 - `1...10` no longer silently truncates to `1`; it is a clear error.
 - `try` without `catch`/`finally` is a clear error.
 - `release.bump` no longer crashes on pre-release versions.
 - Latent bug where the AST `UnionType` annotation type shadowed the type
   system's `UnionType`.
+- Deeply nested or oversized source raises a clean `SyntaxError` instead of a
+  `RecursionError` traceback.
 
 ### Security
 
@@ -44,6 +60,7 @@ All notable changes to Aura are documented here. The format follows
 - `aura_ide` resolves language-feature paths through the workspace sandbox and
   escapes the project name against TOML injection.
 - LSP bounds open documents and caches.
+- `errors.ErrorCollector` now bounds its collection after `max_errors`.
 
 ### Performance
 
@@ -51,6 +68,7 @@ All notable changes to Aura are documented here. The format follows
   are recorded during transformation.
 - Type checker imports AST nodes once at module scope instead of per node.
 - LSP caches diagnostics per document version.
+- Constant class-body assembly (list + join) instead of repeated concatenation.
 
 ### Removed
 

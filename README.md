@@ -33,9 +33,51 @@ Installed commands (`aura <cmd>`):
 | `aura lsp` | Start the language server (stdio) |
 
 Aura programs can import any Python standard-library module or installed PyPI
-package, plus local `.aura` modules and packages. The standard library also
-ships `stdlib.regex`, `stdlib.os`, `stdlib.http`, and the Python interop bridge
-`stdlib.python` (also available as `import python`).
+package, plus local `.aura` modules and packages. The standard library ships
+`stdlib.regex`, `stdlib.os`, `stdlib.http`, `stdlib.threading`,
+`stdlib.asyncio`, `stdlib.crypto`, and the Python interop bridge
+`stdlib.python` (also available as `import python`). See
+[`aura/stdlib/README.md`](aura/stdlib/README.md).
+
+## Concurrency
+
+Aura has `async def`/`await` and native threads:
+
+```aura
+import stdlib.threading as threading
+import stdlib.asyncio as aio
+
+let mut total = 0
+let lock = threading.lock()
+
+def worker(n) {
+  let mut i = 0
+  while i < n { lock.acquire()\ntotal += 1\nlock.release()\ni += 1 }
+}
+
+let t = threading.spawn((x) => worker(x), 100)
+t.join()
+print(total)
+
+async def work(n) { await aio.sleep(0.01)\nreturn n * 2 }
+let results = await aio.gather(work(1), work(2), work(3))
+print(results)
+```
+
+## Cryptography
+
+`stdlib.crypto` provides real SHA-2/SHA-3/SHAKE, HMAC, HKDF and secure
+randomness, plus post-quantum ML-KEM/ML-DSA behind a pluggable backend.
+Install `aura-language[pqc]` for a vetted implementation; otherwise a bundled
+reference backend is used and `require_production_backend()` fails loudly.
+
+```aura
+import stdlib.crypto as crypto
+
+let kp = crypto.kem_keypair()
+let enc = crypto.kem_encapsulate(kp.public_key)
+let shared = crypto.kem_decapsulate(kp.secret_key, enc.ciphertext)
+```
 
 ## Python Interop
 
@@ -236,11 +278,13 @@ def fib(n) -> int {
 
 ## Documentation
 
+- [Grammar (canonical)](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/GRAMMAR.md)
 - [Language Reference](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/LANGUAGE.md) / [Referência da Linguagem](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/LANGUAGE_PT.md)
+- [Aura Patterns (AUP)](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/AUP.md)
+- [Standard Library](https://github.com/JoaoValentimTheo/aura-lang/blob/master/aura/stdlib/README.md)
 - [Type System](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/TYPES.md) / [Sistema de Tipos](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/TYPES_PT.md)
 - [Architecture](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/DESIGN.md)
-- [Audit Report](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/AUDIT.md)
-- [Completeness Report](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/COMPLETENESS.md)
+- [Contributing](https://github.com/JoaoValentimTheo/aura-lang/blob/master/CONTRIBUTING.md) / [Security](https://github.com/JoaoValentimTheo/aura-lang/blob/master/SECURITY.md)
 - [Documentation Index](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/README.md)
 
 ## REPL
