@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aura-language"
-version = "0.1.0a1"
+version = "0.1.0a2"
 description = "Aura: a gradually-typed language that transpiles to Python"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -16,10 +16,18 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
     "Topic :: Software Development :: Compilers",
+    "Topic :: Software Development :: Interpreters",
 ]
 dependencies = [
     "tomli>=2.0; python_version < '3.11'",
 ]
+
+[project.urls]
+Homepage = "https://github.com/JoaoValentimTheo/aura-lang"
+Repository = "https://github.com/JoaoValentimTheo/aura-lang"
+Documentation = "https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/README.md"
+Changelog = "https://github.com/JoaoValentimTheo/aura-lang/blob/master/CHANGELOG.md"
+Issues = "https://github.com/JoaoValentimTheo/aura-lang/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]

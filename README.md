@@ -212,11 +212,12 @@ def fib(n) -> int {
 
 ## Documentation
 
-- [Language Reference](docs/LANGUAGE.md) / [Referencia da Linguagem](docs/LANGUAGE_PT.md)
-- [Type System](docs/TYPES.md) / [Sistema de Tipos](docs/TYPES_PT.md)
-- [Architecture](docs/DESIGN.md)
-- [Audit Report](docs/AUDIT.md)
-- [Documentation Index](docs/README.md)
+- [Language Reference](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/LANGUAGE.md) / [Referência da Linguagem](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/LANGUAGE_PT.md)
+- [Type System](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/TYPES.md) / [Sistema de Tipos](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/TYPES_PT.md)
+- [Architecture](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/DESIGN.md)
+- [Audit Report](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/AUDIT.md)
+- [Completeness Report](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/COMPLETENESS.md)
+- [Documentation Index](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/README.md)
 
 ## Testing
 

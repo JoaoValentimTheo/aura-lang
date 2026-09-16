@@ -4,6 +4,17 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.0a2] - 2026-09-16
+
+Documentation and package-metadata fix.
+
+### Fixed
+
+- README documentation links now use absolute GitHub URLs, so they work on
+  the PyPI project page (relative links resolved against pypi.org and 404'd).
+- Added `[project.urls]` metadata (Homepage, Repository, Documentation,
+  Changelog, Issues) to the published package.
+
 ## [0.1.0a1] - 2026-09-16
 
 First alpha release of the rewritten Aura toolchain.
