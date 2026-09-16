@@ -7,7 +7,7 @@ class BaseC95022Se {
     private let logger: RealC45641Ls
     public let value: int
     
-    def init(val: int, logger: RealC45641Ls) {
+    def new(val: int, logger: RealC45641Ls) {
         self.value = val;
         self.logger = logger;
     }

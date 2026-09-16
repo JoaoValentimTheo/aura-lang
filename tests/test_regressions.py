@@ -81,7 +81,7 @@ def test_loop_with_continue():
 # ============================================================================
 
 def test_null_coalescing_assignment():
-    out, _ = run_aura('let mut x = null\nx ??= 5\nprint(x)')
+    out, _ = run_aura('let mut x = none\nx ??= 5\nprint(x)')
     assert out.strip() == "5"
 
 
@@ -361,7 +361,7 @@ def test_function_type_annotation():
 
 
 def test_optional_type_annotation():
-    out, _ = run_aura("let name: str? = null\nprint(name)")
+    out, _ = run_aura("let name: str? = none\nprint(name)")
     assert out.strip() == "None"
 
 

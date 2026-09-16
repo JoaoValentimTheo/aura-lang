@@ -3,7 +3,7 @@ class MockC55049Ob {
     public let value: int
     public let name: str = "default"
     
-    def init(value: int) {
+    def new(value: int) {
         self.value = value;
     }
     

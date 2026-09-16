@@ -7,7 +7,7 @@ class ConcreteC14704Vp {
 class RealC28503Tk {
     private let delegate: ConcreteC14704Vp
     
-    def init(t: ConcreteC14704Vp) { self.delegate = t; }
+    def new(t: ConcreteC14704Vp) { self.delegate = t; }
     
     public def process() -> int {
         return self.delegate.process() + 10;

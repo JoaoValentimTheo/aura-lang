@@ -7,7 +7,7 @@ class RealC52461Nz {
 class ImplC73073Fr {
     private let delegate: RealC52461Nz
     
-    def init(t: RealC52461Nz) { self.delegate = t; }
+    def new(t: RealC52461Nz) { self.delegate = t; }
     
     public def process() -> int {
         return self.delegate.process() + 10;

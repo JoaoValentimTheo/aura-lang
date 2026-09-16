@@ -7,7 +7,7 @@ class RealC60508Sd {
 class AbstractC40259Te {
     private let delegate: RealC60508Sd
     
-    def init(t: RealC60508Sd) { self.delegate = t; }
+    def new(t: RealC60508Sd) { self.delegate = t; }
     
     public def process() -> int {
         return self.delegate.process() + 10;

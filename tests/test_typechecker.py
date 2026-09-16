@@ -47,7 +47,7 @@ def test_infer_bool_literal():
 
 
 def test_infer_none_literal():
-    assert infer("let x = null") == NoneType()
+    assert infer("let x = none") == NoneType()
 
 
 def test_infer_list_of_ints():
@@ -160,7 +160,7 @@ def test_valid_union_declaration():
 
 
 def test_valid_optional_declaration():
-    ok, _ = check_source("let x: str? = null")
+    ok, _ = check_source("let x: str? = none")
     assert ok
 
 
@@ -284,13 +284,13 @@ def test_function_arity_ok():
 # ============================================================================
 
 def test_narrow_not_null_then():
-    source = "let x: int | none = get()\nif x != null { let y: int = x }"
+    source = "let x: int | none = get()\nif x != none { let y: int = x }"
     ok, errors = check_source(source)
     assert ok, errors
 
 
 def test_narrow_eq_null_else():
-    source = 'let x: int | none = get()\nif x == null { print("n") } else { let y: int = x }'
+    source = 'let x: int | none = get()\nif x == none { print("n") } else { let y: int = x }'
     ok, errors = check_source(source)
     assert ok, errors
 

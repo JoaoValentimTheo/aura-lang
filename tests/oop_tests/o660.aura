@@ -5,7 +5,7 @@ class BaseC98947Ob {
     
     public let id: int
     
-    def init(id: int) {
+    def new(id: int) {
         self.id = id;
         BaseC98947Ob.increment_count();
     }

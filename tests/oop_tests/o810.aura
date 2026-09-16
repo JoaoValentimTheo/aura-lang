@@ -7,7 +7,7 @@ class AbstractC78497Hu {
 class BaseC90118Pp {
     private let delegate: AbstractC78497Hu
     
-    def init(t: AbstractC78497Hu) { self.delegate = t; }
+    def new(t: AbstractC78497Hu) { self.delegate = t; }
     
     public def process() -> int {
         return self.delegate.process() + 10;

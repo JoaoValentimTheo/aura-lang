@@ -73,11 +73,22 @@ def test_class_with_new_constructor():
     assert out == "3\n4\n"
 
 
-def test_class_with_init_constructor():
+def test_init_is_rejected_as_constructor():
+    """The canonical constructor is `new`; `init` is a clear error."""
+    with pytest.raises(SyntaxError):
+        run_aura(
+            "class Point {\n"
+            "  let x: int = 0\n"
+            "  def init(x: int) { self.x = x }\n"
+            "}\n"
+        )
+
+
+def test_class_with_new_constructor_two():
     out = run_aura(
         "class Point {\n"
         "  let x: int = 0\n"
-        "  def init(x: int) { self.x = x }\n"
+        "  def new(x: int) { self.x = x }\n"
         "}\n"
         "print(Point(9).x)"
     )
@@ -504,7 +515,7 @@ def test_class_implements_multiple_traits():
 def test_class_generics():
     code = transpile(
         "class Box[T] {\n"
-        "  let item: T = null\n"
+        "  let item: T = none\n"
         "}"
     )
     assert "_aura_Generic" in code
@@ -513,7 +524,7 @@ def test_class_generics():
 def test_generic_class_usable():
     out = run_aura(
         "class Box[T] {\n"
-        "  let item: T = null\n"
+        "  let item: T = none\n"
         "  def new(item: T) { self.item = item }\n"
         "}\n"
         "print(Box(42).item)"

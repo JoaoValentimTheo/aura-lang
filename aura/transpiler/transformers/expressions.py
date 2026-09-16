@@ -177,7 +177,7 @@ class ExpressionTransformer:
         op_map = {
             '+': '+', '-': '-', '*': '*', '/': '/', '%': '%', '**': '**',
             '&': '&', '|': '|', '^': '^', '<<': '<<', '>>': '>>',
-            'and': 'and', 'or': 'or', '&&': 'and', '||': 'or',
+            'and': 'and', 'or': 'or',
             '==': '==', '!=': '!=', '<': '<', '>': '>', '<=': '<=', '>=': '>=',
             'is': 'is', 'is not': 'is not', 'in': 'in', 'not in': 'not in',
         }
@@ -192,7 +192,7 @@ class ExpressionTransformer:
             return f"yield {self.transform(node.operand)}"
         operand = self.transform(node.operand)
         op_map = {
-            '-': '-', '+': '+', 'not': 'not', '!': 'not', '~': '~', 'await': 'await'
+            '-': '-', '+': '+', 'not': 'not', '~': '~', 'await': 'await'
         }
         py_op = op_map.get(node.op, node.op)
         return f"({py_op} {operand})"

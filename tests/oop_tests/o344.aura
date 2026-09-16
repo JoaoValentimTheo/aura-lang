@@ -7,7 +7,7 @@ class ImplC26570Ew {
     private let logger: MockC61856Vq
     public let value: int
     
-    def init(val: int, logger: MockC61856Vq) {
+    def new(val: int, logger: MockC61856Vq) {
         self.value = val;
         self.logger = logger;
     }

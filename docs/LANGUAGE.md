@@ -60,14 +60,19 @@ identifier ::= [a-zA-Z_] [a-zA-Z0-9_]*
 ### Keywords
 
 ```
-async      break      case       catch      class      const
-continue   def        else       finally    for        from
-guard      if         import     in         is         let
-loop       match      module     mut        none       null
-return     self       static     super      trait      true
-false      try        type       unless     until      while
-with       assert
+async      await      break      case       catch      class
+const      continue   def        else       enum       export
+false      finally    for        from       guard      if
+implements import     in         is         let        loop
+match      module     mut        none       private    protected
+public     return     self       spawn      static     super
+throw      trait      true       try        type       unless
+until      volatile   while      with       yield      assert
 ```
+
+> `null`, `fn`, `init`, `volatily`, `!`, `&&`, `||` and `<T>` are **not** part
+> of Aura. See [GRAMMAR.md](GRAMMAR.md) for the complete grammar and the list of
+> removed spellings.
 
 ### Literals
 
@@ -99,7 +104,6 @@ false
 
 // Null
 none
-null
 ```
 
 ---
@@ -491,11 +495,14 @@ Multiple traits can be listed: `class C implements A, B`.
 
 ```aura
 class Account {
-  let private balance: float = 0.0
-  let protected account_id: str = ""
-  let public name: str = ""
+  private let balance: float = 0.0
+  protected let account_id: str = ""
+  public let name: str = ""
 }
 ```
+
+Modifiers come **before** `let`/`def`/`class`; `let private balance` is a syntax
+error.
 
 Visibility is enforced by name mangling **inside classes** only:
 
@@ -573,7 +580,7 @@ unless authenticated {
 
 ```aura
 def process(data) {
-  guard data != null else {
+  guard data != none else {
     print("No data")
     return
   }

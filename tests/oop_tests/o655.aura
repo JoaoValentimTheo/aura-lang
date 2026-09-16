@@ -7,7 +7,7 @@ class ImplC83072Ki {
 class ImplC78599Ch {
     private let component: ImplC83072Ki
     
-    def init(comp: ImplC83072Ki) {
+    def new(comp: ImplC83072Ki) {
         self.component = comp;
     }
     

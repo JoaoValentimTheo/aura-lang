@@ -33,7 +33,7 @@ class TestParserExpressions(unittest.TestCase):
         self.assertIsInstance(self.parse_expr("1.5"), FloatLiteral)
         self.assertIsInstance(self.parse_expr('"s"'), StrLiteral)
         self.assertIsInstance(self.parse_expr("true"), BoolLiteral)
-        self.assertIsInstance(self.parse_expr("null"), NoneLiteral)
+        self.assertIsInstance(self.parse_expr("none"), NoneLiteral)
         
     def test_collections(self):
         list_expr = self.parse_expr("[1, 2]")

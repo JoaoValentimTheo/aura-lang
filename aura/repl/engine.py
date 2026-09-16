@@ -25,6 +25,7 @@ from aura.parser.to_ast import Tokenizer, Parser, parse_file
 from aura.transpiler.ast import Program
 from aura.transpiler.transformer import Transformer
 from aura.transpiler.rules import RuleChecker
+from aura.transpiler.semantics import MutabilityChecker
 
 
 BANNER = (
@@ -59,6 +60,12 @@ class AuraREPL:
         self.cont_prompt = "....> "
         self._input = input_func or input
         self._output = output_func or (lambda text: print(text))
+        # Mutability of bindings declared in previous chunks, so a `let` from an
+        # earlier line stays immutable across the whole session.
+        self._bindings = {}
+        # Names of async functions defined in earlier chunks, so a bare
+        # `main()` call is awaited across chunk boundaries.
+        self._async_names = set()
         self._install_python_alias()
 
     @property
@@ -207,6 +214,8 @@ class AuraREPL:
         if name == ':reset':
             self.namespace = {'__name__': '__aura_repl__',
                               '__builtins__': __builtins__}
+            self._bindings = {}
+            self._async_names = set()
             self._install_python_alias()
             self.write("namespace reset")
             return ReplResult()
@@ -283,10 +292,23 @@ class AuraREPL:
             return ReplResult(ok=False)
         try:
             program = parse_file(path.strip())
-            code = self.transformer.transform(program)
-            exec(compile(code, path.strip(), 'exec'), self.namespace)
+        except Exception as exc:
+            self.write(f"error: {exc}")
+            return ReplResult(ok=False, exception=exc)
+
+        # Enforce the same rules the CLI applies to a program.
+        rule_error = self._check_rules(program)
+        if rule_error:
+            return ReplResult(ok=False, message=rule_error)
+
+        try:
+            value, printed = self._execute(program)
+            self._bindings = MutabilityChecker().collect_bindings(
+                program, self._bindings)
+            if printed:
+                self.write(printed)
             self.write(f"loaded {path.strip()}")
-            return ReplResult()
+            return ReplResult(value=value)
         except Exception as exc:
             self.write(f"error: {exc}")
             return ReplResult(ok=False, exception=exc)
@@ -318,12 +340,11 @@ class AuraREPL:
         try:
             program = self._parse_program(source)
         except Exception as exc:
-            self.write(f"Syntax error: {exc}")
-            return ReplResult(ok=False, message=f"Syntax error: {exc}", exception=exc)
+            message = f"Syntax error: {exc}"
+            return ReplResult(ok=False, message=message, exception=exc)
 
         rule_error = self._check_rules(program)
         if rule_error:
-            self.write(rule_error)
             return ReplResult(ok=False, message=rule_error)
 
         try:
@@ -334,6 +355,12 @@ class AuraREPL:
             self.write(f"Runtime error: {type(exc).__name__}: {exc}")
             return ReplResult(ok=False, message=None, exception=exc)
 
+        # Only record the chunk's bindings once it executed successfully, so a
+        # failed assignment does not change the session's mutability view.
+        self._bindings = MutabilityChecker().collect_bindings(
+            program, self._bindings)
+        self._record_async_names(program)
+
         if value is not None:
             self.namespace['_'] = value
         if printed:
@@ -341,16 +368,53 @@ class AuraREPL:
             return ReplResult(value=value, message=None)
         return ReplResult(value=value)
 
+    def _record_async_names(self, program):
+        """Remember async functions so later chunks await their bare calls."""
+        from aura.transpiler.ast import FunctionDecl
+        for stmt in getattr(program, 'statements', []):
+            if isinstance(stmt, FunctionDecl) and getattr(stmt, 'is_async', False):
+                self._async_names.add(stmt.name)
+
+    @staticmethod
+    def _tail_calls_async(program, async_names):
+        """True when the final expression is a bare call to an async function."""
+        from aura.transpiler.ast import ExprStmt, CallExpr, Identifier
+        statements = getattr(program, 'statements', [])
+        if not statements:
+            return False
+        last = statements[-1]
+        if not isinstance(last, ExprStmt) or not isinstance(last.expr, CallExpr):
+            return False
+        func = last.expr.func
+        return isinstance(func, Identifier) and func.name in async_names
+
+    @staticmethod
+    def _stmt_calls_async(stmt, async_names):
+        """True when ``stmt`` is a bare call to a known async function."""
+        from aura.transpiler.ast import ExprStmt, CallExpr, Identifier
+        if not isinstance(stmt, ExprStmt) or not isinstance(stmt.expr, CallExpr):
+            return False
+        func = stmt.expr.func
+        return isinstance(func, Identifier) and func.name in async_names
+
     def _execute(self, program):
         """Execute statements; echo the last bare expression.
 
         Returns ``(value, printed_text)``. Functions/classes/imports execute as
         statements; a trailing expression statement is evaluated separately so
-        its value can be displayed.
+        its value can be displayed. Async chunks are driven to completion, so
+        top-level `await` behaves exactly as it does under `aura run`.
         """
         statements = program.statements
         if not statements:
             return None, None
+
+        from aura.cli import _await_top_level_async_calls
+        is_async = _await_top_level_async_calls(program)
+        if not is_async and self._tail_calls_async(program, self._async_names):
+            is_async = True
+        if is_async:
+            return self._execute_async(program)
 
         tail_expr = None
         body = statements
@@ -371,6 +435,115 @@ class AuraREPL:
         value = eval(compile(expr_code, '<repl>', 'eval'), self.namespace)
         return value, repr(value)
 
+    def _execute_async(self, program):
+        """Execute an async chunk, like ``aura run`` but persistent.
+
+        Definitions must survive the chunk, so they are executed at module
+        scope. Only statements that actually contain a top-level ``await`` are
+        run inside a coroutine and driven to completion.
+        """
+        statements = program.statements
+        tail_expr = None
+        body = statements
+        last = statements[-1]
+        if _is_bare_expression(last):
+            tail_expr = last.expr
+            body = statements[:-1]
+
+        for stmt in body:
+            code = self.transformer.transform(stmt)
+            if not code.strip():
+                continue
+            needs_await = self._needs_await(code) or self._stmt_calls_async(
+                stmt, self._async_names)
+            if needs_await:
+                # Bindings created by an awaited statement must survive the
+                # chunk, so the coroutine writes them into the session
+                # namespace via `global`.
+                if self._stmt_calls_async(stmt, self._async_names) \
+                        and not code.lstrip().startswith('await '):
+                    code = "await " + code
+                names = self._assigned_names(stmt)
+                self._run_awaiting(code, persist=names)
+            else:
+                exec(compile(code, '<repl>', 'exec'), self.namespace)
+
+        if tail_expr is None:
+            return None, None
+
+        expr_code = self.transformer.transform(tail_expr)
+        # A bare call to an async function defined in an earlier chunk must be
+        # awaited explicitly; top-level `await` is already in the expression.
+        if (self._tail_calls_async(program, self._async_names)
+                and not expr_code.lstrip().startswith('await ')):
+            expr_code = f"await {expr_code}"
+        value = self._run_awaiting(f"return {expr_code}", is_expr=True)
+        return value, repr(value)
+
+    @staticmethod
+    def _needs_await(code):
+        try:
+            compile(code, '<repl>', 'exec')
+            return False
+        except SyntaxError as exc:
+            return 'await' in (exc.msg or '')
+
+    @staticmethod
+    def _assigned_names(stmt):
+        """Top-level names bound or assigned by ``stmt``."""
+        from aura.transpiler.ast import (
+            VarDecl, ConstDecl, ExprStmt, BinaryOp, TupleLiteral, ListLiteral,
+            Identifier,
+        )
+        names = []
+
+        if isinstance(stmt, VarDecl):
+            target = stmt.name
+            if isinstance(target, str) and target[:1] in '([' and target[-1:] in ')]':
+                inner = target[1:-1]
+                for part in inner.replace('*', ' ').split(','):
+                    token = part.strip().strip('()[]{}')
+                    if token and token.isidentifier():
+                        names.append(token)
+            elif isinstance(target, str) and target.isidentifier():
+                names.append(target)
+        elif isinstance(stmt, ConstDecl):
+            names.append(stmt.name)
+        elif isinstance(stmt, ExprStmt) and isinstance(stmt.expr, BinaryOp) \
+                and stmt.expr.op == '=':
+            target = stmt.expr.left
+            if isinstance(target, Identifier):
+                names.append(target.name)
+            elif isinstance(target, (TupleLiteral, ListLiteral)):
+                for el in target.elements:
+                    if isinstance(el, Identifier):
+                        names.append(el.name)
+        return [n for n in names if n]
+
+    def _run_awaiting(self, code, is_expr=False, persist=None):
+        """Run ``code`` inside a coroutine and return its result.
+
+        ``persist`` lists names whose assignments must be written to the session
+        namespace instead of staying local to the coroutine.
+        """
+        import asyncio
+
+        if is_expr:
+            wrapper = f"async def _aura_repl_await():\n    {code}\n"
+        else:
+            lines = code.split("\n")
+            indented = "\n".join(("    " + line if line.strip() else line)
+                                 for line in lines)
+            global_decl = ""
+            if persist:
+                global_decl = "    global " + ", ".join(sorted(set(persist))) + "\n"
+            wrapper = f"async def _aura_repl_await():\n{global_decl}{indented}\n"
+        exec(compile(wrapper, '<repl>', 'exec'), self.namespace)
+        try:
+            return asyncio.run(self.namespace['_aura_repl_await']())
+        finally:
+            self.namespace.pop('_aura_repl_await', None)
+
     # -- parsing helpers ----------------------------------------------------
 
     def _parse_program(self, source):
@@ -382,17 +555,28 @@ class AuraREPL:
         return Parser(tokens).parse_expression()
 
     def _check_rules(self, program):
-        """Run structural rules; returns an error string or None.
+        """Run Aura's rules over one chunk; return an error string or None.
 
-        Mutability is intentionally *not* enforced here: interactive bindings
-        are treated as mutable so experimentation is frictionless. Structural
-        rules (break/return/await/self placement and invalid targets) still
-        apply because they catch real mistakes.
+        Both structural rules (break/return/await/self placement, duplicate
+        declarations, invalid assignment targets, unreachable code) and
+        mutability rules are enforced — exactly as ``aura check`` does. For
+        mutability, bindings declared in earlier chunks seed the checker so a
+        `let` stays immutable for the whole session.
         """
-        checker = RuleChecker()
-        if checker.check_program(_RelaxedProgram(program)):
-            return None
-        first = str(checker.collector.errors[0]) if checker.collector.errors else "rule violation"
+        checker = MutabilityChecker()
+        if not checker.check_program(program, initial_bindings=self._bindings):
+            return self._first_error(checker.errors)
+
+        rule_checker = RuleChecker()
+        if not rule_checker.check_program(program):
+            return self._first_error(rule_checker.collector.errors)
+        return None
+
+    @staticmethod
+    def _first_error(errors):
+        if not errors:
+            return "rule violation"
+        first = str(errors[0])
         return first.splitlines()[1].strip() if "\n" in first else first
 
     def _format_vars(self):
@@ -406,24 +590,6 @@ class AuraREPL:
         if not rows:
             return "(no bindings)"
         return "\n".join(rows)
-
-
-class _RelaxedProgram:
-    """Wrapper that reports all top-level `let` bindings as mutable.
-
-    The REPL lets you reassign anything you typed, but the structural rules
-    (break/return placement etc.) are still checked by :class:`RuleChecker`.
-    """
-
-    def __init__(self, program):
-        self.statements = [_relax_stmt(s) for s in program.statements]
-
-
-def _relax_stmt(stmt):
-    from aura.transpiler.ast import VarDecl
-    if isinstance(stmt, VarDecl):
-        stmt.mutable = True
-    return stmt
 
 
 def _is_bare_expression(stmt):

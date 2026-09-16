@@ -62,7 +62,7 @@ def test_const():
 def test_def_and_fn_forms():
     out = run_aura(
         "def add(a, b) { return a + b }\n"
-        "fn sub(a, b) { return a - b }\n"
+        "def sub(a, b) { return a - b }\n"
         "print(add(3, 4))\nprint(sub(10, 3))"
     )
     assert out == "7\n7\n"
@@ -295,7 +295,7 @@ def test_arithmetic_and_bitwise(expr, expected):
     ("1 != 2", "True"),
     ("3 in [1, 2, 3]", "True"),
     ("5 not in [1, 2, 3]", "True"),
-    ("null is null", "True"),
+    ("none is none", "True"),
 ])
 def test_comparison_operators(expr, expected):
     assert run_aura(f"print({expr})") == expected + "\n"
@@ -305,9 +305,9 @@ def test_logical_operators():
     assert run_aura("print(true and false)") == "False\n"
     assert run_aura("print(true or false)") == "True\n"
     assert run_aura("print(not true)") == "False\n"
-    assert run_aura("print(true && false)") == "False\n"
-    assert run_aura("print(true || false)") == "True\n"
-    assert run_aura("print(!false)") == "True\n"
+    assert run_aura("print(true and false)") == "False\n"
+    assert run_aura("print(true or false)") == "True\n"
+    assert run_aura("print(not false)") == "True\n"
 
 
 @pytest.mark.parametrize("expr,expected", [
@@ -325,7 +325,7 @@ def test_ternary():
 
 
 def test_null_coalescing():
-    out = run_aura("let x = null\nprint(x ?? 'default')")
+    out = run_aura("let x = none\nprint(x ?? 'default')")
     assert out == "default\n"
 
 
@@ -351,7 +351,7 @@ def test_safe_navigation():
     out = run_aura(
         "class N { let v: int = 7 }\n"
         "let a = N()\n"
-        "let b = null\n"
+        "let b = none\n"
         "print(a?.v)\nprint(b?.v)"
     )
     assert out == "7\nNone\n"

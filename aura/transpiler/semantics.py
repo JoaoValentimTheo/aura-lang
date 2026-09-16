@@ -65,13 +65,38 @@ class MutabilityChecker:
 
     # -- public API ---------------------------------------------------------
 
-    def check_program(self, program) -> bool:
+    def check_program(self, program, initial_bindings=None) -> bool:
+        """Check ``program``; return True when no rule was violated.
+
+        ``initial_bindings`` maps names to their mutability (``True`` for
+        mutable) as established by an enclosing session. It is used by the REPL
+        so bindings declared in earlier chunks keep their mutability.
+        """
         self.errors = []
         self.violations = []
         self._scope = _Scope()
+        if initial_bindings:
+            for name, mutable in initial_bindings.items():
+                self._scope.declare(name, bool(mutable))
         for stmt in getattr(program, 'statements', []):
             self.visit(stmt)
         return not self.errors
+
+    def collect_bindings(self, program, seed=None):
+        """Return ``{name: mutable}`` for top-level bindings in ``program``.
+
+        Existing entries in ``seed`` are preserved unless the program
+        re-declares the name, mirroring the checker's shadowing semantics. Used
+        by the REPL to carry binding mutability across chunks.
+        """
+        bindings = dict(seed or {})
+        for stmt in getattr(program, 'statements', []):
+            if isinstance(stmt, VarDecl):
+                for name in self._target_names(stmt.name):
+                    bindings[name] = bool(getattr(stmt, 'mutable', False))
+            elif isinstance(stmt, ConstDecl):
+                bindings[stmt.name] = False
+        return bindings
 
     # -- traversal ----------------------------------------------------------
 

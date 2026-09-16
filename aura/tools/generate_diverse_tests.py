@@ -198,7 +198,7 @@ class {cls} {{
     
     public let id: int
     
-    def init(id: int) {{
+    def new(id: int) {{
         self.id = id;
         {cls}.increment_count();
     }}
@@ -231,7 +231,7 @@ class {inner} {{
 class {outer} {{
     private let component: {inner}
     
-    def init(comp: {inner}) {{
+    def new(comp: {inner}) {{
         self.component = comp;
     }}
     
@@ -256,7 +256,7 @@ class {cls} {{
     public let x: int
     public let y: int
     
-    def init(x: int, y: int) {{
+    def new(x: int, y: int) {{
         self.x = x;
         self.y = y;
     }}
@@ -292,7 +292,7 @@ print(obj.sum_squares());
 class {cls} {{
     private let value: int
     
-    def init(value: int) {{ self.value = value; }}
+    def new(value: int) {{ self.value = value; }}
     
     public def get_value() -> int {{ return self.value; }}
     
@@ -343,7 +343,7 @@ class {cls} {{
     public let age: int
     public let email: str
     
-    def init(name: str, age: int, email: str = "") {{
+    def new(name: str, age: int, email: str = "") {{
         self.name = name;
         self.age = age;
         self.email = email;
@@ -397,7 +397,7 @@ class {base} {{
     private let logger: {mixin1}
     public let value: int
     
-    def init(val: int, logger: {mixin1}) {{
+    def new(val: int, logger: {mixin1}) {{
         self.value = val;
         self.logger = logger;
     }}
@@ -423,7 +423,7 @@ class {cls} {{
     public let value: int
     public let name: str = "default"
     
-    def init(value: int) {{
+    def new(value: int) {{
         self.value = value;
     }}
     
@@ -452,7 +452,7 @@ print(obj2.name);
 class {cls} {{
     private let _value: int = 0
     
-    def init(value: int) {{ self._value = value; }}
+    def new(value: int) {{ self._value = value; }}
     
     public def get_value() -> int {{ return self._value; }}
     public def set_value(v: int) -> void {{ 
@@ -484,7 +484,7 @@ class {target} {{
 class {delegator} {{
     private let delegate: {target}
     
-    def init(t: {target}) {{ self.delegate = t; }}
+    def new(t: {target}) {{ self.delegate = t; }}
     
     public def process() -> int {{
         return self.delegate.process() + 10;

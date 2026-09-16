@@ -5,7 +5,7 @@ class C67104Nx {
     
     public let id: int
     
-    def init(id: int) {
+    def new(id: int) {
         self.id = id;
         C67104Nx.increment_count();
     }

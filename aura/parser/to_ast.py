@@ -178,6 +178,11 @@ class Tokenizer:
                     continue
 
                 self.column += (self.pos - start)
+                if value == 'volatily':
+                    raise SyntaxError(
+                        f"'volatily' is not a keyword; did you mean 'volatile'? "
+                        f"(line {self.line})"
+                    )
                 self.tokens.append(Token('IDENT', value, self.line, self.column))
                 continue
 
@@ -406,11 +411,17 @@ class Parser:
     def parse_statement(self):
         """Parse one statement and record its source line for diagnostics."""
         start_line = self.peek().line
+        if self.peek().value == '...':
+            tok = self.peek()
+            raise SyntaxError(
+                f"unexpected '...' at start of a statement; use '..'/'..<' "
+                f"for ranges (line {tok.line})"
+            )
         stmt = self._parse_statement()
         if stmt is not None:
             try:
                 stmt.line = start_line
-            except Exception:
+            except (AttributeError, TypeError):
                 pass
         return stmt
 
@@ -477,7 +488,11 @@ class Parser:
             return self.parse_var_decl(visibility, is_static, is_volatile)
         elif token.value == 'const':
             return self.parse_const_decl()
-        elif token.value in ('def', 'fn', 'async'):
+        elif token.value == 'fn':
+            raise SyntaxError(
+                f"'fn' is not part of Aura; use 'def' instead (line {token.line})"
+            )
+        elif token.value in ('def', 'async'):
             return self.parse_function_decl(decorators, visibility, is_static, is_volatile)
         elif token.value == 'class':
             return self.parse_class_decl(decorators, visibility, is_static, is_volatile)
@@ -613,6 +628,15 @@ class Parser:
         mutable = False
         if self.match('mut'):
             mutable = True
+
+        # Reject the documented-but-wrong `let private x` form: visibility
+        # modifiers belong *before* `let` (e.g. `private let x`).
+        if self.peek().value in ('public', 'private', 'protected', 'static', 'volatile'):
+            tok = self.peek()
+            raise SyntaxError(
+                f"visibility/modifier must come before 'let', not after it "
+                f"(write '{tok.value} let ...') (line {tok.line})"
+            )
         
         # Destructuring check (if starts with { or [ or ()
         name = ""
@@ -705,30 +729,37 @@ class Parser:
         return ConstDecl(name, type_annotation, value)
 
     def parse_function_decl(self, decorators=None, visibility='public', is_static=False, is_volatile=False, name_override=None):
-        # Support 'def' and the alias 'fn' (async def also supported).
+        # Support 'def' (async def also supported). 'fn' is not part of Aura.
         is_async = False
         if self.check('async'):
             self.consume()
             is_async = True
 
         if self.check('fn'):
-            self.consume()
-        else:
-            self.consume(expected_value='def')
-        
+            tok = self.peek()
+            raise SyntaxError(
+                f"'fn' is not part of Aura; use 'def' instead (line {tok.line})"
+            )
+        self.consume(expected_value='def')
+
         name = self.consume(expected_type='IDENT').value
         if name_override is not None:
             name = name_override
-        
-        # Generic params: fn foo[T](...) OR fn foo<T>(...)
+
+        # Type parameters use brackets only: `def foo[T](...)`.
         type_params = []
-        if self.match('[') or self.match('<'):
+        if self.match('['):
             while True:
-                type_params.append(self.consume(expected_type='IDENT').value) 
+                type_params.append(self.consume(expected_type='IDENT').value)
                 if not self.match(','):
                     break
-            if self.check(']'): self.consume()
-            else: self.consume(expected_value='>')
+            self.consume(expected_value=']')
+        elif self.check('<'):
+            tok = self.peek()
+            raise SyntaxError(
+                f"type parameters use brackets, not '<...>' "
+                f"(write 'def {name}[T]') (line {tok.line})"
+            )
         
         self.consume(expected_value='(')
         params = []
@@ -831,7 +862,7 @@ class Parser:
                 elif self.match('private'): visibility = 'private'
                 elif self.match('protected'): visibility = 'protected'
                 elif self.match('static'): is_static = True
-                elif self.match('volatile') or self.match('volatily'): is_volatile = True
+                elif self.match('volatile'): is_volatile = True
                 else: break
 
             # Check for methods
@@ -865,7 +896,19 @@ class Parser:
                 # str -> __str__, len -> __len__, ...). Names already written as
                 # dunders are preserved verbatim. The table is shared with the
                 # transformers via ``SPECIAL_METHOD_NAMES``.
+                if self.check('fn'):
+                    tok = self.peek()
+                    raise SyntaxError(
+                        f"'fn' is not part of Aura; use 'def' instead "
+                        f"(line {tok.line})"
+                    )
                 method_name = self.peek(1).value
+                if method_name == 'init':
+                    tok = self.peek(1)
+                    raise SyntaxError(
+                        f"'init' is not the Aura constructor; use 'new' "
+                        f"instead (line {tok.line})"
+                    )
                 override = self._SPECIAL_METHOD_NAMES.get(method_name)
                 func = self.parse_function_decl(
                     decorators=member_decorators,
@@ -1571,12 +1614,23 @@ class Parser:
                 lhs = UnaryOp('yield', operand=None)
             else:
                 lhs = UnaryOp('yield', operand=self.parse_expression(13))
-        elif (token.type == 'OP' and token.value in ('-', '!', '+', '~', '*', '**', '...')
-                or token.value in ('not', 'await')):
+        elif token.type == 'OP' and token.value == '!':
+            raise SyntaxError(
+                f"'!' is not part of Aura; use 'not' instead (line {token.line})"
+            )
+        elif token.value == 'not':
+            self.consume()
+            # `not` binds looser than comparisons (so `not a in b` is
+            # `not (a in b)`) but tighter than `and`/`or`, matching Python.
+            rhs = self.parse_expression(6)
+            lhs = UnaryOp('not', operand=rhs)
+        elif (token.type == 'OP' and token.value in ('-', '+', '~', '*', '**', '...')
+                or token.value == 'await'):
             op = token.value
             self.consume()
-            # right associative, high precedence (say 13)
-            rhs = self.parse_expression(13) 
+            # Arithmetic unary binds looser than `**` (so `-2 ** 2` is
+            # `-(2 ** 2)`) but tighter than `*`/`/` (so `-2 * 3` is `(-2) * 3`).
+            rhs = self.parse_expression(11)
             lhs = UnaryOp(op, operand=rhs)
         else:
             lhs = self.parse_primary()
@@ -1600,8 +1654,23 @@ class Parser:
                         op = 'is not'
             
             if not op:
+                # `...` is a prefix spread only; seeing it between operands
+                # (e.g. `1...10`) is always a mistake, not a valid operator.
+                if pk.type == 'OP' and pk.value == '...':
+                    raise SyntaxError(
+                        f"unexpected '...' in expression; use '..' or '..<' "
+                        f"for ranges (line {pk.line})"
+                    )
                 break
-                
+
+            if op in ('&&', '||'):
+                canonical = 'and' if op == '&&' else 'or'
+                tok = self.peek()
+                raise SyntaxError(
+                    f"'{op}' is not part of Aura; use '{canonical}' instead "
+                    f"(line {tok.line})"
+                )
+
             prec = self.get_precedence(op)
             
             if prec < min_prec or prec == 0:
@@ -1666,8 +1735,8 @@ class Parser:
             '=': 1, '+=': 1, '-=': 1, '*=': 1, '/=': 1, '%=': 1,
             '**=': 1, '&=': 1, '|=': 1, '^=': 1, '<<=': 1, '>>=': 1, '??=': 1,
             '?': 2, # Ternary
-            'or': 3, '||': 3,
-            'and': 4, '&&': 4,
+            'or': 3,
+            'and': 4,
             # Bitwise operators bind looser than equality but tighter than
             # `and`/`or`, mirroring the grammar's bitwiseOr/Xor/And chain.
             '|': 4.2,
@@ -1719,7 +1788,12 @@ class Parser:
             elif token.value == 'false':
                 self.consume()
                 return BoolLiteral(False)
-            elif token.value == 'null' or token.value == 'none':
+            elif token.value == 'null':
+                raise SyntaxError(
+                    f"'null' is not part of Aura; use 'none' instead "
+                    f"(line {token.line})"
+                )
+            elif token.value == 'none':
                 self.consume()
                 return NoneLiteral()
             # Lambda is handled via '(' ... '=>' or check special syntax if needed

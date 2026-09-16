@@ -514,7 +514,6 @@ String = StrLiteral
 SPECIAL_METHOD_NAMES = {
     # Construction and lifecycle
     'new': '__init__',
-    'init': '__init__',
     'destroy': '__del__',
     'enter': '__enter__',
     'exit': '__exit__',

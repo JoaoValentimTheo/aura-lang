@@ -7,7 +7,7 @@ class ImplC67635Fp {
 class RealC25709My {
     private let component: ImplC67635Fp
     
-    def init(comp: ImplC67635Fp) {
+    def new(comp: ImplC67635Fp) {
         self.component = comp;
     }
     

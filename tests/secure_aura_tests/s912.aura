@@ -1,8 +1,8 @@
 // Security: Null Safety
-let v_98813: int? = null
+let v_98813: int? = none
 let v_48818: int? = 42
 
-guard v_48818 != null else {
+guard v_48818 != none else {
     print("null value");
     return;
 }
@@ -10,6 +10,6 @@ guard v_48818 != null else {
 let result = v_48818 ?? 0
 print(result);
 
-unless v_98813 == null {
+unless v_98813 == none {
     print("has value");
 }

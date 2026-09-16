@@ -2,8 +2,13 @@
 
 ## Language Reference
 
+- [GRAMMAR.md](GRAMMAR.md) - **Canonical grammar spec (source of truth)**
 - [LANGUAGE.md](LANGUAGE.md) - Complete syntax reference (English)
 - [LANGUAGE_PT.md](LANGUAGE_PT.md) - Referencia completa de sintaxe (Portugues)
+
+## Patterns
+
+- [AUP.md](AUP.md) - Aura Patterns: idiomatic solutions to common problems
 
 ## Type System
 

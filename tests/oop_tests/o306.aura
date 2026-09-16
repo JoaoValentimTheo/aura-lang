@@ -7,7 +7,7 @@ class ImplC82702Sw {
 class MockC75730Yx {
     private let delegate: ImplC82702Sw
     
-    def init(t: ImplC82702Sw) { self.delegate = t; }
+    def new(t: ImplC82702Sw) { self.delegate = t; }
     
     public def process() -> int {
         return self.delegate.process() + 10;

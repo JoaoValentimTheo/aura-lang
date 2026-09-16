@@ -7,7 +7,7 @@ class RealC96385Nd {
 class C15001Oz {
     private let component: RealC96385Nd
     
-    def init(comp: RealC96385Nd) {
+    def new(comp: RealC96385Nd) {
         self.component = comp;
     }
     

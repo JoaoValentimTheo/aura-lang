@@ -7,7 +7,7 @@ class RealC40993Dq {
 class AbstractC25017Qe {
     private let component: RealC40993Dq
     
-    def init(comp: RealC40993Dq) {
+    def new(comp: RealC40993Dq) {
         self.component = comp;
     }
     

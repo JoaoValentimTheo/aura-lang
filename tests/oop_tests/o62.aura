@@ -24,7 +24,7 @@ class C13609Xz {
     public let age: int
     public let email: str
     
-    def init(name: str, age: int, email: str = "") {
+    def new(name: str, age: int, email: str = "") {
         self.name = name;
         self.age = age;
         self.email = email;

@@ -7,7 +7,7 @@ class C18917Jt {
 class C59371Jy {
     private let component: C18917Jt
     
-    def init(comp: C18917Jt) {
+    def new(comp: C18917Jt) {
         self.component = comp;
     }
     

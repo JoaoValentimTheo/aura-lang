@@ -2,7 +2,7 @@
 class C16260Ce {
     private let value: int
     
-    def init(value: int) { self.value = value; }
+    def new(value: int) { self.value = value; }
     
     public def get_value() -> int { return self.value; }
     

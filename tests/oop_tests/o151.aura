@@ -7,7 +7,7 @@ class BaseC65149Zn {
 class ConcreteC76627Dj {
     private let component: BaseC65149Zn
     
-    def init(comp: BaseC65149Zn) {
+    def new(comp: BaseC65149Zn) {
         self.component = comp;
     }
     

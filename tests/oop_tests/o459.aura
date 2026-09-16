@@ -7,7 +7,7 @@ class C20111Pu {
 class C89952Ra {
     private let component: C20111Pu
     
-    def init(comp: C20111Pu) {
+    def new(comp: C20111Pu) {
         self.component = comp;
     }
     

@@ -1,6 +1,6 @@
 // Pattern Match Test 52
-let data_52 = null;
+let data_52 = none;
 match data_52 {
-    case null { print("exact"); }
+    case none { print("exact"); }
     case _ { print("default"); }
 }

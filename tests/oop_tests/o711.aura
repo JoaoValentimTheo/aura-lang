@@ -7,7 +7,7 @@ class RealC59214Tj {
 class C16847Hc {
     private let component: RealC59214Tj
     
-    def init(comp: RealC59214Tj) {
+    def new(comp: RealC59214Tj) {
         self.component = comp;
     }
     

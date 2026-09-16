@@ -2,7 +2,7 @@
 class MockC25707Wq {
     private let _value: int = 0
     
-    def init(value: int) { self._value = value; }
+    def new(value: int) { self._value = value; }
     
     public def get_value() -> int { return self._value; }
     public def set_value(v: int) -> void { 

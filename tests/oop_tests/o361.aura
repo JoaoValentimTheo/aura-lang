@@ -7,7 +7,7 @@ class C74070Rw {
 class ConcreteC31534Oi {
     private let component: C74070Rw
     
-    def init(comp: C74070Rw) {
+    def new(comp: C74070Rw) {
         self.component = comp;
     }
     

@@ -7,7 +7,7 @@ class ImplC24295Iz {
 class MockC29026Oa {
     private let component: ImplC24295Iz
     
-    def init(comp: ImplC24295Iz) {
+    def new(comp: ImplC24295Iz) {
         self.component = comp;
     }
     

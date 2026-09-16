@@ -5,7 +5,7 @@ class C63974Kz {
     
     public let id: int
     
-    def init(id: int) {
+    def new(id: int) {
         self.id = id;
         C63974Kz.increment_count();
     }
