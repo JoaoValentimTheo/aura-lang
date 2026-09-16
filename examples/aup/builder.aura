@@ -1,0 +1,38 @@
+// AUP-02: Builder pattern.
+//
+// A mutable object whose methods return `self` allows left-to-right chaining.
+
+class Query {
+  let table: str = ""
+  let columns: list = []
+  let limit_value: int = 0
+
+  def new(table: str) {
+    self.table = table
+  }
+
+  def select(*names) {
+    self.columns = names
+    return self
+  }
+
+  def limit(n: int) {
+    self.limit_value = n
+    return self
+  }
+
+  def build() -> str {
+    let mut cols = " * "
+    if self.columns.length() > 0 {
+      cols = " " + ", ".join(self.columns) + " "
+    }
+    let mut sql = f"SELECT{cols}FROM {self.table}"
+    if self.limit_value > 0 {
+      sql += f" LIMIT {self.limit_value}"
+    }
+    return sql
+  }
+}
+
+let query = Query("users").select("id", "name").limit(10).build()
+print(query)

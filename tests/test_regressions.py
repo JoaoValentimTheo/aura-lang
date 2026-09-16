@@ -1128,3 +1128,24 @@ if __name__ == "__main__":
             traceback.print_exc()
     print(f"\n{len(tests) - failed}/{len(tests)} regression tests passed")
     sys.exit(1 if failed else 0)
+
+def test_guard_return_inside_method_returns_not_systemexit():
+    """A `guard ... else { return }` in a method returns from the method.
+
+    Earlier this was rewritten to `raise SystemExit` (the module-level idiom),
+    which killed the whole program.
+    """
+    source = (
+        "class C {\n"
+        "  def check(flag: bool) -> str {\n"
+        "    guard flag else { return 'no' }\n"
+        "    return 'yes'\n"
+        "  }\n"
+        "}\n"
+        "let c = C()\n"
+        "print(c.check(true))\n"
+        "print(c.check(false))\n"
+        "print('still running')"
+    )
+    out, _ = run_aura(source)
+    assert out == "yes\nno\nstill running\n"

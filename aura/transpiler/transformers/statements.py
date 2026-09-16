@@ -426,11 +426,15 @@ class StatementTransformer:
         if node.body is None:
             return f"{decorators_code}def {name}({params_str}): pass"
         elif isinstance(node.body, list):
+            # A method body is a function scope: a `guard ... else { return }`
+            # returns from the method (not a module-level SystemExit).
+            self.function_scopes.append(set())
             self._global_assignments.append(set())
             try:
                 body_code = self._block(node.body)
                 global_decl = self._global_decl_line()
             finally:
+                self.function_scopes.pop()
                 self._global_assignments.pop()
             if not body_code.strip():
                 # A nested function body needs one extra indentation level

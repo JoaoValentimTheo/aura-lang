@@ -1,0 +1,32 @@
+// AUP-08: Resource management with a context manager.
+//
+// `with` calls `enter()` on entry and `exit()` on exit, even if the body
+// throws, so cleanup always runs.
+
+class Timer {
+  let label: str = ""
+  let start: float = 0.0
+
+  def new(label: str) { self.label = label }
+
+  def enter() {
+    self.start = 0.0
+    print(f"[{self.label}] start")
+    return self
+  }
+
+  def exit(exc_type, exc, tb) {
+    print(f"[{self.label}] end")
+  }
+}
+
+with Timer("load") as t {
+  print("working...")
+}
+
+// Nested context managers run their exit blocks in reverse order.
+with Timer("outer") as a {
+  with Timer("inner") as b {
+    print("body")
+  }
+}

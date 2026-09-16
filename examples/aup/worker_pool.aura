@@ -1,0 +1,31 @@
+// AUP-09: Worker pool (bounded concurrency) with threads.
+//
+// For I/O-bound work, run a bounded number of tasks across threads. The pool
+// preserves input order in its results.
+
+import stdlib.threading as threading
+import stdlib.time as time
+
+def fetch(id) -> int {
+  time.sleep(0.01)     // simulate I/O
+  return id * id
+}
+
+let ids = [1, 2, 3, 4, 5, 6]
+let results = threading.map_concurrent((x) => fetch(x), ids, workers: 3)
+print(results)
+
+// Manual fan-out with a shared counter guarded by a lock.
+let mut completed = 0
+let lock = threading.lock()
+
+def job(n) {
+  fetch(n)
+  lock.acquire()
+  completed += 1
+  lock.release()
+}
+
+let threads = [threading.spawn((x) => job(x), n) for n in ids]
+for t in threads { t.join() }
+print(f"completed {completed} of {ids.length()}")

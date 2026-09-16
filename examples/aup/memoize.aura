@@ -1,0 +1,22 @@
+// AUP-06: Memoization and caching.
+//
+// `@memoize` caches an unbounded result table; `@cache(maxsize=N)` bounds it
+// with LRU eviction.
+
+@memoize
+def fib(n) -> int {
+  if n < 2 { return n }
+  return fib(n - 1) + fib(n - 2)
+}
+
+print(fib(30))
+
+@cache(64)
+def expensive(n) -> int {
+  let mut total = 0
+  for i in range(n) { total += i }
+  return total
+}
+
+print(expensive(1000))
+print(expensive(1000))  // second call is cached
