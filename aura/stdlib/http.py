@@ -121,7 +121,7 @@ def _read_limited(stream, max_bytes):
     """Read at most ``max_bytes`` from ``stream`` (0/None means unlimited)."""
     if not max_bytes or max_bytes <= 0:
         return stream.read()
-    return stream.read(max_bytes + 1)
+    return stream.read(max_bytes)
 
 
 def _json_headers(headers, data):
