@@ -41,83 +41,60 @@ class Transformer:
                 return self._transform_legacy(node)
     
     def _transform_program(self, program):
-        self.expr_transformer.hoisted_functions = []
-        self.expr_transformer._needs_aura_call = False
-        self.stmt_transformer.uses_aura_unset = False
-        self.stmt_transformer.uses_oop_prelude = False
+        expr = self.expr_transformer
+        stmt = self.stmt_transformer
+        expr.hoisted_functions = []
+        expr._needs_aura_call = False
+        expr.seen_identifiers = set()
+        expr.used_decorators = []
+        expr.has_dict = False
+        # Reset cross-program state so a reused Transformer is deterministic
+        # (important for the REPL, which reuses one instance across chunks).
+        expr.member_visibilities = {}
+        expr.known_method_names = set()
+        expr._lambda_counter = 0
+        stmt.class_members = {}
+        stmt.indent_level = 0
+        stmt.in_class_scope = False
+        stmt.function_scopes = []
+        stmt.uses_aura_unset = False
+        stmt.uses_oop_prelude = False
+        stmt.has_enum = False
+        stmt.has_label = False
         lines = []
-        for stmt in program.statements:
-            code = self.transform(stmt)
+        for statement in program.statements:
+            code = self.transform(statement)
             if code and code.strip():
                 lines.append(code)
         body = "\n".join(lines)
 
-        decorators, identifiers, has_dict, has_enum, has_label = self._scan_ast(program)
-
+        # Prelude flags were recorded while transforming, so there is no
+        # separate AST scan.
         preludes = []
-        if prelude_needed(decorators):
+        if prelude_needed(expr.used_decorators):
             preludes.append(PRELUDE)
-        if stdlib_prelude_needed(identifiers):
+        if stdlib_prelude_needed(expr.seen_identifiers):
             preludes.append(STDLIB_PRELUDE)
-        if has_dict:
+        if expr.has_dict:
             preludes.append(DICT_PRELUDE)
-        if has_enum:
+        if stmt.has_enum:
             preludes.append(ENUM_PRELUDE)
-        if has_label:
+        if stmt.has_label:
             preludes.append(LABEL_PRELUDE)
-        if getattr(self.expr_transformer, '_needs_aura_call', False):
+        if expr._needs_aura_call:
             preludes.append(SPREAD_PRELUDE)
-        if self.stmt_transformer.uses_aura_unset:
+        if stmt.uses_aura_unset:
             preludes.append(UNSET_PRELUDE)
-        if self.stmt_transformer.uses_oop_prelude:
+        if stmt.uses_oop_prelude:
             preludes.append(OOP_PRELUDE)
 
-        hoisted = self.expr_transformer.hoisted_functions
+        hoisted = expr.hoisted_functions
         if hoisted:
             preludes.append("\n".join(hoisted))
 
         if preludes:
             return "\n".join(preludes) + "\n" + body
         return body
-
-    def _scan_ast(self, node):
-        """Single-pass collection of decorator names, identifiers, dict/enum/label presence."""
-        decorators = []
-        identifiers = set()
-        has_dict = False
-        has_enum = False
-        has_label = False
-
-        def visit(value):
-            nonlocal has_dict, has_enum, has_label
-            if value is None:
-                return
-            if isinstance(value, Decorator):
-                decorators.append(value.name)
-            elif isinstance(value, Identifier):
-                identifiers.add(value.name)
-            elif isinstance(value, DictLiteral):
-                has_dict = True
-            elif isinstance(value, EnumDecl):
-                has_enum = True
-            elif isinstance(value, (ForStmt, WhileStmt, UntilStmt, LoopStmt)) and value.label:
-                has_label = True
-            elif isinstance(value, (BreakStmt, ContinueStmt)) and value.label:
-                has_label = True
-            elif isinstance(value, dict):
-                for item in value.values():
-                    visit(item)
-                return
-            elif isinstance(value, (list, tuple)):
-                for item in value:
-                    visit(item)
-                return
-            elif isinstance(value, Node):
-                for item in vars(value).values():
-                    visit(item)
-
-        visit(node)
-        return decorators, identifiers, has_dict, has_enum, has_label
 
     def _transform_module(self, node):
         return self.stmt_transformer.transform(node)

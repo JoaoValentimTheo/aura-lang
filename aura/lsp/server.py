@@ -51,10 +51,12 @@ class AuraLanguageServer:
         self.writer = writer or sys.stdout.buffer
         self.documents = {}
         self.shutdown_requested = False
-        # (uri, text) -> (program, parse_error). Avoids re-parsing the same
+        # (uri, text) -> (text, program, parse_error). Avoids re-parsing the same
         # document for hover, symbols and diagnostics within a request cycle.
         self._parse_cache = {}
-        self._parse_cache_uri = None
+        # uri -> (text, diagnostics). Avoids re-running the checkers on an
+        # unchanged document.
+        self._diagnostics_cache = {}
 
     # -- transport ----------------------------------------------------------
 
@@ -81,7 +83,7 @@ class AuraLanguageServer:
         return json.loads(body.decode('utf-8'))
 
     def _parsed(self, uri):
-        """Return ``(program, error)`` for the current text of ``uri``.
+        """Return ``(text, program, error)`` for the current text of ``uri``.
 
         The result is cached per (uri, text), so repeated feature requests on
         the same document version parse only once.
@@ -89,15 +91,41 @@ class AuraLanguageServer:
         text = self.documents.get(uri, '')
         cached = self._parse_cache.get(uri)
         if cached is not None and cached[0] == text:
-            return cached[1], cached[2]
+            return cached
         try:
             program = Parser(Tokenizer(text).tokenize()).parse()
             error = None
         except Exception as exc:
             program = None
             error = exc
-        self._parse_cache[uri] = (text, program, error)
-        return program, error
+        entry = (text, program, error)
+        self._parse_cache[uri] = entry
+        return entry
+
+    def _diagnostics_for(self, uri):
+        """Return the diagnostics for ``uri``, computing them once per version.
+
+        Mutability and type checks are not re-run for hover/symbols on an
+        unchanged document.
+        """
+        text, program, error = self._parsed(uri)
+        cached = self._diagnostics_cache.get(uri)
+        if cached is not None and cached[0] == text:
+            return cached[1]
+        diagnostics = []
+        if program is None:
+            diagnostics.append(self._diagnostic_from_error(error))
+        else:
+            checker = MutabilityChecker()
+            if not checker.check_program(program):
+                for err in checker.errors:
+                    diagnostics.append(self._message_diagnostic(err, text))
+            type_checker = TypeChecker()
+            if not type_checker.check_program(program):
+                for err in type_checker.errors:
+                    diagnostics.append(self._message_diagnostic(err, text))
+        self._diagnostics_cache[uri] = (text, diagnostics)
+        return diagnostics
 
     def _write_message(self, payload):
         body = json.dumps(payload).encode('utf-8')
@@ -166,6 +194,7 @@ class AuraLanguageServer:
             doc = params['textDocument']
             self.documents.pop(doc['uri'], None)
             self._parse_cache.pop(doc['uri'], None)
+            self._diagnostics_cache.pop(doc['uri'], None)
             self._notify('textDocument/publishDiagnostics',
                          {'uri': doc['uri'], 'diagnostics': []})
         elif method == 'textDocument/hover':
@@ -180,25 +209,7 @@ class AuraLanguageServer:
     # -- features -----------------------------------------------------------
 
     def _publish_diagnostics(self, uri):
-        text = self.documents.get(uri, '')
-        diagnostics = []
-        program, error = self._parsed(uri)
-        if program is None:
-            diagnostics.append(self._diagnostic_from_error(error))
-            self._notify('textDocument/publishDiagnostics',
-                         {'uri': uri, 'diagnostics': diagnostics})
-            return
-
-        checker = MutabilityChecker()
-        if not checker.check_program(program):
-            for error in checker.errors:
-                diagnostics.append(self._message_diagnostic(error, text))
-
-        type_checker = TypeChecker()
-        if not type_checker.check_program(program):
-            for error in type_checker.errors:
-                diagnostics.append(self._message_diagnostic(error, text))
-
+        diagnostics = self._diagnostics_for(uri)
         self._notify('textDocument/publishDiagnostics',
                      {'uri': uri, 'diagnostics': diagnostics})
 
@@ -251,7 +262,7 @@ class AuraLanguageServer:
             return None
         details = None
         try:
-            program, error = self._parsed(uri)
+            _, program, error = self._parsed(uri)
             if program is None:
                 raise error
             checker = TypeChecker()
@@ -280,7 +291,7 @@ class AuraLanguageServer:
     def _document_symbols(self, params):
         uri = params['textDocument']['uri']
         symbols = []
-        program, _ = self._parsed(uri)
+        _, program, _ = self._parsed(uri)
         if program is None:
             return symbols
         for stmt in getattr(program, 'statements', []):

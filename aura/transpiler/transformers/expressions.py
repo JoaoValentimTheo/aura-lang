@@ -9,6 +9,11 @@ class ExpressionTransformer:
         self.hoisted_functions = []  # generated module-level defs
         # Set when an adaptive `...value` call needs the `_aura_call` helper.
         self._needs_aura_call = False
+        # Prelude needs recorded *during* transformation, so the transformer
+        # does not need a second full AST walk to decide what to inject.
+        self.seen_identifiers = set()
+        self.used_decorators = []
+        self.has_dict = False
 
     # Aura string/collection methods with a direct Python method equivalent.
     # Only applied to *calls* on members that are not user-defined methods.
@@ -110,6 +115,7 @@ class ExpressionTransformer:
         return f"[{', '.join(items)}]"
     
     def transform_DictLiteral(self, node):
+        self.has_dict = True
         items = []
         for item in node.pairs:
             if isinstance(item, tuple):
@@ -138,6 +144,7 @@ class ExpressionTransformer:
     
     # ========== Identifiers & Variables ==========
     def transform_Identifier(self, node):
+        self.seen_identifiers.add(node.name)
         return node.name
     
     # ========== Expressions ==========

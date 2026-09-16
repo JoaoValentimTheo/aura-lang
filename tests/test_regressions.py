@@ -298,7 +298,7 @@ def test_stdlib_list_chunk_rejects_bad_size():
 # Transformer internals
 # ============================================================================
 
-def test_single_pass_scan_collects_all_metadata():
+def test_transform_records_prelude_metadata():
     source = (
         "@debug\n"
         'def f() { return [x for x in items] }\n'
@@ -307,12 +307,16 @@ def test_single_pass_scan_collects_all_metadata():
     tokens = Tokenizer(source).tokenize()
     program = Parser(tokens).parse()
     transformer = Transformer()
-    decorators, identifiers, has_dict, has_enum, has_label = transformer._scan_ast(program)
-    assert "debug" in decorators
-    assert "items" in identifiers
-    assert has_dict is True
-    assert has_enum is False
-    assert has_label is False
+    code = transformer.transform(program)
+    expr = transformer.expr_transformer
+    stmt = transformer.stmt_transformer
+    assert "debug" in expr.used_decorators
+    assert "items" in expr.seen_identifiers
+    assert expr.has_dict is True
+    assert stmt.has_enum is False
+    assert stmt.has_label is False
+    # The @debug prelude is actually injected.
+    assert "def debug(" in code
 
 
 def test_block_lambda_preserves_class_scope():

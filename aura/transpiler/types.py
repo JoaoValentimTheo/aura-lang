@@ -2,6 +2,24 @@
 from typing import Dict, List, Optional, Set, Tuple, Any
 from dataclasses import dataclass, field
 
+# AST nodes are imported once at module scope (not per visited node) to keep the
+# checker's hot paths fast.
+from aura.transpiler.ast import (
+    Node, Program, Module,
+    VarDecl, ConstDecl, FunctionDecl, ClassDecl, EnumDecl, TypeDecl, TraitDecl,
+    Method,
+    ExprStmt, ReturnStmt, AssertStmt, ThrowStmt,
+    IfStmt, UnlessStmt, GuardStmt, WhileStmt, UntilStmt, ForStmt, LoopStmt,
+    MatchStmt, TryStmt, WithStmt,
+    Identifier, IntLiteral, FloatLiteral, StrLiteral, BoolLiteral, NoneLiteral,
+    FStringLiteral, ListLiteral, SetLiteral, DictLiteral, TupleLiteral,
+    BinaryOp, UnaryOp, CallExpr, MemberExpr, IndexExpr, SafeNavExpr, SpreadExpr,
+    CondExpr, CoalesceExpr, ElvisExpr, RangeExpr, PipeExpr, LambdaExpr, BlockExpr,
+    ComprehensionExpr, MatchExpr, TryExpr,
+    IdentifierPattern,
+    SimpleType, GenericType, StructuralType, OptionalType, UnionType,
+)
+
 # Sentinel for "no binding present".
 _MISSING = object()
 
@@ -218,14 +236,6 @@ class TypeInference:
 
     def infer(self, node) -> Type:
         """Infer the type of an AST node."""
-        from aura.transpiler.ast import (
-            IntLiteral, FloatLiteral, StrLiteral, BoolLiteral, NoneLiteral,
-            FStringLiteral, ListLiteral, DictLiteral, SetLiteral, TupleLiteral,
-            Identifier, BinaryOp, UnaryOp, CallExpr, MemberExpr, IndexExpr,
-            LambdaExpr, ComprehensionExpr, RangeExpr,
-            SafeNavExpr, ElvisExpr, CoalesceExpr, CondExpr,
-            SpreadExpr, MatchExpr, TryExpr, BlockExpr, PipeExpr,
-        )
 
         if node is None:
             return AnyType()
@@ -298,7 +308,6 @@ class TypeInference:
     }
 
     def _infer_call(self, node) -> Type:
-        from aura.transpiler.ast import Identifier, CallExpr
         if not isinstance(node.func, Identifier):
             return AnyType()
         name = node.func.name
@@ -430,8 +439,11 @@ class TypeInference:
 # Type Checker
 # ============================================================================
 
-class TypeError(Exception):
-    """Raised for a single type error (collected by TypeChecker)."""
+class AuraTypeError(Exception):
+    """Raised for a single type error (collected by TypeChecker).
+
+    Named distinctly so it never shadows the builtin ``TypeError``.
+    """
 
 
 class TypeChecker:
@@ -448,7 +460,7 @@ class TypeChecker:
     _COMPAT_OPS = {
         '+', '-', '*', '/', '%', '**',
         '==', '!=', '<', '>', '<=', '>=',
-        'and', 'or', '&&', '||', 'is', 'is not', 'in', 'not in',
+        'and', 'or', 'is', 'is not', 'in', 'not in',
         '&', '|', '^', '<<', '>>',
     }
 
@@ -487,13 +499,6 @@ class TypeChecker:
     def visit(self, node):
         if node is None:
             return
-        from aura.transpiler.ast import (
-            Program, Module, VarDecl, ConstDecl, FunctionDecl, ClassDecl,
-            EnumDecl, TypeDecl, TraitDecl,
-            IfStmt, UnlessStmt, GuardStmt, WhileStmt, UntilStmt, ForStmt,
-            LoopStmt, MatchStmt, TryStmt, WithStmt, ReturnStmt, ExprStmt,
-            AssertStmt, ThrowStmt, FunctionDecl as _F,
-        )
 
         if isinstance(node, Program):
             for stmt in node.statements:
@@ -516,7 +521,7 @@ class TypeChecker:
         elif isinstance(node, (IfStmt, UnlessStmt)):
             self._check_if(node)
         elif isinstance(node, GuardStmt):
-            self.visit(node.else_body and None)
+            self.visit(node.condition)
             for stmt in (node.else_body or []):
                 self.visit(stmt)
         elif isinstance(node, WhileStmt):
@@ -559,7 +564,6 @@ class TypeChecker:
             self._visit_children(node)
 
     def _visit_children(self, node):
-        from aura.transpiler.ast import Node
         if isinstance(node, Node):
             for value in vars(node).values():
                 if isinstance(value, list):
@@ -652,8 +656,7 @@ class TypeChecker:
             self._type_params[tp] = TypeVariable(tp)
 
         for item in (node.body or []):
-            from aura.transpiler.ast import VarDecl as _VarDecl, Method
-            if isinstance(item, _VarDecl):
+            if isinstance(item, VarDecl):
                 field_type = self._parse_type_annotation(item.type_annotation) \
                     if item.type_annotation is not None else AnyType()
                 class_type.fields[item.name] = field_type
@@ -680,7 +683,6 @@ class TypeChecker:
         # Check method bodies in a fresh scope.
         old_context = dict(self.context)
         for item in (node.body or []):
-            from aura.transpiler.ast import Method
             if isinstance(item, Method):
                 self._check_function_decl(item)
         self.context = old_context
@@ -750,7 +752,6 @@ class TypeChecker:
         Handles null checks (`x != null`, `x == null`) and `is` type tests
         (`x is int`). Returns ``(then_bindings, else_bindings)``.
         """
-        from aura.transpiler.ast import BinaryOp, Identifier, NoneLiteral, UnaryOp
         then_narrow = {}
         else_narrow = {}
         if not isinstance(condition, BinaryOp):
@@ -793,7 +794,6 @@ class TypeChecker:
 
     def _check_for(self, node):
         iter_type = self.inference.infer(node.iterable)
-        from aura.transpiler.ast import IdentifierPattern
         if isinstance(node.pattern, IdentifierPattern):
             if isinstance(iter_type, ListType):
                 self.context[node.pattern.name] = iter_type.element_type
@@ -836,12 +836,6 @@ class TypeChecker:
         """Recursively validate expressions and their sub-expressions."""
         if node is None:
             return
-        from aura.transpiler.ast import (
-            BinaryOp, UnaryOp, CallExpr, MemberExpr, IndexExpr, CondExpr,
-            ElvisExpr, CoalesceExpr, SafeNavExpr, ListLiteral, DictLiteral,
-            SetLiteral, TupleLiteral, ComprehensionExpr, LambdaExpr, PipeExpr,
-            BlockExpr, MatchExpr, TryExpr, SpreadExpr, FStringLiteral,
-        )
 
         if isinstance(node, BinaryOp):
             self._check_binary_op(node)
@@ -937,7 +931,6 @@ class TypeChecker:
                 )
 
     def _check_call_expr(self, node):
-        from aura.transpiler.ast import Identifier, MemberExpr
         func_type = None
         func_name = None
         if isinstance(node.func, Identifier) and node.func.name in self.functions:
@@ -1022,15 +1015,11 @@ class TypeChecker:
             return AnyType()
 
         # AST type nodes (used when types are constructed programmatically).
-        from aura.transpiler.ast import (
-            SimpleType, GenericType,
-            UnionType as _UnionAnn, OptionalType as _OptAnn, StructuralType,
-        )
         if isinstance(annotation, SimpleType):
             return self._parse_type_annotation(annotation.name)
-        if isinstance(annotation, _OptAnn):
+        if isinstance(annotation, OptionalType):
             return UnionType({self._parse_type_annotation(annotation.base_type), NoneType()})
-        if isinstance(annotation, _UnionAnn):
+        if isinstance(annotation, UnionType):
             return UnionType({self._parse_type_annotation(t) for t in annotation.types})
         if isinstance(annotation, GenericType):
             base = self._parse_type_annotation(annotation.name)

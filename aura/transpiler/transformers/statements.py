@@ -18,6 +18,9 @@ class StatementTransformer:
         self.uses_aura_unset = False
         # Set True when traits/generics need the abc/typing prelude.
         self.uses_oop_prelude = False
+        # Prelude needs recorded during transformation (enum/labeled loops).
+        self.has_enum = False
+        self.has_label = False
     
     def transform(self, node):
         if node is None:
@@ -49,6 +52,7 @@ class StatementTransformer:
 
     def _decorator_line(self, dec):
         """Render a single decorator, including arguments and keyword args."""
+        self.expr_transformer.used_decorators.append(dec.name)
         parts = [self.expr_transformer.transform(a) for a in dec.args]
         for key, value in dec.kwargs.items():
             parts.append(f"{key}={self.expr_transformer.transform(value)}")
@@ -309,7 +313,7 @@ class StatementTransformer:
         # Only emit class-level defaults for fields that don't duplicate __init__ params.
         emit_field_defaults = has_manual_init or not instance_fields
 
-        body_code = ""
+        body_parts = []
         class_indent = self._indent()
         for member in node.body:
             if isinstance(member, VarDecl):
@@ -318,15 +322,19 @@ class StatementTransformer:
                 # is not handling them.
                 if not member.is_static and not emit_field_defaults:
                     continue
-                body_code += self._indent() + self.transform(member) + "\n"
+                body_parts.append(self._indent() + self.transform(member))
             elif isinstance(member, Method):
                 self.indent_level -= 1
                 method_code = self.transform(member)
                 self.indent_level += 1
-                body_code += class_indent + method_code.replace('\n', '\n' + class_indent) + "\n"
+                body_parts.append(
+                    class_indent + method_code.replace('\n', '\n' + class_indent))
             else:
-                body_code += self._indent() + self.transform(member) + "\n"
-        
+                body_parts.append(self._indent() + self.transform(member))
+        body_code = "\n".join(body_parts)
+        if body_code:
+            body_code += "\n"
+
         # Reset and finish
         final_body = init_code + body_code
         if not final_body.strip():
@@ -519,6 +527,7 @@ class StatementTransformer:
     def transform_EnumDecl(self, node):
         """Emit a Python enum. Auto-numbered members continue from the last
         explicit integer value (so `enum E { A, B = 3, C }` gives C == 4)."""
+        self.has_enum = True
         header = f"class {node.name}(_aura_enum.Enum):"
         body_lines = []
         next_auto = 1
@@ -710,6 +719,7 @@ class StatementTransformer:
         `continue label` raises `_AuraContinue`, caught around the loop body.
         """
         label = node.label
+        self.has_label = True
         # Body wrapped so `continue label` is handled in place.
         self.indent_level += 1
         inner_indent = self._indent()

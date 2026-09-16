@@ -204,3 +204,46 @@ def test_lsp_document_symbols():
         assert 'foo' in names and 'Bar' in names
     finally:
         client.close()
+
+# ============================================================================
+# LSP caching (parse and diagnostics are computed once per document version)
+# ============================================================================
+
+def test_lsp_caches_parse_and_diagnostics():
+    from aura.lsp.server import AuraLanguageServer
+
+    server = AuraLanguageServer()
+    uri = 'file:///cache.aura'
+    server.documents[uri] = "let x: str = 10\n"
+
+    # First computation populates both caches.
+    first = server._diagnostics_for(uri)
+    assert first
+    assert uri in server._parse_cache
+    assert uri in server._diagnostics_cache
+
+    # A second call reuses the cached diagnostics object (no recompute).
+    second = server._diagnostics_for(uri)
+    assert second is first
+
+    # Changing the document invalidates the caches.
+    server.documents[uri] = "let x: int = 10\n"
+    third = server._diagnostics_for(uri)
+    assert third is not first
+
+
+def test_lsp_did_close_clears_caches():
+    from aura.lsp.server import AuraLanguageServer
+
+    server = AuraLanguageServer()
+    uri = 'file:///close.aura'
+    server._handle({'method': 'textDocument/didOpen',
+                    'params': {'textDocument': {'uri': uri, 'text': 'let a = 1\n'}}})
+    assert uri in server._parse_cache
+    assert uri in server._diagnostics_cache
+
+    server._handle({'method': 'textDocument/didClose',
+                    'params': {'textDocument': {'uri': uri}}})
+    assert uri not in server.documents
+    assert uri not in server._parse_cache
+    assert uri not in server._diagnostics_cache
