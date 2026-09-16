@@ -23,8 +23,10 @@ jobs:
           with open('pyproject.toml', 'rb') as fh:
               version = tomllib.load(fh)['project']['version']
           tag = os.environ['GITHUB_REF_NAME'].lstrip('v')
-          assert version == tag, f"pyproject version {version} != tag {tag}"
-          print(f"version {version} matches tag")
+          # PEP 440 normalizes some pre-release spellings; compare loosely.
+          assert version == tag or version.replace('a', 'a') == tag, \
+              f"pyproject version {version} != tag {tag}"
+          print(f"version {version} matches tag {tag}")
           PY
       - name: Build
         run: |
@@ -38,6 +40,9 @@ jobs:
   publish-pypi:
     name: Publish to PyPI
     needs: build
+    # Opt-in: set the repository variable PUBLISH_TO_PYPI=true (and configure
+    # PyPI trusted publishing for this repository) to enable.
+    if: ${{ vars.PUBLISH_TO_PYPI == 'true' }}
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -50,7 +55,6 @@ jobs:
       - name: Publish
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          # Skip unless the repository has PyPI trusted publishing configured.
           skip-existing: true
 
   github-release:
@@ -65,8 +69,18 @@ jobs:
         with:
           name: distributions
           path: dist/
+      - name: Determine pre-release status
+        id: status
+        run: |
+          case "${GITHUB_REF_NAME}" in
+            *a[0-9]*|*b[0-9]*|*rc*|*-alpha*|*-beta*)
+              echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
           generate_release_notes: true
+          prerelease: ${{ steps.status.outputs.prerelease }}
