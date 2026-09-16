@@ -84,3 +84,4 @@ jobs:
           files: dist/*
           generate_release_notes: true
           prerelease: ${{ steps.status.outputs.prerelease }}
+          allow_updates: true
