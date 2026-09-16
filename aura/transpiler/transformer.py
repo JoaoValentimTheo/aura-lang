@@ -6,20 +6,14 @@ from aura.transpiler.macros import (
     PRELUDE,
     prelude_needed,
     STDLIB_PRELUDE,
-    STDLIB_PRELUDE_NAMES,
     stdlib_prelude_needed,
     DICT_PRELUDE,
     ENUM_PRELUDE,
     LABEL_PRELUDE,
+    SPREAD_PRELUDE,
+    UNSET_PRELUDE,
+    OOP_PRELUDE,
 )
-
-
-# Fast lookup table for the most common node transform dispatch.
-_COMMON_STMT_TRANSFORMS = frozenset({
-    'VarDecl', 'ConstDecl', 'FunctionDecl', 'ClassDecl',
-    'IfStmt', 'ForStmt', 'WhileStmt', 'ReturnStmt',
-    'ExprStmt', 'Import', 'FromImport',
-})
 
 
 class Transformer:
@@ -28,25 +22,6 @@ class Transformer:
         self.stmt_transformer = StatementTransformer()
         self.stmt_transformer.expr_transformer = self.expr_transformer
         self.expr_transformer.stmt_transformer = self.stmt_transformer
-        # Cache transform methods to avoid repeated getattr lookups.
-        self._stmt_methods = {}
-        self._expr_methods = {}
-    
-    def _get_stmt_method(self, name):
-        """Cache-backed lookup for statement transform methods."""
-        m = self._stmt_methods.get(name)
-        if m is None:
-            m = getattr(self.stmt_transformer, name, None)
-            self._stmt_methods[name] = m
-        return m
-
-    def _get_expr_method(self, name):
-        """Cache-backed lookup for expression transform methods."""
-        m = self._expr_methods.get(name)
-        if m is None:
-            m = getattr(self.expr_transformer, name, None)
-            self._expr_methods[name] = m
-        return m
 
     def transform(self, node):
         if isinstance(node, Program):
@@ -67,6 +42,9 @@ class Transformer:
     
     def _transform_program(self, program):
         self.expr_transformer.hoisted_functions = []
+        self.expr_transformer._needs_aura_call = False
+        self.stmt_transformer.uses_aura_unset = False
+        self.stmt_transformer.uses_oop_prelude = False
         lines = []
         for stmt in program.statements:
             code = self.transform(stmt)
@@ -87,6 +65,12 @@ class Transformer:
             preludes.append(ENUM_PRELUDE)
         if has_label:
             preludes.append(LABEL_PRELUDE)
+        if getattr(self.expr_transformer, '_needs_aura_call', False):
+            preludes.append(SPREAD_PRELUDE)
+        if self.stmt_transformer.uses_aura_unset:
+            preludes.append(UNSET_PRELUDE)
+        if self.stmt_transformer.uses_oop_prelude:
+            preludes.append(OOP_PRELUDE)
 
         hoisted = self.expr_transformer.hoisted_functions
         if hoisted:

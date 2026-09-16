@@ -21,7 +21,7 @@ def transpile_and_run(code):
     
     # Execute
     loc = {}
-    exec(py_code, {}, loc)
+    exec(py_code, loc)
     return loc
 
 def test_private_visibility_enforcement():

@@ -148,6 +148,23 @@ class _AuraContinue(Exception):
 # --- end Aura labeled loop support ---
 '''
 
+# Adaptive `...value` call spreading: unpack a mapping as keyword arguments
+# and any other iterable as positional arguments.
+SPREAD_PRELUDE = '''# --- Aura adaptive spread support ---
+def _aura_call(func, value):
+    if isinstance(value, dict):
+        return func(**value)
+    return func(*value)
+# --- end Aura adaptive spread support ---
+'''
+
+# Auto-generated constructors use a module-level sentinel so an explicit
+# ``None`` can override a field default.
+UNSET_PRELUDE = "_aura_unset = object()\n"
+
+# Traits compile to ABCs and generic classes compile to Generic[...]
+OOP_PRELUDE = "import abc as _aura_abc\nfrom typing import Generic as _aura_Generic, TypeVar as _aura_TypeVar\n"
+
 
 def stdlib_prelude_needed(free_names) -> bool:
     """Return True if any data-first stdlib helper is referenced."""

@@ -1,8 +1,30 @@
 """AST-aware Aura formatter - normalizes style, indentation, and spacing."""
 
 import re
-import sys
-from pathlib import Path
+
+# Multi-character operators, longest first so masking is unambiguous.
+_MULTI_OPS = ['**=', '??=', '<<=', '>>=', '->', '=>', '>=', '<=', '==', '!=',
+              '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '<<', '>>',
+              '??', '?:', '|>', '**', '..<', '..']
+
+_STRING_RE = re.compile(
+    r'(?:[rRbBfF]{0,2})("""(?:.|\n)*?"""|\'\'\'(?:.|\n)*?\'\'\'|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\')'
+)
+_UNARY_RE = re.compile(r'(?:(?<=[(,=\[\s])|^)\s*([-+])\s*(?=[\w\d(])')
+_SINGLE_OP_RE = {
+    op: re.compile(r'\s*' + re.escape(op) + r'\s*')
+    for op in ('=', '+', '-', '*', '/', '%', '<', '>')
+}
+_MULTI_OP_RE = {
+    op: re.compile(r'\s*' + re.escape(op) + r'\s*')
+    for op in _MULTI_OPS
+}
+_AND_RE = re.compile(r'\band\b')
+_OR_RE = re.compile(r'\bor\b')
+_NOT_RE = re.compile(r'\bnot\b')
+_REPEAT_SPACE_RE = re.compile(r'  +')
+_COMMA_RE = re.compile(r',(\S)')
+_SPACE_COMMA_RE = re.compile(r'\s+,')
 
 # Keywords that start a block
 BLOCK_STARTERS = {
@@ -90,10 +112,7 @@ def _format_line(line: str) -> str:
         strings.append(match.group(0))
         return f"\x00{len(strings) - 1}\x00"
 
-    string_re = re.compile(
-        r'(?:[rRbBfF]{0,2})("""(?:.|\n)*?"""|\'\'\'(?:.|\n)*?\'\'\'|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\')'
-    )
-    line = string_re.sub(_mask, line)
+    line = _STRING_RE.sub(_mask, line)
 
     # Comments: format only the code before `//`.
     comment = ''
@@ -103,11 +122,8 @@ def _format_line(line: str) -> str:
         line = line[:idx]
 
     # Mask multi-character operators so they survive single-char rules.
-    multi = ['**=', '??=', '<<=', '>>=', '->', '=>', '>=', '<=', '==', '!=',
-             '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '<<', '>>',
-             '??', '?:', '|>', '**', '..<', '..']
     placeholders = {}
-    for i, op in enumerate(multi):
+    for i, op in enumerate(_MULTI_OPS):
         token = f"\x01{i}\x01"
         if op in line:
             placeholders[token] = op
@@ -121,11 +137,10 @@ def _format_line(line: str) -> str:
         unary.append(match.group(0).lstrip())
         return f"\x02{len(unary) - 1}\x02"
 
-    line = re.sub(r'(?:(?<=[(,=\[\s])|^)\s*([-+])\s*(?=[\w\d(])',
-                  lambda m: _mask_unary(m), line)
+    line = _UNARY_RE.sub(lambda m: _mask_unary(m), line)
 
-    for op in ('=', '+', '-', '*', '/', '%', '<', '>'):
-        line = re.sub(r'\s*' + re.escape(op) + r'\s*', f' {op} ', line)
+    for op, pattern in _SINGLE_OP_RE.items():
+        line = pattern.sub(f' {op} ', line)
 
     for i, original in enumerate(unary):
         line = line.replace(f"\x02{i}\x02", original)
@@ -134,21 +149,21 @@ def _format_line(line: str) -> str:
     for token, op in placeholders.items():
         line = line.replace(token, op)
     # Collapse any spaces that restoration may have left around them.
-    for op in multi:
-        line = re.sub(r'\s*' + re.escape(op) + r'\s*', f' {op} ', line)
+    for op, pattern in _MULTI_OP_RE.items():
+        line = pattern.sub(f' {op} ', line)
 
     # Normalize logical operators.
-    line = re.sub(r'\band\b', 'and', line)
-    line = re.sub(r'\bor\b', 'or', line)
-    line = re.sub(r'\bnot\b', 'not', line)
+    line = _AND_RE.sub('and', line)
+    line = _OR_RE.sub('or', line)
+    line = _NOT_RE.sub('not', line)
 
     # Remove trailing whitespace and collapse repeated spaces.
     line = line.rstrip()
-    line = re.sub(r'  +', ' ', line)
+    line = _REPEAT_SPACE_RE.sub(' ', line)
 
     # Ensure space after comma and none before.
-    line = re.sub(r',(\S)', r', \1', line)
-    line = re.sub(r'\s+,', ',', line)
+    line = _COMMA_RE.sub(r', \1', line)
+    line = _SPACE_COMMA_RE.sub(',', line)
 
     # Restore strings and the comment, preserving original comment text.
     for i, original in enumerate(strings):

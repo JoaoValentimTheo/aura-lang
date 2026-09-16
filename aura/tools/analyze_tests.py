@@ -7,7 +7,7 @@ Verifies diversity, uniqueness, and quality of generated test files
 import os
 import hashlib
 from pathlib import Path
-from collections import defaultdict, Counter
+from collections import defaultdict
 import json
 
 def get_file_hash(filepath):

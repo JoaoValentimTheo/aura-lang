@@ -28,7 +28,8 @@
 Start with [LANGUAGE.md](LANGUAGE.md) (or [LANGUAGE_PT.md](LANGUAGE_PT.md)) for the complete syntax, then check the `examples/` directory for working programs.
 
 ### For contributing
-Read [DESIGN.md](DESIGN.md) for the transpiler architecture, then explore `parser/`, `transpiler/`, and `tests/`.
+Read [DESIGN.md](DESIGN.md) for the transpiler architecture, then explore
+`aura/parser/`, `aura/transpiler/`, and `tests/`.
 
 ### For users
 Use `python3 main.py run <file.aura>` to execute Aura programs. See the CLI commands section in [DESIGN.md](DESIGN.md).

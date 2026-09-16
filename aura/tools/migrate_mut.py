@@ -14,10 +14,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from aura.parser.to_ast import Tokenizer, Parser
 from aura.transpiler.semantics import MutabilityChecker
 
-DECL_RE = re.compile(
-    r'(\blet)(\s+(?:public|private|protected|static|volatile)\b)*(\s+)(?!mut\b)'
-)
-
 
 def violations_for(ast):
     checker = MutabilityChecker()
@@ -30,12 +26,6 @@ def rewrite(source, names):
         return source, 0
     # Strip comments for matching but keep line structure (same line count).
     changed = 0
-
-    def add_mut(match):
-        nonlocal changed
-        # Determine the declared identifiers immediately following `let`.
-        # Only rewrite when this declaration binds a violating name.
-        return match.group(0)
 
     out_lines = []
     for line in source.split('\n'):

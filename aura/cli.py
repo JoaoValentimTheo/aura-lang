@@ -1,7 +1,6 @@
 """CLI for Aura transpiler - Phase 3 with type checking, formatting, linting."""
 import argparse
 import sys
-import json
 import time as _time
 from pathlib import Path
 
@@ -12,8 +11,8 @@ install_runtime_aliases()
 
 from aura.parser.to_ast import parse_file
 from aura.transpiler.transformer import Transformer
-from aura.transpiler.types import TypeChecker, TypeInference
-from aura.transpiler.errors import ErrorCollector, ErrorCode, ErrorSeverity
+from aura.transpiler.types import TypeChecker
+from aura.transpiler.errors import ErrorCollector, ErrorCode
 from aura.transpiler.semantics import MutabilityChecker
 
 
@@ -210,7 +209,7 @@ def cmd_lint(path: str) -> int:
         
         if errors.errors:
             print(errors.format())
-            return 0 if errors.warning_count() > 0 else 0
+            return 1
         else:
             print(f"✓ {path}: no style issues")
             return 0

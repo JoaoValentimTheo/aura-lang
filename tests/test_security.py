@@ -1,0 +1,200 @@
+"""Security and hardening regression tests.
+
+Each test pins a concrete hardening fix so it cannot silently regress:
+
+  * TOML injection via newlines in `aura add` package names/versions
+  * URL scheme allow-listing and SSRF blocking of private/loopback hosts
+  * strict JSON serialization (NaN/Infinity rejected)
+  * `os.env` allow-list to avoid dumping every secret
+  * `os.listdir`-style APIs leaving deleted paths alone
+  * the `aura-ide` workspace path-traversal guard (Python side)
+"""
+import json
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from aura.tools import deps  # noqa: E402
+from aura.stdlib import http as aura_http  # noqa: E402
+from aura.stdlib import json as aura_json  # noqa: E402
+from aura.stdlib import os as aura_os  # noqa: E402
+
+
+# ============================================================================
+# TOML injection
+# ============================================================================
+
+def test_toml_value_escapes_newlines():
+    rendered = deps._toml_value('a\n[dependencies]\nevil = "1.0"')
+    assert '\n' not in rendered
+    assert '\\n' in rendered
+
+
+def test_toml_value_escapes_quotes_and_backslashes():
+    rendered = deps._toml_value('a"b\\c')
+    assert rendered == '"a\\"b\\\\c"'
+
+
+def test_add_package_rejects_newline_in_name(tmp_path, capsys):
+    manifest = tmp_path / 'aura.toml'
+    rc = deps.add_package('evil\nname', manifest_path=manifest, install=False)
+    assert rc == 2
+    assert 'invalid package name' in capsys.readouterr().err.lower()
+
+
+def test_add_package_rejects_empty_name(tmp_path, capsys):
+    manifest = tmp_path / 'aura.toml'
+    rc = deps.add_package('   ', manifest_path=manifest, install=False)
+    assert rc == 2
+
+
+def test_add_package_sanitizes_manifest(tmp_path):
+    manifest = tmp_path / 'aura.toml'
+    assert deps.add_package('requests>=2.0', manifest_path=manifest,
+                            install=False) == 0
+    data = deps.load_manifest(manifest)
+    assert data['dependencies']['requests'] == '>=2.0'
+
+
+def test_dependency_name_validation():
+    assert deps._valid_dependency_name('requests')
+    assert deps._valid_dependency_name('my-pkg.v2')
+    assert not deps._valid_dependency_name('bad name')
+    assert not deps._valid_dependency_name('bad\nname')
+    assert not deps._valid_dependency_name('')
+
+
+# ============================================================================
+# HTTP URL / SSRF hardening
+# ============================================================================
+
+@pytest.mark.parametrize('url', [
+    'file:///etc/passwd',
+    'ftp://example.com/x',
+    'data:text/plain,hello',
+    'javascript:alert(1)',
+])
+def test_http_rejects_non_http_schemes(url):
+    with pytest.raises(ValueError):
+        aura_http._validate_url(url)
+
+
+@pytest.mark.parametrize('url', [
+    'http://127.0.0.1/x',
+    'http://localhost/x',
+    'http://169.254.169.254/latest/meta-data/',
+    'http://10.0.0.1/',
+    'http://192.168.1.1/',
+    'http://172.16.0.1/',
+    'http://[::1]/',
+    'http://0.0.0.0/',
+])
+def test_http_blocks_private_and_local_hosts(url):
+    with pytest.raises(ValueError):
+        aura_http._validate_url(url)
+
+
+def test_http_allows_public_urls():
+    assert aura_http._validate_url('http://example.com/x')
+    assert aura_http._validate_url('https://example.com')
+
+
+def test_http_private_opt_out(monkeypatch):
+    monkeypatch.setenv('AURA_HTTP_ALLOW_PRIVATE', '1')
+    assert aura_http._validate_url('http://127.0.0.1/x')
+
+
+def test_http_rejects_empty_and_non_string():
+    with pytest.raises(ValueError):
+        aura_http._validate_url('')
+    with pytest.raises(ValueError):
+        aura_http._validate_url(None)
+
+
+# ============================================================================
+# JSON strictness
+# ============================================================================
+
+@pytest.mark.parametrize('value', [float('nan'), float('inf'), float('-inf')])
+def test_json_dumps_rejects_non_finite(value):
+    with pytest.raises(ValueError):
+        aura_json.dumps({'x': value})
+
+
+@pytest.mark.parametrize('value', [float('nan'), float('inf')])
+def test_json_dump_rejects_non_finite(tmp_path, value):
+    target = tmp_path / 'out.json'
+    with pytest.raises(ValueError):
+        aura_json.dump({'x': value}, str(target))
+
+
+def test_json_roundtrip_utf8(tmp_path):
+    target = tmp_path / 'out.json'
+    aura_json.dump({'name': 'café'}, str(target))
+    assert aura_json.load(str(target)) == {'name': 'café'}
+
+
+def test_json_is_valid_rejects_nan():
+    assert aura_json.is_valid('{"a": 1}')
+    assert not aura_json.is_valid('{"a": NaN}')
+
+
+# ============================================================================
+# os.env allow-list
+# ============================================================================
+
+def test_os_env_allowlist(monkeypatch):
+    monkeypatch.setenv('AURA_TEST_SECRET', 'hunter2')
+    monkeypatch.setenv('AURA_TEST_PUBLIC', 'yes')
+    filtered = aura_os.env(['AURA_TEST_PUBLIC'])
+    assert filtered == {'AURA_TEST_PUBLIC': 'yes'}
+    assert 'AURA_TEST_SECRET' not in filtered
+
+
+def test_os_env_full_without_allowlist(monkeypatch):
+    monkeypatch.setenv('AURA_TEST_ONE', '1')
+    assert aura_os.env()['AURA_TEST_ONE'] == '1'
+
+
+# ============================================================================
+# Filesystem safety helpers
+# ============================================================================
+
+def test_io_write_lines_empty_is_empty_file(tmp_path):
+    from aura.stdlib import io as aura_io
+    target = tmp_path / 'empty.txt'
+    aura_io.write_lines(str(target), [])
+    assert target.read_text() == ''
+
+
+def test_io_write_lines_roundtrip(tmp_path):
+    from aura.stdlib import io as aura_io
+    target = tmp_path / 'lines.txt'
+    aura_io.write_lines(str(target), ['a', 'b', 'c'])
+    assert target.read_text() == 'a\nb\nc\n'
+    assert aura_io.read_lines(str(target)) == ['a', 'b', 'c']
+
+
+# ============================================================================
+# aura_ide workspace sandbox (Python implementation)
+# ============================================================================
+
+def test_workspace_rejects_escape(tmp_path):
+    pytest.importorskip('aura_ide.backend')
+    from aura_ide.backend import Workspace
+    ws = Workspace(str(tmp_path))
+    with pytest.raises(Exception):
+        ws.read('../outside.txt')
+
+
+def test_workspace_allows_inside(tmp_path):
+    pytest.importorskip('aura_ide.backend')
+    from aura_ide.backend import Workspace
+    ws = Workspace(str(tmp_path))
+    ws.write('src/main.aura', 'print(1)')
+    assert ws.read('src/main.aura') == 'print(1)'

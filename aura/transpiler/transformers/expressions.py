@@ -7,6 +7,8 @@ class ExpressionTransformer:
         self.known_method_names = set() # every method name defined in any class
         self._lambda_counter = 0
         self.hoisted_functions = []  # generated module-level defs
+        # Set when an adaptive `...value` call needs the `_aura_call` helper.
+        self._needs_aura_call = False
 
     # Aura string/collection methods with a direct Python method equivalent.
     # Only applied to *calls* on members that are not user-defined methods.
@@ -175,18 +177,22 @@ class ExpressionTransformer:
         op_map = {
             '+': '+', '-': '-', '*': '*', '/': '/', '%': '%', '**': '**',
             '&': '&', '|': '|', '^': '^', '<<': '<<', '>>': '>>',
-            'and': 'and', 'or': 'or',
+            'and': 'and', 'or': 'or', '&&': 'and', '||': 'or',
             '==': '==', '!=': '!=', '<': '<', '>': '>', '<=': '<=', '>=': '>=',
-            'is': 'is', 'in': 'in', 'not in': 'not in',
+            'is': 'is', 'is not': 'is not', 'in': 'in', 'not in': 'not in',
         }
         py_op = op_map.get(node.op, node.op)
         return f"({left} {py_op} {right})"
     
     # ========== Unary Operations ==========
     def transform_UnaryOp(self, node):
+        if node.op == 'yield':
+            if node.operand is None:
+                return "yield"
+            return f"yield {self.transform(node.operand)}"
         operand = self.transform(node.operand)
         op_map = {
-            '-': '-', '+': '+', 'not': 'not', '~': '~', 'await': 'await'
+            '-': '-', '+': '+', 'not': 'not', '!': 'not', '~': '~', 'await': 'await'
         }
         py_op = op_map.get(node.op, node.op)
         return f"({py_op} {operand})"
@@ -197,47 +203,76 @@ class ExpressionTransformer:
         # str.slice(a, b), plus the alias table above.
         if isinstance(node.func, MemberExpr):
             member = node.func.member
-            known_member = (member in self.member_visibilities
-                            or member in self.known_method_names)
-            obj = self.transform(node.func.obj)
+            # Aura protocol methods keep their bare name at the call site
+            # (`obj.str()`, `obj.eq(other)`) but are defined and called by their
+            # Python dunder name (`__str__`, `__eq__`). Constructors are always
+            # `__init__`.
+            dunder = python_method_name(member)
+            known_member = (dunder in self.member_visibilities
+                            or dunder in self.known_method_names
+                            or dunder == '__init__')
+            obj = self._render_object(node.func.obj)
             args = [self.transform(a) for a in node.args]
             kwargs = [f"{k}={self.transform(v)}" for k, v in node.kwargs.items()]
 
-            if not known_member:
-                if member == 'length' and not args:
-                    return f"len({obj})"
-                if member == 'is_empty' and not args:
-                    return f"(not {obj})"
-                if member == 'contains' and len(args) == 1:
-                    return f"({args[0]} in {obj})"
-                if member == 'slice':
-                    if len(args) == 1:
-                        return f"{obj}[{args[0]}:]"
-                    if len(args) == 2:
-                        return f"{obj}[{args[0]}:{args[1]}]"
-                if member == 'char_at' and len(args) == 1:
-                    return f"{obj}[{args[0]}]"
-                if member in self.METHOD_ALIASES:
-                    py_member = self.METHOD_ALIASES[member]
-                    all_args = args + kwargs
-                    return f"{obj}.{py_member}({', '.join(all_args)})"
+            if known_member:
+                all_args = args + kwargs
+                vis = self.member_visibilities.get(dunder, 'public')
+                if vis == 'private' and not dunder.startswith('__'):
+                    dunder = f"__{dunder}"
+                elif vis == 'protected' and not dunder.startswith('_'):
+                    dunder = f"_{dunder}"
+                return f"{obj}.{dunder}({', '.join(all_args)})"
 
+            if member == 'length' and not args:
+                return f"len({obj})"
+            if member == 'is_empty' and not args:
+                return f"(not {obj})"
+            if member == 'contains' and len(args) == 1:
+                return f"({args[0]} in {obj})"
+            if member == 'slice':
+                if len(args) == 1:
+                    return f"{obj}[{args[0]}:]"
+                if len(args) == 2:
+                    return f"{obj}[{args[0]}:{args[1]}]"
+            if member == 'char_at' and len(args) == 1:
+                return f"{obj}[{args[0]}]"
+            if member in self.METHOD_ALIASES:
+                py_member = self.METHOD_ALIASES[member]
+                all_args = args + kwargs
+                return f"{obj}.{py_member}({', '.join(all_args)})"
+
+            # Unknown member (e.g. a native Python module/object method):
+            # emit the name verbatim.
             all_args = args + kwargs
-            vis = self.member_visibilities.get(member, 'public')
-            if vis == 'private': member = f"__{member}"
-            elif vis == 'protected': member = f"_{member}"
             return f"{obj}.{member}({', '.join(all_args)})"
 
         func = self.transform(node.func)
+
+        # Adaptive `...value` as the single argument: unpack as keyword
+        # arguments when the value is a mapping, otherwise as positional
+        # arguments. This is resolved at runtime by the `_aura_call` helper.
+        adaptive = [a for a in node.args if isinstance(a, SpreadExpr)
+                    and a.is_dict is None]
+        if len(adaptive) == 1 and len(node.args) == 1 and not node.kwargs:
+            value = self.transform(adaptive[0].expr)
+            self._needs_aura_call = True
+            return f"_aura_call({func}, {value})"
+
         all_args = self._render_call_args(node)
         return f"{func}({', '.join(all_args)})"
 
     def _render_call_args(self, node):
-        """Render positional, keyword and spread call arguments."""
+        """Render positional, keyword and spread call arguments.
+
+        Adaptive spreads (``...value``) that are not the sole argument fall
+        back to positional unpacking; use ``**value`` to force keyword
+        unpacking.
+        """
         rendered = []
         for arg in node.args:
             if isinstance(arg, SpreadExpr):
-                prefix = "**" if arg.is_dict else "*"
+                prefix = '*' if arg.is_dict is False or arg.is_dict is None else '**'
                 rendered.append(f"{prefix}{self.transform(arg.expr)}")
             else:
                 rendered.append(self.transform(arg))
@@ -260,11 +295,29 @@ class ExpressionTransformer:
             return f"{obj}[{start}:{stop}:{step}]"
         return f"{obj}[{start}:{stop}]"
     
+    def _render_object(self, node):
+        """Render an expression used as the object of a member access.
+
+        Aura's zero-argument `super` (as in `super.new(...)` / `super.hi()`)
+        maps to Python's `super()`, which requires the call. A bare `super`
+        identifier would otherwise be emitted as the built-in class, producing
+        `type object 'super' has no attribute ...`.
+        """
+        if isinstance(node, Identifier) and node.name == 'super':
+            return 'super()'
+        return self.transform(node)
+
     def transform_MemberExpr(self, node):
-        obj = self.transform(node.obj)
+        obj = self._render_object(node.obj)
         member = node.member
+        # Only rewrite a bare member reference when it is a known protocol
+        # *method*; a field that happens to be named `len`/`str`/... is left
+        # alone.
+        dunder = python_method_name(member)
+        if dunder != member and dunder in self.known_method_names:
+            member = dunder
         vis = self.member_visibilities.get(member, 'public')
-        if vis == 'private': member = f"__{member}"
+        if vis == 'private' and not member.startswith('__'): member = f"__{member}"
         elif vis == 'protected': member = f"_{member}"
         return f"{obj}.{member}"
     
@@ -277,8 +330,11 @@ class ExpressionTransformer:
             return f"({obj}[{index}] if {obj} is not None else None)"
         else:
             member = node.member_or_index
+            dunder = python_method_name(member)
+            if dunder != member and dunder in self.known_method_names:
+                member = dunder
             vis = self.member_visibilities.get(member, 'public')
-            if vis == 'private': member = f"__{member}"
+            if vis == 'private' and not member.startswith('__'): member = f"__{member}"
             elif vis == 'protected': member = f"_{member}"
             return f"({obj}.{member} if {obj} is not None else None)"
     

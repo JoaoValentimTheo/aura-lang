@@ -21,9 +21,6 @@ injecting ``input_func``/``output_func``.
 
 from __future__ import annotations
 
-import sys
-import traceback
-
 from aura.parser.to_ast import Tokenizer, Parser, parse_file
 from aura.transpiler.ast import Program
 from aura.transpiler.transformer import Transformer

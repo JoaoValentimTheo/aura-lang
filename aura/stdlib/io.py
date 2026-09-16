@@ -84,9 +84,15 @@ def read_lines(path):
 
 
 def write_lines(path, lines):
-    """Write an iterable of lines to file (adds a trailing newline)."""
-    _Path(path).write_text('\n'.join(str(line) for line in lines) + '\n',
-                           encoding=_ENCODING)
+    """Write an iterable of lines to file (adds a trailing newline).
+
+    An empty iterable writes an empty file rather than a lone newline.
+    """
+    materialized = [str(line) for line in lines]
+    text = '\n'.join(materialized)
+    if materialized:
+        text += '\n'
+    _Path(path).write_text(text, encoding=_ENCODING)
 
 
 def copy(src, dst):

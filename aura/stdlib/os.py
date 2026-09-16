@@ -25,8 +25,16 @@ def unset_env(name):
     _os.environ.pop(name, None)
 
 
-def env():
-    """Return all environment variables as a dict."""
+def env(allowlist=None):
+    """Return environment variables as a dict.
+
+    With no argument this copies the entire environment, which can expose
+    secrets (tokens, keys, credentials). Pass ``allowlist`` (an iterable of
+    names) to return only the variables you need.
+    """
+    if allowlist is not None:
+        allowed = set(allowlist)
+        return {k: v for k, v in _os.environ.items() if k in allowed}
     return dict(_os.environ)
 
 

@@ -15,14 +15,14 @@ def dumps(obj, indent=None):
 
 def load(path):
     """Read and parse a JSON file."""
-    with open(path, 'r') as f:
+    with open(path, 'r', encoding='utf-8') as f:
         return _json.load(f)
 
 
 def dump(obj, path, indent=None):
-    """Write object as JSON to a file."""
-    with open(path, 'w') as f:
-        _json.dump(obj, f, indent=indent)
+    """Write object as JSON to a file (strict: NaN/Infinity rejected)."""
+    with open(path, 'w', encoding='utf-8') as f:
+        _json.dump(obj, f, indent=indent, allow_nan=False)
 
 
 def pretty(obj):

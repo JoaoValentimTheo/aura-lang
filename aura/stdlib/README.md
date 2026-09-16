@@ -236,6 +236,65 @@ print(replace("hello", "l", "L"))           // "heLLo"
 - `is_space(s)`, `is_lower(s)`, `is_upper(s)`, `is_numeric(s)`
 - `lines(s)`, `unlines(lines)`, `codes(s)`, `from_codes(codes)`
 
+### regex
+
+Regular expressions (wraps Python's `re`).
+
+```aura
+import stdlib.regex as re
+
+print(re.find_all(r"\d+", "a1b22c333"))   // ["1", "22", "333"]
+print(re.groups(r"(\w+)@(\w+)", "u@h"))   // ["u", "h"]
+print(re.replace(r"\s+", "_", "a b  c"))  // "a_b_c"
+print(re.split(r",\s*", "a, b,c"))        // ["a", "b", "c"]
+```
+
+**Functions:** `match`, `full_match`, `search`, `find_all`, `find_iter`,
+`split`, `replace`, `replace_fn`, `groups`, `escape`, `compile_pattern`.
+**Flags:** `IGNORECASE`, `MULTILINE`, `DOTALL`, `VERBOSE`, `ASCII`.
+
+### os
+
+Environment, paths and process information. Does **not** expose process
+execution, so Aura never shells out implicitly.
+
+```aura
+import stdlib.os as osx
+
+print(osx.cwd())
+print(osx.path_join("a", "b", "c.txt"))    // "a/b/c.txt"
+print(osx.path_splitext("file.tar.gz"))    // ["file.tar", ".gz"]
+let home = osx.get_env("HOME", "/tmp")
+```
+
+**Environment:** `get_env`, `set_env`, `unset_env`, `env`.
+**Paths:** `cwd`, `chdir`, `home`, `temp_dir`, `path_join`, `path_abspath`,
+`path_exists`, `path_is_file`, `path_is_dir`, `path_basename`, `path_dirname`,
+`path_split`, `path_splitext`, `path_normpath`, `sep`, `linesep`.
+**System:** `name`, `platform`, `pid`, `listdir`, `walk`, `makedirs`, `remove`,
+`rename`, `get_size`.
+
+### http
+
+HTTP client using the standard library (`urllib`), with automatic use of
+`requests` when installed. Responses are `AuraDict`, so both
+`response.status` and `response["status"]` work.
+
+```aura
+import stdlib.http as http
+
+let r = http.get("https://example.com")
+print(r.status, r.ok)
+
+let data = http.get_json("https://api.example.com/items")
+print(data["count"])
+
+let created = http.post_json("https://api.example.com/items", {"name": "x"})
+```
+
+**Functions:** `request`, `get`, `post`, `put`, `delete`, `get_json`,
+`post_json`, `quote`, `unquote`, `build_url`.
+
 ## String methods
 
 Strings also support direct method calls, which map to the Python equivalents:
@@ -258,7 +317,8 @@ s.is_alpha()        // false
 
 To add a new standard library module:
 
-1. Create `stdlib/mymodule.py` with functions
-2. Add it to the imports in `stdlib/__init__.py`
-3. Document it here
-4. Add a test under `tests/`
+1. Create `aura/stdlib/mymodule.py` with functions
+2. Add it to the imports in `aura/stdlib/__init__.py`
+3. Register it in the source shim `stdlib/__init__.py`
+4. Document it here
+5. Add a test under `tests/`

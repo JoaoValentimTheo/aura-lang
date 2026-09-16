@@ -3,7 +3,6 @@ Complete recursive descent parser for Aura.
 Handles expressions, control flow, functions, classes, and more.
 """
 import re
-import sys
 from aura.transpiler.ast import *
 
 # ==============================================================================
@@ -323,11 +322,25 @@ class Tokenizer:
         self.tokens.append(Token('EOF', '', self.line, self.column))
         return self.tokens
 
+# Keywords that can begin a statement. Used to decide whether a bare `yield`
+# has a value or stands alone.
+_STATEMENT_KEYWORDS = frozenset({
+    'let', 'const', 'def', 'fn', 'async', 'class', 'trait', 'enum', 'type',
+    'module', 'import', 'from', 'if', 'unless', 'until', 'while', 'for',
+    'loop', 'guard', 'throw', 'return', 'break', 'continue', 'assert', 'try',
+    'with', 'match', 'case', 'else', 'catch', 'finally', 'public', 'private',
+    'protected', 'static', 'export',
+})
+
 # ==============================================================================
 # Parser
 # ==============================================================================
 
 class Parser:
+    # Aura method names that map to Python dunder names. The canonical table
+    # lives in ``aura.transpiler.ast`` so the parser and the transformers agree.
+    _SPECIAL_METHOD_NAMES = SPECIAL_METHOD_NAMES
+
     def __init__(self, tokens):
         self.tokens = tokens
         self.pos = 0
@@ -464,7 +477,7 @@ class Parser:
             return self.parse_var_decl(visibility, is_static, is_volatile)
         elif token.value == 'const':
             return self.parse_const_decl()
-        elif token.value == 'def' or token.value == 'async':
+        elif token.value in ('def', 'fn', 'async'):
             return self.parse_function_decl(decorators, visibility, is_static, is_volatile)
         elif token.value == 'class':
             return self.parse_class_decl(decorators, visibility, is_static, is_volatile)
@@ -692,13 +705,16 @@ class Parser:
         return ConstDecl(name, type_annotation, value)
 
     def parse_function_decl(self, decorators=None, visibility='public', is_static=False, is_volatile=False, name_override=None):
-        # Support only 'def' (async def also supported)
+        # Support 'def' and the alias 'fn' (async def also supported).
         is_async = False
         if self.check('async'):
             self.consume()
             is_async = True
-            
-        self.consume(expected_value='def')
+
+        if self.check('fn'):
+            self.consume()
+        else:
+            self.consume(expected_value='def')
         
         name = self.consume(expected_type='IDENT').value
         if name_override is not None:
@@ -776,10 +792,20 @@ class Parser:
             self.consume(expected_value=']')
 
         base_class = None
-        # Strict Inheritance: class Foo(Base) only
+        # Inheritance: class Foo(Base) or multiple: class Foo(A, B).
+        # Base names may be dotted (module.Class).
         if self.match('('):
-            base_class = self.consume(expected_type='IDENT').value
+            bases = []
+            while True:
+                base = self.consume(expected_type='IDENT').value
+                while self.check('.') and self.peek(1).type == 'IDENT':
+                    self.consume()
+                    base += "." + self.consume(expected_type='IDENT').value
+                bases.append(base)
+                if not self.match(','):
+                    break
             self.consume(expected_value=')')
+            base_class = ", ".join(bases)
 
         # Trait implementation: class Foo implements TraitA, TraitB
         # Python has no traits, so implemented traits become mixins/base classes.
@@ -835,22 +861,38 @@ class Parser:
                 elif dec_name == 'property': is_property = True
 
             if self.check('def') or self.check('fn'):
-                # Aura constructors: `def new(...)` maps to Python `__init__`.
-                is_ctor = (self.peek(1).value == 'new')
+                # Aura method names map to Python dunder names (new -> __init__,
+                # str -> __str__, len -> __len__, ...). Names already written as
+                # dunders are preserved verbatim. The table is shared with the
+                # transformers via ``SPECIAL_METHOD_NAMES``.
+                method_name = self.peek(1).value
+                override = self._SPECIAL_METHOD_NAMES.get(method_name)
                 func = self.parse_function_decl(
                     decorators=member_decorators,
-                    name_override='__init__' if is_ctor else None,
+                    name_override=override,
                 )
                 method = Method(func.name, func.params, func.return_type, func.body,
                                 is_static=is_static, is_classmethod=is_classmethod,
                                 is_property=is_property, visibility=visibility,
                                 is_volatile=is_volatile, decorators=member_decorators)
                 members.append(method)
+            elif self.check('class'):
+                # Nested class: `class Inner { ... }`.
+                members.append(self.parse_class_decl(
+                    decorators=member_decorators,
+                    visibility=visibility,
+                ))
             else:
                  # Fields: x: Int = 1
                 if self.check('}') or self.check('EOF'): break
-                if self.peek().value in ('let', 'mut'):
+                # `let`, `let mut` and bare `mut` all declare a field.
+                field_mutable = True
+                if self.peek().value == 'let':
                     self.consume()
+                    if self.match('mut'):
+                        field_mutable = True
+                elif self.match('mut'):
+                    field_mutable = True
                 if self.peek().type == 'IDENT':
                     field_name = self.consume().value
                     t = None
@@ -861,7 +903,7 @@ class Parser:
                         v = self.parse_expression()
                     
                     if self.check(';'): self.consume()
-                    members.append(VarDecl(field_name, True, t, v, 
+                    members.append(VarDecl(field_name, field_mutable, t, v,
                                           visibility=visibility, is_static=is_static, is_volatile=is_volatile))
                 else:
                     raise SyntaxError(f"Unexpected token in class: {self.peek()}")
@@ -1160,12 +1202,20 @@ class Parser:
                     decorators=func.decorators,
                 ))
             elif self.peek().type == 'IDENT':
-                # Field declaration inside a trait: `name: Type`.
+                # Field declaration inside a trait: `name: Type`,
+                # `let name: Type`, `let name: Type = default`, `mut name`.
+                if self.peek().value in ('let', 'mut'):
+                    self.consume()
+                    if self.check('mut'):
+                        self.consume()
                 member_name = self.consume().value
                 field_type = None
                 if self.match(':'):
                     field_type = self.parse_type()
-                members.append(VarDecl(member_name, True, field_type, None,
+                default = None
+                if self.match('='):
+                    default = self.parse_expression()
+                members.append(VarDecl(member_name, True, field_type, default,
                                        visibility=visibility))
             else:
                 break
@@ -1380,7 +1430,12 @@ class Parser:
         finally_body = None
         if self.match('finally'):
             finally_body = self.parse_block()
-            
+
+        if not catch_clauses and finally_body is None:
+            raise SyntaxError(
+                "try requires at least one catch clause or a finally block"
+            )
+
         return TryStmt(try_body, catch_clauses, finally_body)
     
     def parse_with_stmt(self):
@@ -1506,7 +1561,17 @@ class Parser:
     def parse_expression(self, min_prec=0):
         # Prefix operators
         token = self.peek()
-        if (token.type == 'OP' and token.value in ('-', '!', '+', '~', '*', '**', '...')
+        if token.value == 'yield':
+            self.consume()
+            # `yield` may carry a value or stand alone. Do not let it swallow
+            # the following statement, so stop at a block/statement boundary.
+            if (self.check('}') or self.check(';') or self.check_type('EOF')
+                    or (self.peek().type == 'IDENT'
+                        and self.peek().value in _STATEMENT_KEYWORDS)):
+                lhs = UnaryOp('yield', operand=None)
+            else:
+                lhs = UnaryOp('yield', operand=self.parse_expression(13))
+        elif (token.type == 'OP' and token.value in ('-', '!', '+', '~', '*', '**', '...')
                 or token.value in ('not', 'await')):
             op = token.value
             self.consume()
@@ -1866,12 +1931,21 @@ class Parser:
                 kwargs = {}
                 if not self.check(')'):
                     while True:
-                        # Spread arguments: `f(*items)`, `f(**mapping)`,
-                        # `f(...items)` unpack into the call.
+                        # Spread arguments: `f(*items)`, `f(**mapping)`, `f(...value)`.
+                        # `...value` is *adaptive*: a dict spreads as keyword
+                        # arguments, anything else as positional arguments.
                         if self.check('**') or self.check('...'):
                             marker = self.consume().value
-                            spread = SpreadExpr(self.parse_expression(), is_dict=(marker == '**'))
-                            args.append(spread)
+                            expr = self.parse_expression()
+                            if marker == '**':
+                                is_dict = True
+                            elif isinstance(expr, DictLiteral):
+                                is_dict = True
+                            elif isinstance(expr, (ListLiteral, TupleLiteral)):
+                                is_dict = False
+                            else:
+                                is_dict = None  # decide at runtime
+                            args.append(SpreadExpr(expr, is_dict=is_dict))
                             if not self.match(','):
                                 break
                             continue

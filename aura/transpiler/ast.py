@@ -1,6 +1,6 @@
 """Complete AST node definitions for Aura language based on docs."""
 from dataclasses import dataclass, field
-from typing import Optional, List, Any
+from typing import Optional, List
 
 @dataclass
 class SourceLocation:
@@ -23,9 +23,6 @@ class Node:
         self.location = location
         return self
 
-
-class Expr(Node):
-    pass
 
 class Stmt(Node):
     pass
@@ -442,11 +439,6 @@ class AsPattern(Pattern):
         self.pattern = pattern
         self.binding_name = binding_name
 
-class GuardPattern(Pattern):
-    def __init__(self, pattern, guard):
-        self.pattern = pattern
-        self.guard = guard
-
 # ============================================================================
 # Type annotations
 # ============================================================================
@@ -511,4 +503,92 @@ class FromImport(Stmt):
 # Backward compatibility (old names)
 Number = IntLiteral
 String = StrLiteral
+
+# ============================================================================
+# Python protocol (dunder) mapping
+# ============================================================================
+# Aura spells Python protocols with readable method names. Defining a method
+# whose name appears here implements the corresponding Python protocol, both
+# at the definition site and at every call/member-access site. Names already
+# written as dunders are preserved verbatim.
+SPECIAL_METHOD_NAMES = {
+    # Construction and lifecycle
+    'new': '__init__',
+    'init': '__init__',
+    'destroy': '__del__',
+    'enter': '__enter__',
+    'exit': '__exit__',
+    # Representation and conversion
+    'str': '__str__',
+    'repr': '__repr__',
+    'format': '__format__',
+    'bytes': '__bytes__',
+    'bool': '__bool__',
+    'int': '__int__',
+    'float': '__float__',
+    'hash': '__hash__',
+    'len': '__len__',
+    'index': '__index__',
+    'round': '__round__',
+    # Comparison
+    'eq': '__eq__',
+    'ne': '__ne__',
+    'lt': '__lt__',
+    'le': '__le__',
+    'gt': '__gt__',
+    'ge': '__ge__',
+    # Container protocols
+    'getitem': '__getitem__',
+    'setitem': '__setitem__',
+    'delitem': '__delitem__',
+    'contains': '__contains__',
+    'iter': '__iter__',
+    'reversed': '__reversed__',
+    # Callable
+    'call': '__call__',
+    # Arithmetic operators
+    'add': '__add__',
+    'sub': '__sub__',
+    'mul': '__mul__',
+    'truediv': '__truediv__',
+    'floordiv': '__floordiv__',
+    'mod': '__mod__',
+    'pow': '__pow__',
+    'matmul': '__matmul__',
+    'neg': '__neg__',
+    'pos': '__pos__',
+    'abs': '__abs__',
+    'invert': '__invert__',
+    # Reflected arithmetic operators
+    'radd': '__radd__',
+    'rsub': '__rsub__',
+    'rmul': '__rmul__',
+    'rtruediv': '__rtruediv__',
+    'rfloordiv': '__rfloordiv__',
+    'rmod': '__rmod__',
+    'rpow': '__rpow__',
+    # In-place arithmetic operators
+    'iadd': '__iadd__',
+    'isub': '__isub__',
+    'imul': '__imul__',
+    'itruediv': '__itruediv__',
+    'ifloordiv': '__ifloordiv__',
+    'imod': '__imod__',
+    'ipow': '__ipow__',
+    # Bitwise operators
+    'and': '__and__',
+    'or': '__or__',
+    'xor': '__xor__',
+    'lshift': '__lshift__',
+    'rshift': '__rshift__',
+    # Copy, subclass hooks
+    'copy': '__copy__',
+    'deepcopy': '__deepcopy__',
+    'init_subclass': '__init_subclass__',
+}
+
+
+def python_method_name(name):
+    """Return the Python method name for an Aura method name."""
+    return SPECIAL_METHOD_NAMES.get(name, name)
 Let = VarDecl

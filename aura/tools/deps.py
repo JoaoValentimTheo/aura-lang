@@ -17,7 +17,6 @@ dependency is just a Python distribution. ``aura add`` records it and pipes it
 to the active interpreter's package installer.
 """
 
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -49,6 +48,10 @@ def load_manifest(path=None):
     manifest_path = Path(path) if path else find_manifest()
     if manifest_path is None or not Path(manifest_path).is_file():
         return {}
+    if tomllib is None:  # pragma: no cover - only without tomli on 3.10
+        raise RuntimeError(
+            "no TOML parser available; install 'tomli' to read aura.toml"
+        )
     with open(manifest_path, 'rb') as handle:
         return tomllib.load(handle)
 
@@ -66,6 +69,8 @@ def _dump_manifest(data, path):
     deps = data.get('dependencies', {})
     lines.append('[dependencies]')
     for name in sorted(deps):
+        if not _valid_dependency_name(str(name)):
+            continue
         lines.append(f'{name} = {_toml_value(deps[name])}')
     if not deps:
         lines[-1] = '[dependencies]'
@@ -79,7 +84,17 @@ def _toml_value(value):
         return 'true' if value else 'false'
     if isinstance(value, (int, float)):
         return str(value)
-    return '"' + str(value).replace('\\', '\\\\').replace('"', '\\"') + '"'
+    escaped = (str(value)
+               .replace('\\', '\\\\')
+               .replace('"', '\\"')
+               .replace('\n', '\\n')
+               .replace('\r', '\\r'))
+    return '"' + escaped + '"'
+
+
+def _valid_dependency_name(name):
+    """Dependency keys must be bare TOML keys (no newlines or quotes)."""
+    return bool(name) and all(ch.isalnum() or ch in '._-' for ch in name)
 
 
 def _pip():
@@ -108,6 +123,9 @@ def add_package(name, version=None, manifest_path=None, install=True):
         _dump_manifest({'project': {}, 'dependencies': {}}, manifest_path)
 
     name = name.strip()
+    if not name:
+        print("Error: package name must not be empty.", file=sys.stderr)
+        return 2
     spec = version
     if any(op in name for op in ('==', '>=', '<=', '~=', '!=', '>', '<')):
         package_name = name.split('==')[0].split('>=')[0].split('<=')[0] \
@@ -122,6 +140,10 @@ def add_package(name, version=None, manifest_path=None, install=True):
             requirement = f"{name}=={version}"
         else:
             requirement = name
+
+    if not _valid_dependency_name(package_name):
+        print(f"Error: invalid package name {package_name!r}.", file=sys.stderr)
+        return 2
 
     data = load_manifest(manifest_path)
     data.setdefault('dependencies', {})

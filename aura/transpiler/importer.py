@@ -10,7 +10,6 @@ executed in its own module namespace, so it behaves like a Python module.
 """
 
 import sys
-import types
 from pathlib import Path
 
 

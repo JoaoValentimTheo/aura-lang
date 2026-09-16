@@ -1,7 +1,5 @@
 """Aura Standard Library - String module."""
 
-import string as str_module
-
 def upper(s):
     """Convert to uppercase."""
     return s.upper()

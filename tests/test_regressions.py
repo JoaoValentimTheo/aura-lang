@@ -201,7 +201,7 @@ def test_trait_emits_real_base_class():
     )
     out, code = run_aura(source)
     assert out.strip() == "circle"
-    assert "class Drawable:" in code
+    assert "class Drawable(_aura_abc.ABC):" in code
     assert "class Circle(Drawable):" in code
 
 

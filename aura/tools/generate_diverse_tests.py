@@ -8,7 +8,7 @@ Each test is unique with varied patterns, edge cases, and complexity levels
 import os
 import random
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import List, Dict
 
 # Configuration
 ROOT = Path("tests")

@@ -20,23 +20,36 @@ from aura.parser.to_ast import parse_file
 from aura.transpiler.transformer import Transformer
 
 
-def build_source_map(ast):
-    """Map generated-Python line numbers to Aura source lines.
+def _statement_spans(ast):
+    """Transpile each top-level statement once.
 
-    Transpiles each top-level statement independently; the number of lines in
-    the result gives the span occupied by that statement in the full output.
-    Returns ``{generated_line: aura_line}`` (1-indexed generated lines).
+    Returns ``(spans, body_lines)`` where ``spans`` is a list of
+    ``(aura_line, line_count)`` in source order and ``body_lines`` is the total
+    number of generated body lines. Transpiling each statement a single time
+    keeps the debugger from doing redundant work.
     """
-    source_map = {}
-    generated_line = 1
-    # Prelude length: transpile the whole program and subtract the body lines.
+    spans = []
+    body_lines = 0
     for stmt in getattr(ast, 'statements', []):
         try:
             code = Transformer().transform(stmt)
         except Exception:
             continue
-        aura_line = getattr(stmt, 'line', None)
         line_count = max(1, len(code.split('\n')))
+        spans.append((getattr(stmt, 'line', None), line_count))
+        body_lines += line_count
+    return spans, body_lines
+
+
+def build_source_map(ast):
+    """Map generated-Python line numbers to Aura source lines.
+
+    Returns ``{generated_line: aura_line}`` (1-indexed generated lines).
+    """
+    source_map = {}
+    generated_line = 1
+    spans, _ = _statement_spans(ast)
+    for aura_line, line_count in spans:
         if aura_line is not None:
             for offset in range(line_count):
                 source_map[generated_line + offset] = aura_line
@@ -46,12 +59,7 @@ def build_source_map(ast):
 
 def _offset_for_prelude(ast, full_code):
     """Compute how many prelude lines precede the first program statement."""
-    body_lines = 0
-    for stmt in getattr(ast, 'statements', []):
-        try:
-            body_lines += max(1, len(Transformer().transform(stmt).split('\n')))
-        except Exception:
-            continue
+    _, body_lines = _statement_spans(ast)
     return max(0, len(full_code.split('\n')) - body_lines)
 
 
@@ -64,8 +72,15 @@ def run(path, trace=False, show_code=False):
             print(f"{number:4d} | {line}")
 
     source_lines = Path(path).read_text(encoding='utf-8').split('\n')
-    offset = _offset_for_prelude(ast, code)
-    local_map = build_source_map(ast)
+    spans, body_lines = _statement_spans(ast)
+    local_map = {}
+    generated_line = 1
+    for aura_line, line_count in spans:
+        if aura_line is not None:
+            for span_offset in range(line_count):
+                local_map[generated_line + span_offset] = aura_line
+        generated_line += line_count
+    offset = max(0, len(code.split('\n')) - body_lines)
 
     def aura_line(generated_line):
         mapped = local_map.get(generated_line - offset)

@@ -155,23 +155,24 @@ def set_from(*items):
 
 def set_union(*sets):
     """Union of sets."""
-    result = set()
-    for s in sets:
-        result = result.union(s)
-    return result
+    if not sets:
+        return set()
+    return set().union(*sets)
 
 def set_intersection(*sets):
-    """Intersection of sets."""
-    result = sets[0] if sets else set()
-    for s in sets[1:]:
-        result = result.intersection(s)
+    """Intersection of sets (a fresh set, never an input alias)."""
+    if not sets:
+        return set()
+    result = set(sets[0])
+    if len(sets) > 1:
+        result.intersection_update(*sets[1:])
     return result
 
 def set_difference(a, *rest):
-    """Difference of sets."""
-    result = a.copy()
-    for s in rest:
-        result = result.difference(s)
+    """Difference of sets (a fresh set, never an input alias)."""
+    result = set(a)
+    if rest:
+        result.difference_update(*rest)
     return result
 
 # Aliases for convenience (data-first, so `data |> map(fn)` works)

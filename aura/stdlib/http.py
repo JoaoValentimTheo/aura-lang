@@ -5,14 +5,75 @@ dependency. If ``requests`` is installed it is used automatically for a
 nicer API; otherwise the urllib fallback is transparently selected.
 
 Only client-side requests are exposed; there is no server.
+
+Security note: only ``http`` and ``https`` URLs are accepted. Other schemes
+(notably ``file://``, ``ftp://`` and ``data:``) are rejected with a
+``ValueError`` so a request cannot silently read local files or reach an
+unexpected protocol. Loopback, link-local and private (RFC 1918) hosts are
+also rejected to limit server-side request forgery (SSRF) against local
+services and cloud metadata endpoints. Set ``AURA_HTTP_ALLOW_PRIVATE=1`` to
+opt out when a program genuinely needs to call a private address.
 """
 
+import ipaddress as _ipaddress
 import json as _json
+import os as _os
+import socket as _socket
 import urllib.error as _urlerror
 import urllib.parse as _urlparse
 import urllib.request as _urlrequest
 
 from .collections import AuraDict
+
+
+_ALLOWED_SCHEMES = ('http', 'https')
+
+
+def _allow_private():
+    return _os.environ.get('AURA_HTTP_ALLOW_PRIVATE') == '1'
+
+
+def _is_blocked_host(hostname):
+    """Return True when ``hostname`` resolves to a non-public address."""
+    try:
+        addresses = [hostname]
+        _ipaddress.ip_address(hostname)
+    except ValueError:
+        try:
+            addresses = [info[4][0] for info in _socket.getaddrinfo(hostname, None)]
+        except _socket.gaierror:
+            return False
+    for address in addresses:
+        try:
+            addr = _ipaddress.ip_address(address)
+        except ValueError:
+            continue
+        if (addr.is_private or addr.is_loopback or addr.is_link_local
+                or addr.is_reserved or addr.is_multicast or addr.is_unspecified):
+            return True
+    return False
+
+
+def _validate_url(url):
+    """Reject non-HTTP(S) URLs before any network or file access happens."""
+    if not isinstance(url, str) or not url:
+        raise ValueError("URL must be a non-empty string")
+    parsed = _urlparse.urlparse(url)
+    scheme = (parsed.scheme or '').lower()
+    if scheme not in _ALLOWED_SCHEMES:
+        raise ValueError(
+            f"unsupported URL scheme {scheme!r}; only http and https are allowed"
+        )
+    if not parsed.netloc:
+        raise ValueError(f"URL has no host: {url!r}")
+    if not _allow_private():
+        hostname = parsed.hostname
+        if hostname and _is_blocked_host(hostname):
+            raise ValueError(
+                f"requests to private or local address {hostname!r} are blocked; "
+                "set AURA_HTTP_ALLOW_PRIVATE=1 to allow"
+            )
+    return url
 
 
 def _response(status, body, headers, ok, url):
@@ -48,6 +109,7 @@ def request(method, url, data=None, headers=None, timeout=30):
     ``ok`` keys, so it works the same whether ``requests`` or ``urllib`` is
     used underneath.
     """
+    _validate_url(url)
     if _use_requests():
         import requests
         # Non-string bodies are sent as JSON, matching the urllib path.

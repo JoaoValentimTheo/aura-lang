@@ -14,7 +14,6 @@ launch ``aura lsp``. Capabilities can grow without changing the transport.
 import json
 import sys
 import traceback
-from pathlib import Path
 
 from aura.parser.to_ast import Tokenizer, Parser
 from aura.transpiler.semantics import MutabilityChecker
@@ -41,6 +40,10 @@ STDLIB_MODULES = [
     'stdlib.http',
 ]
 
+# Upper bound on a single JSON-RPC message body, guarding against a buggy or
+# malicious client forcing an unbounded allocation.
+MAX_MESSAGE_BYTES = 16 * 1024 * 1024
+
 
 class AuraLanguageServer:
     def __init__(self, reader=None, writer=None):
@@ -48,6 +51,10 @@ class AuraLanguageServer:
         self.writer = writer or sys.stdout.buffer
         self.documents = {}
         self.shutdown_requested = False
+        # (uri, text) -> (program, parse_error). Avoids re-parsing the same
+        # document for hover, symbols and diagnostics within a request cycle.
+        self._parse_cache = {}
+        self._parse_cache_uri = None
 
     # -- transport ----------------------------------------------------------
 
@@ -66,10 +73,31 @@ class AuraLanguageServer:
         length = int(headers.get(b'content-length', 0))
         if length <= 0:
             return None
+        if length > MAX_MESSAGE_BYTES:
+            raise ValueError(f"message exceeds {MAX_MESSAGE_BYTES} bytes")
         body = self.reader.read(length)
         if not body:
             return None
         return json.loads(body.decode('utf-8'))
+
+    def _parsed(self, uri):
+        """Return ``(program, error)`` for the current text of ``uri``.
+
+        The result is cached per (uri, text), so repeated feature requests on
+        the same document version parse only once.
+        """
+        text = self.documents.get(uri, '')
+        cached = self._parse_cache.get(uri)
+        if cached is not None and cached[0] == text:
+            return cached[1], cached[2]
+        try:
+            program = Parser(Tokenizer(text).tokenize()).parse()
+            error = None
+        except Exception as exc:
+            program = None
+            error = exc
+        self._parse_cache[uri] = (text, program, error)
+        return program, error
 
     def _write_message(self, payload):
         body = json.dumps(payload).encode('utf-8')
@@ -137,6 +165,7 @@ class AuraLanguageServer:
         elif method == 'textDocument/didClose':
             doc = params['textDocument']
             self.documents.pop(doc['uri'], None)
+            self._parse_cache.pop(doc['uri'], None)
             self._notify('textDocument/publishDiagnostics',
                          {'uri': doc['uri'], 'diagnostics': []})
         elif method == 'textDocument/hover':
@@ -153,11 +182,9 @@ class AuraLanguageServer:
     def _publish_diagnostics(self, uri):
         text = self.documents.get(uri, '')
         diagnostics = []
-        try:
-            tokens = Tokenizer(text).tokenize()
-            program = Parser(tokens).parse()
-        except Exception as exc:
-            diagnostics.append(self._diagnostic_from_error(exc))
+        program, error = self._parsed(uri)
+        if program is None:
+            diagnostics.append(self._diagnostic_from_error(error))
             self._notify('textDocument/publishDiagnostics',
                          {'uri': uri, 'diagnostics': diagnostics})
             return
@@ -216,15 +243,17 @@ class AuraLanguageServer:
         return 0, 0
 
     def _hover(self, params):
-        text = self.documents.get(params['textDocument']['uri'], '')
+        uri = params['textDocument']['uri']
+        text = self.documents.get(uri, '')
         position = params['position']
         word = self._word_at(text, position['line'], position['character'])
         if not word:
             return None
         details = None
         try:
-            tokens = Tokenizer(text).tokenize()
-            program = Parser(tokens).parse()
+            program, error = self._parsed(uri)
+            if program is None:
+                raise error
             checker = TypeChecker()
             checker.check_program(program)
             if word in checker.context:
@@ -249,11 +278,10 @@ class AuraLanguageServer:
         return {'isIncomplete': False, 'items': items}
 
     def _document_symbols(self, params):
-        text = self.documents.get(params['textDocument']['uri'], '')
+        uri = params['textDocument']['uri']
         symbols = []
-        try:
-            program = Parser(Tokenizer(text).tokenize()).parse()
-        except Exception:
+        program, _ = self._parsed(uri)
+        if program is None:
             return symbols
         for stmt in getattr(program, 'statements', []):
             kind = None
@@ -270,13 +298,14 @@ class AuraLanguageServer:
             elif cls == 'Module':
                 kind = 2
             if kind and name:
+                line = max(0, (getattr(stmt, 'line', 1) or 1) - 1)
+                selection = {'start': {'line': line, 'character': 0},
+                             'end': {'line': line, 'character': len(name)}}
                 symbols.append({
                     'name': name,
                     'kind': kind,
-                    'range': {'start': {'line': 0, 'character': 0},
-                              'end': {'line': 0, 'character': 0}},
-                    'selectionRange': {'start': {'line': 0, 'character': 0},
-                                       'end': {'line': 0, 'character': 0}},
+                    'range': selection,
+                    'selectionRange': selection,
                 })
         return symbols
 

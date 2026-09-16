@@ -294,10 +294,12 @@ class TestHttpStdlib:
         assert build_url("http://x.com", None) == "http://x.com"
         assert unquote(quote("a b/c")) == "a b/c"
 
-    def test_request_against_local_server(self):
+    def test_request_against_local_server(self, monkeypatch):
         import http.server
         import json
         import threading
+
+        monkeypatch.setenv('AURA_HTTP_ALLOW_PRIVATE', '1')
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def log_message(self, *args):
@@ -341,9 +343,11 @@ class TestHttpStdlib:
             server.shutdown()
             server.server_close()
 
-    def test_request_404_returns_response(self):
+    def test_request_404_returns_response(self, monkeypatch):
         import http.server
         import threading
+
+        monkeypatch.setenv('AURA_HTTP_ALLOW_PRIVATE', '1')
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def log_message(self, *args):

@@ -285,10 +285,13 @@ continuation token.
 
 ```bash
 python3 -m pytest tests/ -v          # full suite
-python3 tests/test_runtime.py        # transpile + execute programs
-python3 tests/test_regressions.py    # audit regression coverage
-python3 tests/test_stress_raw.py     # raw pipeline stress tests
-python3 tests/test_language_rules.py # rules, modules, functions, Python bridge, REPL
+python3 tests/test_syntax_complete.py  # every syntax construct, end to end
+python3 tests/test_oop_complete.py     # full OOP surface (classes, traits, dunders)
+python3 tests/test_security.py         # hardening regressions
+python3 tests/test_stdlib_coverage.py  # itertools, python bridge, formatter
+python3 tests/test_aura_corpora.py     # runs the generated .aura corpora
+python3 tests/test_runtime.py          # transpile + execute programs
+python3 tests/test_regressions.py      # audit regression coverage
 ```
 
 Set `AURA_FUZZ_SEEDS=100000` to run the stochastic fuzzer beyond its

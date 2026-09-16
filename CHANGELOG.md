@@ -4,6 +4,65 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.0a4] - 2026-09-16
+
+A cleanup, hardening and completeness pass: dead weight removed, security bugs
+fixed, performance hot spots eliminated, the object system completed, and a
+full syntax + OOP test suite added.
+
+### Added
+
+- **Complete object system.** `SPECIAL_METHOD_NAMES` in
+  `aura/transpiler/ast.py` maps readable Aura method names to Python protocols
+  (`str`→`__str__`, `len`→`__len__`, `eq`/`lt`/…, `iter`, `getitem`,
+  `contains`, `call`, arithmetic operators, context managers, …), applied at
+  both definition and call sites. `init` is now an alias for `new`.
+- **Traits compile to real ABCs** (`abc.ABC` + `@abstractmethod`), so missing
+  implementations fail at instantiation time instead of call time.
+- **Generic classes and traits** (`class Box[T]`, `trait Container[T]`)
+  transpile to `Generic[...]`.
+- `yield` (with and without a value) is now supported.
+- `fn` is accepted as an alias for `def` at statement level.
+- `&&`/`||` and `is not` are accepted as operator spellings.
+- New test suites: `tests/test_syntax_complete.py`, `tests/test_oop_complete.py`,
+  `tests/test_security.py`, `tests/test_stdlib_coverage.py`, and
+  `tests/test_aura_corpora.py` (runs the 5000-file `.aura` corpora).
+
+### Changed
+
+- Auto-generated constructors use a module-level sentinel so an explicit
+  `None` can override a field default.
+- `aura lint` now exits non-zero when warnings are reported.
+- `aura-ide` workspace resolution compares against a path separator boundary
+  (path-traversal fix).
+
+### Fixed
+
+- `!x` transpiles to `not x` instead of invalid `(! x)`.
+- `try { … }` with no `catch`/`finally` is a clear syntax error.
+- Empty function, method and trait bodies emit `pass`.
+- Static fields are always emitted on the class; trait fields support
+  `let`/`mut`, type annotations and defaults.
+- Private protocol methods are no longer double-mangled (`__str__` not
+  `____str__`).
+
+### Security
+
+- `aura add` rejects package names with newlines/quotes (TOML injection) and
+  escapes control characters in written values.
+- HTTP rejects loopback/link-local/private hosts (SSRF) unless
+  `AURA_HTTP_ALLOW_PRIVATE=1`; non-HTTP(S) schemes were already blocked.
+- `json.dump` rejects NaN/Infinity, matching `dumps`/`pretty`.
+- `os.env(allowlist)` can return only selected variables.
+- The LSP bounds incoming message size.
+
+### Removed
+
+- The unused ANTLR-generated parser, `.antlr` Java artifacts and grammar files
+  (~1.3 MB), the `transpiler/types.py.bak` snapshot, the empty `src/` package,
+  byte-identical duplicate `stdlib/` and `tools/` modules, and assorted dead
+  code and unused imports.
+
 ## [0.1.0a3] - 2026-09-16
 
 This alpha focuses on making Aura's *rules* real and enforceable, hardening the

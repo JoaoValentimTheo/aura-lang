@@ -27,7 +27,7 @@ from aura.transpiler.ast import (
     MatchStmt, TryStmt, WithStmt, ReturnStmt, ExprStmt, ThrowStmt,
     AssertStmt, BreakStmt, ContinueStmt, Method,
     Identifier, MemberExpr, IndexExpr, BinaryOp, TupleLiteral, ListLiteral,
-    SpreadExpr, CallExpr, UnaryOp, LambdaExpr, BlockExpr,
+    SpreadExpr, UnaryOp, LambdaExpr,
     IdentifierPattern, ListPattern,
 )
 

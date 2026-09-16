@@ -29,28 +29,29 @@ Source (.aura) --> Parser --> AST --> Transformer --> Python Code
 
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| ANTLR Grammar | `parser/aura.g4` | Language syntax definition |
-| AST Nodes | `transpiler/ast.py` | 83 AST node types |
-| Parser | `parser/to_ast.py` | Convert parse tree to AST |
-| Transformer | `transpiler/transformer.py` | AST to Python code |
-| Expression Transformer | `transpiler/transformers/expressions.py` | Expression handling |
-| Statement Transformer | `transpiler/transformers/statements.py` | Statement handling |
-| Type System | `transpiler/types.py` | 15 type classes, inference, checking |
-| Macros | `transpiler/macros.py` | Decorator-based macro system |
-| Error Handling | `transpiler/errors.py` | Error collection and formatting |
-| CLI | `main.py` | User interface |
+| AST Nodes | `aura/transpiler/ast.py` | AST node types and the protocol (dunder) map |
+| Tokenizer | `aura/parser/to_ast.py` (`Tokenizer`) | Hand-written lexer |
+| Parser | `aura/parser/to_ast.py` (`Parser`) | Recursive-descent + Pratt parser producing the AST |
+| Transformer | `aura/transpiler/transformer.py` | AST to Python code |
+| Expression Transformer | `aura/transpiler/transformers/expressions.py` | Expression handling |
+| Statement Transformer | `aura/transpiler/transformers/statements.py` | Statement handling |
+| Type System | `aura/transpiler/types.py` | Type classes, inference, checking |
+| Macros | `aura/transpiler/macros.py` | Decorator-based macro system and preludes |
+| Error Handling | `aura/transpiler/errors.py` | Error collection and formatting |
+| CLI | `aura/cli.py` (entry point `main.py`) | User interface |
 
 See [AUDIT.md](AUDIT.md) for the findings and fixes from the code audit.
 
 ### Compilation Pipeline
 
-1. **Lexical Analysis**: Source code is tokenized by ANTLR4
-2. **Parsing**: Tokens are parsed into a parse tree using `parser/aura.g4`
-3. **AST Construction**: Parse tree is converted to AST nodes (`parser/to_ast.py`)
-4. **Type Checking**: Optional type validation (`transpiler/types.py`)
-5. **Macro Expansion**: Decorator macros are applied (`transpiler/macros.py`)
-6. **Transformation**: AST is converted to Python source code
-7. **Execution**: Generated Python code is executed via `exec()` or saved to file
+1. **Lexical Analysis**: Source code is tokenized by the hand-written
+   `Tokenizer` in `aura/parser/to_ast.py`
+2. **Parsing**: Tokens are parsed directly into AST nodes by the
+   recursive-descent `Parser` (there is no separate parse tree or ANTLR step)
+3. **Type Checking**: Optional type validation (`aura/transpiler/types.py`)
+4. **Macro Expansion**: Decorator macros are applied (`aura/transpiler/macros.py`)
+5. **Transformation**: AST is converted to Python source code
+6. **Execution**: Generated Python code is executed via `exec()` or saved to file
 
 ### AST Node Types
 
@@ -108,11 +109,9 @@ aura-lang/
 │   ├── cli.py              # Console entry point (`aura` command)
 │   ├── runtime.py          # stdlib namespace aliases for generated code
 │   ├── parser/
-│   │   ├── aura.g4         # ANTLR4 grammar (reference)
-│   │   ├── to_ast.py       # Tokenizer + recursive-descent parser
-│   │   └── generated/      # Generated parser code
+│   │   └── to_ast.py       # Tokenizer + recursive-descent parser
 │   ├── transpiler/         # Core transpilation logic
-│   │   ├── ast.py          # AST node definitions (83+ classes)
+│   │   ├── ast.py          # AST node definitions + protocol (dunder) map
 │   │   ├── transformer.py  # Main AST to Python transformer
 │   │   ├── semantics.py    # Mutability checker
 │   │   ├── importer.py     # Local .aura import hook
@@ -166,6 +165,5 @@ Installed as `aura <command>`; the same commands work via `python3 main.py`.
 
 ## Dependencies
 
-- Python 3.10+
-- `antlr4-python3-runtime` (only needed to regenerate the ANTLR parser;
-  the runtime does not depend on it)
+- Python 3.10+ (the runtime has no third-party dependencies; `tomli` is
+  installed automatically on 3.10 for reading `aura.toml`)
