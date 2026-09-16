@@ -78,10 +78,20 @@ jobs:
             *)
               echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
           esac
+      - name: Delete any existing release for this tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          ids=$(gh api "repos/${{ github.repository }}/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"${GITHUB_REF_NAME}\") | .id")
+          for id in $ids; do
+            echo "deleting release $id"
+            gh api -X DELETE "repos/${{ github.repository }}/releases/$id"
+          done
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
           generate_release_notes: true
           prerelease: ${{ steps.status.outputs.prerelease }}
-          allow_updates: true
