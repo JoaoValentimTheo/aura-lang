@@ -1,0 +1,87 @@
+// A tour of Aura: variables, functions, classes, collections,
+// functional pipelines, pattern matching, and error handling.
+
+const GREETING = "Hello, Aura!"
+
+// --- Variables & functions -------------------------------------------------
+def greet(name, punctuation = "!") -> str {
+  return GREETING + " " + name + punctuation
+}
+
+print(greet("world"))
+print(greet("Aura", "?"))
+
+// --- Collections -----------------------------------------------------------
+let numbers = [1, 2, 3, 4, 5]
+let user = {name: "Alice", age: 30}
+let unique = {1, 2, 2, 3, 3, 3}
+
+print(numbers)
+print(user["name"], user.age)
+print(unique)
+
+// --- Functional pipeline ---------------------------------------------------
+let total = numbers
+  |> map((x) => x * x)
+  |> filter((x) => x > 5)
+  |> reduce((acc, x) => acc + x, 0)
+
+print(f"Sum of squares > 5: {total}")
+
+let squares = [x * x for x in range(6)]
+print(squares)
+
+// --- Classes ---------------------------------------------------------------
+class Shape {
+  let name: str = "shape"
+
+  def area() -> float {
+    return 0.0
+  }
+
+  def describe() -> str {
+    return f"{self.name} with area {self.area()}"
+  }
+}
+
+class Rectangle(Shape) {
+  let width: float = 0.0
+  let height: float = 0.0
+
+  def new(width: float, height: float) {
+    self.name = "rectangle"
+    self.width = width
+    self.height = height
+  }
+
+  def area() -> float {
+    return self.width * self.height
+  }
+}
+
+let rect = Rectangle(4.0, 5.0)
+print(rect.describe())
+
+// --- Pattern matching ------------------------------------------------------
+def grade(score) -> str {
+  match score {
+    case s if s >= 90 { return "A" }
+    case s if s >= 80 { return "B" }
+    case s if s >= 70 { return "C" }
+    case _ { return "F" }
+  }
+  return "?"
+}
+
+for score in [95, 85, 72, 40] {
+  print(f"{score}: {grade(score)}")
+}
+
+// --- Error handling --------------------------------------------------------
+try {
+  throw ValueError("something went wrong")
+} catch e {
+  print(f"Handled: {e}")
+} finally {
+  print("tour complete")
+}

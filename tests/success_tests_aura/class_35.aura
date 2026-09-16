@@ -1,8 +1,8 @@
 // Class Test 35
 class Base_35 { let val: int = 35 }
-class Sub_35 extends Base_35 {
+class Sub_35(Base_35) {
     let extra: str = "hi"
-    def show(self) { print(self.val); print(self.extra); }
+    def show() { print(self.val); print(self.extra); }
 }
 let obj_35 = Sub_35(val: 70, extra: "test_35");
 obj_35.show();

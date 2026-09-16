@@ -5,7 +5,7 @@ class BaseC18338Kk {
     public def double_value() -> int { return self.value * 2; }
 }
 
-class ConcreteC61380Ro extends BaseC18338Kk {
+class ConcreteC61380Ro(BaseC18338Kk) {
     public def double_value() -> int { return self.value * 3; }
 }
 

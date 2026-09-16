@@ -1,0 +1,772 @@
+"""Statement and declaration transformers."""
+import textwrap
+from aura.transpiler.ast import *
+from aura.transpiler.transformers.expressions import ExpressionTransformer
+
+class StatementTransformer:
+    def __init__(self):
+        self.expr_transformer = ExpressionTransformer()
+        self.indent_level = 0
+        self.class_members = {} # class_name -> {member_name: visibility}
+        self.in_class_scope = False
+        # Stack of local-name sets, one per enclosing function body. Used to
+        # decide when a hoisted closure needs a `nonlocal` declaration.
+        self.function_scopes = []
+    
+    def transform(self, node):
+        if node is None:
+            return ""
+        
+        method_name = f"transform_{node.__class__.__name__}"
+        method = getattr(self, method_name, None)
+        if method:
+            return method(node)
+        
+        raise NotImplementedError(f"No transformer for {node.__class__.__name__}")
+    
+    def _indent(self):
+        return "    " * self.indent_level
+
+    @staticmethod
+    def _declared_names(name):
+        """Return the individual names bound by a declaration target string."""
+        if not name:
+            return []
+        if isinstance(name, str) and name[:1] in '([' and name[-1:] in ')]':
+            names = []
+            for part in name[1:-1].replace('*', ' ').split(','):
+                token = part.strip().strip('()[]{}')
+                if token and token.isidentifier():
+                    names.append(token)
+            return names
+        return [name] if isinstance(name, str) and name.isidentifier() else []
+
+    def _decorator_line(self, dec):
+        """Render a single decorator, including arguments and keyword args."""
+        parts = [self.expr_transformer.transform(a) for a in dec.args]
+        for key, value in dec.kwargs.items():
+            parts.append(f"{key}={self.expr_transformer.transform(value)}")
+        if parts:
+            return f"@{dec.name}({', '.join(parts)})\n"
+        return f"@{dec.name}\n"
+    
+    def _block(self, statements):
+        """Transform a list of statements into indented block.
+
+        Hoisted helpers (block lambdas, block expressions) are emitted as
+        nested functions at the start of the *current* block. Keeping them in
+        the enclosing lexical scope lets them capture `self` and local
+        variables, which module-level hoisting would break.
+        """
+        self.indent_level += 1
+        indent = "    " * self.indent_level
+        lines = []
+        pending = self.expr_transformer.hoisted_functions
+        for stmt in statements:
+            before = len(pending)
+            code = self.transform(stmt)
+            new_hoists = pending[before:]
+            if new_hoists:
+                del pending[before:]
+                for helper in new_hoists:
+                    for line in helper.split('\n'):
+                        lines.append(indent + line)
+            if code:
+                for line in code.split('\n'):
+                    if line.strip():
+                        lines.append(indent + line)
+        self.indent_level -= 1
+        return '\n'.join(lines)
+    
+    # ========== Declarations ==========
+    def transform_VarDecl(self, node):
+        name = node.name
+        # Track declared locals for closure `nonlocal` analysis.
+        if self.function_scopes:
+            for local_name in self._declared_names(node.name):
+                self.function_scopes[-1].add(local_name)
+        # Visibility only mangles names inside a class body, where Python's
+        # name mangling is meaningful and member access is mangled to match.
+        # For module-level and local variables the modifier is compile-time
+        # metadata only; mangling the declaration alone would break every
+        # later reference to it.
+        if self.in_class_scope:
+            if node.visibility == 'private': name = f"__{name}"
+            elif node.visibility == 'protected': name = f"_{name}"
+
+        if node.value:
+            value = self.expr_transformer.transform(node.value)
+            return f"{name} = {value}"
+        else:
+            return f"{name} = None"
+    
+    def transform_ConstDecl(self, node):
+        value = self.expr_transformer.transform(node.value)
+        return f"{node.name} = {value}  # const"
+    
+    def transform_FunctionDecl(self, node):
+        decorators_code = ""
+        # Handle static/volatile
+        if node.is_static:
+            decorators_code += "@staticmethod\n"
+        if node.is_volatile:
+             decorators_code += "# volatile\n"
+             
+        for dec in node.decorators:
+            decorators_code += self._decorator_line(dec)
+        
+        name = node.name
+        if self.in_class_scope:
+            if node.visibility == 'private': name = f"__{name}"
+            elif node.visibility == 'protected': name = f"_{name}"
+        
+        params = []
+        for param in node.params:
+            if param.name == '*' and not param.is_variadic and not param.is_kwonly:
+                params.append('*')
+            elif param.is_kwonly:
+                params.append(f"**{param.name}")
+            elif param.is_variadic:
+                params.append(f"*{param.name}")
+            elif param.default:
+                default = self.expr_transformer.transform(param.default)
+                params.append(f"{param.name}={default}")
+            else:
+                params.append(param.name)
+        
+        params_str = ", ".join(params)
+        
+        async_kw = "async " if node.is_async else ""
+        
+        if node.body is None:
+            return f"{decorators_code}{async_kw}def {node.name}({params_str}): pass"
+        elif isinstance(node.body, list):
+            self.function_scopes.append(set())
+            try:
+                body_code = self._block(node.body)
+            finally:
+                self.function_scopes.pop()
+            if not body_code.strip():
+                body_code = self._indent() + "pass"
+            return f"{decorators_code}{async_kw}def {node.name}({params_str}):\n{body_code}"
+        else:
+            # Expression body
+            expr_code = self.expr_transformer.transform(node.body)
+            return f"{decorators_code}{async_kw}def {node.name}({params_str}): return {expr_code}"
+    
+    def transform_ClassDecl(self, node):
+        decorators_code = ""
+        for dec in node.decorators:
+            decorators_code += self._decorator_line(dec)
+        
+        name = node.name
+        if node.visibility == 'private': name = f"__{name}"
+        elif node.visibility == 'protected': name = f"_{name}"
+        
+        base = ""
+        if node.base_class:
+            base = f"({node.base_class})"
+        
+        self.indent_level += 1
+        old_in_class = self.in_class_scope
+        self.in_class_scope = True
+        
+        # Populate visibility map for expressions
+        current_vis = {}
+        # Inherit from base
+        if node.base_class in self.class_members:
+            current_vis.update(self.class_members[node.base_class])
+        
+        # Add current members
+        for member in node.body:
+            if hasattr(member, 'name') and hasattr(member, 'visibility'):
+                current_vis[member.name] = member.visibility
+            if isinstance(member, Method):
+                self.expr_transformer.known_method_names.add(member.name)
+        
+        # Save to global map
+        self.class_members[node.name] = current_vis
+        
+        old_vis = self.expr_transformer.member_visibilities
+        self.expr_transformer.member_visibilities = current_vis
+
+        # Automatic __init__ and __match_args__ for instance fields
+        # Note: static fields go directly into class body, not __init__
+        instance_fields = [m for m in node.body if isinstance(m, VarDecl) and not m.is_static]
+        methods = [m for m in node.body if isinstance(m, Method)]
+        has_manual_init = any(m.name == '__init__' for m in methods)
+        init_code = ""
+        if instance_fields and not has_manual_init:
+            params = ", ".join([f"{f.name}=None" for f in instance_fields])
+            if params: params += ", "
+            params += "**kwargs"
+            
+            assign_lines = []
+            for f in instance_fields:
+                name = f.name
+                if f.visibility == 'private': name = f"__{name}"
+                elif f.visibility == 'protected': name = f"_{name}"
+                
+                if f.value:
+                    default_py = self.expr_transformer.transform(f.value)
+                    assign_lines.append(f"{self._indent()}    self.{name} = {f.name} if {f.name} is not None else {default_py}")
+                else:
+                    assign_lines.append(f"{self._indent()}    self.{name} = {f.name}")
+            assigns = "\n".join(assign_lines)
+            
+            match_args = ", ".join([f"'{f.name}'" for f in instance_fields])
+            if len(instance_fields) == 1: match_args += ","
+            super_line = ""
+            if node.base_class:
+                super_line = f"{self._indent()}    super().__init__(**kwargs)\n"
+            init_code = f"{self._indent()}__match_args__ = ({match_args})\n{self._indent()}def __init__(self, {params}):\n{super_line}{assigns}\n"
+
+        # Only emit class-level defaults for fields that don't duplicate __init__ params.
+        emit_field_defaults = has_manual_init or not instance_fields
+
+        body_code = ""
+        class_indent = self._indent()
+        for member in node.body:
+            if isinstance(member, VarDecl):
+                if not emit_field_defaults:
+                    continue
+                body_code += self._indent() + self.transform(member) + "\n"
+            elif isinstance(member, Method):
+                self.indent_level -= 1
+                method_code = self.transform(member)
+                self.indent_level += 1
+                body_code += class_indent + method_code.replace('\n', '\n' + class_indent) + "\n"
+            else:
+                body_code += self._indent() + self.transform(member) + "\n"
+        
+        # Reset and finish
+        final_body = init_code + body_code
+        self.indent_level -= 1
+        self.in_class_scope = old_in_class
+        self.expr_transformer.member_visibilities = old_vis
+        
+        if not final_body.strip():
+            final_body = self._indent() + "pass"
+        
+        return f"{decorators_code}class {node.name}{base}:\n{final_body}"
+    
+    def transform_Method(self, node):
+        decorators_code = ""
+        if node.is_property:
+            decorators_code += "@property\n"
+        if node.is_static:
+            decorators_code += "@staticmethod\n"
+        if node.is_classmethod:
+            decorators_code += "@classmethod\n"
+        if node.is_volatile:
+            decorators_code += "# volatile\n"
+        for dec in node.decorators:
+            if dec.name in ('property', 'staticmethod', 'classmethod'):
+                continue
+            decorators_code += self._decorator_line(dec)
+        
+        name = node.name
+        if node.visibility == 'private' and name != '__init__': name = f"__{name}"
+        elif node.visibility == 'protected' and name != '__init__': name = f"_{name}"
+        
+        if node.is_static:
+            params = []
+        elif node.is_classmethod:
+            params = ["cls"]
+        elif node.name == '__init__':
+            params = ["self"]
+        else:
+            params = ["self"]
+        for param in node.params:
+            if param.name in ("self", "cls"):
+                continue
+            if param.name == '*' and not param.is_variadic and not param.is_kwonly:
+                params.append('*')
+            elif param.is_kwonly:
+                params.append(f"**{param.name}")
+            elif param.is_variadic:
+                params.append(f"*{param.name}")
+            elif param.default:
+                default = self.expr_transformer.transform(param.default)
+                params.append(f"{param.name}={default}")
+            else:
+                params.append(param.name)
+        
+        params_str = ", ".join(params)
+        
+        if node.body is None:
+            return f"{decorators_code}def {name}({params_str}): pass"
+        elif isinstance(node.body, list):
+            body_code = self._block(node.body)
+            if not body_code.strip():
+                body_code = self._indent() + "pass"
+            return f"{decorators_code}def {name}({params_str}):\n{body_code}"
+        else:
+            expr_code = self.expr_transformer.transform(node.body)
+            return f"{decorators_code}def {name}({params_str}): return {expr_code}"
+    
+    def transform_TypeDecl(self, node):
+        # Aura types are erased at compile time; emit a best-effort Python
+        # runtime alias so the name still exists (e.g. `UserId = int`) and
+        # document the original Aura spelling in a comment.
+        py_type = self._aura_type_to_python(node.type_expr)
+        return f"{node.name} = {py_type}  # type alias: {node.type_expr}"
+
+    _SIMPLE_TYPES = {
+        'int': 'int',
+        'float': 'float',
+        'str': 'str',
+        'bool': 'bool',
+        'bytes': 'bytes',
+        'none': 'None',
+        'null': 'None',
+        'any': 'object',
+        'Never': 'type(None)',
+    }
+
+    def _aura_type_to_python(self, type_text):
+        """Best-effort conversion of an Aura type expression to Python."""
+        if type_text is None:
+            return 'object'
+        # Type annotations may be AST nodes (SimpleType, GenericType, ...)
+        # when constructed programmatically; fall back to their name if so.
+        if not isinstance(type_text, str):
+            name = getattr(type_text, 'name', None)
+            if name:
+                type_text = name
+            else:
+                return 'object'
+        text = type_text.strip()
+        if text in self._SIMPLE_TYPES:
+            return self._SIMPLE_TYPES[text]
+        if text.startswith('[') and text.endswith(']'):
+            return 'list'
+        if text.startswith('{') and text.endswith('}'):
+            inner = text[1:-1]
+            if ':' in inner:
+                return 'dict'
+            return 'set'
+        if '->' in text or text.startswith('('):
+            return 'object'
+        if '|' in text:
+            return text
+        if text.isidentifier():
+            return text
+        return 'object'
+    
+    def transform_TraitDecl(self, node):
+        # Traits are interfaces. Python has no native traits, so a trait
+        # becomes an empty (optionally abstract) base class that implementing
+        # classes can inherit from.
+        header = f"class {node.name}:"
+        body_lines = []
+        for member in node.members:
+            if isinstance(member, Method):
+                # Signature-only methods become abstract placeholders.
+                body_lines.append(self._indent() + "    def " + member.name + "(self, *args, **kwargs):")
+                body_lines.append(self._indent() + "        raise NotImplementedError")
+            elif hasattr(member, 'name'):
+                body_lines.append(self._indent() + f"    {member.name} = None")
+        if not body_lines:
+            body_lines.append(self._indent() + "    pass")
+        return header + "\n" + "\n".join(body_lines)
+
+    def transform_EnumDecl(self, node):
+        """Emit a Python enum. Auto-numbered members continue from the last
+        explicit integer value (so `enum E { A, B = 3, C }` gives C == 4)."""
+        header = f"class {node.name}(_aura_enum.Enum):"
+        body_lines = []
+        next_auto = 1
+        for member_name, value in node.members:
+            if value is not None:
+                rendered = self.expr_transformer.transform(value)
+                body_lines.append(self._indent() + f"    {member_name} = {rendered}")
+                if isinstance(value, IntLiteral):
+                    next_auto = int(value.value) + 1
+                else:
+                    next_auto += 1
+            else:
+                body_lines.append(self._indent() + f"    {member_name} = {next_auto}")
+                next_auto += 1
+        return header + "\n" + "\n".join(body_lines)
+    
+    # ========== Statements ==========
+    def transform_AssertStmt(self, node):
+        cond = self.expr_transformer.transform(node.condition)
+        if node.message:
+            msg = self.expr_transformer.transform(node.message)
+            return f"assert {cond}, {msg}"
+        return f"assert {cond}"
+
+    def transform_ExprStmt(self, node):
+        if isinstance(node.expr, BlockExpr):
+            return "\n".join([self.transform(s) for s in node.expr.statements])
+            
+        # Check if it's an assignment (BinaryOp with '=')
+        # Aura parsers assignments as BinaryOp expressions. 
+        # In Python, assignment is a statement.
+        if isinstance(node.expr, BinaryOp) and node.expr.op == '=':
+            left = self.expr_transformer.transform(node.expr.left)
+            # Remove outer parens from left if present (though usually identifier)
+            if left.startswith('(') and left.endswith(')'):
+                left = left[1:-1]
+                
+            right = self.expr_transformer.transform(node.expr.right)
+            return f"{left} = {right}"
+        elif isinstance(node.expr, BinaryOp) and node.expr.op in ('+=', '-=', '*=', '/=', '%=', '**=', '&=', '|=', '^=', '<<=', '>>='):
+            # Computed assignments are also statements in Python
+            left = self.expr_transformer.transform(node.expr.left)
+            if left.startswith('(') and left.endswith(')'):
+                left = left[1:-1]
+            right = self.expr_transformer.transform(node.expr.right)
+            op = node.expr.op
+            return f"{left} {op} {right}"
+        elif isinstance(node.expr, BinaryOp) and node.expr.op == '??=':
+            # Null-coalescing assignment: `x ??= v` -> `x = x if x is not None else v`
+            left = self.expr_transformer.transform(node.expr.left)
+            if left.startswith('(') and left.endswith(')'):
+                left = left[1:-1]
+            right = self.expr_transformer.transform(node.expr.right)
+            return f"{left} = {left} if {left} is not None else {right}"
+            
+        expr = node.expr
+        
+        # Safety: unwrap nested ExprStmt if parser wrapped redundantly
+        # Use Duck Typing / Name check to avoid class identity issues
+        attempts = 0
+        while expr.__class__.__name__ == 'ExprStmt':
+            expr = expr.expr
+            attempts += 1
+            if attempts > 100:
+                raise Exception("Infinite recursion unwrapping ExprStmt")
+            
+        return self.expr_transformer.transform(expr)
+    
+    def transform_IfStmt(self, node):
+        cond = self.expr_transformer.transform(node.condition)
+        then_body = self._block(node.then_body)
+        
+        result = f"if {cond}:\n{then_body}"
+        
+        if node.else_body:
+            else_body = self._block(node.else_body)
+            result += f"\nelse:\n{else_body}"
+        
+        return result
+    
+    def transform_UnlessStmt(self, node):
+        # unless → if not
+        cond = self.expr_transformer.transform(node.condition)
+        body = self._block(node.body)
+        
+        result = f"if not ({cond}):\n{body}"
+        
+        if node.else_body:
+            else_body = self._block(node.else_body)
+            result += f"\nelse:\n{else_body}"
+        
+        return result
+    
+    def transform_GuardStmt(self, node):
+        # guard condition else { ... } → if not condition: ...
+        cond = self.expr_transformer.transform(node.condition)
+        else_body = self._block(node.else_body)
+        return f"if not ({cond}):\n{else_body}"
+    
+    def transform_WhileStmt(self, node):
+        cond = self.expr_transformer.transform(node.condition)
+        if node.label:
+            return self._labeled_loop(node, f"while {cond}:")
+        body = self._block(node.body)
+        return f"while {cond}:\n{body}"
+    
+    def transform_UntilStmt(self, node):
+        # until condition → while not condition
+        cond = self.expr_transformer.transform(node.condition)
+        if node.label:
+            return self._labeled_loop(node, f"while not ({cond}):")
+        body = self._block(node.body)
+        return f"while not ({cond}):\n{body}"
+    
+    def transform_ForStmt(self, node):
+        pattern = self.expr_transformer.transform(node.pattern)
+
+        if node.step is not None:
+            iterable = self._iterable_with_step(node.iterable, node.step)
+        else:
+            iterable = self.expr_transformer.transform(node.iterable)
+        if node.label:
+            return self._labeled_loop(node, f"for {pattern} in {iterable}:")
+        body = self._block(node.body)
+        return f"for {pattern} in {iterable}:\n{body}"
+
+    def _iterable_with_step(self, iterable, step_node):
+        """Render a `for ... step N` iterable correctly.
+
+        Handles the three shapes Aura allows:
+        * ``range(...)`` call  -> fold the step into the call
+        * ``a..b`` range expr  -> attach step to the range
+        * any other iterable   -> fall back to a Python slice ``items[::step]``
+        """
+        from aura.transpiler.ast import CallExpr, Identifier as _Ident, RangeExpr
+
+        if isinstance(iterable, CallExpr) and isinstance(iterable.func, _Ident) \
+                and iterable.func.name == 'range':
+            step = self.expr_transformer.transform(step_node)
+            args = [self.expr_transformer.transform(a) for a in iterable.args]
+            if len(args) >= 3:
+                args[2] = step
+            else:
+                args.append(step)
+            return f"range({', '.join(args)})"
+
+        if isinstance(iterable, RangeExpr):
+            iterable.step = step_node
+            return self.expr_transformer.transform(iterable)
+
+        step = self.expr_transformer.transform(step_node)
+        base = self.expr_transformer.transform(iterable)
+        return f"{base}[::{step}]"
+
+    def _labeled_loop(self, node, header):
+        """Emit a loop supporting labeled `break`/`continue`.
+
+        `break label` raises `_AuraBreak`, caught around the whole loop.
+        `continue label` raises `_AuraContinue`, caught around the loop body.
+        """
+        label = node.label
+        # Body wrapped so `continue label` is handled in place.
+        self.indent_level += 1
+        inner_indent = self._indent()
+        self.indent_level += 1
+        body_indent = self._indent()
+
+        body_lines = []
+        pending = self.expr_transformer.hoisted_functions
+        before = len(pending)
+        for stmt in node.body:
+            code = self.transform(stmt)
+            if code:
+                for line in code.split('\n'):
+                    if line.strip():
+                        body_lines.append(body_indent + line)
+        new_hoists = pending[before:]
+        if new_hoists:
+            del pending[before:]
+        self.indent_level -= 2
+
+        inner = (
+            f"{inner_indent}try:\n"
+            + ("\n".join(body_lines) if body_lines else f"{body_indent}pass") + "\n"
+            f"{inner_indent}except _AuraContinue as _aura_c:\n"
+            f"{body_indent}if _aura_c.label != {label!r}:\n"
+            f"{body_indent}    raise\n"
+            f"{body_indent}continue"
+        )
+        loop = f"{header}\n{inner}"
+        return (
+            "try:\n"
+            + textwrap.indent(loop, "    ") + "\n"
+            f"except _AuraBreak as _aura_b:\n"
+            f"    if _aura_b.label != {label!r}:\n"
+            f"        raise"
+        )
+    
+    def transform_LoopStmt(self, node):
+        if node.label:
+            return self._labeled_loop(node, "while True:")
+        body = self._block(node.body)
+        return f"while True:\n{body}"
+    
+    def transform_BreakStmt(self, node):
+        if node.label:
+            return f"raise _AuraBreak({node.label!r})"
+        return "break"
+    
+    def transform_ContinueStmt(self, node):
+        if node.label:
+            return f"raise _AuraContinue({node.label!r})"
+        return "continue"
+    
+    def transform_ReturnStmt(self, node):
+        if node.value:
+            value = self.expr_transformer.transform(node.value)
+            return f"return {value}"
+        return "return"
+
+    def transform_ThrowStmt(self, node):
+        if node.value:
+            # `throw "message"` must raise an exception object: Python does not
+            # allow raising bare strings. Wrap non-exception values so the
+            # documented `throw ValueError(...)` form and the convenient string
+            # form both work.
+            if isinstance(node.value, StrLiteral):
+                return f"raise Exception({self.expr_transformer.transform(node.value)})"
+            value = self.expr_transformer.transform(node.value)
+            return f"raise {value}"
+        return "raise"
+    
+    def transform_TryStmt(self, node):
+        try_body = self._block(node.try_body)
+        result = f"try:\n{try_body}"
+        
+        for catch in node.catch_clauses:
+            exc_type = catch.exception_type or "Exception"
+            var_name = f" as {catch.var_name}" if catch.var_name else ""
+            catch_body = self._block(catch.body)
+            result += f"\nexcept {exc_type}{var_name}:\n{catch_body}"
+        
+        if node.finally_body:
+            finally_body = self._block(node.finally_body)
+            result += f"\nfinally:\n{finally_body}"
+        
+        return result
+    
+    def transform_WithStmt(self, node):
+        items = []
+        for expr, var_name in node.items:
+            expr_code = self.expr_transformer.transform(expr)
+            if var_name:
+                items.append(f"{expr_code} as {var_name}")
+            else:
+                items.append(expr_code)
+        
+        items_str = ", ".join(items)
+        body = self._block(node.body)
+        return f"with {items_str}:\n{body}"
+    
+    def transform_ImportStmt(self, node):
+        # import a, b as c -> import a, b as c
+        # import a.b {x, y} -> from a.b import x, y
+        # import a.b as c -> import a.b as c
+        if getattr(node, 'modules', None):
+            parts = []
+            for mod, mod_alias in node.modules:
+                parts.append(f"{mod} as {mod_alias}" if mod_alias else mod)
+            return "import " + ", ".join(parts)
+        if node.items:
+            parts = []
+            for item in node.items:
+                name, item_alias = item if isinstance(item, tuple) else (item, None)
+                if item_alias:
+                    parts.append(f"{name} as {item_alias}")
+                else:
+                    parts.append(name)
+            if node.alias:
+                # `import a.b as c {x}` is ambiguous; import the module under
+                # the alias *and* bind the selected names.
+                lines = [f"import {node.module} as {node.alias}"]
+                lines.append(f"from {node.module} import {', '.join(parts)}")
+                return "\n".join(lines)
+            return f"from {node.module} import {', '.join(parts)}"
+        if node.alias:
+            return f"import {node.module} as {node.alias}"
+        return f"import {node.module}"
+
+    def transform_Import(self, node):
+        """Legacy `Import(module, alias)` node."""
+        if getattr(node, 'alias', None):
+            return f"import {node.module} as {node.alias}"
+        return f"import {node.module}"
+
+    def transform_FromImport(self, node):
+        items = []
+        for name, alias in node.items:
+            if name == '*':
+                items.append('*')
+            elif alias:
+                items.append(f"{name} as {alias}")
+            else:
+                items.append(name)
+        return f"from {node.module} import {', '.join(items)}"
+
+    def transform_MatchStmt(self, node):
+        expr = self.expr_transformer.transform(node.expr)
+        
+        # Python 3.10+ match statement
+        result = f"match {expr}:\n"
+        
+        # Increase indent for cases
+        self.indent_level += 1
+        
+        for case in node.cases:
+            pattern = self.expr_transformer.transform(case.pattern)
+            if case.guard:
+                guard = self.expr_transformer.transform(case.guard)
+                result += f"{self._indent()}case {pattern} if {guard}:\n"
+            else:
+                result += f"{self._indent()}case {pattern}:\n"
+            
+            # Block handles its own indent increment usually? 
+            # If _block adds ANOTHER indent... check _block logic.
+            # Assuming _block increments, renders, decrements.
+            # So calling _block here works for case body relative to case.
+            body = self._block(case.body)
+            result += body + "\n"
+            
+        self.indent_level -= 1
+        return result
+    
+    def transform_Module(self, node):
+        """Transform a module declaration into a namespaced class.
+
+        Module members are static so `Module.member` keeps working. This is
+        also reachable when a module is nested inside a block.
+        """
+        header = f"class {node.name}:"
+        body_lines = []
+        for member in node.members:
+            if isinstance(member, FunctionDecl):
+                member.is_static = True
+                code = self.transform(member)
+            else:
+                code = self.transform(member)
+            if code and code.strip():
+                for line in code.split("\n"):
+                    body_lines.append("    " + line if line.strip() else line)
+        if not body_lines:
+            body_lines.append("    pass")
+        return header + "\n" + "\n".join(body_lines)
+
+    # ========== Helper: Transform patterns ==========
+    def _transform_pattern(self, pattern):
+        if isinstance(pattern, IdentifierPattern):
+            return pattern.name
+        elif isinstance(pattern, LiteralPattern):
+            val = pattern.value
+            # The parser may wrap a literal as an AST expression node.
+            if isinstance(val, Expr):
+                return self.expr_transformer.transform(val)
+            if isinstance(val, str): return repr(val)
+            if isinstance(val, bool): return str(val)
+            if val is None: return "None"
+            return str(val)
+        elif isinstance(pattern, WildcardPattern):
+            return "_"
+        elif isinstance(pattern, ListPattern):
+            pats = [self._transform_pattern(p) for p in pattern.patterns]
+            if pattern.rest_pattern:
+                pats.append(f"*{pattern.rest_pattern.name}")
+            return f"[{', '.join(pats)}]"
+        elif isinstance(pattern, DictPattern):
+            fields = []
+            for name, pat in pattern.field_patterns.items():
+                 # Match Python dict pattern: {key: value} 
+                 # Python match dict syntax: {"key": value} or {k: v} if k is literal?
+                 # Actually Python 3.10 match items are keys? 
+                 # case {"a": 1}:
+                 fields.append(f'"{name}": {self._transform_pattern(pat)}')
+            if pattern.rest_pattern:
+                 fields.append(f"**{pattern.rest_pattern.name}")
+            return f"{{{', '.join(fields)}}}"
+        elif isinstance(pattern, ConstructorPattern):
+            name = pattern.name
+            args = [self._transform_pattern(p) for p in pattern.subpatterns]
+            return f"{name}({', '.join(args)})"
+
+        elif isinstance(pattern, OrPattern):
+            pats = [self._transform_pattern(p) for p in pattern.patterns]
+            return f"({' | '.join(pats)})"
+        
+        return "_"
+

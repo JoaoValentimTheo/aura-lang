@@ -3,11 +3,11 @@ class BaseC36999Li {
     public def render() -> str { return "base"; }
 }
 
-class ImplC12006Zk extends BaseC36999Li {
+class ImplC12006Zk(BaseC36999Li) {
     public def render() -> str { return "child1"; }
 }
 
-class C48104Ed extends BaseC36999Li {
+class C48104Ed(BaseC36999Li) {
     public def render() -> str { return "child2"; }
 }
 

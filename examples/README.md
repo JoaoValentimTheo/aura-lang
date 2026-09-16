@@ -1,45 +1,42 @@
-# The Zen of Aura
+# Aura Examples
 
-*Explicit is better than implicit.*
-*Simple is better than complex.*
-*There should be one-- and preferably only one --obvious way to do it.*
+Runnable Aura programs demonstrating the language.
 
-Aura adheres to strict syntactic standards to ensure readability and maintainability.
+| File | What it shows |
+|------|---------------|
+| `hello.aura` | Basic output |
+| `fibonacci.aura` | Loops and variables |
+| `prime_checker.aura` | Functions, conditionals, loops |
+| `classes.aura` | Classes, constructors, inheritance, properties |
+| `functional.aura` | Lambdas, pipe operator, comprehensions |
+| `pattern_matching.aura` | `match` with guards and destructuring |
+| `error_handling.aura` | `try`/`catch`/`finally`, `guard`, `throw` |
+| `macros.aura` | Built-in decorators (`@debug`, `@timeit`, `@memoize`, `@cache`) |
+| `tour.aura` | A tour of the whole language |
 
-## Standard Syntax
+Run any example with:
 
-### Functions
-Use `def` to define functions. `fn` is deprecated.
-
-```aura
-public def add(a: int, b: int) {
-    return a + b
-}
+```bash
+python3 main.py run examples/tour.aura
 ```
 
-### Control Flow
-Use `if`, `while`, and `match`.
-Deprecated: `unless`, `until`, `loop`, `guard`.
+## Style notes
 
-```aura
-// Correct
-if !condition { ... }
-while condition { ... }
+Aura follows a single, explicit syntax:
 
-// Incorrect (Deprecated)
-// unless condition { ... }
-// until !condition { ... }
-```
+- Functions use `def`; `fn` does not exist.
+- Inheritance uses parentheses: `class Dog(Animal) { ... }`.
+- Generics use square brackets: `class Box[T] { ... }`.
+- Logical negation is `not`; `!` is not part of the language.
+- `unless`, `until`, `loop` and `guard` are first-class statements.
 
-### Pattern Matching
-Use `match` for branching on values.
+## Testing
 
-```aura
-match value {
-    case 1 { print("One") }
-    case _ { print("Other") }
-}
-```
+The project is verified by a large automated test suite:
 
-## Testing Philosophy
-We verify Aura's correctness using a massive stochastic test suite (500,000+ tests) that generates structurally diverse code adhering to these principles.
+- `tests/test_massive_aura_files.py` - generated language constructs
+- `tests/test_massive_generated.py` - generated robustness cases
+- `tests/test_massive_stress.py` - 100,000 stress cases
+- `tests/test_massive_aura_v2.py` - stochastic fuzzing (200 seeds by default;
+  set `AURA_FUZZ_SEEDS` for a longer campaign)
+- `tests/test_runtime.py` and `tests/test_regressions.py` - end-to-end checks

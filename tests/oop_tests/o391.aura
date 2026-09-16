@@ -3,11 +3,11 @@ class AbstractC98650Nt {
     public def render() -> str { return "base"; }
 }
 
-class BaseC73907Ub extends AbstractC98650Nt {
+class BaseC73907Ub(AbstractC98650Nt) {
     public def render() -> str { return "child1"; }
 }
 
-class BaseC46376Oj extends AbstractC98650Nt {
+class BaseC46376Oj(AbstractC98650Nt) {
     public def render() -> str { return "child2"; }
 }
 

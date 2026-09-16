@@ -3,11 +3,11 @@ class ImplC74101Vs {
     public def render() -> str { return "base"; }
 }
 
-class BaseC23199Vk extends ImplC74101Vs {
+class BaseC23199Vk(ImplC74101Vs) {
     public def render() -> str { return "child1"; }
 }
 
-class BaseC10562Yg extends ImplC74101Vs {
+class BaseC10562Yg(ImplC74101Vs) {
     public def render() -> str { return "child2"; }
 }
 

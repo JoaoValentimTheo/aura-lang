@@ -1,433 +1,171 @@
-# Aura Transpiler Design Document
+# Aura Transpiler - Architecture
+
+Internal documentation for the Aura transpiler implementation.
+
+---
 
 ## Overview
 
-Aura is a **gradually-typed**, **functional-first** programming language that transpiles to Python 3. The transpiler converts Aura source code (.aura) to executable Python code while maintaining type safety, performance, and expressiveness.
+Aura is a **gradually-typed**, **functional-first** programming language that transpiles to Python 3. The transpiler converts `.aura` source files to executable Python code.
 
 ## Design Principles
 
-1. **Simplicity**: Straightforward syntax, minimal boilerplate
-2. **Type Safety**: Optional but comprehensive type system without runtime overhead
-3. **Functional First**: Pure functions, immutable data, higher-order functions
+1. **Simplicity**: Explicit syntax with minimal boilerplate
+2. **Type Safety**: Optional type system without runtime overhead
+3. **Functional First**: First-class lambdas, pipe operator, higher-order functions
 4. **Python Integration**: Seamless interoperability with Python ecosystem
-5. **Clarity**: Generated code should be readable and debuggable
-6. **Performance**: No unnecessary abstractions or overhead
+5. **Readability**: Generated Python code should be clean and debuggable
 
 ## Architecture
 
-### Phase Model
-
-Aura development follows a phased approach:
-
 ```
-Phase 1: Foundation (COMPLETE)
-  - Basic AST nodes
-  - Simple parser scaffold
-  - Basic transformer
-  - Project structure
-
-Phase 2: Core Features (COMPLETE)
-  - 60+ AST node types
-  - ANTLR4 grammar
-  - Complete expression/statement transformers
-  - Type system foundation
-  - 12-test suite (100% passing)
-  - CLI with transpile command
-
-Phase 3: Advanced Features (IN PROGRESS)
-  - Complete type checking system
-  - Error handling with source locations
-  - CLI: check, format, lint, repl commands
-  - Comprehensive documentation
-  - ANTLR4 code generation
-
-Phase 4: Production Ready
-  - Macro system with decorators
-  - Standard library
-  - Package management
-  - Optimization passes
-
-Phase 5: Ecosystem
-  - IDE integration (LSP, VS Code)
-  - Package registry
-  - REPL with debugging
-  - Performance profiling
+Source (.aura) --> Parser --> AST --> Transformer --> Python Code
+                       |                    |
+                       v                    v
+                 Type Checker         Macro Expansion
 ```
 
-### Component Architecture
+### Components
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| ANTLR Grammar | `parser/aura.g4` | Language syntax definition |
+| AST Nodes | `transpiler/ast.py` | 83 AST node types |
+| Parser | `parser/to_ast.py` | Convert parse tree to AST |
+| Transformer | `transpiler/transformer.py` | AST to Python code |
+| Expression Transformer | `transpiler/transformers/expressions.py` | Expression handling |
+| Statement Transformer | `transpiler/transformers/statements.py` | Statement handling |
+| Type System | `transpiler/types.py` | 15 type classes, inference, checking |
+| Macros | `transpiler/macros.py` | Decorator-based macro system |
+| Error Handling | `transpiler/errors.py` | Error collection and formatting |
+| CLI | `main.py` | User interface |
+
+See [AUDIT.md](AUDIT.md) for the findings and fixes from the code audit.
+
+### Compilation Pipeline
+
+1. **Lexical Analysis**: Source code is tokenized by ANTLR4
+2. **Parsing**: Tokens are parsed into a parse tree using `parser/aura.g4`
+3. **AST Construction**: Parse tree is converted to AST nodes (`parser/to_ast.py`)
+4. **Type Checking**: Optional type validation (`transpiler/types.py`)
+5. **Macro Expansion**: Decorator macros are applied (`transpiler/macros.py`)
+6. **Transformation**: AST is converted to Python source code
+7. **Execution**: Generated Python code is executed via `exec()` or saved to file
+
+### AST Node Types
+
+The AST (`transpiler/ast.py`) defines 83 node types covering:
+
+- **Declarations**: `VarDecl`, `ConstDecl`, `FunctionDecl`, `ClassDecl`, `TraitDecl`, `TypeDecl`, `ModuleDecl`
+- **Statements**: `IfStmt`, `WhileStmt`, `ForStmt`, `LoopStmt`, `TryStmt`, `MatchStmt`, `ReturnStmt`, `BreakStmt`, `ContinueStmt`, `AssertStmt`
+- **Expressions**: `BinaryOp`, `UnaryOp`, `CallExpr`, `LambdaExpr`, `PipeExpr`, `TernaryExpr`, `ElvisExpr`, `CoalesceExpr`, `RangeExpr`, `ComprehensionExpr`, `SafeNavExpr`
+- **Literals**: `IntLiteral`, `FloatLiteral`, `StrLiteral`, `BoolLiteral`, `NoneLiteral`, `ListLiteral`, `DictLiteral`, `SetLiteral`, `TupleLiteral`
+- **Patterns**: `LiteralPattern`, `IdentifierPattern`, `WildcardPattern`, `ConstructorPattern`, `ListPattern`, `DictPattern`, `OrPattern`, `AsPattern`
+- **Types**: `NamedType`, `FunctionType`, `ListType`, `DictType`, `UnionType`, `OptionalType`, `StructuralType`
+
+### Macro System
+
+Built-in macros are implemented as Python decorators injected as a runtime prelude:
+
+| Macro | Purpose |
+|-------|---------|
+| `@debug` | Log function entry/exit with arguments and return value |
+| `@timeit` | Measure and print execution time |
+| `@memoize` | Cache function results (unbounded) |
+| `@cache(maxsize=N)` | Cache with LRU eviction |
+| `@must_return` | Assert function returns a value |
+| `@deprecated` / `@deprecated("msg")` | Warn when function is used |
+
+`@property`, `@staticmethod` and `@classmethod` are handled directly by the
+parser/transformer (they are language-level decorators, not prelude macros).
+
+The prelude is injected automatically only when a macro is used.
+
+### Type System
+
+The type system (`transpiler/types.py`) provides 15 type classes:
+
+- `Type` (base), `AnyType`, `NeverType`, `NoneType`
+- `IntType`, `FloatType`, `StrType`, `BoolType`
+- `ListType`, `DictType`, `SetType`, `TupleType`
+- `FunctionType`, `ClassType`, `UnionType`, `TypeVariable`
+
+Features:
+- Type inference from literals and operations
+- Union type compatibility
+- Generic type variables
+- Structural type matching
+
+## Project Structure
+
+The installable package is `aura/`; top-level `parser/`, `transpiler/`,
+`stdlib/`, `repl/` and `tools/` are thin compatibility shims for source
+checkouts and existing tests.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        CLI (main.py)                        │
-│  transpile | check | format | lint | repl                 │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-        ┌────────────────┼────────────────┐
-        │                │                │
-┌───────▼────┐  ┌────────▼────────┐  ┌──▼──────────┐
-│  Parser    │  │  Type System    │  │ Error       │
-│            │  │                 │  │ Handling    │
-│ aura.g4    │  │ types.py        │  │ errors.py   │
-│ to_ast.py  │  │ - TypeChecker   │  │ - ErrorCode │
-└───────┬────┘  │ - TypeInference │  │ - Collector │
-        │       └────────┬────────┘  └──┬──────────┘
-        │                │              │
-        │                │              │
-        └────────────────┼──────────────┘
-                         │
-                ┌────────▼────────┐
-                │   AST Nodes     │
-                │   (ast.py)      │
-                │                 │
-                │ 60+ node types  │
-                └────────┬────────┘
-                         │
-        ┌────────────────┼────────────────┐
-        │                │                │
-┌───────▼──────────┐  ┌──▼──────────┐  ┌─▼────────────┐
-│  ExprTransformer │  │  StmtTrans- │  │ Main         │
-│                  │  │  former     │  │ Transformer  │
-│ expressions.py   │  │ statements  │  │ transformer  │
-│ - 50+ methods    │  │ .py         │  │ .py          │
-│ - Operators      │  │ - 30+ methods   │ - Orchestrator
-│ - Functions      │  │ - Control flow  │
-│ - Lambdas        │  │ - Declarations  │
-└────────┬─────────┘  └──┬──────────┘  └─┬────────────┘
-         │               │              │
-         └───────────────┼──────────────┘
-                         │
-                ┌────────▼─────────┐
-                │  Python Code     │
-                │  (generated)     │
-                └──────────────────┘
+aura-lang/
+├── aura/                   # Installable package (pip install .)
+│   ├── cli.py              # Console entry point (`aura` command)
+│   ├── runtime.py          # stdlib namespace aliases for generated code
+│   ├── parser/
+│   │   ├── aura.g4         # ANTLR4 grammar (reference)
+│   │   ├── to_ast.py       # Tokenizer + recursive-descent parser
+│   │   └── generated/      # Generated parser code
+│   ├── transpiler/         # Core transpilation logic
+│   │   ├── ast.py          # AST node definitions (83+ classes)
+│   │   ├── transformer.py  # Main AST to Python transformer
+│   │   ├── semantics.py    # Mutability checker
+│   │   ├── importer.py     # Local .aura import hook
+│   │   ├── types.py        # Type system (15 type classes)
+│   │   ├── macros.py       # Runtime prelude (6 macros)
+│   │   ├── errors.py       # Error collection and formatting
+│   │   └── transformers/   # Modular transformers
+│   │       ├── expressions.py
+│   │       └── statements.py
+│   ├── stdlib/             # Standard library (210+ functions)
+│   │   ├── collections.py  # List, dict, set utilities
+│   │   ├── itertools.py    # Iterator utilities
+│   │   ├── math.py         # Mathematical functions
+│   │   ├── string.py       # String manipulation
+│   │   ├── json.py, time.py, io.py
+│   │   ├── regex.py        # Regular expressions
+│   │   ├── os.py           # Environment, paths, process info
+│   │   └── http.py         # HTTP client (stdlib urllib, optional requests)
+│   ├── repl/               # Interactive engine
+│   ├── lsp/                # Language server (JSON-RPC over stdio)
+│   └── tools/              # Formatter, deps, release, debugger, generators
+├── examples/               # Working example programs
+├── tests/                  # Test suite (static, runtime, regression, fuzz)
+├── docs/                   # Documentation
+├── main.py                 # Backward-compatible CLI shim
+└── pyproject.toml          # Packaging metadata + console script
 ```
 
-### Data Flow
-
-```
-Aura Source (.aura)
-       │
-       ▼
-   Parser (to_ast.py)
-       │
-       ▼
-   AST (60+ node types)
-       │
-       ├──────────────────┐
-       │                  │
-       ▼                  ▼
-   Type Checker     Transformer
-   (types.py)      (transformer.py)
-       │                  │
-       │                  │
-       └──────────┬───────┘
-                  │
-                  ▼
-          Python Code (.py)
-                  │
-                  ▼
-          Python Interpreter
-```
-
-## Type System Design
-
-### Type Hierarchy
-
-```
-Type
-├── AnyType
-├── NeverType
-├── NoneType
-├── IntType
-├── FloatType
-├── StrType
-├── BoolType
-├── ListType[T]
-├── DictType[K, V]
-├── SetType[T]
-├── TupleType[T...]
-├── FunctionType[Params... → Return]
-├── UnionType[T1 | T2 | ...]
-├── ClassType[T]
-└── TypeVariable[T]
-```
-
-### Type Inference
-
-The type inference system:
-
-1. **Literal Inference**: Infer types from literal values
-   - `42` → `Int`
-   - `3.14` → `Float`
-   - `"hello"` → `String`
-
-2. **Operation Inference**: Infer from operations
-   - `2 + 3` → `Int`
-   - `[1, 2, 3]` → `[Int]`
-   - `{a: 1, b: 2}` → `{String: Int}`
-
-3. **Function Inference**: From parameter/return types
-   - `fn(x: Int) -> Int { x * 2 }` → `(Int) -> Int`
-
-4. **Control Flow Narrowing**: Type refinement
-   - In `if x is Int { ... }`, `x` is narrowed to `Int`
-
-### Type Checking
-
-The TypeChecker validates:
-
-- **Assignments**: Value type matches variable type
-- **Function calls**: Arguments match parameter types
-- **Operations**: Operands are compatible
-- **Return values**: Match function's return type
-- **Method calls**: Method exists on object's type
-- **Field access**: Field exists on object's type
-
-## Transformer Design
-
-### Expression Transformation
-
-Expression transformers convert Aura expressions to Python:
-
-```
-Aura: 2 + 3
-→ Python: (2 + 3)
-
-Aura: [1, 2, 3] |> map(x => x * 2)
-→ Python: list(map(lambda x: x * 2, [1, 2, 3]))
-
-Aura: user?.address?.city
-→ Python: (user.address.city if user is not None and user.address is not None else None)
-```
-
-### Statement Transformation
-
-Statement transformers convert Aura statements to Python:
-
-```
-Aura: if x > 0 { print(x) }
-→ Python: if x > 0:
-          print(x)
-
-Aura: for item in [1, 2, 3] { print(item) }
-→ Python: for item in [1, 2, 3]:
-          print(item)
-```
-
-## Error Handling Design
-
-### Error Categories
-
-1. **Syntax Errors** (E00x): Invalid grammar
-2. **Type Errors** (E10x): Type mismatches
-3. **Runtime Errors** (E20x): Division by zero, etc.
-4. **Semantic Errors** (E30x): Duplicate definitions
-5. **I/O Errors** (E40x): File not found, etc.
-
-### Error Recovery
-
-Errors are collected during compilation:
-
-```python
-collector = ErrorCollector()
-collector.add(ErrorCode.TYPE_MISMATCH, "Expected Int, got String")
-collector.add_warning(ErrorCode.UNUSED_VARIABLE, "Variable 'x' is unused")
-
-if collector.has_errors():
-    raise CompilationException(collector)
-```
-
-### Error Messages
-
-Error messages include:
-- **Location**: File, line, column
-- **Message**: Clear description
-- **Hint**: Suggested fix
-- **Related**: Related source locations
-
-Example:
-```
-error[E101]: Type mismatch: expected Int, got String
-  at hello.aura:5:10
-  let x: Int = "hello"
-           ^ Type annotation says Int
-  hint: Remove type annotation or provide an Int value
-```
-
-## Performance Considerations
-
-### Code Generation Quality
-
-- **Minimal wrapping**: Direct Python idioms
-- **No intermediate objects**: Avoid unnecessary conversions
-- **Generator-based**: Comprehensions compile to generators
-- **Inlining**: Small functions are inlined
-
-### Optimization Passes
-
-Phase 4+ will include:
-
-1. **Constant Folding**: Compute constant expressions at compile time
-2. **Dead Code Elimination**: Remove unreachable code
-3. **Function Inlining**: Replace function calls with body
-4. **Loop Optimization**: Simplify comprehensions
-5. **Type Specialization**: Optimize based on types
-
-## Python Integration
-
-### Direct Python Interop
-
-```aura
-// Use Python modules
-import sys
-import json
-
-// Call Python functions
-let data = json.loads(json_str)
-
-// Create Python objects
-let now = @datetime.datetime.now()
-```
-
-### Generated Code Quality
-
-Generated Python code should be:
-
-- **Readable**: Proper indentation and formatting
-- **Debuggable**: Line numbers match source
-- **Efficient**: No unnecessary operations
-- **Compatible**: Works with Python 3.8+
-
-Example:
-
-```python
-# Generated from: let x = 10
-x = 10
-
-# Generated from: fn add(a, b) { a + b }
-def add(a, b):
-    return a + b
-```
-
-## Extension Points
-
-### Macros
-
-Future macro system will support:
-
-```aura
-@macro
-fn my_macro(code: String) -> String {
-    // Transform code at compile time
-}
-
-@my_macro
-let result = expensive_computation()
-```
-
-### Custom Transformers
-
-Custom transformers for new syntax:
-
-```python
-class CustomTransformer(Transformer):
-    def transform_MyNode(self, node):
-        # Custom transformation logic
-        return "..."
-```
-
-### Plugin System
-
-Phase 4+ will support plugins:
-
-```python
-class MyPlugin(AuraPlugin):
-    def register_types(self, registry):
-        registry.add('MyType', MyTypeClass)
-    
-    def register_transformers(self, registry):
-        registry.add('MyNode', MyTransformer)
-```
-
-## Testing Strategy
-
-### Test Levels
-
-1. **Unit Tests** (tests/): Individual components
-2. **Integration Tests**: Multiple components together
-3. **End-to-End Tests**: Full transpilation pipeline
-4. **Performance Tests**: Benchmark generated code
-
-### Test Coverage
-
-- Target >80% code coverage
-- Test happy paths
-- Test error cases
-- Test edge cases
-
-### Example Test
-
-```python
-def test_pipe_operator():
-    """Pipe operator chains functions correctly."""
-    source = "[1, 2, 3] |> map(x => x * 2)"
-    expected = "list(map(lambda x: x * 2, [1, 2, 3]))"
-    
-    ast = parse_aura(source)
-    result = Transformer().transform(ast)
-    
-    assert result.strip() == expected
-```
-
-## Future Directions
-
-### Phase 4+
-
-1. **Standard Library**: Core modules (collections, math, etc.)
-2. **Package Management**: Package manager and registry
-3. **REPL**: Interactive shell with debugging
-4. **IDE Support**: LSP server, VS Code extension
-5. **Performance**: Optimization passes, benchmarking
-6. **Compiler**: Ahead-of-time compilation to machine code
-
-### Long-term Vision
-
-Aura could evolve into:
-- Standalone language with own VM
-- WebAssembly compilation target
-- Distributed computing support
-- Advanced type system features
-- Metaprogramming capabilities
-
-## Design Decisions
-
-### Why Gradual Typing?
-
-- **Developer productivity**: Write code without types first
-- **Flexible migration**: Gradually add types as needed
-- **Python compatibility**: Python is dynamically typed
-- **Type safety option**: Types available when wanted
-
-### Why Functional-First?
-
-- **Correctness**: Pure functions are easier to reason about
-- **Concurrency**: No mutable state issues
-- **Testing**: Easier to test pure functions
-- **Composition**: Function composition enables reusability
-
-### Why Transpile to Python?
-
-- **Proven ecosystem**: Leverage Python libraries
-- **Easy debugging**: Generated Python is readable
-- **Rapid prototyping**: No compiler infrastructure needed
-- **Compatibility**: Works anywhere Python runs
-
-## References
-
-- [Language Specification](aura.md)
-- [Type System Guide](TYPES.md)
-- [Language Guide](LANGUAGE_GUIDE.md)
-- [Contributing Guide](CONTRIBUTING.md)
-- [Semantic Rules](rules.md)
-- [Error Handling](errors.md)
-- [Functional Features](functional.md)
+## CLI Commands
+
+Installed as `aura <command>`; the same commands work via `python3 main.py`.
+
+| Command | Description |
+|---------|-------------|
+| `aura transpile <file>` | Convert Aura to Python (stdout) |
+| `aura transpile <file> -o <out>` | Convert Aura to Python (file) |
+| `aura check <file>` | Type + mutability checks |
+| `aura format <file>` | Format source code |
+| `aura lint <file>` | Check style warnings |
+| `aura run <file>` | Transpile and execute |
+| `aura run <file> -v` | Run with Python code output |
+| `aura test <dir>` | Run `.aura` files |
+| `aura repl` | Start interactive REPL |
+| `aura init [name]` | Create `aura.toml` and `src/main.aura` |
+| `aura add <pkg>` | Add and install a dependency |
+| `aura install` | Install dependencies from `aura.toml` |
+| `aura deps` | List declared dependencies |
+| `aura version [bump]` | Show or bump the version |
+| `aura debug <file> [-t]` | Run under the trace debugger |
+| `aura lsp` | Start the language server (stdio) |
+
+## Dependencies
+
+- Python 3.10+
+- `antlr4-python3-runtime` (only needed to regenerate the ANTLR parser;
+  the runtime does not depend on it)

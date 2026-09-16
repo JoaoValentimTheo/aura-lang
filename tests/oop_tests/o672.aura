@@ -5,7 +5,7 @@ class RealC15033Wv {
     public def double_value() -> int { return self.value * 2; }
 }
 
-class MockC52926Vb extends RealC15033Wv {
+class MockC52926Vb(RealC15033Wv) {
     public def double_value() -> int { return self.value * 3; }
 }
 

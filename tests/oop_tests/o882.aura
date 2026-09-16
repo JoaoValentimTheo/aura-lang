@@ -5,7 +5,7 @@ class AbstractC91884Or {
     public def double_value() -> int { return self.value * 2; }
 }
 
-class ImplC12578Oh extends AbstractC91884Or {
+class ImplC12578Oh(AbstractC91884Or) {
     public def double_value() -> int { return self.value * 3; }
 }
 

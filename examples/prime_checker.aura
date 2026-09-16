@@ -1,15 +1,19 @@
 def is_prime(n) -> bool {
-  if n < 2 ret false
-  if n == 2 ret true
-  if n % 2 == 0 ret false
-  
-  for i in range(3, int(n**0.5) + 1, 2) {
-    if n % i == 0 ret false
+  if n < 2 { return false }
+  if n == 2 { return true }
+  if n % 2 == 0 { return false }
+
+  let mut i = 3
+  while i * i <= n {
+    if n % i == 0 { return false }
+    i += 2
   }
-  
-  ret true
+  return true
 }
 
-for n in [2, 3, 5, 7, 11, 13, 17, 19, 23, 29] {
-  print(f"{n} is prime: {is_prime(n)}")
+let primes = [n for n in range(2, 30) if is_prime(n)]
+print(primes)
+
+for n in primes {
+  print(f"{n} is prime")
 }

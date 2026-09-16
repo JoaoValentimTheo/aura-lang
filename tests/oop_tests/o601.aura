@@ -3,11 +3,11 @@ class RealC52359Uj {
     public def render() -> str { return "base"; }
 }
 
-class RealC34905Zm extends RealC52359Uj {
+class RealC34905Zm(RealC52359Uj) {
     public def render() -> str { return "child1"; }
 }
 
-class ImplC59445Hc extends RealC52359Uj {
+class ImplC59445Hc(RealC52359Uj) {
     public def render() -> str { return "child2"; }
 }
 

@@ -1,9 +1,14 @@
 def fibonacci(n) -> int {
-  let mut a, b = 0, 1
+  let mut a = 0
+  let mut b = 1
   for i in range(n) {
-    a, b = b, a + b
+    let next = a + b
+    a = b
+    b = next
   }
-  ret a
+  return a
 }
 
-print(fibonacci(10))
+for i in range(10) {
+  print(f"fib({i}) = {fibonacci(i)}")
+}

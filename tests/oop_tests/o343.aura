@@ -3,11 +3,11 @@ class BaseC19941Qn {
     public def process(x: int) -> int { return x; }
 }
 
-class ImplC77287Ys extends BaseC19941Qn {
+class ImplC77287Ys(BaseC19941Qn) {
     public def process(x: int) -> int { return x * 2; }
 }
 
-class C50477Pe extends BaseC19941Qn {
+class C50477Pe(BaseC19941Qn) {
     public def process(x: int) -> int { return x + 10; }
 }
 

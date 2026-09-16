@@ -4,11 +4,11 @@ class MockC82009Bh {
     public def get_val() -> int { return self.base_val; }
 }
 
-class MockC84104Qx extends MockC82009Bh {
+class MockC84104Qx(MockC82009Bh) {
     public def get_val() -> int { return self.base_val * 2; }
 }
 
-class BaseC37941Nf extends MockC84104Qx {
+class BaseC37941Nf(MockC84104Qx) {
     public def get_val() -> int { return self.base_val * 3; }
 }
 

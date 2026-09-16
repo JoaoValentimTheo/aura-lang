@@ -4,15 +4,15 @@ class AbstractC34290Xt {
     public def get_val() -> int { return self.base_val; }
 }
 
-class ImplC65965Nh extends AbstractC34290Xt {
+class ImplC65965Nh(AbstractC34290Xt) {
     public def get_val() -> int { return self.base_val * 2; }
 }
 
-class ConcreteC52250Xm extends ImplC65965Nh {
+class ConcreteC52250Xm(ImplC65965Nh) {
     public def get_val() -> int { return self.base_val * 3; }
 }
 
-class BaseC53841Le extends ConcreteC52250Xm {
+class BaseC53841Le(ConcreteC52250Xm) {
     public def get_val() -> int { return self.base_val * 4; }
 }
 

@@ -1,10 +1,10 @@
 // Security: Large Collection (size=164)
-let items = [];
+let mut items = [];
 for i in 1..164 {
     items = [*items, i];
 }
 
-let count = 0;
+let mut count = 0;
 for item in items {
     if item % 2 == 0 {
         count = count + 1;

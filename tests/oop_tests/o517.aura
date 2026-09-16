@@ -3,11 +3,11 @@ class BaseC10844Vj {
     public def render() -> str { return "base"; }
 }
 
-class BaseC75817Hh extends BaseC10844Vj {
+class BaseC75817Hh(BaseC10844Vj) {
     public def render() -> str { return "child1"; }
 }
 
-class BaseC89085Rd extends BaseC10844Vj {
+class BaseC89085Rd(BaseC10844Vj) {
     public def render() -> str { return "child2"; }
 }
 

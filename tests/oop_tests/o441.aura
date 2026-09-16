@@ -3,11 +3,11 @@ class RealC86174Ux {
     public def process(x: int) -> int { return x; }
 }
 
-class ConcreteC89268Ti extends RealC86174Ux {
+class ConcreteC89268Ti(RealC86174Ux) {
     public def process(x: int) -> int { return x * 2; }
 }
 
-class BaseC97021At extends RealC86174Ux {
+class BaseC97021At(RealC86174Ux) {
     public def process(x: int) -> int { return x + 10; }
 }
 

@@ -5,7 +5,7 @@ class ImplC62880Vc {
     public def double_value() -> int { return self.value * 2; }
 }
 
-class RealC17959Hv extends ImplC62880Vc {
+class RealC17959Hv(ImplC62880Vc) {
     public def double_value() -> int { return self.value * 3; }
 }
 

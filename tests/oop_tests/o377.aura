@@ -3,11 +3,11 @@ class BaseC87640Xq {
     public def render() -> str { return "base"; }
 }
 
-class RealC22397Hq extends BaseC87640Xq {
+class RealC22397Hq(BaseC87640Xq) {
     public def render() -> str { return "child1"; }
 }
 
-class ConcreteC50775By extends BaseC87640Xq {
+class ConcreteC50775By(BaseC87640Xq) {
     public def render() -> str { return "child2"; }
 }
 

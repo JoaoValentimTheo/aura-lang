@@ -5,7 +5,7 @@ class MockC42621Rs {
     public def double_value() -> int { return self.value * 2; }
 }
 
-class ConcreteC66328Ti extends MockC42621Rs {
+class ConcreteC66328Ti(MockC42621Rs) {
     public def double_value() -> int { return self.value * 3; }
 }
 

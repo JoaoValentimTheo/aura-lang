@@ -4,11 +4,11 @@ class RealC97822Rw {
     public def get_val() -> int { return self.base_val; }
 }
 
-class RealC79665Nn extends RealC97822Rw {
+class RealC79665Nn(RealC97822Rw) {
     public def get_val() -> int { return self.base_val * 2; }
 }
 
-class ConcreteC28006Pv extends RealC79665Nn {
+class ConcreteC28006Pv(RealC79665Nn) {
     public def get_val() -> int { return self.base_val * 3; }
 }
 

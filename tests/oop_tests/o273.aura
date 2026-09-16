@@ -3,11 +3,11 @@ class RealC54889Gt {
     public def process(x: int) -> int { return x; }
 }
 
-class ImplC77815Ch extends RealC54889Gt {
+class ImplC77815Ch(RealC54889Gt) {
     public def process(x: int) -> int { return x * 2; }
 }
 
-class MockC42808Vh extends RealC54889Gt {
+class MockC42808Vh(RealC54889Gt) {
     public def process(x: int) -> int { return x + 10; }
 }
 

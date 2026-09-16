@@ -36,12 +36,14 @@ class TestTokenizer(unittest.TestCase):
         self.assertEqual(len(tokens) - 1, 17)
         
     def test_f_strings(self):
-        # f-string syntax in tokenizer currently: f"..."
+        # f-strings carry their quote style plus the raw inner text.
         source = 'f"Hello {name}"'
         tokenizer = Tokenizer(source)
         tokens = tokenizer.tokenize()
         self.assertEqual(tokens[0].type, 'FSTRING')
-        self.assertEqual(tokens[0].value, 'Hello {name}')
+        quote, raw = tokens[0].value
+        self.assertEqual(quote, '"')
+        self.assertEqual(raw, 'Hello {name}')
         
     def test_float_vs_range(self):
         # 1..10 -> INT OP(..) INT

@@ -3,11 +3,11 @@ class AbstractC52526Wj {
     public def render() -> str { return "base"; }
 }
 
-class AbstractC53954Yu extends AbstractC52526Wj {
+class AbstractC53954Yu(AbstractC52526Wj) {
     public def render() -> str { return "child1"; }
 }
 
-class RealC28717Pu extends AbstractC52526Wj {
+class RealC28717Pu(AbstractC52526Wj) {
     public def render() -> str { return "child2"; }
 }
 

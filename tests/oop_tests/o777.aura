@@ -3,11 +3,11 @@ class RealC73574Ij {
     public def process(x: int) -> int { return x; }
 }
 
-class RealC54110Mb extends RealC73574Ij {
+class RealC54110Mb(RealC73574Ij) {
     public def process(x: int) -> int { return x * 2; }
 }
 
-class BaseC69847Hs extends RealC73574Ij {
+class BaseC69847Hs(RealC73574Ij) {
     public def process(x: int) -> int { return x + 10; }
 }
 

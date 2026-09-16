@@ -3,11 +3,11 @@ class ImplC29940Kt {
     public def render() -> str { return "base"; }
 }
 
-class ConcreteC89158Sr extends ImplC29940Kt {
+class ConcreteC89158Sr(ImplC29940Kt) {
     public def render() -> str { return "child1"; }
 }
 
-class BaseC52414Mf extends ImplC29940Kt {
+class BaseC52414Mf(ImplC29940Kt) {
     public def render() -> str { return "child2"; }
 }
 

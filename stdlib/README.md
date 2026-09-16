@@ -1,307 +1,324 @@
 # Aura Standard Library
 
-The Aura Standard Library provides core functionality for common programming tasks.
+The Aura Standard Library provides core functionality for common programming
+tasks. Aura code imports it with the `stdlib.` prefix.
+
+```aura
+from stdlib.math import sqrt, PI
+from stdlib.collections import map, filter, reduce
+```
+
+The three supported import forms are:
+
+```aura
+import stdlib.collections as c          // module alias
+from stdlib.collections import map, filter
+import stdlib.collections { map, filter }   // brace form
+```
 
 ## Modules
 
-### collections
+### json
 
-Provides list, dict, and set utilities.
+JSON parsing and serialization.
 
 ```aura
-import collections
+import stdlib.json
 
-// List operations
-let numbers = [1, 2, 3, 4, 5]
-let doubled = collections.list_map(fn(x) { x * 2 }, numbers)    // [2, 4, 6, 8, 10]
-let even = collections.list_filter(fn(x) { x % 2 == 0 }, numbers)  // [2, 4]
-let sum = collections.list_reduce(fn(a, b) { a + b }, numbers, 0)  // 15
-
-// Dictionary operations
-let user = {name: "Alice", age: 30}
-let age = collections.dict_get(user, "age", 0)  // 30
-let keys = collections.dict_keys(user)           // ["name", "age"]
-
-// Set operations
-let a = {1, 2, 3}
-let b = {2, 3, 4}
-let union = collections.set_union(a, b)         // {1, 2, 3, 4}
-let inter = collections.set_intersection(a, b)  // {2, 3}
+let data = stdlib.json.loads('{"name": "Aura"}')
+let text = stdlib.json.dumps(data, indent=2)
+let pretty = stdlib.json.pretty(data)
+let valid = stdlib.json.is_valid('{"ok": true}')
 ```
 
 **Functions:**
-- `list_map(fn, items)` - Map function over list
-- `list_filter(predicate, items)` - Filter list
-- `list_reduce(fn, items, initial)` - Reduce to single value
-- `list_find(predicate, items)` - Find first match
-- `list_any(predicate, items)` - Check if any match
-- `list_all(predicate, items)` - Check if all match
-- `list_take(n, items)` - Take first n items
-- `list_drop(n, items)` - Drop first n items
-- `list_zip(*iterables)` - Zip lists
-- `list_flatten(items)` - Flatten nested lists
-- `list_unique(items)` - Get unique items
-- `list_sort(items, key, reverse)` - Sort list
-- `list_reverse(items)` - Reverse list
-- `list_chunk(n, items)` - Split into chunks
-- `dict_get(d, key, default)` - Get with default
-- `dict_keys(d)` - Get all keys
-- `dict_values(d)` - Get all values
-- `dict_items(d)` - Get key-value pairs
-- `dict_merge(*dicts)` - Merge dicts
-- `dict_filter(predicate, d)` - Filter dict
-- `dict_map(fn, d)` - Map over values
-- `set_union(*sets)` - Union of sets
-- `set_intersection(*sets)` - Intersection
-- `set_difference(a, *rest)` - Difference
+- `loads(s)` - Parse JSON string
+- `dumps(obj, indent)` - Serialize to JSON (strict: rejects NaN/Infinity)
+- `load(path)` - Read and parse JSON file
+- `dump(obj, path, indent)` - Write JSON to file
+- `pretty(obj)` - Pretty-print JSON (indent=2, strict)
+- `parse(s)` - Alias for loads
+- `stringify(obj)` - Alias for dumps
+- `is_valid(s)` - Check if string is standards-compliant JSON
+- `merge(*dicts)` - Merge dicts (must be mappings), return JSON string
+
+### time
+
+Time and date utilities.
+
+```aura
+import stdlib.time
+
+let t = stdlib.time.now()         // timestamp (seconds)
+let ms = stdlib.time.now_ms()     // timestamp (milliseconds)
+let iso = stdlib.time.iso()       // ISO 8601 string
+stdlib.time.sleep(0.5)            // sleep 500ms
+let elapsed = stdlib.time.elapsed(start)
+```
+
+**Functions:**
+- `now()` - Current timestamp (seconds)
+- `now_ms()` - Current timestamp (milliseconds)
+- `sleep(seconds)` - Sleep for given seconds
+- `clock()` - CPU time used by process
+- `monotonic()` - Monotonic clock
+- `perf_counter()` - High-resolution performance counter
+- `strftime(fmt)` - Format current time
+- `parse(date_string, fmt)` - Parse date string
+- `iso()` - Current time as ISO 8601
+- `timestamp(dt_obj)` - Convert datetime to timestamp
+- `elapsed(start)` - Elapsed time since start
+
+### io
+
+File and directory operations.
+
+```aura
+import stdlib.io
+
+stdlib.io.write("out.txt", "hello")
+let content = stdlib.io.read("out.txt")
+let lines = stdlib.io.read_lines("data.csv")
+
+if stdlib.io.exists("config.json") {
+  let cfg = stdlib.io.read("config.json")
+}
+
+stdlib.io.mkdir("output")
+stdlib.io.rm("temp.txt")
+let files = stdlib.io.ls(".")
+```
+
+**Functions:**
+- `read(path)` - Read entire file as string
+- `write(path, content)` - Write string to file
+- `append(path, content)` - Append to file
+- `exists(path)` - Check if file/dir exists
+- `is_file(path)` - Check if path is a file
+- `is_dir(path)` - Check if path is a directory
+- `mkdir(path)` - Create directory
+- `ls(path)` - List directory contents
+- `rm(path)` - Remove file
+- `rename(old, new)` - Rename/move file
+- `extension(path)` - Get file extension
+- `basename(path)` - Get filename without dir
+- `dirname(path)` - Get directory part
+- `join(*parts)` - Join path components
+- `read_lines(path)` - Read file as list of lines (newlines removed)
+- `write_lines(path, lines)` - Write list of lines (adds trailing newline)
+- `copy(src, dst)` - Copy file
+- `size(path)` - Get file size in bytes
+- `touch(path)` - Create empty file
+
+### collections
+
+List, dict and set utilities.
+
+```aura
+from stdlib.collections import map, filter, reduce
+
+let numbers = [1, 2, 3, 4, 5]
+let doubled = map(numbers, (x) => x * 2)       // [2, 4, 6, 8, 10]
+let even = filter(numbers, (x) => x % 2 == 0)  // [2, 4]
+let sum = reduce(numbers, (a, b) => a + b, 0)  // 15
+```
+
+`map`, `filter`, `reduce`, `take` and `drop` are **data-first**, so they work
+with the pipe operator:
+
+```aura
+let result = [1, 2, 3, 4, 5]
+  |> filter((x) => x > 2)
+  |> map((x) => x * 10)
+  |> reduce((a, b) => a + b, 0)
+```
+
+**Data-first helpers:**
+- `map(items, fn)` - Map function over items
+- `filter(items, predicate)` - Keep items matching predicate
+- `reduce(items, fn, initial)` - Reduce to a single value
+- `take(items, n)` - First n items
+- `drop(items, n)` - Items after the first n
+
+**List helpers (fn-first):**
+- `list_map(fn, items)`, `list_filter(predicate, items)`, `list_reduce(fn, items, initial)`
+- `list_find(predicate, items)`, `list_any(predicate, items)`, `list_all(predicate, items)`
+- `list_take(n, items)`, `list_drop(n, items)`, `list_chunk(n, items)`
+- `list_zip(*iterables)`, `list_flatten(items)`, `list_unique(items)`
+- `list_sort(items, key, reverse)`, `list_reverse(items)`
+
+**Dict helpers:**
+- `dict_get(d, key, default)`, `dict_keys(d)`, `dict_values(d)`, `dict_items(d)`
+- `dict_merge(*dicts)`, `dict_filter(predicate, d)`, `dict_map(fn, d)`
+
+**Set helpers:**
+- `set_union(*sets)`, `set_intersection(*sets)`, `set_difference(a, *rest)`
+
+`AuraDict` is the runtime dict used for dict literals; it supports both
+`user["name"]` and `user.name`.
 
 ### itertools
 
-Provides iterator and sequence utilities.
+Iterator and sequence utilities.
 
 ```aura
-import itertools
+from stdlib.itertools import combinations, permutations, chain, groupby
 
-// Create ranges
-for i in itertools.range_iter(0, 10) {
-    print(i)
-}
-
-// Combinations and permutations
 let items = [1, 2, 3]
-let combos = itertools.combinations(items, 2)    // [[1,2], [1,3], [2,3]]
-let perms = itertools.permutations(items, 2)     // [[1,2], [1,3], [2,1], ...]
-
-// Chain iterables
-let combined = itertools.chain([1,2], [3,4], [5,6])  // [1, 2, 3, 4, 5, 6]
-
-// Grouping
-let grouped = itertools.groupby([1,1,2,2,3])    // {1: [1,1], 2: [2,2], 3: [3]}
+let combos = combinations(items, 2)     // [(1,2), (1,3), (2,3)]
+let perms = permutations(items, 2)      // [(1,2), (1,3), (2,1), ...]
+let combined = chain([1, 2], [3, 4])    // [1, 2, 3, 4]
+let grouped = groupby([1, 1, 2, 2, 3])  // {1: [1, 1], 2: [2, 2], 3: [3]}
 ```
 
 **Functions:**
-- `range_iter(start, end, step)` - Create range
-- `cycle(iterable)` - Cycle indefinitely
-- `repeat(value, times)` - Repeat value
-- `chain(*iterables)` - Chain together
-- `combinations(iterable, r)` - Combinations
-- `permutations(iterable, r)` - Permutations
-- `product(*iterables, repeat)` - Cartesian product
-- `count(start, step)` - Infinite counter
-- `enumerate_iter(iterable, start)` - Enumerate
-- `islice(iterable, *args)` - Slice iterator
-- `takewhile(predicate, iterable)` - Take while true
-- `dropwhile(predicate, iterable)` - Drop while true
-- `groupby(iterable, key)` - Group by key
-- `filterfalse(predicate, iterable)` - Keep false
-- `starmap(fn, iterable)` - Apply to tuples
-- `tee(iterable, n)` - Create n copies
-- `zip_longest(*iterables, fillvalue)` - Zip with fill
-- `pairwise(iterable)` - Consecutive pairs
+- `range_iter(start, end, step)` - Create a range
+- `cycle(iterable)`, `repeat(value, times)`, `count(start, step)`
+- `chain(*iterables)`, `product(*iterables, repeat)`
+- `combinations(iterable, r)`, `permutations(iterable, r)`
+- `enumerate_iter(iterable, start)`, `islice(iterable, *args)`
+- `takewhile(predicate, iterable)`, `dropwhile(predicate, iterable)`
+- `groupby(iterable, key)`, `filterfalse(predicate, iterable)`
+- `starmap(fn, iterable)`, `tee(iterable, n)`
+- `zip_longest(*iterables, fillvalue)`, `pairwise(iterable)`
 
 ### math
 
-Provides mathematical functions and constants.
+Mathematical functions and constants.
 
 ```aura
-import math
+from stdlib.math import sqrt, PI, floor, comb
 
-// Constants
-print(math.PI)     // 3.14159...
-print(math.E)      // 2.71828...
-print(math.TAU)    // 6.28318...
-
-// Basic operations
-let root = math.sqrt(16)    // 4.0
-let power = math.pow(2, 8)  // 256.0
-let logged = math.log(10)   // 2.302...
-
-// Trigonometry (radians)
-let angle = math.radians(90)
-let sine = math.sin(angle)      // 1.0
-let cosine = math.cos(angle)    // 0.0
-
-// Combinatorics
-let combinations = math.comb(10, 3)      // 120
-let permutations = math.perm(10, 3)      // 720
-let fact = math.factorial(5)              // 120
+print(PI)              // 3.141592653589793
+print(sqrt(16))        // 4.0
+print(floor(7 / 2))    // 3
+print(comb(10, 3))     // 120
 ```
 
-**Constants:**
-- `PI` - Pi
-- `E` - Euler's number
-- `TAU` - 2*Pi
-- `INF` - Infinity
-- `NAN` - Not a number
+**Constants:** `PI`, `E`, `TAU`, `INF`, `NAN` (lowercase aliases too).
 
 **Functions:**
-- `sqrt(x)` - Square root
-- `pow(x, y)` - Power
-- `exp(x)` - e^x
-- `log(x, base)` - Logarithm
-- `log10(x)` - Base 10 log
-- `log2(x)` - Base 2 log
-- `sin(x)`, `cos(x)`, `tan(x)` - Trigonometry
-- `asin(x)`, `acos(x)`, `atan(x)` - Inverse trig
-- `sinh(x)`, `cosh(x)`, `tanh(x)` - Hyperbolic
-- `degrees(x)`, `radians(x)` - Angle conversion
-- `floor(x)`, `ceil(x)` - Rounding
-- `round(x, ndigits)` - Round
-- `abs(x)`, `min(*vals)`, `max(*vals)` - Comparison
-- `gcd(*numbers)` - Greatest common divisor
-- `lcm(*numbers)` - Least common multiple
-- `factorial(n)` - Factorial
-- `comb(n, k)` - Combinations
-- `perm(n, k)` - Permutations
-- `is_finite(x)`, `is_infinite(x)`, `is_nan(x)` - Checks
+- `sqrt(x)`, `pow(x, y)`, `exp(x)`, `log(x, base)`, `log10(x)`, `log2(x)`
+- `sin(x)`, `cos(x)`, `tan(x)` and inverses `asin`, `acos`, `atan`, `atan2`
+- `sinh(x)`, `cosh(x)`, `tanh(x)`
+- `degrees(x)`, `radians(x)`
+- `floor(x)`, `ceil(x)`, `round(x, ndigits)`
+- `abs(x)`, `min(*values)`, `max(*values)`
+- `gcd(*numbers)`, `lcm(*numbers)`
+- `factorial(n)`, `comb(n, k)`, `perm(n, k)`
+- `is_finite(x)`, `is_infinite(x)`, `is_nan(x)`
 
 ### string
 
-Provides string manipulation functions.
+String manipulation functions.
 
 ```aura
-import string
+from stdlib.string import upper, lower, trim, split, join, replace
 
-// Case conversion
-let upper = string.upper("hello")        // "HELLO"
-let lower = string.lower("HELLO")        // "hello"
-let title = string.title("hello world")  // "Hello World"
-
-// Trimming and padding
-let trimmed = string.trim("  hello  ")   // "hello"
-let padded = string.pad_right("hi", 5, '-')  // "hi---"
-
-// Splitting and joining
-let parts = string.split("a,b,c", ",")  // ["a", "b", "c"]
-let joined = string.join(["a", "b", "c"], "-")  // "a-b-c"
-
-// Searching
-if string.starts_with("hello", "he") {
-    print("Starts with 'he'")
-}
-
-let index = string.index_of("hello", "ll")  // 2
-
-// Replacement
-let replaced = string.replace("hello", "l", "L")  // "heLLo"
+print(upper("hello"))                       // "HELLO"
+print(trim("  hi  "))                       // "hi"
+let parts = split("a,b,c", ",")             // ["a", "b", "c"]
+let joined = join(["a", "b", "c"], "-")     // "a-b-c"
+print(replace("hello", "l", "L"))           // "heLLo"
 ```
 
 **Functions:**
-- `upper(s)` - Uppercase
-- `lower(s)` - Lowercase
-- `title(s)` - Title case
-- `capitalize(s)` - Capitalize first char
-- `reverse(s)` - Reverse
-- `trim(s)` - Remove whitespace
-- `trim_left(s)` - Remove left whitespace
-- `trim_right(s)` - Remove right whitespace
-- `pad_left(s, length, char)` - Pad left
-- `pad_right(s, length, char)` - Pad right
-- `pad(s, length, char)` - Pad both sides
-- `repeat_string(s, times)` - Repeat
-- `split(s, separator, limit)` - Split
-- `join(strings, separator)` - Join
-- `starts_with(s, prefix)` - Check prefix
-- `ends_with(s, suffix)` - Check suffix
-- `contains(s, substring)` - Check contains
-- `index_of(s, substring)` - Find first
-- `last_index_of(s, substring)` - Find last
-- `replace(s, old, new, count)` - Replace
-- `slice_string(s, start, end)` - Slice
-- `substring(s, start, length)` - Substring
-- `char_at(s, index)` - Get char
-- `format_string(template, *args)` - Format
-- `is_empty(s)` - Check empty
-- `is_blank(s)` - Check blank
-- `length(s)` - Get length
-- `is_alpha(s)`, `is_alphanumeric(s)`, `is_digit(s)` - Checks
-- `is_space(s)`, `is_lower(s)`, `is_upper(s)` - Checks
-- `lines(s)` - Split into lines
-- `unlines(lines)` - Join lines
+- `upper(s)`, `lower(s)`, `title(s)`, `capitalize(s)`, `reverse(s)`
+- `trim(s)`, `trim_left(s)`, `trim_right(s)`
+- `pad_left(s, length, char)`, `pad_right(s, length, char)`, `pad(s, length, char)`
+- `repeat_string(s, times)`, `split(s, separator, limit)`, `join(strings, separator)`
+  (in `split`, `limit` is the maximum number of splits, like Python `maxsplit`)
+- `starts_with(s, prefix)`, `ends_with(s, suffix)`, `contains(s, substring)`
+- `index_of(s, substring)`, `last_index_of(s, substring)`, `replace(s, old, new, count)`
+- `slice_string(s, start, end)`, `substring(s, start, length)`, `char_at(s, index)`
+- `format_string(template, *args)`, `is_empty(s)`, `is_blank(s)`, `length(s)`
+- `is_alpha(s)`, `is_alphanumeric(s)`, `is_digit(s)`
+- `is_space(s)`, `is_lower(s)`, `is_upper(s)`, `is_numeric(s)`
+- `lines(s)`, `unlines(lines)`, `codes(s)`, `from_codes(codes)`
 
-## Using the Standard Library
+### regex
 
-### Import Specific Module
+Regular expressions (wraps Python's `re`).
 
 ```aura
-import collections
-let doubled = collections.list_map(fn(x) { x * 2 }, [1, 2, 3])
+import stdlib.regex as re
+
+print(re.find_all(r"\d+", "a1b22c333"))   // ["1", "22", "333"]
+print(re.groups(r"(\w+)@(\w+)", "u@h"))   // ["u", "h"]
+print(re.replace(r"\s+", "_", "a b  c"))  // "a_b_c"
+print(re.split(r",\s*", "a, b,c"))        // ["a", "b", "c"]
 ```
 
-### Import Specific Function
+**Functions:** `match`, `full_match`, `search`, `find_all`, `find_iter`,
+`split`, `replace`, `replace_fn`, `groups`, `escape`, `compile_pattern`.
+**Flags:** `IGNORECASE`, `MULTILINE`, `DOTALL`, `VERBOSE`, `ASCII`.
+
+### os
+
+Environment, paths and process information. Does **not** expose process
+execution, so Aura never shells out implicitly.
 
 ```aura
-import collections { list_map, list_filter }
-let doubled = list_map(fn(x) { x * 2 }, [1, 2, 3])
-let even = list_filter(fn(x) { x % 2 == 0 }, doubled)
+import stdlib.os as osx
+
+print(osx.cwd())
+print(osx.path_join("a", "b", "c.txt"))    // "a/b/c.txt"
+print(osx.path_splitext("file.tar.gz"))    // ["file.tar", ".gz"]
+let home = osx.get_env("HOME", "/tmp")
 ```
 
-### Import Everything
+**Environment:** `get_env`, `set_env`, `unset_env`, `env`.
+**Paths:** `cwd`, `chdir`, `home`, `temp_dir`, `path_join`, `path_abspath`,
+`path_exists`, `path_is_file`, `path_is_dir`, `path_basename`, `path_dirname`,
+`path_split`, `path_splitext`, `path_normpath`, `sep`, `linesep`.
+**System:** `name`, `platform`, `pid`, `listdir`, `walk`, `makedirs`, `remove`,
+`rename`, `get_size`.
+
+### http
+
+HTTP client using the standard library (`urllib`), with automatic use of
+`requests` when installed. Responses are `AuraDict`, so both
+`response.status` and `response["status"]` work.
 
 ```aura
-import collections::*
-let doubled = list_map(fn(x) { x * 2 }, [1, 2, 3])
+import stdlib.http as http
+
+let r = http.get("https://example.com")
+print(r.status, r.ok)
+
+let data = http.get_json("https://api.example.com/items")
+print(data["count"])
+
+let created = http.post_json("https://api.example.com/items", {"name": "x"})
 ```
 
-## Examples
+**Functions:** `request`, `get`, `post`, `put`, `delete`, `get_json`,
+`post_json`, `quote`, `unquote`, `build_url`.
 
-### Working with Lists
+## String methods
+
+Strings also support direct method calls, which map to the Python equivalents:
 
 ```aura
-import collections { list_map, list_filter, list_reduce }
-
-let numbers = [1, 2, 3, 4, 5]
-
-// Chain operations
-let result = numbers
-    |> list_map(fn(x) { x * 2 })      // [2, 4, 6, 8, 10]
-    |> list_filter(fn(x) { x > 4 })   // [6, 8, 10]
-    |> list_reduce(fn(a,b) { a + b }, 0)  // 24
+let s = "Hello, World"
+s.to_upper()        // "HELLO, WORLD"
+s.to_lower()        // "hello, world"
+s.trim()            // strips whitespace
+s.starts_with("He") // true
+s.ends_with("ld")   // true
+s.contains("ell")   // true
+s.index_of("ell")   // 1
+s.slice(0, 5)       // "Hello"
+s.length()          // 12
+s.is_alpha()        // false
 ```
 
-### String Processing
-
-```aura
-import string { split, map, join, upper }
-
-let text = "hello world"
-let words = split(text, " ")        // ["hello", "world"]
-let upper_words = list_map(upper, words)  // ["HELLO", "WORLD"]
-let result = join(upper_words, "-")  // "HELLO-WORLD"
-```
-
-### Mathematical Operations
-
-```aura
-import math { sqrt, pow, PI }
-
-let radius = 5.0
-let area = PI * pow(radius, 2)   // 78.54
-let diagonal = sqrt(pow(5, 2) + pow(5, 2))  // 7.07
-```
-
-## Adding to stdlib
+## Adding to the stdlib
 
 To add a new standard library module:
 
-1. Create `stdlib/mymodule.py` with functions
-2. Add to `stdlib/__init__.py` imports
-3. Document in this README
-4. Test with examples
-
-## Performance Notes
-
-- All collection functions are optimized for Pythonic idioms
-- Generator-based functions return lists (not iterators) for compatibility
-- Consider using `itertools` functions for large datasets
-- String operations use native Python implementations
-
-## Future Additions
-
-Planned standard library modules:
-- `json` - JSON parsing and serialization
-- `time` - Date and time utilities
-- `file` - File I/O
-- `network` - HTTP and networking
-- `crypto` - Cryptography utilities
-- `database` - Database utilities
+1. Create `aura/stdlib/mymodule.py` with functions
+2. Add it to the imports in `aura/stdlib/__init__.py`
+3. Register it in the source shim `stdlib/__init__.py`
+4. Document it here
+5. Add a test under `tests/`

@@ -3,11 +3,11 @@ class BaseC92612Wn {
     public def render() -> str { return "base"; }
 }
 
-class C44652Sx extends BaseC92612Wn {
+class C44652Sx(BaseC92612Wn) {
     public def render() -> str { return "child1"; }
 }
 
-class BaseC27065Nt extends BaseC92612Wn {
+class BaseC27065Nt(BaseC92612Wn) {
     public def render() -> str { return "child2"; }
 }
 

@@ -1,16 +1,50 @@
-[tool.poetry]
-name = "aura-transpiler"
-version = "0.1.0"
-description = "Phase 1: Foundation for the Aura language transpiler"
-authors = ["Your Name <you@example.com>"]
-
-[tool.poetry.dependencies]
-python = "^3.10"
-antlr4-python3-runtime = "^4.11"
-
-[tool.poetry.scripts]
-aura = "main:main"
-
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aura-lang"
+version = "0.1.0"
+description = "Aura: a gradually-typed language that transpiles to Python"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = []
+authors = [{ name = "Aura Team" }]
+keywords = ["transpiler", "language", "python", "aura"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development :: Compilers",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+aura = "aura.cli:main"
+
+[tool.setuptools]
+packages = [
+    "aura",
+    "aura.parser",
+    "aura.parser.generated",
+    "aura.parser.generated.parser",
+    "aura.transpiler",
+    "aura.transpiler.transformers",
+    "aura.stdlib",
+    "aura.repl",
+    "aura.tools",
+    "aura.lsp",
+]
+py-modules = ["main"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"aura.parser" = ["aura.g4", "README.md"]
+"aura.stdlib" = ["README.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = [".venv", "__pycache__", "tests/success_tests_aura", "tests/oop_tests", "tests/collections_tests", "tests/integration_tests", "tests/secure_aura_tests", "tests/speed_aura_tests", "tests/syntax_scope_tests"]

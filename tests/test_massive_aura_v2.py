@@ -1,3 +1,4 @@
+import os
 import pytest
 import sys
 import io
@@ -12,7 +13,13 @@ from parser.to_ast import Tokenizer, Parser
 from transpiler.transformer import Transformer
 from tools.stochastic_aura_gen import AuraGenerator
 
-@pytest.mark.parametrize("seed", range(500000))
+# The generator is deterministic per seed. Each case takes a few seconds, so
+# the default run covers a representative sample. Set AURA_FUZZ_SEEDS to run a
+# larger campaign (e.g. AURA_FUZZ_SEEDS=100000).
+FUZZ_SEEDS = int(os.environ.get("AURA_FUZZ_SEEDS", "200"))
+
+
+@pytest.mark.parametrize("seed", range(FUZZ_SEEDS))
 def test_stochastic_aura(seed):
     # 1. Generate unique Aura code and expected output
     gen = AuraGenerator(seed)

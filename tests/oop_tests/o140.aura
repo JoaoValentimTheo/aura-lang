@@ -5,7 +5,7 @@ class AbstractC92204Hj {
     public def double_value() -> int { return self.value * 2; }
 }
 
-class ConcreteC11245Ql extends AbstractC92204Hj {
+class ConcreteC11245Ql(AbstractC92204Hj) {
     public def double_value() -> int { return self.value * 3; }
 }
 

@@ -3,11 +3,11 @@ class C61806Lu {
     public def render() -> str { return "base"; }
 }
 
-class BaseC82282Ix extends C61806Lu {
+class BaseC82282Ix(C61806Lu) {
     public def render() -> str { return "child1"; }
 }
 
-class ConcreteC90251Oq extends C61806Lu {
+class ConcreteC90251Oq(C61806Lu) {
     public def render() -> str { return "child2"; }
 }
 

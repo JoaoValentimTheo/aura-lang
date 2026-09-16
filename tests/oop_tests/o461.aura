@@ -3,11 +3,11 @@ class C96911Bx {
     public def render() -> str { return "base"; }
 }
 
-class RealC21623Oj extends C96911Bx {
+class RealC21623Oj(C96911Bx) {
     public def render() -> str { return "child1"; }
 }
 
-class MockC14151Si extends C96911Bx {
+class MockC14151Si(C96911Bx) {
     public def render() -> str { return "child2"; }
 }
 

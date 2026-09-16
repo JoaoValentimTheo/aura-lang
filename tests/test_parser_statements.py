@@ -32,7 +32,7 @@ class TestParserStatements(unittest.TestCase):
         
     def test_function_decl(self):
         source = """
-        fn add(a: Int, b: Int) -> Int {
+        def add(a: Int, b: Int) -> Int {
             return a + b
         }
         """
@@ -49,7 +49,7 @@ class TestParserStatements(unittest.TestCase):
             x: Int
             y: Int = 0
             
-            fn new(x, y) {
+            def new(x, y) {
                 self.x = x
                 self.y = y
             }

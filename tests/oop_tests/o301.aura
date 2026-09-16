@@ -3,11 +3,11 @@ class BaseC19434Ko {
     public def process(x: int) -> int { return x; }
 }
 
-class BaseC68109Mw extends BaseC19434Ko {
+class BaseC68109Mw(BaseC19434Ko) {
     public def process(x: int) -> int { return x * 2; }
 }
 
-class ConcreteC63829Gr extends BaseC19434Ko {
+class ConcreteC63829Gr(BaseC19434Ko) {
     public def process(x: int) -> int { return x + 10; }
 }
 

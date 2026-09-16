@@ -1,0 +1,36 @@
+// Built-in macros are ordinary decorators backed by the Aura runtime prelude.
+// The prelude is injected automatically only when a macro is used.
+
+@debug
+def multiply(a, b) -> int {
+  return a * b
+}
+
+print(multiply(6, 7))
+
+@timeit
+def sum_to(n) -> int {
+  let mut total = 0
+  for i in range(n) {
+    total += i
+  }
+  return total
+}
+
+print(sum_to(100000))
+
+@memoize
+def fib(n) -> int {
+  if n < 2 { return n }
+  return fib(n - 1) + fib(n - 2)
+}
+
+print(fib(30))
+
+@cache(maxsize=256)
+def expensive(n) -> int {
+  return n * n
+}
+
+print(expensive(12))
+print(expensive(12))

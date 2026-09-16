@@ -29,7 +29,7 @@ class TestFeatures(unittest.TestCase):
         
     def test_async_await(self):
         source = """
-        async fn fetch() {
+        async def fetch() {
             await http.get(url)
         }
         """

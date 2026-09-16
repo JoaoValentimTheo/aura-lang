@@ -74,14 +74,29 @@ def test_static_method_semantics():
     assert loc['res'] == 15
 
 def test_global_modifiers_parsing():
-    """Test that parser accepts global modifiers (even if Python ignores them for now)."""
+    """Test that global visibility modifiers parse and are compile-time only.
+
+    Name mangling is only meaningful inside a class body, so a global
+    ``private let y`` keeps its plain name rather than becoming ``__y``.
+    """
     code = """
     public let x = 1
     private let y = 2
     static def foo() { return 3 }
     """
-    # This should verify transpilation passes
     loc = transpile_and_run(code)
     assert loc['x'] == 1
-    # Global 'private' y maps to __y
-    assert loc['__y'] == 2 
+    # Global 'private' is metadata only: the name is not mangled.
+    assert loc['y'] == 2
+    
+    # Inside a class, private members are still name-mangled.
+    class_code = """
+    class Account {
+        private let balance = 100
+        def get() { return self.balance }
+    }
+    let a = Account()
+    let result = a.get()
+    """
+    loc2 = transpile_and_run(class_code)
+    assert loc2['result'] == 100 

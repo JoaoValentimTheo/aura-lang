@@ -3,11 +3,11 @@ class ImplC99373Rj {
     public def process(x: int) -> int { return x; }
 }
 
-class ConcreteC48452Iv extends ImplC99373Rj {
+class ConcreteC48452Iv(ImplC99373Rj) {
     public def process(x: int) -> int { return x * 2; }
 }
 
-class ConcreteC56746Wm extends ImplC99373Rj {
+class ConcreteC56746Wm(ImplC99373Rj) {
     public def process(x: int) -> int { return x + 10; }
 }
 

@@ -4,11 +4,11 @@ class ImplC92789Mr {
     public def get_val() -> int { return self.base_val; }
 }
 
-class ImplC58941Dr extends ImplC92789Mr {
+class ImplC58941Dr(ImplC92789Mr) {
     public def get_val() -> int { return self.base_val * 2; }
 }
 
-class C63754Nf extends ImplC58941Dr {
+class C63754Nf(ImplC58941Dr) {
     public def get_val() -> int { return self.base_val * 3; }
 }
 

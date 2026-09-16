@@ -5,7 +5,7 @@ class AbstractC28119Rj {
     public def double_value() -> int { return self.value * 2; }
 }
 
-class RealC68431Gk extends AbstractC28119Rj {
+class RealC68431Gk(AbstractC28119Rj) {
     public def double_value() -> int { return self.value * 3; }
 }
 

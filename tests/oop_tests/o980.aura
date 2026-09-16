@@ -5,7 +5,7 @@ class MockC15957Fq {
     public def double_value() -> int { return self.value * 2; }
 }
 
-class BaseC51124Qg extends MockC15957Fq {
+class BaseC51124Qg(MockC15957Fq) {
     public def double_value() -> int { return self.value * 3; }
 }
 

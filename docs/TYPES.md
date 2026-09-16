@@ -1,335 +1,404 @@
 # Aura Type System
 
-## Overview
+Reference for the Aura type system. Aura uses gradual typing with type inference.
 
-Aura is a **gradually typed** language with **full type inference**. Types are optional but recommended for function signatures and class definitions. The type system provides:
+---
 
-- **Type inference**: Automatic type detection from literals and operations
-- **Union types**: Combine multiple types (`Int | String | None`)
-- **Generic types**: Parameterized types (`List[Int]`, `Dict[String, Float]`)
-- **Type narrowing**: Automatic type refinement through control flow
-- **Type checking**: Compile-time type validation without runtime overhead
+## Table of Contents
 
-## Basic Types
+1. [Overview](#1-overview)
+2. [Primitive Types](#2-primitive-types)
+3. [Collection Types](#3-collection-types)
+4. [Function Types](#4-function-types)
+5. [Union Types](#5-union-types)
+6. [Generic Types](#6-generic-types)
+7. [Optional Types](#7-optional-types)
+8. [Structural Types](#8-structural-types)
+9. [Class Types](#9-class-types)
+10. [Type Inference](#10-type-inference)
+11. [Type Annotations](#11-type-annotations)
+12. [Type Compatibility](#12-type-compatibility)
+13. [Python Type Mapping](#13-python-type-mapping)
 
-### Primitive Types
+---
+
+## 1. Overview
+
+Aura provides **gradual typing** with **type inference**. Types are optional but recommended for function signatures and class definitions. The type system provides:
+
+- Automatic type detection from literals and operations
+- Union types to combine multiple types
+- Generic types with square bracket syntax `[T]`
+- Type narrowing through control flow
+- Compile-time type validation
+
+---
+
+## 2. Primitive Types
+
+| Aura Type | Python Equivalent | Description |
+|-----------|-------------------|-------------|
+| `int` | `int` | Arbitrary precision integer |
+| `float` | `float` | 64-bit floating point |
+| `str` | `str` | Unicode string |
+| `bool` | `bool` | `true` or `false` |
+| `bytes` | `bytes` | Byte sequence |
+| `none` | `None` | Null value |
 
 ```aura
-let x: Int = 42
-let y: Float = 3.14
-let s: String = "hello"
-let b: Bool = true
-let n: None = null
+let x: int = 42
+let y: float = 3.14
+let s: str = "hello"
+let b: bool = true
+let n: none = null
 ```
 
-### Collection Types
+---
+
+## 3. Collection Types
+
+### Lists
 
 ```aura
-let list: [Int] = [1, 2, 3]
-let dict: {String: Int} = {"a": 1, "b": 2}
-let set: {Int} = {1, 2, 3}
-let tuple: (Int, String, Bool) = (1, "a", true)
+// Type syntax
+[int]                    // List of integers
+[str]                    // List of strings
+[list[int]]              // Nested list
+
+// Usage
+let numbers: [int] = [1, 2, 3]
+let mixed = [1, "two", 3.0, true]
+let empty = []
 ```
 
-### Function Types
+### Dictionaries
 
 ```aura
-let f: (Int, Int) -> Int = fn(a, b) { a + b }
-let g: (String) -> String = fn(s) { s + "!" }
-let async_f: async (Int) -> String = async fn(x) { ... }
+// Type syntax
+{str: int}               // Dict with string keys, int values
+{str: any}               // Dict with any values
+
+// Usage
+let user: {name: str, age: int} = {name: "Alice", age: 30}
+let config = {"max-size": 100, "timeout": 30}
 ```
 
-### Union Types
+### Sets
 
 ```aura
-let value: Int | String = 42
-let option: Int | None = null
-let result: {ok: Int, err: String} | None = ...
+// Type syntax
+{int}                    // Set of integers
+
+// Usage
+let unique: {int} = {1, 2, 3}
 ```
 
-## Type Inference
-
-The transpiler infers types from:
-
-- **Literals**: `42` → `Int`, `3.14` → `Float`, `"str"` → `String`, `true` → `Bool`
-- **Operations**: `2 + 3` → `Int`, `"a" + "b"` → `String`, `[1,2,3]` → `[Int]`
-- **Function calls**: Based on function signature's return type
-- **Control flow**: Narrowing in if/match branches
-
-### Type Inference Examples
+### Tuples
 
 ```aura
-let x = 10              // Inferred: Int
-let y = x + 5           // Inferred: Int
-let z = "hello"         // Inferred: String
-let items = [1, 2, 3]   // Inferred: [Int]
-let map = {a: 1}        // Inferred: {String: Int}
-
-fn double(n: Int) {     // Return type inferred: Int
-    n * 2
-}
-
-fn process(items: [Int]) {  // Return type inferred: [Int]
-    items |> map(x => x * 2)
-}
+// Tuples are represented as fixed-size lists in the type system
+// Runtime: (1, "hello") is a Python tuple
 ```
 
-## Type Annotations
+---
 
-### Variable Annotations
+## 4. Function Types
 
 ```aura
-let name: String = "Alice"
-const MAX_SIZE: Int = 100
+// Type syntax: (ParamTypes) -> ReturnType
+
+let handler: (int, int) -> int = add
+let predicate: (str) -> bool = is_valid
+let callback: () -> none = on_ready
 ```
 
-### Function Annotations
+### In function signatures
 
 ```aura
-fn add(a: Int, b: Int) -> Int {
-    a + b
+def apply(f: (int) -> int, x: int) -> int {
+  return f(x)
 }
 
-fn greet(name: String, age: Int) -> String {
-    "Hello, \(name)! You are \(age) years old."
-}
-
-fn process[T](items: [T]) -> [T] {
-    items |> filter(x => x != null)
-}
-```
-
-### Class Annotations
-
-```aura
-class User {
-    name: String
-    age: Int
-    email: String | None
-    
-    fn new(name: String, age: Int) {
-        self.name = name
-        self.age = age
-        self.email = null
-    }
-    
-    fn set_email(email: String) {
-        self.email = email
-    }
-}
-```
-
-## Type Narrowing
-
-The type system automatically narrows types in control flow:
-
-```aura
-let value: Int | String = ...
-
-if value is Int {
-    // value is Int here
-    print(value + 10)
-}
-
-if value is String {
-    // value is String here
-    print(value + "!")
-}
-
-match value {
-    n: Int -> print(n * 2)
-    s: String -> print(s.uppercase())
+def compose(f: (int) -> int, g: (int) -> int) -> (int) -> int {
+  return (x) => g(f(x))
 }
 ```
 
-## Generic Types
+---
 
-### Generic Functions
+## 5. Union Types
+
+Union types allow a value to be one of several types:
 
 ```aura
-fn first[T](items: [T]) -> T | None {
-    if items.length > 0 { items[0] } else { null }
+let value: int | str = 42
+value = "hello"  // also valid
+
+// In function signatures
+def process(value: int | str) {
+  // ...
 }
 
-fn map[T, U](items: [T], fn: (T) -> U) -> [U] {
-    items |> map(fn)
-}
-
-fn identity[T](x: T) -> T {
-    x
-}
+// Multiple types
+let result: int | float | none = null
 ```
 
-### Generic Classes
+---
+
+## 6. Generic Types
+
+Generics use **square brackets** `[T]`:
+
+### Generic classes
 
 ```aura
 class Box[T] {
-    value: T
-    
-    fn new(value: T) {
-        self.value = value
-    }
-    
-    fn get() -> T {
-        self.value
-    }
+  let value: T
+
+  def new(value: T) {
+    self.value = value
+  }
+
+  def get() -> T {
+    return self.value
+  }
 }
 
-let int_box: Box[Int] = Box.new(42)
-let str_box: Box[String] = Box.new("hello")
+let int_box: Box[int] = Box(42)
+let str_box: Box[str] = Box("hello")
 ```
 
-## Type Compatibility
-
-### Subtyping
-
-A type `A` is a subtype of `B` if:
-- They are the same type
-- `A` is a subclass of `B`
-- `A` is part of a union type that `B` is part of
+### Multiple type parameters
 
 ```aura
-class Animal { }
-class Dog: Animal { }
+class Pair[A, B] {
+  let first: A
+  let second: B
 
-fn process_animal(a: Animal) { }
+  def new(first: A, second: B) {
+    self.first = first
+    self.second = second
+  }
+}
 
-let dog: Dog = Dog.new()
-process_animal(dog)  // OK: Dog is subtype of Animal
+let p: Pair[str, int] = Pair("age", 30)
 ```
 
-### Implicit Conversions
-
-Implicit conversions are limited to prevent errors:
+### Generic functions
 
 ```aura
-let x: Int = 42
-let y: Float = x  // ✗ ERROR: Int is not Float
-let z: Float = 42.0  // ✓ OK
+def first[T](items: [T]) -> T | none {
+  if len(items) > 0 { return items[0] }
+  return none
+}
+
+def map[T, R](items: [T], fn: (T) -> R) -> [R] {
+  return [fn(item) for item in items]
+}
 ```
 
-## Null/None Handling
+---
 
-### Nullable Types
+## 7. Optional Types
 
-Any type can be made nullable with `| None`:
+Any type can be made nullable with `?`:
 
 ```aura
-let required: String = "value"
-let optional: String | None = null
+let name: str? = get_name()   // can be str or null
 
-// Null-safe navigation
-let name: String | None = user?.name
+// Null-safe access
+let upper: str? = name?.upper()
 
-// Elvis operator (coalesce)
-let display: String = user?.name ?: "Unknown"
+// Null coalescing
+let display: str = name ?? "Anonymous"
 ```
 
-### Optional Chaining
+### In function signatures
+
+```aura
+def find_user(id: int) -> User? {
+  let user = db.query(id)
+  return user
+}
+
+// Usage
+let user = find_user(123)
+guard user != null else {
+  return
+}
+// user is guaranteed non-null here
+```
+
+---
+
+## 8. Structural Types
+
+Structural types describe the shape of a value:
+
+```aura
+let point: {x: float, y: float} = {x: 1.0, y: 2.0}
+
+let user: {
+  name: str,
+  age: int,
+  email?: str            // optional field
+} = {name: "Alice", age: 30}
+```
+
+---
+
+## 9. Class Types
+
+Classes create named types:
 
 ```aura
 class User {
-    name: String
-    address: Address | None
+  let name: str = ""
+  let age: int = 0
+
+  def new(name: str, age: int) {
+    self.name = name
+    self.age = age
+  }
 }
 
-let city: String | None = user?.address?.city
-let zip: String | None = user?.address?.zip ?: "00000"
+// User is now a type
+let alice: User = User("Alice", 30)
 ```
 
-## Advanced Type Features
-
-### Type Aliases
+### Inheritance and subtyping
 
 ```aura
-type UserId = Int
-type UserResult = User | None
-type Callback = (Int, String) -> Bool
+class Animal {
+  let name: str = ""
+}
+
+class Dog(Animal) {
+  let breed: str = ""
+}
+
+// Dog is a subtype of Animal
+def process_animal(a: Animal) {
+  // ...
+}
+
+let d = Dog()
+process_animal(d)  // OK: Dog is subtype of Animal
 ```
 
-### Intersection Types
+---
+
+## 10. Type Inference
+
+The transpiler infers types automatically from:
+
+| Source | Inference |
+|--------|-----------|
+| `42` | `int` |
+| `3.14` | `float` |
+| `"hello"` | `str` |
+| `true` | `bool` |
+| `null` / `none` | `none` |
+| `[1, 2, 3]` | `[int]` |
+| `{a: 1}` | `{str: int}` |
+| `1..10` | `[int]` |
+| `x + y` (both int) | `int` |
+| `"a" + "b"` | `str` |
+
+### Examples
 
 ```aura
-// Trait composition
-class Reader { fn read() -> String { } }
-class Writer { fn write(data: String) { } }
+let x = 10              // inferred: int
+let y = x + 5           // inferred: int
+let name = "Alice"      // inferred: str
+let items = [1, 2, 3]   // inferred: [int]
+let point = {x: 10, y: 20}  // inferred: {x: int, y: int}
 
-fn process[T: Reader & Writer](obj: T) {
-    let data = obj.read()
-    obj.write(data)
-}
+// Return type inferred
+def double(x) = x * 2   // return type inferred as int
 ```
 
-### Constrained Types
+---
+
+## 11. Type Annotations
+
+### Variable annotations
 
 ```aura
-fn process[T: Comparable](items: [T]) -> T {
-    items |> max()
-}
+let name: str = "Alice"
+let age: int = 30
+let scores: [float] = [9.5, 8.7, 9.2]
 ```
 
-## Type System Validation
-
-The type checker validates:
-
-1. **Type correctness**: Operations use compatible types
-2. **Function calls**: Arguments match parameter types
-3. **Variable assignment**: Assigned values match declared types
-4. **Return values**: Function returns match return type
-5. **Method calls**: Called methods exist on type
-6. **Field access**: Accessed fields exist on type
-
-### Type Checking Example
+### Function annotations
 
 ```aura
-fn calculate(x: Int, y: Int) -> Int {
-    x + y  // ✓ Returns Int
+def add(a: int, b: int) -> int {
+  return a + b
 }
 
-fn badCalculate(x: Int, y: Int) -> Int {
-    x + "hello"  // ✗ ERROR: Cannot add Int + String
-    "result"     // ✗ ERROR: String is not Int
+def greet(name: str, greeting: str = "Hello") -> str {
+  return f"{greeting}, {name}!"
 }
 ```
 
-## Error Messages
+### Class annotations
 
-Type errors include helpful messages:
+```aura
+class User {
+  let name: str = ""
+  let age: int = 0
+  let email: str = ""
 
+  def new(name: str, age: int) {
+    self.name = name
+    self.age = age
+  }
+}
 ```
-error[E101]: Type mismatch: expected Int, got String
-  at line 42: let x: Int = "hello"
-  hint: Remove type annotation or provide an Int value
+
+---
+
+## 12. Type Compatibility
+
+### Subtype relationships
+
+- A type is compatible with itself
+- A subclass is compatible with its parent class
+- `any` is compatible with all types
+
+```aura
+class Animal { }
+class Dog(Animal) { }
+
+def process(a: Animal) { }
+
+let d = Dog()
+process(d)  // OK: Dog is subtype of Animal
 ```
 
-## Best Practices
+### Union type compatibility
 
-1. **Type annotations on public APIs**: Always annotate function parameters and return types
-2. **Use type narrowing**: Check types in conditionals to avoid errors
-3. **Prefer immutable types**: Use `const` for non-changing values
-4. **Leverage inference**: Don't over-annotate local variables
-5. **Use union types sparingly**: Keep union types simple and well-documented
-6. **Pattern match**: Use match expressions for type-safe branching
+```aura
+let x: int | str = 10      // OK: int is compatible with int | str
+```
 
-## Integration with Python
+---
 
-Aura types map to Python types:
+## 13. Python Type Mapping
 
-| Aura Type | Python Type |
-|-----------|-------------|
-| Int | int |
-| Float | float |
-| String | str |
-| Bool | bool |
-| None | NoneType |
-| [T] | list |
-| {K: V} | dict |
-| {T} | set |
-| (A, B, C) | tuple |
-| (A) -> B | Callable |
+| Aura Type | Python Type | Notes |
+|-----------|-------------|-------|
+| `int` | `int` | Arbitrary precision |
+| `float` | `float` | 64-bit |
+| `str` | `str` | Unicode |
+| `bool` | `bool` | `true`/`false` |
+| `none` | `NoneType` | Null |
+| `[T]` | `list` | Dynamic array |
+| `{K: V}` | `dict` | Hash map |
+| `{T}` | `set` | Hash set |
+| `(A, B)` | `tuple` | Fixed-size |
+| `(A) -> B` | `Callable` | Function type |
+| `any` | `Any` | Opt-out of checking |
 
-Aura's type system is a **compile-time feature** - types are erased before Python generation, but type information is used for:
-- Error detection
-- IDE support and completions
-- Documentation
-- Optimization opportunities
+Aura types are a **compile-time feature**. Types are erased before Python generation, but type information is used for error detection, IDE support, and documentation.
