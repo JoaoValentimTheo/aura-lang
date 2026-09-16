@@ -338,6 +338,9 @@ _STATEMENT_KEYWORDS = frozenset({
     'protected', 'static', 'export',
 })
 
+# Upper bound on source size, guarding against accidental multi-gigabyte input.
+MAX_SOURCE_BYTES = 16 * 1024 * 1024
+
 # ==============================================================================
 # Parser
 # ==============================================================================
@@ -385,10 +388,13 @@ class Parser:
     # --- Main Entry Point ---
     def parse(self):
         statements = []
-        while self.peek().type != 'EOF':
-            stmt = self.parse_statement()
-            if stmt:
-                statements.append(stmt)
+        try:
+            while self.peek().type != 'EOF':
+                stmt = self.parse_statement()
+                if stmt:
+                    statements.append(stmt)
+        except RecursionError:
+            raise SyntaxError("source is nested too deeply to parse") from None
         return Program(statements)
 
     # --- Statements ---
@@ -2282,6 +2288,11 @@ def parse_file(path: str) -> Program:
     """Parse Aura file using recursive descent parser."""
     with open(path, encoding='utf-8') as f:
         source = f.read()
+    if len(source) > MAX_SOURCE_BYTES:
+        raise SyntaxError(
+            f"{path}: source is too large "
+            f"({len(source)} bytes; limit {MAX_SOURCE_BYTES})"
+        )
     tokenizer = Tokenizer(source)
     tokens = tokenizer.tokenize()
     parser = Parser(tokens)

@@ -9,9 +9,11 @@ working, without polluting the global namespace with generic package names.
 
 import importlib
 import sys
+import threading
 
 _ALIASES = ('stdlib', 'parser', 'transpiler', 'repl', 'tools')
 _installed = False
+_lock = threading.Lock()
 
 
 # Aura programs write `import python` to reach the interop bridge. Map that
@@ -25,25 +27,47 @@ _SUBMODULE_ALIASES = {
 def install_runtime_aliases():
     """Register ``stdlib`` → ``aura.stdlib`` (and friends) in ``sys.modules``.
 
-    Idempotent. Existing top-level modules with the same name are left alone so
-    running from a source checkout continues to work.
+    Idempotent and thread-safe. Existing top-level modules with the same name
+    are left alone so running from a source checkout continues to work.
     """
     global _installed
     if _installed:
         return
-    for alias in _ALIASES:
-        if alias in sys.modules:
-            continue
-        try:
-            module = importlib.import_module(f'aura.{alias}')
-        except ImportError:
-            continue
-        sys.modules[alias] = module
-    for alias, target in _SUBMODULE_ALIASES.items():
-        if alias in sys.modules:
-            continue
-        try:
-            sys.modules[alias] = importlib.import_module(target)
-        except ImportError:
-            continue
-    _installed = True
+    with _lock:
+        if _installed:
+            return
+        for alias in _ALIASES:
+            if alias in sys.modules:
+                continue
+            try:
+                module = importlib.import_module(f'aura.{alias}')
+            except ImportError:
+                continue
+            sys.modules[alias] = module
+        for alias, target in _SUBMODULE_ALIASES.items():
+            if alias in sys.modules:
+                continue
+            try:
+                sys.modules[alias] = importlib.import_module(target)
+            except ImportError:
+                continue
+        _installed = True
+
+
+def uninstall_runtime_aliases():
+    """Remove only the aliases this module installed.
+
+    Used by tests to keep sessions isolated; safe to call when nothing was
+    installed.
+    """
+    global _installed
+    with _lock:
+        for alias in _ALIASES:
+            module = sys.modules.get(alias)
+            if module is not None and getattr(module, '__name__', '').startswith('aura.'):
+                del sys.modules[alias]
+        for alias, target in _SUBMODULE_ALIASES.items():
+            module = sys.modules.get(alias)
+            if module is not None and getattr(module, '__name__', '') == target:
+                del sys.modules[alias]
+        _installed = False

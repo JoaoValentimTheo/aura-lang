@@ -295,3 +295,61 @@ def test_lsp_document_cap_evicts_oldest():
     assert len(server.documents) <= MAX_DOCUMENTS
     # The earliest documents were evicted.
     assert 'file:///d0.aura' not in server.documents
+
+
+# ============================================================================
+# Robustness: recursion and size guards
+# ============================================================================
+
+def test_deeply_nested_source_is_a_clean_error():
+    from aura.parser.to_ast import Tokenizer, Parser
+
+    source = "let x = " + "(" * 5000 + "1" + ")" * 5000
+    with pytest.raises(SyntaxError):
+        Parser(Tokenizer(source).tokenize()).parse()
+
+
+def test_parse_file_rejects_oversized_source(tmp_path, monkeypatch):
+    from aura.parser import to_ast
+    monkeypatch.setattr(to_ast, 'MAX_SOURCE_BYTES', 16)
+    path = tmp_path / 'big.aura'
+    path.write_text('let x = 1\n' * 10, encoding='utf-8')
+    with pytest.raises(SyntaxError):
+        to_ast.parse_file(str(path))
+
+
+def test_runtime_aliases_can_be_removed():
+    from aura.runtime import install_runtime_aliases, uninstall_runtime_aliases
+    import sys as _sys
+
+    install_runtime_aliases()
+    assert 'stdlib' in _sys.modules
+    uninstall_runtime_aliases()
+    assert 'stdlib' not in _sys.modules or not _sys.modules['stdlib'].__name__.startswith('aura.')
+
+
+# ============================================================================
+# REPL isolation between chunks
+# ============================================================================
+
+def test_repl_class_state_does_not_leak_between_chunks():
+    """A class defined in one chunk must not affect the next chunk."""
+    from aura.repl.engine import AuraREPL
+    from aura.parser.to_ast import Tokenizer, Parser
+
+    repl = AuraREPL(output_func=lambda *a: None)
+    assert repl.process("class A { def helper() { return 1 } }").ok
+    # A later, unrelated program must be transformed without leaked state.
+    program = Parser(Tokenizer("print([1, 2, 3].length())").tokenize()).parse()
+    code = repl.transformer.transform(program)
+    assert 'len(' in code
+
+
+def test_repl_recovers_after_deep_nesting_error():
+    from aura.repl.engine import AuraREPL
+
+    repl = AuraREPL(output_func=lambda *a: None)
+    result = repl.process("let x = " + "(" * 5000 + "1" + ")" * 5000)
+    assert result.ok is False
+    # The session is still usable.
+    assert repl.process("let y = 1").ok

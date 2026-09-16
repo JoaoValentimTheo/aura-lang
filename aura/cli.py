@@ -25,8 +25,11 @@ def _mutability_errors(ast):
     actually effective rather than documentation-only.
     """
     checker = MutabilityChecker()
-    if checker.check_program(ast):
-        return []
+    try:
+        if checker.check_program(ast):
+            return []
+    except RecursionError:
+        return ["source is nested too deeply to check"]
     return list(checker.errors)
 
 
@@ -40,8 +43,11 @@ def _rule_errors(ast):
     """
     from aura.transpiler.rules import RuleChecker
     checker = RuleChecker()
-    if checker.check_program(ast):
-        return []
+    try:
+        if checker.check_program(ast):
+            return []
+    except RecursionError:
+        return ["source is nested too deeply to check"]
     return [str(e) for e in checker.collector.errors]
 
 

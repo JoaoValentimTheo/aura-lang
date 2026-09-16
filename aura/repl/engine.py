@@ -570,12 +570,15 @@ class AuraREPL:
         `let` stays immutable for the whole session.
         """
         checker = MutabilityChecker()
-        if not checker.check_program(program, initial_bindings=self._bindings):
-            return self._first_error(checker.errors)
+        try:
+            if not checker.check_program(program, initial_bindings=self._bindings):
+                return self._first_error(checker.errors)
 
-        rule_checker = RuleChecker()
-        if not rule_checker.check_program(program):
-            return self._first_error(rule_checker.collector.errors)
+            rule_checker = RuleChecker()
+            if not rule_checker.check_program(program):
+                return self._first_error(rule_checker.collector.errors)
+        except RecursionError:
+            return "input is nested too deeply"
         return None
 
     @staticmethod
