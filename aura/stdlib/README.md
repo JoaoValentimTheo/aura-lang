@@ -359,6 +359,42 @@ await main()
 already-running loop (`await`, or a program the CLI already wraps) use `await`
 instead.
 
+### crypto
+
+Cryptography with real, stdlib-backed primitives and a pluggable post-quantum
+backend.
+
+```aura
+import stdlib.crypto as crypto
+
+print(crypto.sha3_256("hello"))          // post-quantum-resistant hash
+let key = crypto.random_bytes(32)
+let tag = crypto.hmac_sha3_256(key, "msg")
+
+// Post-quantum key encapsulation (ML-KEM) and signatures (ML-DSA).
+let kp = crypto.kem_keypair()
+let enc = crypto.kem_encapsulate(kp.public_key)
+let shared = crypto.kem_decapsulate(kp.secret_key, enc.ciphertext)
+
+let signer = crypto.dsa_keypair()
+let sig = crypto.dsa_sign(signer.secret_key, "payload")
+print(crypto.dsa_verify(signer.public_key, "payload", sig))
+```
+
+**Hashing:** `sha256`, `sha512`, `sha3_256`, `sha3_512`, `shake_256`, `blake2b`,
+`digest`, `available_hashes`.
+**MAC/KDF:** `hmac_sha256`, `hmac_sha3_256`, `hmac_sha512`, `hkdf_sha256`.
+**Randomness:** `random_bytes`, `random_hex`, `random_int`, `constant_time_compare`.
+**Post-quantum:** `kem_keypair`/`kem_encapsulate`/`kem_decapsulate`,
+`dsa_keypair`/`dsa_sign`/`dsa_verify`, `algorithms`, `backend_info`,
+`is_production_backend`, `require_production_backend`.
+
+> **Backend:** the post-quantum operations use a vetted implementation when the
+> optional `cryptography>=44` package is installed (`pip install
+> "aura-language[pqc]"`). Otherwise a bundled **reference** backend is used: it
+> round-trips but is **not secure** — call `require_production_backend()` before
+> protecting real secrets.
+
 ## String methods
 
 Strings also support direct method calls, which map to the Python equivalents:

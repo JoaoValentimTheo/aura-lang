@@ -8,6 +8,7 @@ __author__ = "Aura Team"
 from . import (
     asyncio,
     collections,
+    crypto,
     http,
     io,
     itertools,
@@ -36,6 +37,7 @@ __all__ = [
     'python',
     'threading',
     'asyncio',
+    'crypto',
 ]
 
 # Convenience imports

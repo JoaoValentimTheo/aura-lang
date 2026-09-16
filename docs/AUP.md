@@ -19,6 +19,7 @@ standard library. Every example passes `aura check` and runs.
 | 07 | Observer | `examples/aup/observer.aura` | lambdas/closures, dict of callback lists |
 | 08 | Resource management | `examples/aup/resource.aura` | `with`, `enter`/`exit` |
 | 09 | Worker pool | `examples/aup/worker_pool.aura` | `stdlib.threading`, locks, `map_concurrent` |
+| 10 | Hybrid secure message | `examples/aup/hybrid_crypto.aura` | `stdlib.crypto` (ML-KEM, HKDF, HMAC-SHA3) |
 
 ---
 
@@ -152,6 +153,24 @@ let results = threading.map_concurrent((x) => fetch(x), ids, workers: 3)
 Warn: Aura globals are shared across threads. Any assignment to shared state
 from a worker must be protected by a lock (`lock.acquire()/release()` or `with`).
 For CPU-bound work, prefer processes; the GIL limits threading speedups.
+
+## 10 — Hybrid secure message
+
+Establish a shared secret with a post-quantum KEM (ML-KEM), derive a symmetric
+key with HKDF, and authenticate with HMAC-SHA3. This is the shape of a hybrid
+handshake.
+
+```aura
+let enc = crypto.kem_encapsulate(recipient_public_key)
+let key = crypto.hkdf_sha256(enc.shared_secret, 32, info: b"message")
+let tag = crypto.hmac_sha3_256(key, message)
+```
+
+Install `aura-language[pqc]` for a vetted KEM/signature backend. The bundled
+reference backend is for tests and education only — call
+`crypto.require_production_backend()` before protecting real secrets. The XOR
+encryption in the example is illustrative; use a real AEAD (AES-GCM,
+ChaCha20-Poly1305) in production.
 
 ---
 
