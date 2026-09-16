@@ -28,7 +28,7 @@ def get_version():
 
     try:
         from importlib.metadata import version as _dist_version
-        return _dist_version('flux-lang')
+        return _dist_version('aura-language')
     except Exception:
         pass
 
