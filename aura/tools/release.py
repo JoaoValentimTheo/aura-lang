@@ -41,7 +41,8 @@ def get_version():
 
 def set_version(version, pyproject=PYPROJECT, init=INIT):
     """Write ``version`` to both pyproject.toml and aura/__init__.py."""
-    if not re.fullmatch(r'\d+\.\d+\.\d+([.\-+][0-9A-Za-z.\-]+)?', version):
+    # Accept semver and PEP 440 pre-releases (0.1.0a1, 1.0.0b2, 1.0.0-rc.1).
+    if not re.fullmatch(r'\d+\.\d+\.\d+(?:[.\-+]?[0-9A-Za-z][0-9A-Za-z.\-]*)?', version):
         raise ValueError(f"invalid semantic version: {version!r}")
 
     py_text = Path(pyproject).read_text(encoding='utf-8')

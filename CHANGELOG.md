@@ -4,7 +4,9 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.1.0a1] - 2026-09-16
+
+First alpha release of the rewritten Aura toolchain.
 
 ### Added
 
