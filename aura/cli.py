@@ -17,8 +17,8 @@ from aura.transpiler.errors import ErrorCollector, ErrorCode, ErrorSeverity
 from aura.transpiler.semantics import MutabilityChecker
 
 
-def _check_mutability(ast, path: str) -> bool:
-    """Run the semantic mutability rules. Returns True when the file is valid.
+def _mutability_errors(ast):
+    """Return the semantic mutability violations for ``ast`` (possibly empty).
 
     Aura's ``let`` bindings are immutable and ``const`` bindings can never be
     reassigned; both require an explicit ``let mut`` to be reassigned. This is
@@ -27,10 +27,30 @@ def _check_mutability(ast, path: str) -> bool:
     """
     checker = MutabilityChecker()
     if checker.check_program(ast):
-        return True
-    for error in checker.errors:
+        return []
+    return list(checker.errors)
+
+
+def _rule_errors(ast):
+    """Return structural rule violations for ``ast`` (possibly empty).
+
+    These are the rules that do not depend on type inference: ``return`` and
+    ``break``/``continue`` placement, ``await`` outside async, ``self`` outside
+    a class, duplicate declarations, unreachable code and invalid assignment
+    targets. Enforced for ``check`` and ``run``.
+    """
+    from aura.transpiler.rules import RuleChecker
+    checker = RuleChecker()
+    if checker.check_program(ast):
+        return []
+    return [str(e) for e in checker.collector.errors]
+
+
+def _print_semantic_errors(path, mutability, rules):
+    for error in mutability:
         print(f"{path}: semantic error: {error}", file=sys.stderr)
-    return False
+    for error in rules:
+        print(f"{path}: rule error: {error}", file=sys.stderr)
 
 
 def _install_aura_imports(script_path: str):
@@ -55,7 +75,10 @@ def cmd_transpile(path: str, output: str = None, verbose: bool = False) -> int:
         print(f"Error parsing {path}: {e}", file=sys.stderr)
         return 2
 
-    if not _check_mutability(ast, path):
+    mutability = _mutability_errors(ast)
+    rules = _rule_errors(ast)
+    if mutability or rules:
+        _print_semantic_errors(path, mutability, rules)
         return 2
 
     try:
@@ -91,12 +114,14 @@ def cmd_check(path: str, verbose: bool = False) -> int:
         return 2
 
     checker = TypeChecker()
-    success = checker.check_program(ast)
-    mut_ok = _check_mutability(ast, path)
-    success = success and mut_ok
+    type_ok = checker.check_program(ast)
+    mutability = _mutability_errors(ast)
+    rules = _rule_errors(ast)
+    success = type_ok and not mutability and not rules
 
     for error in checker.errors:
         print(f"{path}: type error: {error}", file=sys.stderr)
+    _print_semantic_errors(path, mutability, rules)
 
     if verbose:
         print(f"# Inferred {len(checker.context)} top-level binding(s)", file=sys.stderr)
@@ -106,7 +131,8 @@ def cmd_check(path: str, verbose: bool = False) -> int:
     if success:
         print(f"OK {path}: type check passed")
         return 0
-    print(f"FAIL {path}: {len(checker.errors)} type error(s)", file=sys.stderr)
+    total = len(checker.errors) + len(mutability) + len(rules)
+    print(f"FAIL {path}: {total} issue(s)", file=sys.stderr)
     return 1
 
 
@@ -261,7 +287,10 @@ def cmd_run(path: str, verbose: bool = False) -> int:
         print(f"Error parsing {path}: {e}", file=sys.stderr)
         return 2
 
-    if not _check_mutability(ast, path):
+    mutability = _mutability_errors(ast)
+    rules = _rule_errors(ast)
+    if mutability or rules:
+        _print_semantic_errors(path, mutability, rules)
         return 2
 
     has_async = _await_top_level_async_calls(ast)
@@ -298,6 +327,10 @@ def cmd_run(path: str, verbose: bool = False) -> int:
             exec(compile(code, path, 'exec'), {'__name__': '__aura__'})
         return 0
     except SystemExit as e:
+        # A bare `return` in a top-level guard becomes `raise SystemExit()`.
+        # That is a *successful* early exit, so treat a missing/None code as 0.
+        if e.code is None:
+            return 0
         return e.code if isinstance(e.code, int) else 1
     except Exception as e:
         print(f"Runtime error: {e}", file=sys.stderr)
@@ -425,49 +458,11 @@ def cmd_lsp() -> int:
 
 def cmd_repl() -> int:
     """Interactive REPL for Aura."""
-    print("Aura REPL v0.3 (type 'exit' to quit)")
-    
-    transformer = Transformer()
-    
-    while True:
-        try:
-            user_input = input("aura> ").strip()
-            
-            if not user_input:
-                continue
-            
-            if user_input in ('exit', 'quit', ':q'):
-                print("Goodbye!")
-                break
-            
-            if user_input.startswith(':'):
-                # Special commands
-                if user_input == ':help':
-                    print("""
-Aura REPL Commands:
-  :help     - Show this help
-  :quit     - Exit REPL
-  :types    - Show inferred types
-  :ast      - Show AST
-                    """)
-                continue
-            
-            # Parse and transpile
-            from aura.parser.to_ast import parse_value
-            try:
-                # Try to parse as expression
-                expr = parse_value(user_input)
-                result = transformer.expr_transformer.transform(expr)
-                print(f"  → {result}")
-            except Exception as e:
-                print(f"  error: {e}")
-        
-        except KeyboardInterrupt:
-            print("\n(use 'exit' to quit)")
-        except EOFError:
-            break
-    
-    return 0
+    from aura.repl.engine import AuraREPL
+    try:
+        return AuraREPL().run()
+    except EOFError:
+        return 0
 
 
 def main(argv=None):

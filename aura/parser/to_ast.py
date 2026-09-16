@@ -196,7 +196,13 @@ class Tokenizer:
                             digits += self.source[self.pos]
                         self.pos += 1
                     base = {'x': 16, 'o': 8, 'b': 2}[prefix]
-                    value = int(digits, base)
+                    try:
+                        value = int(digits, base)
+                    except ValueError:
+                        raise SyntaxError(
+                            f"Invalid base-{base} integer literal "
+                            f"'0{prefix}{digits}' at {self.line}:{self.column}"
+                        )
                     self.column += (self.pos - start)
                     self.tokens.append(Token('INT', value, self.line, self.column))
                     continue
@@ -233,6 +239,27 @@ class Tokenizer:
                     self.tokens.append(Token('FLOAT', float(raw), self.line, self.column))
                 else:
                     self.tokens.append(Token('INT', int(raw), self.line, self.column))
+                continue
+
+            # Leading-dot floats: `.5` (but not `..` ranges or member access).
+            if (char == '.' and self.pos + 1 < length
+                    and self.source[self.pos + 1].isdigit()):
+                start = self.pos
+                self.pos += 1
+                while self.pos < length and (self.source[self.pos].isdigit() or self.source[self.pos] == '_'):
+                    self.pos += 1
+                if self.pos < length and self.source[self.pos] in 'eE':
+                    nxt = self.source[self.pos + 1] if self.pos + 1 < length else ''
+                    after = self.source[self.pos + 2] if self.pos + 2 < length else ''
+                    if nxt.isdigit() or (nxt in '+-' and after.isdigit()):
+                        self.pos += 1
+                        if self.source[self.pos] in '+-':
+                            self.pos += 1
+                        while self.pos < length and self.source[self.pos].isdigit():
+                            self.pos += 1
+                raw = self.source[start:self.pos].replace('_', '')
+                self.column += (self.pos - start)
+                self.tokens.append(Token('FLOAT', float(raw), self.line, self.column))
                 continue
             
             # Strings
@@ -962,7 +989,16 @@ class Parser:
         return "".join(parts).strip()
 
     # --- Type Parsing ---
+    _TYPE_START_VALUES = {'(', '[', '{'}
+    _TYPE_START_TYPES = {'IDENT'}
+
     def parse_type(self):
+        token = self.peek()
+        if token.type not in self._TYPE_START_TYPES and token.value not in self._TYPE_START_VALUES:
+            raise SyntaxError(
+                f"Expected a type but got '{token.value}' "
+                f"at {token.line}:{token.column}"
+            )
         token = self.consume()
         t_name = str(token.value)
         
@@ -1096,49 +1132,106 @@ class Parser:
     def parse_trait_decl(self, visibility='public'):
         self.consume(expected_value='trait')
         name = self.consume(expected_type='IDENT').value
+
+        # Traits may declare generic parameters: `trait Mapper[T] { ... }`.
+        type_params = []
+        if self.match('['):
+            while True:
+                type_params.append(self.consume(expected_type='IDENT').value)
+                if not self.match(','):
+                    break
+            self.consume(expected_value=']')
+
         self.consume(expected_value='{')
-        # Traits usually have method signatures
         members = []
-        while not self.check('}'):
-             # def foo(...) -> Type
-             if self.check('def') or self.check('fn'):
-                 self.consume() # eat def/fn
-                 m_name = self.consume(expected_type='IDENT').value
-                 self.consume(expected_value='(')
-                 # skip params parsing for now or do full parse? 
-                 # TraitDecl needs signatures.
-                 # Let's reuse parameter parsing but without body
-                 params = []
-                 if not self.check(')'):
-                     while True:
-                         # Simplified param parsing for trait
-                         if self.check_type('IDENT'): p_name = self.consume().value
-                         else: p_name = '_'
-                         
-                         if self.match(':'): self.parse_type()
-                         if self.match('='): self.parse_expression()
-                         if not self.match(','): break
-                 self.consume(expected_value=')')
-                 
-                 ret_type = None
-                 if self.match('->'):
-                     ret_type = self.parse_type()
-                     
-                 # Trait methods might not have body, or default body?
-                 body = None
-                 if self.match('{'):
-                     body = self.parse_block() # Default implementation?
-                 
-                 # We need a TraitMethod node? Or just Method with no body?
-                 # using Method(..., body=None)
-                 members.append(Method(m_name, [], ret_type, body)) 
-             elif self.check('}'): 
-                 break
-             else:
-                 self.pos += 1 # Skip unknown
-                 
+        while not self.check('}') and not self.check('EOF'):
+            # Skip visibility / modifiers on members.
+            while self.peek().value in ('public', 'private', 'protected', 'static'):
+                self.consume()
+
+            if self.check('def') or self.check('fn'):
+                # Reuse the full function parser so parameters, defaults,
+                # types, generics and default bodies are all preserved.
+                self.consume()  # eat def/fn
+                func = self.parse_function_decl_after_keyword()
+                members.append(Method(
+                    func.name, func.params, func.return_type, func.body,
+                    is_static=func.is_static, visibility=visibility,
+                    decorators=func.decorators,
+                ))
+            elif self.peek().type == 'IDENT':
+                # Field declaration inside a trait: `name: Type`.
+                member_name = self.consume().value
+                field_type = None
+                if self.match(':'):
+                    field_type = self.parse_type()
+                members.append(VarDecl(member_name, True, field_type, None,
+                                       visibility=visibility))
+            else:
+                break
+
         self.consume(expected_value='}')
-        return TraitDecl(name, members, None, visibility)
+        return TraitDecl(name, members, type_params, visibility)
+
+    def parse_function_decl_after_keyword(self):
+        """Parse a function signature/body when `def`/`fn` was already consumed.
+
+        Used by trait declarations so they share the exact function grammar.
+        """
+        name = self.consume(expected_type='IDENT').value
+
+        type_params = []
+        if self.match('['):
+            while True:
+                type_params.append(self.consume(expected_type='IDENT').value)
+                if not self.match(','):
+                    break
+            self.consume(expected_value=']')
+
+        self.consume(expected_value='(')
+        params = []
+        if not self.check(')'):
+            while True:
+                is_variadic = False
+                is_kwonly = False
+                if self.check('**'):
+                    self.consume()
+                    is_variadic = True
+                    is_kwonly = True
+                elif self.check('*'):
+                    self.consume()
+                    if self.check(',') or self.check(')'):
+                        params.append(Parameter('*', None, None))
+                        if not self.match(','):
+                            break
+                        continue
+                    is_variadic = True
+
+                p_name = self.consume(expected_type='IDENT').value
+                p_type = None
+                if self.match(':'):
+                    p_type = self.parse_type()
+                default = None
+                if self.match('='):
+                    default = self.parse_expression()
+                params.append(Parameter(p_name, p_type, default,
+                                        is_variadic=is_variadic, is_kwonly=is_kwonly))
+                if not self.match(','):
+                    break
+        self.consume(expected_value=')')
+
+        return_type = None
+        if self.match('->'):
+            return_type = self.parse_type()
+
+        body = None
+        if self.match('='):
+            body = [ReturnStmt(self.parse_expression())]
+        elif self.check('{'):
+            body = self.parse_block()
+
+        return FunctionDecl(name, params, return_type, body,
+                            type_params=type_params)
 
     def parse_enum_decl(self, visibility='public'):
         """Parse `enum Name { A, B = 3, C }` into an EnumDecl."""
@@ -1431,22 +1524,15 @@ class Parser:
             elif pk.type == 'IDENT':
                 if pk.value in ('in', 'is', 'and', 'or', 'as'):
                     op = pk.value
-                    
-                    # Handle 'not in' and 'is not'
-                    if pk.value == 'not' and self.source[self.pos+3:].strip().startswith('in'): # weak check
-                         # Better: peek next token
-                         pass
                 elif pk.value == 'not':
-                     # Check if next is 'in'
-                     # peek() uses self.pos. If we peek+1?
-                     # Tokenizer pre-reads.
-                     if self.pos + 1 < len(self.tokens) and self.tokens[self.pos+1].value == 'in':
-                         op = 'not in'
-                
+                    # `not in`: only when directly followed by `in`.
+                    if self.pos + 1 < len(self.tokens) and self.tokens[self.pos + 1].value == 'in':
+                        op = 'not in'
+
                 # Check for 'is not'
                 if op == 'is':
-                     if self.pos + 1 < len(self.tokens) and self.tokens[self.pos+1].value == 'not':
-                         op = 'is not'
+                    if self.pos + 1 < len(self.tokens) and self.tokens[self.pos + 1].value == 'not':
+                        op = 'is not'
             
             if not op:
                 break
@@ -1525,7 +1611,9 @@ class Parser:
             '==': 5, '!=': 5, '<': 6, '>': 6, '<=': 6, '>=': 6, 'in': 6, 'not in': 6, 'is': 6, 'is not': 6,
             '..': 7, '..<': 7, # Range
             '??': 8, '?:': 8, # Null coalescing/Elvis
-            '<<': 8.5, '>>': 8.5, # Bitwise shifts
+            # Shifts bind looser than additive but tighter than comparison,
+            # matching Python (`1 << 2 + 1` == `1 << 3`).
+            '<<': 5.5, '>>': 5.5,
             '+': 9, '-': 9,
             '*': 10, '/': 10, '%': 10, 'as': 10,
             '**': 11,
@@ -1566,7 +1654,7 @@ class Parser:
             elif token.value == 'false':
                 self.consume()
                 return BoolLiteral(False)
-            elif token.value == 'null':
+            elif token.value == 'null' or token.value == 'none':
                 self.consume()
                 return NoneLiteral()
             # Lambda is handled via '(' ... '=>' or check special syntax if needed

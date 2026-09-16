@@ -241,13 +241,14 @@ class StatementTransformer:
         
         # Reset and finish
         final_body = init_code + body_code
+        if not final_body.strip():
+            # Keep the class body indented even when it is empty (an empty
+            # class still needs a `pass` under the class header).
+            final_body = self._indent() + "pass"
         self.indent_level -= 1
         self.in_class_scope = old_in_class
         self.expr_transformer.member_visibilities = old_vis
-        
-        if not final_body.strip():
-            final_body = self._indent() + "pass"
-        
+
         return f"{decorators_code}class {node.name}{base}:\n{final_body}"
     
     def transform_Method(self, node):
@@ -356,20 +357,52 @@ class StatementTransformer:
     
     def transform_TraitDecl(self, node):
         # Traits are interfaces. Python has no native traits, so a trait
-        # becomes an empty (optionally abstract) base class that implementing
-        # classes can inherit from.
+        # becomes a base class. Methods with a body keep their default
+        # implementation; signature-only methods raise NotImplementedError.
         header = f"class {node.name}:"
+        self.indent_level += 1
+        class_indent = self._indent()
         body_lines = []
         for member in node.members:
             if isinstance(member, Method):
-                # Signature-only methods become abstract placeholders.
-                body_lines.append(self._indent() + "    def " + member.name + "(self, *args, **kwargs):")
-                body_lines.append(self._indent() + "        raise NotImplementedError")
-            elif hasattr(member, 'name'):
-                body_lines.append(self._indent() + f"    {member.name} = None")
+                if member.body:
+                    self.indent_level -= 1
+                    impl = self.transform(member)
+                    self.indent_level += 1
+                    body_lines.append(
+                        class_indent + impl.replace('\n', '\n' + class_indent))
+                else:
+                    signature = self._trait_method_signature(member)
+                    body_lines.append(class_indent + f"def {signature}:")
+                    body_lines.append(class_indent + "    raise NotImplementedError")
+            elif isinstance(member, VarDecl):
+                default = 'None'
+                if member.value is not None:
+                    default = self.expr_transformer.transform(member.value)
+                body_lines.append(class_indent + f"{member.name} = {default}")
+        self.indent_level -= 1
         if not body_lines:
-            body_lines.append(self._indent() + "    pass")
+            body_lines.append(class_indent + "pass")
         return header + "\n" + "\n".join(body_lines)
+
+    def _trait_method_signature(self, method):
+        """Render a trait method's parameter list, preserving its signature."""
+        params = ["self"]
+        for param in method.params or []:
+            if param.name in ("self", "cls"):
+                continue
+            if param.name == '*' and not param.is_variadic and not param.is_kwonly:
+                params.append('*')
+            elif param.is_kwonly:
+                params.append(f"**{param.name}")
+            elif param.is_variadic:
+                params.append(f"*{param.name}")
+            elif param.default:
+                default = self.expr_transformer.transform(param.default)
+                params.append(f"{param.name}={default}")
+            else:
+                params.append(param.name)
+        return f"{method.name}({', '.join(params)})"
 
     def transform_EnumDecl(self, node):
         """Emit a Python enum. Auto-numbered members continue from the last
@@ -469,9 +502,39 @@ class StatementTransformer:
     
     def transform_GuardStmt(self, node):
         # guard condition else { ... } → if not condition: ...
+        #
+        # A bare top-level `guard cond else { return }` is Aura's idiom for
+        # "bail out of the program". Python forbids a bare `return` at module
+        # level, so those guard bodies are rewritten to `raise SystemExit`
+        # instead of emitting invalid Python.
         cond = self.expr_transformer.transform(node.condition)
-        else_body = self._block(node.else_body)
+        else_body = self._render_guard_else(node.else_body)
         return f"if not ({cond}):\n{else_body}"
+
+    def _render_guard_else(self, else_body):
+        if not getattr(self, 'function_scopes', None):
+            # Module scope: rewrite a leading bare `return` into SystemExit.
+            rewritten = [
+                self._module_return_to_exit(stmt) for stmt in (else_body or [])
+            ]
+            if any(r is not None for r in rewritten):
+                else_body = [r if r is not None else stmt
+                             for r, stmt in zip(rewritten, else_body or [])]
+        return self._block(else_body)
+
+    @staticmethod
+    def _module_return_to_exit(stmt):
+        """Return a rewritten statement for a module-level guard body.
+
+        ``return`` (bare or with a value) becomes ``raise SystemExit(...)`` so
+        it is valid Python and terminates the program with the intended code.
+        Returns ``None`` when the statement needs no rewriting.
+        """
+        if isinstance(stmt, ReturnStmt):
+            if stmt.value is None:
+                return ThrowStmt(CallExpr(Identifier('SystemExit'), [], {}))
+            return ThrowStmt(CallExpr(Identifier('SystemExit'), [stmt.value], {}))
+        return None
     
     def transform_WhileStmt(self, node):
         cond = self.expr_transformer.transform(node.condition)
@@ -710,17 +773,25 @@ class StatementTransformer:
     def transform_Module(self, node):
         """Transform a module declaration into a namespaced class.
 
-        Module members are static so `Module.member` keeps working. This is
-        also reachable when a module is nested inside a block.
+        Module members are static so `Module.member` keeps working. A dotted
+        module name (`module Outer.Inner`) becomes nested classes so the
+        attribute path `Outer.Inner.member` resolves in Python.
         """
-        header = f"class {node.name}:"
+        parts = node.name.split('.')
+        # Innermost class holds the members; wrap it in one class per prefix.
+        inner = self._module_class(parts[-1], node.members)
+        for part in reversed(parts[:-1]):
+            inner = textwrap.indent(inner, "    ")
+            inner = f"class {part}:\n{inner}"
+        return inner
+
+    def _module_class(self, name, members):
+        header = f"class {name}:"
         body_lines = []
-        for member in node.members:
+        for member in members:
             if isinstance(member, FunctionDecl):
                 member.is_static = True
-                code = self.transform(member)
-            else:
-                code = self.transform(member)
+            code = self.transform(member)
             if code and code.strip():
                 for line in code.split("\n"):
                     body_lines.append("    " + line if line.strip() else line)

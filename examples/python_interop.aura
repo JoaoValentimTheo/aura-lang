@@ -1,0 +1,24 @@
+// Python interop: import any Python standard-library module or PyPI package.
+import os
+import sys
+import math
+
+from json import dumps, loads
+
+// Aura also ships first-class helpers in `python` for dynamic access.
+import python
+
+let payload = {"name": "aura", "ok": true}
+let encoded = dumps(payload)
+print("json:", encoded)
+print("roundtrip:", loads(encoded)["name"])
+
+print("os.name:", os.name)
+print("sqrt(2):", math.sqrt(2))
+print("platform:", sys.platform)
+
+// Dynamic import and evaluation mirror Python's importlib semantics.
+let re = python.import_module("re")
+print("regex:", re.findall("[0-9]+", "a1b22c333"))
+
+print("eval:", python.eval("sum(range(10))"))

@@ -34,7 +34,31 @@ Installed commands (`aura <cmd>`):
 
 Aura programs can import any Python standard-library module or installed PyPI
 package, plus local `.aura` modules and packages. The standard library also
-ships `stdlib.regex`, `stdlib.os` and `stdlib.http`.
+ships `stdlib.regex`, `stdlib.os`, `stdlib.http`, and the Python interop bridge
+`stdlib.python` (also available as `import python`).
+
+## Python Interop
+
+Aura transpiles to Python, so community PyPI packages are first-class. Install
+one with `aura add`, declare it in `aura.toml`, then import it directly, or use
+the explicit bridge for dynamic access:
+
+```aura
+import python
+
+let requests = python.import_module("requests")
+let text = requests.get("https://example.com").text
+
+let re = python.load("re")
+print(re.findall("[0-9]+", "a1b22c333"))
+
+print(python.eval("sum(range(10))"))
+print(python.type_name(text))
+```
+
+The bridge exposes `import_module`, `load`, `eval`, `exec_code`, `call`,
+`getattr`/`setattr`/`hasattr`, `is_available`, `to_aura`/`to_python`, and more.
+See `aura/stdlib/python.py`.
 
 ## Quick Start (from source, no install)
 
@@ -219,12 +243,52 @@ def fib(n) -> int {
 - [Completeness Report](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/COMPLETENESS.md)
 - [Documentation Index](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/README.md)
 
+## REPL
+
+```bash
+aura repl
+```
+
+```
+aura> let mut total = 0
+aura> for i in 1..5 { total += i }
+aura> total
+10
+aura> :type total
+int  (value: 10)
+aura> import python
+aura> python.eval("2 ** 8")
+256
+aura> :py [x * x for x in range(5)]
+[0, 1, 4, 9, 16]
+aura> :q
+```
+
+| Command | Description |
+|---------|-------------|
+| `:help` | Show help |
+| `:vars` | List session bindings |
+| `:type <expr>` | Evaluate and show the value/type |
+| `:ast <code>` | Print the syntax tree |
+| `:py <code>` | Run raw Python in the session |
+| `:load <file>` | Execute an Aura file into the session |
+| `:run <file>` | Run an Aura file as a program |
+| `:history` | Show entered chunks |
+| `:reset` | Clear all bindings |
+| `:q` | Quit |
+
+A bare expression prints its value and stores it in `_`. Multi-line input
+continues automatically while brackets are open or a line ends with a
+continuation token.
+
 ## Testing
 
 ```bash
 python3 -m pytest tests/ -v          # full suite
 python3 tests/test_runtime.py        # transpile + execute programs
 python3 tests/test_regressions.py    # audit regression coverage
+python3 tests/test_stress_raw.py     # raw pipeline stress tests
+python3 tests/test_language_rules.py # rules, modules, functions, Python bridge, REPL
 ```
 
 Set `AURA_FUZZ_SEEDS=100000` to run the stochastic fuzzer beyond its

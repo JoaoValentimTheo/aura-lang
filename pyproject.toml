@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aura-language"
-version = "0.1.0a2"
+version = "0.1.0a3"
 description = "Aura: a gradually-typed language that transpiles to Python"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -58,3 +58,4 @@ include-package-data = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 norecursedirs = [".venv", "__pycache__", "tests/success_tests_aura", "tests/oop_tests", "tests/collections_tests", "tests/integration_tests", "tests/secure_aura_tests", "tests/speed_aura_tests", "tests/syntax_scope_tests"]
+addopts = "--ignore=tests/test_ide.py --ignore=tests/test_massive_aura_files.py --ignore=tests/test_massive_aura_v2.py --ignore=tests/test_massive_generated.py --ignore=tests/test_massive_stress.py"

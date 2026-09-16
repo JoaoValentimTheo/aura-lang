@@ -54,3 +54,8 @@ Thumbs.db
 output/
 *.log
 .DS_Store
+
+# Aura IDE (separate effort, not part of the published language package)
+aura_ide/
+aura-ide/
+tests/test_ide.py

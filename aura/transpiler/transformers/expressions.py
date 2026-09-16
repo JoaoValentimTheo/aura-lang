@@ -445,14 +445,15 @@ class ExpressionTransformer:
         for pattern, iterable, filters in node.comprehensions:
             pat_str = self.transform(pattern)
             iter_str = self.transform(iterable)
-            
-            # Heuristic: if pattern is a tuple/pair and we are in a map/dict context, or it just looks like it needs .items()
-            # In Aura, if you do 'for (k, v) in config', Python needs 'for k, v in config.items()'
-            if isinstance(pattern, TupleLiteral) and len(pattern.elements) == 2:
-                 # Check if iter_str already has .items()
-                 if ".items()" not in iter_str:
-                     iter_str += ".items()"
-            
+
+            # `for (k, v) in some_dict` needs `.items()` in Python. Only add it
+            # when the iterable is provably dict-shaped; an arbitrary 2-tuple
+            # pattern over a list of pairs must be left untouched, otherwise
+            # `[k for (k, v) in pairs]` would become `pairs.items()`.
+            if (isinstance(pattern, TupleLiteral) and len(pattern.elements) == 2
+                    and self._needs_items(iterable, iter_str)):
+                iter_str += ".items()"
+
             part = f"for {pat_str} in {iter_str}"
             
             for cond in filters:
@@ -471,7 +472,25 @@ class ExpressionTransformer:
             return f"({term} {generators})"
         else:
             raise NotImplementedError(f"Unknown comprehension type: {node.expr_type}")
-    
+
+    @staticmethod
+    def _needs_items(iterable, rendered):
+        """True when a `for (k, v) in X` iterable must be `.items()`-ed.
+
+        Only provably dict-shaped iterables qualify: a dict/set literal, an
+        `AuraDict(...)`/`dict(...)` call, or an expression that already yields
+        pairs via `.items()`/`.keys()`. Everything else (lists of pairs,
+        tuples, unknown names) is left alone so the pattern just unpacks it.
+        """
+        if isinstance(iterable, DictLiteral):
+            return True
+        text = (rendered or '').strip()
+        if text.endswith('.items()') or text.endswith('.keys()'):
+            return False
+        if text.startswith('AuraDict(') or text.startswith('dict('):
+            return True
+        return False
+
     # ========== Spread ==========
     def transform_SpreadExpr(self, node):
         expr = self.transform(node.expr)

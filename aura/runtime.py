@@ -15,6 +15,14 @@ _ALIASES = ('stdlib', 'parser', 'transpiler', 'repl', 'tools')
 _installed = False
 
 
+# Aura programs write `import python` to reach the interop bridge. Map that
+# friendly name onto the real `aura.stdlib.python` module so the bridge is
+# available without a top-level package named `python`.
+_SUBMODULE_ALIASES = {
+    'python': 'aura.stdlib.python',
+}
+
+
 def install_runtime_aliases():
     """Register ``stdlib`` → ``aura.stdlib`` (and friends) in ``sys.modules``.
 
@@ -32,4 +40,11 @@ def install_runtime_aliases():
         except ImportError:
             continue
         sys.modules[alias] = module
+    for alias, target in _SUBMODULE_ALIASES.items():
+        if alias in sys.modules:
+            continue
+        try:
+            sys.modules[alias] = importlib.import_module(target)
+        except ImportError:
+            continue
     _installed = True

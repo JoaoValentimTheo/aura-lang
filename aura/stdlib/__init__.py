@@ -1,6 +1,6 @@
 """Aura Standard Library initialization."""
 
-__version__ = "0.1.0"
+__version__ = "0.1.0a3"
 __author__ = "Aura Team"
 
 # Core modules
@@ -14,6 +14,7 @@ from . import io
 from . import regex
 from . import os
 from . import http
+from . import python
 
 # Common exports
 __all__ = [
@@ -27,6 +28,7 @@ __all__ = [
     'regex',
     'os',
     'http',
+    'python',
 ]
 
 # Convenience imports

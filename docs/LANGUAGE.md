@@ -948,6 +948,80 @@ The brace form (`import module { a, b }`) is a convenience that compiles to
 forms above. There is no `::` namespace separator and no `*` in the brace
 form — use `from stdlib.module import *` if a wildcard is required.
 
+### 16.1 Python Interop
+
+Any Python standard-library module or installed PyPI package can be imported
+directly. For dynamic access, use the `python` bridge:
+
+```aura
+import python
+
+let re = python.import_module("re")        // dynamic import
+let math = python.load("math")             // same, returns a ModuleProxy
+print(math.sqrt(2))
+
+print(python.eval("1 + 2"))                // evaluate an expression
+print(python.type_name(math))              // fully-qualified type name
+print(python.is_available("requests"))     // True/False, never raises
+```
+
+Available helpers include `import_module`, `load`, `reload`, `is_available`,
+`eval`, `exec_code`, `compile_source`, `call`, `getattr`, `setattr`, `hasattr`,
+`dir`, `type_name`, `is_module`, `is_callable`, `is_class`, `is_instance`,
+`to_aura`, `to_python`, `add_path`, `site_packages`, `modules` and
+`interpreter_version`.
+
+### 16.2 Modules
+
+`module` declarations create a namespaced class. Dotted names nest:
+
+```aura
+module Geometry {
+  def area(w, h) { return w * h }
+}
+
+module Outer.Inner {
+  def value() { return 3 }
+}
+
+print(Geometry.area(2, 3))   // 6
+print(Outer.Inner.value())   // 3
+```
+
+Local `.aura` files and packages are importable with the same syntax
+(`import util`, `import pkg.util`, `from pkg.util import x`).
+
+---
+
+## 16b. Language Rules
+
+Aura is strict by default. The following rules are enforced by `aura check`,
+`aura run` and the REPL:
+
+- **Immutability** — `let` bindings cannot be reassigned; use `let mut`.
+  `const` can never be reassigned. Member assignments (`self.x = ...`) are not
+  affected.
+- **No duplicate declarations** in the same scope, and no duplicate parameter
+  names.
+- **`return` only inside a function** (or in a top-level
+  `guard cond else { return }`, which exits the program).
+- **`break` / `continue` only inside a loop.**
+- **`await` only inside an `async` function**, or at the top level (Aura runs
+  async programs inside a coroutine).
+- **`self` only inside a class method.**
+- **No unreachable code** after `return` / `throw` / `break` / `continue`.
+- **Valid assignment targets only** (variables, members, indexes, destructuring
+  patterns).
+
+```aura
+let count = 0
+count = 1              // rule error: reassign an immutable binding
+let mut total = 0
+total += 1             // ok
+
+guard total > 0 else { return }   // exits the program if the guard fails
+```
+
 ---
 
 ## 17. Macros and Decorators
