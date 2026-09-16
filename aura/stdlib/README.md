@@ -295,6 +295,70 @@ let created = http.post_json("https://api.example.com/items", {"name": "x"})
 **Functions:** `request`, `get`, `post`, `put`, `delete`, `get_json`,
 `post_json`, `quote`, `unquote`, `build_url`.
 
+Only `http`/`https` URLs are allowed; loopback/private hosts are blocked
+(`AURA_HTTP_ALLOW_PRIVATE=1` to opt out), redirects are re-validated, and
+response bodies are capped (`AURA_HTTP_MAX_BYTES`).
+
+### threading
+
+Native OS threads for I/O-bound work. Globals are shared across threads; guard
+shared state with a lock.
+
+```aura
+import stdlib.threading as threading
+
+let mut total = 0
+let lock = threading.lock()
+
+def worker(n) {
+  let mut i = 0
+  while i < n {
+    lock.acquire()
+    total += 1
+    lock.release()
+    i += 1
+  }
+}
+
+let t = threading.spawn((x) => worker(x), 100)
+t.join()
+print(total)
+```
+
+**Functions:** `spawn`, `thread`, `lock`, `rlock`, `event`, `condition`,
+`semaphore`, `barrier`, `local`, `run_many`, `map_concurrent`, `current_name`,
+`active_count`, `enumerate_threads`, `main_thread`, `get_ident`, `stack_size`.
+**Types:** `Thread` (`.start/.join/.is_alive/.name/.ident`), `_Lock`, `_RLock`.
+
+### asyncio
+
+Coroutines and structured concurrency. Aura has `async def`/`await` natively;
+this module adds tasks, queues and gathering.
+
+```aura
+import stdlib.asyncio as aio
+
+async def work(n) {
+  await aio.sleep(0.01)
+  return n * 2
+}
+
+async def main() {
+  let results = await aio.gather(work(1), work(2), work(3))
+  print(results)
+}
+
+await main()
+```
+
+**Functions:** `run`, `sleep`, `create_task`, `gather`, `wait_for`, `wait`,
+`as_completed`, `queue`, `lock`, `event`, `semaphore`, `current_task`,
+`all_tasks`, `is_running`, `new_event_loop`, `set_event_loop`, `get_event_loop`.
+
+`aio.run(coro)` drives a coroutine from synchronous top-level code; inside an
+already-running loop (`await`, or a program the CLI already wraps) use `await`
+instead.
+
 ## String methods
 
 Strings also support direct method calls, which map to the Python equivalents:

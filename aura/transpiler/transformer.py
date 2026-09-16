@@ -61,6 +61,17 @@ class Transformer:
         stmt.uses_oop_prelude = False
         stmt.has_enum = False
         stmt.has_label = False
+        stmt.module_bindings = set()
+        stmt._global_assignments = []
+        # Collect module-level binding names so functions that assign to them
+        # get a `global` declaration in the generated Python.
+        from aura.transpiler.ast import ConstDecl, VarDecl
+        for statement in program.statements:
+            if isinstance(statement, VarDecl):
+                for name in stmt._declared_names(statement.name):
+                    stmt.module_bindings.add(name)
+            elif isinstance(statement, ConstDecl):
+                stmt.module_bindings.add(statement.name)
         lines = []
         for statement in program.statements:
             code = self.transform(statement)

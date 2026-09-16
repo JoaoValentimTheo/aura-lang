@@ -6,5 +6,5 @@ import aura.stdlib as _impl
 _sys.modules[__name__] = _impl
 
 for _sub in ('collections', 'itertools', 'math', 'string', 'json', 'time', 'io',
-             'regex', 'os', 'http'):
+             'regex', 'os', 'http', 'python', 'threading', 'asyncio'):
     _sys.modules[f'{__name__}.{_sub}'] = _importlib.import_module(f'aura.stdlib.{_sub}')

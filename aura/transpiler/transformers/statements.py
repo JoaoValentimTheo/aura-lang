@@ -23,6 +23,11 @@ class StatementTransformer:
         # Prelude needs recorded during transformation (enum/labeled loops).
         self.has_enum = False
         self.has_label = False
+        # Names bound at module scope; assigning to one inside a function needs
+        # a `global` declaration in the generated Python.
+        self.module_bindings = set()
+        # Stack (one per function) of module names assigned inside the body.
+        self._global_assignments = []
 
     def transform(self, node):
         if node is None:
@@ -37,6 +42,22 @@ class StatementTransformer:
 
     def _indent(self):
         return "    " * self.indent_level
+
+    def _record_global_assignment(self, name):
+        """Note that ``name`` (a module binding) is assigned inside a function.
+
+        Python treats an assigned name as local to the function unless it is
+        declared ``global``, so generated code must add that declaration.
+        """
+        if (self._global_assignments and isinstance(name, str)
+                and name in self.module_bindings):
+            self._global_assignments[-1].add(name)
+
+    def _global_decl_line(self):
+        if not self._global_assignments or not self._global_assignments[-1]:
+            return ""
+        names = ", ".join(sorted(self._global_assignments[-1]))
+        return f"{self._indent()}    global {names}\n"
 
     @staticmethod
     def _declared_names(name):
@@ -216,12 +237,17 @@ class StatementTransformer:
             return f"{decorators_code}{async_kw}def {node.name}({params_str}): pass"
         elif isinstance(node.body, list):
             self.function_scopes.append(set())
+            self._global_assignments.append(set())
             try:
                 body_code = self._block(node.body)
+                global_decl = self._global_decl_line()
             finally:
                 self.function_scopes.pop()
+                self._global_assignments.pop()
             if not body_code.strip():
                 body_code = self._indent() + "    pass"
+            elif global_decl:
+                body_code = global_decl + body_code
             return f"{decorators_code}{async_kw}def {node.name}({params_str}):\n{body_code}"
         else:
             # Expression body
@@ -400,11 +426,18 @@ class StatementTransformer:
         if node.body is None:
             return f"{decorators_code}def {name}({params_str}): pass"
         elif isinstance(node.body, list):
-            body_code = self._block(node.body)
+            self._global_assignments.append(set())
+            try:
+                body_code = self._block(node.body)
+                global_decl = self._global_decl_line()
+            finally:
+                self._global_assignments.pop()
             if not body_code.strip():
                 # A nested function body needs one extra indentation level
                 # relative to the `def` line.
                 body_code = self._indent() + "    pass"
+            elif global_decl:
+                body_code = global_decl + body_code
             return f"{decorators_code}def {name}({params_str}):\n{body_code}"
         else:
             expr_code = self.expr_transformer.transform(node.body)
@@ -566,6 +599,7 @@ class StatementTransformer:
             # Remove outer parens from left if present (though usually identifier)
             if left.startswith('(') and left.endswith(')'):
                 left = left[1:-1]
+            self._record_assign_targets(node.expr.left)
 
             right = self.expr_transformer.transform(node.expr.right)
             return f"{left} = {right}"
@@ -574,6 +608,7 @@ class StatementTransformer:
             left = self.expr_transformer.transform(node.expr.left)
             if left.startswith('(') and left.endswith(')'):
                 left = left[1:-1]
+            self._record_assign_targets(node.expr.left)
             right = self.expr_transformer.transform(node.expr.right)
             op = node.expr.op
             return f"{left} {op} {right}"
@@ -582,6 +617,7 @@ class StatementTransformer:
             left = self.expr_transformer.transform(node.expr.left)
             if left.startswith('(') and left.endswith(')'):
                 left = left[1:-1]
+            self._record_assign_targets(node.expr.left)
             right = self.expr_transformer.transform(node.expr.right)
             return f"{left} = {left} if {left} is not None else {right}"
 
@@ -597,6 +633,17 @@ class StatementTransformer:
                 raise Exception("Infinite recursion unwrapping ExprStmt")
 
         return self.expr_transformer.transform(expr)
+
+    def _record_assign_targets(self, target):
+        """Record module-level names assigned by ``target`` (Identifier/tuple)."""
+        from aura.transpiler.ast import Identifier, ListLiteral, TupleLiteral
+        if target is None:
+            return
+        if isinstance(target, Identifier):
+            self._record_global_assignment(target.name)
+        elif isinstance(target, (TupleLiteral, ListLiteral)):
+            for el in target.elements:
+                self._record_assign_targets(el)
 
     def transform_IfStmt(self, node):
         cond = self.expr_transformer.transform(node.condition)

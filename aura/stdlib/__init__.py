@@ -5,7 +5,21 @@ from aura import __version__
 __author__ = "Aura Team"
 
 # Core modules
-from . import collections, http, io, itertools, json, math, os, python, regex, string, time
+from . import (
+    asyncio,
+    collections,
+    http,
+    io,
+    itertools,
+    json,
+    math,
+    os,
+    python,
+    regex,
+    string,
+    threading,
+    time,
+)
 
 # Common exports
 __all__ = [
@@ -20,6 +34,8 @@ __all__ = [
     'os',
     'http',
     'python',
+    'threading',
+    'asyncio',
 ]
 
 # Convenience imports
