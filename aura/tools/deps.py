@@ -20,8 +20,15 @@ to the active interpreter's package installer.
 import shutil
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
+
+try:  # Python 3.11+
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python 3.10 fallback
+    try:
+        import tomli as tomllib  # type: ignore
+    except ModuleNotFoundError:
+        tomllib = None
 
 
 MANIFEST_NAME = 'aura.toml'
