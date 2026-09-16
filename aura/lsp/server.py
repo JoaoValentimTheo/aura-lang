@@ -14,6 +14,7 @@ launch ``aura lsp``. Capabilities can grow without changing the transport.
 import json
 import sys
 import traceback
+from collections import OrderedDict
 
 from aura.parser.to_ast import Tokenizer, Parser
 from aura.transpiler.semantics import MutabilityChecker
@@ -25,7 +26,7 @@ KEYWORDS = [
     'type', 'import', 'from', 'as', 'return', 'if', 'else', 'unless',
     'guard', 'match', 'case', 'for', 'while', 'until', 'loop', 'break',
     'continue', 'try', 'catch', 'finally', 'throw', 'await', 'async',
-    'and', 'or', 'not', 'in', 'is', 'null', 'true', 'false', 'none',
+    'and', 'or', 'not', 'in', 'is', 'true', 'false', 'none',
 ]
 
 BUILTINS = [
@@ -44,19 +45,23 @@ STDLIB_MODULES = [
 # malicious client forcing an unbounded allocation.
 MAX_MESSAGE_BYTES = 16 * 1024 * 1024
 
+# Upper bound on open documents (and their caches), guarding against a client
+# that opens unbounded URIs. Oldest documents are evicted first.
+MAX_DOCUMENTS = 512
+
 
 class AuraLanguageServer:
     def __init__(self, reader=None, writer=None):
         self.reader = reader or sys.stdin.buffer
         self.writer = writer or sys.stdout.buffer
-        self.documents = {}
+        self.documents = OrderedDict()
         self.shutdown_requested = False
         # (uri, text) -> (text, program, parse_error). Avoids re-parsing the same
         # document for hover, symbols and diagnostics within a request cycle.
-        self._parse_cache = {}
+        self._parse_cache = OrderedDict()
         # uri -> (text, diagnostics). Avoids re-running the checkers on an
         # unchanged document.
-        self._diagnostics_cache = {}
+        self._diagnostics_cache = OrderedDict()
 
     # -- transport ----------------------------------------------------------
 
@@ -81,6 +86,13 @@ class AuraLanguageServer:
         if not body:
             return None
         return json.loads(body.decode('utf-8'))
+
+    def _evict_old_documents(self):
+        """Keep the open-document (and cache) count bounded."""
+        while len(self.documents) > MAX_DOCUMENTS:
+            uri, _ = self.documents.popitem(last=False)
+            self._parse_cache.pop(uri, None)
+            self._diagnostics_cache.pop(uri, None)
 
     def _parsed(self, uri):
         """Return ``(text, program, error)`` for the current text of ``uri``.
@@ -180,12 +192,15 @@ class AuraLanguageServer:
         elif method == 'textDocument/didOpen':
             doc = params['textDocument']
             self.documents[doc['uri']] = doc['text']
+            self.documents.move_to_end(doc['uri'])
+            self._evict_old_documents()
             self._publish_diagnostics(doc['uri'])
         elif method == 'textDocument/didChange':
             doc = params['textDocument']
             changes = params.get('contentChanges', [])
             if changes:
                 self.documents[doc['uri']] = changes[-1]['text']
+                self.documents.move_to_end(doc['uri'])
             self._publish_diagnostics(doc['uri'])
         elif method == 'textDocument/didSave':
             doc = params['textDocument']

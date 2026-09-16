@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aura-language"
-version = "0.1.0a4"
+version = "0.1.1"
 description = "Aura: a gradually-typed language that transpiles to Python"
 readme = "README.md"
 requires-python = ">=3.10"

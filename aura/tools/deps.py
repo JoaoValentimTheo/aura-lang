@@ -172,13 +172,31 @@ def install_dependencies(manifest_path=None, upgrade=False):
         print("No dependencies declared.")
         return 0
     requirements = []
+    invalid = []
     for name, spec in deps.items():
-        if spec in ('*', '', None):
+        name = str(name)
+        if not _valid_dependency_name(name):
+            invalid.append(name)
+            continue
+        spec = '' if spec is None else str(spec)
+        # A specifier must not smuggle a pip option (e.g. "--target=/etc").
+        if spec.startswith('-') or any(ch.isspace() for ch in spec):
+            invalid.append(name)
+            continue
+        if spec in ('*', ''):
             requirements.append(name)
-        elif str(spec)[0] in '<>=~!':
+        elif spec[0] in '<>=~!':
             requirements.append(f"{name}{spec}")
         else:
             requirements.append(f"{name}=={spec}")
+    if invalid:
+        for name in invalid:
+            print(f"Error: refusing unsafe dependency entry {name!r}.",
+                  file=sys.stderr)
+        return 2
+    if not requirements:
+        print("No valid dependencies declared.")
+        return 0
     return _pip_install(requirements, upgrade=upgrade)
 
 

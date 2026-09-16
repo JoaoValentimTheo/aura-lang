@@ -28,6 +28,20 @@ from .collections import AuraDict
 
 _ALLOWED_SCHEMES = ('http', 'https')
 
+# Upper bound on a response body (default 32 MiB) so a server cannot exhaust
+# memory. Set AURA_HTTP_MAX_BYTES to override (0 disables the limit).
+_DEFAULT_MAX_BYTES = 32 * 1024 * 1024
+
+
+def _max_bytes():
+    raw = _os.environ.get('AURA_HTTP_MAX_BYTES')
+    if raw is None:
+        return _DEFAULT_MAX_BYTES
+    try:
+        return int(raw)
+    except ValueError:
+        return _DEFAULT_MAX_BYTES
+
 
 def _allow_private():
     return _os.environ.get('AURA_HTTP_ALLOW_PRIVATE') == '1'
@@ -95,6 +109,22 @@ def _use_requests():
         return False
 
 
+class _SafeRedirectHandler(_urlrequest.HTTPRedirectHandler):
+    """Re-validate every redirect hop so an open redirect cannot reach a
+    private host after the initial URL passed validation."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _validate_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _read_limited(stream, max_bytes):
+    """Read at most ``max_bytes`` from ``stream`` (0/None means unlimited)."""
+    if not max_bytes or max_bytes <= 0:
+        return stream.read()
+    return stream.read(max_bytes + 1)
+
+
 def _json_headers(headers, data):
     merged = dict(headers or {})
     if data is not None:
@@ -108,8 +138,13 @@ def request(method, url, data=None, headers=None, timeout=30):
     The returned mapping has ``status``, ``body`` (text), ``headers`` and
     ``ok`` keys, so it works the same whether ``requests`` or ``urllib`` is
     used underneath.
+
+    Redirects are not followed blindly: each hop is re-validated (scheme and
+    private-host checks), so an open redirect cannot bypass the SSRF guard.
+    Response bodies are capped (see ``AURA_HTTP_MAX_BYTES``).
     """
     _validate_url(url)
+    max_bytes = _max_bytes()
     if _use_requests():
         import requests
         # Non-string bodies are sent as JSON, matching the urllib path.
@@ -119,10 +154,15 @@ def request(method, url, data=None, headers=None, timeout=30):
         response = requests.request(
             method.upper(), url,
             data=req_data, headers=_json_headers(headers, data), timeout=timeout,
+            allow_redirects=False,
         )
+        content = response.content
+        if max_bytes and max_bytes > 0 and len(content) > max_bytes:
+            content = content[:max_bytes]
         return _response(
-            response.status_code, response.text, dict(response.headers),
-            response.ok, response.url,
+            response.status_code,
+            content.decode('utf-8', errors='replace'),
+            dict(response.headers), response.ok, response.url,
         )
 
     payload = None
@@ -130,13 +170,14 @@ def request(method, url, data=None, headers=None, timeout=30):
         payload = data.encode('utf-8') if isinstance(data, str) else _json.dumps(data).encode('utf-8')
     req = _urlrequest.Request(url, data=payload, method=method.upper(),
                               headers=_json_headers(headers, data))
+    opener = _urlrequest.build_opener(_SafeRedirectHandler())
     try:
-        with _urlrequest.urlopen(req, timeout=timeout) as resp:
-            body = resp.read().decode('utf-8', errors='replace')
+        with opener.open(req, timeout=timeout) as resp:
+            body = _read_limited(resp, max_bytes).decode('utf-8', errors='replace')
             return _response(resp.status, body, dict(resp.headers),
                              200 <= resp.status < 300, resp.geturl())
     except _urlerror.HTTPError as exc:
-        body = exc.read().decode('utf-8', errors='replace')
+        body = _read_limited(exc, max_bytes).decode('utf-8', errors='replace')
         return _response(exc.code, body, dict(exc.headers), False, url)
 
 

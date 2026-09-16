@@ -198,3 +198,100 @@ def test_workspace_allows_inside(tmp_path):
     ws = Workspace(str(tmp_path))
     ws.write('src/main.aura', 'print(1)')
     assert ws.read('src/main.aura') == 'print(1)'
+
+# ============================================================================
+# Redirect re-validation and response size cap
+# ============================================================================
+
+def test_http_redirect_handler_revalidates():
+    from aura.stdlib.http import _SafeRedirectHandler
+
+    handler = _SafeRedirectHandler()
+    # A redirect to a private host must be rejected during redirect_request.
+    with pytest.raises(ValueError):
+        handler.redirect_request(
+            None, None, 302, 'Found', {}, 'http://127.0.0.1/secret')
+
+
+def test_http_response_size_cap(monkeypatch):
+    from aura.stdlib import http as aura_http
+    import http.server
+    import threading
+
+    monkeypatch.setenv('AURA_HTTP_ALLOW_PRIVATE', '1')
+    monkeypatch.setenv('AURA_HTTP_MAX_BYTES', '10')
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'x' * 1000)
+
+    server = http.server.HTTPServer(('127.0.0.1', 0), Handler)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        response = aura_http.get(f'http://127.0.0.1:{port}/big')
+        assert len(response.body) <= 10
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+# ============================================================================
+# Dependency manifest validation
+# ============================================================================
+
+def test_install_dependencies_rejects_unsafe_name(tmp_path, capsys):
+    from aura.tools import deps
+    manifest = tmp_path / 'aura.toml'
+    manifest.write_text(
+        '[dependencies]\n"bad name" = "1.0"\n', encoding='utf-8')
+    rc = deps.install_dependencies(str(manifest))
+    assert rc == 2
+    assert 'unsafe' in capsys.readouterr().err.lower()
+
+
+def test_install_dependencies_rejects_pip_option(tmp_path, capsys):
+    from aura.tools import deps
+    manifest = tmp_path / 'aura.toml'
+    manifest.write_text(
+        '[dependencies]\nrequests = "--target=/etc"\n', encoding='utf-8')
+    rc = deps.install_dependencies(str(manifest))
+    assert rc == 2
+
+
+# ============================================================================
+# Version bump with a pre-release suffix
+# ============================================================================
+
+def test_release_bump_handles_prerelease(tmp_path):
+    from aura.tools import release
+    pyproject = tmp_path / 'pyproject.toml'
+    init = tmp_path / '__init__.py'
+    pyproject.write_text('version = "0.1.0a4"\n', encoding='utf-8')
+    init.write_text('__version__ = "0.1.0a4"\n', encoding='utf-8')
+    assert release.bump('patch', pyproject=pyproject, init=init) == '0.1.1'
+    assert '0.1.1' in pyproject.read_text(encoding='utf-8')
+    assert '0.1.1' in init.read_text(encoding='utf-8')
+
+
+# ============================================================================
+# LSP document cap
+# ============================================================================
+
+def test_lsp_document_cap_evicts_oldest():
+    from aura.lsp.server import AuraLanguageServer, MAX_DOCUMENTS
+
+    server = AuraLanguageServer()
+    for i in range(MAX_DOCUMENTS + 20):
+        server._handle({'method': 'textDocument/didOpen',
+                        'params': {'textDocument': {
+                            'uri': f'file:///d{i}.aura', 'text': 'let x = 1\n'}}})
+    assert len(server.documents) <= MAX_DOCUMENTS
+    # The earliest documents were evicted.
+    assert 'file:///d0.aura' not in server.documents

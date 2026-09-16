@@ -13,15 +13,16 @@ PYPROJECT = ROOT / 'pyproject.toml'
 INIT = ROOT / 'aura' / '__init__.py'
 
 
-def get_version():
+def get_version(pyproject=PYPROJECT):
     """Read the version.
 
     Prefers ``pyproject.toml`` in a source checkout; falls back to the
     installed package metadata (or ``aura.__version__``) when Aura is installed
     without the repository present.
     """
-    if PYPROJECT.is_file():
-        text = PYPROJECT.read_text(encoding='utf-8')
+    pyproject = Path(pyproject)
+    if pyproject.is_file():
+        text = pyproject.read_text(encoding='utf-8')
         match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
         if match:
             return match.group(1)
@@ -59,9 +60,16 @@ def set_version(version, pyproject=PYPROJECT, init=INIT):
     return version
 
 
-def bump(part='patch'):
-    """Bump major/minor/patch and propagate the new version."""
-    major, minor, patch = (int(x) for x in get_version().split('.')[:3])
+def bump(part='patch', pyproject=PYPROJECT, init=INIT):
+    """Bump major/minor/patch and propagate the new version.
+
+    Pre-release suffixes are dropped (``0.1.0a4`` bumped by ``patch`` becomes
+    ``0.1.1``), matching how a release graduates from alpha to a normal version.
+    """
+    release = re.match(r'^(\d+)\.(\d+)\.(\d+)', get_version(pyproject))
+    if release is None:
+        raise ValueError(f"cannot bump a non-numeric version: {get_version(pyproject)!r}")
+    major, minor, patch = (int(x) for x in release.groups())
     if part == 'major':
         major, minor, patch = major + 1, 0, 0
     elif part == 'minor':
@@ -70,4 +78,4 @@ def bump(part='patch'):
         patch += 1
     else:
         raise ValueError("part must be 'major', 'minor' or 'patch'")
-    return set_version(f"{major}.{minor}.{patch}")
+    return set_version(f"{major}.{minor}.{patch}", pyproject=pyproject, init=init)
