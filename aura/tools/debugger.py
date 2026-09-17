@@ -59,7 +59,15 @@ def build_source_map(ast):
 
 def run(path, trace=False, show_code=False):
     ast = parse_file(path)
+
+    # Entry files declare `main`; the runtime invokes it. Mirror `aura run` so
+    # the debugger actually executes the program.
+    from aura.cli import _prepare_entrypoint
+    has_async, invoke_code = _prepare_entrypoint(ast)
+
     code = Transformer().transform(ast)
+    if invoke_code:
+        code = code + "\n" + invoke_code
 
     if show_code:
         for number, line in enumerate(code.split('\n'), 1):
@@ -84,6 +92,18 @@ def run(path, trace=False, show_code=False):
 
     namespace = {'__name__': '__aura__'}
 
+    def _exec(source):
+        if has_async:
+            import asyncio
+            indented = "\n".join(
+                ("    " + line if line.strip() else line)
+                for line in source.split("\n"))
+            wrapper = "async def _aura_debug_main():\n" + indented + "\n"
+            exec(compile(wrapper, path, 'exec'), namespace)
+            asyncio.run(namespace['_aura_debug_main']())
+        else:
+            exec(compile(source, path, 'exec'), namespace)
+
     if trace:
         def tracer(frame, event, arg):
             if frame.f_code.co_filename != path:
@@ -98,13 +118,13 @@ def run(path, trace=False, show_code=False):
 
         sys.settrace(tracer)
         try:
-            exec(compile(code, path, 'exec'), namespace)
+            _exec(code)
         finally:
             sys.settrace(None)
         return 0
 
     try:
-        exec(compile(code, path, 'exec'), namespace)
+        _exec(code)
         return 0
     except SystemExit as exc:
         return exc.code if isinstance(exc.code, int) else 0

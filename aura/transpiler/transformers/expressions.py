@@ -1,5 +1,26 @@
 """Expression transformers: convert AST expression nodes to Python code."""
+import keyword
+
 from aura.transpiler.ast import *
+
+
+def py_safe_name(name):
+    """Return a Python-safe spelling of an Aura identifier.
+
+    Aura allows identifiers that are reserved words in Python (``raise``,
+    ``class``, ``lambda``, ...). Emitting them verbatim produces invalid
+    Python, so such names get a trailing underscore. The mapping is a pure
+    function of the name, which keeps declarations and every use consistent
+    without needing scope tracking.
+    """
+    if not name.isidentifier():
+        return name
+    if name in ("True", "False", "None"):
+        # These spell Python's literals and are already valid as emitted.
+        return name
+    if keyword.iskeyword(name):
+        return f"{name}_"
+    return name
 
 
 def mangle_member(owner, name, visibility):
@@ -13,12 +34,15 @@ def mangle_member(owner, name, visibility):
     * ``public``    -> ``name``
     * ``protected`` -> ``_name``
     * ``private``   -> ``_{owner}__name``
+
+    The name is additionally spelled safely for Python (a keyword like
+    ``raise`` becomes ``raise_``) so the attribute is always valid.
     """
     if visibility == 'private':
-        return f"_{owner}__{name}"
+        return f"_{owner}__{py_safe_name(name)}"
     if visibility == 'protected':
-        return f"_{name}"
-    return name
+        return f"_{py_safe_name(name)}"
+    return py_safe_name(name)
 
 
 class ExpressionTransformer:
@@ -165,7 +189,7 @@ class ExpressionTransformer:
     # ========== Identifiers & Variables ==========
     def transform_Identifier(self, node):
         self.seen_identifiers.add(node.name)
-        return node.name
+        return py_safe_name(node.name)
 
     # ========== Expressions ==========
     def transform_BinaryOp(self, node):
@@ -302,7 +326,7 @@ class ExpressionTransformer:
             else:
                 rendered.append(self.transform(arg))
         for key, value in node.kwargs.items():
-            rendered.append(f"{key}={self.transform(value)}")
+            rendered.append(f"{py_safe_name(key)}={self.transform(value)}")
         return rendered
 
     # ========== Indexing & Member Access ==========
@@ -725,14 +749,14 @@ class ExpressionTransformer:
 
     # ========== Patterns (Shared with StatementTransformer) ==========
     def transform_IdentifierPattern(self, node):
-        return node.name
+        return py_safe_name(node.name)
 
     def transform_LiteralPattern(self, node):
         return self.transform(node.value)
 
     def transform_AsPattern(self, node):
         pat = self.transform(node.pattern)
-        return f"{pat} as {node.binding_name}"
+        return f"{pat} as {py_safe_name(node.binding_name)}"
 
     def transform_WildcardPattern(self, node):
         return "_"
@@ -740,7 +764,7 @@ class ExpressionTransformer:
     def transform_ListPattern(self, node):
         pats = [self.transform(p) for p in node.patterns]
         if node.rest_pattern:
-            pats.append(f"*{node.rest_pattern.name}")
+            pats.append(f"*{py_safe_name(node.rest_pattern.name)}")
         return f"[{', '.join(pats)}]"
 
     def transform_DictPattern(self, node):
@@ -748,7 +772,7 @@ class ExpressionTransformer:
         for name, pat in node.field_patterns.items():
              fields.append(f'"{name}": {self.transform(pat)}')
         if node.rest_pattern:
-             fields.append(f"**{node.rest_pattern.name}")
+             fields.append(f"**{py_safe_name(node.rest_pattern.name)}")
         return f"{{{', '.join(fields)}}}"
 
     def transform_ConstructorPattern(self, node):

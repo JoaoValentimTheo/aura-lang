@@ -266,13 +266,14 @@ class AuraREPL:
             self.write("usage: :py <python code>")
             return ReplResult(ok=False)
         try:
-            compiled = compile(code, '<repl:py>', 'eval')
             try:
-                value = eval(compiled, self.namespace)
+                compiled = compile(code, '<repl:py>', 'eval')
             except SyntaxError:
+                # Not an expression: run it as statements instead.
                 exec(compile(code, '<repl:py>', 'exec'), self.namespace)
                 self.write("(executed)")
                 return ReplResult()
+            value = eval(compiled, self.namespace)
             self.namespace['_'] = value
             self.write(repr(value))
             return ReplResult(value=value)

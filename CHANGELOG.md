@@ -4,6 +4,34 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- Identifiers that are Python reserved words (`raise`, `class`, `lambda`,
+  `import`, ...) are now emitted with a safe spelling (`raise_`) everywhere
+  they appear: local bindings, function/method/constructor parameters,
+  keyword-argument calls, member and attribute names, destructuring targets,
+  and match patterns. Previously such names produced `SyntaxError` in the
+  generated Python (e.g. an auto-generated `__init__` for a field named
+  `raise`). `True`, `False` and `None` are left untouched.
+
+- Runtime import aliases now pin each *submodule* (`transpiler.ast`, ...) to
+  the already-imported `aura.*` module. Importing an aliased submodule could
+  otherwise load a second, distinct module object for the same file, breaking
+  `isinstance`/identity checks across the toolchain.
+- The debugger now invokes `main` like `aura run` (including `async main` and
+  `args`), instead of only defining it.
+- REPL `:py <statement>` runs statements instead of failing on the `eval`
+  compile outside the fallback path.
+
+### Added
+
+- `tests/test_repl_deep.py` (46 tests): deep REPL coverage.
+- `tests/test_stdlib_deep_collections_string.py` (71 tests): `collections`
+  and `string` standard-library coverage.
+- `tests/test_cli_deep.py` (33 tests): in-process CLI coverage.
+
 ## [0.1.0a10] - 2026-09-17
 
 ### Fixed

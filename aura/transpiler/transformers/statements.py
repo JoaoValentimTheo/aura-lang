@@ -5,6 +5,7 @@ from aura.transpiler.ast import *
 from aura.transpiler.transformers.expressions import (
     ExpressionTransformer,
     mangle_member,
+    py_safe_name,
 )
 
 
@@ -84,6 +85,32 @@ class StatementTransformer:
         return f"{self._indent()}    nonlocal {names}\n"
 
     @staticmethod
+    def _safe_binding(name):
+        """Map a declaration target to Python-safe spellings.
+
+        Handles plain names and tuple/list destructuring targets like
+        ``(a, b)`` by rewriting each component. Pattern characters (``*``,
+        parentheses, brackets) are preserved.
+        """
+        if not isinstance(name, str):
+            return name
+        stripped = name.strip()
+        if stripped[:1] in '([' and stripped[-1:] in ')]':
+            inner = name[name.index(stripped[:1]) + 1:len(name) - 1]
+            parts = []
+            for part in inner.split(','):
+                token = part.strip()
+                if token.startswith('*'):
+                    parts.append('*' + py_safe_name(token[1:].strip()))
+                elif token:
+                    parts.append(py_safe_name(token))
+                else:
+                    parts.append('')
+            open_b, close_b = stripped[0], stripped[-1]
+            return f"{open_b}{', '.join(parts)}{close_b}"
+        return py_safe_name(name)
+
+    @staticmethod
     def _declared_names(name):
         """Return the individual names bound by a declaration target string."""
         if not name:
@@ -159,6 +186,8 @@ class StatementTransformer:
         if isinstance(name, str) and name.lstrip().startswith('{'):
             return self._emit_dict_destructure(name, node.value)
 
+        name = self._safe_binding(name)
+
         if node.value:
             value = self.expr_transformer.transform(node.value)
             return f"{name} = {value}"
@@ -188,7 +217,7 @@ class StatementTransformer:
                 if info is not None:
                     vis, owner = info
                     target = mangle_member(owner, target, vis)
-            lines.append(f"{target} = {temp}[{field!r}]")
+            lines.append(f"{py_safe_name(target)} = {temp}[{field!r}]")
         return "\n".join(lines)
 
     @staticmethod
@@ -218,7 +247,7 @@ class StatementTransformer:
 
     def transform_ConstDecl(self, node):
         value = self.expr_transformer.transform(node.value)
-        return f"{node.name} = {value}  # const"
+        return f"{self._safe_binding(node.name)} = {value}  # const"
 
     def transform_FunctionDecl(self, node):
         decorators_code = ""
@@ -241,14 +270,14 @@ class StatementTransformer:
             if param.name == '*' and not param.is_variadic and not param.is_kwonly:
                 params.append('*')
             elif param.is_kwonly:
-                params.append(f"**{param.name}")
+                params.append(f"**{py_safe_name(param.name)}")
             elif param.is_variadic:
-                params.append(f"*{param.name}")
+                params.append(f"*{py_safe_name(param.name)}")
             elif param.default:
                 default = self.expr_transformer.transform(param.default)
-                params.append(f"{param.name}={default}")
+                params.append(f"{py_safe_name(param.name)}={default}")
             else:
-                params.append(param.name)
+                params.append(py_safe_name(param.name))
 
         params_str = ", ".join(params)
 
@@ -342,22 +371,23 @@ class StatementTransformer:
             # default, instead of being indistinguishable from "argument not
             # supplied" (which the old `x if x is not None else default` could
             # not do).
-            params = ", ".join([f"{f.name}=_aura_unset" for f in instance_fields])
+            params = ", ".join([f"{py_safe_name(f.name)}=_aura_unset" for f in instance_fields])
             if params: params += ", "
             params += "**kwargs"
 
             assign_lines = []
             for f in instance_fields:
                 name = mangle_member(node.name, f.name, f.visibility)
+                pname = py_safe_name(f.name)
 
                 if f.value:
                     default_py = self.expr_transformer.transform(f.value)
                     assign_lines.append(
-                        f"{self._indent()}    self.{name} = {default_py} if {f.name} is _aura_unset else {f.name}"
+                        f"{self._indent()}    self.{name} = {default_py} if {pname} is _aura_unset else {pname}"
                     )
                 else:
                     assign_lines.append(
-                        f"{self._indent()}    self.{name} = None if {f.name} is _aura_unset else {f.name}"
+                        f"{self._indent()}    self.{name} = None if {pname} is _aura_unset else {pname}"
                     )
             assigns = "\n".join(assign_lines)
 
@@ -473,14 +503,14 @@ class StatementTransformer:
             if param.name == '*' and not param.is_variadic and not param.is_kwonly:
                 params.append('*')
             elif param.is_kwonly:
-                params.append(f"**{param.name}")
+                params.append(f"**{py_safe_name(param.name)}")
             elif param.is_variadic:
-                params.append(f"*{param.name}")
+                params.append(f"*{py_safe_name(param.name)}")
             elif param.default:
                 default = self.expr_transformer.transform(param.default)
-                params.append(f"{param.name}={default}")
+                params.append(f"{py_safe_name(param.name)}={default}")
             else:
-                params.append(param.name)
+                params.append(py_safe_name(param.name))
 
         params_str = ", ".join(params)
 
@@ -627,14 +657,14 @@ class StatementTransformer:
             if param.name == '*' and not param.is_variadic and not param.is_kwonly:
                 params.append('*')
             elif param.is_kwonly:
-                params.append(f"**{param.name}")
+                params.append(f"**{py_safe_name(param.name)}")
             elif param.is_variadic:
-                params.append(f"*{param.name}")
+                params.append(f"*{py_safe_name(param.name)}")
             elif param.default:
                 default = self.expr_transformer.transform(param.default)
-                params.append(f"{param.name}={default}")
+                params.append(f"{py_safe_name(param.name)}={default}")
             else:
-                params.append(param.name)
+                params.append(py_safe_name(param.name))
         return f"{method.name}({', '.join(params)})"
 
     def transform_EnumDecl(self, node):

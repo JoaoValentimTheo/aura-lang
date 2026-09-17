@@ -8,6 +8,7 @@ working, without polluting the global namespace with generic package names.
 """
 
 import importlib
+import pkgutil
 import sys
 import threading
 
@@ -22,6 +23,32 @@ _lock = threading.Lock()
 _SUBMODULE_ALIASES = {
     'python': 'aura.stdlib.python',
 }
+
+
+def _register_submodules(alias, module):
+    """Alias ``alias.<sub>`` → the real ``aura.<alias>.<sub>`` module.
+
+    Registering the parent package alone is not enough: once ``transpiler`` is
+    aliased to ``aura.transpiler``, a later ``import transpiler.ast`` would let
+    the import machinery load a *second*, distinct module object for the same
+    file. That breaks ``isinstance`` checks and identity comparisons across the
+    toolchain (e.g. a ``Transformer`` not recognising its own ``Program``).
+    Pinning each submodule to the already-imported real module keeps a single
+    canonical class identity.
+    """
+    path = getattr(module, '__path__', None)
+    if not path:
+        return
+    for info in pkgutil.walk_packages(path, prefix=f'aura.{alias}.'):
+        sub = info.name
+        short = sub[len(f'aura.{alias}.'):]
+        key = f'{alias}.{short}'
+        if key in sys.modules:
+            continue
+        try:
+            sys.modules[key] = importlib.import_module(sub)
+        except ImportError:
+            continue
 
 
 def install_runtime_aliases():
@@ -44,6 +71,7 @@ def install_runtime_aliases():
             except ImportError:
                 continue
             sys.modules[alias] = module
+            _register_submodules(alias, module)
         for alias, target in _SUBMODULE_ALIASES.items():
             if alias in sys.modules:
                 continue
@@ -66,6 +94,11 @@ def uninstall_runtime_aliases():
             module = sys.modules.get(alias)
             if module is not None and getattr(module, '__name__', '').startswith('aura.'):
                 del sys.modules[alias]
+            prefix = f'{alias}.'
+            for key in [k for k in sys.modules if k.startswith(prefix)]:
+                target = sys.modules.get(key)
+                if target is not None and getattr(target, '__name__', '').startswith('aura.'):
+                    del sys.modules[key]
         for alias, target in _SUBMODULE_ALIASES.items():
             module = sys.modules.get(alias)
             if module is not None and getattr(module, '__name__', '') == target:
