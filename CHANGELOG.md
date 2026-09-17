@@ -4,6 +4,15 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.0a8] - 2026-09-17
+
+### Fixed
+
+- **PyPI README links.** All relative links in `README.md` (documentation,
+  examples, `LICENSE`, `CONTRIBUTING`, `SECURITY`, `CHANGELOG`) are now
+  absolute GitHub URLs, so they resolve on the PyPI project page instead of
+  producing `404`s. The stale `0.1.0a5` status line is updated.
+
 ## [0.1.0a7] - 2026-09-17
 
 ### Added

@@ -5,9 +5,9 @@ It combines a clean, unambiguous syntax with the entire Python ecosystem:
 first-class PyPI interop, a standard library, native threads and coroutines,
 and post-quantum cryptography.
 
-> **Status:** alpha (`0.1.0a5`). The syntax is standardized and frozen for the
-> alpha series; see the [grammar](docs/GRAMMAR.md) and the
-> [changelog](CHANGELOG.md).
+> **Status:** alpha (`0.1.0a7`). The syntax is standardized and frozen for the
+> alpha series; see the [grammar](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/GRAMMAR.md)
+> and the [changelog](https://github.com/JoaoValentimTheo/aura-lang/blob/master/CHANGELOG.md).
 
 ## Installation
 
@@ -45,7 +45,7 @@ python3 main.py run examples/hello.aura
 ## The Language
 
 Aura has exactly **one spelling per construct** — no synonyms. The full
-grammar lives in [`docs/GRAMMAR.md`](docs/GRAMMAR.md). Highlights:
+grammar lives in [`docs/GRAMMAR.md`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/GRAMMAR.md). Highlights:
 
 ```aura
 // Functions, generics and traits.
@@ -135,7 +135,7 @@ async def main() {
 }
 ```
 
-See [`aura/stdlib/README.md`](aura/stdlib/README.md) for the full API.
+See [`aura/stdlib/README.md`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/aura/stdlib/README.md) for the full API.
 
 ## Cryptography
 
@@ -183,14 +183,14 @@ def main() {
 
 The bridge exposes `import_module`, `load`, `eval`, `exec_code`, `call`,
 `getattr`/`setattr`/`hasattr`, `is_available`, `to_aura`/`to_python`, and more.
-See [`aura/stdlib/python.py`](aura/stdlib/python.py).
+See [`aura/stdlib/python.py`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/aura/stdlib/python.py).
 
 ## Aura Patterns (AUP)
 
-[AUP](docs/AUP.md) is a catalog of idiomatic solutions — option, builder,
+[AUP](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/AUP.md) is a catalog of idiomatic solutions — option, builder,
 strategy, pipelines, error handling, memoization, observer, resource
 management, worker pools and hybrid crypto. Every pattern is a runnable
-program under [`examples/aup/`](examples/aup/):
+program under [`examples/aup/`](https://github.com/JoaoValentimTheo/aura-lang/tree/master/examples/aup):
 
 | Pattern | File |
 |---------|------|
@@ -267,13 +267,14 @@ continuation token.
 
 ## Documentation
 
-- [Grammar (canonical source of truth)](docs/GRAMMAR.md)
-- [Language Reference](docs/LANGUAGE.md) · [Referência da Linguagem](docs/LANGUAGE_PT.md)
-- [Aura Patterns (AUP)](docs/AUP.md)
-- [Standard Library](aura/stdlib/README.md)
-- [Type System](docs/TYPES.md) · [Sistema de Tipos](docs/TYPES_PT.md)
-- [Architecture](docs/DESIGN.md)
-- [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Changelog](CHANGELOG.md)
+- [Documentation index](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/README.md)
+- [Grammar (canonical source of truth)](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/GRAMMAR.md)
+- [Language Reference](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/LANGUAGE.md) · [Referência da Linguagem](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/LANGUAGE_PT.md)
+- [Aura Patterns (AUP)](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/AUP.md)
+- [Standard Library](https://github.com/JoaoValentimTheo/aura-lang/blob/master/aura/stdlib/README.md)
+- [Type System](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/TYPES.md) · [Sistema de Tipos](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/TYPES_PT.md)
+- [Architecture](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/DESIGN.md)
+- [Contributing](https://github.com/JoaoValentimTheo/aura-lang/blob/master/CONTRIBUTING.md) · [Security](https://github.com/JoaoValentimTheo/aura-lang/blob/master/SECURITY.md) · [Changelog](https://github.com/JoaoValentimTheo/aura-lang/blob/master/CHANGELOG.md)
 
 ## Development
 
@@ -289,9 +290,9 @@ mypy aura/                         # types
 
 The suite covers every syntax construct, the full object system, concurrency,
 cryptography, hardening regressions, and runs the generated `.aura` corpora.
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the architecture and how to add a
+See [CONTRIBUTING.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/CONTRIBUTING.md) for the architecture and how to add a
 language feature.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](https://github.com/JoaoValentimTheo/aura-lang/blob/master/LICENSE).
