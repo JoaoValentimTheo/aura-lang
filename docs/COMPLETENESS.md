@@ -41,7 +41,8 @@ real multi-file projects". Ratings below 100 % name the concrete gap.
 | Error handling | 90 % | `try`/`catch`/`finally`, typed catches, `throw` (objects and strings) | No custom exception hierarchy |
 | Operators | 95 % | Full precedence table, bitwise, `?:`, `??`, `??=`, `?.`, `?[`, `|>`, ranges, spreads, slicing | — |
 | String literals | 98 % | Escapes (`\n`, `\t`, `\uXXXX`), raw/byte prefixes, f-strings, triples | — |
-| Mutability rules | 95 % | Enforced at all CLI entry points | Not yet surfaced by the `lint` command |
+| Mutability rules | 98 % | `E303` with a real source location, enforced at every CLI entry point | Not surfaced by `aura lint` (which is style-only by design) |
+| Diagnostics | 98 % | Every diagnostic is a coded `E##`/`W##` with `file:line:column`; `docs/ERRORS.md` is the source of truth, kept in sync by a test | — |
 
 ## 2. Tooling
 
@@ -49,9 +50,9 @@ real multi-file projects". Ratings below 100 % name the concrete gap.
 |------|---|----------|---------------|
 | `run` | 100 % | Transpiles + executes; async wrapper | — |
 | `transpile` | 100 % | Emits Python to stdout/file | — |
-| `check` | 90 % | Type + mutability checks, function arg types, generic params, builtin inference | No interprocedural inference across modules |
+| `check` | 92 % | Type + mutability + rule diagnostics, each with a code and location | No interprocedural inference across modules; arity not checked for too-few args |
 | `format` | 80 % | Placeholder-protected, string-aware formatter | Not AST-based; comment reflow |
-| `lint` | 55 % | Line length, trailing whitespace, naming | Style-only; does not run semantic checks |
+| `lint` | 75 % | Line length, trailing whitespace, naming, spacing — all `W00x` with locations | Style-only; no auto-fix |
 | `test` | 85 % | Runs `.aura` files with pass/fail | No assertions/matchers framework, no fixtures |
 | `repl` | 70 % | Parse/transpile/eval loop | Basic multi-line handling |
 | `debug` | 65 % | `aura debug`, `--trace`, post-mortem line mapping | Top-level line granularity; no interactive breakpoints |
@@ -98,12 +99,12 @@ real multi-file projects". Ratings below 100 % name the concrete gap.
 | Area | % | Remaining gap |
 |------|---|---------------|
 | Quick start | 98 % | `pip install .` provides the `aura` command; `python3 main.py` still works |
-| Documentation | 85 % | EN + PT language/type docs; audit, completeness, changelog, README |
-| Examples | 85 % | 9 runnable examples covering features |
-| Tests | 95 % | 541 passing; 6,609-file corpus |
-| CI | 90 % | GitHub Actions: tests on 3.10–3.13, CLI smoke test, build |
-| Releases / versioning | 85 % | Tag-driven release workflow + `aura version`; PyPI trusted publishing pending |
-| Package layout for users | 90 % | Installable console entry point; clean `aura` namespace; not on PyPI yet |
+| Documentation | 92 % | EN + PT language/type docs; grammar, diagnostics reference, AUP, audit, completeness, changelog, README |
+| Examples | 92 % | 11 feature examples + 10 runnable Aura Patterns (AUP) with an enforced standard |
+| Tests | 97 % | 1,388 passing; property-based (Hypothesis) and differential suites; ~71 % coverage; 6,609-file corpus |
+| CI | 92 % | GitHub Actions: tests on 3.10–3.13, CLI smoke test, build, coverage floor |
+| Releases / versioning | 95 % | Tag-driven release workflow, `aura version`, PyPI trusted publishing (live on PyPI) |
+| Package layout for users | 95 % | Installable console entry point; clean `aura` namespace; published as `aura-language` on PyPI |
 
 ---
 

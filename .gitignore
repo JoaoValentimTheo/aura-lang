@@ -57,7 +57,14 @@ output/
 *.log
 .DS_Store
 
+# Unrelated Azure AI tooling that may appear in the workspace
+.agentignore
+azure.yaml
+agent.yaml
+agent.manifest.yaml
+
 # Aura IDE (separate effort, not part of the published language package)
 aura_ide/
 aura-ide/
 tests/test_ide.py
+.azure

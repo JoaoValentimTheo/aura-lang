@@ -37,7 +37,7 @@ Source (.aura) --> Parser --> AST --> Transformer --> Python Code
 | Statement Transformer | `aura/transpiler/transformers/statements.py` | Statement handling |
 | Type System | `aura/transpiler/types.py` | Type classes, inference, checking |
 | Macros | `aura/transpiler/macros.py` | Decorator-based macro system and preludes |
-| Error Handling | `aura/transpiler/errors.py` | Error collection and formatting |
+| Error Handling | `aura/transpiler/errors.py` | Coded `E##`/`W##` diagnostics with locations; catalogued in [ERRORS.md](ERRORS.md) |
 | CLI | `aura/cli.py` (entry point `main.py`) | User interface |
 
 See [AUDIT.md](AUDIT.md) for the findings and fixes from the code audit.

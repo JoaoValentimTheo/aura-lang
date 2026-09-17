@@ -4,6 +4,48 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.0a9] - 2026-09-17
+
+### Added
+
+- **Diagnostics standard.** Every diagnostic is now a coded `E##`/`W##` with a
+  real `file:line:column`; `docs/ERRORS.md` is the single source of truth and a
+  test keeps it in sync with `errors.py`.
+  - New `W` namespace: `W001` line-too-long, `W002` trailing-whitespace,
+    `W003` naming, `W004` spacing, `W101` unused-variable, `W102`
+    unused-import, `W103` unused-type-parameter.
+  - `E303 REASSIGN_IMMUTABLE` replaces the uncoded mutability error.
+  - Removed 25 codes that were defined but never emitted (`E201`–`E204`,
+    `E303`(old), `E304`–`E306`, plus dead syntax/type stubs).
+- Property-based tests (Hypothesis) for the lexer, parser and transpiler
+  (`tests/test_property_lexer_parser.py`, `tests/test_property_transpiler.py`).
+- Differential suite comparing Aura against equivalent Python
+  (`tests/test_differential.py`).
+- `tests/test_diagnostics.py`, `tests/test_type_diagnostics.py`,
+  `tests/test_cli_diagnostics.py`; the Aura Pattern standard is enforced by
+  `tests/test_aup.py`.
+- `hypothesis` added to the `dev` extra.
+
+### Changed
+
+- Parser errors carry structured `line`/`column`/`filename`; the LSP and CLI
+  report real positions instead of defaulting to `1:1`.
+- The CLI prints diagnostics uniformly as `file:line:column: SEVERITY [code]`.
+- The LSP runs the rule checker too, reports `W` codes with warning severity,
+  and attaches the code and range.
+- The REPL keeps the diagnostic code instead of dropping it.
+- The linter reports style issues under `W00x` codes (it previously misused
+  `E004`); coverage floor raised from 60% to 65% (~71% now).
+
+### Fixed
+
+- The lexer accepted Unicode digits (`¹`, `٣`) and then crashed in `int()`;
+  number scanning is now ASCII-only.
+- A string literal whose content is a keyword (`"yield"`, `"not"`, `"await"`)
+  was misparsed as that keyword and produced invalid Python.
+- A dict/set literal whose first element was a keyword-like string
+  (`{"if": 1}`) was misclassified as a block.
+
 ## [0.1.0a8] - 2026-09-17
 
 ### Fixed

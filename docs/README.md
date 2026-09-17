@@ -3,6 +3,7 @@
 ## Language Reference
 
 - [GRAMMAR.md](GRAMMAR.md) - **Canonical grammar spec (source of truth)**
+- [ERRORS.md](ERRORS.md) - **Diagnostics reference: every E##/W## code**
 - [LANGUAGE.md](LANGUAGE.md) - Complete syntax reference (English)
 - [LANGUAGE_PT.md](LANGUAGE_PT.md) - Referencia completa de sintaxe (Portugues)
 

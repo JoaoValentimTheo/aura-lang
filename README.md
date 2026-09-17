@@ -269,6 +269,7 @@ continuation token.
 
 - [Documentation index](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/README.md)
 - [Grammar (canonical source of truth)](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/GRAMMAR.md)
+- [Diagnostics reference (E##/W##)](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/ERRORS.md)
 - [Language Reference](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/LANGUAGE.md) · [Referência da Linguagem](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/LANGUAGE_PT.md)
 - [Aura Patterns (AUP)](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/AUP.md)
 - [Standard Library](https://github.com/JoaoValentimTheo/aura-lang/blob/master/aura/stdlib/README.md)
@@ -280,16 +281,19 @@ continuation token.
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"            # pytest, coverage, ruff, mypy
+pip install -e ".[dev]"            # pytest, coverage, hypothesis, ruff, mypy
 
 python -m pytest tests/ -q         # full suite
-python -m pytest tests/ --cov=aura # with coverage (floor: 60%)
+python -m pytest tests/ --cov=aura # with coverage (floor: 65%)
 ruff check aura/                   # lint
 mypy aura/                         # types
 ```
 
 The suite covers every syntax construct, the full object system, concurrency,
-cryptography, hardening regressions, and runs the generated `.aura` corpora.
+cryptography and hardening regressions, and runs the generated `.aura` corpora.
+It also includes property-based tests (Hypothesis) for the lexer, parser and
+transpiler, a differential suite that compares Aura against equivalent Python,
+and tests that enforce the diagnostics catalogue and the Aura Pattern standard.
 See [CONTRIBUTING.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/CONTRIBUTING.md) for the architecture and how to add a
 language feature.
 
