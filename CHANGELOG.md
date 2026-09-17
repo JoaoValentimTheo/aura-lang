@@ -4,7 +4,7 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.1.0a11] - 2026-09-17
 
 ### Fixed
 
@@ -24,6 +24,11 @@ All notable changes to Aura are documented here. The format follows
   `args`), instead of only defining it.
 - REPL `:py <statement>` runs statements instead of failing on the `eval`
   compile outside the fallback path.
+- The property tests for generated class fields now assert the *emitted* name
+  (`py_safe_name`), so a field named after a Python keyword (e.g. `raise` →
+  `raise_`) is checked against the real attribute instead of the raw Aura
+  spelling. This closes the regression the reserved-word change introduced in
+  `test_property_transpiler.py`.
 
 ### Added
 
@@ -31,6 +36,38 @@ All notable changes to Aura are documented here. The format follows
 - `tests/test_stdlib_deep_collections_string.py` (71 tests): `collections`
   and `string` standard-library coverage.
 - `tests/test_cli_deep.py` (33 tests): in-process CLI coverage.
+- `tests/test_stdlib_wrappers.py` (66 tests): public surface of `math`, `os`,
+  `io`, `time`, `regex`, `threading`, `asyncio`, `python` and the offline
+  helpers of `http`, including env overrides, error paths and async primitives.
+- `tests/test_tools_coverage.py` (55 tests): branching behaviour of `deps`,
+  `release`, `formatter`, the Aura import hook (`importer`) and the debugger
+  run loop, exercised in-process.
+- `tests/test_runtime_backend_repl.py` (27 tests): runtime alias
+  install/uninstall, crypto backend selection and reference round-trips, and
+  REPL edge branches (`:load`/`:run`/`:ast` failures, `_assigned_names`,
+  `_first_error`).
+- `tests/test_rules_traversal.py` (31 tests): rule-checker traversal of
+  modules, match/try/with, nested functions, guard-else, pattern helpers and
+  transitive abstract-method resolution.
+- `tests/test_statements_deep.py`: deep `StatementTransformer` coverage for
+  dict destructuring, modules, patterns and import forms.
+
+### Changed
+
+- The test suite's coverage floor is raised from 65 % to **90 %**; the suite
+  currently measures **91.3 %** branch-aware coverage over `aura/`.
+
+### Notes
+
+- `tests/test_statements_deep.py` was corrected to the language's actual
+  behaviour: pattern fallbacks return a wildcard for non-pattern expression
+  nodes, dict patterns emit `AuraDict(...)`, select imports use
+  `ImportStmt(items=..., alias=...)`, constructors are declared
+  `public def new(...)`.
+- `tests/test_property_lexer_parser.py` and `tests/test_property_transpiler.py`
+  exclude `volatily` from their identifier strategies: the tokenizer
+  deliberately rejects that one spelling as a typo for `volatile`, so it is not
+  a valid identifier. This removes a latent Hypothesis flake.
 
 ## [0.1.0a10] - 2026-09-17
 

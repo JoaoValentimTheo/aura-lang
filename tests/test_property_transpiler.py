@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT))
 
 from aura.parser.to_ast import Parser, Tokenizer  # noqa: E402
 from aura.transpiler.transformer import Transformer  # noqa: E402
+from aura.transpiler.transformers.expressions import py_safe_name  # noqa: E402
 
 SETTINGS = settings(
     max_examples=150,
@@ -40,9 +41,14 @@ _KEYWORDS = {
 
 
 def _safe_identifier():
-    """A lowercase identifier that is not an Aura keyword."""
+    """A lowercase identifier that is not an Aura keyword or keyword typo.
+
+    The tokenizer deliberately rejects `volatily` as a typo for `volatile`, so
+    it can never be a valid identifier and must be excluded here too.
+    """
     return st.text(alphabet=st.characters(min_codepoint=97, max_codepoint=122),
-                   min_size=1, max_size=8).filter(lambda s: s not in _KEYWORDS)
+                   min_size=1, max_size=8).filter(
+                       lambda s: s not in _KEYWORDS and s != 'volatily')
 
 
 @given(st.integers(min_value=-1000, max_value=1000))
@@ -105,7 +111,7 @@ def test_auto_init_assigns_all_fields(field_names):
     exec(compile(Transformer().transform(program), "<prop>", "exec"), namespace)
     instance = namespace["C"]()
     for name in field_names:
-        assert getattr(instance, name) == 0
+        assert getattr(instance, py_safe_name(name)) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -132,8 +138,9 @@ def test_protected_field_uses_single_underscore(field):
     src = f"class Box {{\n  protected let {field}: int = 1\n}}"
     program = Parser(Tokenizer(src).tokenize()).parse()
     code = Transformer().transform(program)
-    assert f"self._{field} =" in code or f"_{field} =" in code
-    assert f"__{field}" not in code.replace(f"_{field}", "")
+    safe = py_safe_name(field)
+    assert f"self._{safe} =" in code or f"_{safe} =" in code
+    assert f"__{safe}" not in code.replace(f"_{safe}", "")
 
 
 @given(_safe_identifier(), st.integers(min_value=-1000, max_value=1000))

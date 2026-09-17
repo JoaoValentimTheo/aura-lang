@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aura-language"
-version = "0.1.0a10"
+version = "0.1.0a11"
 description = "Aura: a gradually-typed language that transpiles to Python"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -116,5 +116,6 @@ omit = [
 
 [tool.coverage.report]
 show_missing = true
-# Baseline floor; raised over time.
-fail_under = 65
+# Baseline floor; raised over time. The suite currently sits above 91%, so the
+# floor guards against regressions rather than the old alpha-era baseline.
+fail_under = 90

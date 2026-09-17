@@ -84,7 +84,8 @@ def test_simple_string_literals_roundtrip(body):
 
 
 @given(st.text(alphabet=st.characters(min_codepoint=97, max_codepoint=122),
-               min_size=1, max_size=20))
+               min_size=1, max_size=20).filter(
+                   lambda name: name != 'volatily'))
 @SETTINGS
 def test_identifier_roundtrips(name):
     tokens = Tokenizer(name).tokenize()

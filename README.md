@@ -284,7 +284,7 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"            # pytest, coverage, hypothesis, ruff, mypy
 
 python -m pytest tests/ -q         # full suite
-python -m pytest tests/ --cov=aura # with coverage (floor: 65%)
+python -m pytest tests/ --cov=aura # with coverage (floor: 90%)
 ruff check aura/                   # lint
 mypy aura/                         # types
 ```
