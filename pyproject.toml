@@ -106,9 +106,15 @@ check_untyped_defs = false
 [tool.coverage.run]
 branch = true
 source = ["aura"]
-omit = ["aura/parser/generated/*"]
+omit = [
+    "aura/parser/generated/*",
+    # Dev-only test-data scaffolding, never imported by the language runtime.
+    "aura/tools/generate_*.py",
+    "aura/tools/stochastic_aura_gen.py",
+    "aura/tools/analyze_tests.py",
+]
 
 [tool.coverage.report]
 show_missing = true
 # Baseline floor; raised over time.
-fail_under = 60
+fail_under = 65

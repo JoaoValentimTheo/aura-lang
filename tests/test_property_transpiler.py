@@ -34,7 +34,8 @@ _KEYWORDS = {
     "async", "await", "yield", "break", "continue", "pass", "mut", "const",
     "public", "private", "protected", "static", "volatile", "super", "spawn",
     "guard", "loop", "until", "unless", "enum", "type", "module", "export",
-    "implements", "assert", "new", "fn", "init", "null",
+    "implements", "assert", "new", "fn", "init", "null", "as", "is", "in",
+    "else", "elif", "pass",
 }
 
 
