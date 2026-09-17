@@ -21,6 +21,16 @@ class Token:
         return f"Token({self.type}, {repr(self.value)})"
 
 
+def _is_ascii_digit(ch: str) -> bool:
+    """True only for ``0``-``9``.
+
+    ``str.isdigit()`` accepts Unicode digits like ``¹`` or ``٣`` which
+    ``int()`` then rejects. Number scanning must be ASCII-only so the lexer
+    never produces a token it cannot convert.
+    """
+    return '0' <= ch <= '9'
+
+
 def annotate_syntax_error(exc, line=None, column=None, filename=None):
     """Attach structured location attributes to a ``SyntaxError``.
 
@@ -210,7 +220,7 @@ class Tokenizer:
                 continue
 
             # Numbers
-            if char.isdigit():
+            if _is_ascii_digit(char):
                 start = self.pos
                 start_line, start_col = self.line, self.column
 
@@ -236,28 +246,28 @@ class Tokenizer:
                     continue
 
                 # Decimal integer part (underscores allowed as separators).
-                while self.pos < length and (self.source[self.pos].isdigit() or self.source[self.pos] == '_'):
+                while self.pos < length and (_is_ascii_digit(self.source[self.pos]) or self.source[self.pos] == '_'):
                     self.pos += 1
 
                 # Check for float dot vs range (..)
                 is_float = False
                 if (self.pos < length and self.source[self.pos] == '.'
-                        and self.pos + 1 < length and self.source[self.pos + 1].isdigit()):
+                        and self.pos + 1 < length and _is_ascii_digit(self.source[self.pos + 1])):
                     is_float = True
                     self.pos += 1  # consume dot
-                    while self.pos < length and (self.source[self.pos].isdigit() or self.source[self.pos] == '_'):
+                    while self.pos < length and (_is_ascii_digit(self.source[self.pos]) or self.source[self.pos] == '_'):
                         self.pos += 1
 
                 # Scientific notation: 1e10, 1.5e-5
                 if self.pos < length and self.source[self.pos] in 'eE':
                     nxt = self.source[self.pos + 1] if self.pos + 1 < length else ''
                     after = self.source[self.pos + 2] if self.pos + 2 < length else ''
-                    if nxt.isdigit() or (nxt in '+-' and after.isdigit()):
+                    if _is_ascii_digit(nxt) or (nxt in '+-' and _is_ascii_digit(after)):
                         is_float = True
                         self.pos += 1
                         if self.source[self.pos] in '+-':
                             self.pos += 1
-                        while self.pos < length and self.source[self.pos].isdigit():
+                        while self.pos < length and _is_ascii_digit(self.source[self.pos]):
                             self.pos += 1
 
                 raw = self.source[start:self.pos].replace('_', '')
@@ -271,19 +281,19 @@ class Tokenizer:
 
             # Leading-dot floats: `.5` (but not `..` ranges or member access).
             if (char == '.' and self.pos + 1 < length
-                    and self.source[self.pos + 1].isdigit()):
+                    and _is_ascii_digit(self.source[self.pos + 1])):
                 start = self.pos
                 self.pos += 1
-                while self.pos < length and (self.source[self.pos].isdigit() or self.source[self.pos] == '_'):
+                while self.pos < length and (_is_ascii_digit(self.source[self.pos]) or self.source[self.pos] == '_'):
                     self.pos += 1
                 if self.pos < length and self.source[self.pos] in 'eE':
                     nxt = self.source[self.pos + 1] if self.pos + 1 < length else ''
                     after = self.source[self.pos + 2] if self.pos + 2 < length else ''
-                    if nxt.isdigit() or (nxt in '+-' and after.isdigit()):
+                    if _is_ascii_digit(nxt) or (nxt in '+-' and _is_ascii_digit(after)):
                         self.pos += 1
                         if self.source[self.pos] in '+-':
                             self.pos += 1
-                        while self.pos < length and self.source[self.pos].isdigit():
+                        while self.pos < length and _is_ascii_digit(self.source[self.pos]):
                             self.pos += 1
                 raw = self.source[start:self.pos].replace('_', '')
                 self.column += (self.pos - start)
@@ -1707,7 +1717,7 @@ class Parser:
     def parse_expression(self, min_prec=0):
         # Prefix operators
         token = self.peek()
-        if token.value == 'yield':
+        if token.type == 'IDENT' and token.value == 'yield':
             self.consume()
             # `yield` may carry a value or stand alone. Do not let it swallow
             # the following statement, so stop at a block/statement boundary.
@@ -1720,14 +1730,14 @@ class Parser:
         elif token.type == 'OP' and token.value == '!':
             raise self.error(
                 "'!' is not part of Aura; use 'not' instead", token)
-        elif token.value == 'not':
+        elif token.type == 'IDENT' and token.value == 'not':
             self.consume()
             # `not` binds looser than comparisons (so `not a in b` is
             # `not (a in b)`) but tighter than `and`/`or`, matching Python.
             rhs = self.parse_expression(6)
             lhs = UnaryOp('not', operand=rhs)
-        elif (token.type == 'OP' and token.value in ('-', '+', '~', '*', '**', '...')
-                or token.value == 'await'):
+        elif ((token.type == 'OP' and token.value in ('-', '+', '~', '*', '**', '...'))
+                or (token.type == 'IDENT' and token.value == 'await')):
             op = token.value
             self.consume()
             # Arithmetic unary binds looser than `**` (so `-2 ** 2` is
@@ -2275,10 +2285,12 @@ class Parser:
         if self.match('}'):
             return DictLiteral([])
 
-        # Heuristic: Check for statement keywords -> Block
+        # Heuristic: Check for statement keywords -> Block. Only a bare keyword
+        # token counts: a string literal such as `"if"` is a dict key/value,
+        # not a statement.
         tok = self.peek()
         stmt_keywords = ('let', 'const', 'return', 'while', 'for', 'if', 'try', 'match', 'guard', 'unless')
-        if tok.value in stmt_keywords:
+        if tok.type == 'IDENT' and tok.value in stmt_keywords:
             return self.parse_block_expr_internal(first_stmt=None)
 
         # Heuristic: `{ ident = ... }` where `=` is assignment (not a dict
@@ -2293,14 +2305,19 @@ class Parser:
         i = self.pos
         is_literal = False
         while i < len(self.tokens):
-            v = self.tokens[i].value
-            if v in ('{', '(', '['):
+            t = self.tokens[i]
+            v = t.value
+            op = t.type == 'OP'
+            if op and v in ('{', '(', '['):
                 depth += 1
-            elif v in ('}', ')', ']'):
+            elif op and v in ('}', ')', ']'):
                 depth -= 1
                 if depth == 0:
                     break
-            elif depth == 1 and v in (':', ',', '**', 'for'):
+            elif depth == 1 and (
+                    (op and v in (':', ',', '**'))
+                    or (t.type == 'IDENT' and v == 'for')
+            ):
                 is_literal = True
                 break
             i += 1

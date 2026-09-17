@@ -62,7 +62,7 @@ include-package-data = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-norecursedirs = [".venv", "__pycache__", "tests/success_tests_aura", "tests/oop_tests", "tests/integration_tests", "tests/secure_aura_tests", "tests/speed_aura_tests", "tests/syntax_scope_tests"]
+norecursedirs = [".venv", "__pycache__", ".hypothesis", "tests/success_tests_aura", "tests/oop_tests", "tests/integration_tests", "tests/secure_aura_tests", "tests/speed_aura_tests", "tests/syntax_scope_tests"]
 addopts = "--ignore=tests/test_ide.py --ignore=tests/test_massive_aura_files.py --ignore=tests/test_massive_aura_v2.py --ignore=tests/test_massive_generated.py --ignore=tests/test_massive_stress.py"
 
 [tool.ruff]
