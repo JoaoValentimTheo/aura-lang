@@ -187,6 +187,10 @@ ChaCha20-Poly1305) in production.
 
 ## Adding a pattern
 
-1. Add `examples/aup/<name>.aura` — a self-contained, runnable program.
-2. Add a row to the table and a section here explaining *when* to use it.
-3. `tests/test_aup.py` runs every example automatically; no test edit needed.
+1. Add `examples/aup/<name>.aura` — a self-contained, runnable program whose
+   **first line** is `// AUP-NN: Title.` (two-digit, sequential, no gaps) and
+   which declares `def main()`.
+2. Add a row to the table and a `## NN — Title` section here explaining *when*
+   to use it.
+3. `tests/test_aup.py` runs every example and checks the header, numbering,
+   table row and section stay in sync; no test edit is needed.
