@@ -59,6 +59,10 @@ All notable changes to Aura are documented here. The format follows
 
 ### Notes
 
+- `stdlib.asyncio.as_completed` keeps its pass-through contract (a
+  synchronously iterable of awaitables, matching `asyncio.as_completed` on
+  every supported interpreter); the docstring now spells this out, since the
+  async-iterator form only exists on Python 3.13+.
 - `tests/test_statements_deep.py` was corrected to the language's actual
   behaviour: pattern fallbacks return a wildcard for non-pattern expression
   nodes, dict patterns emit `AuraDict(...)`, select imports use

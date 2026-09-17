@@ -76,7 +76,13 @@ def wait(*coros, timeout=None, return_when='ALL_COMPLETED'):
 
 
 def as_completed(coros, timeout=None):
-    """Yield results as each coroutine completes (async iterator)."""
+    """Yield awaitables for each coroutine as it completes.
+
+    Mirrors ``asyncio.as_completed``: the returned object is synchronously
+    iterable and each item must be awaited to obtain the result. This works on
+    every supported interpreter (3.10+); the async-iterator form only exists in
+    Python 3.13+, so callers should use ``for fut in ...: await fut``.
+    """
     tasks = [_asyncio.ensure_future(c) for c in coros]
     return _asyncio.as_completed(tasks, timeout=timeout)
 

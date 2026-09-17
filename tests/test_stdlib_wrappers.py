@@ -424,20 +424,26 @@ class TestAsyncioExtras:
 
         async def main():
             task = aio.create_task(work(3))
-            done = [t.result() async for t in aio.as_completed([work(1), work(2)])]
-            return await task, sorted(done)
+            collected = []
+            for fut in aio.as_completed([work(1), work(2)]):
+                collected.append(await fut)
+            return await task, sorted(collected)
 
         task_result, collected = aio.run(main())
         assert task_result == 6 and collected == [2, 4]
 
     def test_wait_for_timeout(self):
+        import asyncio as _std_asyncio
+
         from aura.stdlib import asyncio as aio
 
         async def slow():
             await aio.sleep(1)
 
         async def main():
-            with pytest.raises(TimeoutError):
+            # `asyncio.TimeoutError` is an alias of the builtin TimeoutError
+            # only from 3.11; accept either so the test is version-agnostic.
+            with pytest.raises((TimeoutError, _std_asyncio.TimeoutError)):
                 await aio.wait_for(slow(), 0.01)
 
         aio.run(main())
