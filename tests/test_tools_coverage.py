@@ -468,6 +468,32 @@ class TestDebugger:
         assert run(str(src), trace=True) == 0
         assert 'traced.aura' in capsys.readouterr().out
 
+    def test_trace_restores_previous_tracer(self, tmp_path):
+        """A trace run must not clear an existing `sys.settrace` hook.
+
+        Coverage drives tracing through `sys.settrace` on Python <= 3.12, so
+        clearing it would silently disable coverage for the rest of the
+        process (and any other active tracer).
+        """
+        from aura.tools.debugger import run
+
+        calls = []
+
+        def sentinel(frame, event, arg):
+            calls.append(event)
+            return sentinel
+
+        src = tmp_path / 'restore.aura'
+        src.write_text('def main() {\n  print("x")\n}\n\nmain()\n')
+        previous = sys.gettrace()
+        sys.settrace(sentinel)
+        try:
+            assert run(str(src), trace=True) == 0
+            assert sys.gettrace() is sentinel
+        finally:
+            sys.settrace(previous)
+        assert calls
+
     def test_run_async_program(self, tmp_path, capsys):
         from aura.tools.debugger import run
         src = tmp_path / 'asyncpg.aura'

@@ -8,6 +8,11 @@ All notable changes to Aura are documented here. The format follows
 
 ### Fixed
 
+- `aura debug --trace` restored a cleared `sys.settrace` hook instead of the
+  previous one, silently disabling coverage (and any other active tracer) for
+  the rest of the process on Python ≤ 3.12. It now saves and restores the
+  existing trace/profile hooks.
+
 - Identifiers that are Python reserved words (`raise`, `class`, `lambda`,
   `import`, ...) are now emitted with a safe spelling (`raise_`) everywhere
   they appear: local bindings, function/method/constructor parameters,

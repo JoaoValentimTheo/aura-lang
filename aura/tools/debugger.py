@@ -116,11 +116,19 @@ def run(path, trace=False, show_code=False):
                 print(f"  {path}:{aline or '?'}  {context}")
             return tracer
 
+        # Save and restore the previous tracer instead of clearing it: tools
+        # like coverage (which drives tracing via `sys.settrace` on Python
+        # <= 3.12) would otherwise be silently disabled for the rest of the
+        # process.
+        previous_trace = sys.gettrace()
+        previous_profile = sys.getprofile()
         sys.settrace(tracer)
         try:
             _exec(code)
         finally:
-            sys.settrace(None)
+            sys.settrace(previous_trace)
+            if previous_profile is not None:
+                sys.setprofile(previous_profile)
         return 0
 
     try:
