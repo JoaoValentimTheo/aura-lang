@@ -29,23 +29,22 @@ def rewrite(source, names):
 
     out_lines = []
     for line in source.split('\n'):
-        stripped = line.lstrip()
-        if stripped.startswith('let ') or stripped.startswith('\tlet ') or re.match(r'let\s', stripped):
-            # Extract declared names up to ':' or '='.
-            m = re.match(
-                r'^(\s*)(.*?\blet)\b(\s+(?:public|private|protected|static|volatile)\b)*\s+',
-                line,
-            )
-            if m and ' mut ' not in line and not re.search(r'\blet\s+mut\b', line):
-                rest = line[m.end():]
-                # names part: everything before ':' or '=' or ';' or end.
-                names_part = re.split(r'[:=;]', rest, maxsplit=1)[0]
-                declared = set(re.findall(r'[A-Za-z_]\w*', names_part))
-                if declared & names:
-                    # Insert `mut ` right after `let`.
-                    insert_at = m.end()
-                    line = line[:insert_at] + 'mut ' + line[insert_at:]
-                    changed += 1
+        # A declaration whose `let` occurs at the start of the line, optionally
+        # preceded only by visibility modifiers.
+        m = re.match(
+            r'^(\s*)((?:public|private|protected|static|volatile)\s+)*let\b\s+',
+            line,
+        )
+        if m and ' mut ' not in line and not re.search(r'\blet\s+mut\b', line):
+            rest = line[m.end():]
+            # names part: everything before ':' or '=' or ';' or end.
+            names_part = re.split(r'[:=;]', rest, maxsplit=1)[0]
+            declared = set(re.findall(r'[A-Za-z_]\w*', names_part))
+            if declared & names:
+                # Insert `mut ` right after `let`.
+                insert_at = m.end()
+                line = line[:insert_at] + 'mut ' + line[insert_at:]
+                changed += 1
         out_lines.append(line)
     return '\n'.join(out_lines), changed
 
