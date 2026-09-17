@@ -209,6 +209,15 @@ class ClassType(Type):
     def __str__(self):
         return self.name
 
+    def __eq__(self, other):
+        # Identity is the class name, not just the runtime class: two distinct
+        # classes must not compare equal (they would otherwise collapse in a
+        # union or a set of types).
+        return isinstance(other, ClassType) and other.name == self.name
+
+    def __hash__(self):
+        return hash(('ClassType', self.name))
+
     def get_field_type(self, field_name: str) -> Type:
         """Get field type with inheritance."""
         if field_name in self.fields:
@@ -245,6 +254,14 @@ class TypeVariable(Type):
 
     def __str__(self):
         return self.name
+
+    def __eq__(self, other):
+        # Distinct type variables (`T`, `U`) must not compare equal; the base
+        # class equality is type-only and would collapse them in a set/union.
+        return isinstance(other, TypeVariable) and other.name == self.name
+
+    def __hash__(self):
+        return hash(('TypeVariable', self.name))
 
     def is_compatible(self, other: Type) -> bool:
         # Generic parameters are erased at runtime, so they accept any value.
