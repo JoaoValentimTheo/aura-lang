@@ -6,8 +6,6 @@ def multiply(a, b) -> int {
   return a * b
 }
 
-print(multiply(6, 7))
-
 @timeit
 def sum_to(n) -> int {
   let mut total = 0
@@ -17,20 +15,21 @@ def sum_to(n) -> int {
   return total
 }
 
-print(sum_to(100000))
-
 @memoize
 def fib(n) -> int {
   if n < 2 { return n }
   return fib(n - 1) + fib(n - 2)
 }
 
-print(fib(30))
-
 @cache(maxsize=256)
 def expensive(n) -> int {
   return n * n
 }
 
-print(expensive(12))
-print(expensive(12))
+def main() {
+  print(multiply(6, 7))
+  print(sum_to(100000))
+  print(fib(30))
+  print(expensive(12))
+  print(expensive(12))
+}

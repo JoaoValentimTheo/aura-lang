@@ -28,6 +28,11 @@ def _run(path):
     buffer = io.StringIO()
     with contextlib.redirect_stdout(buffer):
         exec(compile(code, str(path), "exec"), namespace)
+        # Entry files declare `main`; the runtime invokes it (the programmer
+        # never calls it). Mirror that here.
+        main = namespace.get("main")
+        if callable(main):
+            main()
     return buffer.getvalue()
 
 

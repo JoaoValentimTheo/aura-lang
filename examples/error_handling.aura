@@ -5,23 +5,6 @@ def safe_divide(a, b) -> float {
   return a / b
 }
 
-try {
-  print(safe_divide(10, 2))
-  print(safe_divide(1, 0))
-} catch error {
-  print(f"Caught: {error}")
-} finally {
-  print("cleanup complete")
-}
-
-// Catch by type.
-try {
-  let values = [1]
-  print(values[5])
-} catch IndexError {
-  print("index out of range")
-}
-
 // Guard clause for early validation.
 def process(value) {
   guard value > 0 else {
@@ -31,9 +14,28 @@ def process(value) {
   print(f"processing {value}")
 }
 
-process(10)
-process(-1)
+def main() {
+  try {
+    print(safe_divide(10, 2))
+    print(safe_divide(1, 0))
+  } catch error {
+    print(f"Caught: {error}")
+  } finally {
+    print("cleanup complete")
+  }
 
-// assert for internal invariants.
-assert 2 + 2 == 4, "math is broken"
-print("assertions passed")
+  // Catch by type.
+  try {
+    let values = [1]
+    print(values[5])
+  } catch IndexError {
+    print("index out of range")
+  }
+
+  process(10)
+  process(-1)
+
+  // assert for internal invariants.
+  assert 2 + 2 == 4, "math is broken"
+  print("assertions passed")
+}

@@ -34,5 +34,7 @@ class Query {
   }
 }
 
-let query = Query("users").select("id", "name").limit(10).build()
-print(query)
+def main() {
+  let query = Query("users").select("id", "name").limit(10).build()
+  print(query)
+}

@@ -33,18 +33,21 @@ def _mutability_errors(ast):
     return list(checker.errors)
 
 
-def _rule_errors(ast):
+def _rule_errors(ast, require_main=False):
     """Return structural rule violations for ``ast`` (possibly empty).
 
     These are the rules that do not depend on type inference: ``return`` and
     ``break``/``continue`` placement, ``await`` outside async, ``self`` outside
     a class, duplicate declarations, unreachable code and invalid assignment
     targets. Enforced for ``check`` and ``run``.
+
+    ``require_main`` enforces the program entry point (a top-level ``def
+    main``) for files executed directly; imported modules leave it off.
     """
     from aura.transpiler.rules import RuleChecker
     checker = RuleChecker()
     try:
-        if checker.check_program(ast):
+        if checker.check_program(ast, require_main=require_main):
             return []
     except RecursionError:
         return ["source is nested too deeply to check"]
@@ -224,18 +227,46 @@ def cmd_lint(path: str) -> int:
         return 2
 
 
-def _await_top_level_async_calls(ast):
-    """Wrap bare top-level calls to async functions in `await`.
+def _find_program_main(ast):
+    """Return the top-level ``main`` FunctionDecl, or None."""
+    from aura.transpiler.ast import FunctionDecl
 
-    Aura allows `main()` as the last statement of an async program. In
-    generated Python that is a bare coroutine that is never awaited, so the
-    program silently does nothing. Rewriting `main()` to `await main()` lets
-    the async wrapper in cmd_run drive it to completion.
+    for stmt in ast.statements:
+        if isinstance(stmt, FunctionDecl) and stmt.name == 'main':
+            return stmt
+    return None
 
-    Returns ``True`` when the program is asynchronous (any ``async def`` or
-    ``await`` expression), so ``cmd_run`` can decide whether to wrap the whole
-    program in a coroutine. Detection is AST-based, not a substring search, so
-    a literal ``"await"`` inside a string does not trigger it.
+
+def _main_is_called(ast):
+    """True when the file already calls ``main()`` at the top level.
+
+    A program normally never calls ``main`` itself (the runtime does). This
+    only detects the explicit form so an existing program is not run twice.
+    """
+    from aura.transpiler.ast import CallExpr, ExprStmt, Identifier
+
+    for stmt in ast.statements:
+        if not isinstance(stmt, ExprStmt) or not isinstance(stmt.expr, CallExpr):
+            continue
+        func = stmt.expr.func
+        if isinstance(func, Identifier) and func.name == 'main':
+            return True
+    return False
+
+
+def _prepare_entrypoint(ast):
+    """Return ``(has_async, invoke_code)`` for running ``ast`` as a program.
+
+    ``has_async`` is True when the file declares or awaits async code, so
+    ``cmd_run`` can wrap the whole program in a coroutine. ``invoke_code`` is
+    the Python snippet that calls the program's ``main`` (with command-line
+    arguments when the signature asks for them) and propagates an integer
+    return value as the process exit code. It is empty when the file already
+    calls ``main`` explicitly, so nothing is invoked twice.
+
+    A bare top-level call to any async function is rewritten to ``await`` so a
+    coroutine is not left un-awaited; detection is AST-based, not a substring
+    search, so a literal ``"await"`` inside a string does not trigger it.
     """
     from aura.transpiler.ast import (
         CallExpr,
@@ -275,6 +306,7 @@ def _await_top_level_async_calls(ast):
             async_names.add(fn)
     scan(ast)
 
+    # An explicit top-level call to an async function must be awaited.
     if async_names:
         for stmt in ast.statements:
             if not isinstance(stmt, ExprStmt) or not isinstance(stmt.expr, CallExpr):
@@ -283,11 +315,39 @@ def _await_top_level_async_calls(ast):
             if isinstance(func, Identifier) and func.name in async_names:
                 stmt.expr = UnaryOp('await', stmt.expr)
 
-    return has_async
+    main = _find_program_main(ast)
+    if main is None or _main_is_called(ast):
+        return has_async, ""
+
+    main_async = bool(getattr(main, 'is_async', False))
+    params = list(getattr(main, 'params', None) or [])
+    takes_args = bool(params)
+    call = "main(_aura_argv)" if takes_args else "main()"
+    if main_async:
+        call = "await " + call
+    snippet = (
+        f"_aura_rc = {call}\n"
+        "if _aura_rc is not None:\n"
+        "    raise SystemExit(_aura_rc)\n"
+    )
+    return has_async, snippet
 
 
-def cmd_run(path: str, verbose: bool = False) -> int:
-    """Run Aura file by transpiling and executing."""
+def _await_top_level_async_calls(ast):
+    """Backwards-compatible helper: return only whether ``ast`` is async.
+
+    Kept for the REPL, which needs the async detection and the await rewrite
+    but performs its own execution.
+    """
+    return _prepare_entrypoint(ast)[0]
+
+
+def cmd_run(path: str, verbose: bool = False, program_args=None) -> int:
+    """Run Aura file by transpiling and executing.
+
+    ``program_args`` are forwarded to the program's ``main(args)`` when it
+    declares an ``args`` parameter.
+    """
     try:
         ast = parse_file(path)
     except FileNotFoundError:
@@ -298,16 +358,18 @@ def cmd_run(path: str, verbose: bool = False) -> int:
         return 2
 
     mutability = _mutability_errors(ast)
-    rules = _rule_errors(ast)
+    rules = _rule_errors(ast, require_main=True)
     if mutability or rules:
         _print_semantic_errors(path, mutability, rules)
         return 2
 
-    has_async = _await_top_level_async_calls(ast)
+    has_async, invoke_code = _prepare_entrypoint(ast)
 
     try:
         t = Transformer()
         code = t.transform(ast)
+        if invoke_code:
+            code = code + "\n" + invoke_code
 
         if verbose:
             print("# Generated Python code:", file=sys.stderr)
@@ -328,13 +390,16 @@ def cmd_run(path: str, verbose: bool = False) -> int:
             )
             wrapper = "async def _aura_main():\n" + indented + "\n"
 
-            namespace: dict = {'__name__': '__aura__'}
+            namespace: dict = {'__name__': '__aura__',
+                               '_aura_argv': list(program_args or [])}
             _install_aura_imports(path)
             exec(compile(wrapper, path, 'exec'), namespace)
             asyncio.run(namespace['_aura_main']())
         else:
             _install_aura_imports(path)
-            exec(compile(code, path, 'exec'), {'__name__': '__aura__'})
+            namespace = {'__name__': '__aura__',
+                         '_aura_argv': list(program_args or [])}
+            exec(compile(code, path, 'exec'), namespace)
         return 0
     except SystemExit as e:
         # A bare `return` in a top-level guard becomes `raise SystemExit()`.
@@ -524,6 +589,8 @@ Examples:
     run = sub.add_parser('run', help='Run Aura file')
     run.add_argument('path', help='Source file (.aura)')
     run.add_argument('-v', '--verbose', action='store_true', help='Show generated Python code')
+    run.add_argument('args', nargs=argparse.REMAINDER,
+                     help='Arguments passed to the program as main(args)')
 
     # repl command
     sub.add_parser('repl', help='Start interactive REPL')
@@ -576,7 +643,7 @@ Examples:
     elif args.cmd == 'lint':
         return cmd_lint(args.path)
     elif args.cmd == 'run':
-        return cmd_run(args.path, args.verbose)
+        return cmd_run(args.path, args.verbose, args.args)
     elif args.cmd == 'test':
         return cmd_test(args.path, args.verbose, args.pattern)
     elif args.cmd == 'repl':

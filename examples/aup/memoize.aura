@@ -9,8 +9,6 @@ def fib(n) -> int {
   return fib(n - 1) + fib(n - 2)
 }
 
-print(fib(30))
-
 @cache(64)
 def expensive(n) -> int {
   let mut total = 0
@@ -18,5 +16,8 @@ def expensive(n) -> int {
   return total
 }
 
-print(expensive(1000))
-print(expensive(1000))  // second call is cached
+def main() {
+  print(fib(30))
+  print(expensive(1000))
+  print(expensive(1000))  // second call is cached
+}

@@ -11,9 +11,11 @@ def is_prime(n) -> bool {
   return true
 }
 
-let primes = [n for n in range(2, 30) if is_prime(n)]
-print(primes)
+def main() {
+  let primes = [n for n in range(2, 30) if is_prime(n)]
+  print(primes)
 
-for n in primes {
-  print(f"{n} is prime")
+  for n in primes {
+    print(f"{n} is prime")
+  }
 }

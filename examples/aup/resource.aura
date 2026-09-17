@@ -20,13 +20,15 @@ class Timer {
   }
 }
 
-with Timer("load") as t {
-  print("working...")
-}
+def main() {
+  with Timer("load") as t {
+    print("working...")
+  }
 
-// Nested context managers run their exit blocks in reverse order.
-with Timer("outer") as a {
-  with Timer("inner") as b {
-    print("body")
+  // Nested context managers run their exit blocks in reverse order.
+  with Timer("outer") as a {
+    with Timer("inner") as b {
+      print("body")
+    }
   }
 }

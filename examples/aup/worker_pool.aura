@@ -11,21 +11,23 @@ def fetch(id) -> int {
   return id * id
 }
 
-let ids = [1, 2, 3, 4, 5, 6]
-let results = threading.map_concurrent((x) => fetch(x), ids, workers: 3)
-print(results)
+def main() {
+  let ids = [1, 2, 3, 4, 5, 6]
+  let results = threading.map_concurrent((x) => fetch(x), ids, workers: 3)
+  print(results)
 
-// Manual fan-out with a shared counter guarded by a lock.
-let mut completed = 0
-let lock = threading.lock()
+  // Manual fan-out with a shared counter guarded by a lock.
+  let mut completed = 0
+  let lock = threading.lock()
 
-def job(n) {
-  fetch(n)
-  lock.acquire()
-  completed += 1
-  lock.release()
+  def job(n) {
+    fetch(n)
+    lock.acquire()
+    completed += 1
+    lock.release()
+  }
+
+  let threads = [threading.spawn((x) => job(x), n) for n in ids]
+  for t in threads { t.join() }
+  print(f"completed {completed} of {ids.length()}")
 }
-
-let threads = [threading.spawn((x) => job(x), n) for n in ids]
-for t in threads { t.join() }
-print(f"completed {completed} of {ids.length()}")

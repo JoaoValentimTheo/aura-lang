@@ -30,11 +30,6 @@ class BankAccount {
   }
 }
 
-let account = BankAccount("Alice", 1000.0)
-account.deposit(500.0)
-account.withdraw(200.0)
-print(f"Empty? {account.is_empty}")
-
 class SavingsAccount(BankAccount) {
   public let rate: float = 0.05
 
@@ -49,6 +44,13 @@ class SavingsAccount(BankAccount) {
   }
 }
 
-let savings = SavingsAccount("Bob", 1000.0, 0.10)
-savings.add_interest()
-print(f"Bob's balance with interest: {savings.balance}")
+def main() {
+  let account = BankAccount("Alice", 1000.0)
+  account.deposit(500.0)
+  account.withdraw(200.0)
+  print(f"Empty? {account.is_empty}")
+
+  let savings = SavingsAccount("Bob", 1000.0, 0.10)
+  savings.add_interest()
+  print(f"Bob's balance with interest: {savings.balance}")
+}

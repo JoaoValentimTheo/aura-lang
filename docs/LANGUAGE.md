@@ -29,7 +29,11 @@ Complete syntax reference for the Aura programming language. Aura transpiles to 
 
 ## 1. Program Structure
 
-An Aura program is a sequence of declarations, statements, and imports:
+An Aura program is a sequence of declarations, statements, and imports.
+
+An **entry file** — one executed with `aura run` — must declare a top-level
+`main`. The runtime invokes `main` for you: never write a trailing `main()`
+call.
 
 ```aura
 import stdlib.math { sqrt, PI }
@@ -40,8 +44,38 @@ def greet(name) -> str {
   return GREETING + " " + name
 }
 
-print(greet("world"))
+def main() {
+  print(greet("world"))
+}
 ```
+
+`main` takes no parameters, or a single `args` parameter that receives the
+command-line arguments:
+
+```aura
+def main(args: [string]) {
+  print(f"{args.length()} argument(s)")
+}
+```
+
+```bash
+$ aura run app.aura alpha beta
+2 argument(s)
+```
+
+`main` may return an `int` to set the process exit code. It may also be
+`async`; the runtime awaits it inside an event loop:
+
+```aura
+async def main() {
+  print(await fetch_data("https://example.com"))
+}
+```
+
+A file **imported as a module** needs no `main`: any Aura file can expose
+functions, classes and constants to another one through `import`. Omitting
+`main` in a file run directly is a compile error (`E310`), and a `main` with any
+other signature is rejected (`E311`).
 
 ---
 
@@ -1253,7 +1287,8 @@ async def main() {
 }
 ```
 
-Running async code with `aura run` automatically wraps in an event loop.
+Running async code with `aura run` automatically wraps the program in an event
+loop; an `async def main` is awaited, so no explicit call is needed.
 
 Multiple concurrent awaits:
 

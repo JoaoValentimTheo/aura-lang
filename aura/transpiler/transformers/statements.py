@@ -62,6 +62,27 @@ class StatementTransformer:
         names = ", ".join(sorted(self._global_assignments[-1]))
         return f"{self._indent()}    global {names}\n"
 
+    def _nonlocal_decl_line(self, node, enclosing):
+        """Return a `nonlocal` line for a nested function's captured locals.
+
+        A nested ``def`` that assigns to a name bound in an enclosing function
+        makes that name local to itself in Python, so the assignment must be
+        declared ``nonlocal`` to mutate the captured binding. Names that the
+        function declares itself (params, local ``let``/``const``, nested
+        defs) or that live at module scope are excluded.
+        """
+        from aura.transpiler.transformers.expressions import (
+            _collect_closure_names,
+        )
+        assigned: set = set()
+        declared = {p.name for p in (node.params or [])}
+        _collect_closure_names(node.body, assigned, declared)
+        captured = (assigned - declared) & enclosing
+        if not captured:
+            return ""
+        names = ", ".join(sorted(captured))
+        return f"{self._indent()}    nonlocal {names}\n"
+
     @staticmethod
     def _declared_names(name):
         """Return the individual names bound by a declaration target string."""
@@ -236,6 +257,9 @@ class StatementTransformer:
         if node.body is None:
             return f"{decorators_code}{async_kw}def {node.name}({params_str}): pass"
         elif isinstance(node.body, list):
+            enclosing = set()
+            for scope in self.function_scopes:
+                enclosing |= scope
             self.function_scopes.append(set())
             self._global_assignments.append(set())
             try:
@@ -244,10 +268,20 @@ class StatementTransformer:
             finally:
                 self.function_scopes.pop()
                 self._global_assignments.pop()
+            nonlocal_decl = ""
+            if enclosing and body_code.strip():
+                nonlocal_decl = self._nonlocal_decl_line(
+                    node, enclosing)
             if not body_code.strip():
                 body_code = self._indent() + "    pass"
-            elif global_decl:
-                body_code = global_decl + body_code
+            else:
+                prefix = ""
+                if global_decl:
+                    prefix += global_decl
+                if nonlocal_decl:
+                    prefix += nonlocal_decl
+                if prefix:
+                    body_code = prefix + body_code
             return f"{decorators_code}{async_kw}def {node.name}({params_str}):\n{body_code}"
         else:
             # Expression body

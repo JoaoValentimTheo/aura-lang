@@ -17,20 +17,22 @@ def safe_divide(a, b) -> float {
   return a / b
 }
 
-// Statement form with a typed catch and a finally.
-try {
-  print(safe_divide(10, 2))
-  print(parse_int("not a number"))
-} catch ValueError as e {
-  print(f"ValueError: {e}")
-} finally {
-  print("done")
-}
+def main() {
+  // Statement form with a typed catch and a finally.
+  try {
+    print(safe_divide(10, 2))
+    print(parse_int("not a number"))
+  } catch ValueError as e {
+    print(f"ValueError: {e}")
+  } finally {
+    print("done")
+  }
 
-// Expression form: the try yields a value.
-let label = try {
-  f"parsed: {parse_int('42')}"
-} catch e {
-  "failed"
+  // Expression form: the try yields a value.
+  let label = try {
+    f"parsed: {parse_int('42')}"
+  } catch e {
+    "failed"
+  }
+  print(label)
 }
-print(label)

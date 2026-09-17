@@ -8,29 +8,6 @@ def greet(name, punctuation = "!") -> str {
   return GREETING + " " + name + punctuation
 }
 
-print(greet("world"))
-print(greet("Aura", "?"))
-
-// --- Collections -----------------------------------------------------------
-let numbers = [1, 2, 3, 4, 5]
-let user = {name: "Alice", age: 30}
-let unique = {1, 2, 2, 3, 3, 3}
-
-print(numbers)
-print(user["name"], user.age)
-print(unique)
-
-// --- Functional pipeline ---------------------------------------------------
-let total = numbers
-  |> map((x) => x * x)
-  |> filter((x) => x > 5)
-  |> reduce((acc, x) => acc + x, 0)
-
-print(f"Sum of squares > 5: {total}")
-
-let squares = [x * x for x in range(6)]
-print(squares)
-
 // --- Classes ---------------------------------------------------------------
 class Shape {
   public let name: str = "shape"
@@ -59,9 +36,6 @@ class Rectangle(Shape) {
   }
 }
 
-let rect = Rectangle(4.0, 5.0)
-print(rect.describe())
-
 // --- Pattern matching ------------------------------------------------------
 def grade(score) -> str {
   match score {
@@ -73,15 +47,45 @@ def grade(score) -> str {
   return "?"
 }
 
-for score in [95, 85, 72, 40] {
-  print(f"{score}: {grade(score)}")
-}
+def main() {
+  print(greet("world"))
+  print(greet("Aura", "?"))
 
-// --- Error handling --------------------------------------------------------
-try {
-  throw ValueError("something went wrong")
-} catch e {
-  print(f"Handled: {e}")
-} finally {
-  print("tour complete")
+  // --- Collections ---------------------------------------------------------
+  let numbers = [1, 2, 3, 4, 5]
+  let user = {name: "Alice", age: 30}
+  let unique = {1, 2, 2, 3, 3, 3}
+
+  print(numbers)
+  print(user["name"], user.age)
+  print(unique)
+
+  // --- Functional pipeline -------------------------------------------------
+  let total = numbers
+    |> map((x) => x * x)
+    |> filter((x) => x > 5)
+    |> reduce((acc, x) => acc + x, 0)
+
+  print(f"Sum of squares > 5: {total}")
+
+  let squares = [x * x for x in range(6)]
+  print(squares)
+
+  // --- Classes -------------------------------------------------------------
+  let rect = Rectangle(4.0, 5.0)
+  print(rect.describe())
+
+  // --- Pattern matching ----------------------------------------------------
+  for score in [95, 85, 72, 40] {
+    print(f"{score}: {grade(score)}")
+  }
+
+  // --- Error handling ------------------------------------------------------
+  try {
+    throw ValueError("something went wrong")
+  } catch e {
+    print(f"Handled: {e}")
+  } finally {
+    print("tour complete")
+  }
 }

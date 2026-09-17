@@ -48,11 +48,6 @@ Aura has exactly **one spelling per construct** — no synonyms. The full
 grammar lives in [`docs/GRAMMAR.md`](docs/GRAMMAR.md). Highlights:
 
 ```aura
-// Immutable by default; opt into mutation.
-let name = "Aura"
-let mut count = 0
-count += 1
-
 // Functions, generics and traits.
 def max[T](a: T, b: T) -> T {
   return a > b ? a : b
@@ -68,18 +63,26 @@ class Circle implements Shape {
   public def area() -> float { return 3.14159 * self.r * self.r }
 }
 
-// Pattern matching, pipes, guard clauses, error handling.
-let label = match count {
-  case 0 -> "zero"
-  case n if n > 0 -> "positive"
-  case _ -> "other"
-}
-
-let sum = [1, 2, 3, 4] |> filter((x) => x % 2 == 0) |> reduce((a, x) => a + x, 0)
-
 def parse(text) -> int | none {
   guard text.length() > 0 else { return none }
   return try { int(text) } catch e { none }
+}
+
+// The entry point: `aura run` invokes `main` for you.
+def main() {
+  // Immutable by default; opt into mutation.
+  let name = "Aura"
+  let mut count = 0
+  count += 1
+
+  // Pattern matching, pipes, guard clauses, error handling.
+  let label = match count {
+    case 0 -> "zero"
+    case n if n > 0 -> "positive"
+    case _ -> "other"
+  }
+
+  let sum = [1, 2, 3, 4] |> filter((x) => x % 2 == 0) |> reduce((a, x) => a + x, 0)
 }
 ```
 
@@ -109,9 +112,11 @@ def worker(n) {
   }
 }
 
-let t = threading.spawn((x) => worker(x), 100)
-t.join()
-print(total)
+def main() {
+  let t = threading.spawn((x) => worker(x), 100)
+  t.join()
+  print(total)
+}
 ```
 
 Coroutines:
@@ -128,8 +133,6 @@ async def main() {
   let results = await aio.gather(work(1), work(2), work(3))
   print(results)
 }
-
-await main()
 ```
 
 See [`aura/stdlib/README.md`](aura/stdlib/README.md) for the full API.
@@ -145,15 +148,17 @@ implementation; otherwise a clearly-labelled reference backend is used and
 ```aura
 import stdlib.crypto as crypto
 
-print(crypto.sha3_256("hello"))
+def main() {
+  print(crypto.sha3_256("hello"))
 
-let kp = crypto.kem_keypair()
-let enc = crypto.kem_encapsulate(kp.public_key)
-let shared = crypto.kem_decapsulate(kp.secret_key, enc.ciphertext)
+  let kp = crypto.kem_keypair()
+  let enc = crypto.kem_encapsulate(kp.public_key)
+  let shared = crypto.kem_decapsulate(kp.secret_key, enc.ciphertext)
 
-let signer = crypto.dsa_keypair()
-let sig = crypto.dsa_sign(signer.secret_key, "payload")
-print(crypto.dsa_verify(signer.public_key, "payload", sig))
+  let signer = crypto.dsa_keypair()
+  let sig = crypto.dsa_sign(signer.secret_key, "payload")
+  print(crypto.dsa_verify(signer.public_key, "payload", sig))
+}
 ```
 
 ## Python Interop
@@ -165,13 +170,15 @@ the explicit bridge for dynamic access:
 ```aura
 import python
 
-let requests = python.import_module("requests")
-let text = requests.get("https://example.com").text
+def main() {
+  let requests = python.import_module("requests")
+  let text = requests.get("https://example.com").text
 
-let re = python.load("re")
-print(re.findall("[0-9]+", "a1b22c333"))
+  let re = python.load("re")
+  print(re.findall("[0-9]+", "a1b22c333"))
 
-print(python.eval("sum(range(10))"))
+  print(python.eval("sum(range(10))"))
+}
 ```
 
 The bridge exposes `import_module`, `load`, `eval`, `exec_code`, `call`,

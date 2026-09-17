@@ -135,6 +135,12 @@ decorated_statement = { decorator } , declaration ;
 decorator      = "@" , identifier , [ "(" , [ arg_list ] , ")" ] ;
 ```
 
+A **program executed as an entry file** (`aura run`) must declare a top-level
+`def main()`; its parameters are either none or a single `args` (error `E310`
+when missing, `E311` when the signature is wrong). The runtime invokes `main`
+with the command-line arguments, so a trailing `main()` call is not written. A
+file used purely as a **module** (`import`ed by another file) needs no `main`.
+
 ---
 
 ## 3. Declarations

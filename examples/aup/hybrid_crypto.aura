@@ -25,9 +25,11 @@ def open(secret_key, envelope, message, algorithm: str) -> bool {
   return crypto.constant_time_compare(expected, envelope.tag)
 }
 
-let recipient = crypto.kem_keypair()
-let message = "attack at dawn"
-let envelope = seal(recipient.public_key, message)
+def main() {
+  let recipient = crypto.kem_keypair()
+  let message = "attack at dawn"
+  let envelope = seal(recipient.public_key, message)
 
-print(f"verified: {open(recipient.secret_key, envelope, message, recipient.algorithm)}")
-print(f"tampered: {open(recipient.secret_key, envelope, 'attack at dusk', recipient.algorithm)}")
+  print(f"verified: {open(recipient.secret_key, envelope, message, recipient.algorithm)}")
+  print(f"tampered: {open(recipient.secret_key, envelope, 'attack at dusk', recipient.algorithm)}")
+}

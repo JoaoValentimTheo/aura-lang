@@ -4,6 +4,29 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Program entry point.** An entry file run with `aura run` must declare a
+  top-level `main`; the runtime invokes it (no trailing `main()` call). `main`
+  may take no parameters or a single `args`, may return an `int` exit code, and
+  may be `async` (awaited automatically). Missing `main` is `E310`; a wrong
+  signature is `E311`. Imported modules need no `main`.
+- `aura run` forwards trailing arguments to the program's `main(args)`.
+- `tests/test_main_entrypoint.py`: 17 tests for `E310`/`E311`, auto-invocation,
+  argument forwarding, async `main`, exit codes and nested-function `nonlocal`.
+
+### Changed
+
+- `examples/` migrated to the `main` entry point.
+
+### Fixed
+
+- A nested `def` that assigns to a captured local of an enclosing function now
+  emits `nonlocal`, instead of raising `UnboundLocalError` (which could
+  deadlock a lock-guarded thread example).
+
 ## [0.1.0a6] - 2026-09-17
 
 ### Added

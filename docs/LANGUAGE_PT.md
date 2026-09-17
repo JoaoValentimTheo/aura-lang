@@ -29,7 +29,11 @@ Referencia completa de sintaxe da linguagem de programacao Aura. Aura transpila 
 
 ## 1. Estrutura do Programa
 
-Um programa Aura e uma sequencia de declaracoes, instrucoes e imports:
+Um programa Aura e uma sequencia de declaracoes, instrucoes e imports.
+
+Um **arquivo executavel** — aquele rodado com `aura run` — precisa declarar uma
+`main` de topo. O runtime invoca a `main` por voce: nunca escreva uma chamada
+`main()` no final.
 
 ```aura
 import stdlib.math { sqrt, PI }
@@ -40,8 +44,38 @@ def saudar(nome) -> str {
   return SAUDACAO + " " + nome
 }
 
-print(saudar("mundo"))
+def main() {
+  print(saudar("mundo"))
+}
 ```
+
+A `main` nao recebe parametros, ou recebe um unico parametro `args` com os
+argumentos de linha de comando:
+
+```aura
+def main(args: [string]) {
+  print(f"{args.length()} argumento(s)")
+}
+```
+
+```bash
+$ aura run app.aura alfa beta
+2 argumento(s)
+```
+
+A `main` pode retornar um `int` para definir o codigo de saida do processo, e
+pode ser `async`; o runtime a aguarda dentro de um event loop:
+
+```aura
+async def main() {
+  print(await buscar_dados("https://example.com"))
+}
+```
+
+Um arquivo **importado como modulo** nao precisa de `main`: qualquer arquivo
+Aura pode expor funcoes, classes e constantes a outro via `import`. Omitir a
+`main` num arquivo executado diretamente e erro de compilacao (`E310`), e uma
+`main` com outra assinatura e rejeitada (`E311`).
 
 ---
 

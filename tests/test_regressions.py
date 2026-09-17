@@ -934,7 +934,10 @@ def test_local_aura_module_import(tmp_path):
         "def square(x: int) -> int { return x * x }\n"
     )
     main_file = tmp_path / "program.aura"
-    main_file.write_text("import mathutil\nprint(mathutil.square(7))\n")
+    main_file.write_text(
+        "import mathutil\n"
+        "def main() { print(mathutil.square(7)) }\n"
+    )
 
     result = subprocess.run(
         [sys.executable, str(Path(__file__).parent.parent / "main.py"),
@@ -954,7 +957,10 @@ def test_local_aura_dotted_package_import(tmp_path):
         "def triple(x: int) -> int { return x * 3 }\n"
     )
     main_file = tmp_path / "program.aura"
-    main_file.write_text("from pkg.util import triple\nprint(triple(5))\n")
+    main_file.write_text(
+        "from pkg.util import triple\n"
+        "def main() { print(triple(5)) }\n"
+    )
 
     result = subprocess.run(
         [sys.executable, str(Path(__file__).parent.parent / "main.py"),
@@ -969,7 +975,10 @@ def test_importer_does_not_hijack_python_stdlib(tmp_path):
     import subprocess
 
     main_file = tmp_path / "program.aura"
-    main_file.write_text("import os\nprint(os.path.basename('/a/b/c.txt'))\n")
+    main_file.write_text(
+        "import os\n"
+        "def main() { print(os.path.basename('/a/b/c.txt')) }\n"
+    )
     result = subprocess.run(
         [sys.executable, str(Path(__file__).parent.parent / "main.py"),
          "run", str(main_file)],

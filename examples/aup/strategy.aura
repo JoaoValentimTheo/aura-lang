@@ -30,7 +30,9 @@ def total(prices, strategy: Discount) -> float {
   return sum
 }
 
-let prices = [100.0, 50.0]
-print(total(prices, NoDiscount()))
-print(total(prices, PercentOff(10.0)))
-print(total(prices, BlackFriday()))
+def main() {
+  let prices = [100.0, 50.0]
+  print(total(prices, NoDiscount()))
+  print(total(prices, PercentOff(10.0)))
+  print(total(prices, BlackFriday()))
+}

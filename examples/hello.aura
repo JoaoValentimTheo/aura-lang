@@ -1,1 +1,3 @@
-print("Hello, Aura!")
+def main() {
+  print("Hello, Aura!")
+}

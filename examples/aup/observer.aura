@@ -20,12 +20,14 @@ class EventBus {
   }
 }
 
-let bus = EventBus()
+def main() {
+  let bus = EventBus()
 
-bus.on("order", (payload) => print(f"email: order {payload}"))
-bus.on("order", (payload) => print(f"audit: order {payload}"))
-bus.on("login", (user) => print(f"welcome {user}"))
+  bus.on("order", (payload) => print(f"email: order {payload}"))
+  bus.on("order", (payload) => print(f"audit: order {payload}"))
+  bus.on("login", (user) => print(f"welcome {user}"))
 
-bus.emit("order", 42)
-bus.emit("login", "alice")
-bus.emit("unknown", 1)  // no handlers: nothing happens
+  bus.emit("order", 42)
+  bus.emit("login", "alice")
+  bus.emit("unknown", 1)  // no handlers: nothing happens
+}

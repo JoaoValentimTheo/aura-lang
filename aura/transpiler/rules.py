@@ -97,8 +97,14 @@ class RuleChecker:
 
     # -- public API ---------------------------------------------------------
 
-    def check_program(self, program) -> bool:
-        """Check ``program``; return True when no rule was violated."""
+    def check_program(self, program, require_main=False) -> bool:
+        """Check ``program``; return True when no rule was violated.
+
+        ``require_main`` is set by entry points that execute a file directly
+        (``aura run``); it enforces the program entry point described in the
+        language reference. Imported modules leave it off, so a library file
+        needs no ``main``.
+        """
         self._scope_stack = [set()]
         self._loop_depth = 0
         self._function_depth = 0
@@ -111,9 +117,48 @@ class RuleChecker:
         # access can be resolved (including inherited members) in any order.
         self._classes = {}
         self._register_classes(program)
+        if require_main:
+            self._check_main(program)
         for stmt in getattr(program, 'statements', []) or []:
             self.visit(stmt)
         return not self.collector.has_errors()
+
+    def _check_main(self, program):
+        """Enforce the program entry point for directly-executed files.
+
+        A program must declare a top-level ``def main()`` (sync or async). It
+        may accept a single ``args`` parameter, which receives the command-line
+        arguments; any other signature is rejected. ``main`` is invoked by the
+        runtime, never by the programmer, so a bare trailing ``main()`` call is
+        unnecessary.
+        """
+        main = None
+        for stmt in getattr(program, 'statements', []) or []:
+            if isinstance(stmt, FunctionDecl) and stmt.name == 'main':
+                main = stmt
+                break
+        if main is None:
+            self.collector.add(
+                ErrorCode.MISSING_MAIN,
+                "program has no 'main' function",
+                hint="declare 'def main() { ... }' (an entry file is executed "
+                     "from 'main')",
+            )
+            return
+        params = list(getattr(main, 'params', None) or [])
+        if not params:
+            return
+        if len(params) == 1:
+            param = params[0]
+            name = getattr(param, 'name', None)
+            if name == 'args' and not getattr(param, 'is_variadic', False) \
+                    and not getattr(param, 'is_kwonly', False):
+                return
+        self.collector.add(
+            ErrorCode.INVALID_MAIN,
+            "'main' must take no parameters, or a single 'args' parameter",
+            hint="use 'def main()' or 'def main(args: [string])'",
+        )
 
     def _register_classes(self, node):
         """Collect class/trait member maps and base names, recursively."""

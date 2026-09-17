@@ -10,10 +10,6 @@ def classify(value) -> str {
   return "unreachable"
 }
 
-for value in [0, 1, 42, 200, -7] {
-  print(f"{value} -> {classify(value)}")
-}
-
 // Match on a string.
 def command(name) -> str {
   match name {
@@ -22,10 +18,6 @@ def command(name) -> str {
     case _ { return "unknown command" }
   }
   return ""
-}
-
-for cmd in ["quit", "help", "run"] {
-  print(f"{cmd}: {command(cmd)}")
 }
 
 // Destructuring with lists.
@@ -37,5 +29,15 @@ def sum_pair(pair) -> int {
   return 0
 }
 
-print(sum_pair([3, 4]))
-print(sum_pair([1, 2]))
+def main() {
+  for value in [0, 1, 42, 200, -7] {
+    print(f"{value} -> {classify(value)}")
+  }
+
+  for cmd in ["quit", "help", "run"] {
+    print(f"{cmd}: {command(cmd)}")
+  }
+
+  print(sum_pair([3, 4]))
+  print(sum_pair([1, 2]))
+}

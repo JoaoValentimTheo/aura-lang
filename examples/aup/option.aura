@@ -29,8 +29,10 @@ def report(text) {
   print(f"{text}: ok")
 }
 
-report("42")
-report("-3")
-report("abc")
-print(describe("7"))
-print(describe("nope"))
+def main() {
+  report("42")
+  report("-3")
+  report("abc")
+  print(describe("7"))
+  print(describe("nope"))
+}
