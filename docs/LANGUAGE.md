@@ -235,6 +235,38 @@ def map[T, R](fn: (T) -> R, items: [T]) -> [R] {
 }
 ```
 
+### Generic constraints
+
+A type parameter may declare a constraint after a colon. The constraint must be
+a builtin type or a class/trait declared in the same program (a union of such
+names is also accepted); anything else is reported as `E110`:
+
+```aura
+class Comparable {
+  public def compare(other: Comparable) -> int {
+    return 0
+  }
+}
+
+def smallest[T: Comparable](items: [T]) -> T {
+  let mut best = items[0]
+  for item in items {
+    if item.compare(best) < 0 {
+      best = item
+    }
+  }
+  return best
+}
+
+// A union constraint accepts any of the listed types.
+def display[T: int | str](value: T) -> str {
+  return str(value)
+}
+```
+
+Constraints are compile-time only: the emitted Python is unchanged, and the
+checker verifies that every declared constraint resolves.
+
 ### Union types
 
 ```aura
@@ -821,6 +853,43 @@ match response {
 }
 ```
 
+### Matching enums and exhaustiveness
+
+Match an enum value with a dotted member pattern (`Color.RED`), which refers to
+the constant rather than binding a new name:
+
+```aura
+enum Color { RED, GREEN, BLUE }
+
+def name(c: Color) -> str {
+  match c {
+    case Color.RED { return "red" }
+    case Color.GREEN { return "green" }
+    case Color.BLUE { return "blue" }
+  }
+}
+```
+
+A `match` over a value with a known finite domain should handle every case or
+provide a catch-all. The checker reports `E109` (a warning, so it never fails a
+build) when a `match` over `bool`, an enum, or a scalar has no `case _`
+fallback:
+
+```aura
+match count {
+  case 1 { print("one") }
+  // warning E109: no case handles unlisted values
+}
+
+match count {
+  case 1 { print("one") }
+  case _ { print("many") }   // exhaustive
+}
+```
+
+A guarded fallback (`case _ if cond`) does not count as exhaustive, because the
+guard may reject the value. `case name` binds the value and does count.
+
 ---
 
 ## 13. Expressions and Operators
@@ -993,6 +1062,43 @@ def validate(age) {
   return true
 }
 ```
+
+### Custom exception types
+
+The exception root is `Error`, which needs no import. Define your own error
+types with either inheritance spelling — `extends` or parentheses — and pass a
+message to the parent constructor with `super(message)`:
+
+```aura
+class AppError extends Error {
+  public def new(message: str) {
+    super(message)
+  }
+}
+
+class NotFoundError extends AppError {
+  public def new(message: str) {
+    super(message)
+  }
+}
+
+def find(id: int) -> str {
+  throw NotFoundError("no item " + str(id))
+}
+
+try {
+  find(7)
+} catch NotFoundError {
+  print("not found")      // most specific first
+} catch AppError {
+  print("application error")
+} catch Error {
+  print("something else")  // catches any remaining Error
+}
+```
+
+`catch` clauses are matched in order, so list subclasses before their parents.
+Catching `Error` catches every custom and builtin exception.
 
 ### Try as expression
 
@@ -1299,6 +1405,32 @@ async def parallel() {
   return [a, b]
 }
 ```
+
+### Async standard library
+
+`stdlib.io` and `stdlib.http` expose `*_async` helpers so an `async def` never
+blocks the event loop on file or network I/O. Each pairs with its synchronous
+counterpart and behaves identically (same errors, same security checks):
+
+```aura
+import stdlib.io as io
+import stdlib.http as http
+
+async def main() {
+  await io.write_async("out.txt", "hello\n")
+  let text = await io.read_async("out.txt")
+  print(text.trim())
+
+  let response = await http.aget("https://example.com")
+  print(response.status)
+
+  let data = await http.aget_json("https://example.com/data.json")
+}
+```
+
+Async HTTP keeps the same SSRF guard as the synchronous API: only `http` and
+`https` are allowed, and private, loopback, link-local and unresolvable hosts
+are refused unless `AURA_HTTP_ALLOW_PRIVATE=1` is set.
 
 ---
 

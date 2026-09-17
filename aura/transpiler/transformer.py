@@ -3,12 +3,14 @@ from aura.transpiler.ast import *
 from aura.transpiler.macros import (
     DICT_PRELUDE,
     ENUM_PRELUDE,
+    ERROR_PRELUDE,
     LABEL_PRELUDE,
     OOP_PRELUDE,
     PRELUDE,
     SPREAD_PRELUDE,
     STDLIB_PRELUDE,
     UNSET_PRELUDE,
+    error_prelude_needed,
     prelude_needed,
     stdlib_prelude_needed,
 )
@@ -82,6 +84,11 @@ class Transformer:
         # Prelude flags were recorded while transforming, so there is no
         # separate AST scan.
         preludes = []
+        if error_prelude_needed(expr.seen_identifiers):
+            # Aura's exception root is `Error`; alias it to Python's Exception
+            # so `class MyError extends Error` and `catch Error` work without
+            # an explicit import.
+            preludes.append(ERROR_PRELUDE)
         if prelude_needed(expr.used_decorators):
             preludes.append(PRELUDE)
         if stdlib_prelude_needed(expr.seen_identifiers):

@@ -11,10 +11,14 @@ Security note: only ``http`` and ``https`` URLs are accepted. Other schemes
 ``ValueError`` so a request cannot silently read local files or reach an
 unexpected protocol. Loopback, link-local and private (RFC 1918) hosts are
 also rejected to limit server-side request forgery (SSRF) against local
-services and cloud metadata endpoints. Set ``AURA_HTTP_ALLOW_PRIVATE=1`` to
-opt out when a program genuinely needs to call a private address.
+services and cloud metadata endpoints. The check **fails closed**: a hostname
+that does not resolve is treated as blocked rather than being allowed, and
+IPv4-mapped IPv6 addresses are classified by their embedded IPv4 address. Set
+``AURA_HTTP_ALLOW_PRIVATE=1`` to opt out when a program genuinely needs to call
+a private address.
 """
 
+import asyncio as _asyncio
 import ipaddress as _ipaddress
 import json as _json
 import os as _os
@@ -47,7 +51,16 @@ def _allow_private():
 
 
 def _is_blocked_host(hostname):
-    """Return True when ``hostname`` resolves to a non-public address."""
+    """Return True when ``hostname`` resolves to a non-public address.
+
+    Fails **closed**: a hostname that cannot be resolved is treated as blocked,
+    because an unresolvable name cannot be proven public and would otherwise be
+    resolved again (to anything) by the HTTP client at connect time. IPv4-mapped
+    IPv6 addresses (``::ffff:127.0.0.1``) are unwrapped so they are classified
+    by their embedded IPv4 address.
+    """
+    if not hostname:
+        return True
     try:
         addresses = [hostname]
         _ipaddress.ip_address(hostname)
@@ -55,12 +68,19 @@ def _is_blocked_host(hostname):
         try:
             addresses = [info[4][0] for info in _socket.getaddrinfo(hostname, None)]
         except _socket.gaierror:
-            return False
+            # Cannot resolve: refuse rather than let the client try later.
+            return True
+        except (UnicodeError, OSError):
+            return True
+    if not addresses:
+        return True
     for address in addresses:
         try:
             addr = _ipaddress.ip_address(address)
         except ValueError:
-            continue
+            return True
+        if isinstance(addr, _ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
+            addr = addr.ipv4_mapped
         if (addr.is_private or addr.is_loopback or addr.is_link_local
                 or addr.is_reserved or addr.is_multicast or addr.is_unspecified):
             return True
@@ -268,3 +288,48 @@ def build_url(base, params=None):
         return base
     sep = '&' if '?' in base else '?'
     return base + sep + _urlparse.urlencode(params)
+
+
+# ============================================================================
+# Async variants
+# ============================================================================
+#
+# Aura's HTTP client is synchronous and vetted (scheme allow-list, SSRF guard,
+# bounded redirects, capped body). Rather than reimplement all of that against
+# a third-party async client, the async entry points await the synchronous
+# request on a worker thread. Every guard therefore applies unchanged.
+
+async def arequest(method, url, data=None, headers=None, timeout=30):
+    """Await :func:`request` off the event loop."""
+    return await _asyncio.to_thread(
+        request, method, url, data, headers, timeout)
+
+
+async def aget(url, headers=None, timeout=30):
+    """Await :func:`get` off the event loop."""
+    return await _asyncio.to_thread(get, url, headers, timeout)
+
+
+async def apost(url, data=None, headers=None, timeout=30):
+    """Await :func:`post` off the event loop."""
+    return await _asyncio.to_thread(post, url, data, headers, timeout)
+
+
+async def aput(url, data=None, headers=None, timeout=30):
+    """Await :func:`put` off the event loop."""
+    return await _asyncio.to_thread(put, url, data, headers, timeout)
+
+
+async def adelete(url, headers=None, timeout=30):
+    """Await :func:`delete` off the event loop."""
+    return await _asyncio.to_thread(delete, url, headers, timeout)
+
+
+async def aget_json(url, headers=None, timeout=30):
+    """Await :func:`get_json` off the event loop."""
+    return await _asyncio.to_thread(get_json, url, headers, timeout)
+
+
+async def apost_json(url, data, headers=None, timeout=30):
+    """Await :func:`post_json` off the event loop."""
+    return await _asyncio.to_thread(post_json, url, data, headers, timeout)

@@ -19,6 +19,7 @@ from . import (
     python,
     regex,
     string,
+    testing,
     threading,
     time,
 )
@@ -38,6 +39,7 @@ __all__ = [
     'python',
     'threading',
     'asyncio',
+    'testing',
     'crypto',
     'crypto_backend',
 ]
@@ -64,12 +66,14 @@ from .io import (
     ls,
     mkdir,
     read,
+    read_async,
     read_lines,
     rename,
     rm,
     size,
     touch,
     write,
+    write_async,
     write_lines,
 )
 from .io import (

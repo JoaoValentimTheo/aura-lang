@@ -99,7 +99,11 @@ def test_http_blocks_private_and_local_hosts(url):
         aura_http._validate_url(url)
 
 
-def test_http_allows_public_urls():
+def test_http_allows_public_urls(monkeypatch):
+    # Pin resolution so the test is hermetic (no live DNS dependency).
+    monkeypatch.setattr(
+        aura_http._socket, 'getaddrinfo',
+        lambda *a, **k: [(2, 1, 6, '', ('93.184.216.34', 0))])
     assert aura_http._validate_url('http://example.com/x')
     assert aura_http._validate_url('https://example.com')
 
@@ -107,6 +111,61 @@ def test_http_allows_public_urls():
 def test_http_private_opt_out(monkeypatch):
     monkeypatch.setenv('AURA_HTTP_ALLOW_PRIVATE', '1')
     assert aura_http._validate_url('http://127.0.0.1/x')
+
+
+# ============================================================================
+# SSRF guard hardening
+# ============================================================================
+
+@pytest.mark.parametrize('host', [
+    '::ffff:127.0.0.1',      # IPv4-mapped IPv6 loopback
+    '::ffff:169.254.169.254',  # IPv4-mapped link-local (cloud metadata)
+])
+def test_http_blocks_ipv4_mapped_ipv6(host):
+    assert aura_http._is_blocked_host(host)
+
+
+def test_http_blocks_unresolvable_host(monkeypatch):
+    # Fail closed: a name that cannot be resolved must not be allowed, since
+    # the client would resolve it again (to anything) at connect time.
+    def _fail(*args, **kwargs):
+        raise __import__('socket').gaierror('nodename nor servname provided')
+
+    monkeypatch.setattr(aura_http._socket, 'getaddrinfo', _fail)
+    assert aura_http._is_blocked_host('this-does-not-resolve.invalid')
+
+
+def test_http_blocks_empty_hostname():
+    assert aura_http._is_blocked_host('')
+    assert aura_http._is_blocked_host(None)
+
+
+def test_http_blocks_host_resolving_to_no_addresses(monkeypatch):
+    monkeypatch.setattr(aura_http._socket, 'getaddrinfo', lambda *a, **k: [])
+    assert aura_http._is_blocked_host('weird.invalid')
+
+
+def test_http_blocks_host_with_unparseable_address(monkeypatch):
+    monkeypatch.setattr(
+        aura_http._socket, 'getaddrinfo',
+        lambda *a, **k: [(2, 1, 6, '', ('not-an-ip', 0))])
+    assert aura_http._is_blocked_host('weird.invalid')
+
+
+def test_http_permits_resolved_public_host(monkeypatch):
+    monkeypatch.setattr(
+        aura_http._socket, 'getaddrinfo',
+        lambda *a, **k: [(2, 1, 6, '', ('93.184.216.34', 0))])
+    assert not aura_http._is_blocked_host('example.com')
+
+
+def test_http_validate_url_blocks_unresolvable(monkeypatch):
+    def _fail(*args, **kwargs):
+        raise __import__('socket').gaierror('nope')
+
+    monkeypatch.setattr(aura_http._socket, 'getaddrinfo', _fail)
+    with pytest.raises(ValueError, match='private or local'):
+        aura_http._validate_url('http://cannot-resolve.invalid/x')
 
 
 def test_http_rejects_empty_and_non_string():

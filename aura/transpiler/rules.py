@@ -182,7 +182,10 @@ class RuleChecker:
             for member in body:
                 name = getattr(member, 'name', None)
                 if name:
-                    members[name] = getattr(member, 'visibility', None)
+                    # (visibility, is_const): a class-level `const` may never be
+                    # assigned through a member expression.
+                    members[name] = (getattr(member, 'visibility', None),
+                                     isinstance(member, ConstDecl))
                 # A trait method with no body is a pure signature: subclasses
                 # must provide the implementation.
                 if is_trait and isinstance(member, Method) and not member.body:
@@ -610,6 +613,10 @@ class RuleChecker:
             for scope in reversed(self._instance_scopes):
                 if name in scope:
                     return scope[name]
+            # A bare class name denotes the class itself (static access), so
+            # `C.K` resolves against C even though no instance is instantiated.
+            if name in self._classes:
+                return name
         return None
 
     def _visit_member_access(self, obj, member, node):
@@ -651,19 +658,29 @@ class RuleChecker:
     def _lookup_member(self, class_name, name, seen):
         """Resolve ``(visibility, declaring_class)`` for a member, walking the
         base-class chain. Returns ``(None, None)`` when the member is unknown."""
+        vis, _is_const, decl = self._lookup_member_info(class_name, name, seen)
+        return vis, decl
+
+    def _lookup_member_info(self, class_name, name, seen):
+        """Resolve ``(visibility, is_const, declaring_class)`` for a member.
+
+        Walks the base-class chain; returns ``(None, False, None)`` when the
+        member is unknown.
+        """
         if class_name in seen:
-            return None, None
+            return None, False, None
         seen.add(class_name)
         info = self._classes.get(class_name)
         if not info:
-            return None, None
+            return None, False, None
         if name in info['members']:
-            return info['members'][name], class_name
+            vis, is_const = info['members'][name]
+            return vis, is_const, class_name
         for base in info['bases']:
-            vis, decl = self._lookup_member(base, name, seen)
+            vis, is_const, decl = self._lookup_member_info(base, name, seen)
             if vis is not None:
-                return vis, decl
-        return None, None
+                return vis, is_const, decl
+        return None, False, None
 
     def _private_visible_here(self, decl_class):
         """True when the private member's declaring class is exactly the class
@@ -746,10 +763,35 @@ class RuleChecker:
                     location=self._here(node),
                     hint="assign to a variable, member or index",
                 )
+            elif isinstance(node.left, MemberExpr):
+                self._check_const_member_assignment(node.left)
             self.visit(node.right)
             return
         self.visit(node.left)
         self.visit(node.right)
+
+    def _check_const_member_assignment(self, target):
+        """Reject assigning to a class-level ``const`` through a member access.
+
+        `C.K = 2` and `self.K = 2` would otherwise silently succeed at runtime
+        for a constant that is meant to never change.
+        """
+        if not isinstance(target.member, str):
+            return
+        owner_class = self._object_class(target.obj)
+        if owner_class is None:
+            return
+        vis, is_const, decl_class = self._lookup_member_info(
+            owner_class, target.member, set())
+        if not is_const:
+            return
+        self.collector.add(
+            ErrorCode.REASSIGN_IMMUTABLE,
+            f"cannot assign to constant '{target.member}' of '{decl_class}'; "
+            f"constants never change",
+            location=self._here(target),
+            hint="declare it with 'let mut' if it must change",
+        )
 
     def _is_assignable(self, target):
         if isinstance(target, (Identifier, MemberExpr, IndexExpr)):

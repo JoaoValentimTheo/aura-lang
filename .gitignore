@@ -68,3 +68,7 @@ aura_ide/
 aura-ide/
 tests/test_ide.py
 .azure
+
+# Working session transcripts kept locally, not project documentation
+session_backup.txt
+session_backup*.txt

@@ -58,41 +58,54 @@ class VarDecl(Stmt):
         self.owner = owner
 
 class ConstDecl(Stmt):
-    def __init__(self, name, type_annotation=None, value=None):
+    def __init__(self, name, type_annotation=None, value=None, visibility=None,
+                 is_static=False, is_volatile=False, owner=None):
         self.name = name
         self.type_annotation = type_annotation
         self.value = value
+        # Class-member metadata. A `const` declared inside a class body is a
+        # class-level constant: it lives on the class, never on instances, and
+        # is never a constructor parameter.
+        self.visibility = visibility
+        self.is_static = is_static
+        self.is_volatile = is_volatile
+        self.owner = owner
 
 class FunctionDecl(Stmt):
     def __init__(self, name, params, return_type=None, body=None,
-                 is_async=False, type_params=None, decorators=None, visibility=None, is_static=False, is_volatile=False):
+                 is_async=False, type_params=None, decorators=None, visibility=None, is_static=False, is_volatile=False, type_constraints=None):
         self.name = name
         self.params = params or []
         self.return_type = return_type
         self.body = body
         self.is_async = is_async
         self.type_params = type_params or []
+        # Generic constraints: {param_name: constraint_text}. A constrained
+        # parameter must be an identifier declared in `type_params`.
+        self.type_constraints = type_constraints or {}
         self.decorators = decorators or []
         self.visibility = visibility
         self.is_static = is_static
         self.is_volatile = is_volatile
 
 class ClassDecl(Stmt):
-    def __init__(self, name, body, base_class=None, type_params=None, decorators=None, visibility=None, is_static=False, is_volatile=False):
+    def __init__(self, name, body, base_class=None, type_params=None, decorators=None, visibility=None, is_static=False, is_volatile=False, type_constraints=None):
         self.name = name
         self.body = body
         self.base_class = base_class
         self.type_params = type_params or []
+        self.type_constraints = type_constraints or {}
         self.decorators = decorators or []
         self.visibility = visibility
         self.is_static = is_static
         self.is_volatile = is_volatile
 
 class TraitDecl(Stmt):
-    def __init__(self, name, members, type_params=None, visibility=None, base_class=None):
+    def __init__(self, name, members, type_params=None, visibility=None, base_class=None, type_constraints=None):
         self.name = name
         self.members = members
         self.type_params = type_params or []
+        self.type_constraints = type_constraints or {}
         self.visibility = visibility
         self.base_class = base_class
 
@@ -421,6 +434,15 @@ class IdentifierPattern(Pattern):
 
 class WildcardPattern(Pattern):
     pass
+
+class MemberPattern(Pattern):
+    """A dotted member pattern such as `Color.RED`.
+
+    Used by enum matching so the case refers to the real constant instead of
+    binding a new variable.
+    """
+    def __init__(self, expr):
+        self.expr = expr
 
 class ConstructorPattern(Pattern):
     def __init__(self, name, subpatterns):

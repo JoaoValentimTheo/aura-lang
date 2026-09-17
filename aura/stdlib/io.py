@@ -1,5 +1,13 @@
-"""Aura Standard Library - File I/O module."""
+"""Aura Standard Library - File I/O module.
 
+The synchronous helpers are the primary API. Each has an ``*_async`` sibling
+that runs the same operation on a worker thread via ``asyncio.to_thread``, so
+Aura's ``async def`` code can do file I/O without blocking the event loop. The
+async variants are thin wrappers: they perform identically and raise the same
+errors, differing only in how they are awaited.
+"""
+
+import asyncio as _asyncio
 import shutil as _shutil
 from pathlib import Path as _Path
 
@@ -108,3 +116,86 @@ def size(path):
 def touch(path):
     """Create empty file or update timestamp."""
     _Path(path).touch()
+
+
+# ============================================================================
+# Async variants
+# ============================================================================
+#
+# These await the synchronous implementation on a worker thread. That keeps the
+# event loop responsive for the common case (reading/writing a file) without
+# introducing a second, subtly different implementation that could drift.
+
+async def read_async(path):
+    """Await :func:`read` off the event loop."""
+    return await _asyncio.to_thread(read, path)
+
+
+async def write_async(path, content):
+    """Await :func:`write` off the event loop."""
+    return await _asyncio.to_thread(write, path, content)
+
+
+async def append_async(path, content):
+    """Await :func:`append` off the event loop."""
+    return await _asyncio.to_thread(append, path, content)
+
+
+async def exists_async(path):
+    """Await :func:`exists` off the event loop."""
+    return await _asyncio.to_thread(exists, path)
+
+
+async def is_file_async(path):
+    """Await :func:`is_file` off the event loop."""
+    return await _asyncio.to_thread(is_file, path)
+
+
+async def is_dir_async(path):
+    """Await :func:`is_dir` off the event loop."""
+    return await _asyncio.to_thread(is_dir, path)
+
+
+async def mkdir_async(path):
+    """Await :func:`mkdir` off the event loop."""
+    return await _asyncio.to_thread(mkdir, path)
+
+
+async def ls_async(path="."):
+    """Await :func:`ls` off the event loop."""
+    return await _asyncio.to_thread(ls, path)
+
+
+async def rm_async(path):
+    """Await :func:`rm` off the event loop."""
+    return await _asyncio.to_thread(rm, path)
+
+
+async def rename_async(old, new):
+    """Await :func:`rename` off the event loop."""
+    return await _asyncio.to_thread(rename, old, new)
+
+
+async def read_lines_async(path):
+    """Await :func:`read_lines` off the event loop."""
+    return await _asyncio.to_thread(read_lines, path)
+
+
+async def write_lines_async(path, lines):
+    """Await :func:`write_lines` off the event loop."""
+    return await _asyncio.to_thread(write_lines, path, lines)
+
+
+async def copy_async(src, dst):
+    """Await :func:`copy` off the event loop."""
+    return await _asyncio.to_thread(copy, src, dst)
+
+
+async def size_async(path):
+    """Await :func:`size` off the event loop."""
+    return await _asyncio.to_thread(size, path)
+
+
+async def touch_async(path):
+    """Await :func:`touch` off the event loop."""
+    return await _asyncio.to_thread(touch, path)

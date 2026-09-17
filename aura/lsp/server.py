@@ -182,6 +182,10 @@ class AuraLanguageServer:
                     'hoverProvider': True,
                     'completionProvider': {'triggerCharacters': ['.', ':']},
                     'documentSymbolProvider': True,
+                    'definitionProvider': True,
+                    'referencesProvider': True,
+                    'renameProvider': {'prepareProvider': True},
+                    'documentFormattingProvider': True,
                 },
                 'serverInfo': {'name': 'aura-lsp', 'version': '0.1.0'},
             })
@@ -221,6 +225,16 @@ class AuraLanguageServer:
             self._respond(request_id, self._completion(params))
         elif method == 'textDocument/documentSymbol':
             self._respond(request_id, self._document_symbols(params))
+        elif method == 'textDocument/definition':
+            self._respond(request_id, self._definition(params))
+        elif method == 'textDocument/references':
+            self._respond(request_id, self._references(params))
+        elif method == 'textDocument/prepareRename':
+            self._respond(request_id, self._prepare_rename(params))
+        elif method == 'textDocument/rename':
+            self._respond(request_id, self._rename(params))
+        elif method == 'textDocument/formatting':
+            self._respond(request_id, self._formatting(params))
         elif request_id is not None:
             self._respond(request_id, None)
 
@@ -337,6 +351,200 @@ class AuraLanguageServer:
                     'selectionRange': selection,
                 })
         return symbols
+
+    # -- definition / references / rename ----------------------------------
+
+    # Token types that name a symbol.
+    _NAME_TOKENS = ('IDENT',)
+
+    def _identifier_tokens(self, uri):
+        """Return ``[(name, line, column)]`` for every identifier token.
+
+        Positions are 0-indexed (LSP convention). A lexical error yields an
+        empty list rather than raising, so navigation features stay usable
+        while the document is mid-edit.
+        """
+        text = self.documents.get(uri, '')
+        try:
+            tokens = Tokenizer(text).tokenize()
+        except Exception:
+            return []
+        result = []
+        for tok in tokens:
+            if tok.type in self._NAME_TOKENS:
+                result.append((tok.value, (tok.line or 1) - 1,
+                               max(0, (tok.column or 1) - 1)))
+        return result
+
+    def _declarations(self, uri):
+        """Map symbol names to their declaration positions (0-indexed).
+
+        Only the *first* declaration of a name is kept, which is the one an
+        editor should jump to. Parameters have no location of their own, so
+        they are found by searching the tokens on the declaration line.
+        """
+        _, program, _ = self._parsed(uri)
+        if program is None:
+            return {}
+        decls = {}
+        tokens = self._identifier_tokens(uri)
+
+        def record(name, line, column):
+            if name and name not in decls:
+                decls[name] = (line, column)
+
+        def first_token_on(name, line0):
+            for tname, tline, tcol in tokens:
+                if tline == line0 and tname == name:
+                    return tcol
+            return 0
+
+        def walk(node):
+            if node is None:
+                return
+            if isinstance(node, (list, tuple)):
+                for item in node:
+                    walk(item)
+                return
+            loc = getattr(node, 'location', None)
+            if loc is not None and getattr(loc, 'line', 0):
+                line0 = loc.line - 1
+                cls = type(node).__name__
+                name = getattr(node, 'name', None)
+                if cls in ('FunctionDecl', 'ClassDecl', 'EnumDecl',
+                           'TraitDecl', 'Module', 'VarDecl', 'ConstDecl',
+                           'TypeDecl') and isinstance(name, str):
+                    # Point at the *name token*, not the statement start, so
+                    # `def foo` resolves to `foo` (keywords precede the name).
+                    record(name, line0, first_token_on(name, line0))
+                # Parameters and methods are declared inside the body.
+                if cls in ('FunctionDecl', 'Method'):
+                    for param in getattr(node, 'params', []) or []:
+                        if getattr(param, 'name', None) and param.name != '*':
+                            # Params sit on the `def` line; find the token.
+                            record(param.name, line0,
+                                   first_token_on(param.name, line0))
+                body = getattr(node, 'body', None) or getattr(node, 'members', None)
+                if isinstance(body, (list, tuple)):
+                    for member in body:
+                        walk(member)
+                return
+            if hasattr(node, '__dict__'):
+                for value in vars(node).values():
+                    if isinstance(value, (list, tuple)) or hasattr(value, '__dict__'):
+                        walk(value)
+
+        for stmt in getattr(program, 'statements', []):
+            walk(stmt)
+        return decls
+
+    def _definition(self, params):
+        uri = params['textDocument']['uri']
+        text = self.documents.get(uri, '')
+        position = params['position']
+        word = self._word_at(text, position['line'], position['character'])
+        if not word:
+            return None
+        decls = self._declarations(uri)
+        target = decls.get(word)
+        if target is None:
+            return None
+        line, column = target
+        pos = {'line': line, 'character': column}
+        return {'uri': uri, 'range': {'start': pos, 'end': pos}}
+
+    def _references(self, params):
+        uri = params['textDocument']['uri']
+        text = self.documents.get(uri, '')
+        position = params['position']
+        word = self._word_at(text, position['line'], position['character'])
+        if not word:
+            return []
+        include_declaration = (params.get('context') or {}).get(
+            'includeDeclaration', True)
+        decls = self._declarations(uri)
+        locations = []
+        for name, line, column in self._identifier_tokens(uri):
+            if name != word:
+                continue
+            if not include_declaration and decls.get(word) == (line, column):
+                continue
+            locations.append({
+                'uri': uri,
+                'range': {
+                    'start': {'line': line, 'character': column},
+                    'end': {'line': line, 'character': column + len(name)},
+                },
+            })
+        return locations
+
+    def _prepare_rename(self, params):
+        uri = params['textDocument']['uri']
+        text = self.documents.get(uri, '')
+        position = params['position']
+        word = self._word_at(text, position['line'], position['character'])
+        if not word or word in KEYWORDS or word in BUILTINS:
+            return None
+        # Only offer a rename when the name is an identifier we can place.
+        decls = self._declarations(uri)
+        if word not in decls:
+            return None
+        line, column = decls[word]
+        return {
+            'range': {
+                'start': {'line': line, 'character': column},
+                'end': {'line': line, 'character': column + len(word)},
+            },
+            'placeholder': word,
+        }
+
+    def _rename(self, params):
+        uri = params['textDocument']['uri']
+        text = self.documents.get(uri, '')
+        position = params['position']
+        new_name = params.get('newName', '')
+        word = self._word_at(text, position['line'], position['character'])
+        if not word or not new_name:
+            return None
+        if not new_name.isidentifier() or new_name in KEYWORDS:
+            return None
+        edits = []
+        for name, line, column in self._identifier_tokens(uri):
+            if name != word:
+                continue
+            edits.append({
+                'range': {
+                    'start': {'line': line, 'character': column},
+                    'end': {'line': line, 'character': column + len(name)},
+                },
+                'newText': new_name,
+            })
+        if not edits:
+            return None
+        return {'changes': {uri: edits}}
+
+    def _formatting(self, params):
+        uri = params['textDocument']['uri']
+        text = self.documents.get(uri, '')
+        if not text:
+            return []
+        from aura.tools.formatter import format_aura
+
+        try:
+            formatted = format_aura(text)
+        except Exception:
+            return []
+        if formatted == text:
+            return []
+        lines = text.split('\n')
+        # Replace the whole document in one edit; safer than diffing lines.
+        return [{
+            'range': {
+                'start': {'line': 0, 'character': 0},
+                'end': {'line': len(lines), 'character': 0},
+            },
+            'newText': formatted,
+        }]
 
     @staticmethod
     def _word_at(text, line, character):

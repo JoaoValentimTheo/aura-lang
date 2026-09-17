@@ -388,6 +388,9 @@ class Parser:
         self.tokens = tokens
         self.pos = 0
         self.filename = filename
+        # Depth of `case`-pattern parsing. Inside a pattern, `{` starts the
+        # case body, never a struct literal, so struct-init must be suppressed.
+        self._pattern_depth = 0
 
     # --- Diagnostics ---
     def error(self, message, token=None):
@@ -784,6 +787,32 @@ class Parser:
         if self.check(';'): self.consume()
         return ConstDecl(name, type_annotation, value)
 
+    def _parse_type_params(self, owner_name):
+        """Parse an optional ``[T, U: Constraint]`` type-parameter list.
+
+        Returns ``(names, constraints)`` where ``constraints`` maps a parameter
+        name to the constraint text (a type name such as ``Comparable``). An
+        empty list yields ``([], {})``. Type parameters use brackets only:
+        ``def foo[T](...)``; ``<T>`` is rejected with a pointed message.
+        """
+        names = []
+        constraints = {}
+        if self.match('['):
+            while True:
+                pname = self.consume(expected_type='IDENT').value
+                names.append(pname)
+                if self.match(':'):
+                    constraints[pname] = self.parse_type()
+                if not self.match(','):
+                    break
+            self.consume(expected_value=']')
+        elif self.check('<'):
+            tok = self.peek()
+            raise self.error(
+                "type parameters use brackets, not '<...>' "
+                f"(write '[T]' on {owner_name!r})", tok)
+        return names, constraints
+
     def parse_function_decl(self, decorators=None, visibility='public', is_static=False, is_volatile=False, name_override=None):
         # Support 'def' (async def also supported). 'fn' is not part of Aura.
         is_async = False
@@ -802,18 +831,7 @@ class Parser:
             name = name_override
 
         # Type parameters use brackets only: `def foo[T](...)`.
-        type_params = []
-        if self.match('['):
-            while True:
-                type_params.append(self.consume(expected_type='IDENT').value)
-                if not self.match(','):
-                    break
-            self.consume(expected_value=']')
-        elif self.check('<'):
-            tok = self.peek()
-            raise self.error(
-                "type parameters use brackets, not '<...>' "
-                f"(write 'def {name}[T]')", tok)
+        type_params, type_constraints = self._parse_type_params(name)
 
         self.consume(expected_value='(')
         params = []
@@ -862,24 +880,31 @@ class Parser:
         else:
             body = self.parse_block()
 
-        return FunctionDecl(name, params, return_type, body, is_async=is_async, type_params=type_params, decorators=decorators, visibility=visibility, is_static=is_static, is_volatile=is_volatile)
+        return FunctionDecl(name, params, return_type, body, is_async=is_async, type_params=type_params, type_constraints=type_constraints, decorators=decorators, visibility=visibility, is_static=is_static, is_volatile=is_volatile)
 
     def parse_class_decl(self, decorators=None, visibility='public', is_static=False, is_volatile=False):
         self.consume(expected_value='class')
         name = self.consume(expected_type='IDENT').value
 
         # Generics: Strict [T] only (Zen of Aura)
-        type_params = []
-        if self.match('['):
-            while True:
-                type_params.append(self.consume(expected_type='IDENT').value)
-                if not self.match(','): break
-            self.consume(expected_value=']')
+        type_params, type_constraints = self._parse_type_params(name)
 
         base_class = None
-        # Inheritance: class Foo(Base) or multiple: class Foo(A, B).
-        # Base names may be dotted (module.Class).
-        if self.match('('):
+        # Inheritance: class Foo(Base), class Foo extends Base, or multiple:
+        # class Foo(A, B). `extends` is accepted as a readable synonym for the
+        # parenthesised form; the two cannot be combined.
+        if self.match('extends'):
+            bases = []
+            while True:
+                base = self.consume(expected_type='IDENT').value
+                while self.check('.') and self.peek(1).type == 'IDENT':
+                    self.consume()
+                    base += "." + self.consume(expected_type='IDENT').value
+                bases.append(base)
+                if not self.match(','):
+                    break
+            base_class = ", ".join(bases)
+        elif self.match('('):
             bases = []
             while True:
                 base = self.consume(expected_type='IDENT').value
@@ -982,9 +1007,16 @@ class Parser:
             else:
                  # Fields: x: Int = 1
                 if self.check('}') or self.check('EOF'): break
-                # `let`, `let mut` and bare `mut` all declare a field.
+                # `let`, `let mut`, `const` and bare `mut` all declare a member.
+                # `const` is a class-level constant: it must be initialised,
+                # lives on the class and is never an instance field.
+                is_const = False
                 field_mutable = True
-                if self.peek().value == 'let':
+                if self.peek().value == 'const':
+                    self.consume()
+                    is_const = True
+                    field_mutable = False
+                elif self.peek().value == 'let':
                     self.consume()
                     if self.match('mut'):
                         field_mutable = True
@@ -1000,16 +1032,25 @@ class Parser:
                         v = self.parse_expression()
 
                     if self.check(';'): self.consume()
-                    field = VarDecl(field_name, field_mutable, t, v,
-                                    visibility=visibility, is_static=is_static,
-                                    is_volatile=is_volatile, owner=name)
-                    field.with_location(self._member_location(member_start))
-                    members.append(field)
+                    if is_const:
+                        if v is None:
+                            raise self.error(
+                                f"constant '{field_name}' requires a value")
+                        member = ConstDecl(
+                            field_name, t, v, visibility=visibility,
+                            is_static=is_static, is_volatile=is_volatile,
+                            owner=name)
+                    else:
+                        member = VarDecl(field_name, field_mutable, t, v,
+                                         visibility=visibility, is_static=is_static,
+                                         is_volatile=is_volatile, owner=name)
+                    member.with_location(self._member_location(member_start))
+                    members.append(member)
                 else:
                     raise self.error(f"Unexpected token in class: {self.peek().value}")
 
         self.consume(expected_value='}')
-        return ClassDecl(name, members, base_class, type_params, decorators, visibility, is_static, is_volatile)
+        return ClassDecl(name, members, base_class, type_params, decorators, visibility, is_static, is_volatile, type_constraints=type_constraints)
 
     def _member_location(self, tok):
         """Build a SourceLocation for a class member's first token."""
@@ -1043,12 +1084,7 @@ class Parser:
         name = self.consume(expected_type='IDENT').value
 
         # Generics: type Result[T, E] only
-        type_params = []
-        if self.match('['):
-            while True:
-                type_params.append(self.consume(expected_type='IDENT').value)
-                if not self.match(','): break
-            self.consume(expected_value=']')
+        type_params, _type_constraints = self._parse_type_params(name)
 
         self.consume(expected_value='=')
 
@@ -1282,18 +1318,18 @@ class Parser:
         name = self.consume(expected_type='IDENT').value
 
         # Traits may declare generic parameters: `trait Mapper[T] { ... }`.
-        type_params = []
-        if self.match('['):
+        type_params, type_constraints = self._parse_type_params(name)
+
+        # Traits may extend other traits: `trait Loud extends Greeter`,
+        # `trait Loud implements Greeter`, or `trait Loud(Greeter)`, mirroring
+        # class inheritance.
+        bases = []
+        if self.match('extends'):
             while True:
-                type_params.append(self.consume(expected_type='IDENT').value)
+                bases.append(self.consume(expected_type='IDENT').value)
                 if not self.match(','):
                     break
-            self.consume(expected_value=']')
-
-        # Traits may extend other traits: `trait Loud implements Greeter(...)`
-        # or `trait Loud(Greeter)`, mirroring class inheritance.
-        bases = []
-        if self.match('('):
+        elif self.match('('):
             if not self.check(')'):
                 while True:
                     bases.append(self.consume(expected_type='IDENT').value)
@@ -1363,8 +1399,13 @@ class Parser:
                 members.append(method)
             elif self.peek().type == 'IDENT':
                 # Field declaration inside a trait: `name: Type`,
-                # `let name: Type`, `let name: Type = default`, `mut name`.
-                if self.peek().value in ('let', 'mut'):
+                # `let name: Type`, `let name: Type = default`, `mut name`,
+                # or `const NAME = value`.
+                is_const = False
+                if self.peek().value == 'const':
+                    self.consume()
+                    is_const = True
+                elif self.peek().value in ('let', 'mut'):
                     self.consume()
                     if self.check('mut'):
                         self.consume()
@@ -1375,16 +1416,26 @@ class Parser:
                 default = None
                 if self.match('='):
                     default = self.parse_expression()
-                field = VarDecl(member_name, True, field_type, default,
-                                visibility=member_visibility, is_static=is_static,
-                                owner=name)
+                if is_const:
+                    if default is None:
+                        raise self.error(
+                            f"constant '{member_name}' requires a value")
+                    field = ConstDecl(
+                        member_name, field_type, default,
+                        visibility=member_visibility, is_static=is_static,
+                        owner=name)
+                else:
+                    field = VarDecl(member_name, True, field_type, default,
+                                    visibility=member_visibility, is_static=is_static,
+                                    owner=name)
                 field.with_location(self._member_location(member_start))
                 members.append(field)
             else:
                 break
 
         self.consume(expected_value='}')
-        return TraitDecl(name, members, type_params, visibility, base_class)
+        return TraitDecl(name, members, type_params, visibility, base_class,
+                         type_constraints=type_constraints)
 
     def parse_function_decl_after_keyword(self):
         """Parse a function signature/body when `def`/`fn` was already consumed.
@@ -1393,13 +1444,7 @@ class Parser:
         """
         name = self.consume(expected_type='IDENT').value
 
-        type_params = []
-        if self.match('['):
-            while True:
-                type_params.append(self.consume(expected_type='IDENT').value)
-                if not self.match(','):
-                    break
-            self.consume(expected_value=']')
+        type_params, type_constraints = self._parse_type_params(name)
 
         self.consume(expected_value='(')
         params = []
@@ -1444,7 +1489,8 @@ class Parser:
             body = self.parse_block()
 
         return FunctionDecl(name, params, return_type, body,
-                            type_params=type_params)
+                            type_params=type_params,
+                            type_constraints=type_constraints)
 
     def parse_enum_decl(self, visibility='public'):
         """Parse `enum Name { A, B = 3, C }` into an EnumDecl."""
@@ -1620,52 +1666,12 @@ class Parser:
              self.match('case')
              pat_node = None
 
-             # Parse pattern (simplified as expr for now)
-             pattern_expr = self.parse_expression()
-
-             if isinstance(pattern_expr, Identifier) and pattern_expr.name == '_':
-                pat_node = WildcardPattern()
-             elif isinstance(pattern_expr, (IntLiteral, StrLiteral, BoolLiteral)):
-                pat_node = LiteralPattern(pattern_expr)
-             elif isinstance(pattern_expr, Identifier):
-                 pat_node = IdentifierPattern(pattern_expr.name)
-             elif isinstance(pattern_expr, (TupleLiteral, ListLiteral)):
-                 # Convert tuple/list literal to ListPattern for destructuring
-
-                 patterns = []
-                 for elem in (pattern_expr.elements if isinstance(pattern_expr.elements, list) else []):
-                     if isinstance(elem, Identifier):
-                         patterns.append(IdentifierPattern(elem.name))
-                     elif isinstance(elem, (IntLiteral, StrLiteral, BoolLiteral)):
-                         patterns.append(LiteralPattern(elem))
-                     elif isinstance(elem, UnaryOp) and elem.op == '*':
-                         # This is the *rest part
-                         if isinstance(elem.operand, Identifier):
-                             rest_pattern = IdentifierPattern(elem.operand.name)
-                             # Return early or handle as rest
-                             pat_node = ListPattern(patterns, rest_pattern=rest_pattern)
-                             break
-                     else:
-                         # Fallback/Recurse needed for nested? For now literal fallback
-                         patterns.append(LiteralPattern(elem))
-
-                 pat_node = ListPattern(patterns)
-             elif isinstance(pattern_expr, CallExpr):
-                 # Convert CallExpr to ConstructorPattern (e.g. Some(x), Err(msg))
-
-                 pat_name = pattern_expr.func.name if isinstance(pattern_expr.func, Identifier) else "unknown"
-                 subpatterns = []
-                 for arg in pattern_expr.args:
-                     if isinstance(arg, Identifier):
-                         subpatterns.append(IdentifierPattern(arg.name))
-                     elif isinstance(arg, (IntLiteral, StrLiteral, BoolLiteral)):
-                         subpatterns.append(LiteralPattern(arg.value))
-                     else:
-                         subpatterns.append(LiteralPattern(arg))
-
-                 pat_node = ConstructorPattern(pat_name, subpatterns)
-             else:
-                pat_node = LiteralPattern(pattern_expr)
+             # Parse the pattern. A bare identifier is a binding pattern or an
+             # enum member, never a call: the `{` that follows starts the case
+             # body. Parsing it as a full expression would swallow the body as
+             # a block argument, so identifiers and member paths are handled
+             # explicitly before falling back to expression parsing.
+             pat_node = self._parse_match_pattern()
 
              guard = None
              if self.match('if'):
@@ -1688,6 +1694,70 @@ class Parser:
 
         self.consume(expected_value='}')
         return MatchStmt(expr, cases)
+
+    def _parse_match_pattern(self):
+        """Parse a single `case` pattern into a pattern node.
+
+        Handled forms: wildcard, literal, bare identifier / enum member,
+        dotted member path (`Color.RED`), tuple/list destructuring with an
+        optional `*rest`, constructor patterns (`Some(x)`), or-patterns
+        (`1 | 2`), and `_ as name` bindings.
+        """
+        self._pattern_depth += 1
+        try:
+            pattern_expr = self.parse_expression()
+        finally:
+            self._pattern_depth -= 1
+        return self._pattern_from_expr(pattern_expr)
+
+    def _pattern_from_expr(self, pattern_expr):
+        if isinstance(pattern_expr, Identifier) and pattern_expr.name == '_':
+            return WildcardPattern()
+        if isinstance(pattern_expr, (IntLiteral, StrLiteral, BoolLiteral, NoneLiteral)):
+            return LiteralPattern(pattern_expr)
+        if isinstance(pattern_expr, Identifier):
+            return IdentifierPattern(pattern_expr.name)
+        if isinstance(pattern_expr, MemberExpr):
+            # `Color.RED` is an enum-member pattern; keep the member path so
+            # the match can refer to the real constant.
+            return MemberPattern(pattern_expr)
+        if isinstance(pattern_expr, (TupleLiteral, ListLiteral)):
+            patterns = []
+            for elem in (pattern_expr.elements if isinstance(pattern_expr.elements, list) else []):
+                if isinstance(elem, Identifier):
+                    patterns.append(IdentifierPattern(elem.name))
+                elif isinstance(elem, (IntLiteral, StrLiteral, BoolLiteral, NoneLiteral)):
+                    patterns.append(LiteralPattern(elem))
+                elif isinstance(elem, UnaryOp) and elem.op == '*':
+                    if isinstance(elem.operand, Identifier):
+                        rest_pattern = IdentifierPattern(elem.operand.name)
+                        return ListPattern(patterns, rest_pattern=rest_pattern)
+                    patterns.append(LiteralPattern(elem))
+                else:
+                    patterns.append(self._pattern_from_expr(elem))
+            return ListPattern(patterns)
+        if isinstance(pattern_expr, CallExpr):
+            pat_name = pattern_expr.func.name if isinstance(pattern_expr.func, Identifier) else "unknown"
+            subpatterns = []
+            for arg in pattern_expr.args:
+                if isinstance(arg, Identifier):
+                    subpatterns.append(IdentifierPattern(arg.name))
+                elif isinstance(arg, (IntLiteral, StrLiteral, BoolLiteral)):
+                    subpatterns.append(LiteralPattern(arg))
+                else:
+                    subpatterns.append(self._pattern_from_expr(arg))
+            return ConstructorPattern(pat_name, subpatterns)
+        if isinstance(pattern_expr, BinaryOp) and pattern_expr.op == '|':
+            alternatives = [self._pattern_from_expr(pattern_expr.left),
+                            self._pattern_from_expr(pattern_expr.right)]
+            parts = []
+            for alt in alternatives:
+                if isinstance(alt, OrPattern):
+                    parts.extend(alt.patterns)
+                else:
+                    parts.append(alt)
+            return OrPattern(parts)
+        return LiteralPattern(pattern_expr)
 
     def parse_assert_stmt(self):
         self.consume(expected_value='assert')
@@ -2188,12 +2258,13 @@ class Parser:
                 # Ambiguity with control flow: if x { ... } vs if x {} ...
                 # Heuristic: Only allow if node is Capitalized Identifier (or member access)
                 is_struct = False
-                if isinstance(node, Identifier) and node.name[0].isupper():
-                    is_struct = True
-                elif isinstance(node, BinaryOp) and node.op == '.':
-                     # Check rhs
-                     if isinstance(node.rhs, Identifier) and node.rhs.name[0].isupper():
-                         is_struct = True
+                if not self._pattern_depth:
+                    if isinstance(node, Identifier) and node.name[0].isupper():
+                        is_struct = True
+                    elif isinstance(node, BinaryOp) and node.op == '.':
+                         # Check rhs
+                         if isinstance(node.rhs, Identifier) and node.rhs.name[0].isupper():
+                             is_struct = True
 
                 if is_struct:
                     self.consume()

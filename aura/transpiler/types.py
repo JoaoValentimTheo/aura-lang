@@ -5,6 +5,7 @@ from typing import Any, Optional
 # AST nodes are imported once at module scope (not per visited node) to keep the
 # checker's hot paths fast.
 from aura.transpiler.ast import (
+    AsPattern,
     AssertStmt,
     BinaryOp,
     BlockExpr,
@@ -15,6 +16,7 @@ from aura.transpiler.ast import (
     ComprehensionExpr,
     CondExpr,
     ConstDecl,
+    ConstructorPattern,
     DictLiteral,
     ElvisExpr,
     EnumDecl,
@@ -32,15 +34,18 @@ from aura.transpiler.ast import (
     IntLiteral,
     LambdaExpr,
     ListLiteral,
+    LiteralPattern,
     LoopStmt,
     MatchExpr,
     MatchStmt,
-    MemberExpr,
+MemberExpr,
+    MemberPattern,
     Method,
     Module,
     Node,
     NoneLiteral,
     OptionalType,
+    OrPattern,
     PipeExpr,
     Program,
     RangeExpr,
@@ -63,6 +68,7 @@ from aura.transpiler.ast import (
     UntilStmt,
     VarDecl,
     WhileStmt,
+    WildcardPattern,
     WithStmt,
 )
 from aura.transpiler.ast import (
@@ -535,6 +541,13 @@ class TypeChecker:
         self._return_stack: list[Any] = []
         # Active generic type parameters (name -> TypeVariable).
         self._type_params: dict[str, TypeVariable] = {}
+        # Class/trait names declared in the current program (constraint scope).
+        self._declared_types: set = set()
+        # Enum declarations in the current program (for match exhaustiveness).
+        self._enum_decls: dict = {}
+        # Names whose declared annotation is an enum, even before the enum's
+        # own class type is resolvable (`Color` is not a registered class).
+        self._enum_typed: dict = {}
 
     @staticmethod
     def _loc(node):
@@ -573,12 +586,106 @@ class TypeChecker:
         self.errors = []
         self.diagnostics = []
         self._current_loc = None
+        # Names usable as a generic constraint. Collected up front so a
+        # constraint may reference a class declared later in the file.
+        self._declared_types = self._collect_declared_types(program)
+        self._enum_decls = self._collect_enum_decls(program)
         try:
             for stmt in getattr(program, 'statements', []):
                 self.visit(stmt)
         except TypeError as exc:
             self.errors.append(str(exc))
         return len(self.errors) == 0
+
+    @staticmethod
+    def _collect_declared_types(program) -> set:
+        """Return every class/trait name declared in the program (recursively)."""
+        names: set = set()
+
+        def walk(node):
+            if node is None:
+                return
+            if isinstance(node, (list, tuple)):
+                for item in node:
+                    walk(item)
+                return
+            if isinstance(node, (ClassDecl, TraitDecl)):
+                names.add(node.name)
+                body = getattr(node, 'body', None) or getattr(node, 'members', None) or []
+                for member in body:
+                    walk(member)
+            elif isinstance(node, Module):
+                for member in getattr(node, 'members', []) or []:
+                    walk(member)
+            elif isinstance(node, Node):
+                for value in vars(node).values():
+                    if isinstance(value, (Node, list, tuple)):
+                        walk(value)
+
+        walk(program)
+        return names
+
+    @staticmethod
+    def _collect_enum_decls(program) -> dict:
+        """Map enum name -> EnumDecl for exhaustiveness checks."""
+        decls: dict = {}
+
+        def walk(node):
+            if node is None:
+                return
+            if isinstance(node, (list, tuple)):
+                for item in node:
+                    walk(item)
+                return
+            if isinstance(node, EnumDecl):
+                decls[node.name] = node
+            elif isinstance(node, Node):
+                for value in vars(node).values():
+                    if isinstance(value, (Node, list, tuple)):
+                        walk(value)
+
+        walk(program)
+        return decls
+
+    def _check_type_constraints(self, node, owner_kind):
+        """Validate generic constraints on a class/trait/function declaration.
+
+        A constraint must name a builtin type or a class/trait declared in the
+        same program; anything else is a typo that would silently erase.
+        """
+        constraints = getattr(node, 'type_constraints', None) or {}
+        if not constraints:
+            return
+        params = set(getattr(node, 'type_params', None) or [])
+        for name, constraint in constraints.items():
+            if name not in params:
+                self._add(
+                    ErrorCode.UNKNOWN_TYPE_CONSTRAINT,
+                    f"{owner_kind} '{node.name}': constraint applies to "
+                    f"'{name}', which is not one of its type parameters",
+                    node,
+                    hint="declare the parameter first, e.g. '[T: Comparable]'",
+                )
+                continue
+            base = str(constraint).strip().strip('[]')
+            # A constraint may be a union (`Comparable | Hashable`) or a
+            # parameterised type (`Iterable[T]`); check each component name.
+            for part in base.replace('|', ',').split(','):
+                token = part.strip()
+                if not token:
+                    continue
+                token = token.split('[')[0].strip()
+                if (token in self._declared_types
+                        or token in self.inference.builtin_types
+                        or token in self.inference.BUILTIN_NAMES):
+                    continue
+                self._add(
+                    ErrorCode.UNKNOWN_TYPE_CONSTRAINT,
+                    f"{owner_kind} '{node.name}': type parameter '{name}' has "
+                    f"unknown constraint '{token}'",
+                    node,
+                    hint="use a builtin type or a class/trait declared here",
+                )
 
     # -- traversal ----------------------------------------------------------
 
@@ -606,8 +713,10 @@ class TypeChecker:
             self._check_function_decl(node)
         elif isinstance(node, ClassDecl):
             self._check_class_decl(node)
-        elif isinstance(node, (EnumDecl, TypeDecl, TraitDecl)):
+        elif isinstance(node, (EnumDecl, TypeDecl)):
             pass
+        elif isinstance(node, TraitDecl):
+            self._check_type_constraints(node, "Trait")
         elif isinstance(node, (IfStmt, UnlessStmt)):
             self._check_if(node)
         elif isinstance(node, GuardStmt):
@@ -628,6 +737,7 @@ class TypeChecker:
             for stmt in node.body:
                 self.visit(stmt)
         elif isinstance(node, MatchStmt):
+            self._check_match_exhaustive(node)
             for case in node.cases:
                 if case.guard is not None:
                     self._check_condition(case.guard, "match guard")
@@ -699,6 +809,7 @@ class TypeChecker:
         self._type_params = dict(old_type_params)
         for tp in getattr(node, 'type_params', None) or []:
             self._type_params[tp] = TypeVariable(tp)
+        self._check_type_constraints(node, "Function")
 
         param_types = []
         variadic = False
@@ -736,6 +847,7 @@ class TypeChecker:
                 continue
             if param.type_annotation is not None:
                 self.context[param.name] = self._parse_type_annotation(param.type_annotation)
+                self._record_enum_annotation(param.name, param.type_annotation)
             else:
                 self.context[param.name] = AnyType()
 
@@ -750,6 +862,7 @@ class TypeChecker:
         type_params = list(getattr(node, 'type_params', None) or [])
         class_type = ClassType(node.name)
         class_type.type_params = type_params
+        self._check_type_constraints(node, "Class")
 
         # Register generic parameters while reading field/method signatures.
         old_type_params = self._type_params
@@ -918,6 +1031,163 @@ class TypeChecker:
                 self.visit(stmt)
         for stmt in (node.finally_body or []):
             self.visit(stmt)
+
+    # -- match exhaustiveness ----------------------------------------------
+
+    def _check_match_exhaustive(self, node):
+        """Warn when a `match` over a known finite domain has no catch-all.
+
+        Aura is gradually typed, so only subjects with a *known* finite domain
+        are checked: ``bool`` (both literals) and enum values (all members).
+        For any other value a bare ``case _``/``case name`` is required,
+        because a `match` with no fallback silently does nothing for the
+        unmatched values. This is a warning, so it never fails a build.
+        """
+        # A "catch-all" is a wildcard or a bare identifier binding, with no
+        # guard, since a guard may reject the value and fall through.
+        catch_all = False
+        covered_literals = set()
+        covered_enums = set()
+        for case in node.cases:
+            pattern = case.pattern
+            if case.guard is None and self._is_catch_all(pattern):
+                catch_all = True
+            for lit in self._literal_values(pattern):
+                covered_literals.add(lit)
+            for name in self._constructor_names(pattern):
+                covered_enums.add(name)
+        if catch_all:
+            return
+
+        subject_type = self._subject_type(node.expr)
+        subject_name = type(subject_type).__name__
+
+        if subject_name == 'BoolType':
+            missing = {True, False} - covered_literals
+            if missing:
+                rendered = ', '.join('true' if m else 'false' for m in sorted(missing))
+                self._add_warning(
+                    ErrorCode.NON_EXHAUSTIVE_MATCH,
+                    f"'match' over bool is not exhaustive: no case handles {rendered}",
+                    node,
+                    hint="add the missing cases, or a 'case _' fallback",
+                )
+            return
+
+        enum_members = self._enum_members_for(node.expr, subject_type)
+        if enum_members is not None:
+            missing = enum_members - covered_enums
+            if missing:
+                rendered = ', '.join(sorted(missing))
+                self._add_warning(
+                    ErrorCode.NON_EXHAUSTIVE_MATCH,
+                    f"'match' over enum is not exhaustive: no case handles {rendered}",
+                    node,
+                    hint="add the missing cases, or a 'case _' fallback",
+                )
+            return
+
+        if isinstance(subject_type, (IntType, StrType)):
+            self._add_warning(
+                ErrorCode.NON_EXHAUSTIVE_MATCH,
+                f"'match' over {subject_type} is not exhaustive: no case handles "
+                f"unlisted values",
+                node,
+                hint="add a 'case _' or 'case name' fallback",
+            )
+
+    def _record_enum_annotation(self, name, annotation):
+        """Remember that ``name`` is declared with an enum type annotation.
+
+        Recorded independently of full type resolution, because an enum name is
+        not a registered class type: the resolved type would be ``Any`` and
+        exhaustiveness could not apply.
+        """
+        text = annotation if isinstance(annotation, str) else getattr(annotation, 'name', None)
+        if not isinstance(text, str):
+            return
+        base = text.strip().strip('?').split('[')[0].strip()
+        if base in self._enum_decls:
+            self._enum_typed[name] = base
+
+    def _subject_type(self, expr):
+        """Resolve the type of a match subject, preferring the checker context.
+
+        ``TypeInference`` is context-free, so a bare variable would infer as
+        ``Any``. The checker's ``context`` holds the declared/param types, which
+        is what exhaustiveness analysis needs.
+        """
+        if isinstance(expr, Identifier) and expr.name in self.context:
+            return self.context[expr.name]
+        return self.inference.infer(expr)
+
+    @staticmethod
+    def _is_catch_all(pattern):
+        """True for a wildcard or a bare identifier binding pattern."""
+        if isinstance(pattern, WildcardPattern):
+            return True
+        if isinstance(pattern, IdentifierPattern):
+            return True
+        if isinstance(pattern, AsPattern):
+            return TypeChecker._is_catch_all(pattern.pattern)
+        if isinstance(pattern, OrPattern):
+            return any(TypeChecker._is_catch_all(p) for p in pattern.patterns)
+        return False
+
+    @staticmethod
+    def _literal_values(pattern):
+        """Collect literal values a pattern matches (for bool coverage)."""
+        if isinstance(pattern, OrPattern):
+            values = set()
+            for sub in pattern.patterns:
+                values |= TypeChecker._literal_values(sub)
+            return values
+        if isinstance(pattern, LiteralPattern):
+            value = pattern.value
+            if isinstance(value, BoolLiteral):
+                return {bool(value.value)}
+            if value is True or value is False:
+                return {value}
+        return set()
+
+    @staticmethod
+    def _constructor_names(pattern):
+        """Collect enum/constructor member names a pattern matches.
+
+        A dotted member pattern (`Color.RED`) covers the ``RED`` member; a
+        constructor pattern (`Some(x)`) covers ``Some``.
+        """
+        if isinstance(pattern, OrPattern):
+            names = set()
+            for sub in pattern.patterns:
+                names |= TypeChecker._constructor_names(sub)
+            return names
+        if isinstance(pattern, ConstructorPattern):
+            return {pattern.name}
+        if isinstance(pattern, MemberPattern):
+            member = getattr(pattern.expr, 'member', None)
+            if isinstance(member, str):
+                return {member}
+        return set()
+
+    def _enum_members_for(self, expr, subject_type=None):
+        """Return enum member names when ``expr`` is a known enum value."""
+        enum_name = None
+        if isinstance(expr, MemberExpr) and isinstance(expr.obj, Identifier):
+            enum_name = expr.obj.name
+        elif isinstance(expr, Identifier) and expr.name in self._enum_typed:
+            enum_name = self._enum_typed[expr.name]
+        elif isinstance(expr, Identifier) and expr.name in self.context:
+            declared = self.context[expr.name]
+            enum_name = getattr(declared, 'name', None)
+        elif subject_type is not None:
+            enum_name = getattr(subject_type, 'name', None)
+        if enum_name is None:
+            return None
+        decl = self._enum_decls.get(enum_name)
+        if decl is not None:
+            return {name for name, _value in decl.members}
+        return None
 
     def _check_return(self, node):
         self._check_expr(node.value)

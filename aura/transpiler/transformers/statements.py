@@ -9,6 +9,48 @@ from aura.transpiler.transformers.expressions import (
 )
 
 
+def _collect_declared_names(statements):
+    """Collect names bound by a function body (locals, loop vars, patterns).
+
+    Used to decide whether a bare identifier shadows a module-level member.
+    Nested function bodies are included: their locals are separate scopes in
+    Python, but over-approximating here only means a module member is *not*
+    rewritten inside a nested function that happens to rebind the name, which
+    is the safe direction.
+    """
+    names = set()
+    stack = list(statements or [])
+    while stack:
+        node = stack.pop()
+        if node is None:
+            continue
+        if isinstance(node, (list, tuple)):
+            stack.extend(node)
+            continue
+        if isinstance(node, (VarDecl, ConstDecl)):
+            target = node.name
+            if isinstance(target, str):
+                names |= set(StatementTransformer._declared_names(target))
+        elif isinstance(node, FunctionDecl):
+            names.add(node.name)
+            for param in getattr(node, 'params', []) or []:
+                if getattr(param, 'name', None):
+                    names.add(param.name)
+        elif isinstance(node, Parameter):
+            if getattr(node, 'name', None):
+                names.add(node.name)
+        # Descend into every child node so nested blocks and functions are
+        # covered. Only Aura AST nodes are traversed (never arbitrary objects).
+        if not isinstance(node, Node):
+            continue
+        for value in vars(node).values():
+            if isinstance(value, (list, tuple)):
+                stack.extend(value)
+            elif isinstance(value, Node):
+                stack.append(value)
+    return names
+
+
 class StatementTransformer:
     def __init__(self):
         self.expr_transformer = ExpressionTransformer()
@@ -291,10 +333,16 @@ class StatementTransformer:
                 enclosing |= scope
             self.function_scopes.append(set())
             self._global_assignments.append(set())
+            # Locally-bound names shadow module-level members, so bare
+            # references to them must stay bare.
+            local_names = {p.name for p in node.params if getattr(p, 'name', None)}
+            local_names |= _collect_declared_names(node.body)
+            self.expr_transformer._local_scopes.append(local_names)
             try:
                 body_code = self._block(node.body)
                 global_decl = self._global_decl_line()
             finally:
+                self.expr_transformer._local_scopes.pop()
                 self.function_scopes.pop()
                 self._global_assignments.pop()
             nonlocal_decl = ""
@@ -326,6 +374,7 @@ class StatementTransformer:
         bases = []
         if node.base_class:
             if isinstance(node.base_class, str):
+                self._register_base_names(node.base_class)
                 bases.append(node.base_class)
             else:
                 bases.append(self.expr_transformer.transform(node.base_class))
@@ -440,6 +489,17 @@ class StatementTransformer:
                 if not member.is_static and not emit_field_defaults:
                     continue
                 body_parts.append(self._indent() + self.transform(member))
+            elif isinstance(member, ConstDecl):
+                # A class-level `const` lives on the class, never on instances,
+                # and is never a constructor parameter. It still honours
+                # visibility so `private const` is mangled like any member.
+                const_name = mangle_member(
+                    node.name, member.name, member.visibility or 'public')
+                const_value = self.expr_transformer.transform(member.value)
+                line = f"{const_name} = {const_value}  # const"
+                if member.is_volatile:
+                    line = "# volatile\n" + line
+                body_parts.append(self._indent() + line)
             elif isinstance(member, Method):
                 self.indent_level -= 1
                 method_code = self.transform(member)
@@ -630,6 +690,11 @@ class StatementTransformer:
                     default = self.expr_transformer.transform(member.value)
                 name = mangle_member(node.name, member.name, member.visibility)
                 body_lines.append(class_indent + f"{name} = {default}")
+            elif isinstance(member, ConstDecl):
+                # Trait-level constant: lives on the trait, never on instances.
+                value = self.expr_transformer.transform(member.value)
+                name = mangle_member(node.name, member.name, member.visibility)
+                body_lines.append(class_indent + f"{name} = {value}  # const")
         self.indent_level -= 1
         self.expr_transformer.member_visibilities = old_tvis
         if not body_lines:
@@ -642,6 +707,23 @@ class StatementTransformer:
         """Render ``[T, U]`` as ``_aura_Generic[_T, _U]`` with TypeVars."""
         vars_ = [f"_aura_TypeVar('{p}')" for p in type_params]
         return f"_aura_Generic[{', '.join(vars_)}]"
+
+    def _register_base_names(self, base_class):
+        """Record each base class name as a referenced identifier.
+
+        Base names are emitted verbatim, so they never flow through
+        ``transform_Identifier``. Registering them lets prelude detection see
+        e.g. `class MyError extends Error` and inject the `Error` alias.
+        """
+        for part in str(base_class).split(','):
+            name = part.strip()
+            if not name:
+                continue
+            # A dotted base (`pkg.Base`) only contributes its head, which is the
+            # name that must resolve as a free identifier.
+            head = name.split('.')[0].strip()
+            if head:
+                self.expr_transformer.seen_identifiers.add(head)
 
     def _trait_method_signature(self, method):
         """Render a trait method's parameter list, preserving its signature."""
@@ -1068,13 +1150,24 @@ class StatementTransformer:
     def _module_class(self, name, members):
         header = f"class {name}:"
         body_lines = []
+        # Module-level data members (const/let/static) live on the class; a bare
+        # reference to one inside a module function must resolve to
+        # `Module.name`. Register them for the duration of the body transform.
+        module_data = {}
         for member in members:
-            if isinstance(member, FunctionDecl):
-                member.is_static = True
-            code = self.transform(member)
-            if code and code.strip():
-                for line in code.split("\n"):
-                    body_lines.append("    " + line if line.strip() else line)
+            if isinstance(member, (VarDecl, ConstDecl)):
+                module_data[member.name] = name
+        self.expr_transformer._module_scopes.append(module_data)
+        try:
+            for member in members:
+                if isinstance(member, FunctionDecl):
+                    member.is_static = True
+                code = self.transform(member)
+                if code and code.strip():
+                    for line in code.split("\n"):
+                        body_lines.append("    " + line if line.strip() else line)
+        finally:
+            self.expr_transformer._module_scopes.pop()
         if not body_lines:
             body_lines.append("    pass")
         return header + "\n" + "\n".join(body_lines)

@@ -435,6 +435,40 @@ def cmd_run(path: str, verbose: bool = False, program_args=None) -> int:
         return 1
 
 
+def _last_stderr_line(stderr: str) -> str:
+    """Return the most informative last line of an error stream."""
+    if not stderr:
+        return "exit code non-zero"
+    lines = [line for line in stderr.strip().split('\n') if line.strip()]
+    return lines[-1] if lines else "exit code non-zero"
+
+
+def _test_failure_summary(stdout: str, stderr: str):
+    """Extract a ``stdlib.testing`` failure summary from a test run.
+
+    A file that uses ``import stdlib.testing`` prints ``N/M passed, K failed``
+    plus ``FAIL <name>: ...`` lines to stdout and lets ``TestFailure`` produce
+    the non-zero exit. Surfacing that summary is far more useful than the
+    generic traceback line.
+    """
+    combined = f"{stdout}\n{stderr}"
+    if 'stdlib.testing' not in combined and 'tests failed' not in combined:
+        return None
+    summary = None
+    details = []
+    for line in stdout.split('\n'):
+        stripped = line.strip()
+        if stripped.startswith('FAIL '):
+            details.append(stripped)
+        elif 'passed,' in stripped and 'failed' in stripped:
+            summary = stripped
+    if summary is None:
+        return None
+    if details:
+        return summary + ' — ' + '; '.join(details)
+    return summary
+
+
 def cmd_test(path: str = ".", verbose: bool = False, pattern: str = "*.aura") -> int:
     """Run .aura test files and report pass/fail."""
     import subprocess
@@ -475,7 +509,8 @@ def cmd_test(path: str = ".", verbose: bool = False, pattern: str = "*.aura") ->
                     print(f"  OK   {f}", file=sys.stderr)
             else:
                 failed += 1
-                err_msg = result.stderr.strip().split('\n')[-1] if result.stderr else "exit code non-zero"
+                err_msg = (_test_failure_summary(result.stdout, result.stderr)
+                           or _last_stderr_line(result.stderr))
                 errors.append((f, err_msg))
                 if verbose:
                     print(f"  FAIL {f}: {err_msg}", file=sys.stderr)

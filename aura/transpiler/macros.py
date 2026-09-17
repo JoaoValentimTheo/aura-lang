@@ -157,6 +157,21 @@ def _aura_call(func, value):
 # ``None`` can override a field default.
 UNSET_PRELUDE = "_aura_unset = object()\n"
 
+# Aura spells the root of the exception hierarchy `Error`; Python calls it
+# `Exception`. Aliasing it lets `class MyError extends Error` and
+# `catch Error` work without the program importing anything.
+ERROR_PRELUDE = "Error = Exception\n"
+
+# Builtins an Aura program may name as a type without importing them. Only the
+# exception root needs an alias (the rest already exist in Python), so this is
+# the set that triggers ERROR_PRELUDE.
+ERROR_PRELUDE_NAMES = ("Error",)
+
+
+def error_prelude_needed(free_names) -> bool:
+    """Return True when an Aura program references the `Error` root type."""
+    return any(name in ERROR_PRELUDE_NAMES for name in free_names)
+
 # Traits compile to ABCs and generic classes compile to Generic[...]
 OOP_PRELUDE = "import abc as _aura_abc\nfrom typing import Generic as _aura_Generic, TypeVar as _aura_TypeVar\n"
 

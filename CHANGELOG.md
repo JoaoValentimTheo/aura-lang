@@ -4,6 +4,143 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.0a12] - 2026-09-17
+
+A feature release across the language, type checker, LSP, standard library and
+tooling. It adds generic constraints, custom exception hierarchies, enum-member
+pattern matching, match-exhaustiveness analysis, an assertions/matchers module,
+native async file and HTTP helpers, and a full set of editor navigation
+features. It also hardens the HTTP SSRF guard and fixes several declaration and
+matching bugs.
+
+### Added
+
+#### Language
+
+- **Custom exception hierarchies.** The exception root `Error` needs no import
+  and is aliased to Python's `Exception`. A class may extend it with either
+  spelling — `class MyError extends Error { ... }` or
+  `class MyError(Error) { ... }` — and `super(message)` now maps to
+  `super().__init__(message)` (previously `super(msg)` was emitted verbatim and
+  failed at runtime with "super() argument 1 must be a type"). Multi-level
+  hierarchies work: `catch NotFoundError`, then `catch AppError`, then
+  `catch Error`, matched in order.
+
+- **Generic constraints.** A type parameter may declare a constraint after a
+  colon: `def smallest[T: Comparable](items: [T]) -> T`, on functions, classes
+  and traits. The constraint must be a builtin type or a class/trait declared
+  anywhere in the same program; a union (`[T: int | str]`) is accepted. An
+  unknown constraint is reported as `E110` with a hint. Constraints are
+  compile-time only and do not change the emitted Python.
+
+- **Enum-member pattern matching.** A `case` may name an enum member with a
+  dotted pattern (`case Color.RED`) so the case compares against the constant
+  instead of binding a new variable. A bare identifier (`case RED`) remains a
+  binding pattern, matching the documented `case n if ...` semantics.
+
+- **Match-exhaustiveness analysis (`E109`).** A `match` over `bool` (both
+  literals), an enum value (all members), or a scalar (`int`/`str`) must handle
+  every case or provide a catch-all. A missing fallback is reported as `E109`,
+  a *warning*, so it never fails a build. A guarded wildcard (`case _ if cond`)
+  is correctly not treated as a catch-all, while `case name` is.
+
+#### Standard library
+
+- **`stdlib.testing`**: assertions and matchers for Aura test files, including
+  `test`, `equal`, `not_equal`, `is_true`/`is_false`, `is_none`/`is_not_none`,
+  `contains`/`not_contains`, `starts_with`/`ends_with`, `greater`/`less` and
+  the `_or_equal` variants, `has_length`, `is_empty`, `in_range`,
+  `approx_equal`, `raises`, `fail`, `skip`, `case`, `run_all`, and the
+  `TestFailure` type. `aura test` now surfaces the `stdlib.testing` failure
+  summary (`N/M passed, K failed` plus `FAIL <name>` lines) instead of the
+  generic last traceback line.
+
+- **Native async I/O**: `stdlib.io` gains `read_async`, `write_async`,
+  `append_async`, `exists_async`, `is_file_async`, `is_dir_async`,
+  `mkdir_async`, `ls_async`, `rm_async`, `rename_async`, `read_lines_async`,
+  `write_lines_async`, `copy_async`, `size_async` and `touch_async`;
+  `stdlib.http` gains `arequest`, `aget`, `apost`, `aput`, `adelete`,
+  `aget_json` and `apost_json`. All await the vetted synchronous
+  implementation on a worker thread, so errors and (for HTTP) security checks
+  are identical. `read_async`/`write_async` are re-exported from `aura.stdlib`.
+
+#### Tooling
+
+- **LSP navigation and formatting.** `aura lsp` now advertises and implements
+  `textDocument/definition`, `textDocument/references`,
+  `textDocument/prepareRename`, `textDocument/rename` and
+  `textDocument/formatting`, in addition to diagnostics, hover, completion and
+  document symbols. Definition resolves functions, classes, enums, traits,
+  modules, variables, constants and parameters; references and rename operate
+  on every identifier token; formatting replaces the document with
+  `format_aura` output. All features degrade cleanly on unparseable documents.
+
+#### Tests
+
+- `tests/test_custom_errors.py` (15 tests): both inheritance spellings,
+  `super(message)`, multi-level catches, root `catch Error`, `finally`, and an
+  uncaught-error diagnostic.
+- `tests/test_type_features.py` (26 tests): `E110` constraints (function,
+  class, trait, unions, forward-referenced classes) and `E109` exhaustiveness
+  (bool, enum, scalars, guards, fallbacks, gradual-typing opt-out), plus
+  enum-member pattern runtime behaviour.
+- `tests/test_lsp_navigation.py` (24 tests): capabilities, definition,
+  references, prepare/rename, formatting, and robustness on broken documents.
+- `tests/test_async_io.py` (18 tests): every `*_async` IO helper, the async
+  HTTP security guards, and end-to-end Aura `async def` programs.
+- `tests/test_testing_module.py` (35 tests): the public surface and failure
+  paths of `stdlib.testing`.
+- `tests/test_declaration_fixes.py` (35 tests): class/trait `const` members,
+  `E303` on constant reassignment, and module-scope data access.
+- `tests/aura_test_helpers.py` now awaits `async def main`, mirroring
+  `aura run`, so async programs are testable through the shared helpers.
+
+### Fixed
+
+- **`case RED { ... }` swallowed the case body.** A capitalized identifier in a
+  case pattern was parsed as a struct literal (`RED(**{...})`), producing
+  invalid Python. Struct-init is now suppressed while parsing a pattern, so the
+  `{` always starts the case body.
+- **`const` as a class or trait member.** `class C { const K = 1 }` created a
+  stray field literally named `const`; it is now a class-level constant that
+  lives on the class, never on an instance, never becomes a constructor
+  parameter, and respects `public`/`private`/`protected`/`static` mangling.
+- **Assigning to a class-level constant.** `C.K = 2` and `self.K = 2` now
+  report `E303` with a source location and a `let mut` hint instead of silently
+  succeeding at runtime.
+- **Bare module data members inside module functions.** A reference to a
+  module-level `const`/`let`/`static` from a function in the same module
+  resolved to `NameError`; it now resolves through the module class, while
+  locals and parameters correctly shadow it.
+- **Formatter operator corruption.** Restoring multi-character operators after
+  spacing normalization could re-split `..<` into `.. <`, producing invalid
+  code. Spacing is now normalized while the operators are still masked, and
+  inline block comments (`/* ... */`) are protected like strings.
+- **HTTP SSRF guard failed open on unresolvable hosts.** `_is_blocked_host`
+  returned `False` when DNS resolution raised `gaierror`, allowing a hostname
+  that could resolve to anything at connect time. It now fails closed (an
+  unresolvable name is blocked), classifies IPv4-mapped IPv6 addresses
+  (`::ffff:127.0.0.1`) by their embedded IPv4 address, and treats an empty
+  address list or unparseable address as blocked. `AURA_HTTP_ALLOW_PRIVATE=1`
+  still opts out.
+
+### Changed
+
+- `aura check` surfaces `E109`/`E110` through the normal diagnostics channel;
+  `E109` is a warning and does not change the exit code.
+- `docs/ERRORS.md` documents `E109` (`NON_EXHAUSTIVE_MATCH`) and `E110`
+  (`UNKNOWN_TYPE_CONSTRAINT`); the catalogue-sync test keeps the enum and the
+  document aligned.
+- `docs/LANGUAGE.md` documents generic constraints, custom exception types,
+  enum-member matching with exhaustiveness, and the async standard library.
+- `docs/COMPLETENESS.md` raises generics, pattern matching, error handling,
+  `test`, `format`, `lsp` and the stdlib dimension to reflect the release.
+
+### Removed
+
+- Working session transcripts (`session_backup.txt`) are ignored rather than
+  tracked; they are not project documentation.
+
 ## [0.1.0a11] - 2026-09-17
 
 ### Fixed

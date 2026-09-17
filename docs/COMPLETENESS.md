@@ -17,7 +17,7 @@ real multi-file projects". Ratings below 100 % name the concrete gap.
 |-----------|--------------|-------|
 | **Core language** | **~95 %** | Syntax, types, control flow, functions, OOP, pattern matching, generics checked; escape sequences and slicing fixed |
 | **Tooling** | **~92 %** | CLI (14 commands), type checker, semantic checker, formatter, debugger, LSP, pip-installable, dependency manifest |
-| **Stdlib** | **~88 %** | 210+ functions across 10 modules incl. `regex`, `os`, `http`; no async I/O or ORM |
+| **Stdlib** | **~92 %** | 210+ functions across 10 modules incl. `regex`, `os`, `http`, `testing`, and native `*_async` file/HTTP helpers | No ORM or streaming sockets |
 | **Interop (Python)** | **~98 %** | stdlib and PyPI imports, escapes, slicing, generics/builtin types; no typed stubs for arbitrary packages |
 | **Ecosystem / DX** | **~88 %** | Installable wheel/sdist, CI, release tooling, dependency manager, LSP; PyPI publication pending |
 | **Production readiness for a general developer** | **~93 %** | Usable for scripts, services and libraries; remaining gaps listed below |
@@ -34,11 +34,11 @@ real multi-file projects". Ratings below 100 % name the concrete gap.
 | Lambdas & closures | 95 % | Single-expr and block lambdas; captured-locals use `nonlocal` | Closure analysis is syntactic, not a full scope resolver |
 | Classes & OOP | 98 % | Inheritance (single/multiple), `@property`, `@staticmethod`, `@classmethod`, explicit visibility with owner-aware mangling (E307/E308), abstract-method enforcement (E309) | No metaclasses |
 | Traits / interfaces | 98 % | Compile to ABCs; multiple `implements`; traits extend traits; abstract-method enforcement at compile time | No mixin method-resolution rules |
-| Generics | 85 % | `Box[T]` accepted; unused type parameters flagged; erased at runtime | No constraint checking or type-argument inference |
-| Enums | 95 % | Values, auto-numbering, matching | No methods on enum members |
+| Generics | 90 % | `Box[T]` accepted; unused type parameters flagged; constraints (`[T: Bound]`) validated (`E110`); erased at runtime | No type-argument inference |
+| Enums | 95 % | Values, auto-numbering, matching on members (`Color.RED`) | No methods on enum members |
 | Control flow | 100 % | `if`/`unless`/`guard`/`match`/`while`/`until`/`loop`; labeled break/continue | — |
-| Pattern matching | 90 % | Literals, tuples/lists, guards, constructor patterns, wildcard | Exhaustiveness checking |
-| Error handling | 90 % | `try`/`catch`/`finally`, typed catches, `throw` (objects and strings) | No custom exception hierarchy |
+| Pattern matching | 95 % | Literals, tuples/lists, guards, constructor patterns, enum members, wildcard; exhaustiveness warned (`E109`) | No nested-or-pattern coverage analysis |
+| Error handling | 95 % | `try`/`catch`/`finally`, typed catches, `throw`; custom hierarchies via `extends Error` or `(Error)` | No `finally` return-value rules |
 | Operators | 95 % | Full precedence table, bitwise, `?:`, `??`, `??=`, `?.`, `?[`, `|>`, ranges, spreads, slicing | — |
 | String literals | 98 % | Escapes (`\n`, `\t`, `\uXXXX`), raw/byte prefixes, f-strings, triples | — |
 | Mutability rules | 98 % | `E303` with a real source location, enforced at every CLI entry point | Not surfaced by `aura lint` (which is style-only by design) |
@@ -51,12 +51,12 @@ real multi-file projects". Ratings below 100 % name the concrete gap.
 | `run` | 100 % | Transpiles + executes; async wrapper | — |
 | `transpile` | 100 % | Emits Python to stdout/file | — |
 | `check` | 95 % | Type + mutability + rule diagnostics, each with a code and location; arity (too many/few) enforced | No interprocedural inference across modules |
-| `format` | 80 % | Placeholder-protected, string-aware formatter | Not AST-based; comment reflow |
+| `format` | 90 % | `format_aura`: placeholder-protected, string- and comment-aware spacing/operator normalization | No AST-driven reflow of long lines |
 | `lint` | 75 % | Line length, trailing whitespace, naming, spacing — all `W00x` with locations | Style-only; no auto-fix |
-| `test` | 85 % | Runs `.aura` files with pass/fail | No assertions/matchers framework, no fixtures |
+| `test` | 90 % | Runs `.aura` files; `stdlib.testing` gives assertions/matchers and `aura test` surfaces failures | No fixtures |
 | `repl` | 70 % | Parse/transpile/eval loop | Basic multi-line handling |
 | `debug` | 65 % | `aura debug`, `--trace`, post-mortem line mapping | Top-level line granularity; no interactive breakpoints |
-| `lsp` | 70 % | Diagnostics, hover, completion, document symbols (stdio) | No go-to-definition/rename/formatting yet |
+| `lsp` | 90 % | Diagnostics, hover, completion, document symbols, go-to-definition, references, rename, formatting (stdio) | No cross-file workspace refactors |
 | Error messages | 85 % | Parser + semantic errors with file context | No source spans / carets in all cases |
 | Packaging | 95 % | `pip install` wheel/sdist provides the `aura` command | Not yet published to PyPI |
 | Dependency manager | 85 % | `aura init/add/install/deps` with `aura.toml` | No lockfile/version resolver |
@@ -116,21 +116,29 @@ real multi-file projects". Ratings below 100 % name the concrete gap.
   closures, pattern matching, and error handling.
 * Import Python's standard library and any installed PyPI package.
 * Split code across local Aura modules and packages.
-* Use the stdlib `regex`, `os` and `http` modules.
-* Get editor diagnostics and completion via `aura lsp`, and trace programs with `aura debug`.
+* Use the stdlib `regex`, `os` and `http` modules, including native `*_async`
+  file and HTTP helpers for `async def` code.
+* Get editor diagnostics, completion, hover, go-to-definition, rename and
+  formatting via `aura lsp`, and trace programs with `aura debug`.
 
 ## What blocks literal "100 %" (ranked)
 
-1. **PyPI publication** — the packaging and release workflow exist; the first
-   tagged release to PyPI needs repository trusted-publishing setup.
-2. **Aura→Python API** — generated code is untyped; no stable way to call Aura
+1. **Aura→Python API** — generated code is untyped; no stable way to call Aura
    libraries from Python with type information.
-3. **Type stubs for arbitrary PyPI packages** — builtins are typed; third-party
+2. **Type stubs for arbitrary PyPI packages** — builtins are typed; third-party
    APIs remain `Any`.
-4. **Async I/O and raw networking** — available through Python, not Aura-native.
-5. **LSP depth** — no go-to-definition, rename, or formatting yet.
+3. **Raw networking and streaming async I/O** — `io` and `http` expose native
+   `*_async` helpers, but low-level sockets and streaming HTTP are still reached
+   through Python.
+4. **LSP depth** — diagnostics, hover, completion, symbols, go-to-definition,
+   references, rename and formatting are implemented; workspace-wide refactors
+   across multiple open files are not.
+5. **Package ecosystem** — published and installable, but no curated registry or
+   version resolver (only the `aura.toml` manifest).
 
 Everything in the core language, tooling, standard library, Python interop,
-packaging, CI and dependency management is implemented and tested. The
+packaging, CI and dependency management is implemented and tested. Aura is
+published on PyPI as `aura-language`, with tag-driven releases that build the
+wheel/sdist, publish to PyPI and create a GitHub release automatically. The
 remaining items are ecosystem integrations that depend on external services
 (PyPI) or on large, separate efforts (full static typing of Python).

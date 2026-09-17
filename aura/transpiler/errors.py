@@ -46,6 +46,8 @@ class ErrorCode(Enum):
     WRONG_ARGUMENT_TYPE = "E106"
     CANNOT_CALL_NON_FUNCTION = "E107"
     INCOMPATIBLE_OPERANDS = "E108"
+    NON_EXHAUSTIVE_MATCH = "E109"
+    UNKNOWN_TYPE_CONSTRAINT = "E110"
 
     # -- Semantic errors (E3xx) ------------------------------------------
     DUPLICATE_DEFINITION = "E301"
@@ -203,6 +205,8 @@ ERROR_TEMPLATES = {
     ErrorCode.WRONG_ARGUMENT_TYPE: "Argument {index} of '{name}': expected {expected}, got {actual}",
     ErrorCode.CANNOT_CALL_NON_FUNCTION: "Cannot call non-function type '{type}'",
     ErrorCode.INCOMPATIBLE_OPERANDS: "Incompatible operands for {op}: {left} and {right}",
+    ErrorCode.NON_EXHAUSTIVE_MATCH: "'match' over {subject} is not exhaustive: no case handles {missing}",
+    ErrorCode.UNKNOWN_TYPE_CONSTRAINT: "type parameter '{name}' has unknown constraint '{constraint}'",
     # Semantic
     ErrorCode.DUPLICATE_DEFINITION: "'{name}' is already defined",
     ErrorCode.UNREACHABLE_CODE: "Unreachable code after '{terminator}'",

@@ -31,26 +31,32 @@ def run_aura(source):
     """Transpile and execute Aura source; return captured stdout.
 
     Entry files declare ``main``; the runtime invokes it, which this mirrors.
+    An ``async def main`` is driven to completion on a fresh event loop, just
+    as ``aura run`` does.
     """
-    code = transpile(source)
-    namespace = {"__name__": "__aura_prop__"}
-    buffer = io.StringIO()
-    with contextlib.redirect_stdout(buffer):
-        exec(compile(code, "<prop>", "exec"), namespace)
-        main = namespace.get("main")
-        if callable(main):
-            main()
-    return buffer.getvalue()
+    return _run_aura(source, want_namespace=False)
 
 
 def run_aura_ns(source):
     """Like ``run_aura`` but also return the namespace."""
+    return _run_aura(source, want_namespace=True)
+
+
+def _run_aura(source, want_namespace):
+    import asyncio
+    import inspect
+
     code = transpile(source)
     namespace = {"__name__": "__aura_prop__"}
     buffer = io.StringIO()
     with contextlib.redirect_stdout(buffer):
         exec(compile(code, "<prop>", "exec"), namespace)
         main = namespace.get("main")
-        if callable(main):
+        if inspect.iscoroutinefunction(main):
+            asyncio.run(main())
+        elif callable(main):
             main()
-    return buffer.getvalue(), namespace
+    output = buffer.getvalue()
+    if want_namespace:
+        return output, namespace
+    return output

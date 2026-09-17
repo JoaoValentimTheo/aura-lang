@@ -58,6 +58,14 @@ class ExpressionTransformer:
         self.seen_identifiers = set()
         self.used_decorators = []
         self.has_dict = False
+        # Module-scope resolution. A module transpiles to a class whose data
+        # members (const/let/static) live on the class, so a bare reference to
+        # one inside a module function must become `Module.name`. Each stack
+        # frame maps a visible module-level name to its owning module path.
+        self._module_scopes = []
+        # Names bound locally (params, locals, loop vars) in the current
+        # function, which shadow module members and must not be rewritten.
+        self._local_scopes = []
 
     # Aura string/collection methods with a direct Python method equivalent.
     # Only applied to *calls* on members that are not user-defined methods.
@@ -189,7 +197,19 @@ class ExpressionTransformer:
     # ========== Identifiers & Variables ==========
     def transform_Identifier(self, node):
         self.seen_identifiers.add(node.name)
+        # A bare reference to a module-level data member resolves through the
+        # module class, mirroring how `Module.member` is spelled from outside.
+        if self._module_scopes and not self._is_shadowed(node.name):
+            for scope in reversed(self._module_scopes):
+                owner = scope.get(node.name)
+                if owner is not None:
+                    safe = py_safe_name(node.name)
+                    return f"{owner}.{safe}"
         return py_safe_name(node.name)
+
+    def _is_shadowed(self, name):
+        """True when ``name`` is bound locally in any enclosing function."""
+        return any(name in scope for scope in self._local_scopes)
 
     # ========== Expressions ==========
     def transform_BinaryOp(self, node):
@@ -297,6 +317,14 @@ class ExpressionTransformer:
             return f"{obj}.{member}({', '.join(all_args)})"
 
         func = self.transform(node.func)
+
+        # Aura spells a parent constructor call as `super(args)`, which maps to
+        # Python's `super().__init__(args)`. Without this, `super(msg)` would be
+        # emitted verbatim and fail at runtime ("super() argument 1 must be a
+        # type"), since Python's `super` takes no constructor arguments here.
+        if isinstance(node.func, Identifier) and node.func.name == 'super':
+            args = self._render_call_args(node)
+            return f"super().__init__({', '.join(args)})"
 
         # Adaptive `...value` as the single argument: unpack as keyword
         # arguments when the value is a mapping, otherwise as positional
@@ -783,6 +811,10 @@ class ExpressionTransformer:
     def transform_OrPattern(self, node):
         pats = [self.transform(p) for p in node.patterns]
         return f"({' | '.join(pats)})"
+
+    def transform_MemberPattern(self, node):
+        """Render a dotted member pattern (`Color.RED`) as a value pattern."""
+        return self.transform(node.expr)
 
 
 # ============================================================================

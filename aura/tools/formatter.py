@@ -10,14 +10,12 @@ _MULTI_OPS = ['**=', '??=', '<<=', '>>=', '->', '=>', '>=', '<=', '==', '!=',
 _STRING_RE = re.compile(
     r'(?:[rRbBfF]{0,2})("""(?:.|\n)*?"""|\'\'\'(?:.|\n)*?\'\'\'|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\')'
 )
+# A block comment that opens and closes on one line: `/* ... */`.
+_BLOCK_COMMENT_RE = re.compile(r'/\*.*?\*/')
 _UNARY_RE = re.compile(r'(?:(?<=[(,=\[\s])|^)\s*([-+])\s*(?=[\w\d(])')
 _SINGLE_OP_RE = {
     op: re.compile(r'\s*' + re.escape(op) + r'\s*')
     for op in ('=', '+', '-', '*', '/', '%', '<', '>')
-}
-_MULTI_OP_RE = {
-    op: re.compile(r'\s*' + re.escape(op) + r'\s*')
-    for op in _MULTI_OPS
 }
 _AND_RE = re.compile(r'\band\b')
 _OR_RE = re.compile(r'\bor\b')
@@ -98,6 +96,16 @@ def _format_line(line: str) -> str:
 
     line = _STRING_RE.sub(_mask, line)
 
+    # Protect inline block comments (after strings, so a `/*` inside a string
+    # literal is not mistaken for a comment).
+    block_comments = []
+
+    def _mask_block(match):
+        block_comments.append(match.group(0))
+        return f"\x04{len(block_comments) - 1}\x04"
+
+    line = _BLOCK_COMMENT_RE.sub(_mask_block, line)
+
     # Comments: format only the code before `//`.
     comment = ''
     if '//' in line:
@@ -106,11 +114,9 @@ def _format_line(line: str) -> str:
         line = line[:idx]
 
     # Mask multi-character operators so they survive single-char rules.
-    placeholders = {}
     for i, op in enumerate(_MULTI_OPS):
         token = f"\x01{i}\x01"
         if op in line:
-            placeholders[token] = op
             line = line.replace(op, token)
 
     # Normalize spaces around single-character operators.
@@ -129,12 +135,14 @@ def _format_line(line: str) -> str:
     for i, original in enumerate(unary):
         line = line.replace(f"\x02{i}\x02", original)
 
-    # Restore multi-char operators with normalized spacing.
-    for token, op in placeholders.items():
-        line = line.replace(token, op)
-    # Collapse any spaces that restoration may have left around them.
-    for op, pattern in _MULTI_OP_RE.items():
-        line = pattern.sub(f' {op} ', line)
+    # Normalize spacing around multi-char operators while they are still
+    # masked. Doing this after restoring them is unsafe: `..` would re-split a
+    # restored `..<` into `.. <`, producing invalid code.
+    for i, op in enumerate(_MULTI_OPS):
+        token = f"\x01{i}\x01"
+        if token in line:
+            line = re.sub(r'\s*' + re.escape(token) + r'\s*', f' {token} ', line)
+            line = line.replace(token, op)
 
     # Normalize logical operators.
     line = _AND_RE.sub('and', line)
@@ -152,7 +160,13 @@ def _format_line(line: str) -> str:
     # Restore strings and the comment, preserving original comment text.
     for i, original in enumerate(strings):
         line = line.replace(f"\x00{i}\x00", original)
+    for i, original in enumerate(block_comments):
+        line = line.replace(f"\x04{i}\x04", original)
 
+    line = line.rstrip()
+    if comment and line:
+        # Keep a single space between code and an attached trailing comment.
+        return line + ' ' + comment
     return line + comment
 
 

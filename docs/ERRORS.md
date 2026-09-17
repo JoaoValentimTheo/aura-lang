@@ -55,6 +55,8 @@ example, a whole-program rule). Every checker attaches a real
 | `E106` | `WRONG_ARGUMENT_TYPE` | argument of the wrong type | type checker |
 | `E107` | `CANNOT_CALL_NON_FUNCTION` | calling a value that is not callable | type checker |
 | `E108` | `INCOMPATIBLE_OPERANDS` | operator used on incompatible operands | type checker |
+| `E109` | `NON_EXHAUSTIVE_MATCH` | `'match' over <subject> is not exhaustive` | type checker (warning) |
+| `E110` | `UNKNOWN_TYPE_CONSTRAINT` | `type parameter '<name>' has unknown constraint '<constraint>'` | type checker |
 
 ## Errors — semantic / structural (`E3xx`)
 
