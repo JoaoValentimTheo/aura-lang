@@ -57,12 +57,6 @@ def build_source_map(ast):
     return source_map
 
 
-def _offset_for_prelude(ast, full_code):
-    """Compute how many prelude lines precede the first program statement."""
-    _, body_lines = _statement_spans(ast)
-    return max(0, len(full_code.split('\n')) - body_lines)
-
-
 def run(path, trace=False, show_code=False):
     ast = parse_file(path)
     code = Transformer().transform(ast)

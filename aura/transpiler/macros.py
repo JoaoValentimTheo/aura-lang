@@ -116,10 +116,6 @@ def prelude_needed(decorator_names) -> bool:
     return any(name in BUILTIN_MACROS for name in decorator_names)
 
 
-def list_macros() -> list[str]:
-    return list(BUILTIN_MACROS)
-
-
 # Names from the Aura standard library that are data-first and therefore
 # useful with the pipe operator (e.g. `items |> map(fn)`).
 STDLIB_PRELUDE_NAMES = ("map", "filter", "reduce", "take", "drop")

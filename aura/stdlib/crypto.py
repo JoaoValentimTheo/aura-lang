@@ -144,7 +144,19 @@ def hmac_sha512(key, message) -> str:
 
 
 def hkdf_sha256(ikm, length=32, salt=b"", info=b"") -> bytes:
-    """HKDF-SHA256 extract-and-expand, returning ``length`` bytes."""
+    """HKDF-SHA256 extract-and-expand, returning ``length`` bytes.
+
+    RFC 5869 caps the output at ``255 * HashLen`` bytes (8160 for SHA-256);
+    the counter is a single byte, so a larger request is rejected clearly
+    instead of failing later with an obscure ``ValueError``.
+    """
+    max_length = 255 * _hashlib.sha256().digest_size
+    if length < 0:
+        raise ValueError("hkdf_sha256 length must be non-negative")
+    if length > max_length:
+        raise ValueError(
+            f"hkdf_sha256 cannot produce {length} bytes; the maximum for "
+            f"SHA-256 is {max_length}")
     ikm = _to_bytes(ikm)
     salt = _to_bytes(salt) if salt else b"\x00" * _hashlib.sha256().digest_size
     info = _to_bytes(info)

@@ -99,11 +99,6 @@ class AnyType(Type):
     pass
 
 @dataclass(eq=False)
-class NeverType(Type):
-    """Bottom type (unreachable code)."""
-    pass
-
-@dataclass(eq=False)
 class NoneType(Type):
     """Null/None type."""
     def __str__(self):
@@ -191,6 +186,9 @@ class FunctionType(Type):
     is_async: bool = False
     variadic: bool = False
     type_params: list[str] = field(default_factory=list)
+    # Number of parameters that must be supplied positionally (no default,
+    # not variadic/keyword-only). Used to catch too-few-argument calls.
+    required_args: int = 0
 
     def __str__(self):
         params = ", ".join(str(t) for t in self.param_types)
@@ -489,13 +487,6 @@ class TypeInference:
 # Type Checker
 # ============================================================================
 
-class AuraTypeError(Exception):
-    """Raised for a single type error (collected by TypeChecker).
-
-    Named distinctly so it never shadows the builtin ``TypeError``.
-    """
-
-
 class TypeChecker:
     """Check type compatibility and report real errors.
 
@@ -694,15 +685,22 @@ class TypeChecker:
 
         param_types = []
         variadic = False
+        required = 0
         for param in node.params:
             if getattr(param, 'is_variadic', False) or getattr(param, 'is_kwonly', False):
                 variadic = True
             if param.name == '*':
+                # Bare `*` separates positional from keyword-only params; the
+                # ones after it cannot be passed positionally.
+                continue
+            if param.is_kwonly:
                 continue
             if param.type_annotation is not None:
                 param_types.append(self._parse_type_annotation(param.type_annotation))
             else:
                 param_types.append(AnyType())
+            if not param.is_variadic and param.default is None:
+                required += 1
 
         return_type = AnyType()
         if node.return_type is not None:
@@ -712,6 +710,7 @@ class TypeChecker:
             param_types, return_type, getattr(node, 'is_async', False),
             variadic=variadic,
             type_params=list(getattr(node, 'type_params', None) or []),
+            required_args=required,
         )
 
         old_context = dict(self.context)
@@ -1043,12 +1042,25 @@ class TypeChecker:
 
         if func_type is not None:
             expected = len(func_type.param_types)
+            owner = f"Function '{func_name}'" if isinstance(node.func, Identifier) \
+                else f"Method '{func_name}'"
+            # Too many positional arguments, ignoring keyword arguments (which
+            # may be extras) and variadics (which absorb the rest).
             if len(node.args) > expected and not func_type.variadic and not node.kwargs:
-                owner = f"Function '{func_name}'" if isinstance(node.func, Identifier) \
-                    else f"Method '{func_name}'"
                 self._add(
                     ErrorCode.WRONG_ARGUMENT_COUNT,
                     f"{owner} expects {expected} argument(s), got {len(node.args)}",
+                    node,
+                )
+            # Too few: a required parameter is missing. Keyword arguments are
+            # treated as satisfying the requirement, so this stays quiet when
+            # the call is by name.
+            required = func_type.required_args
+            if (required and not node.kwargs and not func_type.variadic
+                    and len(node.args) < required):
+                self._add(
+                    ErrorCode.WRONG_ARGUMENT_COUNT,
+                    f"{owner} expects at least {required} argument(s), got {len(node.args)}",
                     node,
                 )
             # Argument type checking against declared parameter types.
@@ -1134,26 +1146,21 @@ class TypeChecker:
 
     def _method_to_function_type(self, method) -> FunctionType:
         param_types = []
+        required = 0
         for param in method.params:
             if param.name in ('self', 'cls', '*'):
+                continue
+            if getattr(param, 'is_kwonly', False):
                 continue
             if param.type_annotation is not None:
                 param_types.append(self._parse_type_annotation(param.type_annotation))
             else:
                 param_types.append(AnyType())
+            if not getattr(param, 'is_variadic', False) and param.default is None:
+                required += 1
         return_type = AnyType()
         if method.return_type is not None:
             return_type = self._parse_type_annotation(method.return_type)
-        return FunctionType(param_types, return_type)
+        return FunctionType(param_types, return_type, required_args=required)
 
 
-# ============================================================================
-# Convenience Exports
-# ============================================================================
-
-ANY = AnyType()
-NONE = NoneType()
-INT = IntType()
-FLOAT = FloatType()
-STR = StrType()
-BOOL = BoolType()

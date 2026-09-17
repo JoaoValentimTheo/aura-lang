@@ -131,6 +131,48 @@ def _json_headers(headers, data):
     return merged
 
 
+def _request_with_requests(method, url, data, headers, timeout, max_bytes):
+    """``requests`` backend that follows redirects with SSRF re-validation.
+
+    Redirects are followed manually so every hop is re-validated (unlike
+    ``requests``' own handler, which would happily land on a private host).
+    The body is streamed and capped, so an oversized response cannot exhaust
+    memory before it is rejected.
+    """
+    import requests
+
+    req_data = data
+    if data is not None and not isinstance(data, (str, bytes)):
+        req_data = _json.dumps(data)
+
+    current = url
+    for _ in range(10):  # bounded redirect chain
+        _validate_url(current)
+        response = requests.request(
+            method.upper(), current,
+            data=req_data, headers=_json_headers(headers, data),
+            timeout=timeout, allow_redirects=False, stream=True,
+        )
+        if response.status_code in (301, 302, 303, 307, 308):
+            location = response.headers.get('Location')
+            response.close()
+            if not location:
+                break
+            current = _urlparse.urljoin(current, location)
+            # A redirect turns the request into a GET for 301/302/303.
+            if response.status_code in (301, 302, 303):
+                method = 'GET'
+                req_data = None
+            continue
+        content = _read_limited(response.raw, max_bytes)
+        text = content.decode('utf-8', errors='replace')
+        return _response(
+            response.status_code, text, dict(response.headers),
+            response.ok, response.url,
+        )
+    raise _urlerror.URLError("too many redirects")
+
+
 def request(method, url, data=None, headers=None, timeout=30):
     """Perform an HTTP request and return a response-like dict.
 
@@ -145,24 +187,8 @@ def request(method, url, data=None, headers=None, timeout=30):
     _validate_url(url)
     max_bytes = _max_bytes()
     if _use_requests():
-        import requests
-        # Non-string bodies are sent as JSON, matching the urllib path.
-        req_data = data
-        if data is not None and not isinstance(data, (str, bytes)):
-            req_data = _json.dumps(data)
-        response = requests.request(
-            method.upper(), url,
-            data=req_data, headers=_json_headers(headers, data), timeout=timeout,
-            allow_redirects=False,
-        )
-        content = response.content
-        if max_bytes and max_bytes > 0 and len(content) > max_bytes:
-            content = content[:max_bytes]
-        return _response(
-            response.status_code,
-            content.decode('utf-8', errors='replace'),
-            dict(response.headers), response.ok, response.url,
-        )
+        return _request_with_requests(
+            method, url, data, headers, timeout, max_bytes)
 
     payload = None
     if data is not None:

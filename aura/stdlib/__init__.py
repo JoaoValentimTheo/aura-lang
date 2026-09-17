@@ -9,6 +9,7 @@ from . import (
     asyncio,
     collections,
     crypto,
+    crypto_backend,
     http,
     io,
     itertools,
@@ -38,6 +39,7 @@ __all__ = [
     'threading',
     'asyncio',
     'crypto',
+    'crypto_backend',
 ]
 
 # Convenience imports
@@ -59,7 +61,6 @@ from .io import (
     exists,
     is_dir,
     is_file,
-    join,
     ls,
     mkdir,
     read,
@@ -70,6 +71,9 @@ from .io import (
     touch,
     write,
     write_lines,
+)
+from .io import (
+    join as path_join,
 )
 from .itertools import (
     chain,
@@ -90,6 +94,8 @@ from .json import (
     stringify,
 )
 from .math import (
+    INF,
+    NAN,
     PI,
     TAU,
     E,

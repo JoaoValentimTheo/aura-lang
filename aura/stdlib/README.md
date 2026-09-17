@@ -207,6 +207,9 @@ print(comb(10, 3))     // 120
 - `gcd(*numbers)`, `lcm(*numbers)`
 - `factorial(n)`, `comb(n, k)`, `perm(n, k)`
 - `is_finite(x)`, `is_infinite(x)`, `is_nan(x)`
+- `copysign(x, y)`, `fabs(x)`, `fmod(x, y)`, `remainder(x, y)`
+- `fsum(iterable)`, `prod(iterable, start)`
+- `dist(point, point)`, `hypot(*coords)`
 
 ### string
 
@@ -235,6 +238,9 @@ print(replace("hello", "l", "L"))           // "heLLo"
 - `is_alpha(s)`, `is_alphanumeric(s)`, `is_digit(s)`
 - `is_space(s)`, `is_lower(s)`, `is_upper(s)`, `is_numeric(s)`
 - `lines(s)`, `unlines(lines)`, `codes(s)`, `from_codes(codes)`
+- `bytes_from_string(s, encoding="utf-8")`, `string_from_bytes(b, encoding="utf-8")`
+  (encode/decode round-trip between `str` and `bytes`)
+- `unicode_at(s, index)`, `char_from_code(code)` (code-point access by index)
 
 ### regex
 
@@ -404,6 +410,41 @@ print(crypto.dsa_verify(signer.public_key, "payload", sig))
 > "aura-language[pqc]"`). Otherwise a bundled **reference** backend is used: it
 > round-trips but is **not secure** — call `require_production_backend()` before
 > protecting real secrets.
+
+### python
+
+Explicit bridge for dynamic access to the Python interpreter (for cases where a
+static `import` is not enough).
+
+```aura
+import python
+
+let requests = python.import_module("requests")
+let re = python.load("re")
+print(python.eval("sum(range(10))"))
+print(python.is_available("numpy"))
+```
+
+**Functions:** `import_module`, `load`, `reload`, `is_available`, `eval`,
+`exec_code`, `compile_source`, `call`, `getattr`, `setattr`, `hasattr`, `dir`,
+`type_name`, `is_module`, `is_callable`, `is_class`, `is_instance`, `to_aura`,
+`to_python`, `interpreter_version`, `add_path`, `site_packages`, `modules`,
+`py_builtins`, and the `ModuleProxy` class.
+
+### crypto_backend
+
+The pluggable post-quantum backend selected by `stdlib.crypto`. Prefer
+`stdlib.crypto`; use this module only to inspect or drive a backend directly.
+
+```aura
+import stdlib.crypto_backend as backend
+
+let info = backend.info()
+print(info.name, info.production)
+```
+
+**Functions:** `info`, `kem_keypair`, `kem_encapsulate`, `kem_decapsulate`,
+`dsa_keypair`, `dsa_sign`, `dsa_verify`.
 
 ## String methods
 

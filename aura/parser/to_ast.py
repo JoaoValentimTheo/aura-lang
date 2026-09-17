@@ -2424,10 +2424,3 @@ def parse_file(path: str) -> Program:
     tokens = tokenizer.tokenize()
     parser = Parser(tokens, filename=path)
     return parser.parse()
-
-def parse_value(value_str: str) -> Node:
-    """Parse a single expression/value string."""
-    tokenizer = Tokenizer(value_str)
-    tokens = tokenizer.tokenize()
-    parser = Parser(tokens)
-    return parser.parse_expression()

@@ -24,15 +24,6 @@ class AuraDict(dict):
         self[name] = value
 
 
-def aura_dict(mapping=None, **kwargs):
-    """Build an AuraDict from a mapping and/or keyword arguments."""
-    result = AuraDict(mapping or {})
-    result.update(kwargs)
-    return result
-
-def list_from(*items):
-    """Create a list from items."""
-    return list(items)
 
 def list_map(fn, items):
     """Map function over list."""
@@ -114,9 +105,6 @@ def list_chunk(n, items):
     items = list(items)
     return [items[i:i+n] for i in range(0, len(items), n)]
 
-def dict_from(**kwargs):
-    """Create dict from keyword arguments."""
-    return dict(kwargs)
 
 def dict_get(d, key, default=None):
     """Get dict value with default."""
@@ -149,9 +137,6 @@ def dict_map(fn, d):
     """Map function over dict values."""
     return {k: fn(v) for k, v in d.items()}
 
-def set_from(*items):
-    """Create set from items."""
-    return set(items)
 
 def set_union(*sets):
     """Union of sets."""
@@ -201,8 +186,3 @@ def drop(items, n):
     if n <= 0:
         return list(items)
     return list(_itertools.islice(items, n, None))
-
-map_list = list_map
-filter_list = list_filter
-reduce_list = list_reduce
-find_in_list = list_find

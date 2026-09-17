@@ -48,16 +48,6 @@ def _rule_diagnostics(ast, require_main=False):
     return list(checker.collector.errors)
 
 
-def _mutability_errors(ast):
-    """Backward-compatible: formatted mutability violations."""
-    return [str(e) for e in _mutability_diagnostics(ast)]
-
-
-def _rule_errors(ast, require_main=False):
-    """Backward-compatible: formatted rule violations."""
-    return [str(e) for e in _rule_diagnostics(ast, require_main=require_main)]
-
-
 def _report_diagnostic(diag, fallback_path=None):
     """Print one diagnostic to stderr.
 

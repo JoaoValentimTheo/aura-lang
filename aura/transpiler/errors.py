@@ -180,17 +180,12 @@ class ErrorCollector:
     def __bool__(self):
         return self.has_errors()
 
-class CompilationException(Exception):
-    """Raised when compilation has errors."""
-    def __init__(self, collector: ErrorCollector):
-        self.collector = collector
-        super().__init__(f"Compilation failed: {collector.error_count()} errors")
-
-    def __str__(self):
-        return self.collector.format()
-
 # ============================================================================
-# Error message templates
+# Error message catalogue
+#
+# Canonical message templates for every code. Checkers may phrase a specific
+# diagnostic differently, but the catalogue is the reference used by
+# docs/ERRORS.md and is kept complete by tests/test_diagnostics.py.
 # ============================================================================
 
 ERROR_TEMPLATES = {
@@ -228,6 +223,8 @@ ERROR_TEMPLATES = {
     ErrorCode.UNUSED_VARIABLE: "Variable '{name}' is declared but never used",
     ErrorCode.UNUSED_IMPORT: "Import '{name}' is never used",
     ErrorCode.UNUSED_TYPE_PARAMETER: "Type parameter '{name}' is never used",
+    # Fatal
+    ErrorCode.FATAL: "Too many errors; compilation stopped",
 }
 
 
@@ -250,13 +247,3 @@ def code_area(code: ErrorCode) -> str:
         '4': "configuration",
         '9': "fatal",
     }.get(prefix, "error")
-
-
-def format_error_message(code: ErrorCode, **kwargs) -> str:
-    """Format error message from template."""
-    if code in ERROR_TEMPLATES:
-        try:
-            return ERROR_TEMPLATES[code].format(**kwargs)
-        except KeyError as e:
-            return f"Error formatting message for {code}: missing key {e}"
-    return str(code)

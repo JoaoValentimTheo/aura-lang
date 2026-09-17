@@ -26,22 +26,6 @@ _REPEAT_SPACE_RE = re.compile(r'  +')
 _COMMA_RE = re.compile(r',(\S)')
 _SPACE_COMMA_RE = re.compile(r'\s+,')
 
-# Keywords that start a block
-BLOCK_STARTERS = {
-    'def', 'class', 'if', 'else', 'elif', 'for', 'while', 'loop',
-    'until', 'unless', 'match', 'try', 'catch', 'finally', 'trait',
-    'module', 'enum', 'guard', 'async',
-}
-
-# Keywords that should have a space after them
-KEYWORD_SPACE_AFTER = {
-    'let', 'const', 'mut', 'def', 'class', 'if', 'else', 'elif',
-    'for', 'while', 'loop', 'until', 'unless', 'return', 'throw',
-    'import', 'from', 'as', 'match', 'case', 'try', 'catch',
-    'finally', 'trait', 'module', 'enum', 'async', 'await',
-    'guard', 'break', 'continue',
-}
-
 
 def format_aura(source: str, width: int = 100, indent: int = 2) -> str:
     """Format Aura source code with proper indentation and style."""

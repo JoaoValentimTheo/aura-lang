@@ -54,7 +54,6 @@ def analyze_tests(test_dir="tests"):
 
         # Analyze
         unique_hashes = len(set(file_hashes.values()))
-        sum(1 for h in all_hashes.values() if len(h) > 1)
 
         sizes = list(file_sizes.values())
         lines = list(line_counts.values())

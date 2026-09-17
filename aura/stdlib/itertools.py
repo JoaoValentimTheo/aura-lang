@@ -13,8 +13,15 @@ def cycle(iterable):
     return cycle_iter(iterable)
 
 def repeat(value, times=None):
-    """Repeat value."""
+    """Repeat ``value``.
+
+    With ``times=None`` the iterator is infinite (matching Python's
+    ``itertools.repeat(value)``); otherwise it yields exactly ``times``
+    copies.
+    """
     from itertools import repeat as repeat_iter
+    if times is None:
+        return repeat_iter(value)
     return repeat_iter(value, times)
 
 def chain(*iterables):

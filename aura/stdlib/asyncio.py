@@ -60,19 +60,25 @@ def wait_for(coro, timeout):
 
 
 def wait(*coros, timeout=None, return_when='ALL_COMPLETED'):
-    """Wait for coroutines, returning ``(done, pending)``."""
+    """Wait for coroutines, returning ``(done, pending)``.
+
+    Raw coroutines are wrapped in tasks first: Python's ``asyncio.wait``
+    rejects bare coroutines and would otherwise raise ``TypeError``.
+    """
     modes = {
         'ALL_COMPLETED': _asyncio.ALL_COMPLETED,
         'FIRST_COMPLETED': _asyncio.FIRST_COMPLETED,
         'FIRST_EXCEPTION': _asyncio.FIRST_EXCEPTION,
     }
     mode = modes.get(return_when, _asyncio.ALL_COMPLETED)
-    return _asyncio.wait(list(coros), timeout=timeout, return_when=mode)
+    tasks = [_asyncio.ensure_future(c) for c in coros]
+    return _asyncio.wait(tasks, timeout=timeout, return_when=mode)
 
 
 def as_completed(coros, timeout=None):
     """Yield results as each coroutine completes (async iterator)."""
-    return _asyncio.as_completed(list(coros), timeout=timeout)
+    tasks = [_asyncio.ensure_future(c) for c in coros]
+    return _asyncio.as_completed(tasks, timeout=timeout)
 
 
 def queue(maxsize=0):

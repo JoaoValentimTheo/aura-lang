@@ -29,10 +29,6 @@ from aura.transpiler.rules import RuleChecker
 from aura.transpiler.semantics import MutabilityChecker
 from aura.transpiler.transformer import Transformer
 
-BANNER = (
-    "Aura REPL v0.4  •  {}  •  ':help' for commands, ':q' to quit\n"
-).format("transpile to Python")
-
 
 class ReplResult:
     """Outcome of processing one chunk of input."""
@@ -245,10 +241,7 @@ class AuraREPL:
             ast = self._parse_expression(expr)
             value = eval(compile(self.transformer.transform(ast), '<repl>', 'eval'),
                          self.namespace)
-            from aura.transpiler.types import TypeInference
-            inferred = TypeInference().infer(ast) if hasattr(TypeInference(), 'infer') else None
             self.write(f"{type(value).__name__}  (value: {value!r})")
-            _ = inferred
             return ReplResult(value=value)
         except Exception as exc:
             self.write(f"error: {exc}")
