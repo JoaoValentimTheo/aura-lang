@@ -330,6 +330,16 @@ print(total)
 `active_count`, `enumerate_threads`, `main_thread`, `get_ident`, `stack_size`.
 **Types:** `Thread` (`.start/.join/.is_alive/.name/.ident`), `_Lock`, `_RLock`.
 
+> Aura globals are shared across threads. Assigning to a module-level binding
+> from a worker needs synchronization (a lock) — the compiler emits `global`
+> for you, but it does not make the access atomic.
+>
+> Do not mix top-level `await` in the same module as threads that mutate
+> module globals: when a program contains `await`, the CLI runs it inside a
+> coroutine, so top-level bindings become coroutine locals and a worker's
+> `global` name is no longer the same variable. Keep threaded code and
+> top-level-`await` code in separate modules.
+
 ### asyncio
 
 Coroutines and structured concurrency. Aura has `async def`/`await` natively;
