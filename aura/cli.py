@@ -181,38 +181,51 @@ def cmd_lint(path: str) -> int:
     errors = ErrorCollector(path)
 
     try:
+        from aura.transpiler.ast import SourceLocation
+
         lines = source.split('\n')
 
         for i, line in enumerate(lines, 1):
             # Check line length
             if len(line) > 100:
                 errors.add_warning(
-                    ErrorCode.INVALID_SYNTAX,
+                    ErrorCode.LINE_TOO_LONG,
                     f"Line {i} is {len(line)} characters (max 100 recommended)",
+                    location=SourceLocation(path, i, 101, len(line) - 100),
                     hint="Consider breaking into multiple lines"
                 )
 
             # Check trailing whitespace
             if line.endswith(' ') or line.endswith('\t'):
+                trimmed = line.rstrip()
                 errors.add_warning(
-                    ErrorCode.INVALID_SYNTAX,
-                    f"Line {i} has trailing whitespace"
+                    ErrorCode.TRAILING_WHITESPACE,
+                    f"Line {i} has trailing whitespace",
+                    location=SourceLocation(path, i, len(trimmed) + 1,
+                                            len(line) - len(trimmed)),
                 )
 
             # Check naming conventions
             if line.strip().startswith('let '):
                 var_name = line.strip().split()[1].split('=')[0]
                 if var_name.isupper():
+                    col = line.index(var_name) + 1
                     errors.add_warning(
-                        ErrorCode.INVALID_SYNTAX,
-                        f"Variable '{var_name}' should be snake_case, not UPPER_CASE"
+                        ErrorCode.NAMING_CONVENTION,
+                        f"Variable '{var_name}' should be snake_case, not UPPER_CASE",
+                        location=SourceLocation(path, i, col, len(var_name)),
+                        hint="use lower_snake_case for variables",
                     )
 
         # Check for common style issues
-        if 'def  ' in source:
+        idx = source.find('def  ')
+        if idx != -1:
+            line = source.count('\n', 0, idx) + 1
+            col = idx - source.rfind('\n', 0, idx)
             errors.add_warning(
-                ErrorCode.INVALID_SYNTAX,
+                ErrorCode.SPACING,
                 "Multiple spaces after 'def' keyword",
+                location=SourceLocation(path, line, col, 5),
                 hint="Use a single space: 'def name'"
             )
 

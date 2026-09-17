@@ -8,6 +8,7 @@ may extend other traits.
 """
 import contextlib
 import io
+import re
 import sys
 from pathlib import Path
 
@@ -31,7 +32,14 @@ def rule_errors(source):
 
 
 def rule_codes(source):
-    return [e.split()[1] for e in rule_errors(source)]
+    out = []
+    for e in rule_errors(source):
+        m = re.search(r"\[([EW]\d+)\]", e)
+        if m:
+            out.append(m.group(0))
+    return out
+
+
 
 
 def run_aura(source):

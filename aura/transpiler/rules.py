@@ -49,6 +49,7 @@ from aura.transpiler.ast import (
     ReturnStmt,
     SafeNavExpr,
     SpreadExpr,
+    Stmt,
     ThrowStmt,
     TraitDecl,
     TryStmt,
@@ -94,6 +95,7 @@ class RuleChecker:
         self._classes = {}
         self._class_stack = []
         self._instance_scopes = []
+        self._current_loc = None
 
     # -- public API ---------------------------------------------------------
 
@@ -138,9 +140,12 @@ class RuleChecker:
                 main = stmt
                 break
         if main is None:
+            stmts = getattr(program, 'statements', []) or []
+            loc = self._loc(stmts[0]) if stmts else None
             self.collector.add(
                 ErrorCode.MISSING_MAIN,
                 "program has no 'main' function",
+                location=loc,
                 hint="declare 'def main() { ... }' (an entry file is executed "
                      "from 'main')",
             )
@@ -157,6 +162,7 @@ class RuleChecker:
         self.collector.add(
             ErrorCode.INVALID_MAIN,
             "'main' must take no parameters, or a single 'args' parameter",
+            location=self._loc(main),
             hint="use 'def main()' or 'def main(args: [string])'",
         )
 
@@ -198,15 +204,39 @@ class RuleChecker:
     def errors(self):
         return [str(e) for e in self.collector.errors]
 
+    @staticmethod
+    def _loc(node):
+        """Return a node's SourceLocation, or None.
+
+        Prefers the structured ``location`` attached by the parser; falls back
+        to a ``location``-free result when only a bare ``line`` exists (the
+        collector then reports a line-only diagnostic).
+        """
+        if node is None:
+            return None
+        loc = getattr(node, 'location', None)
+        if loc is not None:
+            return loc
+        line = getattr(node, 'line', None)
+        if line:
+            from aura.transpiler.ast import SourceLocation
+            return SourceLocation(line=line)
+        return None
+
+    def _here(self, node=None):
+        """Location for a diagnostic: the node's, else the current statement's."""
+        return self._loc(node) or self._current_loc
+
     # -- scope helpers ------------------------------------------------------
 
-    def _declare(self, name):
+    def _declare(self, name, node=None):
         if not isinstance(name, str) or not name:
             return
         if self._scope_stack and name in self._scope_stack[-1]:
             self.collector.add(
                 ErrorCode.DUPLICATE_DEFINITION,
                 f"'{name}' is already defined in this scope",
+                location=self._loc(node),
                 hint=f"rename or remove one of the '{name}' declarations",
             )
         if self._scope_stack:
@@ -231,6 +261,13 @@ class RuleChecker:
                 self.visit(item)
             return
 
+        # Remember the innermost statement's location so expression-level
+        # diagnostics (which have no location of their own) can point at it.
+        if isinstance(node, Stmt):
+            loc = getattr(node, 'location', None)
+            if loc is not None:
+                self._current_loc = loc
+
         if isinstance(node, Program):
             for stmt in node.statements:
                 self.visit(stmt)
@@ -250,9 +287,9 @@ class RuleChecker:
         elif isinstance(node, ClassDecl):
             self._visit_class(node)
         elif isinstance(node, (EnumDecl, TypeDecl)):
-            self._declare(node.name)
+            self._declare(node.name, node)
         elif isinstance(node, TraitDecl):
-            self._declare(node.name)
+            self._declare(node.name, node)
             # Trait members also require explicit visibility, and trait method
             # bodies (when present) are real function bodies.
             self._class_stack.append(node.name)
@@ -317,6 +354,7 @@ class RuleChecker:
                 self.collector.add(
                     ErrorCode.INVALID_SYNTAX,
                     "'return' outside of a function",
+                    location=self._loc(node),
                     hint="move it inside a 'def', or use 'guard cond else { return }' to exit the program",
                 )
             self.visit(node.value)
@@ -326,6 +364,7 @@ class RuleChecker:
                 self.collector.add(
                     ErrorCode.INVALID_SYNTAX,
                     f"'{keyword}' outside of a loop",
+                    location=self._loc(node),
                     hint="move it inside a loop or remove it",
                 )
         elif isinstance(node, ThrowStmt):
@@ -348,6 +387,7 @@ class RuleChecker:
                     self.collector.add(
                         ErrorCode.INVALID_SYNTAX,
                         "'await' outside of an async function",
+                        location=self._loc(node),
                         hint="mark the enclosing function 'async def'",
                     )
             self.visit(node.operand)
@@ -375,6 +415,7 @@ class RuleChecker:
                 self.collector.add(
                     ErrorCode.INVALID_SYNTAX,
                     "'self' used outside of a class method",
+                    location=self._here(node),
                     hint="use it inside a method defined in a class body",
                 )
         elif isinstance(node, Node):
@@ -389,7 +430,7 @@ class RuleChecker:
         if value is not None:
             self.visit(value)
         for name in self._target_names(node.name):
-            self._declare(name)
+            self._declare(name, node)
             klass = self._instantiated_class(value)
             if klass and self._instance_scopes:
                 self._instance_scopes[-1][name] = klass
@@ -399,13 +440,14 @@ class RuleChecker:
             self.collector.add(
                 ErrorCode.INVALID_SYNTAX,
                 f"constant '{node.name}' must be initialised",
+                location=self._loc(node),
                 hint="write 'const NAME = value'",
             )
         self.visit(node.value)
-        self._declare(node.name)
+        self._declare(node.name, node)
 
     def _visit_function(self, node):
-        self._declare(node.name)
+        self._declare(node.name, node)
         self._check_params(node.params)
         for param in node.params or []:
             self.visit(getattr(param, 'default', None))
@@ -430,7 +472,7 @@ class RuleChecker:
             self._pop_scope()
 
     def _visit_class(self, node):
-        self._declare(node.name)
+        self._declare(node.name, node)
         self._check_abstract_implemented(node)
         self._push_scope()
         self._class_depth += 1
@@ -459,6 +501,7 @@ class RuleChecker:
                     ErrorCode.UNIMPLEMENTED_ABSTRACT,
                     f"'{node.name}' must implement abstract method '{name}' "
                     f"declared by '{decl_class}'",
+                    location=self._loc(node),
                     hint=f"add 'public def {name}(...)' to '{node.name}'",
                 )
 
@@ -504,6 +547,7 @@ class RuleChecker:
                     ErrorCode.MISSING_VISIBILITY,
                     f"{kind} '{member.name}' in class '{class_name}' has no "
                     f"visibility modifier",
+                    location=self._loc(member),
                     hint="prefix it with 'public', 'private' or 'protected'",
                 )
         elif isinstance(member, ClassDecl):
@@ -512,6 +556,7 @@ class RuleChecker:
                     ErrorCode.MISSING_VISIBILITY,
                     f"nested class '{member.name}' in class '{class_name}' has "
                     f"no visibility modifier",
+                    location=self._loc(member),
                     hint="prefix it with 'public', 'private' or 'protected'",
                 )
 
@@ -586,6 +631,7 @@ class RuleChecker:
                     ErrorCode.INACCESSIBLE_MEMBER,
                     f"'{member}' is private to '{decl_class}' and cannot be "
                     f"accessed from a subclass",
+                    location=self._here(node),
                     hint="access it through a public method or getter",
                 )
             return
@@ -593,6 +639,7 @@ class RuleChecker:
             ErrorCode.INACCESSIBLE_MEMBER,
             f"'{member}' is {vis} in '{decl_class}' and cannot be accessed "
             f"from outside the class",
+            location=self._here(node),
             hint="use a public getter/setter or a public method",
         )
 
@@ -647,6 +694,7 @@ class RuleChecker:
                 self.collector.add(
                     ErrorCode.DUPLICATE_DEFINITION,
                     f"duplicate parameter '{name}'",
+                    location=self._here(param),
                     hint="give each parameter a unique name",
                 )
             seen.add(name)
@@ -677,6 +725,7 @@ class RuleChecker:
                     self.collector.add(
                         ErrorCode.UNREACHABLE_CODE,
                         "unreachable statement after a terminating statement",
+                        location=self._loc(stmt),
                         hint="remove the dead code or move it before the terminator",
                     )
                     terminated = False  # report once per region
@@ -694,6 +743,7 @@ class RuleChecker:
                 self.collector.add(
                     ErrorCode.INVALID_SYNTAX,
                     f"invalid assignment target for '{node.op}'",
+                    location=self._here(node),
                     hint="assign to a variable, member or index",
                 )
             self.visit(node.right)

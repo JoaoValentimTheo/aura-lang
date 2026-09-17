@@ -21,12 +21,21 @@ class Token:
         return f"Token({self.type}, {repr(self.value)})"
 
 class Tokenizer:
-    def __init__(self, source):
+    def __init__(self, source, filename: str = "<aura>"):
         self.source = source
         self.pos = 0
         self.line = 1
         self.column = 1
         self.tokens = []
+        self.filename = filename
+
+    def error(self, message):
+        """Build a ``SyntaxError`` carrying the tokenizer's position."""
+        exc = SyntaxError(f"{message} (line {self.line})")
+        exc.line = self.line
+        exc.column = self.column
+        exc.filename = self.filename
+        return exc
 
     _ESCAPES = {
         'n': '\n', 't': '\t', 'r': '\r', '0': '\0',
@@ -181,9 +190,8 @@ class Tokenizer:
 
                 self.column += (self.pos - start)
                 if value == 'volatily':
-                    raise SyntaxError(
-                        f"'volatily' is not a keyword; did you mean 'volatile'? "
-                        f"(line {self.line})"
+                    raise self.error(
+                        "'volatily' is not a keyword; did you mean 'volatile'?"
                     )
                 self.tokens.append(Token('IDENT', value, start_line, start_col))
                 continue
@@ -206,9 +214,9 @@ class Tokenizer:
                     try:
                         value = int(digits, base)
                     except ValueError:
-                        raise SyntaxError(
+                        raise self.error(
                             f"Invalid base-{base} integer literal "
-                            f"'0{prefix}{digits}' at {self.line}:{self.column}"
+                            f"'0{prefix}{digits}'"
                         ) from None
                     self.column += (self.pos - start)
                     self.tokens.append(Token('INT', value, start_line, start_col))
@@ -353,9 +361,27 @@ class Parser:
     # lives in ``aura.transpiler.ast`` so the parser and the transformers agree.
     _SPECIAL_METHOD_NAMES = SPECIAL_METHOD_NAMES
 
-    def __init__(self, tokens):
+    def __init__(self, tokens, filename: str = "<aura>"):
         self.tokens = tokens
         self.pos = 0
+        self.filename = filename
+
+    # --- Diagnostics ---
+    def error(self, message, token=None):
+        """Build a ``SyntaxError`` carrying structured line/column info.
+
+        The CLI and the LSP read ``.line``/``.column``/``.filename`` from the
+        exception, so diagnostics point at the real source position instead of
+        defaulting to line 1. The message text keeps the ``... (line N)``
+        suffix for tools that only show the string.
+        """
+        token = token if token is not None else self.peek()
+        exc = SyntaxError(f"{message} (line {token.line})")
+        exc.line = token.line
+        exc.column = token.column
+        exc.filename = self.filename
+        # Keep the message suffix consistent for the no-location callers.
+        return exc
 
     # --- Token Management ---
     def peek(self, offset=0):
@@ -365,14 +391,18 @@ class Parser:
 
     def consume(self, expected_type=None, expected_value=None):
         if self.pos >= len(self.tokens):
-            raise SyntaxError("Unexpected EOF")
+            raise self.error("Unexpected end of file",
+                             self.tokens[-1] if self.tokens else Token('EOF', '', 1, 1))
         token = self.tokens[self.pos]
         # print(f"DEBUG: consume {token} pos={self.pos}")
         self.pos += 1
         if expected_type and token.type != expected_type:
-            raise SyntaxError(f"Expected {expected_type} but got {token.type} '{token.value}' at {token.line}:{token.column}")
+            raise self.error(
+                f"Expected {expected_type} but got {token.type} '{token.value}'",
+                token)
         if expected_value and token.value != expected_value:
-            raise SyntaxError(f"Expected '{expected_value}' but got '{token.value}' at {token.line}:{token.column}")
+            raise self.error(
+                f"Expected '{expected_value}' but got '{token.value}'", token)
         return token
 
     def match(self, value):
@@ -397,7 +427,7 @@ class Parser:
                 if stmt:
                     statements.append(stmt)
         except RecursionError:
-            raise SyntaxError("source is nested too deeply to parse") from None
+            raise self.error("source is nested too deeply to parse") from None
         return Program(statements)
 
     # --- Statements ---
@@ -423,18 +453,18 @@ class Parser:
         return visibility, is_static, is_volatile
 
     def parse_statement(self):
-        """Parse one statement and record its source line for diagnostics."""
-        start_line = self.peek().line
-        if self.peek().value == '...':
-            tok = self.peek()
-            raise SyntaxError(
-                f"unexpected '...' at start of a statement; use '..'/'..<' "
-                f"for ranges (line {tok.line})"
-            )
+        """Parse one statement and record its source location for diagnostics."""
+        start = self.peek()
+        if start.value == '...':
+            raise self.error(
+                "unexpected '...' at start of a statement; use '..'/'..<' "
+                "for ranges", start)
         stmt = self._parse_statement()
         if stmt is not None:
             with contextlib.suppress(AttributeError, TypeError):
-                stmt.line = start_line
+                stmt.line = start.line
+                stmt.location = SourceLocation(
+                    self.filename, start.line, start.column, 0)
         return stmt
 
     def _parse_statement(self):
@@ -499,9 +529,8 @@ class Parser:
         elif token.value == 'const':
             return self.parse_const_decl()
         elif token.value == 'fn':
-            raise SyntaxError(
-                f"'fn' is not part of Aura; use 'def' instead (line {token.line})"
-            )
+            raise self.error(
+                "'fn' is not part of Aura; use 'def' instead", token)
         elif token.value in ('def', 'async'):
             return self.parse_function_decl(decorators, visibility, is_static, is_volatile)
         elif token.value == 'class':
@@ -643,10 +672,9 @@ class Parser:
         # modifiers belong *before* `let` (e.g. `private let x`).
         if self.peek().value in ('public', 'private', 'protected', 'static', 'volatile'):
             tok = self.peek()
-            raise SyntaxError(
-                f"visibility/modifier must come before 'let', not after it "
-                f"(write '{tok.value} let ...') (line {tok.line})"
-            )
+            raise self.error(
+                "visibility/modifier must come before 'let', not after it "
+                f"(write '{tok.value} let ...')", tok)
 
         # Destructuring check (if starts with { or [ or ()
         name = ""
@@ -746,9 +774,8 @@ class Parser:
 
         if self.check('fn'):
             tok = self.peek()
-            raise SyntaxError(
-                f"'fn' is not part of Aura; use 'def' instead (line {tok.line})"
-            )
+            raise self.error(
+                "'fn' is not part of Aura; use 'def' instead", tok)
         self.consume(expected_value='def')
 
         name = self.consume(expected_type='IDENT').value
@@ -765,10 +792,9 @@ class Parser:
             self.consume(expected_value=']')
         elif self.check('<'):
             tok = self.peek()
-            raise SyntaxError(
-                f"type parameters use brackets, not '<...>' "
-                f"(write 'def {name}[T]') (line {tok.line})"
-            )
+            raise self.error(
+                "type parameters use brackets, not '<...>' "
+                f"(write 'def {name}[T]')", tok)
 
         self.consume(expected_value='(')
         params = []
@@ -906,17 +932,14 @@ class Parser:
                 # transformers via ``SPECIAL_METHOD_NAMES``.
                 if self.check('fn'):
                     tok = self.peek()
-                    raise SyntaxError(
-                        f"'fn' is not part of Aura; use 'def' instead "
-                        f"(line {tok.line})"
-                    )
+                    raise self.error(
+                        "'fn' is not part of Aura; use 'def' instead", tok)
                 method_name = self.peek(1).value
                 if method_name == 'init':
                     tok = self.peek(1)
-                    raise SyntaxError(
-                        f"'init' is not the Aura constructor; use 'new' "
-                        f"instead (line {tok.line})"
-                    )
+                    raise self.error(
+                        "'init' is not the Aura constructor; use 'new' "
+                        "instead", tok)
                 override = self._SPECIAL_METHOD_NAMES.get(method_name)
                 func = self.parse_function_decl(
                     decorators=member_decorators,
@@ -964,14 +987,18 @@ class Parser:
                     field.with_location(self._member_location(member_start))
                     members.append(field)
                 else:
-                    raise SyntaxError(f"Unexpected token in class: {self.peek()}")
+                    raise self.error(f"Unexpected token in class: {self.peek().value}")
 
         self.consume(expected_value='}')
         return ClassDecl(name, members, base_class, type_params, decorators, visibility, is_static, is_volatile)
 
     def _member_location(self, tok):
         """Build a SourceLocation for a class member's first token."""
-        return SourceLocation(line=getattr(tok, 'line', 0), column=getattr(tok, 'column', 0))
+        return SourceLocation(
+            filename=self.filename,
+            line=getattr(tok, 'line', 0),
+            column=getattr(tok, 'column', 0),
+        )
 
     def parse_module_decl(self):
         self.consume(expected_value='module')
@@ -1099,10 +1126,8 @@ class Parser:
     def parse_type(self):
         token = self.peek()
         if token.type not in self._TYPE_START_TYPES and token.value not in self._TYPE_START_VALUES:
-            raise SyntaxError(
-                f"Expected a type but got '{token.value}' "
-                f"at {token.line}:{token.column}"
-            )
+            raise self.error(
+                f"Expected a type but got '{token.value}'", token)
         token = self.consume()
         t_name = str(token.value)
 
@@ -1545,9 +1570,8 @@ class Parser:
             finally_body = self.parse_block()
 
         if not catch_clauses and finally_body is None:
-            raise SyntaxError(
-                "try requires at least one catch clause or a finally block"
-            )
+            raise self.error(
+                "try requires at least one catch clause or a finally block")
 
         return TryStmt(try_body, catch_clauses, finally_body)
 
@@ -1685,9 +1709,8 @@ class Parser:
             else:
                 lhs = UnaryOp('yield', operand=self.parse_expression(13))
         elif token.type == 'OP' and token.value == '!':
-            raise SyntaxError(
-                f"'!' is not part of Aura; use 'not' instead (line {token.line})"
-            )
+            raise self.error(
+                "'!' is not part of Aura; use 'not' instead", token)
         elif token.value == 'not':
             self.consume()
             # `not` binds looser than comparisons (so `not a in b` is
@@ -1727,19 +1750,17 @@ class Parser:
                 # `...` is a prefix spread only; seeing it between operands
                 # (e.g. `1...10`) is always a mistake, not a valid operator.
                 if pk.type == 'OP' and pk.value == '...':
-                    raise SyntaxError(
-                        f"unexpected '...' in expression; use '..' or '..<' "
-                        f"for ranges (line {pk.line})"
-                    )
+                    raise self.error(
+                        "unexpected '...' in expression; use '..' or '..<' "
+                        "for ranges", pk)
                 break
 
             if op in ('&&', '||'):
                 canonical = 'and' if op == '&&' else 'or'
                 tok = self.peek()
-                raise SyntaxError(
-                    f"'{op}' is not part of Aura; use '{canonical}' instead "
-                    f"(line {tok.line})"
-                )
+                raise self.error(
+                    f"'{op}' is not part of Aura; use '{canonical}' instead",
+                    tok)
 
             prec = self.get_precedence(op)
 
@@ -1859,10 +1880,8 @@ class Parser:
                 self.consume()
                 return BoolLiteral(False)
             elif token.value == 'null':
-                raise SyntaxError(
-                    f"'null' is not part of Aura; use 'none' instead "
-                    f"(line {token.line})"
-                )
+                raise self.error(
+                    "'null' is not part of Aura; use 'none' instead", token)
             elif token.value == 'none':
                 self.consume()
                 return NoneLiteral()
@@ -1941,7 +1960,7 @@ class Parser:
                         if isinstance(el, Identifier):
                             params.append(Parameter(el.name))
                         else:
-                            raise SyntaxError("Invalid parameter in lambda")
+                            raise self.error("Invalid parameter in lambda")
 
                     body = self.parse_lambda_body()
                     return LambdaExpr(params, body)
@@ -1965,7 +1984,7 @@ class Parser:
 
             return self.parse_postfix(expr)
 
-        raise SyntaxError(f"Unexpected token {token} at {token.line}:{token.column}")
+        raise self.error(f"Unexpected token {token}", token)
 
     def _parse_fstring_parts(self, raw):
         """Split an f-string's raw body into text and interpolated expressions.
@@ -2113,7 +2132,8 @@ class Parser:
                             kwargs[key] = val
                         else:
                             if kwargs:
-                                raise SyntaxError("Positional argument follows keyword argument")
+                                raise self.error(
+                                    "Positional argument follows keyword argument")
                             first_arg = self.parse_expression()
                             # Generator expression as a sole call argument:
                             # `sum(x for x in items)`.
@@ -2369,13 +2389,17 @@ def parse_file(path: str) -> Program:
     with open(path, encoding='utf-8') as f:
         source = f.read()
     if len(source) > MAX_SOURCE_BYTES:
-        raise SyntaxError(
+        exc = SyntaxError(
             f"{path}: source is too large "
             f"({len(source)} bytes; limit {MAX_SOURCE_BYTES})"
         )
-    tokenizer = Tokenizer(source)
+        exc.filename = path
+        exc.line = 1
+        exc.column = 1
+        raise exc
+    tokenizer = Tokenizer(source, filename=path)
     tokens = tokenizer.tokenize()
-    parser = Parser(tokens)
+    parser = Parser(tokens, filename=path)
     return parser.parse()
 
 def parse_value(value_str: str) -> Node:

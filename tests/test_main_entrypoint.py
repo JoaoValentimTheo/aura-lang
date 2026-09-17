@@ -7,6 +7,7 @@ left alone and need no ``main``.
 """
 import contextlib
 import io
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -29,7 +30,14 @@ def rule_errors(source, require_main=True):
 
 
 def rule_codes(source, require_main=True):
-    return [e.split()[1] for e in rule_errors(source, require_main)]
+    out = []
+    for e in rule_errors(source, require_main):
+        m = re.search(r"\[([EW]\d+)\]", e)
+        if m:
+            out.append(m.group(0))
+    return out
+
+
 
 
 def run_cli(source, *args, tmp_path=None):
