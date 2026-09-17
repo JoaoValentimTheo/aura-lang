@@ -20,22 +20,35 @@ class Token:
     def __repr__(self):
         return f"Token({self.type}, {repr(self.value)})"
 
+
+def annotate_syntax_error(exc, line=None, column=None, filename=None):
+    """Attach structured location attributes to a ``SyntaxError``.
+
+    Python's ``SyntaxError`` has no public ``line``/``column``/``filename``
+    contract for us to set directly, so ``setattr`` is used; mypy-safe and the
+    CLI/LSP read these back via ``getattr``.
+    """
+    if line is not None:
+        exc.line = line  # type: ignore[attr-defined]
+    if column is not None:
+        exc.column = column  # type: ignore[attr-defined]
+    if filename is not None:
+        exc.filename = filename  # type: ignore[attr-defined]
+    return exc
+
 class Tokenizer:
     def __init__(self, source, filename: str = "<aura>"):
         self.source = source
         self.pos = 0
         self.line = 1
         self.column = 1
-        self.tokens = []
+        self.tokens: list = []
         self.filename = filename
 
     def error(self, message):
         """Build a ``SyntaxError`` carrying the tokenizer's position."""
         exc = SyntaxError(f"{message} (line {self.line})")
-        exc.line = self.line
-        exc.column = self.column
-        exc.filename = self.filename
-        return exc
+        return annotate_syntax_error(exc, self.line, self.column, self.filename)
 
     _ESCAPES = {
         'n': '\n', 't': '\t', 'r': '\r', '0': '\0',
@@ -377,11 +390,7 @@ class Parser:
         """
         token = token if token is not None else self.peek()
         exc = SyntaxError(f"{message} (line {token.line})")
-        exc.line = token.line
-        exc.column = token.column
-        exc.filename = self.filename
-        # Keep the message suffix consistent for the no-location callers.
-        return exc
+        return annotate_syntax_error(exc, token.line, token.column, self.filename)
 
     # --- Token Management ---
     def peek(self, offset=0):
@@ -2393,10 +2402,7 @@ def parse_file(path: str) -> Program:
             f"{path}: source is too large "
             f"({len(source)} bytes; limit {MAX_SOURCE_BYTES})"
         )
-        exc.filename = path
-        exc.line = 1
-        exc.column = 1
-        raise exc
+        raise annotate_syntax_error(exc, 1, 1, path)
     tokenizer = Tokenizer(source, filename=path)
     tokens = tokenizer.tokenize()
     parser = Parser(tokens, filename=path)

@@ -41,6 +41,7 @@ from aura.transpiler.ast import (
     Program,
     ReturnStmt,
     SpreadExpr,
+    Stmt,
     TraitDecl,
     TryStmt,
     TupleLiteral,
@@ -86,8 +87,11 @@ class MutabilityChecker:
 
     def __init__(self):
         self.errors = []
+        # Structured diagnostics (code + location); ``errors`` mirrors these.
+        self.diagnostics = []
         self.violations = []
         self._scope = _Scope()
+        self._current_loc = None
 
     # -- public API ---------------------------------------------------------
 
@@ -99,8 +103,10 @@ class MutabilityChecker:
         so bindings declared in earlier chunks keep their mutability.
         """
         self.errors = []
+        self.diagnostics = []
         self.violations = []
         self._scope = _Scope()
+        self._current_loc = None
         if initial_bindings:
             for name, mutable in initial_bindings.items():
                 self._scope.declare(name, bool(mutable))
@@ -133,6 +139,12 @@ class MutabilityChecker:
             for item in node:
                 self.visit(item)
             return
+
+        # Track the innermost statement location for expression diagnostics.
+        if isinstance(node, Stmt):
+            loc = getattr(node, 'location', None)
+            if loc is not None:
+                self._current_loc = loc
 
         if isinstance(node, VarDecl):
             self._visit_var_decl(node)
@@ -310,14 +322,31 @@ class MutabilityChecker:
     def _record_reassignment(self, name, node):
         mutable = self._scope.lookup(name)
         if mutable is False:
-            line = getattr(node, 'line', None)
-            location = f" (line {line})" if line else ""
-            self.violations.append(name)
-            self.errors.append(
-                f"Cannot reassign immutable binding '{name}'{location}; "
-                f"declare it with 'let mut {name}' or use 'const' only for "
-                f"values that never change"
+            from aura.transpiler.errors import (
+                AuraError,
+                ErrorCode,
+                ErrorSeverity,
             )
+            loc = getattr(node, 'location', None)
+            if loc is None:
+                loc = self._current_loc
+            if loc is None:
+                line = getattr(node, 'line', None)
+                if line:
+                    from aura.transpiler.ast import SourceLocation
+                    loc = SourceLocation(line=line)
+            err = AuraError(
+                ErrorCode.REASSIGN_IMMUTABLE,
+                ErrorSeverity.ERROR,
+                f"Cannot reassign immutable binding '{name}'; "
+                f"declare it with 'let mut {name}' or use 'const' only for "
+                f"values that never change",
+                loc,
+                hint=f"write 'let mut {name}' at its declaration",
+            )
+            self.violations.append(name)
+            self.diagnostics.append(err)
+            self.errors.append(str(err))
 
     # -- patterns -----------------------------------------------------------
 

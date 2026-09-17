@@ -16,8 +16,8 @@ from aura.transpiler.transformer import Transformer
 from aura.transpiler.types import TypeChecker
 
 
-def _mutability_errors(ast):
-    """Return the semantic mutability violations for ``ast`` (possibly empty).
+def _mutability_diagnostics(ast):
+    """Return structured mutability diagnostics for ``ast``.
 
     Aura's ``let`` bindings are immutable and ``const`` bindings can never be
     reassigned; both require an explicit ``let mut`` to be reassigned. This is
@@ -29,17 +29,12 @@ def _mutability_errors(ast):
         if checker.check_program(ast):
             return []
     except RecursionError:
-        return ["source is nested too deeply to check"]
-    return list(checker.errors)
+        return []
+    return list(getattr(checker, 'diagnostics', []))
 
 
-def _rule_errors(ast, require_main=False):
-    """Return structural rule violations for ``ast`` (possibly empty).
-
-    These are the rules that do not depend on type inference: ``return`` and
-    ``break``/``continue`` placement, ``await`` outside async, ``self`` outside
-    a class, duplicate declarations, unreachable code and invalid assignment
-    targets. Enforced for ``check`` and ``run``.
+def _rule_diagnostics(ast, require_main=False):
+    """Return structured rule diagnostics for ``ast``.
 
     ``require_main`` enforces the program entry point (a top-level ``def
     main``) for files executed directly; imported modules leave it off.
@@ -47,18 +42,44 @@ def _rule_errors(ast, require_main=False):
     from aura.transpiler.rules import RuleChecker
     checker = RuleChecker()
     try:
-        if checker.check_program(ast, require_main=require_main):
-            return []
+        checker.check_program(ast, require_main=require_main)
     except RecursionError:
-        return ["source is nested too deeply to check"]
-    return [str(e) for e in checker.collector.errors]
+        return []
+    return list(checker.collector.errors)
 
 
-def _print_semantic_errors(path, mutability, rules):
-    for error in mutability:
-        print(f"{path}: semantic error: {error}", file=sys.stderr)
-    for error in rules:
-        print(f"{path}: rule error: {error}", file=sys.stderr)
+def _mutability_errors(ast):
+    """Backward-compatible: formatted mutability violations."""
+    return [str(e) for e in _mutability_diagnostics(ast)]
+
+
+def _rule_errors(ast, require_main=False):
+    """Backward-compatible: formatted rule violations."""
+    return [str(e) for e in _rule_diagnostics(ast, require_main=require_main)]
+
+
+def _report_diagnostic(diag, fallback_path=None):
+    """Print one diagnostic to stderr.
+
+    The formatted diagnostic already carries ``file:line:column: SEVERITY
+    [code]``; when a location is missing we prefix the path so the user still
+    knows which file is at fault.
+    """
+    text = str(diag)
+    if getattr(diag, 'location', None) is None and fallback_path:
+        print(f"{fallback_path}: {text}", file=sys.stderr)
+    else:
+        print(text, file=sys.stderr)
+
+
+def _report_all(path, *groups):
+    """Report every diagnostic in ``groups`` (each an iterable of diagnostics)."""
+    total = 0
+    for group in groups:
+        for diag in group:
+            _report_diagnostic(diag, fallback_path=path)
+            total += 1
+    return total
 
 
 def _install_aura_imports(script_path: str):
@@ -83,10 +104,10 @@ def cmd_transpile(path: str, output: str | None = None, verbose: bool = False) -
         print(f"Error parsing {path}: {e}", file=sys.stderr)
         return 2
 
-    mutability = _mutability_errors(ast)
-    rules = _rule_errors(ast)
+    mutability = _mutability_diagnostics(ast)
+    rules = _rule_diagnostics(ast)
     if mutability or rules:
-        _print_semantic_errors(path, mutability, rules)
+        _report_all(path, mutability, rules)
         return 2
 
     try:
@@ -123,13 +144,11 @@ def cmd_check(path: str, verbose: bool = False) -> int:
 
     checker = TypeChecker()
     type_ok = checker.check_program(ast)
-    mutability = _mutability_errors(ast)
-    rules = _rule_errors(ast)
+    mutability = _mutability_diagnostics(ast)
+    rules = _rule_diagnostics(ast)
     success = type_ok and not mutability and not rules
 
-    for error in checker.errors:
-        print(f"{path}: type error: {error}", file=sys.stderr)
-    _print_semantic_errors(path, mutability, rules)
+    total = _report_all(path, checker.diagnostics, mutability, rules)
 
     if verbose:
         print(f"# Inferred {len(checker.context)} top-level binding(s)", file=sys.stderr)
@@ -139,7 +158,6 @@ def cmd_check(path: str, verbose: bool = False) -> int:
     if success:
         print(f"OK {path}: type check passed")
         return 0
-    total = len(checker.errors) + len(mutability) + len(rules)
     print(f"FAIL {path}: {total} issue(s)", file=sys.stderr)
     return 1
 
@@ -370,10 +388,10 @@ def cmd_run(path: str, verbose: bool = False, program_args=None) -> int:
         print(f"Error parsing {path}: {e}", file=sys.stderr)
         return 2
 
-    mutability = _mutability_errors(ast)
-    rules = _rule_errors(ast, require_main=True)
+    mutability = _mutability_diagnostics(ast)
+    rules = _rule_diagnostics(ast, require_main=True)
     if mutability or rules:
-        _print_semantic_errors(path, mutability, rules)
+        _report_all(path, mutability, rules)
         return 2
 
     has_async, invoke_code = _prepare_entrypoint(ast)

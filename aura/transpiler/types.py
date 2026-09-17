@@ -49,6 +49,7 @@ from aura.transpiler.ast import (
     SetLiteral,
     SimpleType,
     SpreadExpr,
+    Stmt,
     StrLiteral,
     StructuralType,
     ThrowStmt,
@@ -67,6 +68,7 @@ from aura.transpiler.ast import (
 from aura.transpiler.ast import (
     UnionType as AstUnionType,
 )
+from aura.transpiler.errors import AuraError, ErrorCode, ErrorSeverity
 
 # Sentinel for "no binding present".
 _MISSING = object()
@@ -518,9 +520,35 @@ class TypeChecker:
         self.classes: dict[str, ClassType] = {}
         self.functions: dict[str, FunctionType] = {}
         self.errors: list[str] = []
+        # Structured diagnostics (code + location); ``errors`` mirrors these as
+        # formatted strings for backward compatibility.
+        self.diagnostics: list[AuraError] = []
+        self._current_loc = None
         self._return_stack: list[Any] = []
         # Active generic type parameters (name -> TypeVariable).
         self._type_params: dict[str, TypeVariable] = {}
+
+    @staticmethod
+    def _loc(node):
+        if node is None:
+            return None
+        return getattr(node, 'location', None)
+
+    def _here(self, node=None):
+        return self._loc(node) or self._current_loc
+
+    def _add(self, code: ErrorCode, message: str, node=None, hint=None):
+        """Record a structured type diagnostic and its formatted string."""
+        loc = self._here(node)
+        err = AuraError(code, ErrorSeverity.ERROR, message, loc, hint)
+        self.diagnostics.append(err)
+        self.errors.append(str(err))
+
+    def _add_warning(self, code: ErrorCode, message: str, node=None, hint=None):
+        """Record a non-fatal type warning (does not fail the check)."""
+        loc = self._here(node)
+        self.diagnostics.append(
+            AuraError(code, ErrorSeverity.WARNING, message, loc, hint))
 
     # -- public API ---------------------------------------------------------
 
@@ -535,6 +563,8 @@ class TypeChecker:
     def check_program(self, program) -> bool:
         """Check a parsed Program and return True if it type-checks."""
         self.errors = []
+        self.diagnostics = []
+        self._current_loc = None
         try:
             for stmt in getattr(program, 'statements', []):
                 self.visit(stmt)
@@ -547,6 +577,12 @@ class TypeChecker:
     def visit(self, node):
         if node is None:
             return
+
+        # Track the innermost statement location for expression diagnostics.
+        if isinstance(node, Stmt):
+            loc = getattr(node, 'location', None)
+            if loc is not None:
+                self._current_loc = loc
 
         if isinstance(node, Program):
             for stmt in node.statements:
@@ -627,8 +663,10 @@ class TypeChecker:
         if node.type_annotation is not None:
             declared = self._parse_type_annotation(node.type_annotation)
             if not declared.is_compatible(expr_type):
-                self.errors.append(
-                    f"Variable '{node.name}': expected {declared}, got {expr_type}"
+                self._add(
+                    ErrorCode.TYPE_MISMATCH,
+                    f"Variable '{node.name}': expected {declared}, got {expr_type}",
+                    node,
                 )
                 self.context[node.name] = declared
                 return
@@ -640,8 +678,10 @@ class TypeChecker:
         if node.type_annotation is not None:
             declared = self._parse_type_annotation(node.type_annotation)
             if not declared.is_compatible(expr_type):
-                self.errors.append(
-                    f"Constant '{node.name}': expected {declared}, got {expr_type}"
+                self._add(
+                    ErrorCode.TYPE_MISMATCH,
+                    f"Constant '{node.name}': expected {declared}, got {expr_type}",
+                    node,
                 )
         self.context[node.name] = expr_type
 
@@ -722,8 +762,10 @@ class TypeChecker:
                 used |= self._type_variables_in(mtype.return_type)
             for tp in type_params:
                 if tp not in used:
-                    self.errors.append(
-                        f"Class '{node.name}': type parameter '{tp}' is never used"
+                    self._add_warning(
+                        ErrorCode.UNUSED_TYPE_PARAMETER,
+                        f"Class '{node.name}': type parameter '{tp}' is never used",
+                        node,
                     )
 
         # Check method bodies in a fresh scope.
@@ -869,8 +911,10 @@ class TypeChecker:
         if node.value is not None and not isinstance(expected, AnyType):
             actual = self.inference.infer(node.value)
             if not expected.is_compatible(actual):
-                self.errors.append(
-                    f"Return type mismatch: expected {expected}, got {actual}"
+                self._add(
+                    ErrorCode.TYPE_MISMATCH,
+                    f"Return type mismatch: expected {expected}, got {actual}",
+                    node,
                 )
 
     def _check_expr_stmt(self, node):
@@ -929,8 +973,10 @@ class TypeChecker:
         cond_type = self.inference.infer(condition)
         if isinstance(cond_type, (IntType, FloatType, StrType, ListType,
                                   DictType, SetType, TupleType, NoneType)):
-            self.errors.append(
-                f"{context} condition must be Bool, got {cond_type}"
+            self._add(
+                ErrorCode.TYPE_MISMATCH,
+                f"{context} condition must be Bool, got {cond_type}",
+                condition,
             )
         self._check_expr(condition)
 
@@ -949,8 +995,10 @@ class TypeChecker:
             num_ok = isinstance(left, numeric) and isinstance(right, numeric)
             list_ok = isinstance(left, ListType) and isinstance(right, ListType)
             if not (str_ok or num_ok or list_ok):
-                self.errors.append(
-                    f"Operator '+' cannot combine {left} and {right}"
+                self._add(
+                    ErrorCode.INCOMPATIBLE_OPERANDS,
+                    f"Operator '+' cannot combine {left} and {right}",
+                    node,
                 )
         elif op in ('-', '*', '/', '%', '**'):
             if not (isinstance(left, numeric) and isinstance(right, numeric)):
@@ -958,20 +1006,26 @@ class TypeChecker:
                 if op == '*' and ((isinstance(left, StrType) and isinstance(right, IntType))
                                   or (isinstance(left, IntType) and isinstance(right, StrType))):
                     return
-                self.errors.append(
-                    f"Operator '{op}' requires numbers, got {left} and {right}"
+                self._add(
+                    ErrorCode.INCOMPATIBLE_OPERANDS,
+                    f"Operator '{op}' requires numbers, got {left} and {right}",
+                    node,
                 )
         elif op in ('<', '>', '<=', '>='):
             if not ((isinstance(left, numeric) and isinstance(right, numeric))
                     or (isinstance(left, StrType) and isinstance(right, StrType))):
-                self.errors.append(
-                    f"Operator '{op}' cannot compare {left} and {right}"
+                self._add(
+                    ErrorCode.INCOMPATIBLE_OPERANDS,
+                    f"Operator '{op}' cannot compare {left} and {right}",
+                    node,
                 )
         elif op in ('&', '|', '^', '<<', '>>'):
             int_like = (IntType, BoolType)
             if not (isinstance(left, int_like) and isinstance(right, int_like)):
-                self.errors.append(
-                    f"Bitwise operator '{op}' requires integers, got {left} and {right}"
+                self._add(
+                    ErrorCode.INCOMPATIBLE_OPERANDS,
+                    f"Bitwise operator '{op}' requires integers, got {left} and {right}",
+                    node,
                 )
 
     def _check_call_expr(self, node):
@@ -992,8 +1046,10 @@ class TypeChecker:
             if len(node.args) > expected and not func_type.variadic and not node.kwargs:
                 owner = f"Function '{func_name}'" if isinstance(node.func, Identifier) \
                     else f"Method '{func_name}'"
-                self.errors.append(
-                    f"{owner} expects {expected} argument(s), got {len(node.args)}"
+                self._add(
+                    ErrorCode.WRONG_ARGUMENT_COUNT,
+                    f"{owner} expects {expected} argument(s), got {len(node.args)}",
+                    node,
                 )
             # Argument type checking against declared parameter types.
             for index, arg in enumerate(node.args):
@@ -1008,8 +1064,10 @@ class TypeChecker:
                 if not declared.is_compatible(actual):
                     owner = f"Function '{func_name}'" if isinstance(node.func, Identifier) \
                         else f"Method '{func_name}'"
-                    self.errors.append(
-                        f"{owner} argument {index + 1}: expected {declared}, got {actual}"
+                    self._add(
+                        ErrorCode.WRONG_ARGUMENT_TYPE,
+                        f"{owner} argument {index + 1}: expected {declared}, got {actual}",
+                        node,
                     )
         for arg in node.args:
             self._check_expr(arg)

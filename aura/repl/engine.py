@@ -572,7 +572,8 @@ class AuraREPL:
         checker = MutabilityChecker()
         try:
             if not checker.check_program(program, initial_bindings=self._bindings):
-                return self._first_error(checker.errors)
+                return self._first_error(getattr(checker, 'diagnostics', [])
+                                         or checker.errors)
 
             rule_checker = RuleChecker()
             if not rule_checker.check_program(program):
@@ -583,10 +584,16 @@ class AuraREPL:
 
     @staticmethod
     def _first_error(errors):
+        """Render the first diagnostic as ``[CODE] message`` when available."""
         if not errors:
             return "rule violation"
-        first = str(errors[0])
-        return first.splitlines()[1].strip() if "\n" in first else first
+        first = errors[0]
+        code = getattr(getattr(first, 'code', None), 'value', None)
+        message = getattr(first, 'message', None)
+        if code and message:
+            return f"[{code}] {message}"
+        text = str(first)
+        return text.splitlines()[1].strip() if "\n" in text else text
 
     def _format_vars(self):
         skip = {'__name__', '__builtins__', '__doc__', '__package__', '__loader__',

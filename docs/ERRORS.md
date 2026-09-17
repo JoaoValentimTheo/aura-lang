@@ -62,6 +62,7 @@ example, a whole-program rule). Every checker attaches a real
 |------|------|---------|------------|
 | `E301` | `DUPLICATE_DEFINITION` | name already defined in this scope | rule checker |
 | `E302` | `UNREACHABLE_CODE` | statement is unreachable | rule checker |
+| `E303` | `REASSIGN_IMMUTABLE` | reassigning a `let`/`const` binding | mutability checker |
 | `E307` | `MISSING_VISIBILITY` | class/trait member has no visibility | rule checker |
 | `E308` | `INACCESSIBLE_MEMBER` | non-public member accessed from outside | rule checker |
 | `E309` | `UNIMPLEMENTED_ABSTRACT` | concrete class missing an abstract method | rule checker |
@@ -100,6 +101,7 @@ Produced by `aura lint`. Non-zero exit unless `--allow-warnings` is passed.
 |------|------|---------|------------|
 | `W101` | `UNUSED_VARIABLE` | variable is declared but never used | rule checker |
 | `W102` | `UNUSED_IMPORT` | import is never used | rule checker |
+| `W103` | `UNUSED_TYPE_PARAMETER` | generic type parameter is never used | type checker |
 
 ## Warnings — semantic (`W2xx`)
 
@@ -110,13 +112,11 @@ Reserved for future semantic warnings; none are emitted today.
 ## Removed codes
 
 These were defined historically but never emitted; they are removed to keep the
-catalogue honest. Mutability violations are reported as `E004` today and are
-scheduled to move to a dedicated semantic error code.
+catalogue honest.
 
 | Code | Reason |
 |------|--------|
 | `E201`–`E204` | runtime faults are surfaced as native Python exceptions; no Aura diagnostic is emitted |
-| `E303` | `INFINITE_LOOP` is undecidable statically; never emitted |
 | `E304` | `MISSING_RETURN` is not enforced; the type checker reports `E101` instead |
 | `E305` | superseded by `W101` |
 | `E306` | superseded by `W102` |

@@ -50,6 +50,7 @@ class ErrorCode(Enum):
     # -- Semantic errors (E3xx) ------------------------------------------
     DUPLICATE_DEFINITION = "E301"
     UNREACHABLE_CODE = "E302"
+    REASSIGN_IMMUTABLE = "E303"
     MISSING_VISIBILITY = "E307"
     INACCESSIBLE_MEMBER = "E308"
     UNIMPLEMENTED_ABSTRACT = "E309"
@@ -72,6 +73,7 @@ class ErrorCode(Enum):
     # -- Unused / redundant warnings (W1xx) ------------------------------
     UNUSED_VARIABLE = "W101"
     UNUSED_IMPORT = "W102"
+    UNUSED_TYPE_PARAMETER = "W103"
 
 @dataclass
 class AuraError:
@@ -209,6 +211,7 @@ ERROR_TEMPLATES = {
     # Semantic
     ErrorCode.DUPLICATE_DEFINITION: "'{name}' is already defined",
     ErrorCode.UNREACHABLE_CODE: "Unreachable code after '{terminator}'",
+    ErrorCode.REASSIGN_IMMUTABLE: "Cannot reassign immutable binding '{name}'",
     ErrorCode.MISSING_VISIBILITY: "{kind} '{name}' has no visibility modifier",
     ErrorCode.INACCESSIBLE_MEMBER: "'{name}' is {visibility} in '{owner}'",
     ErrorCode.UNIMPLEMENTED_ABSTRACT: "'{class}' must implement abstract method '{method}'",
@@ -224,6 +227,7 @@ ERROR_TEMPLATES = {
     ErrorCode.SPACING: "Multiple spaces after '{keyword}'",
     ErrorCode.UNUSED_VARIABLE: "Variable '{name}' is declared but never used",
     ErrorCode.UNUSED_IMPORT: "Import '{name}' is never used",
+    ErrorCode.UNUSED_TYPE_PARAMETER: "Type parameter '{name}' is never used",
 }
 
 

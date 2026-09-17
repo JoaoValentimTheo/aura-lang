@@ -127,14 +127,18 @@ class AuraLanguageServer:
         if program is None:
             diagnostics.append(self._diagnostic_from_error(error))
         else:
+            from aura.transpiler.rules import RuleChecker
+
             checker = MutabilityChecker()
-            if not checker.check_program(program):
-                for err in checker.errors:
-                    diagnostics.append(self._message_diagnostic(err, text))
+            checker.check_program(program)
             type_checker = TypeChecker()
-            if not type_checker.check_program(program):
-                for err in type_checker.errors:
-                    diagnostics.append(self._message_diagnostic(err, text))
+            type_checker.check_program(program)
+            rule_checker = RuleChecker()
+            rule_checker.check_program(program)
+            for err in (list(getattr(checker, 'diagnostics', []))
+                        + list(getattr(type_checker, 'diagnostics', []))
+                        + list(rule_checker.collector.errors)):
+                diagnostics.append(self._diagnostic_from_aura_error(err))
         self._diagnostics_cache[uri] = (text, diagnostics)
         return diagnostics
 
@@ -227,6 +231,33 @@ class AuraLanguageServer:
         self._notify('textDocument/publishDiagnostics',
                      {'uri': uri, 'diagnostics': diagnostics})
 
+    def _diagnostic_from_aura_error(self, err):
+        """Convert a structured ``AuraError`` into an LSP diagnostic."""
+        loc = getattr(err, 'location', None)
+        if loc is not None and getattr(loc, 'line', 0):
+            line = loc.line - 1
+            start_col = max(0, loc.column - 1) if loc.column else 0
+            length = getattr(loc, 'length', 0) or 1
+        else:
+            line = 0
+            start_col = 0
+            length = 1
+        severity = 2 if getattr(err, 'severity', None) is not None \
+            and err.severity.value == 'warning' else 1
+        message = err.message
+        if getattr(err, 'hint', None):
+            message = f"{message} (hint: {err.hint})"
+        return {
+            'range': {
+                'start': {'line': line, 'character': start_col},
+                'end': {'line': line, 'character': start_col + length},
+            },
+            'severity': severity,
+            'code': getattr(err.code, 'value', None),
+            'source': 'aura',
+            'message': message,
+        }
+
     def _diagnostic_from_error(self, exc):
         line = getattr(exc, 'line', 1) or 1
         column = getattr(exc, 'column', 1) or 1
@@ -239,33 +270,6 @@ class AuraLanguageServer:
             'source': 'aura',
             'message': str(exc),
         }
-
-    def _message_diagnostic(self, message, text):
-        line, column = self._locate(message, text)
-        return {
-            'range': {
-                'start': {'line': line, 'character': column},
-                'end': {'line': line, 'character': column + 1},
-            },
-            'severity': 1,
-            'source': 'aura',
-            'message': message,
-        }
-
-    @staticmethod
-    def _locate(message, text):
-        """Best-effort extraction of (line, column) from an error message."""
-        import re
-        match = re.search(r'\(line (\d+)\)', message)
-        if match:
-            return int(match.group(1)) - 1, 0
-        match = re.search(r"name '(\w+)'", message)
-        if match:
-            name = match.group(1)
-            for index, line_text in enumerate(text.split('\n')):
-                if name in line_text:
-                    return index, line_text.index(name)
-        return 0, 0
 
     def _hover(self, params):
         uri = params['textDocument']['uri']
