@@ -19,13 +19,28 @@ sys.path.insert(0, str(ROOT))
 # ============================================================================
 
 class TestRuntimeAliases:
+    """Runtime alias tests.
+
+    These mutate global ``sys.modules`` state, so every test restores it and
+    leaves the aliases installed. Deleting and reloading ``aura.*`` modules
+    mid-session perturbs coverage attribution on some interpreters, so the
+    canonical package modules are never removed.
+    """
+
     def test_install_and_uninstall_roundtrip(self):
         from aura import runtime
-        runtime.install_runtime_aliases()
-        assert 'stdlib' in sys.modules
-        assert sys.modules['stdlib'].__name__ == 'aura.stdlib'
-        runtime.uninstall_runtime_aliases()
-        assert 'stdlib' not in sys.modules
+        snapshot = dict(sys.modules)
+        try:
+            runtime._installed = False
+            runtime.install_runtime_aliases()
+            assert 'stdlib' in sys.modules
+            assert sys.modules['stdlib'].__name__ == 'aura.stdlib'
+            runtime.uninstall_runtime_aliases()
+            assert 'stdlib' not in sys.modules
+        finally:
+            sys.modules.clear()
+            sys.modules.update(snapshot)
+            runtime.install_runtime_aliases()
 
     def test_install_is_idempotent(self):
         from aura import runtime
@@ -62,12 +77,16 @@ class TestRuntimeAliases:
 
     def test_python_submodule_alias(self):
         from aura import runtime
-        runtime.uninstall_runtime_aliases()
-        sys.modules.pop('python', None)
-        runtime.install_runtime_aliases()
-        assert 'python' in sys.modules
-        assert sys.modules['python'].__name__ == 'aura.stdlib.python'
-        runtime.uninstall_runtime_aliases()
+        snapshot = dict(sys.modules)
+        try:
+            runtime._installed = False
+            sys.modules.pop('python', None)
+            runtime.install_runtime_aliases()
+            assert sys.modules['python'].__name__ == 'aura.stdlib.python'
+        finally:
+            sys.modules.clear()
+            sys.modules.update(snapshot)
+            runtime.install_runtime_aliases()
 
 
 # ============================================================================
