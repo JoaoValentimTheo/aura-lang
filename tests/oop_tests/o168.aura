@@ -1,6 +1,6 @@
 // OOP: Simple Inheritance
 class ConcreteC47693Rq {
-    let value: int = 97
+    public let value: int = 97
     public def get_value() -> int { return self.value; }
     public def double_value() -> int { return self.value * 2; }
 }

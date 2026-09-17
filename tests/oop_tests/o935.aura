@@ -7,7 +7,7 @@ class C90374Uo {
 class C98683Wf {
     private let component: C90374Uo
     
-    def new(comp: C90374Uo) {
+    public def new(comp: C90374Uo) {
         self.component = comp;
     }
     

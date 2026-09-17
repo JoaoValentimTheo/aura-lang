@@ -244,8 +244,9 @@ def test_class_private_is_mangled():
     )
     out, code = run_aura(source)
     assert out.strip() == "100"
-    # Python rewrites self.__balance to _Account__balance at compile time.
-    assert "self.__balance" in code
+    # The transpiler emits the owner-aware mangled name directly, so a private
+    # member resolves correctly even from a subclass.
+    assert "self._Account__balance" in code
 
 
 # ============================================================================

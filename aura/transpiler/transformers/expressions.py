@@ -2,9 +2,28 @@
 from aura.transpiler.ast import *
 
 
+def mangle_member(owner, name, visibility):
+    """Return the runtime name a member is stored/called under.
+
+    ``owner`` is the class that *declares* the member. Mangling is owner-aware
+    so a private member keeps the defining class's prefix even when referenced
+    from a subclass (Python's own ``__name`` mangling would use the *current*
+    class and break the lookup).
+
+    * ``public``    -> ``name``
+    * ``protected`` -> ``_name``
+    * ``private``   -> ``_{owner}__name``
+    """
+    if visibility == 'private':
+        return f"_{owner}__{name}"
+    if visibility == 'protected':
+        return f"_{name}"
+    return name
+
+
 class ExpressionTransformer:
     def __init__(self):
-        self.member_visibilities = {} # member_name -> visibility
+        self.member_visibilities = {} # member_name -> (visibility, owner)
         self.known_method_names = set() # every method name defined in any class
         self._lambda_counter = 0
         self.hoisted_functions = []  # generated module-level defs
@@ -225,11 +244,9 @@ class ExpressionTransformer:
 
             if known_member:
                 all_args = args + kwargs
-                vis = self.member_visibilities.get(dunder, 'public')
-                if vis == 'private' and not dunder.startswith('__'):
-                    dunder = f"__{dunder}"
-                elif vis == 'protected' and not dunder.startswith('_'):
-                    dunder = f"_{dunder}"
+                info = self.member_visibilities.get(dunder)
+                vis, owner = (info if info else ('public', None))
+                dunder = mangle_member(owner, dunder, vis)
                 return f"{obj}.{dunder}({', '.join(all_args)})"
 
             if member == 'length' and not args:
@@ -324,9 +341,9 @@ class ExpressionTransformer:
         dunder = python_method_name(member)
         if dunder != member and dunder in self.known_method_names:
             member = dunder
-        vis = self.member_visibilities.get(member, 'public')
-        if vis == 'private' and not member.startswith('__'): member = f"__{member}"
-        elif vis == 'protected': member = f"_{member}"
+        info = self.member_visibilities.get(member)
+        vis, owner = (info if info else ('public', None))
+        member = mangle_member(owner, member, vis)
         return f"{obj}.{member}"
 
     # ========== Null-Safe Operations ==========
@@ -341,9 +358,9 @@ class ExpressionTransformer:
             dunder = python_method_name(member)
             if dunder != member and dunder in self.known_method_names:
                 member = dunder
-            vis = self.member_visibilities.get(member, 'public')
-            if vis == 'private' and not member.startswith('__'): member = f"__{member}"
-            elif vis == 'protected': member = f"_{member}"
+            info = self.member_visibilities.get(member)
+            vis, owner = (info if info else ('public', None))
+            member = mangle_member(owner, member, vis)
             return f"({obj}.{member} if {obj} is not None else None)"
 
     # ========== Pipe Operator ==========

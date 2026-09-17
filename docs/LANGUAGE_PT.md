@@ -181,13 +181,13 @@ Generics usam colchetes:
 
 ```aura
 class Caixa[T] {
-  let valor: T
+  private let valor: T
 
-  def new(valor: T) {
+  public def new(valor: T) {
     self.valor = valor
   }
 
-  def obter() -> T {
+  public def obter() -> T {
     return self.valor
   }
 }
@@ -359,15 +359,15 @@ let pares = filter(numeros, (x) => x % 2 == 0)
 
 ```aura
 class Ponto {
-  let x: int = 0
-  let y: int = 0
+  public let x: int = 0
+  public let y: int = 0
 
-  def new(x: int, y: int) {
+  public def new(x: int, y: int) {
     self.x = x
     self.y = y
   }
 
-  def distancia() -> float {
+  public def distancia() -> float {
     return (self.x ** 2 + self.y ** 2) ** 0.5
   }
 }
@@ -382,19 +382,19 @@ print(p.distancia())  // 5.0
 
 ```aura
 class Animal {
-  let nome: str = ""
+  protected let nome: str = ""
 
-  def new(nome: str) {
+  public def new(nome: str) {
     self.nome = nome
   }
 
-  def falar() -> str {
+  public def falar() -> str {
     return "..."
   }
 }
 
 class Cachorro(Animal) {
-  def falar() -> str {
+  public def falar() -> str {
     return self.nome + " diz au au"
   }
 }
@@ -409,15 +409,15 @@ O transpiler insere automaticamente `super().__init__()` no construtor quando ex
 
 ```aura
 class Retangulo {
-  let w: int = 0
-  let h: int = 0
+  private let w: int = 0
+  private let h: int = 0
 
-  def new(w: int, h: int) {
+  public def new(w: int, h: int) {
     self.w = w
     self.h = h
   }
 
-  @property
+  public @property
   def area() -> int {
     return self.w * self.h
   }
@@ -431,7 +431,7 @@ print(r.area)  // 20 (acessado como propriedade, sem parenteses)
 
 ```aura
 class UtilMat {
-  @staticmethod
+  public @staticmethod
   def max(a, b) -> int {
     if a > b { return a }
     return b
@@ -445,13 +445,13 @@ print(UtilMat.max(3, 9))  // 9
 
 ```aura
 class Fabrica {
-  let tipo: str = ""
+  public let tipo: str = ""
 
-  def new(tipo: str) {
+  public def new(tipo: str) {
     self.tipo = tipo
   }
 
-  @classmethod
+  public @classmethod
   def criar(cls, tipo) {
     return cls(tipo)
   }
@@ -467,18 +467,18 @@ print(f.tipo)  // custom
 
 ```aura
 trait Desenhavel {
-  def desenhar();
-  def obter_limites();
+  public def desenhar() -> void
+  public def obter_limites() -> float
 }
 
 class Circulo implements Desenhavel {
-  let raio: float = 0.0
+  private let raio: float = 0.0
 
-  def desenhar() {
+  public def desenhar() -> void {
     print(f"Desenhando circulo com raio {self.raio}")
   }
 
-  def obter_limites() {
+  public def obter_limites() -> float {
     return self.raio * 2
   }
 }
@@ -487,23 +487,69 @@ class Circulo implements Desenhavel {
 Um trait transpila para uma classe base, e `implements` vira heranca.
 Multiplos traits podem ser listados: `class C implements A, B`.
 
+Um metodo declarado sem corpo e abstrato: o trait o compila para um
+`@abstractmethod`, e uma classe concreta que nao implementa todos os metodos
+abstratos herdados e rejeitada em tempo de compilacao (`E309`):
+
+```aura
+trait Forma { public def area() -> float }
+
+class Quadrado implements Forma {
+  public let lado: float = 2.0
+  public def area() -> float { return self.lado * self.lado }
+}
+
+// class Ruim implements Forma { }   // E309: precisa implementar 'area'
+```
+
+Traits tambem podem estender outros traits, com `trait Alto(Falante)` ou
+`trait Alto implements Falante`. Metodos abstratos sao herdados
+transitivamente:
+
+```aura
+trait Falante { public def falar() -> str }
+trait Alto implements Falante { public def gritar() -> str }
+
+class Pessoa implements Alto {
+  public def falar() -> str { return "oi" }
+  public def gritar() -> str { return "OI" }
+}
+```
+
 ### Visibilidade
 
 ```aura
 class Conta {
-  let private saldo: float = 0.0
-  let protected id: str = ""
-  let public nome: str = ""
+  private let saldo: float = 0.0
+  protected let id: str = ""
+  public let nome: str = ""
 }
 ```
 
-A visibilidade e aplicada por name mangling **apenas dentro de classes**:
+Todo membro de classe/trait (campo, metodo ou classe aninhada) **precisa**
+declarar a visibilidade explicitamente: `public`, `private` ou `protected`.
+Omitir e erro de compilacao (`E307`).
 
-| Modificador | Nome Python | Significado |
-|-------------|-------------|-------------|
-| `public` (padrao) | `nome` | Sem mangling |
-| `protected` | `_nome` | Convencao de um sublinhado |
-| `private` | `__nome` | Name mangling do Python (`_Classe__nome`) |
+Os modificadores vem **antes** de `let`/`def`/`class`.
+
+A aplicacao acontece em **tempo de compilacao e em tempo de execucao**:
+
+* O rule checker rejeita o acesso a um membro nao-publico de fora da classe
+  (`E308`), resolvendo `self`/`cls` e instancias simples `let x = Classe(...)`.
+* O transpilador emite nomes com mangling ciente do dono, entao a restricao
+  tambem vale em runtime mesmo quando o checker nao consegue provar.
+
+| Modificador | Nome em runtime | Acessivel de |
+|-------------|-----------------|--------------|
+| `public` | `nome` | qualquer lugar |
+| `protected` | `_nome` | a classe que declara e suas subclasses |
+| `private` | `_<ClasseDona>__nome` | apenas a classe que declara |
+
+Um membro `private` **nao** e visivel em uma subclasse; a subclasse so o
+alcanca por um metodo `public`/`protected` ou pelo acessor gerado.
+
+Para todo campo nao-publico sao gerados automaticamente `get_<nome>()` e
+`set_<nome>(valor)`, a menos que a classe ja defina um metodo com esse nome.
 
 No escopo de modulo ou local, `private`/`protected` sao apenas metadados de
 compilacao; os nomes **nao** sao modificados.

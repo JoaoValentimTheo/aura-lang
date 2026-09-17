@@ -23,6 +23,7 @@ from aura.transpiler.ast import (
     AssertStmt,
     BinaryOp,
     BreakStmt,
+    CallExpr,
     ClassDecl,
     ConstDecl,
     ContinueStmt,
@@ -46,6 +47,7 @@ from aura.transpiler.ast import (
     Node,
     Program,
     ReturnStmt,
+    SafeNavExpr,
     SpreadExpr,
     ThrowStmt,
     TraitDecl,
@@ -83,6 +85,15 @@ class RuleChecker:
         # "bail out of the program" form. A bare top-level `return` is only
         # legal in that position, so track it while walking a guard body.
         self._in_guard_else_depth = 0
+        # Visibility enforcement: a registry of every class's members and bases,
+        # plus the stack of class names enclosing the code being checked, and a
+        # parallel scope stack mapping local names to the class they were
+        # instantiated from (``let c = Point(...)`` -> ``c: Point``) so external
+        # member access can be resolved structurally. Runtime name mangling
+        # remains the authoritative safety net for anything this cannot prove.
+        self._classes = {}
+        self._class_stack = []
+        self._instance_scopes = []
 
     # -- public API ---------------------------------------------------------
 
@@ -94,9 +105,49 @@ class RuleChecker:
         self._async_depth = 0
         self._class_depth = 0
         self._in_guard_else_depth = 0
+        self._class_stack = []
+        self._instance_scopes = [{}]
+        # First pass: register every class's members and bases so member
+        # access can be resolved (including inherited members) in any order.
+        self._classes = {}
+        self._register_classes(program)
         for stmt in getattr(program, 'statements', []) or []:
             self.visit(stmt)
         return not self.collector.has_errors()
+
+    def _register_classes(self, node):
+        """Collect class/trait member maps and base names, recursively."""
+        if node is None:
+            return
+        if isinstance(node, (list, tuple)):
+            for item in node:
+                self._register_classes(item)
+            return
+        if isinstance(node, (ClassDecl, TraitDecl)):
+            is_trait = isinstance(node, TraitDecl)
+            members = {}
+            abstracts = {}
+            body = getattr(node, 'body', None) or getattr(node, 'members', None) or []
+            for member in body:
+                name = getattr(member, 'name', None)
+                if name:
+                    members[name] = getattr(member, 'visibility', None)
+                # A trait method with no body is a pure signature: subclasses
+                # must provide the implementation.
+                if is_trait and isinstance(member, Method) and not member.body:
+                    abstracts[name] = node.name
+            bases = []
+            if node.base_class:
+                bases = [b.strip() for b in str(node.base_class).split(',') if b.strip()]
+            self._classes[node.name] = {'members': members, 'bases': bases,
+                                        'is_trait': is_trait, 'abstracts': abstracts}
+            # Recurse into nested classes.
+            for member in body:
+                self._register_classes(member)
+        elif isinstance(node, Node):
+            for value in vars(node).values():
+                if isinstance(value, (Node, list, tuple)):
+                    self._register_classes(value)
 
     @property
     def errors(self):
@@ -118,10 +169,12 @@ class RuleChecker:
 
     def _push_scope(self):
         self._scope_stack.append(set())
+        self._instance_scopes.append({})
 
     def _pop_scope(self):
         if len(self._scope_stack) > 1:
             self._scope_stack.pop()
+            self._instance_scopes.pop()
 
     # -- traversal ----------------------------------------------------------
 
@@ -155,12 +208,20 @@ class RuleChecker:
             self._declare(node.name)
         elif isinstance(node, TraitDecl):
             self._declare(node.name)
-            # Trait method bodies (when present) are real function bodies.
-            for member in node.members or []:
-                if isinstance(member, Method):
-                    self._visit_method(member)
-                else:
-                    self.visit(member)
+            # Trait members also require explicit visibility, and trait method
+            # bodies (when present) are real function bodies.
+            self._class_stack.append(node.name)
+            self._class_depth += 1
+            try:
+                for member in node.members or []:
+                    self._check_member_visibility(member, node.name)
+                    if isinstance(member, Method):
+                        self._visit_method(member)
+                    else:
+                        self.visit(member)
+            finally:
+                self._class_depth -= 1
+                self._class_stack.pop()
         elif isinstance(node, (IfStmt, UnlessStmt)):
             self._visit_conditional(node)
         elif isinstance(node, GuardStmt):
@@ -245,6 +306,25 @@ class RuleChecker:
                         hint="mark the enclosing function 'async def'",
                     )
             self.visit(node.operand)
+        elif isinstance(node, MemberExpr):
+            self._visit_member_access(node.obj, node.member, node)
+        elif isinstance(node, CallExpr):
+            if isinstance(node.func, MemberExpr):
+                self._visit_member_access(node.func.obj, node.func.member, node.func)
+                self.visit(node.func.obj)
+            else:
+                self.visit(node.func)
+            for arg in node.args or []:
+                self.visit(arg)
+            for value in (node.kwargs or {}).values():
+                self.visit(value)
+        elif isinstance(node, SafeNavExpr):
+            if not getattr(node, 'is_index', False):
+                self._visit_member_access(node.obj, node.member_or_index, node)
+                self.visit(node.obj)
+            else:
+                self.visit(node.obj)
+                self.visit(node.member_or_index)
         elif isinstance(node, Identifier):
             if node.name == 'self' and self._class_depth == 0:
                 self.collector.add(
@@ -265,6 +345,9 @@ class RuleChecker:
             self.visit(value)
         for name in self._target_names(node.name):
             self._declare(name)
+            klass = self._instantiated_class(value)
+            if klass and self._instance_scopes:
+                self._instance_scopes[-1][name] = klass
 
     def _visit_const_decl(self, node):
         if node.value is None:
@@ -303,14 +386,89 @@ class RuleChecker:
 
     def _visit_class(self, node):
         self._declare(node.name)
+        self._check_abstract_implemented(node)
         self._push_scope()
         self._class_depth += 1
+        self._class_stack.append(node.name)
         try:
             for member in node.body or []:
+                self._check_member_visibility(member, node.name)
                 self.visit(member)
         finally:
+            self._class_stack.pop()
             self._class_depth -= 1
             self._pop_scope()
+
+    def _check_abstract_implemented(self, node):
+        """A concrete class must implement every abstract trait method it
+        inherits; otherwise instantiating it would fail at runtime."""
+        if not isinstance(node, ClassDecl):
+            return
+        abstracts = self._collect_abstracts(node.name, set())
+        if not abstracts:
+            return
+        implemented = self._collect_implemented(node.name, set())
+        for name, decl_class in sorted(abstracts.items()):
+            if name not in implemented:
+                self.collector.add(
+                    ErrorCode.UNIMPLEMENTED_ABSTRACT,
+                    f"'{node.name}' must implement abstract method '{name}' "
+                    f"declared by '{decl_class}'",
+                    hint=f"add 'public def {name}(...)' to '{node.name}'",
+                )
+
+    def _collect_abstracts(self, class_name, seen):
+        """Map every abstract method name to its declaring trait, following
+        bases transitively."""
+        if class_name in seen:
+            return {}
+        seen.add(class_name)
+        info = self._classes.get(class_name)
+        if not info:
+            return {}
+        result = dict(info.get('abstracts') or {})
+        for base in info.get('bases', []):
+            for name, decl in self._collect_abstracts(base, seen).items():
+                result.setdefault(name, decl)
+        return result
+
+    def _collect_implemented(self, class_name, seen):
+        """Names of all concrete (bodied) methods available on a class,
+        following bases transitively."""
+        if class_name in seen:
+            return set()
+        seen.add(class_name)
+        info = self._classes.get(class_name)
+        if not info:
+            return set()
+        result = set()
+        abstracts = info.get('abstracts') or {}
+        for name in info.get('members', {}):
+            if name not in abstracts:
+                result.add(name)
+        for base in info.get('bases', []):
+            result |= self._collect_implemented(base, seen)
+        return result
+
+    def _check_member_visibility(self, member, class_name):
+        """Every class/trait member must declare its visibility explicitly."""
+        if isinstance(member, (VarDecl, Method)):
+            if getattr(member, 'visibility', None) is None:
+                kind = 'field' if isinstance(member, VarDecl) else 'method'
+                self.collector.add(
+                    ErrorCode.MISSING_VISIBILITY,
+                    f"{kind} '{member.name}' in class '{class_name}' has no "
+                    f"visibility modifier",
+                    hint="prefix it with 'public', 'private' or 'protected'",
+                )
+        elif isinstance(member, ClassDecl):
+            if getattr(member, 'visibility', None) is None:
+                self.collector.add(
+                    ErrorCode.MISSING_VISIBILITY,
+                    f"nested class '{member.name}' in class '{class_name}' has "
+                    f"no visibility modifier",
+                    hint="prefix it with 'public', 'private' or 'protected'",
+                )
 
     def _visit_method(self, node):
         """Check a class/trait method body as a function body."""
@@ -333,6 +491,93 @@ class RuleChecker:
         finally:
             self._function_depth -= 1
             self._pop_scope()
+
+    def _instantiated_class(self, value):
+        """Return the class a variable is instantiated from, or None.
+
+        Only the simple, structural form ``Class(...)`` is recognised; anything
+        dynamic (a function call, a conditional, ...) stays None and is left to
+        runtime mangling.
+        """
+        if not isinstance(value, CallExpr):
+            return None
+        func = value.func
+        if not isinstance(func, Identifier) or not func.name:
+            return None
+        return func.name if func.name in self._classes else None
+
+    def _object_class(self, obj):
+        """Resolve the class of an access object, or None if unknown.
+
+        ``self``/``cls`` resolve to the innermost enclosing class; a bare
+        identifier resolves through the instance map when it is known to hold an
+        instantiated class.
+        """
+        if isinstance(obj, Identifier):
+            name = obj.name
+            if name in ('self', 'cls') and self._class_stack:
+                return self._class_stack[-1]
+            for scope in reversed(self._instance_scopes):
+                if name in scope:
+                    return scope[name]
+        return None
+
+    def _visit_member_access(self, obj, member, node):
+        """Visit an ``obj.member`` access, visiting both sides and enforcing
+        visibility when the member belongs to a known class."""
+        self.visit(obj)
+        if not isinstance(member, str):
+            return
+        owner_class = self._object_class(obj)
+        if owner_class is None:
+            return
+        vis, decl_class = self._lookup_member(owner_class, member, set())
+        if vis is None or vis == 'public':
+            return
+        internal = self._is_internal_access(obj)
+        if internal:
+            if vis == 'private' and not self._private_visible_here(decl_class):
+                self.collector.add(
+                    ErrorCode.INACCESSIBLE_MEMBER,
+                    f"'{member}' is private to '{decl_class}' and cannot be "
+                    f"accessed from a subclass",
+                    hint="access it through a public method or getter",
+                )
+            return
+        self.collector.add(
+            ErrorCode.INACCESSIBLE_MEMBER,
+            f"'{member}' is {vis} in '{decl_class}' and cannot be accessed "
+            f"from outside the class",
+            hint="use a public getter/setter or a public method",
+        )
+
+    def _is_internal_access(self, obj):
+        """True when ``obj`` is ``self``/``cls`` within a class body."""
+        return isinstance(obj, Identifier) and obj.name in ('self', 'cls') \
+            and bool(self._class_stack)
+
+    def _lookup_member(self, class_name, name, seen):
+        """Resolve ``(visibility, declaring_class)`` for a member, walking the
+        base-class chain. Returns ``(None, None)`` when the member is unknown."""
+        if class_name in seen:
+            return None, None
+        seen.add(class_name)
+        info = self._classes.get(class_name)
+        if not info:
+            return None, None
+        if name in info['members']:
+            return info['members'][name], class_name
+        for base in info['bases']:
+            vis, decl = self._lookup_member(base, name, seen)
+            if vis is not None:
+                return vis, decl
+        return None, None
+
+    def _private_visible_here(self, decl_class):
+        """True when the private member's declaring class is exactly the class
+        whose method body is being checked. A private member is only visible
+        inside its own class, never in a subclass."""
+        return self._class_stack and self._class_stack[-1] == decl_class
 
     def _visit_lambda(self, node):
         self._check_params(node.params)

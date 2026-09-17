@@ -5,7 +5,7 @@ class RealC51670Rx {
     
     public let id: int
     
-    def new(id: int) {
+    public def new(id: int) {
         self.id = id;
         RealC51670Rx.increment_count();
     }

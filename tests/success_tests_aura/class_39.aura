@@ -1,8 +1,8 @@
 // Class Test 39
-class Base_39 { let val: int = 39 }
+class Base_39 { public let val: int = 39 }
 class Sub_39(Base_39) {
-    let extra: str = "hi"
-    def show() { print(self.val); print(self.extra); }
+    public let extra: str = "hi"
+    public def show() { print(self.val); print(self.extra); }
 }
 let obj_39 = Sub_39(val: 78, extra: "test_39");
 obj_39.show();

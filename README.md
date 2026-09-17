@@ -59,13 +59,13 @@ def max[T](a: T, b: T) -> T {
 }
 
 trait Shape {
-  def area() -> float
+  public def area() -> float
 }
 
 class Circle implements Shape {
-  let r: float = 1.0
-  def new(r: float) { self.r = r }
-  def area() -> float { return 3.14159 * self.r * self.r }
+  private let r: float = 1.0
+  public def new(r: float) { self.r = r }
+  public def area() -> float { return 3.14159 * self.r * self.r }
 }
 
 // Pattern matching, pipes, guard clauses, error handling.

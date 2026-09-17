@@ -156,6 +156,10 @@ modifiers      = { "public" | "private" | "protected" | "static" | "volatile" | 
 Modifiers appear **before** the declaration keyword
 (`private let x = 1`, not `let private x`).
 
+At class/trait member level a **visibility is mandatory**: every member must
+begin with exactly one of `public`, `private` or `protected` (omitting it is
+error `E307`).
+
 ### 3.1 Variables
 
 ```
@@ -206,7 +210,8 @@ dotted_name    = identifier , { "." , identifier } ;
 
 class_member   = member_modifiers , member_decorators , ( method | nested_class | field ) ;
 
-member_modifiers = { "public" | "private" | "protected" | "static" | "volatile" } ;
+member_modifiers = visibility , { "static" | "volatile" } ;
+visibility     = "public" | "private" | "protected" ;   // mandatory on every member
 member_decorators = { "@" , ( "property" | "staticmethod" | "classmethod" | identifier ) } ;
 
 method         = "def" , identifier , [ type_params ] , "(" , [ param_list ] , ")" , [ "->" , type ] , block ;
@@ -218,6 +223,7 @@ field          = "let" , [ "mut" ] , identifier , [ ":" , type ] , [ "=" , expre
 
 ```
 trait_decl     = modifiers , "trait" , identifier , [ type_params ]
+                 , [ "(" , trait_list , ")" | "implements" , trait_list ]
                  , "{" , { trait_member } , "}" ;
 
 trait_member   = member_modifiers , ( method_signature | method_with_body | field ) ;
@@ -226,7 +232,9 @@ method_with_body = method ;
 ```
 
 Traits compile to abstract base classes: signature-only methods become
-`@abstractmethod`.
+`@abstractmethod`. A trait may extend other traits with either syntax,
+`trait Loud(Greeter)` or `trait Loud implements Greeter`, and a concrete class
+that omits any inherited abstract method is rejected at compile time (E309).
 
 ### 3.5 Enums
 

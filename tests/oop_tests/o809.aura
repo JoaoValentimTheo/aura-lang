@@ -7,7 +7,7 @@ class AbstractC17251Uv {
 class MockC25319Ca {
     private let component: AbstractC17251Uv
     
-    def new(comp: AbstractC17251Uv) {
+    public def new(comp: AbstractC17251Uv) {
         self.component = comp;
     }
     

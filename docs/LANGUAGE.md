@@ -185,13 +185,13 @@ Generics use square brackets:
 
 ```aura
 class Box[T] {
-  let value: T
+  private let value: T
 
-  def new(value: T) {
+  public def new(value: T) {
     self.value = value
   }
 
-  def get() -> T {
+  public def get() -> T {
     return self.value
   }
 }
@@ -363,15 +363,15 @@ let evens = filter(numbers, (x) => x % 2 == 0)
 
 ```aura
 class Point {
-  let x: int = 0
-  let y: int = 0
+  public let x: int = 0
+  public let y: int = 0
 
-  def new(x: int, y: int) {
+  public def new(x: int, y: int) {
     self.x = x
     self.y = y
   }
 
-  def distance() -> float {
+  public def distance() -> float {
     return (self.x ** 2 + self.y ** 2) ** 0.5
   }
 }
@@ -386,19 +386,19 @@ print(p.distance())  // 5.0
 
 ```aura
 class Animal {
-  let name: str = ""
+  protected let name: str = ""
 
-  def new(name: str) {
+  public def new(name: str) {
     self.name = name
   }
 
-  def speak() -> str {
+  public def speak() -> str {
     return "..."
   }
 }
 
 class Dog(Animal) {
-  def speak() -> str {
+  public def speak() -> str {
     return self.name + " says woof"
   }
 }
@@ -413,15 +413,15 @@ The transformer automatically inserts `super().__init__()` in the constructor wh
 
 ```aura
 class Rect {
-  let w: int = 0
-  let h: int = 0
+  private let w: int = 0
+  private let h: int = 0
 
-  def new(w: int, h: int) {
+  public def new(w: int, h: int) {
     self.w = w
     self.h = h
   }
 
-  @property
+  public @property
   def area() -> int {
     return self.w * self.h
   }
@@ -435,7 +435,7 @@ print(r.area)  // 20 (accessed as property, no parentheses)
 
 ```aura
 class MathUtil {
-  @staticmethod
+  public @staticmethod
   def max(a, b) -> int {
     if a > b { return a }
     return b
@@ -449,13 +449,13 @@ print(MathUtil.max(3, 9))  // 9
 
 ```aura
 class Factory {
-  let kind: str = ""
+  public let kind: str = ""
 
-  def new(kind: str) {
+  public def new(kind: str) {
     self.kind = kind
   }
 
-  @classmethod
+  public @classmethod
   def create(cls, kind) {
     return cls(kind)
   }
@@ -471,18 +471,18 @@ print(f.kind)  // custom
 
 ```aura
 trait Drawable {
-  def draw();
-  def get_bounds();
+  public def draw() -> void
+  public def get_bounds() -> float
 }
 
 class Circle implements Drawable {
-  let radius: float = 0.0
+  private let radius: float = 0.0
 
-  def draw() {
+  public def draw() -> void {
     print(f"Drawing circle with radius {self.radius}")
   }
 
-  def get_bounds() {
+  public def get_bounds() -> float {
     return self.radius * 2
   }
 }
@@ -490,6 +490,34 @@ class Circle implements Drawable {
 
 A trait transpiles to a base class, and `implements` becomes inheritance.
 Multiple traits can be listed: `class C implements A, B`.
+
+A method declared without a body is abstract: the trait compiles it to an
+`@abstractmethod`, and a concrete class that does not implement every abstract
+method it inherits is rejected at compile time (`E309`):
+
+```aura
+trait Shape { public def area() -> float }
+
+class Square implements Shape {
+  public let side: float = 2.0
+  public def area() -> float { return self.side * self.side }
+}
+
+// class Bad implements Shape { }   // E309: must implement 'area'
+```
+
+Traits may also extend other traits, using either `trait Loud(Greeter)` or
+`trait Loud implements Greeter`. Abstract methods are inherited transitively:
+
+```aura
+trait Greeter { public def greet() -> str }
+trait Loud implements Greeter { public def shout() -> str }
+
+class Person implements Loud {
+  public def greet() -> str { return "hi" }
+  public def shout() -> str { return "HEY" }
+}
+```
 
 ### Visibility
 
@@ -501,19 +529,47 @@ class Account {
 }
 ```
 
+Every class and trait member (field, method or nested class) **must** declare
+its visibility explicitly: `public`, `private` or `protected`. Omitting it is a
+compile error (`E307`).
+
 Modifiers come **before** `let`/`def`/`class`; `let private balance` is a syntax
 error.
 
-Visibility is enforced by name mangling **inside classes** only:
+Enforcement happens at **compile time and at runtime**:
 
-| Modifier | Python name | Meaning |
-|----------|-------------|---------|
-| `public` (default) | `name` | No mangling |
-| `protected` | `_name` | Single-underscore convention |
-| `private` | `__name` | Python name mangling (`_Class__name`) |
+* The rule checker rejects an access to a non-public member from outside the
+  class (`E308`). It resolves the class of a `self`/`cls` access and of simple
+  `let x = Class(...)` instances.
+* The transpiler emits owner-aware mangled names, so the restriction also holds
+  at runtime even for code the checker cannot prove.
 
-At module or local scope, `private`/`protected` are compile-time metadata
-only; names are **not** mangled, so later references keep working.
+| Modifier | Runtime name | Accessible from |
+|----------|--------------|-----------------|
+| `public` | `name` | anywhere |
+| `protected` | `_name` | the declaring class and its subclasses |
+| `private` | `_<DefiningClass>__name` | only the declaring class |
+
+A private member is **not** visible in a subclass: a subclass may only reach it
+through a `public`/`protected` method or through the generated accessor.
+
+```aura
+class Counter {
+  private let count: int = 0
+  public def increment() { self.count = self.count + 1 }
+}
+
+let c = Counter()
+c.increment()
+print(c.get_count())   // auto-generated getter
+```
+
+For every non-public field, `get_<name>()` and `set_<name>(value)` accessors are
+generated automatically (unless the class already defines a method with that
+name). Public fields get no accessors.
+
+At module or local scope, `private`/`protected` are compile-time metadata only;
+names are **not** mangled, so later references keep working.
 
 ---
 

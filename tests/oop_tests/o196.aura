@@ -1,6 +1,6 @@
 // OOP: Simple Inheritance
 class ImplC99230Go {
-    let value: int = 65
+    public let value: int = 65
     public def get_value() -> int { return self.value; }
     public def double_value() -> int { return self.value * 2; }
 }

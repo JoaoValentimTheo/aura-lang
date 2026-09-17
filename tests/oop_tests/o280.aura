@@ -1,6 +1,6 @@
 // OOP: Simple Inheritance
 class MockC85007Nm {
-    let value: int = 1
+    public let value: int = 1
     public def get_value() -> int { return self.value; }
     public def double_value() -> int { return self.value * 2; }
 }

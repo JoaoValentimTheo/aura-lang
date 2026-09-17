@@ -4,18 +4,18 @@
 // throws, so cleanup always runs.
 
 class Timer {
-  let label: str = ""
-  let start: float = 0.0
+  public let label: str = ""
+  public let start: float = 0.0
 
-  def new(label: str) { self.label = label }
+  public def new(label: str) { self.label = label }
 
-  def enter() {
+  public def enter() {
     self.start = 0.0
     print(f"[{self.label}] start")
     return self
   }
 
-  def exit(exc_type, exc, tb) {
+  public def exit(exc_type, exc, tb) {
     print(f"[{self.label}] end")
   }
 }

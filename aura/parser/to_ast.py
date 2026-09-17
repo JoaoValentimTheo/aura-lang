@@ -116,6 +116,7 @@ class Tokenizer:
             # Identifiers and Keywords
             if char.isalpha() or char == '_':
                 start = self.pos
+                start_line, start_col = self.line, self.column
                 while self.pos < length and (self.source[self.pos].isalnum() or self.source[self.pos] == '_'):
                     self.pos += 1
                 value = self.source[start:self.pos]
@@ -148,7 +149,7 @@ class Tokenizer:
                     str_value = self.source[start_str:self.pos]
                     self.pos += len(closing)  # skip closing delimiter
                     self.column += (self.pos - start)
-                    self.tokens.append(Token('FSTRING', (quote, str_value), self.line, self.column))
+                    self.tokens.append(Token('FSTRING', (quote, str_value), start_line, start_col))
                     continue
 
                 # Raw / byte string prefixes: r"", b"", rb"", br"" (any case).
@@ -175,7 +176,7 @@ class Tokenizer:
                     raw_literal = self.source[start:end]
                     self.column += (end - start)
                     self.pos = end
-                    self.tokens.append(Token('RAWSTRING', raw_literal, self.line, self.column))
+                    self.tokens.append(Token('RAWSTRING', raw_literal, start_line, start_col))
                     continue
 
                 self.column += (self.pos - start)
@@ -184,12 +185,13 @@ class Tokenizer:
                         f"'volatily' is not a keyword; did you mean 'volatile'? "
                         f"(line {self.line})"
                     )
-                self.tokens.append(Token('IDENT', value, self.line, self.column))
+                self.tokens.append(Token('IDENT', value, start_line, start_col))
                 continue
 
             # Numbers
             if char.isdigit():
                 start = self.pos
+                start_line, start_col = self.line, self.column
 
                 # Radix prefixes: 0x, 0o, 0b (with optional _ separators).
                 if char == '0' and self.pos + 1 < length and self.source[self.pos + 1] in 'xXoObB':
@@ -209,7 +211,7 @@ class Tokenizer:
                             f"'0{prefix}{digits}' at {self.line}:{self.column}"
                         ) from None
                     self.column += (self.pos - start)
-                    self.tokens.append(Token('INT', value, self.line, self.column))
+                    self.tokens.append(Token('INT', value, start_line, start_col))
                     continue
 
                 # Decimal integer part (underscores allowed as separators).
@@ -241,9 +243,9 @@ class Tokenizer:
                 self.column += (self.pos - start)
 
                 if is_float:
-                    self.tokens.append(Token('FLOAT', float(raw), self.line, self.column))
+                    self.tokens.append(Token('FLOAT', float(raw), start_line, start_col))
                 else:
-                    self.tokens.append(Token('INT', int(raw), self.line, self.column))
+                    self.tokens.append(Token('INT', int(raw), start_line, start_col))
                 continue
 
             # Leading-dot floats: `.5` (but not `..` ranges or member access).
@@ -270,6 +272,7 @@ class Tokenizer:
             # Strings
             if char in ('"', "'"):
                 quote = char
+                start_line, start_col = self.line, self.column
                 # Triple-quoted multi-line string.
                 if self.source[self.pos:self.pos+3] == quote * 3:
                     self.pos += 3
@@ -284,7 +287,7 @@ class Tokenizer:
                     value = self.source[start:self.pos]
                     self.pos += 3  # skip closing quotes
                     self.column += (self.pos - start)
-                    self.tokens.append(Token('STRING', self._decode_escapes(value), self.line, self.column))
+                    self.tokens.append(Token('STRING', self._decode_escapes(value), start_line, start_col))
                     continue
 
                 self.pos += 1
@@ -299,7 +302,7 @@ class Tokenizer:
                 value = self.source[start:self.pos]
                 self.pos += 1 # Skip closing quote
                 self.column += (self.pos - start + 2)
-                self.tokens.append(Token('STRING', self._decode_escapes(value), self.line, self.column))
+                self.tokens.append(Token('STRING', self._decode_escapes(value), start_line, start_col))
                 continue
 
             # Operators involving multiple chars
@@ -399,8 +402,12 @@ class Parser:
 
     # --- Statements ---
     def parse_modifiers(self):
-        """Parse visibility and other modifiers."""
-        visibility = 'public'
+        """Parse visibility and other modifiers.
+
+        Returns ``visibility=None`` when no visibility keyword was written, so
+        the rule checker can require an explicit modifier on class members.
+        """
+        visibility = None
         is_static = False
         is_volatile = False
 
@@ -466,8 +473,10 @@ class Parser:
                     decorators.append(Decorator(dec_name, dec_args, dec_kwargs))
             elif token.value in ['public', 'private', 'protected', 'static', 'volatile']:
                 v, s, vol = self.parse_modifiers()
-                # Last visibility wins, flags accumulate
-                if v != 'public': visibility = v
+                # Last visibility wins, flags accumulate. At module scope
+                # visibility is metadata only, so an omitted modifier means
+                # public (class members are handled separately).
+                if v is not None: visibility = v
                 if s: is_static = True
                 if vol: is_volatile = True
             else:
@@ -849,11 +858,13 @@ class Parser:
         self.consume(expected_value='{')
         members = []
         while not self.check('}') and not self.check('EOF'):
-            visibility = 'public'
+            member_start = self.peek()
+            visibility = None
             is_static = False
             is_volatile = False
 
-            # Parse modifiers
+            # Parse modifiers. A class member must declare its visibility
+            # explicitly; the rule checker reports a member with none.
             while True:
                 if self.match('public'): visibility = 'public'
                 elif self.match('private'): visibility = 'private'
@@ -914,14 +925,18 @@ class Parser:
                 method = Method(func.name, func.params, func.return_type, func.body,
                                 is_static=is_static, is_classmethod=is_classmethod,
                                 is_property=is_property, visibility=visibility,
-                                is_volatile=is_volatile, decorators=member_decorators)
+                                is_volatile=is_volatile, decorators=member_decorators,
+                                owner=name)
+                method.with_location(self._member_location(member_start))
                 members.append(method)
             elif self.check('class'):
                 # Nested class: `class Inner { ... }`.
-                members.append(self.parse_class_decl(
+                inner = self.parse_class_decl(
                     decorators=member_decorators,
                     visibility=visibility,
-                ))
+                )
+                inner.with_location(self._member_location(member_start))
+                members.append(inner)
             else:
                  # Fields: x: Int = 1
                 if self.check('}') or self.check('EOF'): break
@@ -943,13 +958,21 @@ class Parser:
                         v = self.parse_expression()
 
                     if self.check(';'): self.consume()
-                    members.append(VarDecl(field_name, field_mutable, t, v,
-                                          visibility=visibility, is_static=is_static, is_volatile=is_volatile))
+                    field = VarDecl(field_name, field_mutable, t, v,
+                                    visibility=visibility, is_static=is_static,
+                                    is_volatile=is_volatile, owner=name)
+                    field.with_location(self._member_location(member_start))
+                    members.append(field)
                 else:
                     raise SyntaxError(f"Unexpected token in class: {self.peek()}")
 
         self.consume(expected_value='}')
         return ClassDecl(name, members, base_class, type_params, decorators, visibility, is_static, is_volatile)
+
+    def _member_location(self, tok):
+        """Build a SourceLocation for a class member's first token."""
+        return SourceLocation(line=getattr(tok, 'line', 0), column=getattr(tok, 'column', 0))
+
     def parse_module_decl(self):
         self.consume(expected_value='module')
         name = self.consume(expected_type='IDENT').value
@@ -1223,23 +1246,77 @@ class Parser:
                     break
             self.consume(expected_value=']')
 
+        # Traits may extend other traits: `trait Loud implements Greeter(...)`
+        # or `trait Loud(Greeter)`, mirroring class inheritance.
+        bases = []
+        if self.match('('):
+            if not self.check(')'):
+                while True:
+                    bases.append(self.consume(expected_type='IDENT').value)
+                    if not self.match(','):
+                        break
+            self.consume(expected_value=')')
+        if self.match('implements'):
+            while True:
+                bases.append(self.consume(expected_type='IDENT').value)
+                if not self.match(','):
+                    break
+        base_class = ", ".join(bases) if bases else None
+
         self.consume(expected_value='{')
         members = []
         while not self.check('}') and not self.check('EOF'):
-            # Skip visibility / modifiers on members.
-            while self.peek().value in ('public', 'private', 'protected', 'static'):
-                self.consume()
+            member_start = self.peek()
+            # Member modifiers. Visibility must be explicit; the rule checker
+            # reports a member with none.
+            member_visibility = None
+            is_static = False
+            while True:
+                if self.match('public'): member_visibility = 'public'
+                elif self.match('private'): member_visibility = 'private'
+                elif self.match('protected'): member_visibility = 'protected'
+                elif self.match('static'): is_static = True
+                else: break
+
+            # Member decorators: `@property`, `@staticmethod`, `@classmethod`.
+            member_decorators = []
+            is_classmethod = False
+            is_property = False
+            while self.match('@'):
+                dec_name = self.consume(expected_type='IDENT').value
+                dec_args = []
+                dec_kwargs = {}
+                if self.match('('):
+                    if not self.check(')'):
+                        while True:
+                            is_named = (self.check_type('IDENT')
+                                        and self.peek(1).value in ('=', ':'))
+                            if is_named:
+                                key = self.consume().value
+                                self.consume()
+                                dec_kwargs[key] = self.parse_expression()
+                            else:
+                                dec_args.append(self.parse_expression())
+                            if not self.match(','): break
+                    self.consume(expected_value=')')
+                member_decorators.append(Decorator(dec_name, dec_args, dec_kwargs))
+                if dec_name == 'staticmethod': is_static = True
+                elif dec_name == 'classmethod': is_classmethod = True
+                elif dec_name == 'property': is_property = True
 
             if self.check('def') or self.check('fn'):
                 # Reuse the full function parser so parameters, defaults,
                 # types, generics and default bodies are all preserved.
                 self.consume()  # eat def/fn
                 func = self.parse_function_decl_after_keyword()
-                members.append(Method(
+                method = Method(
                     func.name, func.params, func.return_type, func.body,
-                    is_static=func.is_static, visibility=visibility,
-                    decorators=func.decorators,
-                ))
+                    is_static=is_static, is_classmethod=is_classmethod,
+                    is_property=is_property, visibility=member_visibility,
+                    decorators=member_decorators, owner=name,
+                )
+                method.with_location(self._member_location(member_start))
+                members.append(method)
             elif self.peek().type == 'IDENT':
                 # Field declaration inside a trait: `name: Type`,
                 # `let name: Type`, `let name: Type = default`, `mut name`.
@@ -1254,13 +1331,16 @@ class Parser:
                 default = None
                 if self.match('='):
                     default = self.parse_expression()
-                members.append(VarDecl(member_name, True, field_type, default,
-                                       visibility=visibility))
+                field = VarDecl(member_name, True, field_type, default,
+                                visibility=member_visibility, is_static=is_static,
+                                owner=name)
+                field.with_location(self._member_location(member_start))
+                members.append(field)
             else:
                 break
 
         self.consume(expected_value='}')
-        return TraitDecl(name, members, type_params, visibility)
+        return TraitDecl(name, members, type_params, visibility, base_class)
 
     def parse_function_decl_after_keyword(self):
         """Parse a function signature/body when `def`/`fn` was already consumed.

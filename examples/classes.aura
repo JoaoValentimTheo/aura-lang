@@ -1,20 +1,20 @@
 class BankAccount {
-  let owner: str = ""
-  let balance: float = 0.0
+  public let owner: str = ""
+  public let balance: float = 0.0
 
-  def new(owner: str, balance: float = 0.0) {
+  public def new(owner: str, balance: float = 0.0) {
     self.owner = owner
     self.balance = balance
   }
 
-  def deposit(amount: float) {
+  public def deposit(amount: float) {
     if amount > 0.0 {
       self.balance += amount
       print(f"Deposited {amount}, balance: {self.balance}")
     }
   }
 
-  def withdraw(amount: float) -> bool {
+  public def withdraw(amount: float) -> bool {
     if amount <= self.balance {
       self.balance -= amount
       print(f"Withdrew {amount}, balance: {self.balance}")
@@ -24,7 +24,7 @@ class BankAccount {
     return false
   }
 
-  @property
+  public @property
   def is_empty() -> bool {
     return self.balance == 0.0
   }
@@ -36,15 +36,15 @@ account.withdraw(200.0)
 print(f"Empty? {account.is_empty}")
 
 class SavingsAccount(BankAccount) {
-  let rate: float = 0.05
+  public let rate: float = 0.05
 
-  def new(owner: str, balance: float, rate: float) {
+  public def new(owner: str, balance: float, rate: float) {
     self.owner = owner
     self.balance = balance
     self.rate = rate
   }
 
-  def add_interest() {
+  public def add_interest() {
     self.balance += self.balance * self.rate
   }
 }

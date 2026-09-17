@@ -3,11 +3,11 @@ class ConcreteC84202Dw {
     public let value: int
     public let name: str = "default"
     
-    def new(value: int) {
+    public def new(value: int) {
         self.value = value;
     }
     
-    def init_with_name(value: int, name: str) {
+    public def init_with_name(value: int, name: str) {
         self.value = value;
         self.name = name;
     }

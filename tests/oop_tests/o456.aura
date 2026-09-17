@@ -7,7 +7,7 @@ class ImplC85931Aq {
     private let logger: RealC63779Xf
     public let value: int
     
-    def new(val: int, logger: RealC63779Xf) {
+    public def new(val: int, logger: RealC63779Xf) {
         self.value = val;
         self.logger = logger;
     }

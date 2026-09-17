@@ -1,6 +1,6 @@
 // OOP: Simple Inheritance
 class ImplC85567Rr {
-    let value: int = 3
+    public let value: int = 3
     public def get_value() -> int { return self.value; }
     public def double_value() -> int { return self.value * 2; }
 }

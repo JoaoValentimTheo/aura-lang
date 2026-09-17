@@ -5,7 +5,7 @@ class ImplC47123Kq {
     
     public let id: int
     
-    def new(id: int) {
+    public def new(id: int) {
         self.id = id;
         ImplC47123Kq.increment_count();
     }

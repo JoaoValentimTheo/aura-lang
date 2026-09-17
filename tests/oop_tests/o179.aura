@@ -7,7 +7,7 @@ class RealC35402Ad {
 class BaseC70642Sm {
     private let component: RealC35402Ad
     
-    def new(comp: RealC35402Ad) {
+    public def new(comp: RealC35402Ad) {
         self.component = comp;
     }
     

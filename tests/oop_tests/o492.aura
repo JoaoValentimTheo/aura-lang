@@ -5,7 +5,7 @@ class MockC78219Bh {
     
     public let id: int
     
-    def new(id: int) {
+    public def new(id: int) {
         self.id = id;
         MockC78219Bh.increment_count();
     }

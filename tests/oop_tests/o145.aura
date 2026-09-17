@@ -2,7 +2,7 @@
 class BaseC99993Yi {
     private let value: int
     
-    def new(value: int) { self.value = value; }
+    public def new(value: int) { self.value = value; }
     
     public def get_value() -> int { return self.value; }
     

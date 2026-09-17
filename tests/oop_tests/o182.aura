@@ -1,6 +1,6 @@
 // OOP: Simple Inheritance
 class AbstractC28362Em {
-    let value: int = 15
+    public let value: int = 15
     public def get_value() -> int { return self.value; }
     public def double_value() -> int { return self.value * 2; }
 }

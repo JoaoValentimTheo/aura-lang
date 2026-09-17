@@ -7,7 +7,7 @@ class AbstractC58896Xp {
 class ImplC61879Te {
     private let component: AbstractC58896Xp
     
-    def new(comp: AbstractC58896Xp) {
+    public def new(comp: AbstractC58896Xp) {
         self.component = comp;
     }
     

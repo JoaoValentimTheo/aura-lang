@@ -7,7 +7,7 @@ class RealC33826Ms {
 class MockC89763Kr {
     private let component: RealC33826Ms
     
-    def new(comp: RealC33826Ms) {
+    public def new(comp: RealC33826Ms) {
         self.component = comp;
     }
     

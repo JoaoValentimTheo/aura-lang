@@ -45,7 +45,7 @@ class Module(Node):
 # ============================================================================
 
 class VarDecl(Stmt):
-    def __init__(self, name, mutable, type_annotation=None, value=None, visibility='public', is_static=False, is_volatile=False):
+    def __init__(self, name, mutable, type_annotation=None, value=None, visibility=None, is_static=False, is_volatile=False, owner=None):
         self.name = name
         self.mutable = mutable
         self.type_annotation = type_annotation
@@ -53,6 +53,9 @@ class VarDecl(Stmt):
         self.visibility = visibility
         self.is_static = is_static
         self.is_volatile = is_volatile
+        # Name of the class that declared this field (for owner-aware private
+        # name mangling); None for module/local declarations.
+        self.owner = owner
 
 class ConstDecl(Stmt):
     def __init__(self, name, type_annotation=None, value=None):
@@ -62,7 +65,7 @@ class ConstDecl(Stmt):
 
 class FunctionDecl(Stmt):
     def __init__(self, name, params, return_type=None, body=None,
-                 is_async=False, type_params=None, decorators=None, visibility='public', is_static=False, is_volatile=False):
+                 is_async=False, type_params=None, decorators=None, visibility=None, is_static=False, is_volatile=False):
         self.name = name
         self.params = params or []
         self.return_type = return_type
@@ -75,7 +78,7 @@ class FunctionDecl(Stmt):
         self.is_volatile = is_volatile
 
 class ClassDecl(Stmt):
-    def __init__(self, name, body, base_class=None, type_params=None, decorators=None, visibility='public', is_static=False, is_volatile=False):
+    def __init__(self, name, body, base_class=None, type_params=None, decorators=None, visibility=None, is_static=False, is_volatile=False):
         self.name = name
         self.body = body
         self.base_class = base_class
@@ -86,11 +89,12 @@ class ClassDecl(Stmt):
         self.is_volatile = is_volatile
 
 class TraitDecl(Stmt):
-    def __init__(self, name, members, type_params=None, visibility='public'):
+    def __init__(self, name, members, type_params=None, visibility=None, base_class=None):
         self.name = name
         self.members = members
         self.type_params = type_params or []
         self.visibility = visibility
+        self.base_class = base_class
 
 class TypeDecl(Stmt):
     def __init__(self, name, type_expr, type_params=None):
@@ -119,7 +123,7 @@ class Parameter(Node):
 class Method(Node):
     def __init__(self, name, params, return_type=None, body=None,
                  is_static=False, is_classmethod=False, is_property=False,
-                 visibility='public', is_volatile=False, decorators=None):
+                 visibility=None, is_volatile=False, decorators=None, owner=None):
         self.name = name
         self.params = params
         self.return_type = return_type
@@ -130,6 +134,9 @@ class Method(Node):
         self.visibility = visibility
         self.is_volatile = is_volatile
         self.decorators = decorators or []
+        # Name of the class that declared this member (for owner-aware
+        # private name mangling); filled in by the parser.
+        self.owner = owner
 
 # ============================================================================
 # Statements

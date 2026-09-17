@@ -5,7 +5,7 @@ class C49364Ci {
     
     public let id: int
     
-    def new(id: int) {
+    public def new(id: int) {
         self.id = id;
         C49364Ci.increment_count();
     }

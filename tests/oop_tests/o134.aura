@@ -7,7 +7,7 @@ class C52164Zx {
     private let logger: AbstractC99813Lx
     public let value: int
     
-    def new(val: int, logger: AbstractC99813Lx) {
+    public def new(val: int, logger: AbstractC99813Lx) {
         self.value = val;
         self.logger = logger;
     }

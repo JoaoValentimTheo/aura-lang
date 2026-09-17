@@ -338,7 +338,7 @@ def test_repl_class_state_does_not_leak_between_chunks():
     from aura.parser.to_ast import Tokenizer, Parser
 
     repl = AuraREPL(output_func=lambda *a: None)
-    assert repl.process("class A { def helper() { return 1 } }").ok
+    assert repl.process("class A { public def helper() { return 1 } }").ok
     # A later, unrelated program must be transformed without leaked state.
     program = Parser(Tokenizer("print([1, 2, 3].length())").tokenize()).parse()
     code = repl.transformer.transform(program)

@@ -117,7 +117,7 @@ def test_self_outside_class_is_rejected():
 
 
 def test_self_inside_method_is_accepted():
-    assert rule_errors("class C { def m() { return self.x } }") == []
+    assert rule_errors("class C { public def m() { return self.x } }") == []
 
 
 def test_unreachable_code_is_rejected():
@@ -130,7 +130,7 @@ def test_invalid_assignment_target_is_rejected():
 
 def test_valid_assignment_targets_are_accepted():
     assert rule_errors("let x = 0\nx = 1") == []
-    assert rule_errors("class C { def m() { self.x = 1 } }") == []
+    assert rule_errors("class C { public def m() { self.x = 1 } }") == []
 
 
 def test_duplicate_binding_is_rejected():

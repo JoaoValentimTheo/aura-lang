@@ -24,7 +24,7 @@ class AbstractC45334Qi {
     public let age: int
     public let email: str
     
-    def new(name: str, age: int, email: str = "") {
+    public def new(name: str, age: int, email: str = "") {
         self.name = name;
         self.age = age;
         self.email = email;

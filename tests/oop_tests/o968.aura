@@ -5,7 +5,7 @@ class AbstractC89384Cu {
     
     public let id: int
     
-    def new(id: int) {
+    public def new(id: int) {
         self.id = id;
         AbstractC89384Cu.increment_count();
     }

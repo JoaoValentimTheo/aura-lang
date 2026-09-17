@@ -7,7 +7,7 @@ class AbstractC52069Mv {
 class ImplC32750Ah {
     private let component: AbstractC52069Mv
     
-    def new(comp: AbstractC52069Mv) {
+    public def new(comp: AbstractC52069Mv) {
         self.component = comp;
     }
     

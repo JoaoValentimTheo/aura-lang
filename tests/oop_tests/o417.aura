@@ -7,7 +7,7 @@ class ConcreteC96040En {
 class ConcreteC33999Ed {
     private let component: ConcreteC96040En
     
-    def new(comp: ConcreteC96040En) {
+    public def new(comp: ConcreteC96040En) {
         self.component = comp;
     }
     

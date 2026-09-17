@@ -32,8 +32,8 @@ real multi-file projects". Ratings below 100 % name the concrete gap.
 | Primitive & collection types | 100 % | `int`, `float`, `str`, `bool`, `bytes`, list/dict/set/tuple | — |
 | Functions | 100 % | Defaults, named args, variadics, expression bodies, recursion, multiple returns | — |
 | Lambdas & closures | 95 % | Single-expr and block lambdas; captured-locals use `nonlocal` | Closure analysis is syntactic, not a full scope resolver |
-| Classes & OOP | 95 % | Inheritance, `@property`, `@staticmethod`, `@classmethod`, visibility mangling | Multiple inheritance edge cases; no metaclasses |
-| Traits / interfaces | 90 % | Compile to base classes; multiple `implements` | No abstract-method enforcement |
+| Classes & OOP | 98 % | Inheritance (single/multiple), `@property`, `@staticmethod`, `@classmethod`, explicit visibility with owner-aware mangling (E307/E308), abstract-method enforcement (E309) | No metaclasses |
+| Traits / interfaces | 98 % | Compile to ABCs; multiple `implements`; traits extend traits; abstract-method enforcement at compile time | No mixin method-resolution rules |
 | Generics | 85 % | `Box[T]` accepted; unused type parameters flagged; erased at runtime | No constraint checking or type-argument inference |
 | Enums | 95 % | Values, auto-numbering, matching | No methods on enum members |
 | Control flow | 100 % | `if`/`unless`/`guard`/`match`/`while`/`until`/`loop`; labeled break/continue | — |

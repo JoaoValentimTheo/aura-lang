@@ -7,7 +7,7 @@ class ConcreteC35731Fo {
 class AbstractC53407Pn {
     private let delegate: ConcreteC35731Fo
     
-    def new(t: ConcreteC35731Fo) { self.delegate = t; }
+    public def new(t: ConcreteC35731Fo) { self.delegate = t; }
     
     public def process() -> int {
         return self.delegate.process() + 10;

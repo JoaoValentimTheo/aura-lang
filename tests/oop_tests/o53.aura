@@ -7,7 +7,7 @@ class AbstractC86605Sp {
 class RealC79951Ge {
     private let component: AbstractC86605Sp
     
-    def new(comp: AbstractC86605Sp) {
+    public def new(comp: AbstractC86605Sp) {
         self.component = comp;
     }
     

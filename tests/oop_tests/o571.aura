@@ -7,7 +7,7 @@ class ImplC30768Dm {
 class BaseC35371Xk {
     private let component: ImplC30768Dm
     
-    def new(comp: ImplC30768Dm) {
+    public def new(comp: ImplC30768Dm) {
         self.component = comp;
     }
     

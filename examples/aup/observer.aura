@@ -3,16 +3,16 @@
 // A subject keeps a list of callbacks and notifies them on change.
 
 class EventBus {
-  let handlers: dict = {}
+  public let handlers: dict = {}
 
-  def on(event: str, handler) {
+  public def on(event: str, handler) {
     if not event in self.handlers {
       self.handlers[event] = []
     }
     self.handlers[event].append(handler)
   }
 
-  def emit(event: str, payload) {
+  public def emit(event: str, payload) {
     guard event in self.handlers else { return }
     for handler in self.handlers[event] {
       handler(payload)

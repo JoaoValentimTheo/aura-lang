@@ -1,6 +1,6 @@
 // OOP: Simple Inheritance
 class C12430Tb {
-    let value: int = 75
+    public let value: int = 75
     public def get_value() -> int { return self.value; }
     public def double_value() -> int { return self.value * 2; }
 }

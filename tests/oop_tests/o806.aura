@@ -7,7 +7,7 @@ class C22402Se {
     private let logger: BaseC84531Js
     public let value: int
     
-    def new(val: int, logger: BaseC84531Js) {
+    public def new(val: int, logger: BaseC84531Js) {
         self.value = val;
         self.logger = logger;
     }

@@ -7,7 +7,7 @@ class BaseC22247Fh {
 class RealC68528Sm {
     private let delegate: BaseC22247Fh
     
-    def new(t: BaseC22247Fh) { self.delegate = t; }
+    public def new(t: BaseC22247Fh) { self.delegate = t; }
     
     public def process() -> int {
         return self.delegate.process() + 10;

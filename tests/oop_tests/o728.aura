@@ -1,6 +1,6 @@
 // OOP: Simple Inheritance
 class RealC64885Ta {
-    let value: int = 92
+    public let value: int = 92
     public def get_value() -> int { return self.value; }
     public def double_value() -> int { return self.value * 2; }
 }

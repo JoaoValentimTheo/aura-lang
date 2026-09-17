@@ -7,7 +7,7 @@ class C87947Vv {
 class C40156Lh {
     private let component: C87947Vv
     
-    def new(comp: C87947Vv) {
+    public def new(comp: C87947Vv) {
         self.component = comp;
     }
     

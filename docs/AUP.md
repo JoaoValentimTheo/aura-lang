@@ -58,12 +58,12 @@ A `trait` is an interface that compiles to an abstract base class. Concrete
 classes `implements` it, and call sites accept the trait as a parameter type.
 
 ```aura
-trait Discount { def apply(price: float) -> float }
+trait Discount { public def apply(price: float) -> float }
 
 class PercentOff implements Discount {
-  let percent: float = 0.0
-  def new(percent: float) { self.percent = percent }
-  def apply(price: float) -> float { return price * (1.0 - self.percent / 100.0) }
+  private let percent: float = 0.0
+  public def new(percent: float) { self.percent = percent }
+  public def apply(price: float) -> float { return price * (1.0 - self.percent / 100.0) }
 }
 ```
 

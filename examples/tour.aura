@@ -33,28 +33,28 @@ print(squares)
 
 // --- Classes ---------------------------------------------------------------
 class Shape {
-  let name: str = "shape"
+  public let name: str = "shape"
 
-  def area() -> float {
+  public def area() -> float {
     return 0.0
   }
 
-  def describe() -> str {
+  public def describe() -> str {
     return f"{self.name} with area {self.area()}"
   }
 }
 
 class Rectangle(Shape) {
-  let width: float = 0.0
-  let height: float = 0.0
+  public let width: float = 0.0
+  public let height: float = 0.0
 
-  def new(width: float, height: float) {
+  public def new(width: float, height: float) {
     self.name = "rectangle"
     self.width = width
     self.height = height
   }
 
-  def area() -> float {
+  public def area() -> float {
     return self.width * self.height
   }
 }

@@ -7,7 +7,7 @@ class ConcreteC78953Cb {
 class C15564Oy {
     private let component: ConcreteC78953Cb
     
-    def new(comp: ConcreteC78953Cb) {
+    public def new(comp: ConcreteC78953Cb) {
         self.component = comp;
     }
     

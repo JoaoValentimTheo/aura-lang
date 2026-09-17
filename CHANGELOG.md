@@ -4,6 +4,43 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.0a6] - 2026-09-17
+
+### Added
+
+- **Real encapsulation.** Every class/trait member must declare an explicit
+  `public`, `private` or `protected` visibility; omitting it is a compile error
+  (`E307`).
+- `E308`: the rule checker rejects access to a non-public member from outside
+  the class, resolving `self`/`cls` and simple `let x = Class(...)` instances.
+- Auto-generated `get_<name>()` / `set_<name>(value)` accessors for every
+  non-public field (overridable by an explicit method).
+- Owner-aware name mangling: `private` → `_<DefiningClass>__name`,
+  `protected` → `_name`. A private member keeps its defining class's prefix even
+  when referenced from a subclass, fixing the inherited-private lookup.
+- `tests/test_encapsulation.py`: 20 tests covering `E307`, `E308`, accessors,
+  owner-aware mangling and runtime enforcement.
+- **Abstract-method enforcement.** A concrete class that fails to implement an
+  abstract method inherited from a trait is rejected at compile time (`E309`),
+  instead of only failing when instantiated.
+- **Trait inheritance.** Traits may extend other traits via `trait B(A)` or
+  `trait B implements A`; abstract methods are inherited transitively.
+- `tests/test_oop_abstract.py`: 16 tests covering `E309`, transitive abstract
+  inheritance and trait-to-trait inheritance.
+
+### Changed
+
+- `protected` members are accessible in the declaring class **and its
+  subclasses**; `private` members only in the declaring class.
+- Parser attaches source locations to class/trait members.
+
+### Fixed
+
+- Tokenizer reported every token's column as the position **after** the token
+  (e.g. `class` at column 6 instead of 1); now reports the token's start.
+- The `tests/*_tests/` corpora and `examples/` were migrated to explicit
+  visibility modifiers (816 files).
+
 ## [0.1.0a5] - 2026-09-16
 
 ### Added

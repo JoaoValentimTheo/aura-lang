@@ -7,7 +7,7 @@ class C72881Pn {
     private let logger: ConcreteC26375Fy
     public let value: int
     
-    def new(val: int, logger: ConcreteC26375Fy) {
+    public def new(val: int, logger: ConcreteC26375Fy) {
         self.value = val;
         self.logger = logger;
     }

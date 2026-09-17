@@ -3,25 +3,25 @@
 // A mutable object whose methods return `self` allows left-to-right chaining.
 
 class Query {
-  let table: str = ""
-  let columns: list = []
-  let limit_value: int = 0
+  public let table: str = ""
+  public let columns: list = []
+  public let limit_value: int = 0
 
-  def new(table: str) {
+  public def new(table: str) {
     self.table = table
   }
 
-  def select(*names) {
+  public def select(*names) {
     self.columns = names
     return self
   }
 
-  def limit(n: int) {
+  public def limit(n: int) {
     self.limit_value = n
     return self
   }
 
-  def build() -> str {
+  public def build() -> str {
     let mut cols = " * "
     if self.columns.length() > 0 {
       cols = " " + ", ".join(self.columns) + " "

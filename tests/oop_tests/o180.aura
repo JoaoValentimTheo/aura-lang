@@ -7,7 +7,7 @@ class ImplC57423Ws {
 class ImplC98253Rm {
     private let delegate: ImplC57423Ws
     
-    def new(t: ImplC57423Ws) { self.delegate = t; }
+    public def new(t: ImplC57423Ws) { self.delegate = t; }
     
     public def process() -> int {
         return self.delegate.process() + 10;

@@ -7,7 +7,7 @@ class BaseC68344Ry {
 class AbstractC45644Vw {
     private let component: BaseC68344Ry
     
-    def new(comp: BaseC68344Ry) {
+    public def new(comp: BaseC68344Ry) {
         self.component = comp;
     }
     

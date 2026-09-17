@@ -7,7 +7,7 @@ class AbstractC69081Mb {
 class RealC33804Ip {
     private let component: AbstractC69081Mb
     
-    def new(comp: AbstractC69081Mb) {
+    public def new(comp: AbstractC69081Mb) {
         self.component = comp;
     }
     

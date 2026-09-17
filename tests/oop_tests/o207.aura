@@ -7,7 +7,7 @@ class C34629Dj {
 class ImplC68702Xb {
     private let component: C34629Dj
     
-    def new(comp: C34629Dj) {
+    public def new(comp: C34629Dj) {
         self.component = comp;
     }
     

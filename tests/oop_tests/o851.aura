@@ -7,7 +7,7 @@ class BaseC36540Rc {
 class BaseC32753Qo {
     private let component: BaseC36540Rc
     
-    def new(comp: BaseC36540Rc) {
+    public def new(comp: BaseC36540Rc) {
         self.component = comp;
     }
     
