@@ -50,7 +50,7 @@ real multi-file projects". Ratings below 100 % name the concrete gap.
 |------|---|----------|---------------|
 | `run` | 100 % | Transpiles + executes; async wrapper | — |
 | `transpile` | 100 % | Emits Python to stdout/file | — |
-| `check` | 92 % | Type + mutability + rule diagnostics, each with a code and location | No interprocedural inference across modules; arity not checked for too-few args |
+| `check` | 95 % | Type + mutability + rule diagnostics, each with a code and location; arity (too many/few) enforced | No interprocedural inference across modules |
 | `format` | 80 % | Placeholder-protected, string-aware formatter | Not AST-based; comment reflow |
 | `lint` | 75 % | Line length, trailing whitespace, naming, spacing — all `W00x` with locations | Style-only; no auto-fix |
 | `test` | 85 % | Runs `.aura` files with pass/fail | No assertions/matchers framework, no fixtures |
@@ -101,7 +101,7 @@ real multi-file projects". Ratings below 100 % name the concrete gap.
 | Quick start | 98 % | `pip install .` provides the `aura` command; `python3 main.py` still works |
 | Documentation | 92 % | EN + PT language/type docs; grammar, diagnostics reference, AUP, audit, completeness, changelog, README |
 | Examples | 92 % | 11 feature examples + 10 runnable Aura Patterns (AUP) with an enforced standard |
-| Tests | 97 % | 1,388 passing; property-based (Hypothesis) and differential suites; ~71 % coverage; 6,609-file corpus |
+| Tests | 98 % | ~1,500 passing; property-based (Hypothesis), differential, extreme rule/OOP suites; ~72 % coverage; 6,609-file corpus |
 | CI | 92 % | GitHub Actions: tests on 3.10–3.13, CLI smoke test, build, coverage floor |
 | Releases / versioning | 95 % | Tag-driven release workflow, `aura version`, PyPI trusted publishing (live on PyPI) |
 | Package layout for users | 95 % | Installable console entry point; clean `aura` namespace; published as `aura-language` on PyPI |

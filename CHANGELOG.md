@@ -4,6 +4,49 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.0a10] - 2026-09-17
+
+### Fixed
+
+- `itertools.repeat(value)` without `times` yields an infinite iterator
+  instead of raising `TypeError`.
+- `asyncio.wait` / `asyncio.as_completed` accept raw coroutines (they wrap them
+  in tasks) instead of raising `TypeError`.
+- `crypto.hkdf_sha256` rejects output above the RFC 5869 limit (8160 bytes for
+  SHA-256) with a clear error instead of an obscure `ValueError`.
+- `http`: the `requests` backend now follows redirects while re-validating
+  every hop (SSRF guard) and streams the body under the configured size cap,
+  matching the urllib backend and the documentation.
+- Resolved the top-level `join` shadow: `stdlib.join` is the string join, and
+  `stdlib.io.join` is exported as `stdlib.path_join`.
+
+### Changed
+
+- The type checker reports too-few-argument calls (`E105`); default, variadic
+  and keyword arguments are respected.
+- `stdlib.INF` and `stdlib.NAN` are exported; `crypto_backend` is in
+  `stdlib.__all__`.
+- Documented the `math` extras and the `python` and `crypto_backend` modules in
+  the standard-library reference.
+
+### Removed
+
+- Dead code: unused CLI compatibility wrappers, `parse_value`, `list_macros`,
+  `_offset_for_prelude`, `CompilationException`, `format_error_message`,
+  `AuraTypeError`, `NeverType`, the `ANY/NONE/INT/FLOAT/STR/BOOL` aliases, the
+  REPL `BANNER`, two formatter constants, and the `collections` convenience
+  aliases (`aura_dict`, `list_from`, `dict_from`, `set_from`,
+  `map_list`/`filter_list`/`reduce_list`/`find_in_list`).
+
+### Added
+
+- `tests/test_extreme_rules.py` (65 tests): every enforced `E##`/`W##` code with
+  a boundary near-miss, CLI extremes and catalogue completeness.
+- `tests/test_extreme_oop.py` (37 tests): deep inheritance, MRO, properties,
+  class/static methods, visibility, abstract contracts, dunder protocols,
+  generics, enums, pattern matching and collection edges.
+- `tests/test_stdlib_regressions.py` (14 tests): the fixes above.
+
 ## [0.1.0a9] - 2026-09-17
 
 ### Added
