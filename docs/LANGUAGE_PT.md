@@ -995,7 +995,7 @@ let par = (1, "ola")
 ```aura
 try {
   let resultado = operacao_arriscada()
-} catch e {
+} catch Error as e {
   print("Erro: " + e)
 }
 
@@ -1035,14 +1035,14 @@ def validar(idade) {
 ```aura
 let resultado = try {
   parse_int(entrada)
-} catch e {
+} catch Error as e {
   0
 }
 
 // Com finally
 let dados = try {
   ler_arquivo(caminho)
-} catch e {
+} catch Error as e {
   "padrao"
 } finally {
   limpar()

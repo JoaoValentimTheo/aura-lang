@@ -1135,13 +1135,20 @@ guard may reject the value. `case name` binds the value and does count.
 let result = condition ? "yes" : "no"
 ```
 
-### Elvis operator
+### Elvis operator (`?:`) — fallback on falsy
+
+`a ?: b` evaluates to `b` when `a` is **falsy** (`none`, `false`, `0`, `""`,
+`[]`, `{}`); otherwise it yields `a`.
 
 ```aura
-let value = potential_null ?: default_value
+let value = potential_null ?: default_value   // default if value is falsy
 ```
 
-### Null coalescing
+### Null coalescing (`??`) — fallback on `none`
+
+`a ?? b` evaluates to `b` only when `a` is `none`; `0`, `false` and `""` are
+kept. Prefer `??` when you mean "absent", and `?:` when you mean "empty or
+absent".
 
 ```aura
 let display_name = user?.name ?? "Anonymous"
@@ -1239,10 +1246,23 @@ let pair = (1, "hello")
 
 ### try/catch/finally
 
+A `catch` clause has exactly one meaning per spelling:
+
+| Form | Meaning |
+| --- | --- |
+| `catch { }` | catch every exception (no binding) |
+| `catch Type { }` | catch only `Type` |
+| `catch Type as e { }` | catch only `Type`, binding it to `e` |
+| `catch as e { }` | catch every exception, binding it to `e` |
+
+A lone identifier before `{` is always a **type**, never a binding, so
+`catch SyntaxError { }` really does filter by type. To bind the caught error
+use `as`:
+
 ```aura
 try {
   let result = risky_operation()
-} catch e {
+} catch as e {
   print("Error: " + e)
 }
 
@@ -1325,14 +1345,14 @@ above.
 ```aura
 let result = try {
   parse_int(input)
-} catch e {
+} catch Error as e {
   0
 }
 
 // With finally
 let data = try {
   read_config(path)
-} catch e {
+} catch Error as e {
   "default"
 } finally {
   cleanup()

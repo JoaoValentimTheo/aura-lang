@@ -307,7 +307,7 @@ def test_for_over_dict_binds_key_type():
 
 def test_try_catch_finally_visit():
     ok, checker = check('def main() {\n'
-                        '  try { print(1) } catch e { print(e) } finally { print(2) }\n'
+                        '  try { print(1) } catch Error as e { print(e) } finally { print(2) }\n'
                         '}\n')
     assert ok is True
     assert 'e' in checker.errors or ok

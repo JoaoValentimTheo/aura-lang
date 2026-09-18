@@ -598,8 +598,9 @@ class TypeChecker:
         self.context = {}
         # Names usable as a generic constraint. Collected up front so a
         # constraint may reference a class declared later in the file.
-        self._declared_types = self._collect_declared_types(program)
-        self._enum_decls = self._collect_enum_decls(program)
+        declared, enums = self._collect_declarations(program)
+        self._declared_types = declared
+        self._enum_decls = enums
         self._enum_typed = {}
         try:
             for stmt in getattr(program, 'statements', []):
@@ -614,7 +615,22 @@ class TypeChecker:
     @staticmethod
     def _collect_declared_types(program) -> set:
         """Return every class/trait name declared in the program (recursively)."""
+        return TypeChecker._collect_declarations(program)[0]
+
+    @staticmethod
+    def _collect_enum_decls(program) -> dict:
+        """Map enum name -> EnumDecl for exhaustiveness checks."""
+        return TypeChecker._collect_declarations(program)[1]
+
+    @staticmethod
+    def _collect_declarations(program):
+        """Collect class/trait names and enum declarations in one pass.
+
+        Both sets are needed before visiting the program and both require a
+        full traversal, so they are gathered together.
+        """
         names: set = set()
+        decls: dict = {}
 
         def walk(node):
             if node is None:
@@ -628,6 +644,11 @@ class TypeChecker:
                 body = getattr(node, 'body', None) or getattr(node, 'members', None) or []
                 for member in body:
                     walk(member)
+            elif isinstance(node, EnumDecl):
+                decls[node.name] = node
+                for value in vars(node).values():
+                    if isinstance(value, (Node, list, tuple)):
+                        walk(value)
             elif isinstance(node, Module):
                 for member in getattr(node, 'members', []) or []:
                     walk(member)
@@ -637,29 +658,7 @@ class TypeChecker:
                         walk(value)
 
         walk(program)
-        return names
-
-    @staticmethod
-    def _collect_enum_decls(program) -> dict:
-        """Map enum name -> EnumDecl for exhaustiveness checks."""
-        decls: dict = {}
-
-        def walk(node):
-            if node is None:
-                return
-            if isinstance(node, (list, tuple)):
-                for item in node:
-                    walk(item)
-                return
-            if isinstance(node, EnumDecl):
-                decls[node.name] = node
-            elif isinstance(node, Node):
-                for value in vars(node).values():
-                    if isinstance(value, (Node, list, tuple)):
-                        walk(value)
-
-        walk(program)
-        return decls
+        return names, decls
 
     def _check_type_constraints(self, node, owner_kind):
         """Validate generic constraints on a class/trait/function declaration.

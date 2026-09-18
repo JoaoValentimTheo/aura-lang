@@ -31,7 +31,7 @@ def main() {
   // Expression form: the try yields a value.
   let label = try {
     f"parsed: {parse_int('42')}"
-  } catch e {
+  } catch Error as e {
     "failed"
   }
   print(label)

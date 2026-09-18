@@ -155,7 +155,7 @@ def test_function_declarations_parse(name, nparams):
                 "break", "continue", "pass", "mut", "const", "public",
                 "private", "protected", "static", "volatile", "super", "spawn",
                 "guard", "loop", "until", "unless", "enum", "type", "module",
-                "export", "implements", "assert", "new"}:
+                "export", "implements", "assert", "new", "volatily"}:
         return
     params = ", ".join(f"p{i}" for i in range(nparams))
     src = f"def {name}({params}) {{ return 1 }}"

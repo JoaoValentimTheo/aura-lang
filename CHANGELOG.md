@@ -4,7 +4,60 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [0.1.0a17] - 2026-09-18
+## [0.1.0a18] - 2026-09-18
+
+Second audit round. Fixed the remaining silent miscompilations in the parser
+and transformers, closed two standard-library security gaps, hardened the
+post-quantum fallback, and removed redundant AST traversals that dominated
+compilation time on large sources.
+
+### Fixed — parser and codegen
+
+- **`yield` followed by a binary expression** (`yield x + 1`) bound the value
+  too tightly and emitted `(yield x) + 1`; it now yields the whole expression,
+  matching Python. A tuple yield (`yield a, b`) yields `(a, b)`.
+- **f-string conversions** were dropped: `f"{v!r}"` and `f"{v!s}"` emitted
+  `{v}`. The `!r`/`!s`/`!a` conversion and the `:spec` tail are now parsed and
+  preserved.
+- **An invalid expression inside an f-string** (`f"{1+}"`) emitted invalid
+  Python; it is now a positioned diagnostic.
+- **Typed destructuring** (`let (a, b: Int) = ...`) emitted invalid Python
+  (`(a, b : Int) = ...`); it is now rejected with a clear error, while dict
+  alias patterns (`let {name: n} = ...`) keep working.
+- **`?:` and `??`** emitted the left operand twice in the condition, so a
+  side-effecting or expensive value was evaluated twice and chained operators
+  quadrupled work. Both now go through single-evaluation prelude helpers
+  (`_aura_elvis`, `_aura_null_coalesce`).
+
+### Fixed — standard library security
+
+- **SSRF guard bypass**: `http://:50587/` has no hostname, and the blocked-host
+  check was skipped when the hostname was missing. It now runs unconditionally
+  and fails closed.
+- **Carrier-grade NAT** (`100.64.0.0/10`, RFC 6598) is now treated as blocked;
+  Python's `ipaddress` does not mark it private.
+- **The pure-Python post-quantum reference backend** now emits a one-time
+  `RuntimeWarning` when used, so a program cannot silently rely on a
+  non-production backend whose signatures are forgeable.
+- **`AuraDict`** no longer shadows a data key with an inherited method: a
+  mapping with a `keys`/`values`/`items` key returns the value on attribute
+  access while the method form still works when no such key exists.
+
+### Changed — performance
+
+- The rule checker's four whole-program traversals were fused into one, and
+  the type checker's declaration collection into another, cutting compilation
+  time on a 465 KB / 18,400-line file from ~580 ms to ~465 ms (~20%) without
+  changing diagnostics.
+- The operator-precedence table is a module constant instead of a dict rebuilt
+  on every operator token.
+
+### Tests
+
+- Added `tests/test_audit_round2.py` covering `yield` grouping, f-string
+  conversions and validation, destructuring, single-evaluation coalescing, the
+  SSRF and CGNAT blocks, the reference-backend warning and `AuraDict`
+  collisions.
 
 Internal audit hardening. A full pass over the tokenizer, parser, transformers,
 type checker and developer tooling fixed silent miscompilations, crashes on

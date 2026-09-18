@@ -862,7 +862,7 @@ def test_member_assignment_is_not_a_rebinding():
 
 def test_for_and_catch_bindings_are_mutable():
     assert _mutability_errors("for i in [1] { i = 2 }\n") == []
-    assert _mutability_errors("try { f() } catch e { e = 1 }\n") == []
+    assert _mutability_errors("try { f() } catch Error as e { e = 1 }\n") == []
 
 
 def test_reassignment_inside_nested_block_is_detected():
@@ -917,7 +917,7 @@ def test_multi_target_assign_transpiles_to_valid_python():
 # ============================================================================
 
 def test_throw_string_raises_exception():
-    source = 'try { throw "boom" } catch e { print(e) }'
+    source = 'try { throw "boom" } catch Error as e { print(e) }'
     out, code = run_aura(source)
     assert out.strip() == "boom"
     assert "raise Exception(" in code

@@ -9,12 +9,21 @@ _MISSING = object()
 class AuraDict(dict):
     """A dict that also supports attribute access (`user.name`)."""
 
+    def __getattribute__(self, name):
+        # A data key takes precedence over an inherited dict method so a
+        # mapping that happens to contain `keys`, `values`, `items`, `get`,
+        # ... is still reachable as `d.keys`. Dunder lookups are left alone so
+        # copy/pickle/inspect keep working, and methods keep working when no
+        # such key exists. `self.keys()` is a real call: if the stored value is
+        # callable it is returned and invoked like any other member.
+        if not (name.startswith('__') and name.endswith('__')):
+            try:
+                return dict.__getitem__(self, name)
+            except KeyError:
+                pass
+        return dict.__getattribute__(self, name)
+
     def __getattr__(self, name):
-        # Never intercept dunder lookups: copy/pickle/inspect rely on these
-        # raising AttributeError, and routing them through __getitem__ would
-        # loop or break those protocols.
-        if name.startswith('__') and name.endswith('__'):
-            raise AttributeError(name)
         try:
             return self[name]
         except KeyError as exc:

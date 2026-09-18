@@ -121,9 +121,11 @@ def test_transform_set_literal():
 def test_transform_binary_coalesce_and_elvis():
     t = xf()
     node = ast.BinaryOp(ast.Identifier('a'), '??', ast.Identifier('b'))
-    assert t.transform(node) == '(a if a is not None else b)'
+    assert t.transform(node) == '_aura_null_coalesce(a, b)'
     node = ast.BinaryOp(ast.Identifier('a'), '?:', ast.Identifier('b'))
-    assert t.transform(node) == '(a if a else b)'
+    assert t.transform(node) == '_aura_elvis(a, b)'
+    # Both operators mark the coalescing prelude as needed.
+    assert t.uses_coalesce is True
 
 
 def test_transform_binary_safe_nav_and_cast():
@@ -269,7 +271,7 @@ def test_transform_cond_elvis_coalesce_nodes():
     assert t.transform(ast.CondExpr(ast.BoolLiteral(True), ast.IntLiteral(1),
                                     ast.IntLiteral(0))) == '(1 if True else 0)'
     assert t.transform(ast.CoalesceExpr(ast.Identifier('a'),
-                                        ast.IntLiteral(0))) == '(a if a is not None else 0)'
+                                        ast.IntLiteral(0))) == '_aura_null_coalesce(a, 0)'
 
 
 # ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@ from pathlib import Path
 from aura.transpiler.ast import *
 from aura.transpiler.transformers.expressions import (
     ExpressionTransformer,
+    catch_type_name,
     mangle_member,
     py_safe_name,
 )
@@ -1119,7 +1120,7 @@ class StatementTransformer:
         result = f"try:\n{try_body}"
 
         for catch in node.catch_clauses:
-            exc_type = catch.exception_type or "Exception"
+            exc_type = catch_type_name(catch.exception_type)
             var_name = f" as {catch.var_name}" if catch.var_name else ""
             catch_body = self._block(catch.body)
             result += f"\nexcept {exc_type}{var_name}:\n{catch_body}"

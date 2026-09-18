@@ -83,7 +83,7 @@ def main() {
   // --- Error handling ------------------------------------------------------
   try {
     throw ValueError("something went wrong")
-  } catch e {
+  } catch Error as e {
     print(f"Handled: {e}")
   } finally {
     print("tour complete")

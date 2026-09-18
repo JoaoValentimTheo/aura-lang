@@ -175,7 +175,7 @@ class Tokenizer:
                 # Supports escapes, nested braces and triple quotes. The raw
                 # inner text is stored; parsing into parts happens later so
                 # interpolated Aura code can be transformed.
-                if value == 'f' and self.pos < length and self.source[self.pos] in ('"', "'"):
+                if value.lower() == 'f' and self.pos < length and self.source[self.pos] in ('"', "'"):
                     quote = self.source[self.pos]
                     is_triple = self.source[self.pos:self.pos+3] == quote * 3
                     closing = quote * 3 if is_triple else quote
@@ -402,12 +402,39 @@ class Tokenizer:
 # Keywords that can begin a statement. Used to decide whether a bare `yield`
 # has a value or stands alone.
 _STATEMENT_KEYWORDS = frozenset({
-    'let', 'const', 'def', 'fn', 'async', 'class', 'trait', 'enum', 'type',
+    'let', 'const', 'def', 'async', 'class', 'trait', 'enum', 'type',
     'module', 'import', 'from', 'if', 'unless', 'until', 'while', 'for',
     'loop', 'guard', 'throw', 'return', 'break', 'continue', 'assert', 'try',
     'with', 'match', 'case', 'else', 'catch', 'finally', 'public', 'private',
     'protected', 'static', 'export',
 })
+
+# Operator precedence, hoisted out of `Parser.get_precedence` so the parser
+# does not rebuild a ~40-entry dict on every operator token.
+_PRECEDENCE = {
+    '=': 1, '+=': 1, '-=': 1, '*=': 1, '/=': 1, '%=': 1,
+    '**=': 1, '&=': 1, '|=': 1, '^=': 1, '<<=': 1, '>>=': 1, '??=': 1,
+    '?': 2,  # Ternary
+    'or': 3,
+    'and': 4,
+    # Bitwise operators bind looser than equality but tighter than
+    # `and`/`or`, mirroring the grammar's bitwiseOr/Xor/And chain.
+    '|': 4.2,
+    '^': 4.4,
+    '&': 4.6,
+    '==': 5, '!=': 5, '<': 6, '>': 6, '<=': 6, '>=': 6,
+    'in': 6, 'not in': 6, 'is': 6, 'is not': 6,
+    '..': 7, '..<': 7,  # Range
+    '??': 8, '?:': 8,  # Null coalescing/Elvis
+    # Shifts bind looser than additive but tighter than comparison,
+    # matching Python (`1 << 2 + 1` == `1 << 3`).
+    '<<': 5.5, '>>': 5.5,
+    '+': 9, '-': 9,
+    '*': 10, '/': 10, '%': 10, 'as': 10,
+    '**': 11,
+    '|>': 1,  # Pipe has the lowest precedence, handled separately
+    '.': 12, '[': 12, '(': 12, '?.': 12,
+}
 
 # Upper bound on source size, guarding against accidental multi-gigabyte input.
 MAX_SOURCE_BYTES = 16 * 1024 * 1024
@@ -634,6 +661,12 @@ class Parser:
 
         if token.value == 'let':
             return self.parse_var_decl(visibility, is_static, is_volatile)
+        elif token.value == 'mut':
+            # `mut x = 1` would otherwise parse as a bare `mut` reference
+            # followed by an assignment, silently declaring an immutable `x`.
+            # Only `let mut x` declares a mutable binding outside a class header.
+            raise self.error(
+                "'mut' cannot start a statement; write 'let mut x = ...'", token)
         elif token.value == 'const':
             return self.parse_const_decl()
         elif token.value == 'fn':
@@ -757,6 +790,14 @@ class Parser:
         if isinstance(expr, BinaryOp) and expr.op == '=' and len(elements) > 1:
             expr.right = TupleLiteral(elements[1:])
             return expr
+
+        # `yield a, b` yields the tuple `(a, b)`, so the comma-separated
+        # elements become the yield's operand rather than forming a tuple
+        # around the yield itself.
+        if isinstance(expr, UnaryOp) and expr.op == 'yield':
+            tail = [expr.operand] if expr.operand is not None else []
+            expr.operand = TupleLiteral(tail + elements[1:])
+            return expr
         return TupleLiteral(elements)
 
     def parse_block(self):
@@ -787,6 +828,7 @@ class Parser:
         # Destructuring check (if starts with { or [ or ()
         name = ""
         if self.check('{') or self.check('[') or self.check('('):
+            sequence_pattern = not self.check('{')
             # Capture tokens until we hit ':' or '='
             # Basic balanced consumption
             # This is a heuristic to get the pattern string for Python
@@ -813,6 +855,18 @@ class Parser:
             # This is tricky because we don't have source slice easily from tokens logic above
             # But we can reconstruct from tokens values
             pat_tokens = self.tokens[start_pos:self.pos]
+
+            # A type annotation inside a bracketed destructuring target
+            # (`let (a, b: Int)`) has no Python equivalent and would emit
+            # invalid syntax. Reject it with a diagnostic instead of
+            # miscompiling. Dict patterns use `:` as the alias separator, so
+            # only sequence patterns are checked.
+            if sequence_pattern and any(t.value == ':' for t in pat_tokens):
+                bad = next(t for t in pat_tokens if t.value == ':')
+                raise self.error(
+                    "type annotations are not allowed inside a destructuring "
+                    "pattern; declare the type after the binding "
+                    "(e.g. 'let (a, b): (int, int) = ...')", bad)
 
             # Simple spacing reconstruction
             parts = []
@@ -1359,7 +1413,7 @@ class Parser:
                 consumed_any = True
                 continue
             # At depth 0: literals and identifiers start/continue a type.
-            if tok.type in ('IDENT', 'INT', 'FLOAT', 'STRING') or tok.value in ('true', 'false', 'none', 'null', '.'):
+            if tok.type in ('IDENT', 'INT', 'FLOAT', 'STRING') or tok.value in ('true', 'false', 'none', '.'):
                 if not consumed_any:
                     self.consume()
                     consumed_any = True
@@ -1869,21 +1923,23 @@ class Parser:
         while self.match('catch'):
             exc_type = None
             var_name = None
-            # `catch { }`            -> bare catch
-            # `catch e { }`          -> exception binding, no type
-            # `catch Type { }`       -> type only
-            # `catch Type as e { }`  -> type and binding
-            if self.check_type('IDENT') and self.peek().value != '{':
-                first = self.consume().value
+            # One spelling per concept:
+            #   `catch { }`            -> catch everything
+            #   `catch Type { }`       -> catch a type
+            #   `catch Type as e { }`  -> catch a type and bind it
+            #   `catch as e { }`       -> bind everything (bare `catch e` is
+            #                             rejected: a lone identifier is a type)
+            if self.match('as'):
+                var_name = self.consume(expected_type='IDENT').value
+            elif self.check_type('IDENT') and self.peek().value not in ('{', 'as'):
+                exc_type = self.consume().value
+                if self.check_type('IDENT') and self.peek().value not in ('{', 'as'):
+                    # `catch Value Error` is not a valid form.
+                    raise self.error(
+                        "invalid catch clause; write 'catch Type as name'",
+                        self.peek())
                 if self.match('as'):
-                    exc_type = first
                     var_name = self.consume(expected_type='IDENT').value
-                elif self.peek().value == '{':
-                    var_name = first
-                else:
-                    exc_type = first
-                    if self.check_type('IDENT') and self.peek().value != '{':
-                        var_name = self.consume().value
 
             body = self.parse_block()
             catch_clauses.append(CatchClause(exc_type, var_name, body))
@@ -2054,7 +2110,11 @@ class Parser:
                         and self.peek().value in _STATEMENT_KEYWORDS)):
                 lhs = UnaryOp('yield', operand=None)
             else:
-                lhs = UnaryOp('yield', operand=self.parse_expression(13))
+                # Python's `yield` is the loosest operator: `yield x + 1`
+                # means `yield (x + 1)`, not `(yield x) + 1`. Parse the
+                # operand just above assignment/pipe so the whole expression
+                # is captured.
+                lhs = UnaryOp('yield', operand=self.parse_expression(2))
         elif token.type == 'OP' and token.value == '!':
             raise self.error(
                 "'!' is not part of Aura; use 'not' instead", token)
@@ -2169,30 +2229,7 @@ class Parser:
 
     def get_precedence(self, op):
         # Higher number = higher precedence
-        precedences = {
-            '=': 1, '+=': 1, '-=': 1, '*=': 1, '/=': 1, '%=': 1,
-            '**=': 1, '&=': 1, '|=': 1, '^=': 1, '<<=': 1, '>>=': 1, '??=': 1,
-            '?': 2, # Ternary
-            'or': 3,
-            'and': 4,
-            # Bitwise operators bind looser than equality but tighter than
-            # `and`/`or`, mirroring the grammar's bitwiseOr/Xor/And chain.
-            '|': 4.2,
-            '^': 4.4,
-            '&': 4.6,
-            '==': 5, '!=': 5, '<': 6, '>': 6, '<=': 6, '>=': 6, 'in': 6, 'not in': 6, 'is': 6, 'is not': 6,
-            '..': 7, '..<': 7, # Range
-            '??': 8, '?:': 8, # Null coalescing/Elvis
-            # Shifts bind looser than additive but tighter than comparison,
-            # matching Python (`1 << 2 + 1` == `1 << 3`).
-            '<<': 5.5, '>>': 5.5,
-            '+': 9, '-': 9,
-            '*': 10, '/': 10, '%': 10, 'as': 10,
-            '**': 11,
-            '|>': 1, # Pipe usually low prec, handled separately?
-            '.': 12, '[': 12, '(': 12, '?.': 12
-        }
-        return precedences.get(op, 0)
+        return _PRECEDENCE.get(op, 0)
 
     def is_left_assoc(self, op):
         return op != '**' and op != '=' and op != '??'
@@ -2367,15 +2404,18 @@ class Parser:
                             break
                     j += 1
                 inner = raw[i + 1:j].strip()
-                expr_src, sep, fmt_spec = inner.partition(':')
+                expr_src, conversion, fmt_spec = self._split_fstring_field(inner)
                 expr_src = expr_src.strip()
                 if expr_src:
                     try:
                         sub_tokens = Tokenizer(expr_src).tokenize()
                         expr = Parser(sub_tokens).parse_expression()
-                    except Exception:
-                        expr = Identifier(expr_src)
-                    parts.append((expr, sep + fmt_spec if sep else ''))
+                    except Exception as exc:
+                        raise self.error(
+                            f"invalid expression in f-string: {expr_src!r} "
+                            f"({exc})") from None
+                    spec = conversion + (":" + fmt_spec if fmt_spec is not None else "")
+                    parts.append((expr, spec))
                 i = j + 1
                 continue
             if ch == '}':
@@ -2391,6 +2431,42 @@ class Parser:
         if text:
             parts.append(''.join(text))
         return parts
+
+    def _split_fstring_field(self, inner):
+        """Split an f-string field into (expression, conversion, format_spec).
+
+        The conversion is the optional ``!r``/``!s``/``!a`` suffix and the
+        format spec the optional ``:...`` tail. Both are located at bracket
+        depth zero so a `:` inside a slice or dict is not mistaken for the
+        format separator.
+        """
+        depth = 0
+        i = 0
+        n = len(inner)
+        expr_end = n
+        conversion = ''
+        fmt_spec = None
+        while i < n:
+            ch = inner[i]
+            if ch in '([{':
+                depth += 1
+            elif ch in ')]}':
+                depth -= 1
+            elif depth == 0 and ch == ':' and fmt_spec is None:
+                expr_end = i
+                fmt_spec = inner[i + 1:]
+                break
+            elif depth == 0 and ch == '!':
+                expr_end = i
+                i += 1
+                if i < n and inner[i] in 'rsa':
+                    conversion = '!' + inner[i]
+                    i += 1
+                if i < n and inner[i] == ':':
+                    fmt_spec = inner[i + 1:]
+                break
+            i += 1
+        return inner[:expr_end], conversion, fmt_spec
 
     def parse_lambda_body(self):
         """Parse the body of a lambda: either `{ stmts }` block or an expression."""

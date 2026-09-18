@@ -142,15 +142,18 @@ class RuleChecker:
         self._register_classes(program)
         if require_main:
             self._check_main(program)
+        # The structural checks below each need a full traversal; collect the
+        # nodes they care about once instead of four separate walks.
+        modules, classes, calls = self._structural_nodes(program)
         # A `main` inside a `module` body never runs, in any file.
-        self._check_no_main_in_modules(program)
+        self._check_no_main_in_modules(program, modules)
         # A bare `export Name` must resolve to a sibling source or a local
         # declaration.
-        self._check_reexports(program)
+        self._check_reexports(program, modules)
         # `extends` must name a real base, without duplicates or cycles, and a
         # trait or still-abstract class must not be instantiated.
-        self._check_inheritance(program)
-        self._check_instantiations(program)
+        self._check_inheritance(program, classes)
+        self._check_instantiations(program, calls)
         for stmt in getattr(program, 'statements', []) or []:
             self.visit(stmt)
         return not self.collector.has_errors()
@@ -219,26 +222,47 @@ class RuleChecker:
                     elif isinstance(value, Node):
                         stack.append(value)
 
-    def _check_no_main_in_modules(self, program):
+    def _structural_nodes(self, program):
+        """Collect the node kinds the structural checks need in one walk.
+
+        `_check_no_main_in_modules`, `_check_reexports`, `_check_inheritance`
+        and `_check_instantiations` used to each traverse the whole program,
+        which was measurable on large inputs. A single pass gathers every
+        module, class/trait and call node they care about.
+        """
+        modules = []
+        classes = []
+        calls = []
+        for node in self._walk(program):
+            if isinstance(node, Module):
+                modules.append(node)
+            elif isinstance(node, (ClassDecl, TraitDecl)):
+                classes.append(node)
+            elif isinstance(node, CallExpr):
+                calls.append(node)
+        return modules, classes, calls
+
+    def _check_no_main_in_modules(self, program, modules=None):
         """Report a `main` declared inside a module body (E312).
 
         The runtime calls only the entry file's top-level `main`; a `main` in a
         module namespace would never run, so it is almost certainly a mistake
         (a module is a library, not a program).
         """
-        for node in self._walk(program):
-            if isinstance(node, Module):
-                for member in node.members:
-                    if isinstance(member, FunctionDecl) and member.name == 'main':
-                        self.collector.add(
-                            ErrorCode.MAIN_IN_MODULE,
-                            f"'main' is declared inside module '{node.name}'",
-                            location=self._loc(member),
-                            hint="'main' belongs to the entry file; modules "
-                                 "expose named functions instead",
-                        )
+        if modules is None:
+            modules = (n for n in self._walk(program) if isinstance(n, Module))
+        for node in modules:
+            for member in node.members:
+                if isinstance(member, FunctionDecl) and member.name == 'main':
+                    self.collector.add(
+                        ErrorCode.MAIN_IN_MODULE,
+                        f"'main' is declared inside module '{node.name}'",
+                        location=self._loc(member),
+                        hint="'main' belongs to the entry file; modules "
+                             "expose named functions instead",
+                    )
 
-    def _check_inheritance(self, program):
+    def _check_inheritance(self, program, classes=None):
         """Validate every `extends` clause (E314/E315/E316).
 
         Runs after registration so a base declared later in the file resolves.
@@ -257,9 +281,10 @@ class RuleChecker:
         # `Exception`), as are the Python exception names Aura exposes.
         known = set(self._classes) | set(getattr(self, '_declared_types', ()) or ())
         known |= _BUILTIN_BASE_NAMES
-        for node in self._walk(program):
-            if not isinstance(node, (ClassDecl, TraitDecl)):
-                continue
+        if classes is None:
+            classes = (n for n in self._walk(program)
+                       if isinstance(n, (ClassDecl, TraitDecl)))
+        for node in classes:
             info = self._classes.get(node.name) or {}
             bases = [b.strip() for b in str(node.base_class or '').split(',')
                      if b.strip()]
@@ -337,16 +362,16 @@ class RuleChecker:
                         stack.append(value)
         return None
 
-    def _check_instantiations(self, program):
+    def _check_instantiations(self, program, calls=None):
         """Reject instantiating a trait or a class with unimplemented abstracts.
 
         `T()` where `T` is a trait, and `A()` where `A` still has an abstract
         inherited method, are both Python `TypeError`s at runtime; reporting
         them here names the missing method at the call site (E316).
         """
-        for node in self._walk(program):
-            if not isinstance(node, CallExpr):
-                continue
+        if calls is None:
+            calls = (n for n in self._walk(program) if isinstance(n, CallExpr))
+        for node in calls:
             func = node.func
             if not isinstance(func, Identifier):
                 continue
@@ -389,7 +414,7 @@ class RuleChecker:
             missing |= self._unimplemented_abstracts(bare, seen)
         return missing
 
-    def _check_reexports(self, program):
+    def _check_reexports(self, program, modules=None):
         """Report a `export Name` that cannot be resolved (E313).
 
         The transformer resolves a bare re-export against a sibling source
@@ -400,9 +425,9 @@ class RuleChecker:
 
         source_path = getattr(program, 'source_path', None)
         base_dir = None if source_path is None else Path(source_path).resolve().parent
-        for node in self._walk(program):
-            if not isinstance(node, Module):
-                continue
+        if modules is None:
+            modules = (n for n in self._walk(program) if isinstance(n, Module))
+        for node in modules:
             declared = {getattr(m, 'name', None) for m in node.members}
             for item in getattr(node, 'reexports', None) or []:
                 for name in item.names:

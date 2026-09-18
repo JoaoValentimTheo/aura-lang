@@ -4,6 +4,21 @@ import keyword
 from aura.transpiler.ast import *
 
 
+def catch_type_name(exc_type):
+    """Map an Aura catch type to its Python spelling.
+
+    Aura's exception root is ``Error``; Python's is ``Exception``. Mapping it
+    here means ``catch Error`` works whether or not the program also triggers
+    the ``Error = Exception`` prelude alias. A missing type means "catch
+    everything".
+    """
+    if not exc_type:
+        return 'Exception'
+    if exc_type == 'Error':
+        return 'Exception'
+    return exc_type
+
+
 def py_safe_name(name):
     """Return a Python-safe spelling of an Aura identifier.
 
@@ -58,6 +73,8 @@ class ExpressionTransformer:
         self.seen_identifiers = set()
         self.used_decorators = []
         self.has_dict = False
+        # Set when `??`/`?:` are used and the coalescing prelude is required.
+        self.uses_coalesce = False
         # Module-scope resolution. A module transpiles to a class whose data
         # members (const/let/static) live on the class, so a bare reference to
         # one inside a module function must become `Module.name`. Each stack
@@ -225,9 +242,11 @@ class ExpressionTransformer:
         right = self.transform(node.right)
 
         if node.op == '??':
-            return f"({left} if {left} is not None else {right})"
+            self.uses_coalesce = True
+            return f"_aura_null_coalesce({left}, {right})"
         elif node.op == '?:':
-            return f"({left} if {left} else {right})"
+            self.uses_coalesce = True
+            return f"_aura_elvis({left}, {right})"
         elif node.op == '?.':
             # Safe navigation: left?.right
             # Right is expected to be an identifier (member identifier).
@@ -268,7 +287,11 @@ class ExpressionTransformer:
         if node.op == 'yield':
             if node.operand is None:
                 return "yield"
-            return f"yield {self.transform(node.operand)}"
+            operand = self.transform(node.operand)
+            # A tuple already renders with its own parentheses, so it needs no
+            # extra wrapper; a bare `yield a, b` would otherwise yield a tuple
+            # at a surprising precedence.
+            return f"yield {operand}"
         operand = self.transform(node.operand)
         op_map = {
             '-': '-', '+': '+', 'not': 'not', '~': '~', 'await': 'await'
@@ -378,8 +401,30 @@ class ExpressionTransformer:
     # ========== Indexing & Member Access ==========
     def transform_IndexExpr(self, node):
         obj = self.transform(node.obj)
+        # A range used as an index is a slice, not a key: `a[0..<3]` means
+        # `a[0:3]` (the exclusive `..<` bound becomes the Python stop, and the
+        # inclusive `..` bound becomes `stop + 1`). Emitting `a[range(...)]`
+        # would raise TypeError at runtime.
+        if isinstance(node.index, RangeExpr):
+            index = self._range_as_slice(node.index)
+            return f"{obj}[{index}]"
         index = self.transform(node.index)
         return f"{obj}[{index}]"
+
+    def _range_as_slice(self, node):
+        """Render a range expression as a Python slice fragment."""
+        start = self.transform(node.start) if node.start is not None else ""
+        if node.end is None:
+            stop = ""  # `a[1..]` -> `a[1:]`
+        else:
+            stop = self.transform(node.end)
+            if not node.exclusive:
+                # Inclusive upper bound: include the end element.
+                stop = f"({stop}) + 1"
+        if node.step is not None:
+            step = self.transform(node.step)
+            return f"{start}:{stop}:{step}"
+        return f"{start}:{stop}"
 
     def transform_SliceExpr(self, node):
         obj = self.transform(node.obj)
@@ -458,9 +503,10 @@ class ExpressionTransformer:
 
     def transform_CoalesceExpr(self, node):
         # value ?? default → value if value is not None else default
+        self.uses_coalesce = True
         value = self.transform(node.value)
         default = self.transform(node.default)
-        return f"({value} if {value} is not None else {default})"
+        return f"_aura_null_coalesce({value}, {default})"
 
     def transform_IfStmt(self, node):
         # Handle if-expression: if cond { expr } else { expr }
@@ -711,7 +757,7 @@ class ExpressionTransformer:
         lines.append(f"        return {tail}")
 
         for catch in node.catch_clauses:
-            exc_type = catch.exception_type or "Exception"
+            exc_type = catch_type_name(catch.exception_type)
             var_name = f" as {catch.var_name}" if catch.var_name else ""
             lines.append(f"    except {exc_type}{var_name}:")
             catch_tail, catch_stmts = self._case_value(catch.body)
@@ -721,7 +767,7 @@ class ExpressionTransformer:
                     lines.append(body_code)
             lines.append(f"        return {catch_tail}")
 
-        if node.finally_body:
+        if node.finally_body is not None:
             lines.append("    finally:")
             body_code = stmt_transformer._block(node.finally_body)
             if body_code.strip():

@@ -31,6 +31,11 @@ from .collections import AuraDict
 
 _ALLOWED_SCHEMES = ('http', 'https')
 
+# RFC 6598 shared address space (carrier-grade NAT). Python's `ipaddress`
+# does not treat it as private, but it is not publicly routable, so it must
+# be blocked too.
+_CGNAT = _ipaddress.ip_network('100.64.0.0/10')
+
 # Upper bound on a response body (default 32 MiB) so a server cannot exhaust
 # memory. Set AURA_HTTP_MAX_BYTES to override (0 disables the limit).
 _DEFAULT_MAX_BYTES = 32 * 1024 * 1024
@@ -82,7 +87,8 @@ def _is_blocked_host(hostname):
         if isinstance(addr, _ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
             addr = addr.ipv4_mapped
         if (addr.is_private or addr.is_loopback or addr.is_link_local
-                or addr.is_reserved or addr.is_multicast or addr.is_unspecified):
+                or addr.is_reserved or addr.is_multicast or addr.is_unspecified
+                or addr in _CGNAT):
             return True
     return False
 
@@ -101,7 +107,10 @@ def _validate_url(url):
         raise ValueError(f"URL has no host: {url!r}")
     if not _allow_private():
         hostname = parsed.hostname
-        if hostname and _is_blocked_host(hostname):
+        # `_is_blocked_host` treats a missing hostname as blocked, so it must
+        # run unconditionally: `hostname` is None for URLs like
+        # `http://:50587/`, which would otherwise skip the check entirely.
+        if _is_blocked_host(hostname):
             raise ValueError(
                 f"requests to private or local address {hostname!r} are blocked; "
                 "set AURA_HTTP_ALLOW_PRIVATE=1 to allow"

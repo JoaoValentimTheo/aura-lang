@@ -58,7 +58,7 @@ Reserved words that may not be used as identifiers:
 let  mut  const  def  class  trait  enum  type  module  import  from
 if  else  unless  guard  while  until  for  in  loop  break  continue
 return  throw  try  catch  finally  with  match  case  assert
-async  await  yield  spawn  null  true  false
+async  await  yield  spawn  true  false
 public  private  protected  static  volatile  export
 self  super
 ```
@@ -85,7 +85,7 @@ float_literal  = digit , { digit } , "." , digit , { digit } , [ exponent ]
 exponent       = ( "e" | "E" ) , [ "+" | "-" ] , digit , { digit } ;
 
 bool_literal   = "true" | "false" ;
-null_literal   = "null" ;
+none_literal   = "none" ;
 
 string_literal = [ prefix ] , ( short_string | triple_string ) ;
 prefix         = ( "r" | "b" | "f" | "rb" | "br" ) ;   // case-insensitive
@@ -109,7 +109,7 @@ two-character, which are matched before one-character.
 
 ```
 punctuation = "(" | ")" | "[" | "]" | "{" | "}" | "," | ":" | ";" | "."
-            | "?" | "@" | "#" , { ? not newline ? } ;    // # line comment (alt)
+            | "?" | "@" ;
 
 three_char  = "..<" | "..." | "??=" | "**=" | "<<=" | ">>=" ;
 two_char    = "==" | "!=" | "<=" | ">=" | "->" | "=>" | "+=" | "-=" | "*="
@@ -391,11 +391,15 @@ match_case     = "case" , pattern , [ "if" , expression ] , ( block | "->" , exp
 
 ```
 try_stmt       = "try" , block , { catch_clause } , [ "finally" , block ] ;
-catch_clause   = "catch" , [ type ] , [ "as" , identifier ] , block
-               | "catch" , identifier , block ;
+catch_clause   = "catch" , [ type , [ "as" , identifier ] ] , block
+               | "catch" , "as" , identifier , block ;
 ```
 
 A `try` requires at least one `catch` clause or a `finally` block.
+
+A lone identifier before `{` is always a **type**: `catch TypeError { }` filters
+by type, and `catch as e { }` binds every exception. The old ambiguous
+`catch e { }` form (a bare binding) is a parse error.
 
 ---
 
@@ -464,7 +468,7 @@ primary        = literal
                | if_expression | match_expression | try_expression
                | block_expression ;
 
-literal        = int_literal | float_literal | bool_literal | null_literal | string_literal | f_string ;
+literal        = int_literal | float_literal | bool_literal | none_literal | string_literal | f_string ;
 ```
 
 ### 6.4 Lambda

@@ -197,6 +197,33 @@ def _select():
     return _BACKEND
 
 
+_WARNED_REFERENCE = False
+
+
+def _refuse_insecure_use():
+    """Warn once when PQC runs on the non-production reference backend.
+
+    The reference backend is a demonstration: signatures are forgeable and
+    KEM secrets recoverable from public data, so silently using it for real
+    secrets would be a security hole. The warning (and the opt-out) keeps the
+    fallback usable in tests and demos while making production use explicit.
+    ``require_production_backend()`` turns this into a hard error.
+    """
+    global _WARNED_REFERENCE
+    if _select().production or _WARNED_REFERENCE:
+        return
+    _WARNED_REFERENCE = True
+    import warnings as _warnings
+    _warnings.warn(
+        "aura.stdlib.crypto is using the pure-Python reference backend, which "
+        "is NOT secure for real secrets (signatures are forgeable). Install "
+        "'aura-language[pqc]' or call require_production_backend() before "
+        "trusting post-quantum results.",
+        RuntimeWarning,
+        stacklevel=3,
+    )
+
+
 def info() -> dict:
     backend = _select()
     return {
@@ -207,27 +234,33 @@ def info() -> dict:
 
 
 def kem_keypair(algorithm):
+    _refuse_insecure_use()
     return _select().kem_keypair(algorithm)
 
 
 def kem_encapsulate(public_key, algorithm):
+    _refuse_insecure_use()
     return _select().kem_encapsulate(_to_bytes(public_key), algorithm)
 
 
 def kem_decapsulate(secret_key, ciphertext, algorithm):
+    _refuse_insecure_use()
     return _select().kem_decapsulate(_to_bytes(secret_key), _to_bytes(ciphertext),
                                      algorithm)
 
 
 def dsa_keypair(algorithm):
+    _refuse_insecure_use()
     return _select().dsa_keypair(algorithm)
 
 
 def dsa_sign(secret_key, message, algorithm):
+    _refuse_insecure_use()
     return _select().dsa_sign(_to_bytes(secret_key), _to_bytes(message), algorithm)
 
 
 def dsa_verify(public_key, message, signature, algorithm):
+    _refuse_insecure_use()
     return _select().dsa_verify(_to_bytes(public_key), _to_bytes(message),
                                 _to_bytes(signature), algorithm)
 

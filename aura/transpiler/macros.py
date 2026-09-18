@@ -153,6 +153,20 @@ def _aura_call(func, value):
 # --- end Aura adaptive spread support ---
 '''
 
+# `a ?? b` / `a ?: b` with a single evaluation of `a`. Emitting the condition
+# inline as `(a if a ... else b)` re-evaluates `a`, which is wrong when it has
+# side effects and quadratic for chained operators; the helpers take the
+# already-evaluated value.
+COALESCE_PRELUDE = '''# --- Aura coalescing support ---
+def _aura_null_coalesce(value, default):
+    return value if value is not None else default
+
+
+def _aura_elvis(value, default):
+    return value if value else default
+# --- end Aura coalescing support ---
+'''
+
 # Auto-generated constructors use a module-level sentinel so an explicit
 # ``None`` can override a field default.
 UNSET_PRELUDE = "_aura_unset = object()\n"

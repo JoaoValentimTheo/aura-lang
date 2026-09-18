@@ -234,7 +234,7 @@ def test_assert():
 def test_throw_and_catch():
     out = run_aura(
         "def f() { throw ValueError('boom') }\n"
-        "try { f() } catch e { print('caught') }"
+        "try { f() } catch Error as e { print('caught') }"
     )
     assert out == "caught\n"
 
@@ -242,7 +242,7 @@ def test_throw_and_catch():
 def test_try_catch_finally():
     out = run_aura(
         "try { throw ValueError('x') }\n"
-        "catch e { print('c') }\n"
+        "catch Error as e { print('c') }\n"
         "finally { print('f') }"
     )
     assert out == "c\nf\n"
@@ -260,7 +260,7 @@ def test_try_without_handler_is_error():
 
 def test_throw_string_wrapped():
     out = run_aura(
-        "try { throw 'plain' } catch e { print('ok') }"
+        "try { throw 'plain' } catch Error as e { print('ok') }"
     )
     assert out == "ok\n"
 

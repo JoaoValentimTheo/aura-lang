@@ -75,7 +75,7 @@ class TestErrorRuntime:
             '}\n'
             'def main() {\n'
             '  try { throw MyError("boom") }\n'
-            '  catch e { print("caught: " + str(e)) }\n'
+            '  catch Error as e { print("caught: " + str(e)) }\n'
             '}\n'
         )
         assert out == 'caught: boom\n'

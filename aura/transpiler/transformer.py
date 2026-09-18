@@ -1,6 +1,7 @@
 """Main transpiler that orchestrates AST → Python code transformation."""
 from aura.transpiler.ast import *
 from aura.transpiler.macros import (
+    COALESCE_PRELUDE,
     DICT_PRELUDE,
     ENUM_PRELUDE,
     ERROR_PRELUDE,
@@ -49,6 +50,7 @@ class Transformer:
         expr.seen_identifiers = set()
         expr.used_decorators = []
         expr.has_dict = False
+        expr.uses_coalesce = False
         # Reset cross-program state so a reused Transformer is deterministic
         # (important for the REPL, which reuses one instance across chunks).
         expr.member_visibilities = {}
@@ -97,6 +99,8 @@ class Transformer:
             preludes.append(STDLIB_PRELUDE)
         if expr.has_dict:
             preludes.append(DICT_PRELUDE)
+        if expr.uses_coalesce:
+            preludes.append(COALESCE_PRELUDE)
         if stmt.has_enum:
             preludes.append(ENUM_PRELUDE)
         if stmt.has_label:

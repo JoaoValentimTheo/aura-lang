@@ -8,7 +8,7 @@ def parse_positive(text) -> int | none {
   guard text.length() > 0 else { return none }
   let value = try {
     int(text)
-  } catch e {
+  } catch Error as e {
     -1
   }
   guard value > 0 else { return none }

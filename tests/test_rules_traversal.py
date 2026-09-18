@@ -94,7 +94,7 @@ class TestRuleTraversal:
             'def f() -> int {\n'
             '  try {\n'
             '    return 1\n'
-            '  } catch err {\n'
+            '  } catch Error as err {\n'
             '    return 2\n'
             '  } finally {\n'
             '    print("done")\n'

@@ -353,7 +353,7 @@ def test_static_method():
 ])
 def test_throw_and_catch(exc):
     out, _, _ = run_aura(
-        f'try {{ throw {exc}("x") }}\ncatch e {{ print("caught") }}'
+        f'try {{ throw {exc}("x") }}\ncatch Error as e {{ print("caught") }}'
     )
     assert out.strip() == "caught"
 
@@ -361,7 +361,7 @@ def test_throw_and_catch(exc):
 @pytest.mark.parametrize("message", ['"boom"', '"a\\nb"', '""'])
 def test_throw_string(message):
     out, _, _ = run_aura(
-        f'try {{ throw {message} }} catch error {{ print("ok") }}'
+        f'try {{ throw {message} }} catch Error as error {{ print("ok") }}'
     )
     assert out.strip() == "ok"
 
@@ -369,7 +369,7 @@ def test_throw_string(message):
 def test_finally_always_runs():
     out, _, _ = run_aura(
         'let mut log = ""\n'
-        'try { log += "t" } catch e { log += "c" } finally { log += "f" }\n'
+        'try { log += "t" } catch Error as e { log += "c" } finally { log += "f" }\n'
         'print(log)'
     )
     assert out.strip() == "tf"

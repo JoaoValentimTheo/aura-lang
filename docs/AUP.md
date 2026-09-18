@@ -31,7 +31,7 @@ coalescing operator `??` cover the same ground without a wrapper type.
 ```aura
 def parse_positive(text) -> int | none {
   guard text.length() > 0 else { return none }
-  let value = try { int(text) } catch e { -1 }
+  let value = try { int(text) } catch Error as e { -1 }
   guard value > 0 else { return none }
   return value
 }
@@ -97,7 +97,7 @@ try {
   print("cleanup")
 }
 
-let label = try { f"ok: {parse('42')}" } catch e { "failed" }
+let label = try { f"ok: {parse('42')}" } catch Error as e { "failed" }
 ```
 
 Rules: `try` needs at least one `catch` or a `finally`; don't use exceptions

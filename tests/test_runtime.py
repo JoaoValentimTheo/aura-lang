@@ -299,7 +299,7 @@ def test_try_catch_bare():
     source = """
     try {
       throw ValueError("boom")
-    } catch e {
+    } catch Error as e {
       print("caught", e)
     }
     """
@@ -324,7 +324,7 @@ def test_try_finally():
     source = """
     try {
       print("try")
-    } catch e {
+    } catch Error as e {
       print("catch")
     } finally {
       print("finally")
