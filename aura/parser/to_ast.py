@@ -625,6 +625,35 @@ class Parser:
 
         return visibility, is_static, is_volatile
 
+    def _parse_decorator_arguments(self):
+        """Parse ``(args..., **kw, key=value)`` for a decorator.
+
+        Starred arguments become :class:`SpreadExpr` (``*args`` and
+        ``**kwargs`` in a decorator is valid Python), unlike a plain
+        expression where a leading ``*`` would be read as multiplication.
+        """
+        args = []
+        kwargs = {}
+        if not self.match('('):
+            return args, kwargs
+        if not self.check(')'):
+            while True:
+                is_named = (self.check_type('IDENT')
+                            and self.peek(1).value in ('=', ':'))
+                if is_named:
+                    key = self.consume().value
+                    self.consume()
+                    kwargs[key] = self.parse_expression()
+                elif self.match('**'):
+                    args.append(SpreadExpr(self.parse_expression(), is_dict=True))
+                elif self.match('*') or self.match('...'):
+                    args.append(SpreadExpr(self.parse_expression(), is_dict=False))
+                else:
+                    args.append(self.parse_expression())
+                if not self.match(','): break
+        self.consume(expected_value=')')
+        return args, kwargs
+
     def parse_statement(self):
         """Parse one statement and record its source location for diagnostics."""
         start = self.peek()
@@ -660,21 +689,7 @@ class Parser:
                 # Parse decorators
                 while self.match('@'):
                     dec_name = self.consume(expected_type='IDENT').value
-                    dec_args = []
-                    dec_kwargs = {}
-                    if self.match('('):
-                        if not self.check(')'):
-                            while True:
-                                is_named = (self.check_type('IDENT')
-                                            and self.peek(1).value in ('=', ':'))
-                                if is_named:
-                                    key = self.consume().value
-                                    self.consume()
-                                    dec_kwargs[key] = self.parse_expression()
-                                else:
-                                    dec_args.append(self.parse_expression())
-                                if not self.match(','): break
-                        self.consume(expected_value=')')
+                    dec_args, dec_kwargs = self._parse_decorator_arguments()
                     decorators.append(Decorator(dec_name, dec_args, dec_kwargs))
             elif token.value in ['public', 'private', 'protected', 'static', 'volatile']:
                 v, s, vol = self.parse_modifiers()
@@ -1204,21 +1219,7 @@ class Parser:
             is_property = False
             while self.match('@'):
                 dec_name = self.consume(expected_type='IDENT').value
-                dec_args = []
-                dec_kwargs = {}
-                if self.match('('):
-                    if not self.check(')'):
-                        while True:
-                            is_named = (self.check_type('IDENT')
-                                        and self.peek(1).value in ('=', ':'))
-                            if is_named:
-                                key = self.consume().value
-                                self.consume()
-                                dec_kwargs[key] = self.parse_expression()
-                            else:
-                                dec_args.append(self.parse_expression())
-                            if not self.match(','): break
-                    self.consume(expected_value=')')
+                dec_args, dec_kwargs = self._parse_decorator_arguments()
                 member_decorators.append(Decorator(dec_name, dec_args, dec_kwargs))
                 if dec_name == 'staticmethod': is_static = True
                 elif dec_name == 'classmethod': is_classmethod = True
@@ -1698,21 +1699,7 @@ class Parser:
             is_property = False
             while self.match('@'):
                 dec_name = self.consume(expected_type='IDENT').value
-                dec_args = []
-                dec_kwargs = {}
-                if self.match('('):
-                    if not self.check(')'):
-                        while True:
-                            is_named = (self.check_type('IDENT')
-                                        and self.peek(1).value in ('=', ':'))
-                            if is_named:
-                                key = self.consume().value
-                                self.consume()
-                                dec_kwargs[key] = self.parse_expression()
-                            else:
-                                dec_args.append(self.parse_expression())
-                            if not self.match(','): break
-                    self.consume(expected_value=')')
+                dec_args, dec_kwargs = self._parse_decorator_arguments()
                 member_decorators.append(Decorator(dec_name, dec_args, dec_kwargs))
                 if dec_name == 'staticmethod': is_static = True
                 elif dec_name == 'classmethod': is_classmethod = True
@@ -1944,6 +1931,7 @@ class Parser:
              self.consume(expected_value=')')
 
         self.consume(expected_value='in')
+        self._reject_bare_spread("a 'for' iterable")
         iterable = self.parse_condition()
 
         step = None
@@ -1953,10 +1941,26 @@ class Parser:
         body = self.parse_block()
         return ForStmt(pattern, iterable, body, step)
 
+    def _reject_bare_spread(self, what):
+        """Raise a clear error when a value position starts with `*`/`**`.
+
+        `*args`/`**kwargs` are only meaningful in call arguments (and a `*`
+        element inside a list/set/tuple/dict literal). Anywhere else a leading
+        `*` would otherwise parse as a unary multiply and emit invalid Python
+        such as `return (* a)`.
+        """
+        tok = self.peek()
+        if tok.type == 'OP' and tok.value in ('*', '**'):
+            raise self.error(
+                f"'{tok.value}' spread is not allowed in {what}; "
+                f"it is only valid in call arguments and list/set/tuple/dict "
+                f"literals", tok)
+
     def parse_return_stmt(self):
         self.consume(expected_value='return')
         val = None
         if not self.check(';') and not self.check('}'):
+            self._reject_bare_spread("a return value")
             val = self.parse_expression()
             val = self.parse_trailing_tuple(val)
         if self.check(';'): self.consume()
@@ -2350,7 +2354,10 @@ class Parser:
                     return LambdaExpr([], body)
                 return self.parse_postfix(TupleLiteral([]))
 
-            expr = self.parse_expression(0)
+            if self.match('*') or self.match('...'):
+                expr = SpreadExpr(self.parse_expression(), is_dict=False)
+            else:
+                expr = self.parse_expression(0)
 
             # Generator expression: `(expr for pattern in iterable ...)`.
             if self.check('for'):
@@ -2380,7 +2387,10 @@ class Parser:
                 elements = [expr]
                 while True:
                     if self.check(')'): break
-                    elements.append(self.parse_expression())
+                    if self.match('*') or self.match('...'):
+                        elements.append(SpreadExpr(self.parse_expression(), is_dict=False))
+                    else:
+                        elements.append(self.parse_expression())
                     if not self.match(','): break
                 self.consume(expected_value=')')
 
@@ -2750,6 +2760,12 @@ class Parser:
         if tok.type == 'IDENT' and self.peek(1).value == '=' and self.peek(1).type != '==':
             return self.parse_block_expr_internal(first_stmt=None)
 
+        # Heuristic: a literal that *starts* with a spread (`{*a}`, `{**a}`,
+# `{...a}`) is unambiguous — a block never begins with `*`. This must be
+# checked before the generic scan below, which only looks for `:`/`,`.
+        if tok.type == 'OP' and tok.value in ('*', '**', '...'):
+            return self.parse_set_or_dict_body()
+
         # A top-level `:` or `,` (or a `**` spread) uniquely identifies a
         # dict/set literal. Without one, the braces contain statements, so a
         # bare block such as `{ print(x); let y = 1 }` is handled correctly.
@@ -2776,7 +2792,14 @@ class Parser:
         if not is_literal:
             return self.parse_block_expr_internal(first_stmt=None)
 
-        # Parsing logic handles Dict (with spread) vs Set vs Block
+        return self.parse_set_or_dict_body()
+
+    def parse_set_or_dict_body(self):
+        """Parse the elements of a set/dict literal, up to and including `}`.
+
+        The opening `{` has already been consumed. Handles both spreads and
+        comprehensions.
+        """
         elements = []
         is_dict = False
 

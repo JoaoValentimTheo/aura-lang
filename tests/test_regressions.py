@@ -1159,3 +1159,90 @@ def test_guard_return_inside_method_returns_not_systemexit():
     )
     out, _ = run_aura(source)
     assert out == "yes\nno\nstill running\n"
+
+
+def test_starred_tuple_literal_transpiles_to_valid_python():
+    """`(*a, 1)` is a spread tuple, not a unary `*` on `a`.
+
+    The paren path parsed the first element with `parse_expression`, so a
+    leading `*` became a UnaryOp and `((* a), 1)` was emitted — invalid Python.
+    """
+    source = (
+        "def f() {\n"
+        "  let a = [2, 3]\n"
+        "  let t = (*a, 1)\n"
+        "  print(t)\n"
+        "}\n"
+        "f()"
+    )
+    out, code = run_aura(source)
+    assert out == "(2, 3, 1)\n"
+    assert "(* a)" not in code
+
+
+def test_starred_decorator_arguments_transpile_to_valid_python():
+    """`@deco(*xs, **kw)` keeps the spread instead of wrapping it in a tuple."""
+    source = (
+        "def tag(*prefixes, **opts) {\n"
+        "  return (fn) => fn\n"
+        "}\n"
+        "@tag(*[\"a\"], **{\"k\": 1})\n"
+        "def f() { return 1 }\n"
+        "print(f())"
+    )
+    out, code = run_aura(source)
+    assert out == "1\n"
+    assert "@tag(*['a'], **AuraDict({'k': 1}))" in code
+
+
+def test_private_module_member_whose_name_is_a_keyword_substring():
+    """A private module member named `f`/`c`/`e` must not corrupt `def`/`class`.
+
+    `_rename_module_member` used `prefix.index(name)`, which matched the `f`
+    inside `def ` and rewrote the declaration to `de_M__f(`.
+    """
+    source = (
+        "module M {\n"
+        "  export f, d\n"
+        "  def f() { return 1 }\n"
+        "  class C { }\n"
+        "  def d() { return 2 }\n"
+        "}\n"
+        "print(M.f())\n"
+        "print(M.d())"
+    )
+    out, code = run_aura(source)
+    assert out == "1\n2\n"
+    assert "def f(" in code
+    assert "class _M__C:" in code
+    assert "de_M__f(" not in code
+
+
+def test_set_literal_spread_transpiles_to_valid_python():
+    """`{*a}` is a set spread, not a block expression."""
+    source = (
+        "def f() {\n"
+        "  let a = [1, 2]\n"
+        "  let s = {*a, 3}\n"
+        "  print(len(s))\n"
+        "}\n"
+        "f()"
+    )
+    out, code = run_aura(source)
+    assert out == "3\n"
+    assert "{*a, 3}" in code
+
+
+def test_bare_spread_in_value_position_is_a_clear_error():
+    """`return *a` / `for x in *a` are outside the grammar and must not emit
+    invalid Python (`return (* a)`)."""
+    for source in (
+        "def f() { return *a }",
+        "def f() { for x in *a { print(x) } }",
+    ):
+        try:
+            run_aura(source)
+        except SyntaxError as exc:
+            assert "spread is not allowed" in str(exc)
+        else:
+            raise AssertionError(f"expected SyntaxError for: {source}")

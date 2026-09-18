@@ -177,7 +177,14 @@ class StatementTransformer:
     def _decorator_line(self, dec):
         """Render a single decorator, including arguments and keyword args."""
         self.expr_transformer.used_decorators.append(dec.name)
-        parts = [self.expr_transformer.transform(a) for a in dec.args]
+        parts = []
+        for a in dec.args:
+            if isinstance(a, SpreadExpr):
+                # `*xs` / `**kw` must not be wrapped: `@d((*xs))` is invalid.
+                expr = self.expr_transformer.transform(a.expr)
+                parts.append(f"{'**' if a.is_dict else '*'}{expr}")
+            else:
+                parts.append(self.expr_transformer.transform(a))
         for key, value in dec.kwargs.items():
             parts.append(f"{key}={self.expr_transformer.transform(value)}")
         if parts:
@@ -1417,13 +1424,14 @@ class StatementTransformer:
             if len(indent) != StatementTransformer._MODULE_MEMBER_INDENT:
                 out.append(line)
                 continue
-            for prefix in (f"def {safe}(", f"def {safe} (", f"class {safe}(",
-                           f"class {safe}:"):
-                if stripped.startswith(prefix):
-                    # Replace only the name, never a keyword prefix.
-                    head = prefix[:prefix.index(safe)]
-                    rest = stripped[len(prefix) - 1:]
-                    stripped = f"{head}{mangled}{rest}"
+            for keyword, sep in (("def ", "("), ("class ", "("), ("class ", ":")):
+                head = f"{keyword}{safe}"
+                if stripped.startswith(head + sep) or stripped.startswith(head + " ("):
+                    # Replace only the name, never a keyword prefix. Use the
+                    # known keyword length: `prefix.index(safe)` would match a
+                    # name that is a substring of the keyword (e.g. `f` in
+                    # `def `), corrupting it to `de_M__f(`.
+                    stripped = f"{keyword}{mangled}{stripped[len(head):]}"
                     break
             else:
                 if (stripped.startswith(f"{safe} =")

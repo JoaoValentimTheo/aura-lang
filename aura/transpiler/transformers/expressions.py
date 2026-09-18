@@ -207,7 +207,13 @@ class ExpressionTransformer:
         return "AuraDict({" + ", ".join(items) + "})"
 
     def transform_SetLiteral(self, node):
-        return "{" + ", ".join(self.transform(e) for e in node.elements) + "}"
+        parts = []
+        for e in node.elements:
+            if isinstance(e, SpreadExpr):
+                parts.append(f"*{self.transform(e.expr)}")
+            else:
+                parts.append(self.transform(e))
+        return "{" + ", ".join(parts) + "}"
 
     def transform_TupleLiteral(self, node):
         items = [self.transform(e) for e in node.elements]
