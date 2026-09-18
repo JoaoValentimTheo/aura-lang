@@ -4,6 +4,59 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.0a15] - 2026-09-18
+
+Project-environment tooling. An Aura project can now manage its own virtual
+environment and dependencies without leaving the `aura` command.
+
+### Added
+
+- **`aura venv`** manages the project's virtual environment (`.venv` by
+  default, or `$AURA_VENV`):
+  - `init` creates it and installs the declared dependencies;
+  - `info` prints the project, the interpreter, and each dependency's status;
+  - `shell` prints the activation command for the current platform;
+  - `remove` deletes it (with confirmation);
+  - `--force` recreates, `--python <exe>` picks the base interpreter, and
+    `--no-install` skips dependency installation.
+- **`aura add -D/--dev`** records a dependency under `[dependencies.dev]`
+  instead of `[dependencies]`. Dependencies may carry specifiers and extras
+  (`aura add "requests[security]>=2"`), and a version defaults to `==` when
+  passed with `-V`.
+- **`aura remove <pkg>`** deletes a declared dependency (runtime or dev);
+  `--uninstall` also removes it from the environment.
+- **`aura doctor`** checks the Python version, the manifest, the virtual
+  environment, and whether every declared dependency is installed, exiting
+  non-zero when something needs attention.
+- **`aura deps --lock`** writes `aura.lock` with the exact installed versions,
+  separated into `[runtime]` and `[dev]`.
+- **`aura init --venv`** creates the environment as part of scaffolding.
+- Dependencies install into the project's `.venv` when it exists and into the
+  current interpreter otherwise, so a project is self-contained once its venv
+  exists and works out of the box before that.
+- Colored, consistent output for the project commands (`✓`/`•` markers,
+  dimmed commands), disabled by `NO_COLOR` and forced by `AURA_FORCE_COLOR`.
+
+### Changed
+
+- `aura install` installs runtime and dev dependencies and prints a summary;
+  it no longer prints `$ python -m pip` without context.
+- `aura deps` lists dependencies grouped into runtime and dev, each with the
+  installed version when present.
+- Dependency specifiers are validated before use: a manifest entry that could
+  smuggle a pip option or shell metacharacter is refused, and bare versions
+  (`flask = "3.0"`) are pinned with `==` at install time.
+- `aura/cli.py` exposes `build_parser()` so the command surface can be
+  inspected and tested without executing anything.
+
+### Tests
+
+- `tests/test_deps_venv.py` (91 tests): manifest round-trips, `add`/`remove`
+  with runtime and dev groups, specifier and injection rejection, real venv
+  creation/inspection/removal, a stubbed installer that asserts the target
+  interpreter, lock-file contents, `doctor` outcomes, and CLI wiring for every
+  command.
+
 ## [0.1.0a14] - 2026-09-18
 
 A module-system release. `module { }` members are now private to their file by

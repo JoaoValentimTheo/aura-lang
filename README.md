@@ -34,6 +34,7 @@ post-quantum cryptography.
 - [Python interop](#python-interop)
 - [Aura Patterns (AUP)](#aura-patterns-aup)
 - [CLI](#cli)
+- [Projects and dependencies](#projects-and-dependencies)
 - [REPL](#repl)
 - [Documentation](#documentation)
 - [Development](#development)
@@ -245,15 +246,49 @@ catalog of idiomatic solutions, each with a runnable example in
 | `aura lint <file>` | Style warnings (`--allow-warnings` to exit 0) |
 | `aura test [dir]` | Run `.aura` test files |
 | `aura repl` | Interactive REPL |
-| `aura init <name>` | Scaffold a project |
-| `aura add <pkg>` | Add a dependency |
-| `aura install` | Install declared dependencies |
-| `aura deps` | List declared dependencies |
+| `aura init [name]` | Scaffold a project (`--venv` to set up `.venv`) |
+| `aura venv [action]` | Manage `.venv`: `init`, `info`, `shell`, `remove` |
+| `aura add <pkg>` | Add a dependency (`-D` for dev, `--no-install`) |
+| `aura remove <pkg>` | Remove a dependency (`--uninstall` too) |
+| `aura install` | Install everything declared in `aura.toml` |
+| `aura deps` | List dependencies (`--lock` writes `aura.lock`) |
+| `aura doctor` | Check Python, venv, and installed dependencies |
 | `aura debug <file>` | Trace execution / inspect a crash |
 | `aura lsp` | Language server (stdio) |
 | `aura version` | Print or bump the version |
 
 Run `aura --help` or `aura <command> --help` for details.
+
+## Projects and dependencies
+
+Aura projects are self-contained: `aura init` writes an `aura.toml`, `aura venv`
+creates the environment, and `aura add` records and installs dependencies.
+
+```bash
+aura init myapp --venv          # aura.toml + src/main.aura + .venv
+cd myapp
+aura add "requests>=2.28"       # runtime dependency
+aura add -D pytest              # development dependency
+aura deps --lock                # write aura.lock with exact versions
+aura doctor                     # verify the environment
+```
+
+`aura.toml`:
+
+```toml
+[project]
+name = "myapp"
+version = "0.1.0"
+
+[dependencies]
+requests = ">=2.28"
+
+[dependencies.dev]
+pytest = ">=8"
+```
+
+Dependencies install into the project's `.venv` when it exists, and into the
+current interpreter otherwise. `aura venv shell` prints the activation command.
 
 ## REPL
 

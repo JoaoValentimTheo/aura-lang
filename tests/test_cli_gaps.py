@@ -237,13 +237,14 @@ def test_cmd_add_delegates(monkeypatch):
     import aura.tools.deps as deps
     calls = {}
 
-    def fake_add(package, version, install=True):
-        calls.update(package=package, version=version, install=install)
+    def fake_add(package, version, install=True, dev=False):
+        calls.update(package=package, version=version, install=install, dev=dev)
         return 0
 
     monkeypatch.setattr(deps, 'add_package', fake_add)
     assert cli.cmd_add('requests', '2.0', no_install=True) == 0
-    assert calls == {'package': 'requests', 'version': '2.0', 'install': False}
+    assert calls == {'package': 'requests', 'version': '2.0',
+                     'install': False, 'dev': False}
 
 
 def test_cmd_install_delegates(monkeypatch):
@@ -265,7 +266,7 @@ def test_cmd_init_delegates(monkeypatch):
     import aura.tools.deps as deps
     captured = {}
     monkeypatch.setattr(deps, 'init_project',
-                        lambda name='app': captured.setdefault('name', name) or 0)
+                        lambda name='app', venv=False: captured.setdefault('name', name) or 0)
     cli.cmd_init('myapp')
     assert captured['name'] == 'myapp'
 
@@ -422,14 +423,14 @@ def test_main_install_dispatch(monkeypatch):
 
 def test_main_init_dispatch(monkeypatch):
     import aura.tools.deps as deps
-    monkeypatch.setattr(deps, 'init_project', lambda name='app': 0)
+    monkeypatch.setattr(deps, 'init_project', lambda name='app', venv=False: 0)
     assert cli.main(['init', 'demo']) == 0
 
 
 def test_main_add_dispatch(monkeypatch):
     import aura.tools.deps as deps
     monkeypatch.setattr(deps, 'add_package',
-                        lambda package, version, install=True: 0)
+                        lambda package, version, install=True, dev=False: 0)
     assert cli.main(['add', 'requests', '--no-install']) == 0
 
 

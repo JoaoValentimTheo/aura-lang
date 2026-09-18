@@ -44,7 +44,7 @@ def test_add_package_rejects_newline_in_name(tmp_path, capsys):
     manifest = tmp_path / 'aura.toml'
     rc = deps.add_package('evil\nname', manifest_path=manifest, install=False)
     assert rc == 2
-    assert 'invalid package name' in capsys.readouterr().err.lower()
+    assert 'invalid requirement' in capsys.readouterr().err.lower()
 
 
 def test_add_package_rejects_empty_name(tmp_path, capsys):

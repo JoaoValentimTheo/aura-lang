@@ -54,7 +54,12 @@ real multi-file projects". Ratings below 100 % name the concrete gap.
 | `format` | 90 % | `format_aura`: placeholder-protected, string- and comment-aware spacing/operator normalization | No AST-driven reflow of long lines |
 | `lint` | 75 % | Line length, trailing whitespace, naming, spacing — all `W00x` with locations | Style-only; no auto-fix |
 | `test` | 90 % | Runs `.aura` files; `stdlib.testing` gives assertions/matchers and `aura test` surfaces failures | No fixtures |
-| `repl` | 70 % | Parse/transpile/eval loop | Basic multi-line handling |
+| `repl` | 90 % | Shares the parser and the same three checkers as `aura check` (types, structure, mutability); only the `main` rule is off | Basic multi-line handling |
+| `init` | 95 % | `aura.toml` + `src/main.aura`, `--venv` to create the environment | No framework templates |
+| `venv` | 95 % | `init`/`info`/`shell`/`remove` over the project `.venv`; installs declared deps on creation | No `.python-version` pinning |
+| `add` / `remove` | 95 % | Specifiers, extras, `-D` dev group, validation that blocks argument injection | No version resolution against the index |
+| `install` / `deps` | 95 % | Installs into the project venv; `--lock` writes exact versions | No hash verification |
+| `doctor` | 95 % | Reports Python, manifest, venv, and per-dependency install status | — |
 | `debug` | 65 % | `aura debug`, `--trace`, post-mortem line mapping | Top-level line granularity; no interactive breakpoints |
 | `lsp` | 90 % | Diagnostics, hover, completion, document symbols, go-to-definition, references, rename, formatting (stdio) | No cross-file workspace refactors |
 | Error messages | 85 % | Parser + semantic errors with file context | No source spans / carets in all cases |

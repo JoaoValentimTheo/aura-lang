@@ -75,7 +75,7 @@ class TestDeps:
         manifest = tmp_path / 'aura.toml'
         assert deps.add_package('bad name', manifest_path=manifest,
                                 install=False) == 2
-        assert 'invalid package name' in capsys.readouterr().err
+        assert 'invalid requirement' in capsys.readouterr().err
 
     def test_add_package_creates_manifest_when_absent(self, tmp_path, monkeypatch):
         from aura.tools import deps
@@ -87,7 +87,7 @@ class TestDeps:
         from aura.tools import deps
         manifest = tmp_path / 'aura.toml'
         deps.add_package('flask', '3.0', manifest_path=manifest, install=False)
-        assert deps.load_manifest(manifest)['dependencies']['flask'] == '3.0'
+        assert deps.load_manifest(manifest)['dependencies']['flask'] == '==3.0'
 
     def test_add_package_version_starting_with_operator(self, tmp_path):
         from aura.tools import deps
@@ -98,8 +98,8 @@ class TestDeps:
     def test_install_dependencies_no_manifest(self, tmp_path, monkeypatch, capsys):
         from aura.tools import deps
         monkeypatch.chdir(tmp_path)
-        assert deps.install_dependencies() == 2
-        assert 'No aura.toml' in capsys.readouterr().err
+        assert deps.install_dependencies(root=tmp_path) == 2
+        assert 'no aura.toml' in capsys.readouterr().err.lower()
 
     def test_install_dependencies_empty(self, tmp_path, capsys):
         from aura.tools import deps
@@ -134,13 +134,14 @@ class TestDeps:
             'any = "*"\n')
         captured = {}
 
-        def fake_pip(requirements, upgrade=False):
+        def fake_pip(requirements, upgrade=False, root=None):
             captured['requirements'] = requirements
             captured['upgrade'] = upgrade
             return 0
 
         monkeypatch.setattr(deps, '_pip_install', fake_pip)
-        assert deps.install_dependencies(manifest, upgrade=True) == 0
+        assert deps.install_dependencies(manifest, upgrade=True,
+                                         root=tmp_path) == 0
         assert 'exact==1.2' in captured['requirements']
         assert 'range>=2' in captured['requirements']
         assert 'any' in captured['requirements']
@@ -149,7 +150,7 @@ class TestDeps:
     def test_list_dependencies_no_manifest(self, tmp_path, monkeypatch, capsys):
         from aura.tools import deps
         monkeypatch.chdir(tmp_path)
-        assert deps.list_dependencies() == 0
+        assert deps.list_dependencies(root=tmp_path) == 0
         assert 'No aura.toml' in capsys.readouterr().out
 
     def test_list_dependencies_empty_manifest(self, tmp_path, capsys):
@@ -179,7 +180,7 @@ class TestDeps:
 
         monkeypatch.setattr(subprocess, 'run', boom)
         assert deps._pip_install(['requests']) == 2
-        assert 'pip is not available' in capsys.readouterr().err
+        assert 'command not found' in capsys.readouterr().err
 
 
 # ============================================================================

@@ -550,10 +550,17 @@ def cmd_test(path: str = ".", verbose: bool = False, pattern: str = "*.aura") ->
     return 1 if failed else 0
 
 
-def cmd_add(package: str, version: str | None = None, no_install: bool = False) -> int:
+def cmd_add(package: str, version: str | None = None, no_install: bool = False,
+            dev: bool = False) -> int:
     """Add a Python dependency to aura.toml and install it."""
     from aura.tools.deps import add_package
-    return add_package(package, version, install=not no_install)
+    return add_package(package, version, install=not no_install, dev=dev)
+
+
+def cmd_remove(package: str, uninstall: bool = False) -> int:
+    """Remove a dependency from aura.toml."""
+    from aura.tools.deps import remove_package
+    return remove_package(package, uninstall=uninstall)
 
 
 def cmd_install(upgrade: bool = False) -> int:
@@ -562,16 +569,41 @@ def cmd_install(upgrade: bool = False) -> int:
     return install_dependencies(upgrade=upgrade)
 
 
-def cmd_deps() -> int:
-    """List declared dependencies."""
-    from aura.tools.deps import list_dependencies
+def cmd_deps(lock: bool = False) -> int:
+    """List declared dependencies, or write the lock file."""
+    from aura.tools.deps import list_dependencies, write_lock
+    if lock:
+        return write_lock()
     return list_dependencies()
 
 
-def cmd_init(name: str = "app") -> int:
+def cmd_venv(action: str = "init", force: bool = False,
+             python: str | None = None, no_install: bool = False) -> int:
+    """Manage the project's virtual environment (`.venv` by default)."""
+    from aura.tools import deps
+    if action == "init":
+        return deps.create_venv(force=force, python=python,
+                                install=not no_install)
+    if action == "info":
+        return deps.venv_info()
+    if action == "shell":
+        return deps.shell_into_venv()
+    if action == "remove":
+        return deps.remove_venv(confirm=not force)
+    print(f"Error: unknown venv action '{action}'.", file=sys.stderr)
+    return 2
+
+
+def cmd_doctor() -> int:
+    """Check the project environment (Python, venv, dependencies)."""
+    from aura.tools.deps import doctor
+    return doctor()
+
+
+def cmd_init(name: str = "app", venv: bool = False) -> int:
     """Create a starter aura.toml and src/main.aura."""
     from aura.tools.deps import init_project
-    return init_project(name)
+    return init_project(name, venv=venv)
 
 
 def cmd_version(bump: str | None = None) -> int:
@@ -613,9 +645,12 @@ def cmd_repl() -> int:
         return 0
 
 
-def main(argv=None):
-    argv = argv or sys.argv[1:]
+def build_parser():
+    """Build the `aura` argument parser.
 
+    Exposed so tests and tooling can inspect the command surface without
+    running anything.
+    """
     p = argparse.ArgumentParser(
         prog='aura',
         description='Aura transpiler - Convert Aura source to Python',
@@ -681,19 +716,45 @@ Examples:
     # init command
     init = sub.add_parser('init', help='Create a starter aura.toml and project')
     init.add_argument('name', nargs='?', default='app', help='Project name')
+    init.add_argument('--venv', action='store_true',
+                      help='Also create .venv and install dependencies')
 
     # add command
     add = sub.add_parser('add', help='Add a Python dependency and install it')
     add.add_argument('package', help='Package name, optionally with a specifier')
     add.add_argument('-V', '--version', help='Version or specifier, e.g. 1.2.3 or ">=2.0"')
+    add.add_argument('-D', '--dev', action='store_true',
+                     help='Record as a development dependency')
     add.add_argument('--no-install', action='store_true', help='Only record the dependency')
+
+    # remove command
+    remove = sub.add_parser('remove', help='Remove a declared dependency')
+    remove.add_argument('package', help='Package name to remove')
+    remove.add_argument('--uninstall', action='store_true',
+                        help='Also uninstall it from the environment')
 
     # install command
     install = sub.add_parser('install', help='Install dependencies from aura.toml')
     install.add_argument('--upgrade', action='store_true', help='Upgrade to latest versions')
 
     # deps command
-    sub.add_parser('deps', help='List declared dependencies')
+    deps = sub.add_parser('deps', help='List declared dependencies')
+    deps.add_argument('--lock', action='store_true',
+                      help='Write aura.lock with the installed versions')
+
+    # venv command
+    venv = sub.add_parser('venv', help='Manage the project virtual environment')
+    venv.add_argument('action', nargs='?', default='init',
+                      choices=['init', 'info', 'shell', 'remove'],
+                      help='init (default), info, shell or remove')
+    venv.add_argument('-f', '--force', action='store_true',
+                      help='Recreate (init) or skip confirmation (remove)')
+    venv.add_argument('--python', help='Interpreter used to create the venv')
+    venv.add_argument('--no-install', action='store_true',
+                      help='Do not install dependencies after creating')
+
+    # doctor command
+    sub.add_parser('doctor', help='Check the project environment')
 
     # version command
     version = sub.add_parser('version', help='Show or bump the version')
@@ -709,6 +770,12 @@ Examples:
     # lsp command
     sub.add_parser('lsp', help='Start the language server (stdio)')
 
+    return p
+
+
+def main(argv=None):
+    argv = argv or sys.argv[1:]
+    p = build_parser()
     args = p.parse_args(argv)
 
     if args.cmd == 'transpile':
@@ -727,13 +794,20 @@ Examples:
     elif args.cmd == 'repl':
         return cmd_repl()
     elif args.cmd == 'init':
-        return cmd_init(args.name)
+        return cmd_init(args.name, venv=args.venv)
     elif args.cmd == 'add':
-        return cmd_add(args.package, args.version, args.no_install)
+        return cmd_add(args.package, args.version, args.no_install, dev=args.dev)
+    elif args.cmd == 'remove':
+        return cmd_remove(args.package, uninstall=args.uninstall)
     elif args.cmd == 'install':
         return cmd_install(args.upgrade)
     elif args.cmd == 'deps':
-        return cmd_deps()
+        return cmd_deps(lock=args.lock)
+    elif args.cmd == 'venv':
+        return cmd_venv(args.action, force=args.force, python=args.python,
+                        no_install=args.no_install)
+    elif args.cmd == 'doctor':
+        return cmd_doctor()
     elif args.cmd == 'version':
         return cmd_version(args.bump)
     elif args.cmd == 'debug':
