@@ -4,6 +4,23 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.0a20] - 2026-09-18
+
+Diagnostics and documentation alignment.
+
+### Added
+
+- **A pointed diagnostic for a parenthesised base class**: `class Dog(Animal)`
+  now reports that it looks like a base class and suggests `extends`, instead
+  of the generic header-field message.
+
+### Changed
+
+- **The precedence table in `docs/LANGUAGE.md`** now matches the parser
+  (previously the shift/bitwise order, coalescing vs range, and pipe/assignment
+  levels were wrong). `docs/GRAMMAR.md` documents that `yield` is a
+  statement-level form whose operand is parsed at the lowest precedence.
+
 ## [0.1.0a19] - 2026-09-18
 
 Post-release audit fixes found while reviewing the a18 batch.
