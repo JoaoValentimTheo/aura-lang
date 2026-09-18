@@ -12,6 +12,20 @@ PYPROJECT = ROOT / 'pyproject.toml'
 INIT = ROOT / 'aura' / '__init__.py'
 
 
+def _project_version_match(text):
+    """Match the ``version = "..."`` line inside the ``[project]`` table.
+
+    Searching the whole file would rewrite an unrelated ``version`` key that
+    appears in an earlier table (e.g. ``[tool.x]``).
+    """
+    section = re.search(
+        r'^\[project\]\s*$([\s\S]*?)(?=^\[|\Z)', text, re.MULTILINE)
+    if not section:
+        return None
+    return re.search(r'^(version\s*=\s*)"([^"]+)"', section.group(1),
+                     re.MULTILINE)
+
+
 def get_version(pyproject=PYPROJECT):
     """Read the version.
 
@@ -22,9 +36,9 @@ def get_version(pyproject=PYPROJECT):
     pyproject = Path(pyproject)
     if pyproject.is_file():
         text = pyproject.read_text(encoding='utf-8')
-        match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+        match = _project_version_match(text)
         if match:
-            return match.group(1)
+            return match.group(2)
 
     try:
         from importlib.metadata import version as _dist_version
@@ -45,10 +59,19 @@ def set_version(version, pyproject=PYPROJECT, init=INIT):
     if not re.fullmatch(r'\d+\.\d+\.\d+(?:[.\-+]?[0-9A-Za-z][0-9A-Za-z.\-]*)?', version):
         raise ValueError(f"invalid semantic version: {version!r}")
 
-    py_text = Path(pyproject).read_text(encoding='utf-8')
-    py_text = re.sub(r'^(version\s*=\s*)"[^"]+"', rf'\1"{version}"',
-                     py_text, count=1, flags=re.MULTILINE)
-    Path(pyproject).write_text(py_text, encoding='utf-8')
+    pyproject = Path(pyproject)
+    py_text = pyproject.read_text(encoding='utf-8')
+    section = re.search(
+        r'(^\[project\]\s*$[\s\S]*?)(?=^\[|\Z)', py_text, re.MULTILINE)
+    if section is None:
+        raise ValueError(f"no [project] table in {pyproject}")
+    body = section.group(1)
+    if _project_version_match(py_text) is None:
+        raise ValueError(f"no version key in [project] of {pyproject}")
+    new_body = re.sub(r'^(version\s*=\s*)"[^"]+"', rf'\1"{version}"',
+                      body, count=1, flags=re.MULTILINE)
+    py_text = py_text[:section.start(1)] + new_body + py_text[section.end(1):]
+    pyproject.write_text(py_text, encoding='utf-8')
 
     init_path = Path(init)
     if init_path.is_file():

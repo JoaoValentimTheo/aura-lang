@@ -209,6 +209,11 @@ class StatementTransformer:
                     if line.strip():
                         lines.append(indent + line)
         self.indent_level -= 1
+        if not lines:
+            # Python requires a non-empty suite after every `:`. An Aura block
+            # may legitimately be empty (`if x { }`), so emit `pass` with the
+            # body's indentation instead of producing invalid Python.
+            return indent + "pass"
         return '\n'.join(lines)
 
     # ========== Declarations ==========
@@ -1119,7 +1124,7 @@ class StatementTransformer:
             catch_body = self._block(catch.body)
             result += f"\nexcept {exc_type}{var_name}:\n{catch_body}"
 
-        if node.finally_body:
+        if node.finally_body is not None:
             finally_body = self._block(node.finally_body)
             result += f"\nfinally:\n{finally_body}"
 

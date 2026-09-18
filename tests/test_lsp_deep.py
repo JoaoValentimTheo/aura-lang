@@ -20,9 +20,14 @@ from aura.lsp.server import (
 
 
 def make_server():
-    """A server reading nothing and writing into an in-memory buffer."""
+    """A server reading nothing and writing into an in-memory buffer.
+
+    Marked initialized: these tests exercise feature handlers directly, after
+    the `initialize` handshake a real client would send.
+    """
     out = io.BytesIO()
     server = AuraLanguageServer(reader=io.BytesIO(b''), writer=out)
+    server.initialized = True
     return server, out
 
 
@@ -132,14 +137,15 @@ def test_run_stops_at_eof():
 def test_run_keeps_alive_on_internal_error_and_replies_with_error():
     # A request whose handler raises: missing params for didOpen.
     messages = (
-        encode({'jsonrpc': '2.0', 'id': 9, 'method': 'textDocument/didOpen',
-                'params': {}})
+        encode({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}})
+        + encode({'jsonrpc': '2.0', 'id': 9, 'method': 'textDocument/didOpen',
+                  'params': {}})
         + encode({'jsonrpc': '2.0', 'id': 2, 'method': 'shutdown', 'params': {}})
     )
     out = io.BytesIO()
     server = AuraLanguageServer(reader=io.BytesIO(messages), writer=out)
     server.run()
-    first, second = decode(out)
+    _, first, second = decode(out)
     assert first['id'] == 9
     assert first['error']['code'] == -32603
     assert second['id'] == 2

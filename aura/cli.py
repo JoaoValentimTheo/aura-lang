@@ -1,5 +1,6 @@
 """CLI for Aura transpiler - Phase 3 with type checking, formatting, linting."""
 import argparse
+import re
 import sys
 import time as _time
 from pathlib import Path
@@ -9,11 +10,9 @@ from aura.runtime import install_runtime_aliases
 # Generated code uses `import stdlib...`; map those to `aura.stdlib...`.
 install_runtime_aliases()
 
-from aura.parser.to_ast import parse_file
-from aura.transpiler.errors import ErrorCode, ErrorCollector
-from aura.transpiler.semantics import MutabilityChecker
-from aura.transpiler.transformer import Transformer
-from aura.transpiler.types import TypeChecker
+# Parser and transpiler imports are deliberately deferred to the commands that
+# need them, so lightweight commands (`aura version`, `doctor`, `deps`, ...)
+# start without paying the full compiler import cost.
 
 
 def _mutability_diagnostics(ast):
@@ -24,6 +23,8 @@ def _mutability_diagnostics(ast):
     enforced for every entry point (transpile, run, test, check) so the rule is
     actually effective rather than documentation-only.
     """
+    from aura.transpiler.semantics import MutabilityChecker
+
     checker = MutabilityChecker()
     try:
         if checker.check_program(ast):
@@ -72,6 +73,15 @@ def _report_all(path, *groups):
     return total
 
 
+def _recursion_error(path):
+    """A clean fatal diagnostic for a construct that is too deeply nested."""
+    return (
+        f"{path}: FATAL [E999]\n"
+        "  expression or nesting is too deep to compile\n"
+        "  hint: split the chain or nesting into smaller statements"
+    )
+
+
 def _install_aura_imports(script_path: str):
     """Enable `import sibling_module` for Aura files next to the script."""
     try:
@@ -83,8 +93,20 @@ def _install_aura_imports(script_path: str):
         pass
 
 
+def _recursion_budget_for(path: str):
+    """Recursion budget sized to the source file, for the recursive stages."""
+    from aura.transpiler.errors import recursion_budget
+    try:
+        size = Path(path).stat().st_size
+    except OSError:
+        size = 0
+    return recursion_budget(size)
+
+
 def cmd_transpile(path: str, output: str | None = None, verbose: bool = False) -> int:
     """Transpile Aura file to Python."""
+    from aura.parser.to_ast import parse_file
+    from aura.transpiler.transformer import Transformer
     try:
         ast = parse_file(path)
     except FileNotFoundError:
@@ -94,35 +116,41 @@ def cmd_transpile(path: str, output: str | None = None, verbose: bool = False) -
         print(f"Error parsing {path}: {e}", file=sys.stderr)
         return 2
 
-    mutability = _mutability_diagnostics(ast)
-    rules = _rule_diagnostics(ast)
-    if mutability or rules:
-        _report_all(path, mutability, rules)
-        return 2
+    with _recursion_budget_for(path):
+        mutability = _mutability_diagnostics(ast)
+        rules = _rule_diagnostics(ast)
+        if mutability or rules:
+            _report_all(path, mutability, rules)
+            return 2
 
-    try:
-        t = Transformer()
-        code = t.transform(ast)
+        try:
+            t = Transformer()
+            code = t.transform(ast)
 
-        if output:
-            Path(output).write_text(code)
-            print(f"Transpiled to: {output}")
-        else:
-            print(code)
+            if output:
+                Path(output).write_text(code)
+                print(f"Transpiled to: {output}")
+            else:
+                print(code)
 
-        if verbose:
-            print(f"# AST: {ast}", file=sys.stderr)
+            if verbose:
+                print(f"# AST: {ast}", file=sys.stderr)
 
-        return 0
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        print(f"Error transpiling {path}: {e}", file=sys.stderr)
-        return 2
+            return 0
+        except RecursionError:
+            print(_recursion_error(path), file=sys.stderr)
+            return 2
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"Error transpiling {path}: {e}", file=sys.stderr)
+            return 2
 
 
 def cmd_check(path: str, verbose: bool = False) -> int:
     """Type check Aura file without transpiling."""
+    from aura.parser.to_ast import parse_file
+    from aura.transpiler.types import TypeChecker
     try:
         ast = parse_file(path)
     except FileNotFoundError:
@@ -133,9 +161,14 @@ def cmd_check(path: str, verbose: bool = False) -> int:
         return 2
 
     checker = TypeChecker()
-    type_ok = checker.check_program(ast)
-    mutability = _mutability_diagnostics(ast)
-    rules = _rule_diagnostics(ast)
+    try:
+        with _recursion_budget_for(path):
+            type_ok = checker.check_program(ast)
+            mutability = _mutability_diagnostics(ast)
+            rules = _rule_diagnostics(ast)
+    except RecursionError:
+        print(_recursion_error(path), file=sys.stderr)
+        return 2
     success = type_ok and not mutability and not rules
 
     total = _report_all(path, checker.diagnostics, mutability, rules)
@@ -152,7 +185,8 @@ def cmd_check(path: str, verbose: bool = False) -> int:
     return 1
 
 
-def cmd_format(path: str, output: str | None = None, width: int = 100) -> int:
+def cmd_format(path: str, output: str | None = None, width: int = 100,
+               in_place: bool = False) -> int:
     """Format Aura source code."""
     try:
         source = Path(path).read_text()
@@ -164,7 +198,10 @@ def cmd_format(path: str, output: str | None = None, width: int = 100) -> int:
         from aura.tools.formatter import format_aura
         formatted = format_aura(source, width=width)
 
-        if output:
+        if in_place:
+            Path(path).write_text(formatted)
+            print(f"Formatted in place: {path}")
+        elif output:
             Path(output).write_text(formatted)
             print(f"Formatted to: {output}")
         else:
@@ -173,8 +210,6 @@ def cmd_format(path: str, output: str | None = None, width: int = 100) -> int:
         return 0
     except Exception as e:
         print(f"Error formatting {path}: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
         return 2
 
 
@@ -190,6 +225,7 @@ def cmd_lint(path: str, allow_warnings: bool = False) -> int:
         print(f"Error: File not found: {path}", file=sys.stderr)
         return 2
 
+    from aura.transpiler.errors import ErrorCode, ErrorCollector
     errors = ErrorCollector(path)
 
     try:
@@ -217,9 +253,12 @@ def cmd_lint(path: str, allow_warnings: bool = False) -> int:
                                             len(line) - len(trimmed)),
                 )
 
-            # Check naming conventions
-            if line.strip().startswith('let '):
-                var_name = line.strip().split()[1].split('=')[0]
+            # Check naming conventions on simple `let [mut] name` bindings. Tuple/list
+# patterns and destructuring are skipped: they have no single name to check.
+            let_match = re.match(r'\s*let\s+(?:mut\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*[=;]',
+                                 line)
+            if let_match:
+                var_name = let_match.group(1)
                 if var_name.isupper():
                     col = line.index(var_name) + 1
                     errors.add_warning(
@@ -305,31 +344,31 @@ def _prepare_entrypoint(ast):
     async_names = set()
     has_async = False
 
-    def scan(value):
-        nonlocal has_async
-        if value is None or has_async:
-            return
-        if isinstance(value, FunctionDecl) and getattr(value, 'is_async', False):
-            has_async = True
-            return
-        if isinstance(value, UnaryOp) and value.op == 'await':
-            has_async = True
-            return
-        if isinstance(value, dict):
-            for item in value.values():
-                scan(item)
-        elif isinstance(value, (list, tuple)):
-            for item in value:
-                scan(item)
-        elif isinstance(value, Node):
-            for item in vars(value).values():
-                scan(item)
-
     for stmt in ast.statements:
         fn = getattr(stmt, 'name', None)
         if fn is not None and getattr(stmt, 'is_async', False):
             async_names.add(fn)
-    scan(ast)
+
+    # Iterative walk: a recursive scan can overflow on deeply nested/left-deep
+    # expression trees (long operator chains), where the AST is hundreds of
+    # levels deep even though the source is short.
+    stack = [ast]
+    while stack and not has_async:
+        value = stack.pop()
+        if value is None:
+            continue
+        if isinstance(value, FunctionDecl) and getattr(value, 'is_async', False):
+            has_async = True
+            break
+        if isinstance(value, UnaryOp) and value.op == 'await':
+            has_async = True
+            break
+        if isinstance(value, dict):
+            stack.extend(value.values())
+        elif isinstance(value, (list, tuple)):
+            stack.extend(value)
+        elif isinstance(value, Node):
+            stack.extend(vars(value).values())
 
     # An explicit top-level call to an async function must be awaited.
     if async_names:
@@ -380,6 +419,8 @@ def cmd_run(path: str, verbose: bool = False, program_args=None,
     ``aura test``: a test file drives itself (typically ``t.run_all()``) and
     need not declare ``main``.
     """
+    from aura.parser.to_ast import parse_file
+    from aura.transpiler.transformer import Transformer
     try:
         ast = parse_file(path)
     except FileNotFoundError:
@@ -389,8 +430,9 @@ def cmd_run(path: str, verbose: bool = False, program_args=None,
         print(f"Error parsing {path}: {e}", file=sys.stderr)
         return 2
 
-    mutability = _mutability_diagnostics(ast)
-    rules = _rule_diagnostics(ast, require_main=require_main)
+    with _recursion_budget_for(path):
+        mutability = _mutability_diagnostics(ast)
+        rules = _rule_diagnostics(ast, require_main=require_main)
     if mutability or rules:
         _report_all(path, mutability, rules)
         return 2
@@ -398,8 +440,9 @@ def cmd_run(path: str, verbose: bool = False, program_args=None,
     has_async, invoke_code = _prepare_entrypoint(ast)
 
     try:
-        t = Transformer()
-        code = t.transform(ast)
+        with _recursion_budget_for(path):
+            t = Transformer()
+            code = t.transform(ast)
         if invoke_code:
             code = code + "\n" + invoke_code
 
@@ -425,13 +468,18 @@ def cmd_run(path: str, verbose: bool = False, program_args=None,
             namespace: dict = {'__name__': '__aura__',
                                '_aura_argv': list(program_args or [])}
             _install_aura_imports(path)
-            exec(compile(wrapper, path, 'exec'), namespace)
-            asyncio.run(namespace['_aura_main']())
+            with _recursion_budget_for(path):
+                exec(compile(wrapper, path, 'exec'), namespace)
+                asyncio.run(namespace['_aura_main']())
         else:
             _install_aura_imports(path)
             namespace = {'__name__': '__aura__',
                          '_aura_argv': list(program_args or [])}
-            exec(compile(code, path, 'exec'), namespace)
+            # Generated expressions (long operator chains) are evaluated
+            # recursively by CPython, so the raised budget must span execution
+            # as well as compilation.
+            with _recursion_budget_for(path):
+                exec(compile(code, path, 'exec'), namespace)
         return 0
     except SystemExit as e:
         # A bare `return` in a top-level guard becomes `raise SystemExit()`.
@@ -439,7 +487,15 @@ def cmd_run(path: str, verbose: bool = False, program_args=None,
         if e.code is None:
             return 0
         return e.code if isinstance(e.code, int) else 1
+    except RecursionError:
+        print(_recursion_error(path), file=sys.stderr)
+        return 1
     except Exception as e:
+        # `too many nested parentheses` is a CPython parser limit for a very
+        # long generated expression; report it without a Python traceback.
+        if 'too many nested parentheses' in str(e):
+            print(_recursion_error(path), file=sys.stderr)
+            return 1
         print(f"Runtime error: {e}", file=sys.stderr)
         import traceback
         traceback.print_exc()
@@ -619,15 +675,33 @@ def cmd_version(bump: str | None = None) -> int:
         except ValueError as exc:
             print(f"Error: invalid version '{bump}': {exc}", file=sys.stderr)
             return 2
+        except OSError as exc:
+            print(f"Error: cannot update version metadata: {exc}",
+                  file=sys.stderr)
+            return 2
     else:
-        print(get_version())
+        try:
+            print(get_version())
+        except (OSError, RuntimeError) as exc:
+            print(f"Error: cannot determine version: {exc}", file=sys.stderr)
+            return 2
     return 0
 
 
 def cmd_debug(path: str, trace: bool = False, show_code: bool = False) -> int:
     """Run an Aura file under the lightweight trace debugger."""
     from aura.tools.debugger import run as debug_run
-    return debug_run(path, trace=trace, show_code=show_code)
+    try:
+        return debug_run(path, trace=trace, show_code=show_code)
+    except FileNotFoundError:
+        print(f"Error: File not found: {path}", file=sys.stderr)
+        return 2
+    except SyntaxError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+    except OSError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
 
 
 def cmd_lsp() -> int:
@@ -686,7 +760,9 @@ Examples:
     # format command
     fmt = sub.add_parser('format', help='Format source code')
     fmt.add_argument('path', help='Source file (.aura)')
-    fmt.add_argument('-o', '--output', help='Output file')
+    fmt.add_argument('-o', '--output', help='Write the result to this file')
+    fmt.add_argument('-i', '--in-place', action='store_true',
+                     help='Rewrite the source file in place')
     fmt.add_argument('--width', type=int, default=100, help='Max line width (default: 100)')
 
     # lint command
@@ -697,12 +773,10 @@ Examples:
 
     # run command
     run = sub.add_parser('run', help='Run Aura file')
-    run.add_argument('path', help='Source file (.aura)')
     run.add_argument('-v', '--verbose', action='store_true', help='Show generated Python code')
     run.add_argument('--no-main', action='store_true',
                      help='Do not require a main() entry point (used by `aura test`)')
-    run.add_argument('args', nargs=argparse.REMAINDER,
-                     help='Arguments passed to the program as main(args)')
+    run.add_argument('path', nargs='?', help='Source file (.aura)')
 
     # repl command
     sub.add_parser('repl', help='Start interactive REPL')
@@ -773,8 +847,52 @@ Examples:
     return p
 
 
+
+
+
+def _parse_run_args(argv):
+    """Parse `aura run` options while leaving program arguments intact.
+
+    ``argparse.REMAINDER`` (or a positional list) would swallow ``-v`` when it
+    follows the file. Instead, parse only the known ``run`` options anywhere
+    before an explicit ``--``, use the first non-option token as the file, and
+    treat every remaining token as a program argument. So
+    ``aura run file.aura -v`` enables verbose output while
+    ``aura run file.aura one two`` passes ``['one', 'two']`` to ``main(args)``.
+    """
+    rest = list(argv[1:])
+    verbose = False
+    no_main = False
+    path = None
+    program_args = []
+    i = 0
+    while i < len(rest):
+        token = rest[i]
+        if token == '--':
+            program_args.extend(rest[i + 1:])
+            break
+        if token in ('-v', '--verbose'):
+            verbose = True
+        elif token == '--no-main':
+            no_main = True
+        elif token.startswith('-'):
+            # Unknown option: treat as a program argument.
+            program_args.append(token)
+        elif path is None:
+            path = token
+        else:
+            program_args.append(token)
+        i += 1
+    return path, verbose, no_main, program_args
+
+
 def main(argv=None):
-    argv = argv or sys.argv[1:]
+    argv = list(argv or sys.argv[1:])
+    if argv[:1] == ['run']:
+        if '-h' in argv[1:] or '--help' in argv[1:]:
+            build_parser().parse_args(['run', '--help'])  # prints help, exits
+        path, verbose, no_main, program_args = _parse_run_args(argv)
+        return cmd_run(path, verbose, program_args, require_main=not no_main)
     p = build_parser()
     args = p.parse_args(argv)
 
@@ -783,11 +901,13 @@ def main(argv=None):
     elif args.cmd == 'check':
         return cmd_check(args.path, args.verbose)
     elif args.cmd == 'format':
-        return cmd_format(args.path, args.output, args.width)
+        return cmd_format(args.path, args.output, args.width, args.in_place)
     elif args.cmd == 'lint':
         return cmd_lint(args.path, args.allow_warnings)
     elif args.cmd == 'run':
-        return cmd_run(args.path, args.verbose, args.args,
+        # `run` is dispatched before argparse (see `_parse_run_args`), so this
+        # path is unreachable; kept for clarity of the command table.
+        return cmd_run(args.path, args.verbose, [],
                        require_main=not args.no_main)
     elif args.cmd == 'test':
         return cmd_test(args.path, args.verbose, args.pattern)

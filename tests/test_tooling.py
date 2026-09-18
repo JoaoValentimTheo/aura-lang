@@ -236,6 +236,7 @@ def test_lsp_did_close_clears_caches():
     from aura.lsp.server import AuraLanguageServer
 
     server = AuraLanguageServer()
+    server.initialized = True
     uri = 'file:///close.aura'
     server._handle({'method': 'textDocument/didOpen',
                     'params': {'textDocument': {'uri': uri, 'text': 'let a = 1\n'}}})

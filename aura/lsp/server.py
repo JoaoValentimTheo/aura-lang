@@ -49,12 +49,19 @@ MAX_MESSAGE_BYTES = 16 * 1024 * 1024
 MAX_DOCUMENTS = 512
 
 
+class ProtocolError(ValueError):
+    """A malformed JSON-RPC frame (bad header, encoding or JSON)."""
+
+
 class AuraLanguageServer:
     def __init__(self, reader=None, writer=None):
         self.reader = reader or sys.stdin.buffer
         self.writer = writer or sys.stdout.buffer
         self.documents = OrderedDict()
         self.shutdown_requested = False
+        # Spec requires a `-32002` error for requests that arrive before the
+        # `initialize` handshake completes.
+        self.initialized = False
         # (uri, text) -> (text, program, parse_error). Avoids re-parsing the same
         # document for hover, symbols and diagnostics within a request cycle.
         self._parse_cache = OrderedDict()
@@ -76,15 +83,27 @@ class AuraLanguageServer:
             if b':' in line:
                 key, value = line.split(b':', 1)
                 headers[key.strip().lower()] = value.strip()
-        length = int(headers.get(b'content-length', 0))
+        raw_length = headers.get(b'content-length')
+        try:
+            length = int(raw_length) if raw_length is not None else 0
+        except (TypeError, ValueError):
+            raise ProtocolError(
+                f"invalid Content-Length header: {raw_length!r}") from None
         if length <= 0:
             return None
         if length > MAX_MESSAGE_BYTES:
-            raise ValueError(f"message exceeds {MAX_MESSAGE_BYTES} bytes")
+            raise ProtocolError(f"message exceeds {MAX_MESSAGE_BYTES} bytes")
         body = self.reader.read(length)
         if not body:
             return None
-        return json.loads(body.decode('utf-8'))
+        try:
+            text = body.decode('utf-8')
+        except UnicodeDecodeError:
+            raise ProtocolError("message body is not valid UTF-8") from None
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ProtocolError(f"invalid JSON payload: {exc}") from None
 
     def _evict_old_documents(self):
         """Keep the open-document (and cache) count bounded."""
@@ -158,13 +177,23 @@ class AuraLanguageServer:
 
     def run(self):
         while not self.shutdown_requested:
-            message = self._read_message()
+            try:
+                message = self._read_message()
+            except ProtocolError:
+                # A malformed frame is not recoverable mid-stream: report a
+                # JSON-RPC parse error and stop, rather than crashing with a
+                # traceback on untrusted input.
+                self._write_message({
+                    'jsonrpc': '2.0', 'id': None,
+                    'error': {'code': -32700, 'message': 'Parse error'},
+                })
+                break
             if message is None:
                 break
             try:
                 self._handle(message)
             except Exception:  # keep the server alive on internal errors
-                if 'id' in message:
+                if isinstance(message, dict) and 'id' in message:
                     self._write_message({
                         'jsonrpc': '2.0', 'id': message['id'],
                         'error': {'code': -32603, 'message': traceback.format_exc()},
@@ -176,6 +205,7 @@ class AuraLanguageServer:
         request_id = message.get('id')
 
         if method == 'initialize':
+            self.initialized = True
             self._respond(request_id, {
                 'capabilities': {
                     'textDocumentSync': 1,  # full
@@ -191,6 +221,14 @@ class AuraLanguageServer:
             })
         elif method == 'initialized':
             pass
+        elif not self.initialized and method not in ('exit', 'shutdown'):
+            # Requests before the handshake get the spec-mandated error.
+            if request_id is not None:
+                self._write_message({
+                    'jsonrpc': '2.0', 'id': request_id,
+                    'error': {'code': -32002,
+                              'message': 'Server not initialized'},
+                })
         elif method == 'shutdown':
             self.shutdown_requested = True
             self._respond(request_id, None)

@@ -374,7 +374,7 @@ class TestDepsListing:
     def test_list_shows_groups(self, project, capsys, monkeypatch):
         deps.add_package('requests', install=False)
         deps.add_package('pytest', install=False, dev=True)
-        monkeypatch.setattr(deps, '_installed_version', lambda n, r=None: None)
+        monkeypatch.setattr(deps, '_installed_versions', lambda names, r=None: {})
         assert deps.list_dependencies(root=project) == 0
         out = capsys.readouterr().out
         assert 'runtime' in out
@@ -384,13 +384,13 @@ class TestDepsListing:
 class TestLock:
     def test_lock_with_nothing_installed(self, project, monkeypatch, capsys):
         deps.add_package('requests', install=False)
-        monkeypatch.setattr(deps, '_installed_version', lambda n, r=None: None)
+        monkeypatch.setattr(deps, '_installed_versions', lambda names, r=None: {})
         assert deps.write_lock(root=project) == 1
 
     def test_lock_writes_versions(self, project, monkeypatch, capsys):
         deps.add_package('requests', install=False)
-        monkeypatch.setattr(deps, '_installed_version',
-                            lambda n, r=None: '2.31.0')
+        monkeypatch.setattr(deps, '_installed_versions',
+                            lambda names, r=None: {str(n).lower(): '2.31.0' for n in names})
         assert deps.write_lock(root=project) == 0
         text = (project / 'aura.lock').read_text(encoding='utf-8')
         assert 'requests = "2.31.0"' in text
@@ -399,7 +399,7 @@ class TestLock:
     def test_lock_separates_groups(self, project, monkeypatch):
         deps.add_package('requests', install=False)
         deps.add_package('pytest', install=False, dev=True)
-        monkeypatch.setattr(deps, '_installed_version', lambda n, r=None: '1.0')
+        monkeypatch.setattr(deps, '_installed_versions', lambda names, r=None: {str(n).lower(): '1.0' for n in names})
         deps.write_lock(root=project)
         text = (project / 'aura.lock').read_text(encoding='utf-8')
         assert '[runtime]' in text
@@ -410,14 +410,14 @@ class TestDoctor:
     def test_doctor_reports_missing_dependency(self, project, capsys,
                                                monkeypatch):
         deps.add_package('requests', install=False)
-        monkeypatch.setattr(deps, '_installed_version', lambda n, r=None: None)
+        monkeypatch.setattr(deps, '_installed_versions', lambda names, r=None: {})
         assert deps.doctor(root=project) == 1
         assert 'not installed' in capsys.readouterr().out
 
     def test_doctor_passes_when_installed(self, project, capsys, monkeypatch):
         deps.add_package('requests', install=False)
-        monkeypatch.setattr(deps, '_installed_version',
-                            lambda n, r=None: '2.31.0')
+        monkeypatch.setattr(deps, '_installed_versions',
+                            lambda names, r=None: {str(n).lower(): '2.31.0' for n in names})
         assert deps.doctor(root=project) == 0
         assert 'All checks passed' in capsys.readouterr().out
 
@@ -464,14 +464,15 @@ class TestCliWiring:
         assert build_parser().parse_args(['doctor']).cmd == 'doctor'
 
     def test_run_command_parses(self):
-        from aura.cli import build_parser
-        # Flags for `run` come before the path; everything after the path is
-        # forwarded to the program as `main(args)` (REMAINDER).
-        args = build_parser().parse_args(['run', '-v', 'app.aura', '--', '--x'])
-        assert args.cmd == 'run'
-        assert args.path == 'app.aura'
-        assert args.verbose is True
-        assert args.args == ['--x']
+        from aura.cli import _parse_run_args
+        # Recognized `run` options are parsed wherever they appear; the first
+        # non-option token is the file, and the rest go to `main(args)`.
+        path, verbose, no_main, program_args = _parse_run_args(
+            ['run', '-v', 'app.aura', '--', '--x'])
+        assert path == 'app.aura'
+        assert verbose is True
+        assert no_main is False
+        assert program_args == ['--x']
 
     def test_venv_lists_all_commands(self):
         from aura.cli import build_parser

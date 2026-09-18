@@ -4,6 +4,80 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.0a17] - 2026-09-18
+
+Internal audit hardening. A full pass over the tokenizer, parser, transformers,
+type checker and developer tooling fixed silent miscompilations, crashes on
+malformed input and several data-loss bugs, and made compilation of deeply
+nested inputs robust instead of crashing with a Python traceback.
+
+### Fixed — parser and tokens
+
+- **Empty control-flow bodies** (`if x { }`, `while c { }`, `for x in xs { }`,
+  `loop { }`, `try { } catch { }`) produced invalid Python with no suite after
+  the `:`. `_block` now emits `pass`, so an empty Aura body is valid output.
+- **`try { } finally { }` dropped the `finally` block**, because an empty
+  `finally_body` is falsy; the check is now `is not None`.
+- **Uppercase-identifier conditions** (`if Point { ... }`, `for x in Items { }`,
+  `guard Ready else { ... }`) were parsed as struct initializations and
+  swallowed the block. A new `_no_struct_depth` guard disables the struct
+  heuristic while parsing control-flow conditions.
+- **Keyword and literal binding names** (`let yield = ...`, `let True = ...`)
+  now raise a clear diagnostic naming the keyword, instead of a cryptic
+  downstream `SyntaxError`. Python-shaped `True`/`False`/`None` point at Aura's
+  `true`/`false`/`none`.
+- **Unterminated string and block-comment literals** now raise a positioned
+  `SyntaxError` instead of being silently accepted or crashing.
+- **Raw strings** with an escaped quote delimiter (`r"a\"b"`) are scanned
+  correctly.
+- **Perceptual positions** for float and prefixed-string tokens now point at
+  the token start rather than the end.
+
+### Fixed — developer tooling
+
+- **`aura add`/`remove` no longer destroy the manifest**: `aura.toml` unknown
+  tables (`[tool.*]`, `[scripts]`, ...), inline tables and arrays are preserved
+  on rewrite.
+- **`aura add -V` validates the specifier**: values such as `--upgrade` or
+  `,--no-deps` are rejected instead of being written into the manifest and
+  pip.
+- **The LSP server survives malformed input**: a bad `Content-Length`, invalid
+  UTF-8 or malformed JSON now produces a JSON-RPC parse error (`-32700`)
+  instead of crashing the process. Requests before `initialize` receive the
+  spec-mandated `-32002`.
+- **The formatter preserves multi-line strings** verbatim and no longer
+  corrupts spread/varargs or unary expressions (`f(*a, **b)`, `a * -1`).
+- **`aura version <x>` and `aura debug <missing>`** report a clean error
+  instead of a traceback; `set_version` only rewrites the `version` key inside
+  `[project]`.
+- **`aura run file.aura -v`** now enables verbose output instead of forwarding
+  `-v` to the program; trailing tokens still reach `main(args)`.
+- **`aura format -i`** rewrites a file in place, matching the documented
+  behaviour.
+- **`aura doctor`/`deps`/`lock`** query installed versions in one `pip list`
+  call instead of one `pip show` per dependency.
+- **Lint naming checks** handle `let mut NAME` and no longer misreport tuple
+  destructuring targets.
+- **REPL continuation** ignores brackets inside `//` and `/* */` comments.
+- **`AURA_VENV`** overrides that point at a filesystem root or the home
+  directory are refused before any `rmtree`.
+- **CLI startup** no longer imports the compiler for lightweight commands
+  (`version`, `doctor`, `deps`, `venv`), cutting their start-up cost.
+
+### Fixed — recursion
+
+- Long operator chains and member chains no longer crash the type checker,
+  rule checker, mutability checker or transformer with a raw `RecursionError`.
+  A `recursion_budget` context manager scales the interpreter limit to the
+  source size and restores it afterwards; `_prepare_entrypoint` walks the AST
+  iteratively; residual overflow is reported as a clean `E999` diagnostic.
+
+### Tests
+
+- Added coverage for the empty-body, `try`/`finally`, condition-parsing,
+  binding-name, manifest round-trip, specifier-validation, LSP-protocol,
+  formatter and recursion fixes.
+
 ## [0.1.0a16] - 2026-09-18
 
 Module facades. A module can now be the entry point of a source folder and

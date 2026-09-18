@@ -27,6 +27,7 @@ self-contained without any extra ceremony.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -55,12 +56,15 @@ _NAME_RE = re.compile(r'^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$')
 # version (which the installer pins with `==`). A leading `-` is never allowed,
 # so a manifest cannot smuggle a pip option.
 _SPEC_RE = re.compile(
-    r'^\s*(==|!=|<=|>=|<|>|~=|===)\s*[A-Za-z0-9._*+!-]+'
-    r'(\s*,\s*(==|!=|<=|>=|<|>|~=|===)\s*[A-Za-z0-9._*+!-]+)*\s*$')
+    r'^\s*(==|!=|<=|>=|<|>|~=|===)\s*[A-Za-z0-9][A-Za-z0-9._*+!-]*'
+    r'(\s*,\s*(==|!=|<=|>=|<|>|~=|===)\s*[A-Za-z0-9][A-Za-z0-9._*+!-]*)*\s*$')
 # A bare PEP 440 version, e.g. "1.2.3", "2.0rc1", "1.0.post1".
+# A version must start with a digit; this also rejects leading '-' so no pip
+# option can be smuggled through a specifier.
 _VERSION_RE = re.compile(
     r'^\s*[0-9]+(\.[0-9]+)*'
-    r'((a|b|rc)[0-9]+)?(\.post[0-9]+)?(\.dev[0-9]+)?\s*$')
+    r'((a|b|rc)[0-9]+)?(\.post[0-9]+)?(\.dev[0-9]+)?'
+    r'(\+[A-Za-z0-9.]+)?\s*$')
 
 
 # ============================================================================
@@ -151,7 +155,12 @@ def load_manifest(path=None):
 
 
 def _dump_manifest(data, path):
-    """Write the manifest back in a stable, readable TOML form."""
+    """Write the manifest back in a stable, readable TOML form.
+
+    Only the ``[project]`` and ``[dependencies*]`` tables are rewritten; every
+    other top-level table is re-emitted from the parsed data, so unrelated
+    configuration (``[tool.*]``, ``[scripts]``, ...) survives an edit.
+    """
     lines = []
     project = data.get('project', {})
     if project:
@@ -177,7 +186,35 @@ def _dump_manifest(data, path):
                 lines.append(f'{name} = {_toml_value(dev[name])}')
         lines.append('')
 
+    # Re-emit everything else (tool config, scripts, custom tables) unchanged.
+    for key, value in data.items():
+        if key in ('project', 'dependencies'):
+            continue
+        lines.append(f'[{key}]')
+        _emit_toml_table(value, lines, prefix=key)
+        lines.append('')
+
     Path(path).write_text('\n'.join(lines).rstrip('\n') + '\n', encoding='utf-8')
+
+
+def _emit_toml_table(value, lines, prefix):
+    """Emit ``value`` as TOML key/value lines, recursing into sub-tables.
+
+    Scalars, arrays and inline tables are written with ``_toml_value``;
+    nested dicts become ``[a.b]`` sub-tables so no structure is lost.
+    """
+    if not isinstance(value, dict):
+        lines.append(f'{prefix} = {_toml_value(value)}')
+        return
+    sub_tables = []
+    for key, item in value.items():
+        if isinstance(item, dict):
+            sub_tables.append((key, item))
+        else:
+            lines.append(f'{key} = {_toml_value(item)}')
+    for key, item in sub_tables:
+        lines.append(f'[{prefix}.{key}]')
+        _emit_toml_table(item, lines, f'{prefix}.{key}')
 
 
 def _toml_value(value):
@@ -185,12 +222,26 @@ def _toml_value(value):
         return 'true' if value else 'false'
     if isinstance(value, (int, float)):
         return str(value)
+    if isinstance(value, dict):
+        inner = ', '.join(
+            f'{_toml_key(k)} = {_toml_value(v)}' for k, v in value.items())
+        return '{' + inner + '}'
+    if isinstance(value, (list, tuple)):
+        return '[' + ', '.join(_toml_value(item) for item in value) + ']'
     escaped = (str(value)
                .replace('\\', '\\\\')
                .replace('"', '\\"')
                .replace('\n', '\\n')
                .replace('\r', '\\r'))
     return '"' + escaped + '"'
+
+
+def _toml_key(key):
+    """Bare TOML keys when safe, quoted otherwise."""
+    text = str(key)
+    if text and all(ch.isalnum() or ch in '-_' for ch in text):
+        return text
+    return '"' + text.replace('\\', '\\\\').replace('"', '\\"') + '"'
 
 
 def _valid_dependency_name(name):
@@ -222,6 +273,21 @@ def _dependency_groups(data):
 # ============================================================================
 # Interpreter / environment
 # ============================================================================
+
+def _is_safe_venv_dir(directory: Path) -> bool:
+    """Refuse obviously dangerous paths before any destructive operation.
+
+    An ``AURA_VENV`` override that points at a filesystem root or the user's
+    home directory must never be passed to ``shutil.rmtree``.
+    """
+    try:
+        resolved = directory.resolve()
+    except OSError:
+        return False
+    if resolved == resolved.parent:  # filesystem root
+        return False
+    return resolved != Path.home().resolve()
+
 
 def venv_dir(root=None) -> Path:
     """Path to the project's virtual environment."""
@@ -307,6 +373,10 @@ def create_venv(path=None, force=False, python=None, install=True, root=None) ->
         return 0
 
     if directory.exists() and force:
+        if not _is_safe_venv_dir(directory):
+            print(style.red(f"Refusing to remove unsafe path {directory}."),
+                  file=sys.stderr)
+            return 2
         shutil.rmtree(directory)
         print(_check(f"removed existing {directory}"))
 
@@ -392,13 +462,16 @@ def venv_info(root=None) -> int:
         return 0
     data = load_manifest(manifest)
     any_declared = False
+    all_names = [name for _group, deps in _dependency_groups(data)
+                 for name in deps]
+    versions = _installed_versions(all_names, root)
     for group, deps in _dependency_groups(data):
         if not deps:
             continue
         any_declared = True
         print(_bullet(f"{group} ({len(deps)}):"))
         for name in sorted(deps):
-            installed = _installed_version(str(name), root)
+            installed = versions.get(str(name).lower())
             declared = deps[name]
             detail = (style.dim(installed) if installed
                       else style.yellow('not installed'))
@@ -419,6 +492,10 @@ def remove_venv(root=None, confirm=True) -> int:
         if answer not in ('y', 'yes'):
             print("Aborted.")
             return 0
+    if not _is_safe_venv_dir(directory):
+        print(style.red(f"Refusing to remove unsafe path {directory}."),
+              file=sys.stderr)
+        return 2
     shutil.rmtree(directory)
     print(_check(f"removed {directory}"))
     return 0
@@ -480,7 +557,15 @@ def add_package(name, version=None, manifest_path=None, install=True,
         return 2
 
     if version:
-        spec = version if version[0] in '<>=~!,' else f"=={version}"
+        candidate = version if version[0] in '<>=~!,' else f"=={version}"
+        if not _valid_specifier(candidate):
+            print(style.red(f"Error: invalid version specifier {version!r}."),
+                  file=sys.stderr)
+            print(_bullet("expected a PEP 440 version or specifier, e.g. "
+                          + style.cyan("2.28") + " or " + style.cyan(">=2.28")),
+                  file=sys.stderr)
+            return 2
+        spec = candidate
 
     requirement = package_name if spec in ('', '*') else f"{package_name}{spec}"
 
@@ -610,8 +695,9 @@ def list_dependencies(manifest_path=None, root=None):
             continue
         printed = True
         print(style.bold(f"{group} dependencies") + style.dim(f" ({manifest_path.name})"))
+        versions = _installed_versions(deps.keys(), root)
         for name in sorted(deps):
-            installed = _installed_version(str(name), root)
+            installed = versions.get(str(name).lower())
             status = style.dim(installed) if installed else style.yellow('not installed')
             print(f"  {name} {style.dim(str(deps[name]))}  {status}")
         print()
@@ -620,21 +706,40 @@ def list_dependencies(manifest_path=None, root=None):
     return 0
 
 
-def _installed_version(name, root=None):
-    """Return the installed version of ``name``, or None."""
+def _installed_versions(names, root=None):
+    """Return ``{lowercased_name: version}`` for every installed ``names``.
+
+    One ``pip list`` call replaces one ``pip show`` per dependency, which
+    matters because spawning the interpreter costs hundreds of milliseconds.
+    """
+    wanted = {str(name).lower() for name in names}
+    if not wanted:
+        return {}
     try:
         result = subprocess.run(
-            [environment_python(root), '-m', 'pip', 'show', str(name)],
-            capture_output=True, text=True, timeout=30,
+            [environment_python(root), '-m', 'pip', 'list', '--format=json',
+             '--disable-pip-version-check'],
+            capture_output=True, text=True, timeout=60,
         )
     except (OSError, subprocess.SubprocessError):
-        return None
+        return {}
     if result.returncode != 0:
-        return None
-    for line in result.stdout.splitlines():
-        if line.startswith('Version:'):
-            return line.split(':', 1)[1].strip()
-    return None
+        return {}
+    try:
+        installed = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return {}
+    found = {}
+    for entry in installed:
+        name = str(entry.get('name', '')).lower()
+        if name in wanted:
+            found[name] = entry.get('version')
+    return found
+
+
+def _installed_version(name, root=None):
+    """Return the installed version of ``name``, or None."""
+    return _installed_versions([name], root).get(str(name).lower())
 
 
 def init_project(name='app', manifest_path=None, venv=False):
@@ -692,9 +797,12 @@ def write_lock(manifest_path=None, root=None) -> int:
     data = load_manifest(manifest_path)
     locked = []
     missing = []
+    all_names = [name for _group, deps in _dependency_groups(data)
+                 for name in deps]
+    versions = _installed_versions(all_names, root)
     for group, deps in _dependency_groups(data):
         for name in sorted(deps):
-            version = _installed_version(str(name), root)
+            version = versions.get(str(name).lower())
             if version:
                 locked.append((group, str(name), version))
             else:
@@ -748,9 +856,12 @@ def doctor(root=None) -> int:
 
     if manifest:
         data = load_manifest(manifest)
+        all_names = [name for _group, deps in _dependency_groups(data)
+                     for name in deps]
+        versions = _installed_versions(all_names, root)
         for _group, deps in _dependency_groups(data):
             for name in sorted(deps):
-                if _installed_version(str(name), root):
+                if versions.get(str(name).lower()):
                     print(_check(f"{name} installed"))
                 else:
                     problems.append(f"{name} is declared but not installed")

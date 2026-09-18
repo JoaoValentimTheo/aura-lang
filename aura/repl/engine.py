@@ -152,16 +152,45 @@ class AuraREPL:
         depth = 0
         in_string = None
         escaped = False
-        for ch in self.buffer:
+        in_line_comment = False
+        in_block_comment = False
+        i = 0
+        text = self.buffer
+        while i < len(text):
+            ch = text[i]
+            nxt = text[i + 1] if i + 1 < len(text) else ''
+            if in_line_comment:
+                if ch == '\n':
+                    in_line_comment = False
+                i += 1
+                continue
+            if in_block_comment:
+                if ch == '*' and nxt == '/':
+                    in_block_comment = False
+                    i += 2
+                    continue
+                i += 1
+                continue
             if escaped:
                 escaped = False
+                i += 1
                 continue
             if ch == '\\':
                 escaped = True
+                i += 1
                 continue
             if in_string:
                 if ch == in_string:
                     in_string = None
+                i += 1
+                continue
+            if ch == '/' and nxt == '/':
+                in_line_comment = True
+                i += 2
+                continue
+            if ch == '/' and nxt == '*':
+                in_block_comment = True
+                i += 2
                 continue
             if ch in ('"', "'"):
                 in_string = ch
@@ -169,8 +198,9 @@ class AuraREPL:
                 depth += 1
             elif ch in ')]}':
                 depth -= 1
+            i += 1
 
-        if depth > 0 or in_string is not None:
+        if depth > 0 or in_string is not None or in_block_comment:
             return True
 
         stripped = self.buffer.rstrip()

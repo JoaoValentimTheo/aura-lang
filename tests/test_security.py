@@ -332,7 +332,7 @@ def test_release_bump_handles_prerelease(tmp_path):
     from aura.tools import release
     pyproject = tmp_path / 'pyproject.toml'
     init = tmp_path / '__init__.py'
-    pyproject.write_text('version = "0.1.0a4"\n', encoding='utf-8')
+    pyproject.write_text('[project]\nname = "app"\nversion = "0.1.0a4"\n', encoding='utf-8')
     init.write_text('__version__ = "0.1.0a4"\n', encoding='utf-8')
     assert release.bump('patch', pyproject=pyproject, init=init) == '0.1.1'
     assert '0.1.1' in pyproject.read_text(encoding='utf-8')

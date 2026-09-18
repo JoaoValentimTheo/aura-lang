@@ -34,11 +34,13 @@ def capture(func, *args, **kwargs):
 # ---------------------------------------------------------------------------
 
 def test_mutability_diagnostics_survives_recursion_error(monkeypatch):
+    import aura.transpiler.semantics as semantics
+
     class Boom:
         def check_program(self, _ast):
             raise RecursionError()
 
-    monkeypatch.setattr(cli, 'MutabilityChecker', Boom)
+    monkeypatch.setattr(semantics, 'MutabilityChecker', Boom)
     assert cli._mutability_diagnostics(object()) == []
 
 
@@ -81,8 +83,10 @@ def test_report_diagnostic_prints_plain_without_fallback(capsys):
 # ---------------------------------------------------------------------------
 
 def test_transpile_transform_failure(monkeypatch, tmp_path, capsys):
+    import aura.transpiler.transformer as transformer_mod
+
     path = write(tmp_path, 'p.aura', 'def main() { }\n')
-    monkeypatch.setattr(cli.Transformer, 'transform',
+    monkeypatch.setattr(transformer_mod.Transformer, 'transform',
                         lambda self, ast: (_ for _ in ()).throw(RuntimeError('boom')))
     code = cli.cmd_transpile(path)
     err = capsys.readouterr().err
@@ -346,6 +350,8 @@ def test_install_aura_imports_is_best_effort(monkeypatch, tmp_path):
 
 
 def test_lint_internal_error(monkeypatch, tmp_path, capsys):
+    import aura.transpiler.errors as errors_mod
+
     path = write(tmp_path, 'p.aura', 'let TOTAL = 1\n')
 
     class BoomCollector:
@@ -358,7 +364,7 @@ def test_lint_internal_error(monkeypatch, tmp_path, capsys):
         def format(self):
             return ''
 
-    monkeypatch.setattr(cli, 'ErrorCollector', BoomCollector)
+    monkeypatch.setattr(errors_mod, 'ErrorCollector', BoomCollector)
     code, out, err = capture(cli.cmd_lint, path)
     assert code == 2
     assert 'Error linting' in err

@@ -242,7 +242,7 @@ catalog of idiomatic solutions, each with a runnable example in
 | `aura run <file>` | Transpile and execute an Aura file |
 | `aura check <file>` | Type-check and rule-check without running |
 | `aura transpile <file>` | Print the generated Python |
-| `aura format <file>` | Reformat source; `-o` writes in place |
+| `aura format <file>` | Reformat source; `-i` writes in place, `-o <file>` writes to a file |
 | `aura lint <file>` | Style warnings (`--allow-warnings` to exit 0) |
 | `aura test [dir]` | Run `.aura` test files |
 | `aura repl` | Interactive REPL |

@@ -1,8 +1,30 @@
 """Comprehensive error handling system for Aura transpiler."""
+import sys
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
 
 from aura.transpiler.ast import SourceLocation
+
+
+@contextmanager
+def recursion_budget(size: int):
+    """Temporarily raise the interpreter recursion limit for a compiler stage.
+
+    The checker and transformer visitors recurse once per AST level, so a
+    deeply nested expression (a long operator chain or member chain) can
+    exhaust Python's default limit and crash with a raw ``RecursionError``.
+    The budget scales with the source size, and the original limit is always
+    restored so a caller's limits are never permanently changed.
+    """
+    previous = sys.getrecursionlimit()
+    needed = 2000 + max(0, size) * 4
+    if needed > previous:
+        sys.setrecursionlimit(needed)
+    try:
+        yield
+    finally:
+        sys.setrecursionlimit(previous)
 
 
 class ErrorSeverity(Enum):

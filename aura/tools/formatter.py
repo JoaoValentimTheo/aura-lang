@@ -13,6 +13,10 @@ _STRING_RE = re.compile(
 # A block comment that opens and closes on one line: `/* ... */`.
 _BLOCK_COMMENT_RE = re.compile(r'/\*.*?\*/')
 _UNARY_RE = re.compile(r'(?:(?<=[(,=\[\s])|^)\s*([-+])\s*(?=[\w\d(])')
+# A prefix `*`/`**` (spread, varargs) is attached to the following name and
+# must not be spaced like the multiplication/power operators. Matched after
+# `(`, `,`, `[` or `{`, or at the start of a parameter list.
+_SPREAD_RE = re.compile(r'(?:(?<=[(,\[{])|^)\s*(\*\*|\*)\s*(?=[A-Za-z_])')
 _SINGLE_OP_RE = {
     op: re.compile(r'\s*' + re.escape(op) + r'\s*')
     for op in ('=', '+', '-', '*', '/', '%', '<', '>')
@@ -31,9 +35,28 @@ def format_aura(source: str, width: int = 100, indent: int = 2) -> str:
     result = []
     indent_level = 0
     in_block_comment = False
+    # The triple-quote delimiter currently open, or None. Lines inside a
+    # multi-line string are passed through verbatim: reformatting them would
+    # change the string's value.
+    in_triple = None
 
     for line in lines:
         stripped = line.strip()
+
+        # Multi-line string literals are opaque: emit the raw line untouched
+        # until the closing delimiter is seen.
+        if in_triple is not None:
+            result.append(line)
+            if in_triple in line:
+                in_triple = None
+            continue
+
+        opener = _open_triple_quote(stripped)
+        if opener is not None:
+            result.append(' ' * (indent_level * indent) + stripped)
+            if not _triple_closes(stripped, opener):
+                in_triple = opener
+            continue
 
         # Handle block comments
         if in_block_comment:
@@ -80,6 +103,47 @@ def format_aura(source: str, width: int = 100, indent: int = 2) -> str:
     return '\n'.join(result)
 
 
+def _open_triple_quote(line: str):
+    """Return the triple-quote delimiter that opens an unfinished string.
+
+    ``None`` when the line has no triple-quoted literal, or when it opens and
+    closes on the same line. Triple quotes inside single-line strings are
+    ignored by scanning quotes left to right.
+    """
+    i = 0
+    length = len(line)
+    while i < length:
+        ch = line[i]
+        if ch in ('"', "'"):
+            triple = line[i:i + 3]
+            if triple == ch * 3:
+                end = line.find(triple, i + 3)
+                if end == -1:
+                    return triple
+                i = end + 3
+                continue
+            # Single-line string: skip to its closing quote.
+            i += 1
+            while i < length and line[i] != ch:
+                if line[i] == '\\':
+                    i += 1
+                i += 1
+        i += 1
+    return None
+
+
+def _triple_closes(line: str, triple: str) -> bool:
+    """True when ``line`` contains a closing ``triple`` delimiter.
+
+    The opener itself is never counted: the first occurrence after the opener
+    position is treated as the close.
+    """
+    start = line.find(triple)
+    if start == -1:
+        return False
+    return line.find(triple, start + 3) != -1
+
+
 def _format_line(line: str) -> str:
     """Format a single line of Aura code.
 
@@ -113,6 +177,17 @@ def _format_line(line: str) -> str:
         comment = line[idx:]
         line = line[:idx]
 
+    # Protect prefix `*`/`**` (spread, varargs) before the multi-char operator
+    # pass, so `**` in `f(**b)` is not masked as the power operator. The sigil
+    # and the name it prefixes are kept together.
+    spreads = []
+
+    def _mask_spread(match):
+        spreads.append(match.group(1) + match.group(0).strip().lstrip('*'))
+        return f"\x03{len(spreads) - 1}\x03"
+
+    line = _SPREAD_RE.sub(_mask_spread, line)
+
     # Mask multi-character operators so they survive single-char rules.
     for i, op in enumerate(_MULTI_OPS):
         token = f"\x01{i}\x01"
@@ -143,6 +218,10 @@ def _format_line(line: str) -> str:
         if token in line:
             line = re.sub(r'\s*' + re.escape(token) + r'\s*', f' {token} ', line)
             line = line.replace(token, op)
+
+    # Restore prefix `*`/`**` only now, so they are never treated as operators.
+    for i, original in enumerate(spreads):
+        line = line.replace(f"\x03{i}\x03", original)
 
     # Normalize logical operators.
     line = _AND_RE.sub('and', line)

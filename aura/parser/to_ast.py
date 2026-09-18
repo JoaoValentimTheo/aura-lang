@@ -61,10 +61,17 @@ class Tokenizer:
         self.tokens: list = []
         self.filename = filename
 
-    def error(self, message):
-        """Build a ``SyntaxError`` carrying the tokenizer's position."""
-        exc = SyntaxError(f"{message} (line {self.line})")
-        return annotate_syntax_error(exc, self.line, self.column, self.filename)
+    def error(self, message, token=None):
+        """Build a ``SyntaxError`` carrying the tokenizer's position.
+
+        When ``token`` is given, its line/column are used instead of the
+        tokenizer's current cursor, so an error raised after scanning past a
+        construct still points at where the construct began.
+        """
+        line = getattr(token, 'line', None) or self.line
+        column = getattr(token, 'column', None) or self.column
+        exc = SyntaxError(f"{message} (line {line})")
+        return annotate_syntax_error(exc, line, column, self.filename)
 
     _ESCAPES = {
         'n': '\n', 't': '\t', 'r': '\r', '0': '\0',
@@ -138,6 +145,7 @@ class Tokenizer:
 
             # Block comments: /* ... */ (may span multiple lines).
             if char == '/' and self.pos + 1 < length and self.source[self.pos + 1] == '*':
+                comment_line, comment_col = self.line, self.column
                 self.pos += 2
                 while self.pos < length and not (
                     self.source[self.pos] == '*' and self.pos + 1 < length
@@ -147,8 +155,12 @@ class Tokenizer:
                         self.line += 1
                         self.column = 1
                     self.pos += 1
-                if self.pos < length:
-                    self.pos += 2  # skip closing */
+                if self.pos >= length:
+                    raise self.error(
+                        "unterminated block comment",
+                        Token('OP', '/*', comment_line, comment_col),
+                    )
+                self.pos += 2  # skip closing */
                 continue
 
             # Identifiers and Keywords
@@ -202,7 +214,10 @@ class Tokenizer:
                     body_start = self.pos + len(closing)
                     j = body_start
                     while j < length:
-                        if not value.lower().startswith('r') and self.source[j] == '\\':
+                        # In a raw string a backslash still escapes the quote
+                        # delimiter (`r"a\"b"` is one string), so skip a
+                        # backslash and the character after it even for `r`.
+                        if self.source[j] == '\\':
                             j += 2
                             continue
                         if self.source[j] == '\n':
@@ -210,6 +225,11 @@ class Tokenizer:
                         if self.source[j:j + len(closing)] == closing:
                             break
                         j += 1
+                    if j >= length:
+                        raise self.error(
+                            "unterminated string literal",
+                            Token('RAWSTRING', self.source[start:body_start], start_line, start_col),
+                        )
                     end = j + len(closing)
                     raw_literal = self.source[start:end]
                     self.column += (end - start)
@@ -302,8 +322,9 @@ class Tokenizer:
                         while self.pos < length and _is_ascii_digit(self.source[self.pos]):
                             self.pos += 1
                 raw = self.source[start:self.pos].replace('_', '')
+                start_line, start_col = self.line, self.column
                 self.column += (self.pos - start)
-                self.tokens.append(Token('FLOAT', float(raw), self.line, self.column))
+                self.tokens.append(Token('FLOAT', float(raw), start_line, start_col))
                 continue
 
             # Strings
@@ -321,6 +342,11 @@ class Tokenizer:
                         if self.source[self.pos] == '\n':
                             self.line += 1
                         self.pos += 1
+                    if self.pos >= length:
+                        raise self.error(
+                            "unterminated string literal",
+                            Token('STRING', quote, start_line, start_col),
+                        )
                     value = self.source[start:self.pos]
                     self.pos += 3  # skip closing quotes
                     self.column += (self.pos - start)
@@ -336,6 +362,11 @@ class Tokenizer:
                     if self.source[self.pos] == '\n':
                         self.line += 1
                     self.pos += 1
+                if self.pos >= length:
+                    raise self.error(
+                        "unterminated string literal",
+                        Token('STRING', quote, start_line, start_col),
+                    )
                 value = self.source[start:self.pos]
                 self.pos += 1 # Skip closing quote
                 self.column += (self.pos - start + 2)
@@ -381,6 +412,25 @@ _STATEMENT_KEYWORDS = frozenset({
 # Upper bound on source size, guarding against accidental multi-gigabyte input.
 MAX_SOURCE_BYTES = 16 * 1024 * 1024
 
+# Aura keywords that cannot be used as a binding name. Declaring one is a
+# parse-time error rather than a confusing downstream failure.
+_RESERVED_BINDING_NAMES = frozenset({
+    'if', 'else', 'unless', 'until', 'while', 'for', 'in', 'loop', 'guard',
+    'match', 'case', 'try', 'catch', 'finally', 'throw', 'return', 'break',
+    'continue', 'yield', 'def', 'class', 'trait', 'enum', 'module', 'import',
+    'from', 'as', 'let', 'const', 'type', 'async', 'await', 'spawn', 'and',
+    'or', 'not', 'is', 'true', 'false', 'none', 'self', 'super', 'new',
+    'public', 'private', 'protected', 'static', 'volatile', 'export', 'with',
+    'assert', 'fn',
+})
+
+# Python boolean/None spellings that Aura deliberately spells differently.
+_PYTHON_LITERAL_ALIASES = {
+    'True': 'true',
+    'False': 'false',
+    'None': 'none',
+}
+
 # ==============================================================================
 # Parser
 # ==============================================================================
@@ -397,8 +447,33 @@ class Parser:
         # Depth of `case`-pattern parsing. Inside a pattern, `{` starts the
         # case body, never a struct literal, so struct-init must be suppressed.
         self._pattern_depth = 0
+        # Depth of control-flow condition parsing. A condition like
+        # `if Point { ... }` must treat `{` as the block opener, never a
+        # struct literal, even when the condition is an uppercase identifier.
+        self._no_struct_depth = 0
 
     # --- Diagnostics ---
+    def _check_binding_name(self, token):
+        """Reject keywords and Python-shaped literal spellings as bindings.
+
+        Diagnosing these at the declaration site gives a clear message instead
+        of a confusing error later in the pipeline.
+        """
+        if token.value in _RESERVED_BINDING_NAMES:
+            hint = ""
+            if token.value in ('true', 'false', 'none'):
+                hint = (
+                    f" ('{token.value}' is a literal; choose a different name)")
+            raise self.error(
+                f"'{token.value}' is a reserved keyword and cannot be used as "
+                f"a variable name{hint}", token)
+        alias = _PYTHON_LITERAL_ALIASES.get(token.value)
+        if alias is not None:
+            raise self.error(
+                f"'{token.value}' is not an Aura literal; write '{alias}' "
+                "instead (and choose a different binding name)", token)
+        return token.value
+
     def error(self, message, token=None):
         """Build a ``SyntaxError`` carrying structured line/column info.
 
@@ -761,13 +836,14 @@ class Parser:
             name = name.replace("* ", "*")
 
         else:
-             name = self.consume(expected_type='IDENT').value
+             name = self._check_binding_name(self.consume(expected_type='IDENT'))
              # Multiple assignment: `let a, b = 1, 2` becomes a tuple target.
              # Collect the remaining names and store them as a tuple pattern so
              # the transformer can emit Python tuple unpacking.
              extra_names = []
              while self.match(','):
-                 extra_names.append(self.consume(expected_type='IDENT').value)
+                 extra_names.append(
+                     self._check_binding_name(self.consume(expected_type='IDENT')))
              if extra_names:
                  name = "(" + ", ".join([name] + extra_names) + ")"
         type_annotation = None
@@ -788,7 +864,7 @@ class Parser:
 
     def parse_const_decl(self):
         self.consume(expected_value='const')
-        name = self.consume(expected_type='IDENT').value
+        name = self._check_binding_name(self.consume(expected_type='IDENT'))
         type_annotation = None
         if self.match(':'):
             type_annotation = self.parse_type()
@@ -1680,9 +1756,23 @@ class Parser:
         return EnumDecl(name, members, visibility)
 
     # --- Control Flow ---
+    def parse_condition(self):
+        """Parse a control-flow condition.
+
+        Inside a condition, a ``{`` always opens the statement body, so the
+        struct-literal heuristic must be suppressed. Without this,
+        ``if Point { ... }`` (or any uppercase identifier condition) would be
+        parsed as a struct initialization and swallow the block.
+        """
+        self._no_struct_depth += 1
+        try:
+            return self.parse_expression()
+        finally:
+            self._no_struct_depth -= 1
+
     def parse_if_stmt(self):
         self.consume(expected_value='if')
-        cond = self.parse_expression()
+        cond = self.parse_condition()
         then_body = self.parse_block()
         else_body = None
         if self.match('else'):
@@ -1691,7 +1781,7 @@ class Parser:
 
     def parse_guard_stmt(self):
         self.consume(expected_value='guard')
-        cond = self.parse_expression()
+        cond = self.parse_condition()
         self.consume(expected_value='else')
         else_body = self.parse_block()
         return GuardStmt(cond, else_body)
@@ -1705,13 +1795,13 @@ class Parser:
 
     def parse_while_stmt(self):
         self.consume(expected_value='while')
-        cond = self.parse_expression()
+        cond = self.parse_condition()
         body = self.parse_block()
         return WhileStmt(cond, body)
 
     def parse_unless_stmt(self):
         self.consume(expected_value='unless')
-        cond = self.parse_expression()
+        cond = self.parse_condition()
         body = self.parse_block()
         else_body = None
         if self.match('else'):
@@ -1720,7 +1810,7 @@ class Parser:
 
     def parse_until_stmt(self):
         self.consume(expected_value='until')
-        cond = self.parse_expression()
+        cond = self.parse_condition()
         body = self.parse_block()
         return UntilStmt(cond, body)
 
@@ -1753,11 +1843,11 @@ class Parser:
              self.consume(expected_value=')')
 
         self.consume(expected_value='in')
-        iterable = self.parse_expression()
+        iterable = self.parse_condition()
 
         step = None
         if self.match('step'):
-            step = self.parse_expression()
+            step = self.parse_condition()
 
         body = self.parse_block()
         return ForStmt(pattern, iterable, body, step)
@@ -2426,7 +2516,7 @@ class Parser:
                 # Ambiguity with control flow: if x { ... } vs if x {} ...
                 # Heuristic: Only allow if node is Capitalized Identifier (or member access)
                 is_struct = False
-                if not self._pattern_depth:
+                if not self._pattern_depth and not self._no_struct_depth:
                     if isinstance(node, Identifier) and node.name[0].isupper():
                         is_struct = True
                     elif isinstance(node, BinaryOp) and node.op == '.':
