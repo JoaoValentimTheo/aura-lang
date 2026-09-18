@@ -344,7 +344,7 @@ def test_constructor_is_init():
 # ---------------------------------------------------------------------------
 
 def test_module_execution_roundtrip():
-    out = run_aura('module M { def hi() { return 7 } }\nprint(M.hi())')
+    out = run_aura('module M { export def hi() { return 7 } }\nprint(M.hi())')
     assert out == '7\n'
 
 

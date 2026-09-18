@@ -159,11 +159,13 @@ declaration    = var_decl
                | module_decl
                | import_stmt ;
 
-modifiers      = { "public" | "private" | "protected" | "static" | "volatile" | "export" } ;
+modifiers      = { "public" | "private" | "protected" | "static" | "volatile" } ;
 ```
 
 Modifiers appear **before** the declaration keyword
-(`private let x = 1`, not `let private x`).
+(`private let x = 1`, not `let private x`). `export` is **not** a general
+modifier: it appears only at the start of a `module` member (see
+[Modules](#37-modules)).
 
 At class/trait member level a **visibility is mandatory**: every member must
 begin with exactly one of `public`, `private` or `protected` (omitting it is
@@ -279,8 +281,16 @@ type_alias     = "type" , identifier , [ type_params ] , "=" , type ;
 ### 3.7 Modules
 
 ```
-module_decl    = "module" , dotted_name , "{" , { statement } , "}" ;
+module_decl    = "module" , dotted_name , "{" , { module_member } , "}" ;
+module_member  = [ "export" ] , statement ;
 ```
+
+A module member is private to the declaring file unless prefixed with `export`.
+`export` must precede a named declaration (`def`, `class`, `trait`, `enum`,
+`type`, `let`, `const` or a nested `module`); a bare `export` is a syntax
+error. Non-exported members are mangled in the generated Python, so privacy is
+enforced at runtime as well as by the rule checker (`E308`), and module state
+is not assignable from outside (`E303`).
 
 ### 3.8 Imports
 

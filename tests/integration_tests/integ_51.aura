@@ -1,6 +1,6 @@
 // Integration 51
 module App {
-    class Service {
+    export class Service {
         private let data = []
         public def add(item) {
             self.data = [*self.data, item];

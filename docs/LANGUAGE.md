@@ -737,25 +737,70 @@ referenced.
 
 ### Modules
 
+A `module Name { ... }` body is a namespace. Members are **private to the
+declaring file** unless marked `export`; only exported members are reachable as
+`Name.member`:
+
 ```aura
 module MyLib {
-  export def public_function() {
+  export def public_function() -> int {
     return 42
   }
 
-  def private_function() {
-    // not exported
+  export const VERSION = "1.0.0"
+
+  // Not exported: visible only inside MyLib.
+  let mut cache = 0
+
+  def private_helper() -> int {
+    return cache
   }
 
-  export const VERSION = "1.0.0"
+  export def refresh() -> int {
+    cache = private_helper() + 1
+    return cache
+  }
 }
 
-print(MyLib.public_function())
-print(MyLib.VERSION)
+def main() {
+  print(MyLib.public_function())  // 42
+  print(MyLib.VERSION)            // 1.0.0
+  print(MyLib.refresh())          // 1
+
+  // MyLib.private_helper()  // E308: not exported
+  // MyLib.cache = 9         // E303: module state is not writable from outside
+}
 ```
 
-A module transpiles to a namespaced class whose functions are static.
-`export` is accepted but has no Python equivalent, so it is ignored.
+Rules:
+
+- **Private by default.** Add `export` to a `def`, `class`, `trait`, `enum`,
+  `type`, `let`, `const` or nested `module` to make it public. Accessing a
+  non-exported member from outside reports `E308`.
+- **State is encapsulated.** A module member cannot be assigned from outside
+  (`E303`). Mutate module state through an exported function, which may freely
+  use `let mut` members internally.
+- **Dotted names nest.** `module App.Services { ... }` is reached as
+  `App.Services.member`.
+- Members may be functions, classes, traits, enums, type aliases, data, or
+  nested modules.
+
+A module transpiles to a namespaced class whose functions are static. A
+non-exported member is emitted under a mangled name (`_Lib__cache`), so the
+privacy is enforced at runtime as well as at check time.
+
+A whole file is also importable; see [Imports](#12-imports-and-modules):
+
+```aura
+// lib.aura
+export def greet(name: str) -> str {
+  return "hi " + name
+}
+
+// app.aura
+import lib
+def main() { print(lib.greet("ana")) }
+```
 
 ---
 
@@ -1286,9 +1331,13 @@ Aura is strict by default. The following rules are enforced by `aura check`,
 
 - **Immutability** — `let` bindings cannot be reassigned; use `let mut`.
   `const` can never be reassigned. Member assignments (`self.x = ...`) are not
-  affected.
+  affected. A function parameter is a local binding and may be reassigned.
 - **No duplicate declarations** in the same scope, and no duplicate parameter
   names.
+- **Module membership** — a member declared in a `module` body is private to
+  its file unless marked `export`; accessing a non-exported member from outside
+  reports `E308`. Module state is not writable from outside (`E303`); mutate it
+  through an exported function.
 - **`return` only inside a function** (or in a top-level
   `guard cond else { return }`, which exits the program).
 - **`break` / `continue` only inside a loop.**

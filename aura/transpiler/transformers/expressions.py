@@ -63,6 +63,10 @@ class ExpressionTransformer:
         # one inside a module function must become `Module.name`. Each stack
         # frame maps a visible module-level name to its owning module path.
         self._module_scopes = []
+        # module_name -> {member_name: mangled_name} for non-exported members,
+        # so a private member declared in a module is renamed everywhere the
+        # module's own code refers to it.
+        self._module_privates = {}
         # Names bound locally (params, locals, loop vars) in the current
         # function, which shadow module members and must not be rewritten.
         self._local_scopes = []
@@ -203,8 +207,12 @@ class ExpressionTransformer:
             for scope in reversed(self._module_scopes):
                 owner = scope.get(node.name)
                 if owner is not None:
-                    safe = py_safe_name(node.name)
-                    return f"{owner}.{safe}"
+                    # A private (non-exported) member has a mangled runtime
+                    # name; an internal reference must use it.
+                    mangled = self._module_privates.get(owner, {}).get(node.name)
+                    if mangled is not None:
+                        return f"{owner}.{mangled}"
+                    return f"{owner}.{py_safe_name(node.name)}"
         return py_safe_name(node.name)
 
     def _is_shadowed(self, name):
@@ -335,6 +343,16 @@ class ExpressionTransformer:
             value = self.transform(adaptive[0].expr)
             self._needs_aura_call = True
             return f"_aura_call({func}, {value})"
+
+        # A call to a private (non-exported) module member from inside the
+        # module must use its mangled runtime name.
+        if isinstance(node.func, Identifier) and not self._is_shadowed(node.func.name):
+            for owner, privates in reversed(list(self._module_privates.items())):
+                mangled = privates.get(node.func.name)
+                if mangled is not None:
+                    target = f"{owner}.{mangled}"
+                    all_args = self._render_call_args(node)
+                    return f"{target}({', '.join(all_args)})"
 
         all_args = self._render_call_args(node)
         return f"{func}({', '.join(all_args)})"

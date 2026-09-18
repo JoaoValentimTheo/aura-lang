@@ -15,6 +15,12 @@ class SourceLocation:
 
 class Node:
     """Base AST node with optional source location."""
+    # Set by the parser on every declaration that appears directly in a
+    # `module { }` body: True when prefixed with `export`. Declarations outside
+    # a module leave the default. This lets the rule checker and transformer
+    # ask "is this member public?" without checking the enclosing context.
+    is_exported = False
+
     def __init__(self):
         self.location: SourceLocation | None = None
 
@@ -36,9 +42,18 @@ class Program(Node):
         self.statements = statements
 
 class Module(Node):
-    def __init__(self, name, members):
+    """A `module Name { ... }` declaration.
+
+    Members are private to the declaring file unless marked `export`; only
+    exported members are reachable as `Name.member` from another file (or from
+    outside the module in the same file). `exports` records the exported names
+    so the rule checker can reject an external access to a private member and
+    the transformer can mangle the private ones.
+    """
+    def __init__(self, name, members, exports=None):
         self.name = name
         self.members = members
+        self.exports = set(exports or ())
 
 # ============================================================================
 # Declarations

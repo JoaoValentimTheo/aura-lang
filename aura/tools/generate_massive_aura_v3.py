@@ -82,10 +82,10 @@ d.log();
 
 def gen_integration():
     for i in range(1000):
-        # Mixed heavy stuff
+        # Mixed heavy stuff. Module members are file-private unless exported.
         content = f"""// Integration {i}
 module App {{
-    class Service {{
+    export class Service {{
         private let data = []
         public def add(item) {{
             self.data = [*self.data, item];

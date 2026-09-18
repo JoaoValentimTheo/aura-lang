@@ -65,9 +65,9 @@ to Python rather than reported. See "Removed codes" below.
 |------|------|---------|------------|
 | `E301` | `DUPLICATE_DEFINITION` | name already defined in this scope | rule checker |
 | `E302` | `UNREACHABLE_CODE` | statement is unreachable | rule checker |
-| `E303` | `REASSIGN_IMMUTABLE` | reassigning a `let`/`const` binding | mutability checker |
+| `E303` | `REASSIGN_IMMUTABLE` | reassigning a `let`/`const` binding, a class `const` member, or module state from outside | mutability checker, rule checker |
 | `E307` | `MISSING_VISIBILITY` | class/trait member has no visibility | rule checker |
-| `E308` | `INACCESSIBLE_MEMBER` | non-public member accessed from outside | rule checker |
+| `E308` | `INACCESSIBLE_MEMBER` | non-public class member or non-exported module member accessed from outside | rule checker |
 | `E309` | `UNIMPLEMENTED_ABSTRACT` | concrete class missing an abstract method | rule checker |
 | `E310` | `MISSING_MAIN` | entry file has no `main` | rule checker |
 | `E311` | `INVALID_MAIN` | `main` has a bad signature | rule checker |

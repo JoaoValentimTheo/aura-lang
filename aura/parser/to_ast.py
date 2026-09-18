@@ -500,9 +500,11 @@ class Parser:
         while True:
             token = self.peek()
             if token.value == 'export':
-                # `export` marks public members inside a module; Python has no
-                # equivalent, so it is simply skipped.
-                self.consume()
+                # `export` is consumed before the declaration (see
+                # `parse_module_decl`); reaching it here means an export outside
+                # a module, which is meaningless.
+                raise self.error(
+                    "'export' is only meaningful inside a 'module' body")
             elif token.value == '@':
                 # Parse decorators
                 while self.match('@'):
@@ -1133,21 +1135,39 @@ class Parser:
     def parse_module_decl(self):
         self.consume(expected_value='module')
         name = self.consume(expected_type='IDENT').value
-        # Handle nested module names if needed (e.g. stdlib.collections)
+        # Dotted module names (`module stdlib.collections`) nest the emitted
+        # namespaces as `stdlib.collections`.
         while self.match('.'):
             name += "." + self.consume(expected_type='IDENT').value
 
-        # Parse the module body as a list of member declarations.
+        # Parse the module body as a list of member declarations. Members are
+        # private to the file unless prefixed with `export`.
         self.consume(expected_value='{')
         members = []
+        exports = set()
         while not self.check('}') and not self.check('EOF'):
-            if self.match('export'):
-                pass  # visibility marker; Python has no equivalent
+            is_exported = self.match('export')
+            if is_exported and (self.check('}') or self.check('EOF')
+                                or self.check(';')):
+                raise self.error(
+                    "`export` must precede a declaration (def, class, trait, "
+                    "enum, type, let, const or module)")
             member = self.parse_statement()
-            if member is not None:
-                members.append(member)
+            if member is None:
+                continue
+            member_name = getattr(member, 'name', None)
+            if is_exported:
+                if member_name is None:
+                    raise self.error(
+                        "`export` must precede a named declaration "
+                        "(def, class, trait, enum, type, let, const or module)")
+                exports.add(member_name)
+            # Every declaration node carries `is_exported`; setting it is part
+            # of the node's contract, not a dynamic attribute.
+            member.is_exported = is_exported
+            members.append(member)
         self.consume(expected_value='}')
-        return Module(name, members)
+        return Module(name, members, exports)
 
     def parse_type_decl(self):
         self.consume(expected_value='type')

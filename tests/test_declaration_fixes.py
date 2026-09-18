@@ -145,14 +145,14 @@ class TestModuleDataMembers:
     def test_module_const_reference(self):
         out = run_aura(
             'module M {\n  const K = 1\n'
-            '  def f() -> int { return K }\n}\n'
+            '  export def f() -> int { return K }\n}\n'
             'def main() { print(M.f()) }\n')
         assert out == '1\n'
 
     def test_module_let_reference(self):
         out = run_aura(
             'module M {\n  let x = 2\n'
-            '  def f() -> int { return x }\n}\n'
+            '  export def f() -> int { return x }\n}\n'
             'def main() { print(M.f()) }\n')
         assert out == '2\n'
 
@@ -160,8 +160,8 @@ class TestModuleDataMembers:
         out = run_aura(
             'module Counter {\n'
             '  let mut count = 0\n'
-            '  def inc() -> int {\n    count += 1\n    return count\n  }\n'
-            '  def peek() -> int { return count }\n}\n'
+            '  export def inc() -> int {\n    count += 1\n    return count\n  }\n'
+            '  export def peek() -> int { return count }\n}\n'
             'def main() {\n'
             '  print(Counter.inc())\n'
             '  print(Counter.inc())\n'
@@ -172,21 +172,21 @@ class TestModuleDataMembers:
     def test_local_shadows_module_member(self):
         out = run_aura(
             'module M {\n  const K = 1\n'
-            '  def f() -> int {\n    let K = 100\n    return K\n  }\n}\n'
+            '  export def f() -> int {\n    let K = 100\n    return K\n  }\n}\n'
             'def main() { print(M.f()) }\n')
         assert out == '100\n'
 
     def test_parameter_shadows_module_member(self):
         out = run_aura(
             'module M {\n  const K = 1\n'
-            '  def f(K: int) -> int { return K + 1 }\n}\n'
+            '  export def f(K: int) -> int { return K + 1 }\n}\n'
             'def main() { print(M.f(40)) }\n')
         assert out == '41\n'
 
     def test_module_member_reference_in_expression(self):
         out = run_aura(
             'module M {\n  const A = 6\n  const B = 7\n'
-            '  def product() -> int { return A * B }\n}\n'
+            '  export def product() -> int { return A * B }\n}\n'
             'def main() { print(M.product()) }\n')
         assert out == '42\n'
 

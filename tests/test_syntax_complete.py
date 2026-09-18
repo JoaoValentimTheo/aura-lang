@@ -114,7 +114,7 @@ def test_type_alias():
 def test_module_declaration():
     out = run_aura(
         "module Math {\n"
-        "  let answer = 42\n"
+        "  export let answer = 42\n"
         "}\n"
         "print(Math.answer)"
     )

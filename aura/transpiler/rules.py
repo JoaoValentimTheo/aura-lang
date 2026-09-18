@@ -200,9 +200,32 @@ class RuleChecker:
             if node.base_class:
                 bases = [b.strip() for b in str(node.base_class).split(',') if b.strip()]
             self._classes[node.name] = {'members': members, 'bases': bases,
-                                        'is_trait': is_trait, 'abstracts': abstracts}
+                                        'is_trait': is_trait, 'abstracts': abstracts,
+                                        'is_module': False,
+                                        'exports': None}
             # Recurse into nested classes.
             for member in body:
+                self._register_classes(member)
+        elif isinstance(node, Module):
+            # A module is a namespace like a class, but membership is governed
+            # by `export` rather than a visibility modifier: a name that is not
+            # exported is invisible outside the module (E308).
+            exports = set(getattr(node, 'exports', None) or ())
+            members = {}
+            for member in node.members:
+                name = getattr(member, 'name', None)
+                if not name:
+                    continue
+                is_const = isinstance(member, ConstDecl)
+                members[name] = ('public' if name in exports else 'private',
+                                 is_const)
+            # Nested modules register under their dotted path too, so a member
+            # access through the outer namespace resolves.
+            self._classes[node.name] = {
+                'members': members, 'bases': [], 'is_trait': False,
+                'abstracts': {}, 'is_module': True, 'exports': exports,
+            }
+            for member in node.members:
                 self._register_classes(member)
         elif isinstance(node, Node):
             for value in vars(node).values():
@@ -282,8 +305,12 @@ class RuleChecker:
                 self.visit(stmt)
         elif isinstance(node, Module):
             self._push_scope()
-            for member in node.members:
-                self.visit(member)
+            self._module_depth = getattr(self, '_module_depth', 0) + 1
+            try:
+                for member in node.members:
+                    self.visit(member)
+            finally:
+                self._module_depth -= 1
             self._pop_scope()
         elif isinstance(node, VarDecl):
             self._visit_var_decl(node)
@@ -663,7 +690,8 @@ class RuleChecker:
         vis, decl_class = self._lookup_member(owner_class, member, set())
         if vis is None or vis == 'public':
             return
-        internal = self._is_internal_access(obj)
+        is_module = bool(self._classes.get(decl_class, {}).get('is_module'))
+        internal = self._is_internal_access(obj) and not is_module
         if internal:
             if vis == 'private' and not self._private_visible_here(decl_class):
                 self.collector.add(
@@ -673,6 +701,14 @@ class RuleChecker:
                     location=self._here(node),
                     hint="access it through a public method or getter",
                 )
+            return
+        if is_module:
+            self.collector.add(
+                ErrorCode.INACCESSIBLE_MEMBER,
+                f"'{member}' is not exported from module '{decl_class}'",
+                location=self._here(node),
+                hint=f"add 'export' to {member} in module {decl_class}",
+            )
             return
         self.collector.add(
             ErrorCode.INACCESSIBLE_MEMBER,
@@ -808,18 +844,34 @@ class RuleChecker:
         self.visit(node.right)
 
     def _check_const_member_assignment(self, target):
-        """Reject assigning to a class-level ``const`` through a member access.
+        """Reject assigning through a member access to an immutable member.
 
-        `C.K = 2` and `self.K = 2` would otherwise silently succeed at runtime
-        for a constant that is meant to never change.
+        Covers two cases that would otherwise silently succeed at runtime:
+
+        * a class-level ``const`` (`C.K = 2`, `self.K = 2`) — constants never
+          change;
+        * any module member (`M.count = 99`) — a module namespace is not
+          writable from outside; mutate module state through an exported
+          function instead.
         """
         if not isinstance(target.member, str):
             return
         owner_class = self._object_class(target.obj)
         if owner_class is None:
             return
+        info = self._classes.get(owner_class) or {}
         vis, is_const, decl_class = self._lookup_member_info(
             owner_class, target.member, set())
+
+        if info.get('is_module') and vis is not None and not self._is_module_body():
+            self.collector.add(
+                ErrorCode.REASSIGN_IMMUTABLE,
+                f"cannot assign to module member '{owner_class}.{target.member}'; "
+                f"module state is not writable from outside",
+                location=self._here(target),
+                hint="mutate it through an exported function",
+            )
+            return
         if not is_const:
             return
         self.collector.add(
@@ -829,6 +881,11 @@ class RuleChecker:
             location=self._here(target),
             hint="declare it with 'let mut' if it must change",
         )
+
+    def _is_module_body(self):
+        """True when the current visit is inside a module body or a module
+        function, where assigning to module state is allowed."""
+        return bool(getattr(self, '_module_depth', 0))
 
     def _is_assignable(self, target):
         if isinstance(target, (Identifier, MemberExpr, IndexExpr)):

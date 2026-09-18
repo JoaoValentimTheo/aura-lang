@@ -4,6 +4,72 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.0a14] - 2026-09-18
+
+A module-system release. `module { }` members are now private to their file by
+default and become public only through `export`, so a module is a real
+encapsulation boundary instead of a namespaced class with an ignored marker.
+
+### Added
+
+- **`export` controls visibility inside `module { }`.** A member declared in a
+  module body is private to the declaring file unless prefixed with `export`:
+
+  ```aura
+  module MyLib {
+    export def public_function() -> int { return 42 }
+    export const VERSION = "1.0.0"
+
+    let mut cache = 0                 // private
+    def private_helper() -> int { return cache }
+
+    export def refresh() -> int {     // may use private members
+      cache = private_helper() + 1
+      return cache
+    }
+  }
+  ```
+
+  Every member kind can be exported: `def`, `class`, `trait`, `enum`, `type`,
+  `let`, `const` and nested `module`.
+
+- Accessing a non-exported member from outside reports `E308`
+  (`'<name>' is not exported from module '<M>'`, with an "add `export`" hint).
+  The member is also emitted under a mangled runtime name (`_MyLib__cache`), so
+  the boundary holds at runtime as well.
+
+- `Module.exports` in the AST records the exported names, and every module
+  member carries `is_exported` (defaulted on `Node`).
+
+### Changed
+
+- **Module state is not writable from outside.** `M.count = 9` reports `E303`;
+  mutate module state through an exported function. Assignment inside a module
+  function is unchanged.
+- A bare `export` (not followed by a declaration) is a syntax error instead of
+  being silently ignored, and `export` outside a module body is rejected.
+- `docs/LANGUAGE.md`, `docs/GRAMMAR.md`, `docs/ERRORS.md` and
+  `docs/COMPLETENESS.md` document the module rules; the grammar now models
+  `export` as module-specific rather than a general modifier.
+
+### Fixed
+
+- **An internal call to a private module member emitted an undefined name.** A
+  non-exported member is now renamed at its declaration and at every internal
+  reference (`M._MyLib__helper()`), instead of only at the declaration.
+- **A local that shadowed a module member was renamed.** The declaration rename
+  is scoped to the module body's own indent level, so `let K = 100` inside a
+  module function keeps its binding while `K` still resolves the module member.
+
+### Tests
+
+- `tests/test_modules.py` (34 tests): export parsing for every member kind,
+  mangling and internal-reference codegen, runtime accessibility, `E308`
+  (external access) and `E303` (external assignment), duplicates, shadowing,
+  nested and dotted modules, and cross-file imports.
+- The generated `integration_tests` corpus (1000 files) and its generator were
+  updated to export the class they use from outside the module.
+
 ## [0.1.0a13] - 2026-09-17
 
 An OOP release with a full-codebase clean-up. Inheritance is now spelled with

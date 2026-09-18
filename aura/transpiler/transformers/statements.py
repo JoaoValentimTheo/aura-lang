@@ -1206,15 +1206,17 @@ class StatementTransformer:
         """
         parts = node.name.split('.')
         # Innermost class holds the members; wrap it in one class per prefix.
-        inner = self._module_class(parts[-1], node.members)
+        inner = self._module_class(parts[-1], node.members,
+                                   getattr(node, 'exports', None))
         for part in reversed(parts[:-1]):
             inner = textwrap.indent(inner, "    ")
             inner = f"class {part}:\n{inner}"
         return inner
 
-    def _module_class(self, name, members):
+    def _module_class(self, name, members, exports=None):
         header = f"class {name}:"
         body_lines = []
+        exports = set(exports or ())
         # Module-level data members (const/let/static) live on the class; a bare
         # reference to one inside a module function must resolve to
         # `Module.name`. Register them for the duration of the body transform.
@@ -1223,19 +1225,80 @@ class StatementTransformer:
             if isinstance(member, (VarDecl, ConstDecl)):
                 module_data[member.name] = name
         self.expr_transformer._module_scopes.append(module_data)
+        # Members are private to the file unless exported. A private member is
+        # stored under a mangled name so an external `Module.member` access
+        # fails at runtime (the rule checker reports E308 first).
+        private_names = {}
+        for member in members:
+            member_name = getattr(member, 'name', None)
+            if member_name and member_name not in exports:
+                private_names[member_name] = mangle_member(name, member_name, 'private')
+        old_module_privates = self.expr_transformer._module_privates
+        self.expr_transformer._module_privates = {name: private_names}
         try:
             for member in members:
                 if isinstance(member, FunctionDecl):
                     member.is_static = True
                 code = self.transform(member)
+                # `class`/`def` declarations emit their own header; data
+                # members need the mangled assignment applied to the target.
                 if code and code.strip():
                     for line in code.split("\n"):
                         body_lines.append("    " + line if line.strip() else line)
         finally:
+            self.expr_transformer._module_privates = old_module_privates
             self.expr_transformer._module_scopes.pop()
         if not body_lines:
             body_lines.append("    pass")
-        return header + "\n" + "\n".join(body_lines)
+        # Rename private declarations to their mangled runtime names.
+        text = header + "\n" + "\n".join(body_lines)
+        for public_name, mangled in private_names.items():
+            text = self._rename_module_member(text, public_name, mangled)
+        return text
+
+    # Indentation (in spaces) of a member declared directly in a module body.
+    # Module members are emitted one level inside the module class.
+    _MODULE_MEMBER_INDENT = 4
+
+    @staticmethod
+    def _rename_module_member(text, public_name, mangled):
+        """Rename a private module member's declaration to its mangled name.
+
+        Handles the declaration shapes the transformer emits: `def name(...)`,
+        `class name(...)`, `class name:`, and a data assignment `name = ...` or
+        an annotated `name: T = ...`. Only a member declared at the module
+        body's own indent level is renamed, so a nested local of the same name
+        keeps its binding. Calls to the member inside the module are rewritten
+        separately by the expression transformer, which knows the mapping.
+        """
+        safe = py_safe_name(public_name)
+        if safe == mangled:
+            return text
+        out = []
+        for line in text.split("\n"):
+            stripped = line.lstrip()
+            indent = line[:len(line) - len(stripped)]
+            # Only a member declared directly in the module body (one indent
+            # level) is renamed; a nested local of the same name is a different
+            # binding and must keep its name.
+            if len(indent) != StatementTransformer._MODULE_MEMBER_INDENT:
+                out.append(line)
+                continue
+            for prefix in (f"def {safe}(", f"def {safe} (", f"class {safe}(",
+                           f"class {safe}:"):
+                if stripped.startswith(prefix):
+                    # Replace only the name, never a keyword prefix.
+                    head = prefix[:prefix.index(safe)]
+                    rest = stripped[len(prefix) - 1:]
+                    stripped = f"{head}{mangled}{rest}"
+                    break
+            else:
+                if (stripped.startswith(f"{safe} =")
+                        or stripped.startswith(f"{safe}:")
+                        or stripped.startswith(f"{safe} ")):
+                    stripped = f"{mangled}{stripped[len(safe):]}"
+            out.append(indent + stripped)
+        return "\n".join(out)
 
     # ========== Helper: Transform patterns ==========
     def _transform_pattern(self, pattern):

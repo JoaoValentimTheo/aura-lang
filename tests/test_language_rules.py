@@ -224,12 +224,12 @@ def test_is_not_operator():
 # ============================================================================
 
 def test_module_function_call():
-    out, _, _ = run_aura("module M { def hi() { return 7 } }\nprint(M.hi())")
+    out, _, _ = run_aura("module M { export def hi() { return 7 } }\nprint(M.hi())")
     assert out.strip() == "7"
 
 
 def test_module_variable_access():
-    out, _, _ = run_aura("module M { let x = 5 }\nprint(M.x)")
+    out, _, _ = run_aura("module M { export let x = 5 }\nprint(M.x)")
     assert out.strip() == "5"
 
 
@@ -242,7 +242,7 @@ def test_module_with_export_marker():
 
 def test_nested_module_name():
     out, _, _ = run_aura(
-        "module Outer.Inner { def f() { return 3 } }\nprint(Outer.Inner.f())"
+        "module Outer.Inner { export def f() { return 3 } }\nprint(Outer.Inner.f())"
     )
     assert out.strip() == "3"
 
