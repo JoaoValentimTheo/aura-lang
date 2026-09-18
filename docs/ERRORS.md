@@ -73,6 +73,14 @@ to Python rather than reported. See "Removed codes" below.
 | `E311` | `INVALID_MAIN` | `main` has a bad signature | rule checker |
 | `E312` | `MAIN_IN_MODULE` | `main` declared inside a `module` body (never runs) | rule checker |
 | `E313` | `UNRESOLVED_REEXPORT` | a `module` re-exports a name no sibling source defines | rule checker |
+| `E314` | `UNKNOWN_BASE_CLASS` | `extends` names a base that does not exist | rule checker |
+| `E315` | `INVALID_INHERITANCE` | duplicate base or circular inheritance | rule checker |
+| `E316` | `INSTANTIATE_ABSTRACT` | instantiating a trait or a class with unimplemented abstract methods | rule checker |
+| `E317` | `SELF_IN_STATIC` | `self`/`cls` used in a static method | rule checker |
+| `E318` | `UNKNOWN_LABEL` | `break`/`continue` names a label that is not an enclosing loop | rule checker |
+| `E319` | `USED_BEFORE_DECLARED` | a local is used before its declaration | rule checker |
+| `E320` | `DECORATOR_ON_FIELD` | a method decorator applied to a field | rule checker |
+| `E321` | `ABSTRACT_SUPER_CALL` | `super.method()` targets an abstract method with no implementation | rule checker |
 
 ## Errors — I/O and configuration (`E4xx`)
 

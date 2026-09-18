@@ -82,6 +82,58 @@ re-export the classes and helpers defined in its sibling files, so a folder of
   re-export), imported-file rule enforcement, and import-hook security
   (traversal, symlinks, stdlib names).
 
+### Added — structural rule enforcement (`E314`–`E321`)
+
+A pass of checks for programs that previously failed only at runtime with a
+bare Python error. Each is reported by `aura check`, `aura run` and the LSP,
+with a coded message, a source location and a hint.
+
+- **`E314` `UNKNOWN_BASE_CLASS`** — `extends` names a base that is neither a
+  declared class/trait nor a builtin exception root. Forward references and
+  dotted bases are resolved correctly, so only a genuinely undefined base is
+  reported.
+- **`E315` `INVALID_INHERITANCE`** — a base listed more than once, a class
+  extending itself, or a circular `extends` chain (the message names the
+  cycle).
+- **`E316` `INSTANTIATE_ABSTRACT`** — instantiating a trait, or a class that
+  still has an inherited abstract method without an implementation; the message
+  names the missing method(s).
+- **`E317` `SELF_IN_STATIC`** — `self`/`cls` used inside a `static` method,
+  where neither is bound.
+- **`E318` `UNKNOWN_LABEL`** — `break label` / `continue label` where no
+  enclosing loop carries that label.
+- **`E319` `USED_BEFORE_DECLARED`** — a function-local read before the
+  `let`/`const` that declares it later in the same body (the case that would
+  otherwise be a Python `UnboundLocalError`). Enclosing-scope, module-level and
+  imported names are never reported; a `for` target is scoped to its loop.
+- **`E320` `DECORATOR_ON_FIELD`** — a decorator applied to a class/trait field
+  (it would silently do nothing); rejected while parsing.
+- **`E321` `ABSTRACT_SUPER_CALL`** — `super.m()` where `m` is abstract in the
+  parent and has no implementation to call.
+
+`docs/ERRORS.md` lists all eight codes; `docs/LANGUAGE.md` and
+`docs/GRAMMAR.md` document the corresponding behaviour at the relevant
+sections.
+
+### Fixed — class and trait fields
+
+- **`const` inside a class or trait body is no longer parsed as a field named
+  `const`.** `class C { const K = 1 }` previously produced two fields (`const`
+  and `K`); it is now a single class-level constant, emitted on the class and
+  never as an instance field or constructor parameter. A constant requires a
+  value; omitting it is a clear parse error.
+- **`const` is immutable through member access.** `C.K = 2` (and `self.K = 2`)
+  on a constant is now `E303`; member assignment previously bypassed the
+  mutability checker entirely.
+- `static const` no longer emits a stray `const = None` class attribute.
+- A decorator on a field (class or trait, body or header) is `E320` instead of
+  being silently dropped.
+
+- `tests/test_rule_gaps.py` (51 tests): one rejection test and one near-miss
+  acceptance test per new code, runtime agreement for abstract instantiation
+  and use-before-declaration, plus a no-false-positive sweep over every
+  `examples/**/*.aura` file through both the rule and mutability checkers.
+
 ## [0.1.0a15] - 2026-09-18
 
 Project-environment tooling. An Aura project can now manage its own virtual

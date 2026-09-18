@@ -240,6 +240,12 @@ Inheritance uses `extends` only; there is no parenthesised base list and no
 `implements`. Since the header is introduced by `(`, a bare name there is never
 a base class.
 
+Every base must resolve to a declared class/trait or a builtin exception root.
+A base that does not exist is `E314`; a base listed twice or an `extends` cycle
+is `E315`. Traits and classes with unimplemented abstract methods cannot be
+instantiated (`E316`). `super.m()` on an abstract (body-less) method is `E321`.
+A decorator on a field is rejected while parsing (`E320`).
+
 Header fields become instance fields, constructor parameters and accessors.
 The default visibility is `private`, and fields are immutable unless declared
 `mut`. A `let` field in the body is likewise immutable; `let mut`/`mut` opts

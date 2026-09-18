@@ -73,6 +73,18 @@ ASSIGNMENT_OPS = frozenset({
 _TERMINATORS = (ReturnStmt, ThrowStmt, BreakStmt, ContinueStmt)
 
 
+# Exception roots a class may `extends` without declaring them: Aura's own
+# `Error` (aliased to Python's `Exception` by the prelude) plus the Python
+# exception names the language exposes.
+_BUILTIN_BASE_NAMES = frozenset({
+    'Error', 'Exception', 'BaseException',
+    'ValueError', 'TypeError', 'KeyError', 'IndexError', 'RuntimeError',
+    'AttributeError', 'NameError', 'ZeroDivisionError', 'NotImplementedError',
+    'FileNotFoundError', 'IOError', 'OSError', 'PermissionError',
+    'StopIteration', 'AssertionError', 'ArithmeticError', 'OverflowError',
+    'UnicodeError', 'ImportError', 'LookupError', 'EOFError', 'TimeoutError',
+})
+
 class RuleChecker:
     """Check structural language rules over a parsed program."""
 
@@ -82,6 +94,10 @@ class RuleChecker:
         self._scope_stack = []
         self._loop_depth = 0
         self._function_depth = 0
+        # Labels of enclosing loops and static-method depth. `check_program`
+        # resets them too; defaulting here keeps a direct `visit()` safe.
+        self._loop_labels = []
+        self._static_method_depth = 0
         self._async_depth = 0
         self._class_depth = 0
         # `guard cond else { return }` at the top level is Aura's idiomatic
@@ -117,6 +133,9 @@ class RuleChecker:
         self._in_guard_else_depth = 0
         self._class_stack = []
         self._instance_scopes = [{}]
+        self._loop_labels = []
+        # Depth of enclosing static methods (which have no `self`/`cls`).
+        self._static_method_depth = 0
         # First pass: register every class's members and bases so member
         # access can be resolved (including inherited members) in any order.
         self._classes = {}
@@ -128,6 +147,10 @@ class RuleChecker:
         # A bare `export Name` must resolve to a sibling source or a local
         # declaration.
         self._check_reexports(program)
+        # `extends` must name a real base, without duplicates or cycles, and a
+        # trait or still-abstract class must not be instantiated.
+        self._check_inheritance(program)
+        self._check_instantiations(program)
         for stmt in getattr(program, 'statements', []) or []:
             self.visit(stmt)
         return not self.collector.has_errors()
@@ -214,6 +237,157 @@ class RuleChecker:
                             hint="'main' belongs to the entry file; modules "
                                  "expose named functions instead",
                         )
+
+    def _check_inheritance(self, program):
+        """Validate every `extends` clause (E314/E315/E316).
+
+        Runs after registration so a base declared later in the file resolves.
+        Catches what would otherwise be a confusing runtime `NameError` or
+        `TypeError`:
+
+        * a base class that does not exist (E314);
+        * a repeated base (`class C extends A, A`, a Python `TypeError`) and a
+          cycle (`class A extends B` / `class B extends A`) (E315);
+        * instantiating a trait or a class with unimplemented abstract methods
+          (E316).
+        """
+        # `_declared_types` holds every class/trait/enum/type name in the
+        # program; a base outside it is unknown. Builtin exception roots are
+        # always available (the `Error` prelude aliases `Error` to Python's
+        # `Exception`), as are the Python exception names Aura exposes.
+        known = set(self._classes) | set(getattr(self, '_declared_types', ()) or ())
+        known |= _BUILTIN_BASE_NAMES
+        for node in self._walk(program):
+            if not isinstance(node, (ClassDecl, TraitDecl)):
+                continue
+            info = self._classes.get(node.name) or {}
+            bases = [b.strip() for b in str(node.base_class or '').split(',')
+                     if b.strip()]
+            for base in bases:
+                bare = base.split('.')[-1]
+                # A dotted base (`App.Base`, `pkg.Base`) resolves through its
+                # head, which may be an imported module or another namespace;
+                # only a plain name can be checked against local declarations.
+                if '.' in base:
+                    continue
+                if bare not in known:
+                    self.collector.add(
+                        ErrorCode.UNKNOWN_BASE_CLASS,
+                        f"'{node.name}' extends '{base}', which is not defined",
+                        location=self._loc(node),
+                        hint=f"declare '{bare}', import it, or fix the name",
+                    )
+            seen = set()
+            for base in bases:
+                bare = base.split('.')[-1]
+                if bare in seen:
+                    self.collector.add(
+                        ErrorCode.INVALID_INHERITANCE,
+                        f"'{node.name}' lists base '{bare}' more than once",
+                        location=self._loc(node),
+                        hint="remove the duplicate base",
+                    )
+                seen.add(bare)
+            # `name` itself may not appear among its own bases (direct cycle).
+            if node.name in seen:
+                self.collector.add(
+                    ErrorCode.INVALID_INHERITANCE,
+                    f"'{node.name}' cannot extend itself",
+                    location=self._loc(node),
+                )
+
+        # Indirect cycles: walk each class's base chain.
+        for name in self._classes:
+            visited = []
+            current = name
+            while current is not None:
+                if current in visited:
+                    cycle = ' -> '.join(visited[visited.index(current):] + [current])
+                    self.collector.add(
+                        ErrorCode.INVALID_INHERITANCE,
+                        f"circular inheritance: {cycle}",
+                        location=self._loc(
+                            self._first_class_node(program, name)) or self._loc(program),
+                        hint="break the cycle",
+                    )
+                    break
+                visited.append(current)
+                info = self._classes.get(current) or {}
+                bases = info.get('bases') or []
+                current = bases[0].split('.')[-1] if bases else None
+
+    @staticmethod
+    def _first_class_node(program, name):
+        """Return the ClassDecl/TraitDecl named ``name``, or None."""
+        stack = [program]
+        while stack:
+            node = stack.pop()
+            if node is None:
+                continue
+            if isinstance(node, (list, tuple)):
+                stack.extend(node)
+                continue
+            if isinstance(node, (ClassDecl, TraitDecl)) and node.name == name:
+                return node
+            if isinstance(node, Node):
+                for value in vars(node).values():
+                    if isinstance(value, (list, tuple)):
+                        stack.extend(value)
+                    elif isinstance(value, Node):
+                        stack.append(value)
+        return None
+
+    def _check_instantiations(self, program):
+        """Reject instantiating a trait or a class with unimplemented abstracts.
+
+        `T()` where `T` is a trait, and `A()` where `A` still has an abstract
+        inherited method, are both Python `TypeError`s at runtime; reporting
+        them here names the missing method at the call site (E316).
+        """
+        for node in self._walk(program):
+            if not isinstance(node, CallExpr):
+                continue
+            func = node.func
+            if not isinstance(func, Identifier):
+                continue
+            info = self._classes.get(func.name)
+            if info is None:
+                continue
+            if info.get('is_trait'):
+                self.collector.add(
+                    ErrorCode.INSTANTIATE_ABSTRACT,
+                    f"'{func.name}' is a trait and cannot be instantiated",
+                    location=self._loc(node),
+                    hint="extend it with a class and instantiate the class",
+                )
+                continue
+            missing = self._unimplemented_abstracts(func.name)
+            if missing:
+                self.collector.add(
+                    ErrorCode.INSTANTIATE_ABSTRACT,
+                    f"'{func.name}' does not implement {', '.join(sorted(missing))}",
+                    location=self._loc(node),
+                    hint="implement the abstract method(s) before instantiating",
+                )
+
+    def _unimplemented_abstracts(self, class_name, seen=None):
+        """Names of abstract methods still unimplemented for ``class_name``."""
+        if seen is None:
+            seen = set()
+        if class_name in seen:
+            return set()
+        seen.add(class_name)
+        info = self._classes.get(class_name) or {}
+        own = set(info.get('members') or {})
+        missing = set()
+        for base in info.get('bases') or []:
+            bare = base.split('.')[-1]
+            base_info = self._classes.get(bare) or {}
+            for abstract in (base_info.get('abstracts') or {}):
+                if abstract not in own:
+                    missing.add(abstract)
+            missing |= self._unimplemented_abstracts(bare, seen)
+        return missing
 
     def _check_reexports(self, program):
         """Report a `export Name` that cannot be resolved (E313).
@@ -439,15 +613,15 @@ class RuleChecker:
                 self._in_guard_else_depth -= 1
         elif isinstance(node, (WhileStmt, UntilStmt)):
             self.visit(node.condition)
-            self._visit_loop_body(node.body)
+            self._visit_loop_body(node.body, getattr(node, 'label', None))
         elif isinstance(node, ForStmt):
             self.visit(node.iterable)
             self._push_scope()
             self._declare_pattern(node.pattern)
-            self._visit_loop_body(node.body)
+            self._visit_loop_body(node.body, getattr(node, 'label', None))
             self._pop_scope()
         elif isinstance(node, LoopStmt):
-            self._visit_loop_body(node.body)
+            self._visit_loop_body(node.body, getattr(node, 'label', None))
         elif isinstance(node, MatchStmt):
             self.visit(node.expr)
             for case in node.cases:
@@ -482,14 +656,25 @@ class RuleChecker:
                 )
             self.visit(node.value)
         elif isinstance(node, (BreakStmt, ContinueStmt)):
+            keyword = 'break' if isinstance(node, BreakStmt) else 'continue'
             if self._loop_depth == 0:
-                keyword = 'break' if isinstance(node, BreakStmt) else 'continue'
                 self.collector.add(
                     ErrorCode.INVALID_SYNTAX,
                     f"'{keyword}' outside of a loop",
                     location=self._loc(node),
                     hint="move it inside a loop or remove it",
                 )
+            else:
+                label = getattr(node, 'label', None)
+                if label and label not in self._loop_labels:
+                    self.collector.add(
+                        ErrorCode.UNKNOWN_LABEL,
+                        f"'{keyword} {label}' does not match any enclosing "
+                        f"labeled loop",
+                        location=self._loc(node),
+                        hint="check the label, or drop it to affect the "
+                             "innermost loop",
+                    )
         elif isinstance(node, ThrowStmt):
             self.visit(node.value)
         elif isinstance(node, AssertStmt):
@@ -540,6 +725,16 @@ class RuleChecker:
                     "'self' used outside of a class method",
                     location=self._here(node),
                     hint="use it inside a method defined in a class body",
+                )
+            elif node.name in ('self', 'cls') and self._static_method_depth:
+                # A static method has no instance or class binding, so
+                # `self`/`cls` would be an undefined name at runtime.
+                self.collector.add(
+                    ErrorCode.SELF_IN_STATIC,
+                    f"'{node.name}' is not available in a static method",
+                    location=self._here(node),
+                    hint="take it as a parameter, or drop 'static' to make it "
+                         "an instance/class method",
                 )
         elif isinstance(node, Node):
             for value in vars(node).values():
@@ -715,6 +910,9 @@ class RuleChecker:
             name = getattr(param, 'name', None)
             if name and name != '*':
                 self._scope_stack[-1].add(name)
+        is_static = bool(getattr(node, 'is_static', False))
+        if is_static:
+            self._static_method_depth += 1
         self._function_depth += 1
         try:
             body = getattr(node, 'body', None)
@@ -724,6 +922,8 @@ class RuleChecker:
                 self.visit(body)
         finally:
             self._function_depth -= 1
+            if is_static:
+                self._static_method_depth -= 1
             self._pop_scope()
 
     def _instantiated_class(self, value):
@@ -774,6 +974,19 @@ class RuleChecker:
         owner_class = self._object_class(obj)
         if owner_class is None:
             return
+        # `super.member` on an abstract (body-less) method has no
+        # implementation to run; the call would raise at runtime.
+        if isinstance(obj, Identifier) and obj.name == 'super':
+            base_info = self._classes.get(owner_class) or {}
+            if member in (base_info.get('abstracts') or {}):
+                self.collector.add(
+                    ErrorCode.ABSTRACT_SUPER_CALL,
+                    f"cannot call 'super.{member}': it is abstract in "
+                    f"'{owner_class}' and has no implementation",
+                    location=self._here(node),
+                    hint="implement the method in this class instead of "
+                         "calling the parent",
+                )
         vis, decl_class = self._lookup_member(owner_class, member, set())
         if vis is None or vis == 'public':
             return
@@ -884,11 +1097,15 @@ class RuleChecker:
         if getattr(node, 'else_body', None):
             self._visit_body(node.else_body)
 
-    def _visit_loop_body(self, body):
+    def _visit_loop_body(self, body, label=None):
         self._loop_depth += 1
+        if label:
+            self._loop_labels.append(label)
         try:
             self._visit_body(body)
         finally:
+            if label:
+                self._loop_labels.pop()
             self._loop_depth -= 1
 
     def _visit_body(self, statements):

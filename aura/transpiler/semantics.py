@@ -107,6 +107,10 @@ class MutabilityChecker:
         self.violations = []
         self._scope = _Scope()
         self._current_loc = None
+        # Function-local names declared later in the body, and those already
+        # declared; used to report a use-before-declaration (E319).
+        self._pending_locals: set = set()
+        self._seen_locals: set = set()
         if initial_bindings:
             for name, mutable in initial_bindings.items():
                 self._scope.declare(name, bool(mutable))
@@ -213,8 +217,49 @@ class MutabilityChecker:
             self._with_scope()
             self.visit(node.statements)
             self._pop_scope()
+        elif isinstance(node, Identifier):
+            self._check_use_before_declaration(node)
         elif isinstance(node, Node):
             self._visit_children(node)
+
+    def _seen_locals_get(self):
+        """The set of already-declared locals, created on first use.
+
+        `check_program` seeds it; this keeps a direct `visit()` call safe
+        without requiring the caller to initialise the checker's state.
+        """
+        seen = getattr(self, '_seen_locals', None)
+        if seen is None:
+            seen = set()
+            self._seen_locals = seen
+        return seen
+
+    def _check_use_before_declaration(self, node):
+        """Report a read of a function-local name before its `let`/`const`.
+
+        Only fires inside a function body and only for a name that *this*
+        function declares later in its own statement list, so a module-level,
+        outer-scope or imported name is never reported.
+        """
+        name = node.name
+        pending = getattr(self, '_pending_locals', None)
+        if name in self._seen_locals_get() or name not in (pending or ()):
+            return
+        from aura.transpiler.errors import (
+            AuraError,
+            ErrorCode,
+            ErrorSeverity,
+        )
+        loc = getattr(node, 'location', None) or self._current_loc
+        err = AuraError(
+            ErrorCode.USED_BEFORE_DECLARED,
+            ErrorSeverity.ERROR,
+            f"'{name}' is used before it is declared",
+            loc,
+            hint=f"move the 'let {name} = ...' above this line",
+        )
+        self.diagnostics.append(err)
+        self.errors.append(str(err))
 
     def _visit_children(self, node):
         for value in vars(node).values():
@@ -232,10 +277,12 @@ class MutabilityChecker:
             self.visit(node.value)
         for name in self._target_names(node.name):
             self._scope.declare(name, bool(getattr(node, 'mutable', False)))
+            self._seen_locals_get().add(name)
 
     def _visit_const_decl(self, node):
         self.visit(node.value)
         self._scope.declare(node.name, False)
+        self._seen_locals_get().add(node.name)
 
     def _visit_function(self, node):
         # Default values are evaluated in the *enclosing* scope.
@@ -243,15 +290,49 @@ class MutabilityChecker:
             if getattr(param, 'default', None) is not None:
                 self.visit(param.default)
         self._with_scope()
+        declared = set()
         for param in (node.params or []):
-            self._scope.declare(self._param_name(param), True)
+            name = self._param_name(param)
+            self._scope.declare(name, True)
+            declared.add(name)
         body = node.body
         if isinstance(body, list):
-            self.visit(body)
+            # Names this function declares somewhere in its own body. A read
+            # of one before its declaration is a mistake (Python would raise
+            # `UnboundLocalError`); parameters and earlier declarations are
+            # excluded. This only fires for a name declared *later in the same
+            # function*, so a module-level or outer-scope name is never
+            # reported.
+            pending = self._locals_declared_in(body) - declared
+            old_pending, old_seen = self._pending_locals, self._seen_locals
+            self._pending_locals = pending
+            self._seen_locals = set(declared)
+            try:
+                self.visit(body)
+            finally:
+                self._pending_locals, self._seen_locals = old_pending, old_seen
         elif body is not None:
             # Expression-bodied function: names are read-only there.
             self.visit(body)
         self._pop_scope()
+
+    def _locals_declared_in(self, statements):
+        """Names bound by a `let`/`const` at a body's own nesting level.
+
+        Only `let`/`const` count. A `for` target is intentionally excluded: it
+        is scoped to its own loop (and a comprehension's target to the
+        comprehension), so a read elsewhere in the body is not a
+        use-before-declaration. Only declarations at this level are collected,
+        so a name declared in a nested block is left to that block's scope.
+        """
+        names = set()
+        for stmt in statements or []:
+            if isinstance(stmt, VarDecl):
+                for name in self._target_names(stmt.name):
+                    names.add(name)
+            elif isinstance(stmt, ConstDecl):
+                names.add(stmt.name)
+        return names
 
     def _visit_class(self, node):
         self._with_scope()

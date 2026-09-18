@@ -56,6 +56,14 @@ class ErrorCode(Enum):
     INVALID_MAIN = "E311"
     MAIN_IN_MODULE = "E312"
     UNRESOLVED_REEXPORT = "E313"
+    UNKNOWN_BASE_CLASS = "E314"
+    INVALID_INHERITANCE = "E315"
+    INSTANTIATE_ABSTRACT = "E316"
+    SELF_IN_STATIC = "E317"
+    UNKNOWN_LABEL = "E318"
+    USED_BEFORE_DECLARED = "E319"
+    DECORATOR_ON_FIELD = "E320"
+    ABSTRACT_SUPER_CALL = "E321"
 
     # -- I/O and configuration (E4xx) ------------------------------------
     # The CLI reports I/O and configuration failures as plain messages plus a
@@ -210,6 +218,14 @@ ERROR_TEMPLATES = {
     ErrorCode.INVALID_MAIN: "'main' must take no parameters, or a single 'args'",
     ErrorCode.MAIN_IN_MODULE: "'main' belongs to the entry file, not to a module or an imported file",
     ErrorCode.UNRESOLVED_REEXPORT: "no sibling source defines the re-exported name '{name}'",
+    ErrorCode.UNKNOWN_BASE_CLASS: "base class '{name}' is not defined",
+    ErrorCode.INVALID_INHERITANCE: "invalid inheritance for '{name}'",
+    ErrorCode.INSTANTIATE_ABSTRACT: "'{name}' is abstract and cannot be instantiated",
+    ErrorCode.SELF_IN_STATIC: "'{name}' is not available in a static method",
+    ErrorCode.UNKNOWN_LABEL: "no enclosing loop is labeled '{label}'",
+    ErrorCode.USED_BEFORE_DECLARED: "'{name}' is used before it is declared",
+    ErrorCode.DECORATOR_ON_FIELD: "decorator '@{decorator}' cannot be applied to a field",
+    ErrorCode.ABSTRACT_SUPER_CALL: "cannot call 'super.{name}' because it has no implementation",
     # I/O
     # Warnings
     ErrorCode.LINE_TOO_LONG: "Line {line} is too long ({length} > {limit} columns)",

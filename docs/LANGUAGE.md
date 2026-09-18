@@ -165,6 +165,15 @@ const PI = 3.14159
 const MAX_SIZE: int = 100
 ```
 
+A constant must be initialised where it is declared, and it is never
+reassignable (`E303`, also for a class-level `const` reached through
+`C.K = ...`).
+
+A local must be declared before it is read. Reading a name that a function
+declares **later in its own body** is `E319` (this is the case that would
+otherwise be a Python `UnboundLocalError`). Names from an enclosing scope,
+module scope, or an import are unaffected.
+
 ### Type annotations
 
 ```aura
@@ -534,6 +543,11 @@ print(d.speak())  // Rex says woof
 `class Dog(Animal)` and `implements` are **not** Aura: use `extends`. Traits
 are extended the same way.
 
+The base must resolve. An unknown name is `E314`, a base listed twice or a
+circular `extends` chain is `E315`, and instantiating a trait — or a class that
+still has an unimplemented abstract method — is `E316`. All are reported by
+`aura check`, before the program runs.
+
 With header fields, a subclass declares only its **own** new fields; inherited
 fields are passed to the parent by name:
 
@@ -587,6 +601,10 @@ class MathUtil {
 
 print(MathUtil.max(3, 9))  // 9
 ```
+
+A static method has no instance or class binding, so `self` and `cls` are not
+defined inside it. Using either is `E317`; take the value you need as a
+parameter, or drop `static` to make it an instance/class method.
 
 ### @classmethod
 
@@ -999,6 +1017,10 @@ retry: loop {
 }
 ```
 
+A label must name an enclosing loop. `break label` or `continue label` where no
+such loop is in scope is `E318`; a label on an inner loop is not visible from
+the outer loop. A plain `break` / `continue` always targets the innermost loop.
+
 ---
 
 ## 12. Pattern Matching
@@ -1290,6 +1312,12 @@ try {
 `catch` clauses are matched in order, so list subclasses before their parents.
 Catching `Error` catches every custom and builtin exception.
 
+`super` reaches the parent's implementation. Calling `super.m()` where `m` is
+abstract in the parent (a trait signature or a body-less method, with no
+implementation) has nothing to run; it is reported as `E321` at check time
+rather than raising at runtime. Call `super(message)` from a constructor as
+above.
+
 ### Try as expression
 
 `try` can be used as an expression that returns a value:
@@ -1422,6 +1450,9 @@ guard total > 0 else { return }   // exits the program if the guard fails
 ---
 
 ## 17. Macros and Decorators
+
+Decorators attach to a `def` (or to a class). Applying one to a field is a
+syntax error (`E320`); a field's initialiser is its only decoration.
 
 Built-in decorators are available as runtime macros:
 

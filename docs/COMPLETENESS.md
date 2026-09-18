@@ -108,7 +108,7 @@ real multi-file projects". Ratings below 100 % name the concrete gap.
 | Quick start | 98 % | `pip install .` provides the `aura` command; `python3 main.py` still works |
 | Documentation | 92 % | EN + PT language/type docs; grammar, diagnostics reference, AUP, audit, completeness, changelog, README |
 | Examples | 92 % | 11 feature examples + 10 runnable Aura Patterns (AUP) with an enforced standard |
-| Tests | 98 % | 2,182 passing; property-based (Hypothesis), differential, extreme rule/OOP suites; 91 % coverage; 6,609-file corpus |
+| Tests | 98 % | 2,700+ passing; property-based (Hypothesis), differential, extreme rule/OOP suites; ~91 % coverage; 6,609-file corpus |
 | CI | 92 % | GitHub Actions: tests on 3.10–3.13, CLI smoke test, build, coverage floor |
 | Releases / versioning | 95 % | Tag-driven release workflow, `aura version`, PyPI trusted publishing (live on PyPI) |
 | Package layout for users | 95 % | Installable console entry point; clean `aura` namespace; published as `aura-language` on PyPI |

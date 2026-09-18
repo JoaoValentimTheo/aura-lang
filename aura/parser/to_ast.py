@@ -1085,6 +1085,13 @@ class Parser:
             else:
                  # Fields: x: Int = 1
                 if self.check('}') or self.check('EOF'): break
+                if member_decorators:
+                    # A decorator was parsed but the member is a field; a
+                    # decorator would silently do nothing, so reject it.
+                    names = ', '.join('@' + d.name for d in member_decorators)
+                    raise self.error(
+                        f"{names} cannot be applied to a field; decorators "
+                        f"belong on a 'def'", self.peek())
                 # `let`, `let mut`, `const` and bare `mut` all declare a member.
                 # `const` is a class-level constant: it must be initialised,
                 # lives on the class and is never an instance field. A plain
@@ -1552,6 +1559,11 @@ class Parser:
                 # `let name: Type`, `let name: Type = default`, `mut name`,
                 # or `const NAME = value`. A plain `let` is immutable; `mut`
                 # opts in, matching class fields and ordinary bindings.
+                if member_decorators:
+                    names = ', '.join('@' + d.name for d in member_decorators)
+                    raise self.error(
+                        f"{names} cannot be applied to a field; decorators "
+                        f"belong on a 'def'", self.peek())
                 is_const = False
                 field_mutable = False
                 if self.peek().value == 'const':
