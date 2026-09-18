@@ -1763,6 +1763,32 @@ let upper = stdlib.string.upper("hello")   // "HELLO"
 let parts = stdlib.string.split("a,b,c", ",")  // ["a","b","c"]
 ```
 
+### stdlib.regex
+
+Regular expressions, with full parity with Python's `re` module (lookahead,
+lookbehind, named groups, flags, and Unicode patterns). Matching on groups
+returns tuples; `find_iter` is lazy; `subn` reports the replacement count:
+
+```aura
+import stdlib.regex
+
+let m = stdlib.regex.search(r"\d+(?=%)", "50%")     // match object
+let nums = stdlib.regex.find_all(r"\d+", "a1b22")   // ["1","22"]
+let parts = stdlib.regex.split(r"\s+", "a b  c")    // ["a","b","c"]
+let text = stdlib.regex.replace(r"\d+", "N", "a1b2")           // "aNbN"
+let (out, n) = stdlib.regex.subn(r"\d+", "N", "a1b2")          // ("aNbN", 2)
+let groups = stdlib.regex.groups(r"(\d+)-(\d+)", "12-34")      // ["12","34"]
+let named = stdlib.regex.group_dict(r"(?P<y>\d{4})", "2026")   // {"y":"2026"}
+
+for match in stdlib.regex.find_iter(r"\w+", "one two") {
+  print(stdlib.regex.group(match))
+}
+```
+
+Flags mirror Python: `IGNORECASE`, `MULTILINE`, `DOTALL`, `VERBOSE`, `ASCII`,
+`UNICODE`. `compile_pattern(pattern, flags)` returns a compiled object and
+`purge()` clears the cache.
+
 ### stdlib.collections
 
 List, dict, set utilities:

@@ -4,6 +4,7 @@ Handles expressions, control flow, functions, classes, and more.
 """
 import contextlib
 import re
+import unicodedata
 
 from aura.transpiler.ast import *
 
@@ -11,6 +12,35 @@ from aura.transpiler.ast import *
 # rejects separators, traversal and NUL so the value can never escape the
 # source folder when the transformer resolves it.
 _INVALID_MODULE_PATH = re.compile(r'[\\/\x00]|\.\.')
+
+# Identifier characters follow Python's own rules (PEP 3131: XID_Start /
+# XID_Continue) rather than `str.isalpha()`/`isalnum()`. `isalpha()` accepts
+# 22 codepoints Python rejects as an identifier start (e.g. Arabic ligatures
+# U+FC5E..U+FDFB) and `isalnum()` misses two valid continuation characters
+# (U+2118, U+212E), so guessing here can emit invalid Python or split a name.
+_IDENT_ASCII_START = frozenset(
+    'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_'
+)
+_IDENT_ASCII_CONT = frozenset(
+    'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789'
+)
+
+
+def _ident_start(char):
+    """True when ``char`` may begin an identifier."""
+    if char in _IDENT_ASCII_START:
+        return True
+    return char.isidentifier()
+
+
+def _ident_continue(char):
+    """True when ``char`` may appear after the first identifier character."""
+    if char in _IDENT_ASCII_CONT:
+        return True
+    # A continuation character is any standalone identifier codepoint, or an
+    # XID_Continue-only one (combining marks, ZWJ-like format characters),
+    # which Python recognizes as part of an identifier when not leading.
+    return char.isidentifier() or ('a' + char).isidentifier()
 
 # ==============================================================================
 # Tokenizer
@@ -111,6 +141,13 @@ class Tokenizer:
                         continue
                     except ValueError:
                         out.append(nxt)
+                elif nxt == 'U' and i + 9 < n:
+                    try:
+                        out.append(chr(int(raw[i + 2:i + 10], 16)))
+                        i += 10
+                        continue
+                    except ValueError:
+                        out.append(nxt)
                 else:
                     out.append(nxt)
                 i += 2
@@ -164,12 +201,12 @@ class Tokenizer:
                 continue
 
             # Identifiers and Keywords
-            if char.isalpha() or char == '_':
+            if _ident_start(char):
                 start = self.pos
                 start_line, start_col = self.line, self.column
-                while self.pos < length and (self.source[self.pos].isalnum() or self.source[self.pos] == '_'):
+                while self.pos < length and _ident_continue(self.source[self.pos]):
                     self.pos += 1
-                value = self.source[start:self.pos]
+                value = unicodedata.normalize('NFC', self.source[start:self.pos])
 
                 # F-string support (special case: identifier 'f' followed by quote).
                 # Supports escapes, nested braces and triple quotes. The raw

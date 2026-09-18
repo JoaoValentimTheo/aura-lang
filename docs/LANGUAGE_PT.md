@@ -1327,6 +1327,33 @@ let maiuscula = stdlib.string.upper("ola")   // "OLA"
 let partes = stdlib.string.split("a,b,c", ",")  // ["a","b","c"]
 ```
 
+### stdlib.regex
+
+Expressoes regulares, com paridade total com o modulo `re` do Python
+(lookahead, lookbehind, grupos nomeados, flags e padroes Unicode). Casamentos
+com grupos retornam tuplas; `find_iter` e preguicoso; `subn` informa a
+contagem de substituicoes:
+
+```aura
+import stdlib.regex
+
+let m = stdlib.regex.search(r"\d+(?=%)", "50%")     // objeto de casamento
+let nums = stdlib.regex.find_all(r"\d+", "a1b22")   // ["1","22"]
+let partes = stdlib.regex.split(r"\s+", "a b  c")   // ["a","b","c"]
+let texto = stdlib.regex.replace(r"\d+", "N", "a1b2")          // "aNbN"
+let (saida, n) = stdlib.regex.subn(r"\d+", "N", "a1b2")        // ("aNbN", 2)
+let grupos = stdlib.regex.groups(r"(\d+)-(\d+)", "12-34")      // ["12","34"]
+let nomeados = stdlib.regex.group_dict(r"(?P<y>\d{4})", "2026") // {"y":"2026"}
+
+for casamento in stdlib.regex.find_iter(r"\w+", "um dois") {
+  print(stdlib.regex.group(casamento))
+}
+```
+
+As flags espelham o Python: `IGNORECASE`, `MULTILINE`, `DOTALL`, `VERBOSE`,
+`ASCII`, `UNICODE`. `compile_pattern(pattern, flags)` retorna um objeto
+compilado e `purge()` limpa o cache.
+
 ### stdlib.collections
 
 Utilitarios de listas, dicts e conjuntos:

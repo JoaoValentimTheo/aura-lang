@@ -15,9 +15,13 @@ post-quantum cryptography.
 [![Python](https://img.shields.io/pypi/pyversions/aura-language.svg)](https://pypi.org/project/aura-language/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/JoaoValentimTheo/aura-lang/blob/master/LICENSE)
 
-> **Status:** alpha (`0.1.0a13`). The syntax is standardized and frozen for the
+> **Status:** alpha (`0.1.0a20`). The syntax is standardized and frozen for the
 > alpha series; see the [grammar](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/GRAMMAR.md)
 > and the [changelog](https://github.com/JoaoValentimTheo/aura-lang/blob/master/CHANGELOG.md).
+
+> **Roadmap active** -- Aura is on a phased roadmap toward alpha `0.2.0`.
+> See [CONTRIBUTING.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/CONTRIBUTING.md)
+> for current priorities.
 
 </div>
 
@@ -36,6 +40,7 @@ post-quantum cryptography.
 - [CLI](#cli)
 - [Projects and dependencies](#projects-and-dependencies)
 - [REPL](#repl)
+- [Standard library](#standard-library)
 - [Documentation](#documentation)
 - [Development](#development)
 - [License](#license)
@@ -87,11 +92,11 @@ def main() {
 
 ## The language
 
-Aura has exactly **one spelling per construct** — no synonyms. The full grammar
+Aura has exactly **one spelling per construct** -- no synonyms. The full grammar
 lives in [docs/GRAMMAR.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/GRAMMAR.md).
 
 ```aura
-// Bindings. `let` is immutable; `mut` opts in.
+// Bindings. `let` is immutable; `let mut` opts in.
 let name = "Aura"
 let mut count = 0
 
@@ -110,7 +115,7 @@ match command {
 
 Key rules:
 
-- `let`/`const` are immutable; `let mut` (or `mut`) is required to reassign.
+- `let`/`const` are immutable; `let mut` is required to reassign.
 - Types are optional and checked before execution by `aura check`.
 - `none` is the null literal, `not`/`and`/`or` are the logical operators.
 - Only `def` declares functions, only `new` declares constructors, and only
@@ -131,7 +136,7 @@ class User(private name: str, mut age: int = 0, public id: int = 0) {
 let u = User("ana", 30)
 print(u.get_name())    // ana
 u.set_age(31)          // setter exists because `age` is `mut`
-print(u.id)            // 0      — public field, direct access
+print(u.id)            // 0      -- public field, direct access
 ```
 
 Inheritance uses `extends`, and a subclass header declares only its own fields:
@@ -312,6 +317,28 @@ int
 Commands: `:help`, `:vars`, `:type <expr>`, `:ast <expr>`, `:load <file>`,
 `:run <file>`, `:py <code>`, `:history`, `:reset`, `:q`.
 
+## Standard library
+
+Aura ships with a standard library covering common tasks:
+
+| Module | Purpose |
+|--------|---------|
+| `stdlib.threading` | Thread pool, `map_concurrent` |
+| `stdlib.io` | File I/O (sync + async) |
+| `stdlib.http` | HTTP client (sync + async) |
+| `stdlib.crypto` | Hashing, HMAC, HKDF, post-quantum (ML-KEM/ML-DSA) |
+| `stdlib.json` | JSON encode/decode |
+| `stdlib.math` | Mathematical functions |
+| `stdlib.regex` | Regular expressions |
+| `stdlib.string` | String manipulation |
+| `stdlib.collections` | Collection utilities |
+| `stdlib.itertools` | Iterator combinators |
+| `stdlib.os` | OS-level utilities |
+| `stdlib.python` | Python bridge (`python.is_instance`, etc.) |
+| `stdlib.time` | Time functions |
+| `stdlib.asyncio` | Async event loop helpers |
+| `stdlib.testing` | Test framework support |
+
 ## Documentation
 
 Everything lives under [`docs/`](https://github.com/JoaoValentimTheo/aura-lang/tree/master/docs).
@@ -322,9 +349,9 @@ Start with the index or jump straight in:
 | [docs/README.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/README.md) | Documentation index and recommended reading order |
 | [GRAMMAR.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/GRAMMAR.md) | Canonical EBNF grammar (the source of truth for syntax) |
 | [LANGUAGE.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/LANGUAGE.md) | Complete language reference (English) |
-| [LANGUAGE_PT.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/LANGUAGE_PT.md) | Referência completa da linguagem (Português) |
+| [LANGUAGE_PT.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/LANGUAGE_PT.md) | Referencia completa da linguagem (Portugues) |
 | [TYPES.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/TYPES.md) | Type system (English) |
-| [TYPES_PT.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/TYPES_PT.md) | Sistema de tipos (Português) |
+| [TYPES_PT.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/TYPES_PT.md) | Sistema de tipos (Portugues) |
 | [ERRORS.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/ERRORS.md) | Every diagnostic code (`E##`/`W##`) |
 | [AUP.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/AUP.md) | Aura Patterns catalog |
 | [DESIGN.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/DESIGN.md) | Compiler architecture |
@@ -350,4 +377,4 @@ to report a vulnerability.
 
 ## License
 
-MIT — see [LICENSE](https://github.com/JoaoValentimTheo/aura-lang/blob/master/LICENSE).
+MIT -- see [LICENSE](https://github.com/JoaoValentimTheo/aura-lang/blob/master/LICENSE).

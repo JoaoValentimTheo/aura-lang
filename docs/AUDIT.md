@@ -346,7 +346,7 @@ Closing the remaining interoperability and developer-experience gaps.
 
 | # | Change | Detail |
 |---|--------|--------|
-| 77 | `stdlib.regex` | `match`, `full_match`, `search`, `find_all`, `find_iter`, `split`, `replace`, `groups`, `escape`, `compile_pattern` + flags |
+| 77 | `stdlib.regex` | `match`, `full_match`, `search`, `find_all`, `find_iter` (lazy), `split`, `replace`, `replace_fn`, `subn`, `groups`, `group_dict`, `group`, `escape`, `compile_pattern`, `purge` + flags (`IGNORECASE`/`MULTILINE`/`DOTALL`/`VERBOSE`/`ASCII`/`UNICODE`); parity tested against `re` |
 | 78 | `stdlib.os` | Environment, paths, cwd, `listdir`/`walk`, dir ops, process info. Process execution is deliberately excluded |
 | 79 | `stdlib.http` | GET/POST/PUT/DELETE + JSON helpers over the standard library, falling back to `requests` when installed; responses are `AuraDict` |
 

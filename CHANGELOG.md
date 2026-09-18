@@ -4,6 +4,27 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+Phase 0 of the roadmap to alpha 0.2.0 — full Unicode and regular-expression
+support.
+
+### Added
+
+- **`stdlib.regex` parity with Python's `re`**: `subn`, `group_dict`, `group`,
+  `replace_fn` (callable), a lazy `find_iter`, `purge`, and the `UNICODE`
+  flag, plus documented behavior for group tuples and flags. Covered by
+  `tests/test_regex_phase0.py` and a Hypothesis parity/fuzz suite.
+
+### Fixed
+
+- **Identifiers now follow Python's own rules** (PEP 3131 XID_Start /
+  XID_Continue) instead of `str.isalpha()`/`isalnum()`. The old test accepted
+  22 codepoints Python rejects as an identifier start (Arabic ligatures such
+  as U+FC5E), which would emit invalid Python, and stopped short of valid
+  continuation characters (U+2118, U+212E, ZWJ U+200D). Stress and property
+  tests in `tests/test_phase0_fuzz.py` and `tests/test_unicode_phase0.py`.
+
 ## [0.1.0a20] - 2026-09-18
 
 Diagnostics and documentation alignment.

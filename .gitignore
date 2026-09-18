@@ -72,3 +72,4 @@ tests/test_ide.py
 # Working session transcripts kept locally, not project documentation
 session_backup.txt
 session_backup*.txt
+session-ses_*.md
