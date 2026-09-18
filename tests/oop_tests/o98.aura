@@ -5,7 +5,7 @@ class C22512Tl {
     public def double_value() -> int { return self.value * 2; }
 }
 
-class MockC67240Hz(C22512Tl) {
+class MockC67240Hz extends C22512Tl {
     public def double_value() -> int { return self.value * 3; }
 }
 

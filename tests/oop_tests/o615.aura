@@ -3,11 +3,11 @@ class ImplC79027Uv {
     public def render() -> str { return "base"; }
 }
 
-class MockC90943Tu(ImplC79027Uv) {
+class MockC90943Tu extends ImplC79027Uv {
     public def render() -> str { return "child1"; }
 }
 
-class AbstractC93146Bz(ImplC79027Uv) {
+class AbstractC93146Bz extends ImplC79027Uv {
     public def render() -> str { return "child2"; }
 }
 

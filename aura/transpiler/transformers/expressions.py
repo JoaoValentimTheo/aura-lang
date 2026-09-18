@@ -438,12 +438,6 @@ class ExpressionTransformer:
         false_expr = self.transform(node.false_expr)
         return f"({true_expr} if {cond} else {false_expr})"
 
-    def transform_ElvisExpr(self, node):
-        # value ?: default → value if value else default
-        value = self.transform(node.value)
-        default = self.transform(node.default)
-        return f"({value} if {value} else {default})"
-
     def transform_CoalesceExpr(self, node):
         # value ?? default → value if value is not None else default
         value = self.transform(node.value)

@@ -3,11 +3,11 @@ class C33187Gz {
     public def process(x: int) -> int { return x; }
 }
 
-class MockC49715Wd(C33187Gz) {
+class MockC49715Wd extends C33187Gz {
     public def process(x: int) -> int { return x * 2; }
 }
 
-class BaseC16346Ie(C33187Gz) {
+class BaseC16346Ie extends C33187Gz {
     public def process(x: int) -> int { return x + 10; }
 }
 

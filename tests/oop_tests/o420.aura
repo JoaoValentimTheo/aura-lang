@@ -5,7 +5,7 @@ class RealC85075Oy {
     public def double_value() -> int { return self.value * 2; }
 }
 
-class ConcreteC31634Pv(RealC85075Oy) {
+class ConcreteC31634Pv extends RealC85075Oy {
     public def double_value() -> int { return self.value * 3; }
 }
 

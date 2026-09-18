@@ -3,11 +3,11 @@ class RealC57020Ov {
     public def render() -> str { return "base"; }
 }
 
-class ImplC50895Hz(RealC57020Ov) {
+class ImplC50895Hz extends RealC57020Ov {
     public def render() -> str { return "child1"; }
 }
 
-class MockC86267Aa(RealC57020Ov) {
+class MockC86267Aa extends RealC57020Ov {
     public def render() -> str { return "child2"; }
 }
 

@@ -68,7 +68,13 @@ def test_documented_codes_exist_in_enum():
 
 def test_removed_codes_absent():
     for name in ("DIVISION_BY_ZERO", "NULL_POINTER", "INDEX_OUT_OF_BOUNDS",
-                 "KEY_ERROR", "INFINITE_LOOP", "MISSING_RETURN"):
+                 "KEY_ERROR", "INFINITE_LOOP", "MISSING_RETURN",
+                 # Documented but never emitted; removed to keep the catalogue
+                 # honest (see docs/ERRORS.md, "Removed codes").
+                 "SYNTAX_ERROR", "UNEXPECTED_TOKEN", "UNEXPECTED_EOF",
+                 "UNDEFINED_VARIABLE", "UNDEFINED_FUNCTION", "UNDEFINED_CLASS",
+                 "CANNOT_CALL_NON_FUNCTION", "IO_ERROR", "CONFIGURATION_ERROR",
+                 "UNUSED_VARIABLE", "UNUSED_IMPORT"):
         assert not hasattr(ErrorCode, name), f"{name} should be removed"
 
 
@@ -173,5 +179,5 @@ def test_code_area_classification():
     assert errors_mod.code_area(ErrorCode.TYPE_MISMATCH) == "type"
     assert errors_mod.code_area(ErrorCode.MISSING_MAIN) == "semantic"
     assert errors_mod.code_area(ErrorCode.LINE_TOO_LONG) == "style warning"
-    assert errors_mod.code_area(ErrorCode.UNUSED_VARIABLE) == "warning"
+    assert errors_mod.code_area(ErrorCode.UNUSED_TYPE_PARAMETER) == "warning"
     assert errors_mod.code_area(ErrorCode.FATAL) == "fatal"

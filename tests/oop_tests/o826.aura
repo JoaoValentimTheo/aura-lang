@@ -5,7 +5,7 @@ class C72077Gt {
     public def double_value() -> int { return self.value * 2; }
 }
 
-class ImplC95880Tv(C72077Gt) {
+class ImplC95880Tv extends C72077Gt {
     public def double_value() -> int { return self.value * 3; }
 }
 

@@ -3,11 +3,11 @@ class C17586Pn {
     public def process(x: int) -> int { return x; }
 }
 
-class AbstractC11985Ru(C17586Pn) {
+class AbstractC11985Ru extends C17586Pn {
     public def process(x: int) -> int { return x * 2; }
 }
 
-class ImplC20332Ap(C17586Pn) {
+class ImplC20332Ap extends C17586Pn {
     public def process(x: int) -> int { return x + 10; }
 }
 

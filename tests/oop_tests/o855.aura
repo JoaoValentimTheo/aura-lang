@@ -4,19 +4,19 @@ class C21839Dr {
     public def get_val() -> int { return self.base_val; }
 }
 
-class AbstractC63154Ki(C21839Dr) {
+class AbstractC63154Ki extends C21839Dr {
     public def get_val() -> int { return self.base_val * 2; }
 }
 
-class C64739Bn(AbstractC63154Ki) {
+class C64739Bn extends AbstractC63154Ki {
     public def get_val() -> int { return self.base_val * 3; }
 }
 
-class BaseC36873In(C64739Bn) {
+class BaseC36873In extends C64739Bn {
     public def get_val() -> int { return self.base_val * 4; }
 }
 
-class MockC94856La(BaseC36873In) {
+class MockC94856La extends BaseC36873In {
     public def get_val() -> int { return self.base_val * 5; }
 }
 

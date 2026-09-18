@@ -556,7 +556,7 @@ class Parser:
         elif token.value in ('def', 'async'):
             return self.parse_function_decl(decorators, visibility, is_static, is_volatile)
         elif token.value == 'class':
-            return self.parse_class_decl(decorators, visibility, is_static, is_volatile)
+            return self.parse_class_decl(decorators, visibility)
         elif token.value == 'module':
             return self.parse_module_decl()
         elif token.value == 'type':
@@ -882,7 +882,79 @@ class Parser:
 
         return FunctionDecl(name, params, return_type, body, is_async=is_async, type_params=type_params, type_constraints=type_constraints, decorators=decorators, visibility=visibility, is_static=is_static, is_volatile=is_volatile)
 
-    def parse_class_decl(self, decorators=None, visibility='public', is_static=False, is_volatile=False):
+    def _parse_class_header_fields(self, class_name):
+        """Parse `(private name: str, age: int = 0)` after a class name.
+
+        Each entry declares an instance field. A leading visibility modifier
+        (`private`/`protected`/`public`) or `mut` is optional; the default is
+        ``private`` with no modifier, matching Aura's encapsulation-first
+        design. `mut` (or `let mut`) declares a mutable field and thus yields a
+        setter. Fields default to immutable, so they yield only a getter.
+
+        Returns a list of ``(Parameter, visibility, mutable)`` triples; the
+        parameter carries the name, type and optional default so downstream
+        code reuses the normal parameter machinery.
+        """
+        self.consume(expected_value='(')
+        fields = []
+        if self.check(')'):
+            self.consume()
+            return fields
+        seen = set()
+        while True:
+            visibility = 'private'
+            mutable = False
+            # Visibility / mutability modifiers, in any order before the name.
+            while True:
+                if self.match('public'):
+                    visibility = 'public'
+                elif self.match('private'):
+                    visibility = 'private'
+                elif self.match('protected'):
+                    visibility = 'protected'
+                elif self.match('mut'):
+                    mutable = True
+                elif self.match('let'):
+                    if self.match('mut'):
+                        mutable = True
+                else:
+                    break
+            if self.match('const'):
+                tok = self.peek()
+                raise self.error(
+                    f"constant fields are declared in the class body, not the "
+                    f"header of '{class_name}'", tok)
+            field_name = self.consume(expected_type='IDENT').value
+            if field_name in seen:
+                raise self.error(
+                    f"duplicate header field '{field_name}' in '{class_name}'")
+            seen.add(field_name)
+            type_annotation = None
+            if self.match(':'):
+                type_annotation = self.parse_type()
+            default = None
+            if self.match('='):
+                default = self.parse_expression()
+            if type_annotation is None and default is None:
+                # A bare name in the header would be indistinguishable from the
+                # removed parenthesised base form; require a type or default.
+                raise self.error(
+                    f"header field '{field_name}' needs a type annotation or a "
+                    f"default (write '{field_name}: Type')")
+            # A required field may not follow an optional one, mirroring the
+            # rule for function parameters (otherwise the ctor is ambiguous).
+            if default is None and any(f[0].default is not None for f in fields):
+                raise self.error(
+                    f"header field '{field_name}' without a default cannot "
+                    f"follow a field with a default")
+            fields.append((Parameter(field_name, type_annotation, default),
+                           visibility, mutable))
+            if not self.match(','):
+                break
+        self.consume(expected_value=')')
+        return fields
+
+    def parse_class_decl(self, decorators=None, visibility='public'):
         self.consume(expected_value='class')
         name = self.consume(expected_type='IDENT').value
 
@@ -890,9 +962,15 @@ class Parser:
         type_params, type_constraints = self._parse_type_params(name)
 
         base_class = None
-        # Inheritance: class Foo(Base), class Foo extends Base, or multiple:
-        # class Foo(A, B). `extends` is accepted as a readable synonym for the
-        # parenthesised form; the two cannot be combined.
+        # Inheritance uses `extends` only: `class A extends B`,
+        # `class A extends B, C` (multiple) or a dotted base `pkg.Base`.
+        # Traits are extended the same way. There is no parenthesised base
+        # form; `(` after the name or bases always introduces header fields.
+        if self.check('implements'):
+            tok = self.peek()
+            raise self.error(
+                "'implements' is not Aura; extend with 'extends' "
+                f"(write 'class {name} extends TraitName')", tok)
         if self.match('extends'):
             bases = []
             while True:
@@ -904,26 +982,15 @@ class Parser:
                 if not self.match(','):
                     break
             base_class = ", ".join(bases)
-        elif self.match('('):
-            bases = []
-            while True:
-                base = self.consume(expected_type='IDENT').value
-                while self.check('.') and self.peek(1).type == 'IDENT':
-                    self.consume()
-                    base += "." + self.consume(expected_type='IDENT').value
-                bases.append(base)
-                if not self.match(','):
-                    break
-            self.consume(expected_value=')')
-            base_class = ", ".join(bases)
 
-        # Trait implementation: class Foo implements TraitA, TraitB
-        # Python has no traits, so implemented traits become mixins/base classes.
-        if self.match('implements'):
-            traits = [self.consume(expected_type='IDENT').value]
-            while self.match(','):
-                traits.append(self.consume(expected_type='IDENT').value)
-            base_class = ", ".join([base_class] + traits) if base_class else ", ".join(traits)
+        # Class header fields: `class User(private name: str, age: int = 0)`
+        # or `class Admin extends User(email: str)`. Each entry becomes an
+        # instance field (private by default) and drives the generated
+        # constructor and accessors. Only the class's own fields are declared
+        # here; inherited fields arrive through `extends`.
+        header_fields = []
+        if self.check('('):
+            header_fields = self._parse_class_header_fields(name)
 
         self.consume(expected_value='{')
         members = []
@@ -1009,9 +1076,12 @@ class Parser:
                 if self.check('}') or self.check('EOF'): break
                 # `let`, `let mut`, `const` and bare `mut` all declare a member.
                 # `const` is a class-level constant: it must be initialised,
-                # lives on the class and is never an instance field.
+                # lives on the class and is never an instance field. A plain
+                # `let` field is immutable, exactly like `let` at module and
+                # local scope; `let mut` / `mut` opts into a setter and runtime
+                # reassignment.
                 is_const = False
-                field_mutable = True
+                field_mutable = False
                 if self.peek().value == 'const':
                     self.consume()
                     is_const = True
@@ -1050,7 +1120,7 @@ class Parser:
                     raise self.error(f"Unexpected token in class: {self.peek().value}")
 
         self.consume(expected_value='}')
-        return ClassDecl(name, members, base_class, type_params, decorators, visibility, is_static, is_volatile, type_constraints=type_constraints)
+        return ClassDecl(name, members, base_class, type_params, decorators, visibility, type_constraints=type_constraints, header_fields=header_fields)
 
     def _member_location(self, tok):
         """Build a SourceLocation for a class member's first token."""
@@ -1226,19 +1296,20 @@ class Parser:
              return "{" + ", ".join(fields) + "}"
 
         while True:
-            # Generics: List[Int] (Python/Aura legacy) OR Result<T> (Aura new?)
+            # Generics use brackets only: `List[Int]`, `Result[T, E]`. The
+            # angle form `<T>` is not Aura and is rejected with a pointed error,
+            # matching `_parse_type_params`.
             if self.match('['):
                 arg = self.parse_type()
                 while self.match(','):
                      arg += ", " + self.parse_type()
                 self.consume(expected_value=']')
                 t_name += f"[{arg}]"
-            elif self.match('<'):
-                arg = self.parse_type()
-                while self.match(','):
-                     arg += ", " + self.parse_type()
-                self.consume(expected_value='>')
-                t_name += f"[{arg}]" # Map <T> to [T] for Python typing compatibility
+            elif self.check('<'):
+                tok = self.peek()
+                raise self.error(
+                    "type arguments use brackets, not '<...>' "
+                    f"(write '{t_name}[T]')", tok)
             # Optional: String?
             elif self.match('?'):
                 t_name += "?"
@@ -1320,25 +1391,26 @@ class Parser:
         # Traits may declare generic parameters: `trait Mapper[T] { ... }`.
         type_params, type_constraints = self._parse_type_params(name)
 
-        # Traits may extend other traits: `trait Loud extends Greeter`,
-        # `trait Loud implements Greeter`, or `trait Loud(Greeter)`, mirroring
-        # class inheritance.
+        # Traits extend other traits with `extends` only, mirroring classes:
+        # `trait Loud extends Greeter` or `trait Loud extends A, B`.
         bases = []
+        if self.check('('):
+            tok = self.peek()
+            raise self.error(
+                "parenthesised bases are not Aura; write "
+                f"'trait {name} extends Base'", tok)
+        if self.check('implements'):
+            tok = self.peek()
+            raise self.error(
+                "'implements' is not Aura; extend the trait with 'extends' "
+                f"(write 'trait {name} extends TraitName')", tok)
         if self.match('extends'):
             while True:
-                bases.append(self.consume(expected_type='IDENT').value)
-                if not self.match(','):
-                    break
-        elif self.match('('):
-            if not self.check(')'):
-                while True:
-                    bases.append(self.consume(expected_type='IDENT').value)
-                    if not self.match(','):
-                        break
-            self.consume(expected_value=')')
-        if self.match('implements'):
-            while True:
-                bases.append(self.consume(expected_type='IDENT').value)
+                base = self.consume(expected_type='IDENT').value
+                while self.check('.') and self.peek(1).type == 'IDENT':
+                    self.consume()
+                    base += "." + self.consume(expected_type='IDENT').value
+                bases.append(base)
                 if not self.match(','):
                     break
         base_class = ", ".join(bases) if bases else None
@@ -1400,15 +1472,21 @@ class Parser:
             elif self.peek().type == 'IDENT':
                 # Field declaration inside a trait: `name: Type`,
                 # `let name: Type`, `let name: Type = default`, `mut name`,
-                # or `const NAME = value`.
+                # or `const NAME = value`. A plain `let` is immutable; `mut`
+                # opts in, matching class fields and ordinary bindings.
                 is_const = False
+                field_mutable = False
                 if self.peek().value == 'const':
                     self.consume()
                     is_const = True
-                elif self.peek().value in ('let', 'mut'):
+                elif self.peek().value == 'let':
                     self.consume()
                     if self.check('mut'):
                         self.consume()
+                        field_mutable = True
+                elif self.peek().value == 'mut':
+                    self.consume()
+                    field_mutable = True
                 member_name = self.consume().value
                 field_type = None
                 if self.match(':'):
@@ -1425,7 +1503,7 @@ class Parser:
                         visibility=member_visibility, is_static=is_static,
                         owner=name)
                 else:
-                    field = VarDecl(member_name, True, field_type, default,
+                    field = VarDecl(member_name, field_mutable, field_type, default,
                                     visibility=member_visibility, is_static=is_static,
                                     owner=name)
                 field.with_location(self._member_location(member_start))

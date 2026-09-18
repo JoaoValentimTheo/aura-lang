@@ -3,11 +3,11 @@ class AbstractC77186Uy {
     public def process(x: int) -> int { return x; }
 }
 
-class ConcreteC75528Xd(AbstractC77186Uy) {
+class ConcreteC75528Xd extends AbstractC77186Uy {
     public def process(x: int) -> int { return x * 2; }
 }
 
-class C52138Qc(AbstractC77186Uy) {
+class C52138Qc extends AbstractC77186Uy {
     public def process(x: int) -> int { return x + 10; }
 }
 

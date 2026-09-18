@@ -5,7 +5,7 @@ class BaseC19829El {
     public def double_value() -> int { return self.value * 2; }
 }
 
-class BaseC88750Ym(BaseC19829El) {
+class BaseC88750Ym extends BaseC19829El {
     public def double_value() -> int { return self.value * 3; }
 }
 

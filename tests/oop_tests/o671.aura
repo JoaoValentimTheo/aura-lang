@@ -3,11 +3,11 @@ class C44287Yf {
     public def render() -> str { return "base"; }
 }
 
-class AbstractC97232Yo(C44287Yf) {
+class AbstractC97232Yo extends C44287Yf {
     public def render() -> str { return "child1"; }
 }
 
-class ConcreteC34945Qy(C44287Yf) {
+class ConcreteC34945Qy extends C44287Yf {
     public def render() -> str { return "child2"; }
 }
 

@@ -3,11 +3,11 @@ class ImplC81724Jj {
     public def process(x: int) -> int { return x; }
 }
 
-class ConcreteC14324Cm(ImplC81724Jj) {
+class ConcreteC14324Cm extends ImplC81724Jj {
     public def process(x: int) -> int { return x * 2; }
 }
 
-class MockC21917Ty(ImplC81724Jj) {
+class MockC21917Ty extends ImplC81724Jj {
     public def process(x: int) -> int { return x + 10; }
 }
 

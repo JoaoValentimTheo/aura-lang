@@ -1,41 +1,59 @@
 # Aura Documentation
 
-## Language Reference
-
-- [GRAMMAR.md](GRAMMAR.md) - **Canonical grammar spec (source of truth)**
-- [ERRORS.md](ERRORS.md) - **Diagnostics reference: every E##/W## code**
-- [LANGUAGE.md](LANGUAGE.md) - Complete syntax reference (English)
-- [LANGUAGE_PT.md](LANGUAGE_PT.md) - Referencia completa de sintaxe (Portugues)
-
-## Patterns
-
-- [AUP.md](AUP.md) - Aura Patterns: idiomatic solutions to common problems
-
-## Type System
-
-- [TYPES.md](TYPES.md) - Type system reference (English)
-- [TYPES_PT.md](TYPES_PT.md) - Referencia do sistema de tipos (Portugues)
-
-## Internals
-
-- [DESIGN.md](DESIGN.md) - Transpiler architecture and project structure
-- [AUDIT.md](AUDIT.md) - Code audit: bugs fixed, performance work, doc alignment
-- [COMPLETENESS.md](COMPLETENESS.md) - Language completeness percentages and gaps
-
-## Project
-
-- [../CHANGELOG.md](../CHANGELOG.md) - Notable changes by version
+The complete documentation for the Aura language and toolchain. If you are new
+here, read [LANGUAGE.md](LANGUAGE.md) and then run the programs in
+[`examples/`](https://github.com/JoaoValentimTheo/aura-lang/tree/master/examples).
 
 ---
 
-## Quick Links
+## Learning the language
 
-### For learning Aura
-Start with [LANGUAGE.md](LANGUAGE.md) (or [LANGUAGE_PT.md](LANGUAGE_PT.md)) for the complete syntax, then check the `examples/` directory for working programs.
+| Document | What it covers |
+|----------|----------------|
+| [LANGUAGE.md](LANGUAGE.md) | Complete syntax reference (English) — **start here** |
+| [LANGUAGE_PT.md](LANGUAGE_PT.md) | Referência completa de sintaxe (Português) |
+| [GRAMMAR.md](GRAMMAR.md) | Canonical EBNF grammar (the source of truth for syntax) |
+| [TYPES.md](TYPES.md) | Type system reference (English) |
+| [TYPES_PT.md](TYPES_PT.md) | Referência do sistema de tipos (Português) |
+| [ERRORS.md](ERRORS.md) | Diagnostics reference: every `E##`/`W##` code |
+| [AUP.md](AUP.md) | Aura Patterns: idiomatic solutions to common problems |
 
-### For contributing
-Read [DESIGN.md](DESIGN.md) for the transpiler architecture, then explore
-`aura/parser/`, `aura/transpiler/`, and `tests/`.
+## Reference and internals
 
-### For users
-Use `python3 main.py run <file.aura>` to execute Aura programs. See the CLI commands section in [DESIGN.md](DESIGN.md).
+| Document | What it covers |
+|----------|----------------|
+| [DESIGN.md](DESIGN.md) | Transpiler architecture and project structure |
+| [COMPLETENESS.md](COMPLETENESS.md) | Language coverage percentages and remaining gaps |
+| [AUDIT.md](AUDIT.md) | Historical audit: bugs fixed, performance work, doc alignment |
+
+## Project
+
+| Document | What it covers |
+|----------|----------------|
+| [CHANGELOG.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/CHANGELOG.md) | Notable changes by version |
+| [README.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/README.md) | Project overview and quick start |
+| [CONTRIBUTING.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/CONTRIBUTING.md) | Contribution workflow |
+
+---
+
+## Where to go next
+
+**Learning Aura** — read [LANGUAGE.md](LANGUAGE.md), then work through
+[`examples/`](https://github.com/JoaoValentimTheo/aura-lang/tree/master/examples)
+in order. The [AUP catalog](AUP.md) shows idiomatic solutions once the basics
+are clear.
+
+**Writing a first program**
+
+```bash
+aura init myapp
+aura run myapp/src/main.aura
+```
+
+**Contributing** — read [DESIGN.md](DESIGN.md) for the compiler architecture,
+then explore `aura/parser/`, `aura/transpiler/`, and `tests/`. Run
+`pytest`, `ruff check aura/`, and `mypy aura/` before opening a pull request.
+
+**Reporting a bug** — include the Aura source, the command you ran, and the
+full output. Open an issue at
+<https://github.com/JoaoValentimTheo/aura-lang/issues>.

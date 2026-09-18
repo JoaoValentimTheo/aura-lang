@@ -389,6 +389,40 @@ let pares = filter(numeros, (x) => x % 2 == 0)
 
 ## 7. Classes
 
+### Campos no cabecalho
+
+Declare os campos da classe no proprio cabecalho. Cada campo vira um campo de
+instancia, um parametro do construtor e um getter; um campo `mut` tambem ganha
+setter:
+
+```aura
+class Usuario(nome: str, mut idade: int = 0, public id: int = 0) {
+  public def saudar() -> str {
+    return "ola " + self.get_nome()
+  }
+}
+
+let u = Usuario("ana", 30)
+print(u.get_nome())   // ana
+print(u.get_idade())  // 30
+u.set_idade(31)
+print(u.get_idade())  // 31
+print(u.id)           // 0 (campo public, acesso direto)
+```
+
+Regras do cabecalho:
+
+* A visibilidade padrao e **`private`**. Escreva `public` ou `protected` por
+  campo: `class U(private a: int, public b: int)`.
+* Um campo e **imutavel por padrao**, entao ganha so o getter. Use `mut`
+  (ou `let mut`) para ter setter: `class U(nome: str, mut idade: int = 0)`.
+* Campos podem ter valor padrao (`idade: int = 0`); um campo sem padrao nao
+  pode vir depois de um com padrao.
+* Todo campo precisa de tipo ou valor padrao; `class U(a)` e erro de sintaxe.
+* Campo privado/protegido e armazenado com nome mangled; o getter/setter e a
+  forma suportada de acessar de fora.
+* Um campo do cabecalho nao pode ser declarado tambem no corpo.
+
 ### Classe basica
 
 ```aura
@@ -427,7 +461,7 @@ class Animal {
   }
 }
 
-class Cachorro(Animal) {
+class Cachorro extends Animal {
   public def falar() -> str {
     return self.nome + " diz au au"
   }
@@ -437,7 +471,25 @@ let d = Cachorro("Rex")
 print(d.falar())  // Rex diz au au
 ```
 
-O transpiler insere automaticamente `super().__init__()` no construtor quando existe uma classe base.
+Heranca usa **somente** `extends`; `class Cachorro(Animal)` e `implements` nao
+sao Aura. Varias bases sao separadas por virgula (`class C extends A, B`), e
+nomes podem ser pontuados (`pkg.Base`). O transpiler repassa os argumentos
+restantes para `super().__init__(**kwargs)`.
+
+Com campos no cabecalho, a subclasse declara apenas os **proprios** campos; os
+do pai sao passados por nome:
+
+```aura
+class Usuario(nome: str, mut idade: int = 0) {
+}
+
+class Admin extends Usuario(email: str) {
+}
+
+let a = Admin(email: "a@x.com", nome: "bob")
+print(a.get_nome())   // bob
+print(a.get_email())  // a@x.com
+```
 
 ### @property
 
@@ -505,7 +557,7 @@ trait Desenhavel {
   public def obter_limites() -> float
 }
 
-class Circulo implements Desenhavel {
+class Circulo extends Desenhavel {
   private let raio: float = 0.0
 
   public def desenhar() -> void {
@@ -518,8 +570,8 @@ class Circulo implements Desenhavel {
 }
 ```
 
-Um trait transpila para uma classe base, e `implements` vira heranca.
-Multiplos traits podem ser listados: `class C implements A, B`.
+Um trait transpila para uma classe base, e `extends` vira heranca.
+Multiplos traits podem ser listados: `class C extends A, B`.
 
 Um metodo declarado sem corpo e abstrato: o trait o compila para um
 `@abstractmethod`, e uma classe concreta que nao implementa todos os metodos
@@ -528,23 +580,22 @@ abstratos herdados e rejeitada em tempo de compilacao (`E309`):
 ```aura
 trait Forma { public def area() -> float }
 
-class Quadrado implements Forma {
+class Quadrado extends Forma {
   public let lado: float = 2.0
   public def area() -> float { return self.lado * self.lado }
 }
 
-// class Ruim implements Forma { }   // E309: precisa implementar 'area'
+// class Ruim extends Forma { }   // E309: precisa implementar 'area'
 ```
 
-Traits tambem podem estender outros traits, com `trait Alto(Falante)` ou
-`trait Alto implements Falante`. Metodos abstratos sao herdados
-transitivamente:
+Traits tambem podem estender outros traits com `extends`. Metodos abstratos
+sao herdados transitivamente:
 
 ```aura
 trait Falante { public def falar() -> str }
-trait Alto implements Falante { public def gritar() -> str }
+trait Alto extends Falante { public def gritar() -> str }
 
-class Pessoa implements Alto {
+class Pessoa extends Alto {
   public def falar() -> str { return "oi" }
   public def gritar() -> str { return "OI" }
 }

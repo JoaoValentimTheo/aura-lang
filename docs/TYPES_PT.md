@@ -273,7 +273,7 @@ class Animal {
   let nome: str = ""
 }
 
-class Cachorro(Animal) {
+class Cachorro extends Animal {
   let raca: str = ""
 }
 

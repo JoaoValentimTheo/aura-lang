@@ -3,11 +3,11 @@ class BaseC72484Ff {
     public def process(x: int) -> int { return x; }
 }
 
-class ImplC28387Fp(BaseC72484Ff) {
+class ImplC28387Fp extends BaseC72484Ff {
     public def process(x: int) -> int { return x * 2; }
 }
 
-class ImplC98510Ua(BaseC72484Ff) {
+class ImplC98510Ua extends BaseC72484Ff {
     public def process(x: int) -> int { return x + 10; }
 }
 

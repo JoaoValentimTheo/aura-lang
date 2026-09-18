@@ -170,7 +170,7 @@ def test_class_inheritance_and_override():
       def new(name: str) { self.name = name }
       def speak() -> str { return "..." }
     }
-    class Dog(Animal) {
+    class Dog extends Animal {
       def speak() -> str { return self.name + " says woof" }
     }
     let d = Dog("Rex")

@@ -211,9 +211,21 @@ def test_test_reports_failure(tmp_path, capsys):
     d = tmp_path / "suite"
     d.mkdir()
     (d / "ok.aura").write_text('def main() { print(1) }')
-    (d / "bad.aura").write_text("print(1)")  # no main -> fails
+    # A runtime error is a failure; a missing `main` is not, because a test
+    # file may drive itself (e.g. `stdlib.testing` + `t.run_all()`).
+    (d / "bad.aura").write_text('def main() { throw Error("boom") }')
     assert cmd_test(str(d)) == 1
     assert "failed" in capsys.readouterr().out
+
+
+def test_test_does_not_require_main(tmp_path, capsys):
+    d = tmp_path / "suite"
+    d.mkdir()
+    (d / "selfdriven.aura").write_text('import stdlib.testing as t\n'
+                                       't.test("x", () => { t.equal(1, 1) })\n'
+                                       't.run_all()\n')
+    assert cmd_test(str(d)) == 0
+    assert "passed" in capsys.readouterr().out
 
 
 def test_test_no_files(tmp_path, capsys):

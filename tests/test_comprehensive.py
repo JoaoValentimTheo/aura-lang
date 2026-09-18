@@ -693,14 +693,11 @@ def test_cond_expr():
     print("✓ test_cond_expr")
 
 def test_elvis_expr():
-    """Test elvis operator."""
-    ast = Program([ExprStmt(ElvisExpr(
-        Identifier("value"),
-        StrLiteral("default"),
-    ))])
-    t = Transformer()
-    output = t.transform(ast)
-    assert "value" in output or "default" in output
+    """The `?:` operator is parsed as a coalescing binary expression."""
+    from aura.parser.to_ast import Parser, Tokenizer
+    prog = Parser(Tokenizer('let x = value ?: "default"\n').tokenize()).parse()
+    output = Transformer().transform(prog)
+    assert "value" in output and "default" in output
     print("✓ test_elvis_expr")
 
 def test_coalesce_expr():
@@ -1059,7 +1056,7 @@ def test_as_pattern():
 
 def test_import():
     """Test import statement."""
-    ast = Program([Import("math")])
+    ast = Program([ImportStmt("math")])
     t = Transformer()
     output = t.transform(ast)
     assert "import" in output
@@ -1067,7 +1064,7 @@ def test_import():
 
 def test_import_alias():
     """Test import with alias."""
-    ast = Program([Import("collections", "coll")])
+    ast = Program([ImportStmt("collections", alias="coll")])
     t = Transformer()
     output = t.transform(ast)
     assert "import" in output

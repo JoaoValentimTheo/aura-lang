@@ -6,12 +6,12 @@ trait Discount {
   public def apply(price: float) -> float
 }
 
-class NoDiscount implements Discount {
+class NoDiscount extends Discount {
   public def apply(price: float) -> float { return price }
 }
 
-class PercentOff implements Discount {
-  public let percent: float = 0.0
+class PercentOff extends Discount {
+  public let mut percent: float = 0.0
 
   public def new(percent: float) { self.percent = percent }
 
@@ -20,7 +20,7 @@ class PercentOff implements Discount {
   }
 }
 
-class BlackFriday implements Discount {
+class BlackFriday extends Discount {
   public def apply(price: float) -> float { return price * 0.5 }
 }
 

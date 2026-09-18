@@ -3,11 +3,11 @@ class AbstractC31668Mi {
     public def process(x: int) -> int { return x; }
 }
 
-class AbstractC19685Uq(AbstractC31668Mi) {
+class AbstractC19685Uq extends AbstractC31668Mi {
     public def process(x: int) -> int { return x * 2; }
 }
 
-class RealC86079Xe(AbstractC31668Mi) {
+class RealC86079Xe extends AbstractC31668Mi {
     public def process(x: int) -> int { return x + 10; }
 }
 

@@ -3,11 +3,11 @@ class BaseC18014Pm {
     public def render() -> str { return "base"; }
 }
 
-class BaseC38786Dp(BaseC18014Pm) {
+class BaseC38786Dp extends BaseC18014Pm {
     public def render() -> str { return "child1"; }
 }
 
-class RealC73744Rf(BaseC18014Pm) {
+class RealC73744Rf extends BaseC18014Pm {
     public def render() -> str { return "child2"; }
 }
 

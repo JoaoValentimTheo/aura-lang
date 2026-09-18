@@ -3,9 +3,9 @@
 // A mutable object whose methods return `self` allows left-to-right chaining.
 
 class Query {
-  public let table: str = ""
-  public let columns: list = []
-  public let limit_value: int = 0
+  public let mut table: str = ""
+  public let mut columns: list = []
+  public let mut limit_value: int = 0
 
   public def new(table: str) {
     self.table = table

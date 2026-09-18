@@ -4,11 +4,11 @@ class RealC22055Wz {
     public def get_val() -> int { return self.base_val; }
 }
 
-class ImplC38227Le(RealC22055Wz) {
+class ImplC38227Le extends RealC22055Wz {
     public def get_val() -> int { return self.base_val * 2; }
 }
 
-class AbstractC35368Va(ImplC38227Le) {
+class AbstractC35368Va extends ImplC38227Le {
     public def get_val() -> int { return self.base_val * 3; }
 }
 

@@ -388,16 +388,26 @@ class StatementTransformer:
         old_in_class = self.in_class_scope
         self.in_class_scope = True
 
+        # Header fields (`class User(private name: str, age: int = 0)`) are
+        # turned into ordinary VarDecl members so they flow through exactly the
+        # same constructor/accessor machinery as body-declared fields. They are
+        # placed first, and the header order is preserved.
+        header_fields = self._header_field_decls(node)
+
         # Populate visibility map for expressions
         current_vis = {}
-        # Inherit from base
-        if node.base_class in self.class_members:
-            current_vis.update(self.class_members[node.base_class])
+        # Inherit from every base class. `node.base_class` is a comma-joined
+        # string, so it must be split: keying on the whole string only matched
+        # a single bare base and silently dropped inherited visibility for
+        # multiple inheritance and dotted bases.
+        for base_name in self._base_names(node.base_class):
+            if base_name in self.class_members:
+                current_vis.update(self.class_members[base_name])
 
         # Add current members. Each entry is (visibility, owner) where owner is
         # the class that declares the member, so inherited private members keep
         # their defining class's mangling prefix even when referenced here.
-        for member in node.body:
+        for member in list(header_fields) + list(node.body):
             if hasattr(member, 'name') and hasattr(member, 'visibility'):
                 current_vis[member.name] = (member.visibility, node.name)
             if isinstance(member, Method):
@@ -411,12 +421,14 @@ class StatementTransformer:
 
         # Automatic __init__ and __match_args__ for instance fields
         # Note: static fields go directly into class body, not __init__
-        instance_fields = [m for m in node.body if isinstance(m, VarDecl) and not m.is_static]
+        member_body = list(header_fields) + list(node.body)
+        instance_fields = [m for m in member_body
+                           if isinstance(m, VarDecl) and not m.is_static]
         methods = [m for m in node.body if isinstance(m, Method)]
         has_manual_init = any(m.name == '__init__' for m in methods)
         init_code = ""
         if instance_fields and not has_manual_init:
-            # A per-class sentinel lets an explicit `None` override a field
+            # A module-level sentinel lets an explicit `None` override a field
             # default, instead of being indistinguishable from "argument not
             # supplied" (which the old `x if x is not None else default` could
             # not do).
@@ -440,7 +452,11 @@ class StatementTransformer:
                     )
             assigns = "\n".join(assign_lines)
 
-            match_args = ", ".join([f"'{f.name}'" for f in instance_fields])
+            # `__match_args__` must use the *runtime* attribute name (mangled
+            # for private/protected fields); the raw Aura name would not exist.
+            match_args = ", ".join(
+                [f"'{mangle_member(node.name, f.name, f.visibility)}'"
+                 for f in instance_fields])
             if len(instance_fields) == 1: match_args += ","
             super_line = ""
             if node.base_class:
@@ -453,14 +469,15 @@ class StatementTransformer:
         else:
             init_code = ""
 
-        # Auto-generate public get_<name>() / set_<name>(value) accessors for
-        # every non-public instance field, unless the author already defined a
-        # method with that name.
+        # Auto-generate get_<name>() for every field and set_<name>(value) for
+        # every mutable field, unless the author already defined a method with
+        # that name. Header fields default to immutable, so they get a getter
+        # only unless declared `mut`. Public fields are included: a header or a
+        # field is data, and accessors give it a stable API without exposing
+        # the storage name.
         defined_methods = {m.name for m in methods}
         accessor_parts = []
         for f in instance_fields:
-            if f.visibility not in ('private', 'protected'):
-                continue
             mangled = mangle_member(node.name, f.name, f.visibility)
             getter = f"get_{f.name}"
             setter = f"set_{f.name}"
@@ -469,6 +486,8 @@ class StatementTransformer:
                     f"{self._indent()}def {getter}(self):\n"
                     f"{self._indent()}    return self.{mangled}\n"
                 )
+            if not f.mutable:
+                continue
             if setter not in defined_methods:
                 accessor_parts.append(
                     f"{self._indent()}def {setter}(self, value):\n"
@@ -481,6 +500,16 @@ class StatementTransformer:
 
         body_parts = []
         class_indent = self._indent()
+        # Header fields are emitted first. When the generated constructor owns
+        # them they exist only as parameters; when a manual `new` overrides the
+        # constructor, they are also emitted as class-level defaults so the
+        # generated accessors resolve even if the author forgets to assign one.
+        if emit_field_defaults:
+            for f in header_fields:
+                name = mangle_member(node.name, f.name, f.visibility)
+                default_py = (self.expr_transformer.transform(f.value)
+                              if f.value is not None else "None")
+                body_parts.append(self._indent() + f"{name} = {default_py}")
         for member in node.body:
             if isinstance(member, VarDecl):
                 # Static fields always live on the class. Instance fields are
@@ -725,6 +754,40 @@ class StatementTransformer:
             if head:
                 self.expr_transformer.seen_identifiers.add(head)
 
+    @staticmethod
+    def _base_names(base_class):
+        """Split a comma-joined ``base_class`` string into a list of names."""
+        if not base_class:
+            return []
+        return [part.strip() for part in str(base_class).split(',') if part.strip()]
+
+    def _header_field_decls(self, node):
+        """Turn `ClassDecl.header_fields` into ordinary instance-field VarDecls.
+
+        Each header entry is ``(Parameter, visibility, mutable)``. The result is
+        a VarDecl with the same name/type/default, so it flows through the
+        shared constructor and accessor machinery unchanged. Header fields are
+        never static and never const.
+        """
+        decls = []
+        for entry in getattr(node, 'header_fields', None) or []:
+            param, visibility, mutable = entry
+            decl = VarDecl(
+                param.name,
+                mutable,
+                param.type_annotation,
+                param.default,
+                visibility=visibility,
+                is_static=False,
+                is_volatile=False,
+                owner=node.name,
+            )
+            location = getattr(param, 'location', None) or getattr(node, 'location', None)
+            if location is not None:
+                decl.with_location(location)
+            decls.append(decl)
+        return decls
+
     def _trait_method_signature(self, method):
         """Render a trait method's parameter list, preserving its signature."""
         if method.is_static:
@@ -968,16 +1031,24 @@ class StatementTransformer:
 
         body_lines = []
         pending = self.expr_transformer.hoisted_functions
-        before = len(pending)
         for stmt in node.body:
+            before = len(pending)
             code = self.transform(stmt)
+            # A block lambda or block expression hoists a helper function; it
+            # must be emitted inside the loop body (before the statement that
+            # calls it) or the generated name is undefined. This mirrors
+            # `_block`, and dropping them was a `NameError` at runtime.
+            new_hoists = pending[before:]
+            if new_hoists:
+                del pending[before:]
+                for helper in new_hoists:
+                    for line in helper.split('\n'):
+                        if line.strip():
+                            body_lines.append(body_indent + line)
             if code:
                 for line in code.split('\n'):
                     if line.strip():
                         body_lines.append(body_indent + line)
-        new_hoists = pending[before:]
-        if new_hoists:
-            del pending[before:]
         self.indent_level -= 2
 
         inner = (
@@ -1085,12 +1156,6 @@ class StatementTransformer:
                 return "\n".join(lines)
             return f"from {node.module} import {', '.join(parts)}"
         if node.alias:
-            return f"import {node.module} as {node.alias}"
-        return f"import {node.module}"
-
-    def transform_Import(self, node):
-        """Legacy `Import(module, alias)` node."""
-        if getattr(node, 'alias', None):
             return f"import {node.module} as {node.alias}"
         return f"import {node.module}"
 

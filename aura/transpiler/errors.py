@@ -32,19 +32,15 @@ class ErrorCode(Enum):
     """
 
     # -- Syntax errors (E0xx) ---------------------------------------------
-    SYNTAX_ERROR = "E001"
-    UNEXPECTED_TOKEN = "E002"
-    UNEXPECTED_EOF = "E003"
+    # The parser raises a structured ``SyntaxError`` (with line/column) rather
+    # than an error code, so the E001-E003 codes were never emitted and have
+    # been removed. Use the exception's ``line``/``column`` for positions.
     INVALID_SYNTAX = "E004"
 
     # -- Type errors (E1xx) ----------------------------------------------
     TYPE_MISMATCH = "E101"
-    UNDEFINED_VARIABLE = "E102"
-    UNDEFINED_FUNCTION = "E103"
-    UNDEFINED_CLASS = "E104"
     WRONG_ARGUMENT_COUNT = "E105"
     WRONG_ARGUMENT_TYPE = "E106"
-    CANNOT_CALL_NON_FUNCTION = "E107"
     INCOMPATIBLE_OPERANDS = "E108"
     NON_EXHAUSTIVE_MATCH = "E109"
     UNKNOWN_TYPE_CONSTRAINT = "E110"
@@ -60,8 +56,9 @@ class ErrorCode(Enum):
     INVALID_MAIN = "E311"
 
     # -- I/O and configuration (E4xx) ------------------------------------
-    IO_ERROR = "E401"
-    CONFIGURATION_ERROR = "E402"
+    # The CLI reports I/O and configuration failures as plain messages plus a
+    # non-zero exit code, so E401/E402 were never emitted and have been
+    # removed.
 
     # -- Fatal (E9xx) ----------------------------------------------------
     FATAL = "E999"
@@ -73,8 +70,8 @@ class ErrorCode(Enum):
     SPACING = "W004"
 
     # -- Unused / redundant warnings (W1xx) ------------------------------
-    UNUSED_VARIABLE = "W101"
-    UNUSED_IMPORT = "W102"
+    # W101/W102 (unused variable/import) were documented but never emitted;
+    # they have been removed rather than shipped as a half-working analysis.
     UNUSED_TYPE_PARAMETER = "W103"
 
 @dataclass
@@ -192,18 +189,11 @@ class ErrorCollector:
 
 ERROR_TEMPLATES = {
     # Syntax
-    ErrorCode.SYNTAX_ERROR: "Invalid syntax",
-    ErrorCode.UNEXPECTED_TOKEN: "Unexpected token '{token}'",
-    ErrorCode.UNEXPECTED_EOF: "Unexpected end of file",
     ErrorCode.INVALID_SYNTAX: "{detail}",
     # Types
     ErrorCode.TYPE_MISMATCH: "Type mismatch: expected {expected}, got {actual}",
-    ErrorCode.UNDEFINED_VARIABLE: "Undefined variable '{name}'",
-    ErrorCode.UNDEFINED_FUNCTION: "Undefined function '{name}'",
-    ErrorCode.UNDEFINED_CLASS: "Undefined class '{name}'",
     ErrorCode.WRONG_ARGUMENT_COUNT: "Function '{name}' expects {expected} arguments, got {actual}",
     ErrorCode.WRONG_ARGUMENT_TYPE: "Argument {index} of '{name}': expected {expected}, got {actual}",
-    ErrorCode.CANNOT_CALL_NON_FUNCTION: "Cannot call non-function type '{type}'",
     ErrorCode.INCOMPATIBLE_OPERANDS: "Incompatible operands for {op}: {left} and {right}",
     ErrorCode.NON_EXHAUSTIVE_MATCH: "'match' over {subject} is not exhaustive: no case handles {missing}",
     ErrorCode.UNKNOWN_TYPE_CONSTRAINT: "type parameter '{name}' has unknown constraint '{constraint}'",
@@ -217,15 +207,11 @@ ERROR_TEMPLATES = {
     ErrorCode.MISSING_MAIN: "Program has no 'main' function",
     ErrorCode.INVALID_MAIN: "'main' must take no parameters, or a single 'args'",
     # I/O
-    ErrorCode.IO_ERROR: "{detail}",
-    ErrorCode.CONFIGURATION_ERROR: "{detail}",
     # Warnings
     ErrorCode.LINE_TOO_LONG: "Line {line} is too long ({length} > {limit} columns)",
     ErrorCode.TRAILING_WHITESPACE: "Line {line} has trailing whitespace",
     ErrorCode.NAMING_CONVENTION: "'{name}' does not follow the {convention} convention",
     ErrorCode.SPACING: "Multiple spaces after '{keyword}'",
-    ErrorCode.UNUSED_VARIABLE: "Variable '{name}' is declared but never used",
-    ErrorCode.UNUSED_IMPORT: "Import '{name}' is never used",
     ErrorCode.UNUSED_TYPE_PARAMETER: "Type parameter '{name}' is never used",
     # Fatal
     ErrorCode.FATAL: "Too many errors; compilation stopped",

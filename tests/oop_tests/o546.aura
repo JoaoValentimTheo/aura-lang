@@ -5,7 +5,7 @@ class BaseC40409Mg {
     public def double_value() -> int { return self.value * 2; }
 }
 
-class AbstractC99906Ve(BaseC40409Mg) {
+class AbstractC99906Ve extends BaseC40409Mg {
     public def double_value() -> int { return self.value * 3; }
 }
 

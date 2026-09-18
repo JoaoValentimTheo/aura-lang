@@ -3,11 +3,11 @@ class RealC21097Sm {
     public def render() -> str { return "base"; }
 }
 
-class RealC59438Mz(RealC21097Sm) {
+class RealC59438Mz extends RealC21097Sm {
     public def render() -> str { return "child1"; }
 }
 
-class BaseC49433On(RealC21097Sm) {
+class BaseC49433On extends RealC21097Sm {
     public def render() -> str { return "child2"; }
 }
 

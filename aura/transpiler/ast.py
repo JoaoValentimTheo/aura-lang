@@ -89,7 +89,7 @@ class FunctionDecl(Stmt):
         self.is_volatile = is_volatile
 
 class ClassDecl(Stmt):
-    def __init__(self, name, body, base_class=None, type_params=None, decorators=None, visibility=None, is_static=False, is_volatile=False, type_constraints=None):
+    def __init__(self, name, body, base_class=None, type_params=None, decorators=None, visibility=None, type_constraints=None, header_fields=None):
         self.name = name
         self.body = body
         self.base_class = base_class
@@ -97,8 +97,12 @@ class ClassDecl(Stmt):
         self.type_constraints = type_constraints or {}
         self.decorators = decorators or []
         self.visibility = visibility
-        self.is_static = is_static
-        self.is_volatile = is_volatile
+        # Header fields declared as `class User(private name: str, age: int)`.
+        # Each entry is `(Parameter, visibility, mutable)`: the parameter holds
+        # the name/type/default, the rest drive the generated constructor and
+        # the accessors. Only the class's *own* fields are listed; inherited
+        # fields arrive through `extends`.
+        self.header_fields = header_fields or []
 
 class TraitDecl(Stmt):
     def __init__(self, name, members, type_params=None, visibility=None, base_class=None, type_constraints=None):
@@ -356,12 +360,6 @@ class CondExpr(Expr):
         self.true_expr = true_expr
         self.false_expr = false_expr
 
-class ElvisExpr(Expr):
-    """Elvis operator: value ?: default"""
-    def __init__(self, value, default):
-        self.value = value
-        self.default = default
-
 class CoalesceExpr(Expr):
     """Null coalescing: value ?? default"""
     def __init__(self, value, default):
@@ -510,11 +508,6 @@ class Decorator(Node):
         self.name = name
         self.args = args or []
         self.kwargs = kwargs or {}
-
-class Import(Node):
-    def __init__(self, module, alias=None):
-        self.module = module
-        self.alias = alias
 
 class ImportStmt(Stmt):
     def __init__(self, module, items=None, alias=None, modules=None):

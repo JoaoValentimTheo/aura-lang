@@ -3,11 +3,11 @@ class MockC82155Bm {
     public def process(x: int) -> int { return x; }
 }
 
-class BaseC26066Yu(MockC82155Bm) {
+class BaseC26066Yu extends MockC82155Bm {
     public def process(x: int) -> int { return x * 2; }
 }
 
-class ImplC44758Cy(MockC82155Bm) {
+class ImplC44758Cy extends MockC82155Bm {
     public def process(x: int) -> int { return x + 10; }
 }
 

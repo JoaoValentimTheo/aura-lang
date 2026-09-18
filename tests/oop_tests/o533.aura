@@ -4,15 +4,15 @@ class BaseC86639Qu {
     public def get_val() -> int { return self.base_val; }
 }
 
-class ConcreteC32266Hm(BaseC86639Qu) {
+class ConcreteC32266Hm extends BaseC86639Qu {
     public def get_val() -> int { return self.base_val * 2; }
 }
 
-class MockC85761Bw(ConcreteC32266Hm) {
+class MockC85761Bw extends ConcreteC32266Hm {
     public def get_val() -> int { return self.base_val * 3; }
 }
 
-class AbstractC60125Dx(MockC85761Bw) {
+class AbstractC60125Dx extends MockC85761Bw {
     public def get_val() -> int { return self.base_val * 4; }
 }
 

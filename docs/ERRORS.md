@@ -38,25 +38,26 @@ example, a whole-program rule). Every checker attaches a real
 
 | Code | Name | Message | Emitted by |
 |------|------|---------|------------|
-| `E001` | `SYNTAX_ERROR` | Generic malformed source | parser |
-| `E002` | `UNEXPECTED_TOKEN` | `Expected <x> but got <y>` | parser |
-| `E003` | `UNEXPECTED_EOF` | `Unexpected end of file` | parser |
 | `E004` | `INVALID_SYNTAX` | Construct is not allowed here | parser, rule checker |
+
+The parser reports lexical and syntax errors by raising a `SyntaxError` that
+carries `line`/`column`/`filename`. These are surfaced directly by the CLI and
+the LSP rather than as a separate code.
 
 ## Errors — types (`E1xx`)
 
 | Code | Name | Message | Emitted by |
 |------|------|---------|------------|
 | `E101` | `TYPE_MISMATCH` | `expected <T>, got <U>` | type checker |
-| `E102` | `UNDEFINED_VARIABLE` | `Undefined variable '<name>'` | type checker |
-| `E103` | `UNDEFINED_FUNCTION` | `Undefined function '<name>'` | type checker |
-| `E104` | `UNDEFINED_CLASS` | `Undefined class '<name>'` | type checker |
 | `E105` | `WRONG_ARGUMENT_COUNT` | function called with the wrong arity | type checker |
 | `E106` | `WRONG_ARGUMENT_TYPE` | argument of the wrong type | type checker |
-| `E107` | `CANNOT_CALL_NON_FUNCTION` | calling a value that is not callable | type checker |
 | `E108` | `INCOMPATIBLE_OPERANDS` | operator used on incompatible operands | type checker |
 | `E109` | `NON_EXHAUSTIVE_MATCH` | `'match' over <subject> is not exhaustive` | type checker (warning) |
 | `E110` | `UNKNOWN_TYPE_CONSTRAINT` | `type parameter '<name>' has unknown constraint '<constraint>'` | type checker |
+
+Undefined-name and non-callable diagnostics are not emitted: Aura is gradually
+typed and resolves names at runtime, so a name the checker cannot prove is left
+to Python rather than reported. See "Removed codes" below.
 
 ## Errors — semantic / structural (`E3xx`)
 
@@ -75,8 +76,11 @@ example, a whole-program rule). Every checker attaches a real
 
 | Code | Name | Message | Emitted by |
 |------|------|---------|------------|
-| `E401` | `IO_ERROR` | file not found / unreadable / unwritable | CLI |
-| `E402` | `CONFIGURATION_ERROR` | invalid `aura.toml` or dependency entry | CLI / deps |
+
+## Errors — I/O and configuration (`E4xx`)
+
+There is no code for these: the CLI prints a plain message and returns a
+non-zero exit status. The former E401/E402 codes were removed.
 
 ## Errors — fatal (`E9xx`)
 
@@ -101,9 +105,10 @@ Produced by `aura lint`. Non-zero exit unless `--allow-warnings` is passed.
 
 | Code | Name | Message | Emitted by |
 |------|------|---------|------------|
-| `W101` | `UNUSED_VARIABLE` | variable is declared but never used | rule checker |
-| `W102` | `UNUSED_IMPORT` | import is never used | rule checker |
 | `W103` | `UNUSED_TYPE_PARAMETER` | generic type parameter is never used | type checker |
+
+Unused-variable and unused-import warnings are not emitted; see "Removed
+codes" below.
 
 ## Warnings — semantic (`W2xx`)
 
@@ -120,5 +125,3 @@ catalogue honest.
 |------|--------|
 | `E201`–`E204` | runtime faults are surfaced as native Python exceptions; no Aura diagnostic is emitted |
 | `E304` | `MISSING_RETURN` is not enforced; the type checker reports `E101` instead |
-| `E305` | superseded by `W101` |
-| `E306` | superseded by `W102` |

@@ -4,15 +4,15 @@ class RealC36179Pv {
     public def get_val() -> int { return self.base_val; }
 }
 
-class ConcreteC98371Px(RealC36179Pv) {
+class ConcreteC98371Px extends RealC36179Pv {
     public def get_val() -> int { return self.base_val * 2; }
 }
 
-class ConcreteC79366Ul(ConcreteC98371Px) {
+class ConcreteC79366Ul extends ConcreteC98371Px {
     public def get_val() -> int { return self.base_val * 3; }
 }
 
-class AbstractC87346Bb(ConcreteC79366Ul) {
+class AbstractC87346Bb extends ConcreteC79366Ul {
     public def get_val() -> int { return self.base_val * 4; }
 }
 

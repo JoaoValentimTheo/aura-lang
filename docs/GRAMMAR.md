@@ -59,13 +59,16 @@ let  mut  const  def  class  trait  enum  type  module  import  from
 if  else  unless  guard  while  until  for  in  loop  break  continue
 return  throw  try  catch  finally  with  match  case  assert
 async  await  yield  spawn  null  true  false
-public  private  protected  static  volatile  export  implements
+public  private  protected  static  volatile  export
 self  super
 ```
 
 Contextual words (reserved only in specific positions, usable as identifiers
 elsewhere): `fn` is **removed**; `step`, `as`, `is`, `and`, `or`, `not`, `not in`,
-`is not`, `then` are operators/contextual.
+`is not`, `then` are operators/contextual. `extends` and `implements` are
+matched as contextual words after a class or trait name: `extends` is the only
+inheritance keyword, and `implements` is reported as a pointed error telling you
+to use `extends` instead.
 
 ### 1.4 Literals
 
@@ -206,41 +209,56 @@ The body is always a brace block. `def` is the only function keyword
 
 ```
 class_decl     = modifiers , "class" , identifier , [ type_params ]
-                 , [ "(" , base_list , ")" ]
-                 , [ "implements" , trait_list ]
+                 , [ "extends" , dotted_name , { "," , dotted_name } ]
+                 , [ "(" , [ header_field_list ] , ")" ]
                  , "{" , { class_member } , "}" ;
 
-base_list      = dotted_name , { "," , dotted_name } ;
-trait_list     = dotted_name , { "," , dotted_name } ;
+header_field_list = header_field , { "," , header_field } ;
+header_field   = { "public" | "private" | "protected" | "mut" | "let" [ "mut" ] }
+                 , identifier , ( ":" , type | "=" , expression )
+                 , [ "=" , expression ] ;
+                 // at least one of `: type` or `= default` is required
+                 // a required field may not follow an optional one
+
 dotted_name    = identifier , { "." , identifier } ;
 
-class_member   = member_modifiers , member_decorators , ( method | nested_class | field ) ;
+class_member   = member_modifiers , member_decorators , ( method | nested_class | field | const_field ) ;
 
 member_modifiers = visibility , { "static" | "volatile" } ;
 visibility     = "public" | "private" | "protected" ;   // mandatory on every member
 member_decorators = { "@" , ( "property" | "staticmethod" | "classmethod" | identifier ) } ;
 
 method         = "def" , identifier , [ type_params ] , "(" , [ param_list ] , ")" , [ "->" , type ] , block ;
-nested_class   = "class" , identifier , [ type_params ] , [ "(" , base_list , ")" ] , "{" , { class_member } , "}" ;
-field          = "let" , [ "mut" ] , identifier , [ ":" , type ] , [ "=" , expression ] , [ ";" ] ;
+nested_class   = class_decl ;
+field          = ( "let" , [ "mut" ] | "mut" ) , identifier , [ ":" , type ] , [ "=" , expression ] , [ ";" ] ;
+const_field    = "const" , identifier , [ ":" , type ] , "=" , expression , [ ";" ] ;
 ```
+
+Inheritance uses `extends` only; there is no parenthesised base list and no
+`implements`. Since the header is introduced by `(`, a bare name there is never
+a base class.
+
+Header fields become instance fields, constructor parameters and accessors.
+The default visibility is `private`, and fields are immutable unless declared
+`mut`. A `let` field in the body is likewise immutable; `let mut`/`mut` opts
+into a setter.
 
 ### 3.4 Traits
 
 ```
 trait_decl     = modifiers , "trait" , identifier , [ type_params ]
-                 , [ "(" , trait_list , ")" | "implements" , trait_list ]
+                 , [ "extends" , dotted_name , { "," , dotted_name } ]
                  , "{" , { trait_member } , "}" ;
 
-trait_member   = member_modifiers , ( method_signature | method_with_body | field ) ;
+trait_member   = member_modifiers , ( method_signature | method_with_body | field | const_field ) ;
 method_signature = "def" , identifier , "(" , [ param_list ] , ")" , [ "->" , type ] ;   // no body
 method_with_body = method ;
 ```
 
 Traits compile to abstract base classes: signature-only methods become
-`@abstractmethod`. A trait may extend other traits with either syntax,
-`trait Loud(Greeter)` or `trait Loud implements Greeter`, and a concrete class
-that omits any inherited abstract method is rejected at compile time (E309).
+`@abstractmethod`. A trait extends other traits with `extends`, and a concrete
+class that omits any inherited abstract method is rejected at compile time
+(E309).
 
 ### 3.5 Enums
 

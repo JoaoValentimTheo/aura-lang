@@ -4,19 +4,19 @@ class RealC70697Rj {
     public def get_val() -> int { return self.base_val; }
 }
 
-class MockC57707Rm(RealC70697Rj) {
+class MockC57707Rm extends RealC70697Rj {
     public def get_val() -> int { return self.base_val * 2; }
 }
 
-class ImplC66040Zb(MockC57707Rm) {
+class ImplC66040Zb extends MockC57707Rm {
     public def get_val() -> int { return self.base_val * 3; }
 }
 
-class BaseC44766Bw(ImplC66040Zb) {
+class BaseC44766Bw extends ImplC66040Zb {
     public def get_val() -> int { return self.base_val * 4; }
 }
 
-class ConcreteC33315Gz(BaseC44766Bw) {
+class ConcreteC33315Gz extends BaseC44766Bw {
     public def get_val() -> int { return self.base_val * 5; }
 }
 

@@ -3,11 +3,11 @@ class ImplC32698Ar {
     public def render() -> str { return "base"; }
 }
 
-class BaseC84091Os(ImplC32698Ar) {
+class BaseC84091Os extends ImplC32698Ar {
     public def render() -> str { return "child1"; }
 }
 
-class RealC21094Qy(ImplC32698Ar) {
+class RealC21094Qy extends ImplC32698Ar {
     public def render() -> str { return "child2"; }
 }
 

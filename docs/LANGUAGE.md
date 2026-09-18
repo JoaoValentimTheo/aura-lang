@@ -96,16 +96,16 @@ identifier ::= [a-zA-Z_] [a-zA-Z0-9_]*
 ```
 async      await      break      case       catch      class
 const      continue   def        else       enum       export
-false      finally    for        from       guard      if
-implements import     in         is         let        loop
+extends    false      finally    for        from       guard
+if         import     in         is         let        loop
 match      module     mut        none       private    protected
 public     return     self       spawn      static     super
 throw      trait      true       try        type       unless
 until      volatile   while      with       yield      assert
 ```
 
-> `null`, `fn`, `init`, `volatily`, `!`, `&&`, `||` and `<T>` are **not** part
-> of Aura. See [GRAMMAR.md](GRAMMAR.md) for the complete grammar and the list of
+> `null`, `fn`, `init`, `volatily`, `implements`, `!`, `&&`, `||` and `<T>` are
+> **not** part of Aura. See [GRAMMAR.md](GRAMMAR.md) for the complete grammar and the list of
 > removed spellings.
 
 ### Literals
@@ -425,6 +425,63 @@ let evens = filter(numbers, (x) => x % 2 == 0)
 
 ## 7. Classes
 
+### Class header fields
+
+Declare a class's fields in its header. Each field becomes an instance field,
+a constructor parameter, and a getter; a `mut` field also gets a setter:
+
+```aura
+class User(name: str, mut age: int = 0, public id: int = 0) {
+  public def greet() -> str {
+    return "hi " + self.get_name()
+  }
+}
+
+let u = User("ana", 30)
+print(u.get_name())   // ana
+print(u.get_age())    // 30
+u.set_age(31)
+print(u.get_age())    // 31
+print(u.id)           // 0 (public field, accessed directly)
+```
+
+Rules for the header:
+
+* The default visibility is **`private`**. Write `public` or `protected` per
+  field: `class U(private a: int, public b: int)`.
+* A field is **immutable by default**, so it gets a getter only. Write `mut`
+  (or `let mut`) to make it mutable and get a setter:
+  `class U(name: str, mut age: int = 0)`.
+* Fields may have defaults (`age: int = 0`). A field without a default cannot
+  follow one with a default, matching function parameters.
+* Every field needs a type annotation or a default; `class U(a)` is a syntax
+  error, so a bare name in parentheses is never a base class.
+* Private/protected fields are stored mangled; the getter/setter is the
+  supported way to reach them from outside.
+* A field declared in the header must not also be declared in the body.
+
+A class may mix a header with body fields, methods, and constants:
+
+```aura
+class Counter(start: int = 0) {
+  private let mut count: int = 0
+
+  public def new(start: int) {
+    self.count = start
+  }
+
+  public def increment() -> int {
+    self.count = self.count + 1
+    return self.count
+  }
+}
+```
+
+> **Note:** `def new(...)` maps to Python's `__init__`. Instantiate with
+> `User(args)`, not `User.new(args)`. When a class declares `def new`, that
+> constructor wins over the generated one, but its accessors are still
+> generated.
+
 ### Basic class
 
 ```aura
@@ -446,9 +503,10 @@ let p = Point(3, 4)
 print(p.distance())  // 5.0
 ```
 
-> **Note:** `def new(...)` maps to Python's `__init__`. Instantiate with `Point(args)`, not `Point.new(args)`.
-
 ### Inheritance
+
+Inheritance uses `extends` — the only spelling. A class may extend several
+bases, and base names may be dotted:
 
 ```aura
 class Animal {
@@ -463,7 +521,7 @@ class Animal {
   }
 }
 
-class Dog(Animal) {
+class Dog extends Animal {
   public def speak() -> str {
     return self.name + " says woof"
   }
@@ -473,7 +531,26 @@ let d = Dog("Rex")
 print(d.speak())  // Rex says woof
 ```
 
-The transformer automatically inserts `super().__init__()` in the constructor when a base class exists.
+`class Dog(Animal)` and `implements` are **not** Aura: use `extends`. Traits
+are extended the same way.
+
+With header fields, a subclass declares only its **own** new fields; inherited
+fields are passed to the parent by name:
+
+```aura
+class User(name: str, mut age: int = 0) {
+}
+
+class Admin extends User(email: str) {
+}
+
+let a = Admin(email: "a@x.com", name: "bob")
+print(a.get_name())   // bob
+print(a.get_email())  // a@x.com
+```
+
+The transformer forwards the remaining arguments to `super().__init__(**kwargs)`
+when a base class exists.
 
 ### @property
 
@@ -541,7 +618,7 @@ trait Drawable {
   public def get_bounds() -> float
 }
 
-class Circle implements Drawable {
+class Circle extends Drawable {
   private let radius: float = 0.0
 
   public def draw() -> void {
@@ -554,8 +631,8 @@ class Circle implements Drawable {
 }
 ```
 
-A trait transpiles to a base class, and `implements` becomes inheritance.
-Multiple traits can be listed: `class C implements A, B`.
+A trait transpiles to a base class, and `extends` becomes inheritance.
+Multiple traits can be listed: `class C extends A, B`.
 
 A method declared without a body is abstract: the trait compiles it to an
 `@abstractmethod`, and a concrete class that does not implement every abstract
@@ -564,22 +641,22 @@ method it inherits is rejected at compile time (`E309`):
 ```aura
 trait Shape { public def area() -> float }
 
-class Square implements Shape {
+class Square extends Shape {
   public let side: float = 2.0
   public def area() -> float { return self.side * self.side }
 }
 
-// class Bad implements Shape { }   // E309: must implement 'area'
+// class Bad extends Shape { }   // E309: must implement 'area'
 ```
 
-Traits may also extend other traits, using either `trait Loud(Greeter)` or
-`trait Loud implements Greeter`. Abstract methods are inherited transitively:
+Traits may also extend other traits with `extends`. Abstract methods are
+inherited transitively:
 
 ```aura
 trait Greeter { public def greet() -> str }
-trait Loud implements Greeter { public def shout() -> str }
+trait Loud extends Greeter { public def shout() -> str }
 
-class Person implements Loud {
+class Person extends Loud {
   public def greet() -> str { return "hi" }
   public def shout() -> str { return "HEY" }
 }
@@ -621,8 +698,10 @@ through a `public`/`protected` method or through the generated accessor.
 
 ```aura
 class Counter {
-  private let count: int = 0
-  public def increment() { self.count = self.count + 1 }
+  private let mut count: int = 0
+  public def increment() {
+    self.count = self.count + 1
+  }
 }
 
 let c = Counter()
@@ -630,9 +709,13 @@ c.increment()
 print(c.get_count())   // auto-generated getter
 ```
 
-For every non-public field, `get_<name>()` and `set_<name>(value)` accessors are
-generated automatically (unless the class already defines a method with that
-name). Public fields get no accessors.
+For every instance field, `get_<name>()` is generated automatically. A
+`set_<name>(value)` is generated only for a **mutable** field (`mut`/`let mut`),
+so an immutable field has no setter at all. A method you declare with the same
+name wins over the generated one.
+
+A plain `let` field is immutable, exactly like `let` at module and local scope;
+use `let mut` (or `mut in a class header) when the value must change.
 
 At module or local scope, `private`/`protected` are compile-time metadata only;
 names are **not** mangled, so later references keep working.
@@ -1066,8 +1149,8 @@ def validate(age) {
 ### Custom exception types
 
 The exception root is `Error`, which needs no import. Define your own error
-types with either inheritance spelling — `extends` or parentheses — and pass a
-message to the parent constructor with `super(message)`:
+types with `extends` and pass a message to the parent constructor with
+`super(message)`:
 
 ```aura
 class AppError extends Error {

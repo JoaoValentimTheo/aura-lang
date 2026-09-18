@@ -5,7 +5,7 @@ class BaseC81922Gj {
     public def double_value() -> int { return self.value * 2; }
 }
 
-class C38273Sp(BaseC81922Gj) {
+class C38273Sp extends BaseC81922Gj {
     public def double_value() -> int { return self.value * 3; }
 }
 

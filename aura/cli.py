@@ -178,8 +178,12 @@ def cmd_format(path: str, output: str | None = None, width: int = 100) -> int:
         return 2
 
 
-def cmd_lint(path: str) -> int:
-    """Lint Aura source code (style warnings)."""
+def cmd_lint(path: str, allow_warnings: bool = False) -> int:
+    """Lint Aura source code (style warnings).
+
+    Exits non-zero when any style issue is found, unless ``allow_warnings`` is
+    set, in which case issues are printed but the exit status is 0.
+    """
     try:
         source = Path(path).read_text()
     except FileNotFoundError:
@@ -239,7 +243,7 @@ def cmd_lint(path: str) -> int:
 
         if errors.errors:
             print(errors.format())
-            return 1
+            return 0 if allow_warnings else 1
         else:
             print(f"✓ {path}: no style issues")
             return 0
@@ -332,6 +336,10 @@ def _prepare_entrypoint(ast):
         for stmt in ast.statements:
             if not isinstance(stmt, ExprStmt) or not isinstance(stmt.expr, CallExpr):
                 continue
+            # Skip a call that is already awaited, so calling this twice on the
+            # same Program (the REPL reuses it) cannot wrap `await` twice.
+            if isinstance(stmt.expr, UnaryOp) and stmt.expr.op == 'await':
+                continue
             func = stmt.expr.func
             if isinstance(func, Identifier) and func.name in async_names:
                 stmt.expr = UnaryOp('await', stmt.expr)
@@ -363,11 +371,14 @@ def _await_top_level_async_calls(ast):
     return _prepare_entrypoint(ast)[0]
 
 
-def cmd_run(path: str, verbose: bool = False, program_args=None) -> int:
+def cmd_run(path: str, verbose: bool = False, program_args=None,
+            require_main: bool = True) -> int:
     """Run Aura file by transpiling and executing.
 
     ``program_args`` are forwarded to the program's ``main(args)`` when it
-    declares an ``args`` parameter.
+    declares an ``args`` parameter. ``require_main=False`` is used by
+    ``aura test``: a test file drives itself (typically ``t.run_all()``) and
+    need not declare ``main``.
     """
     try:
         ast = parse_file(path)
@@ -379,7 +390,7 @@ def cmd_run(path: str, verbose: bool = False, program_args=None) -> int:
         return 2
 
     mutability = _mutability_diagnostics(ast)
-    rules = _rule_diagnostics(ast, require_main=True)
+    rules = _rule_diagnostics(ast, require_main=require_main)
     if mutability or rules:
         _report_all(path, mutability, rules)
         return 2
@@ -495,11 +506,13 @@ def cmd_test(path: str = ".", verbose: bool = False, pattern: str = "*.aura") ->
             # Use subprocess to isolate each test run. Invoke the installed
             # module (`python -m aura.cli`) so this works both from a source
             # checkout and from a pip install, and run in the file's directory
-            # so sibling Aura modules resolve.
+            # so sibling Aura modules resolve. `--no-main` because a test file
+            # drives itself (typically `t.run_all()`) and need not define main.
             resolved = Path(f).resolve()
             test_cwd = str(resolved.parent)
             result = subprocess.run(
-                [sys.executable, "-m", "aura.cli", "run", str(resolved)],
+                [sys.executable, "-m", "aura.cli", "run", "--no-main",
+                 str(resolved)],
                 capture_output=True, text=True, timeout=30,
                 cwd=test_cwd,
             )
@@ -566,10 +579,14 @@ def cmd_version(bump: str | None = None) -> int:
     from aura.tools.release import bump as bump_version
     from aura.tools.release import get_version, set_version
     if bump:
-        if bump in ('major', 'minor', 'patch'):
-            print(bump_version(bump))
-        else:
-            print(set_version(bump))
+        try:
+            if bump in ('major', 'minor', 'patch'):
+                print(bump_version(bump))
+            else:
+                print(set_version(bump))
+        except ValueError as exc:
+            print(f"Error: invalid version '{bump}': {exc}", file=sys.stderr)
+            return 2
     else:
         print(get_version())
     return 0
@@ -640,11 +657,15 @@ Examples:
     # lint command
     lnt = sub.add_parser('lint', help='Check style and conventions')
     lnt.add_argument('path', help='Source file (.aura)')
+    lnt.add_argument('-w', '--allow-warnings', action='store_true',
+                     help='Report style issues but exit 0')
 
     # run command
     run = sub.add_parser('run', help='Run Aura file')
     run.add_argument('path', help='Source file (.aura)')
     run.add_argument('-v', '--verbose', action='store_true', help='Show generated Python code')
+    run.add_argument('--no-main', action='store_true',
+                     help='Do not require a main() entry point (used by `aura test`)')
     run.add_argument('args', nargs=argparse.REMAINDER,
                      help='Arguments passed to the program as main(args)')
 
@@ -697,9 +718,10 @@ Examples:
     elif args.cmd == 'format':
         return cmd_format(args.path, args.output, args.width)
     elif args.cmd == 'lint':
-        return cmd_lint(args.path)
+        return cmd_lint(args.path, args.allow_warnings)
     elif args.cmd == 'run':
-        return cmd_run(args.path, args.verbose, args.args)
+        return cmd_run(args.path, args.verbose, args.args,
+                       require_main=not args.no_main)
     elif args.cmd == 'test':
         return cmd_test(args.path, args.verbose, args.pattern)
     elif args.cmd == 'repl':

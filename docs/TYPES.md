@@ -253,10 +253,10 @@ Classes create named types:
 
 ```aura
 class User {
-  let name: str = ""
-  let age: int = 0
+  public let name: str = ""
+  public let age: int = 0
 
-  def new(name: str, age: int) {
+  public def new(name: str, age: int) {
     self.name = name
     self.age = age
   }
@@ -266,15 +266,25 @@ class User {
 let alice: User = User("Alice", 30)
 ```
 
+Class header fields are annotated types too, and give the constructor its
+signature:
+
+```aura
+class User(name: str, age: int = 0) {
+}
+
+let alice: User = User("Alice", 30)
+```
+
 ### Inheritance and subtyping
 
 ```aura
 class Animal {
-  let name: str = ""
+  public let name: str = ""
 }
 
-class Dog(Animal) {
-  let breed: str = ""
+class Dog extends Animal {
+  public let breed: str = ""
 }
 
 // Dog is a subtype of Animal
@@ -285,6 +295,9 @@ def process_animal(a: Animal) {
 let d = Dog()
 process_animal(d)  // OK: Dog is subtype of Animal
 ```
+
+Inheritance uses `extends` only; multiple bases are separated by commas and a
+member lookup searches each base in order.
 
 ---
 

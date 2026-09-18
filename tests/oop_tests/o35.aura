@@ -3,11 +3,11 @@ class AbstractC32816Yx {
     public def process(x: int) -> int { return x; }
 }
 
-class C40162Bd(AbstractC32816Yx) {
+class C40162Bd extends AbstractC32816Yx {
     public def process(x: int) -> int { return x * 2; }
 }
 
-class ImplC76880Sq(AbstractC32816Yx) {
+class ImplC76880Sq extends AbstractC32816Yx {
     public def process(x: int) -> int { return x + 10; }
 }
 

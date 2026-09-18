@@ -3,11 +3,11 @@ class C71262Yp {
     public def process(x: int) -> int { return x; }
 }
 
-class C16505Cj(C71262Yp) {
+class C16505Cj extends C71262Yp {
     public def process(x: int) -> int { return x * 2; }
 }
 
-class ImplC29795El(C71262Yp) {
+class ImplC29795El extends C71262Yp {
     public def process(x: int) -> int { return x + 10; }
 }
 

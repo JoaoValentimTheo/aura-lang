@@ -4,11 +4,11 @@ class ConcreteC36169Nm {
     public def get_val() -> int { return self.base_val; }
 }
 
-class BaseC99586Dn(ConcreteC36169Nm) {
+class BaseC99586Dn extends ConcreteC36169Nm {
     public def get_val() -> int { return self.base_val * 2; }
 }
 
-class MockC43470Kj(BaseC99586Dn) {
+class MockC43470Kj extends BaseC99586Dn {
     public def get_val() -> int { return self.base_val * 3; }
 }
 

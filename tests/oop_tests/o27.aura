@@ -3,11 +3,11 @@ class ConcreteC34514Ra {
     public def render() -> str { return "base"; }
 }
 
-class ConcreteC39250Vn(ConcreteC34514Ra) {
+class ConcreteC39250Vn extends ConcreteC34514Ra {
     public def render() -> str { return "child1"; }
 }
 
-class ConcreteC26094Kt(ConcreteC34514Ra) {
+class ConcreteC26094Kt extends ConcreteC34514Ra {
     public def render() -> str { return "child2"; }
 }
 

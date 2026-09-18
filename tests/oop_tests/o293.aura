@@ -3,11 +3,11 @@ class ConcreteC43491Bz {
     public def render() -> str { return "base"; }
 }
 
-class ImplC24358As(ConcreteC43491Bz) {
+class ImplC24358As extends ConcreteC43491Bz {
     public def render() -> str { return "child1"; }
 }
 
-class C57835Qb(ConcreteC43491Bz) {
+class C57835Qb extends ConcreteC43491Bz {
     public def render() -> str { return "child2"; }
 }
 

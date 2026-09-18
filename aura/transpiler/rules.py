@@ -179,6 +179,12 @@ class RuleChecker:
             members = {}
             abstracts = {}
             body = getattr(node, 'body', None) or getattr(node, 'members', None) or []
+            # Header fields (`class User(private name: str)`) are instance
+            # fields: register them so visibility checks and inherited-member
+            # lookups see them like any body-declared field.
+            for entry in getattr(node, 'header_fields', None) or []:
+                param, visibility, _mutable = entry
+                members[param.name] = (visibility, False)
             for member in body:
                 name = getattr(member, 'name', None)
                 if name:
@@ -481,6 +487,22 @@ class RuleChecker:
         self._class_depth += 1
         self._class_stack.append(node.name)
         try:
+            # A header field and a body field may not share a name: both would
+            # define the same storage, and the constructor would assign twice.
+            body_names = {m.name for m in (node.body or [])
+                          if getattr(m, 'name', None)}
+            for entry in getattr(node, 'header_fields', None) or []:
+                param, _visibility, _mutable = entry
+                if param.name in body_names:
+                    self.collector.add(
+                        ErrorCode.DUPLICATE_DEFINITION,
+                        f"header field '{param.name}' in class '{node.name}' is "
+                        f"also declared in the body",
+                        location=self._loc(param) or self._loc(node),
+                        hint="declare each field once",
+                    )
+                # Check the default expression like any other expression.
+                self.visit(getattr(param, 'default', None))
             for member in node.body or []:
                 self._check_member_visibility(member, node.name)
                 self.visit(member)
@@ -543,9 +565,14 @@ class RuleChecker:
 
     def _check_member_visibility(self, member, class_name):
         """Every class/trait member must declare its visibility explicitly."""
-        if isinstance(member, (VarDecl, Method)):
+        if isinstance(member, (VarDecl, ConstDecl, Method)):
             if getattr(member, 'visibility', None) is None:
-                kind = 'field' if isinstance(member, VarDecl) else 'method'
+                if isinstance(member, Method):
+                    kind = 'method'
+                elif isinstance(member, ConstDecl):
+                    kind = 'constant'
+                else:
+                    kind = 'field'
                 self.collector.add(
                     ErrorCode.MISSING_VISIBILITY,
                     f"{kind} '{member.name}' in class '{class_name}' has no "
@@ -602,14 +629,19 @@ class RuleChecker:
     def _object_class(self, obj):
         """Resolve the class of an access object, or None if unknown.
 
-        ``self``/``cls`` resolve to the innermost enclosing class; a bare
-        identifier resolves through the instance map when it is known to hold an
-        instantiated class.
+        ``self``/``cls`` resolve to the innermost enclosing class; ``super``
+        resolves to that class's first base, so `super.member` is checked
+        against the parent's members. A bare identifier resolves through the
+        instance map when it is known to hold an instantiated class.
         """
         if isinstance(obj, Identifier):
             name = obj.name
             if name in ('self', 'cls') and self._class_stack:
                 return self._class_stack[-1]
+            if name == 'super' and self._class_stack:
+                bases = self._classes.get(
+                    self._class_stack[-1], {}).get('bases') or []
+                return bases[0] if bases else None
             for scope in reversed(self._instance_scopes):
                 if name in scope:
                     return scope[name]
@@ -651,8 +683,13 @@ class RuleChecker:
         )
 
     def _is_internal_access(self, obj):
-        """True when ``obj`` is ``self``/``cls`` within a class body."""
-        return isinstance(obj, Identifier) and obj.name in ('self', 'cls') \
+        """True when ``obj`` is ``self``/``cls``/``super`` within a class body.
+
+        ``super`` counts as internal because a parent call happens inside the
+        subclass: protected members are reachable, private ones are not.
+        """
+        return isinstance(obj, Identifier) \
+            and obj.name in ('self', 'cls', 'super') \
             and bool(self._class_stack)
 
     def _lookup_member(self, class_name, name, seen):

@@ -1,16 +1,18 @@
 """Aura REPL engine.
 
 The REPL shares the real parser, transformer and semantic rules with the rest
-of the toolchain, so what you type behaves exactly like what ``aura run``
-executes. It supports:
+of the toolchain, so what you type behaves the way ``aura check`` treats it.
+The same three checkers run on every chunk — type checks, structural rules and
+mutability — so a type error or a visibility violation is reported instead of
+executing. It supports:
 
 * persistent state across lines (variables, functions, classes, imports);
 * value echoing — a bare expression prints the resulting value, and the result
   is also stored in ``_``;
 * automatic multi-line entry: input continues while brackets are unbalanced or
   the line ends with a continuation token;
-* semantic rule enforcement (mutability is relaxed to *mutable by default* for
-  interactive bindings, but structural rules still apply);
+* semantic rule enforcement, except the entry-point rule: an interactive chunk
+  is a fragment, so ``main`` is not required (it is required by ``aura run``);
 * built-in commands (``:help``, ``:vars``, ``:type``, ``:ast``, ``:py``,
   ``:load``, ``:run``, ``:reset``, ``:history``);
 * direct Python execution through ``:py`` and the ``python`` bridge.
@@ -28,6 +30,7 @@ from aura.transpiler.ast import Program
 from aura.transpiler.rules import RuleChecker
 from aura.transpiler.semantics import MutabilityChecker
 from aura.transpiler.transformer import Transformer
+from aura.transpiler.types import TypeChecker
 
 
 class ReplResult:
@@ -557,14 +560,22 @@ class AuraREPL:
     def _check_rules(self, program):
         """Run Aura's rules over one chunk; return an error string or None.
 
-        Both structural rules (break/return/await/self placement, duplicate
-        declarations, invalid assignment targets, unreachable code) and
-        mutability rules are enforced — exactly as ``aura check`` does. For
-        mutability, bindings declared in earlier chunks seed the checker so a
-        `let` stays immutable for the whole session.
+        The same three checkers that ``aura check`` runs are applied here:
+        type checks (``TypeChecker``), structural rules (break/return/await/self
+        placement, duplicate declarations, invalid assignment targets,
+        unreachable code, visibility, abstract methods) and mutability rules.
+        For mutability, bindings declared in earlier chunks seed the checker so
+        a `let` stays immutable for the whole session. The entry-point rule
+        (``main``) is deliberately *not* enforced: a REPL chunk is a script
+        fragment, not a program.
         """
-        checker = MutabilityChecker()
+        type_checker = TypeChecker()
         try:
+            if not type_checker.check_program(program):
+                return self._first_error(getattr(type_checker, 'diagnostics', [])
+                                         or type_checker.errors)
+
+            checker = MutabilityChecker()
             if not checker.check_program(program, initial_bindings=self._bindings):
                 return self._first_error(getattr(checker, 'diagnostics', [])
                                          or checker.errors)

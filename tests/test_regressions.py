@@ -194,7 +194,7 @@ def test_trait_emits_real_base_class():
         "trait Drawable {\n"
         "  def draw()\n"
         "}\n"
-        "class Circle implements Drawable {\n"
+        "class Circle extends Drawable {\n"
         '  def draw() { print("circle") }\n'
         "}\n"
         "Circle().draw()"
@@ -626,13 +626,13 @@ def test_from_import_with_item_alias():
     assert out.strip() == "6.0"
 
 
-def test_legacy_import_node_still_transpiles():
-    from transpiler.ast import Program, Import, FromImport
+def test_import_nodes_transpile():
+    from transpiler.ast import Program, ImportStmt, FromImport
 
-    code = Transformer().transform(Program([Import("math")]))
+    code = Transformer().transform(Program([ImportStmt("math")]))
     assert code.strip() == "import math"
 
-    code = Transformer().transform(Program([Import("collections", "coll")]))
+    code = Transformer().transform(Program([ImportStmt("collections", alias="coll")]))
     assert code.strip() == "import collections as coll"
 
     code = Transformer().transform(

@@ -32,8 +32,8 @@ real multi-file projects". Ratings below 100 % name the concrete gap.
 | Primitive & collection types | 100 % | `int`, `float`, `str`, `bool`, `bytes`, list/dict/set/tuple | — |
 | Functions | 100 % | Defaults, named args, variadics, expression bodies, recursion, multiple returns | — |
 | Lambdas & closures | 95 % | Single-expr and block lambdas; captured-locals use `nonlocal` | Closure analysis is syntactic, not a full scope resolver |
-| Classes & OOP | 98 % | Inheritance (single/multiple), `@property`, `@staticmethod`, `@classmethod`, explicit visibility with owner-aware mangling (E307/E308), abstract-method enforcement (E309) | No metaclasses |
-| Traits / interfaces | 98 % | Compile to ABCs; multiple `implements`; traits extend traits; abstract-method enforcement at compile time | No mixin method-resolution rules |
+| Classes & OOP | 99 % | Class header fields (`class User(private name: str, mut age: int)`) driving the constructor and accessors, `extends`-only inheritance (single/multiple/dotted), `@property`, `@staticmethod`, `@classmethod`, explicit visibility with owner-aware mangling (E307/E308), abstract-method enforcement (E309) | No metaclasses |
+| Traits / interfaces | 98 % | Compile to ABCs; multiple traits via `extends A, B`; traits extend traits; abstract-method enforcement at compile time | No mixin method-resolution rules |
 | Generics | 90 % | `Box[T]` accepted; unused type parameters flagged; constraints (`[T: Bound]`) validated (`E110`); erased at runtime | No type-argument inference |
 | Enums | 95 % | Values, auto-numbering, matching on members (`Color.RED`) | No methods on enum members |
 | Control flow | 100 % | `if`/`unless`/`guard`/`match`/`while`/`until`/`loop`; labeled break/continue | — |

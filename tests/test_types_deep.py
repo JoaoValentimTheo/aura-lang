@@ -95,12 +95,23 @@ def test_function_type_string_variants():
 def test_class_type_field_and_method_inheritance():
     parent = ClassType('Base', fields={'a': IntType()},
                        methods={'m': FunctionType([], IntType())})
-    child = ClassType('Child', parent=parent)
+    child = ClassType('Child', bases=[parent])
     assert child.get_field_type('a') == IntType()
     assert child.get_method_type('m').return_type == IntType()
     assert child.get_field_type('missing') == AnyType()
     assert child.get_method_type('missing') is None
     assert str(child) == 'Child'
+
+
+def test_class_type_multiple_bases_are_searched_in_order():
+    # Aura allows multiple inheritance; the first base that defines the member
+    # wins, mirroring Python's MRO for the simple diamond-free case.
+    a = ClassType('A', methods={'m': FunctionType([], IntType())})
+    b = ClassType('B', methods={'m': FunctionType([], StrType())})
+    child = ClassType('C', bases=[a, b])
+    assert child.get_method_type('m').return_type == IntType()
+    other = ClassType('D', bases=[b, a])
+    assert other.get_method_type('m').return_type == StrType()
 
 
 def test_union_type_string_and_compatibility():
@@ -138,9 +149,8 @@ def test_infer_lambda_is_function():
     assert isinstance(TypeInference().infer(ast.LambdaExpr([], ast.IntLiteral(0))), FunctionType)
 
 
-def test_infer_elvis_and_coalesce_use_value():
+def test_infer_coalesce_uses_value_type():
     inf = TypeInference()
-    assert isinstance(inf.infer(ast.ElvisExpr(ast.IntLiteral(0), ast.IntLiteral(0))), IntType)
     assert isinstance(inf.infer(ast.CoalesceExpr(ast.IntLiteral(0), ast.IntLiteral(0))), IntType)
 
 
@@ -251,7 +261,7 @@ def test_infer_binary_bitwise_and_shift():
 
 def test_infer_binary_coalesce_strips_none():
     inf = TypeInference()
-    optional = ast.BinaryOp(ast.ElvisExpr(ast.IntLiteral(0), ast.IntLiteral(0)), '??', ast.IntLiteral(0))
+    optional = ast.BinaryOp(ast.IntLiteral(0), '??', ast.IntLiteral(0))
     assert inf.infer(optional) == IntType()
 
 
@@ -677,7 +687,6 @@ def test_check_expr_conditional_and_elvis_and_coalesce_and_safnav():
     checker._check_expr(ast.CondExpr(ast.BoolLiteral(True),
                                      ast.IntLiteral(1),
                                      ast.IntLiteral(2)))
-    checker._check_expr(ast.ElvisExpr(ast.StrLiteral('a'), ast.StrLiteral('b')))
     checker._check_expr(ast.CoalesceExpr(ast.NoneLiteral(), ast.IntLiteral(1)))
     checker._check_expr(ast.SafeNavExpr(ast.Identifier('nope'), 'field'))
     assert _codes(checker) == []

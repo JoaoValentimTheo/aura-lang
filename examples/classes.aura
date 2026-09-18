@@ -30,7 +30,7 @@ class BankAccount {
   }
 }
 
-class SavingsAccount(BankAccount) {
+class SavingsAccount extends BankAccount {
   public let rate: float = 0.05
 
   public def new(owner: str, balance: float, rate: float) {

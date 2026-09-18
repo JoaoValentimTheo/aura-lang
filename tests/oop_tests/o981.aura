@@ -4,15 +4,15 @@ class RealC35339Yf {
     public def get_val() -> int { return self.base_val; }
 }
 
-class MockC64408Ph(RealC35339Yf) {
+class MockC64408Ph extends RealC35339Yf {
     public def get_val() -> int { return self.base_val * 2; }
 }
 
-class RealC63283Pw(MockC64408Ph) {
+class RealC63283Pw extends MockC64408Ph {
     public def get_val() -> int { return self.base_val * 3; }
 }
 
-class AbstractC71533Lo(RealC63283Pw) {
+class AbstractC71533Lo extends RealC63283Pw {
     public def get_val() -> int { return self.base_val * 4; }
 }
 

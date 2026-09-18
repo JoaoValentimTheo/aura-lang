@@ -4,19 +4,19 @@ class C27479Yq {
     public def get_val() -> int { return self.base_val; }
 }
 
-class ImplC94570Iz(C27479Yq) {
+class ImplC94570Iz extends C27479Yq {
     public def get_val() -> int { return self.base_val * 2; }
 }
 
-class ConcreteC34355Dh(ImplC94570Iz) {
+class ConcreteC34355Dh extends ImplC94570Iz {
     public def get_val() -> int { return self.base_val * 3; }
 }
 
-class BaseC20946Es(ConcreteC34355Dh) {
+class BaseC20946Es extends ConcreteC34355Dh {
     public def get_val() -> int { return self.base_val * 4; }
 }
 
-class RealC73635Gv(BaseC20946Es) {
+class RealC73635Gv extends BaseC20946Es {
     public def get_val() -> int { return self.base_val * 5; }
 }
 

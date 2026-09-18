@@ -323,7 +323,7 @@ def test_invalid_function_type_annotation_is_syntax_error():
 def test_trait_signature_only_method():
     out, _, _ = run_aura(
         "trait T { def f() }\n"
-        "class C implements T { def f() { return 1 } }\n"
+        "class C extends T { def f() { return 1 } }\n"
         "print(C().f())"
     )
     assert out.strip() == "1"
@@ -332,7 +332,7 @@ def test_trait_signature_only_method():
 def test_trait_default_method_body():
     out, _, _ = run_aura(
         "trait G { def greet(name: str) -> str { return 'hi ' + name } }\n"
-        "class C implements G {}\n"
+        "class C extends G {}\n"
         "print(C().greet('bob'))"
     )
     assert out.strip() == "hi bob"
@@ -341,7 +341,7 @@ def test_trait_default_method_body():
 def test_trait_field_declaration():
     out, _, _ = run_aura(
         "trait N { name: str }\n"
-        "class P implements N { def new() { self.name = 'x' } }\n"
+        "class P extends N { def new() { self.name = 'x' } }\n"
         "print(P().name)"
     )
     assert out.strip() == "x"

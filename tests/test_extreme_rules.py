@@ -220,13 +220,13 @@ def test_e308_protected_from_outside():
 def test_e308_private_in_subclass():
     assert has_code(
         "class A { private let x: int = 1 }\n"
-        "class B(A) { public def r() -> int { return self.x } }", "E308")
+        "class B extends A { public def r() -> int { return self.x } }", "E308")
 
 
 def test_e308_protected_in_subclass_ok():
     assert not has_code(
         "class A { protected let x: int = 1 }\n"
-        "class B(A) { public def r() -> int { return self.x } }", "E308")
+        "class B extends A { public def r() -> int { return self.x } }", "E308")
 
 
 def test_e308_private_inside_own_class_ok():
@@ -243,13 +243,13 @@ def test_e308_public_anywhere_ok():
 # ============================================================================
 
 def test_e309_missing_trait_method():
-    assert has_code("trait T { public def m() -> int }\nclass C implements T { }", "E309")
+    assert has_code("trait T { public def m() -> int }\nclass C extends T { }", "E309")
 
 
 def test_e309_implemented_ok():
     assert not has_code(
         "trait T { public def m() -> int }\n"
-        "class C implements T { public def m() -> int { return 1 } }", "E309")
+        "class C extends T { public def m() -> int { return 1 } }", "E309")
 
 
 def test_e309_trait_alone_ok():

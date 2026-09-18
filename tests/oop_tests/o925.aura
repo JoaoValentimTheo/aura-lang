@@ -4,11 +4,11 @@ class ImplC97675Xe {
     public def get_val() -> int { return self.base_val; }
 }
 
-class RealC11753Mq(ImplC97675Xe) {
+class RealC11753Mq extends ImplC97675Xe {
     public def get_val() -> int { return self.base_val * 2; }
 }
 
-class C15635Ag(RealC11753Mq) {
+class C15635Ag extends RealC11753Mq {
     public def get_val() -> int { return self.base_val * 3; }
 }
 

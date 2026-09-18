@@ -5,7 +5,7 @@ class ImplC99230Go {
     public def double_value() -> int { return self.value * 2; }
 }
 
-class ImplC23005Ko(ImplC99230Go) {
+class ImplC23005Ko extends ImplC99230Go {
     public def double_value() -> int { return self.value * 3; }
 }
 

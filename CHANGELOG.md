@@ -4,6 +4,167 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.0a13] - 2026-09-17
+
+An OOP release with a full-codebase clean-up. Inheritance is now spelled with
+`extends` only, and a class can declare its fields in its header, which drives
+the constructor and generates accessors automatically. The audit also removed
+dead code, tightened syntax, made the diagnostics catalogue honest, brought the
+REPL to parity with `aura check`, and organised the examples and documentation.
+
+### Added
+
+- **Class header fields.** A class may declare its fields in the header:
+
+  ```aura
+  class User(private name: str, mut age: int = 0, public id: int = 0) { }
+  ```
+
+  Each field becomes an instance field, a constructor parameter, and a
+  getter. A `mut` field also gets a setter; an immutable field gets only a
+  getter. Visibility defaults to `private` and may be set per field
+  (`public`/`protected`/`private`). Fields may declare defaults, and a field
+  without a default may not follow one with a default. Every field needs a
+  type annotation or a default.
+
+- With a base class, the subclass header declares only its **own** fields and
+  inherited fields are passed by name; the generated constructor forwards the
+  rest to `super().__init__(**kwargs)`:
+
+  ```aura
+  class Admin extends User(email: str) { }
+
+  let a = Admin(email: "a@x.com", name: "bob")
+  ```
+
+- A manual `def new(...)` wins over the generated constructor, while the
+  accessors are still generated. A method you declare with the same name as an
+  accessor wins over the generated one.
+
+- `ClassDecl.header_fields` in the AST carries `(Parameter, visibility, mutable)`
+  per header field.
+
+- `aura test` runs each file with `--no-main`, so a `.aura` test file may drive
+  itself (`stdlib.testing` + `t.run_all()`) without declaring `main`.
+
+- `aura lint --allow-warnings` (documented, previously missing): reports style
+  issues but exits 0.
+
+- `tests/test_examples.py` guards the `examples/` tree: every file is parsed,
+  rule-checked, type-checked, transpiled to valid Python, and executed, and the
+  examples README must list every file.
+
+### Changed
+
+- **Inheritance is `extends` only.** The parenthesised base form
+  (`class Dog(Animal)`) and `implements` are no longer Aura. Both now produce a
+  pointed syntax error suggesting `extends`:
+  - `class Dog(Animal)` — `(` after a class name introduces header fields, so a
+    bare name there is an error;
+  - `class Dog implements Trait` — reported as "not Aura; extend with
+    `extends`".
+  Traits extend traits with `extends` too.
+- **Class and trait `let` fields are immutable by default**, matching `let` at
+  module and local scope. Use `let mut` (or `mut`) for a field that changes.
+  Consequently an immutable field no longer receives a setter.
+- **Accessors are generated for every instance field**, not only for
+  `private`/`protected` ones: a getter always, and a setter only for a mutable
+  field. This gives public fields a stable API without exposing storage.
+- **Type arguments use brackets only.** `List<T>` in a type annotation is now a
+  pointed syntax error (write `List[T]`), matching the rule for type
+  parameters. Previously the two spellings were both accepted.
+- **The REPL runs the full checker set.** `aura repl` now runs the
+  `TypeChecker` in addition to the structural-rule and mutability checkers, so a
+  type error (`E101`), wrong-arity call (`E105`), or incompatible operand
+  (`E108`) is reported instead of executed. The entry-point rule (`main`) stays
+  off, because a REPL chunk is a fragment. The module docstring no longer claims
+  output identical to `aura run`.
+- `docs/README.md` and `README.md` were reorganised with badges and a complete,
+  link-checked documentation index.
+- `examples/README.md` was rewritten: a numbered learning path, the full AUP
+  table, corrected style notes, and no removed syntax.
+- The exception hierarchy (`extends Error`), custom errors, and typed `catch`
+  are unchanged; only the parenthesised spelling was removed.
+- `docs/LANGUAGE.md`, `docs/LANGUAGE_PT.md`, `docs/GRAMMAR.md`, `docs/TYPES.md`,
+  `docs/TYPES_PT.md`, `docs/AUP.md` and `docs/COMPLETENESS.md` were updated for
+  the new syntax, accessor rules, and the corrected diagnostics catalogue.
+
+### Fixed
+
+- **A block lambda inside a labeled loop produced a `NameError`.** The
+  `_labeled_loop` transformer collected hoisted helper functions and then
+  deleted them without emitting the `def`, so any block lambda or block
+  expression inside `label: for/while/until/loop` referenced an undefined
+  `_aura_lambda_N`. It now emits the helpers in place, exactly as a plain block
+  does.
+- **`_prepare_entrypoint` could double-wrap `await`.** Rewriting top-level calls
+  to async functions was not idempotent; on a reused `Program` (the REPL) an
+  already-awaited call could be wrapped again. The rewrite now skips a call that
+  is already awaited.
+- **Inherited visibility was dropped for multiple inheritance.** The
+  transformer's visibility map was keyed on the whole comma-joined base string
+  (`"A, B"`), so only a single bare base ever matched and inherited `protected`
+  members were emitted unmangled (a runtime `AttributeError`). The base string
+  is now split, so every base's members are inherited.
+- **`__match_args__` used the raw Aura field name.** For a `private`/`protected`
+  field the emitted tuple named an attribute that does not exist; it now uses
+  the mangled runtime name, so positional pattern matching works.
+- **A subclass could bypass visibility with `super`.** `super.member` did not
+  resolve to a class, so a `private` parent member read through `super` was not
+  reported. `super` now resolves to the first base and is treated as internal
+  access: `protected` is allowed, `private` is rejected with `E308`.
+- **`const` members were exempt from the missing-visibility rule.** A class or
+  trait `const` without a modifier now reports `E307`, as documented.
+- **`ClassType` inheritance was dead code.** `parent` was never assigned and
+  `infer` never produced a `ClassType`, so `get_field_type`/`get_method_type`
+  never ran. `ClassType` now holds a `bases` list (multiple inheritance),
+  bases are linked in a second pass (so a later-declared base still resolves),
+  and constructor/method calls are checked through the checker's context.
+  Inherited method arity is now enforced (`E105`).
+- The type checker now resets `classes`, `functions`, `context` and `_enum_typed`
+  per program, so a reused checker (the REPL) no longer carries stale class
+  types across chunks.
+- A header field and a body field with the same name now report `E301` instead
+  of silently generating two assignments.
+- `aura version <invalid>` now reports a clean error and exits 2 instead of
+  raising an uncaught `ValueError`.
+
+### Removed
+
+- **Dead AST nodes and code paths**: `ElvisExpr` (the `?:` operator is handled
+  as a coalescing `BinaryOp`, so the node was never constructed),
+  `Import` (superseded by `ImportStmt`), `Transformer._transform_legacy`, and
+  `ClassDecl.is_static`/`is_volatile` (parsed but never emitted or checked).
+- **Diagnostic codes that were documented but never emitted**, now listed in
+  `docs/ERRORS.md` under "Removed codes" so the catalogue matches the code:
+  `E001`–`E003` (the parser raises a structured `SyntaxError` with
+  line/column instead), `E102`–`E104`/`E107` (gradual typing defers unknown
+  names to runtime), `E401`/`E402` (the CLI reports plain messages with a
+  non-zero exit), and `W101`/`W102` (unused variable/import — removed rather
+  than shipped as a half-working analysis).
+- `TypeInference`'s single-`parent` inheritance model (`ClassType.parent`),
+  replaced by `ClassType.bases`.
+- The `implements` and parenthesised-base grammar productions for classes and
+  traits, and the `<T>` type-argument spelling.
+- The `examples/tests/` and `examples/aup/tests/` empty directory scaffolding
+  (32 empty directories).
+- `session_backup.txt` is gitignored; it is a working transcript, not project
+  documentation.
+
+### Tests
+
+- `tests/test_oop_header.py` (59 tests): header grammar, defaults, visibility,
+  mutability, accessors, inheritance, diagnostics, and regressions for the
+  bugs fixed here.
+- `tests/test_examples.py` (88 cases): parses, rule-checks, type-checks,
+  transpiles, and runs every example, and asserts the examples README lists
+  every file.
+- The OOP and language corpora (`tests/oop_tests`, `tests/success_tests_aura`,
+  `examples/`) and the embedded Aura sources in the test suite were migrated
+  from the parenthesised/inherits forms to `extends`.
+
+## [0.1.0a12] - 2026-09-17
+
 ## [0.1.0a12] - 2026-09-17
 
 A feature release across the language, type checker, LSP, standard library and

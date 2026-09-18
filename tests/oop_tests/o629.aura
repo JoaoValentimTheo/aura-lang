@@ -3,11 +3,11 @@ class RealC78181Qp {
     public def render() -> str { return "base"; }
 }
 
-class ImplC90466Aw(RealC78181Qp) {
+class ImplC90466Aw extends RealC78181Qp {
     public def render() -> str { return "child1"; }
 }
 
-class ConcreteC21992Fd(RealC78181Qp) {
+class ConcreteC21992Fd extends RealC78181Qp {
     public def render() -> str { return "child2"; }
 }
 

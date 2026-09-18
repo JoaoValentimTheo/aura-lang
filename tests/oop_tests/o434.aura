@@ -5,7 +5,7 @@ class BaseC73240Zl {
     public def double_value() -> int { return self.value * 2; }
 }
 
-class C81585Lt(BaseC73240Zl) {
+class C81585Lt extends BaseC73240Zl {
     public def double_value() -> int { return self.value * 3; }
 }
 

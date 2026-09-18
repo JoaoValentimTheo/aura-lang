@@ -21,7 +21,7 @@ class Shape {
   }
 }
 
-class Rectangle(Shape) {
+class Rectangle extends Shape {
   public let width: float = 0.0
   public let height: float = 0.0
 

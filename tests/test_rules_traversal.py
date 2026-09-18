@@ -60,7 +60,7 @@ class TestRuleTraversal:
             'trait Shape {\n'
             '  public def area() -> int\n'
             '}\n'
-            'class Square implements Shape {\n'
+            'class Square extends Shape {\n'
             '  public def area() -> int { return 4 }\n'
             '}\n')
         assert errors == []
@@ -224,10 +224,10 @@ class TestAbstractResolution:
             'trait Root {\n'
             '  public def run() -> int\n'
             '}\n'
-            'class Mid implements Root {\n'
+            'class Mid extends Root {\n'
             '  public def run() -> int { return 1 }\n'
             '}\n'
-            'class Leaf(Mid) {\n'
+            'class Leaf extends Mid {\n'
             '}\n'
             'def f() -> int { return 1 }\n')
         assert errors == []
@@ -237,10 +237,10 @@ class TestAbstractResolution:
             'trait Root {\n'
             '  public def run() -> int\n'
             '}\n'
-            'class Mid implements Root {\n'
+            'class Mid extends Root {\n'
             '  public def run() -> int { return 1 }\n'
             '}\n'
-            'class Broken implements Root {\n'
+            'class Broken extends Root {\n'
             '}\n'
             'def f() -> int { return 1 }\n')
         assert any('E309' in e for e in errors)
@@ -313,7 +313,7 @@ class TestAbstractResolution:
             'class Base {\n'
             '  private let secret: int = 1\n'
             '}\n'
-            'class Child(Base) {\n'
+            'class Child extends Base {\n'
             '  public def peek(self) -> int { return self.secret }\n'
             '}\n'
             'def f() -> int { return 1 }\n')

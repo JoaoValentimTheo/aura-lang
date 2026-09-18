@@ -126,9 +126,9 @@ def test_deeply_nested_lists():
 def test_four_level_inheritance_chain():
     out = run(
         "class A { public def v() -> int { return 1 } }\n"
-        "class B(A) { public def v() -> int { return 2 } }\n"
-        "class C(B) { public def v() -> int { return 3 } }\n"
-        "class D(C) { public def v() -> int { return super.v() + 10 } }\n"
+        "class B extends A { public def v() -> int { return 2 } }\n"
+        "class C extends B { public def v() -> int { return 3 } }\n"
+        "class D extends C { public def v() -> int { return super.v() + 10 } }\n"
         "def main() { print(D().v()) }"
     )
     assert out == "13\n"
@@ -138,7 +138,7 @@ def test_multiple_inheritance_method_resolution():
     out = run(
         "class A { public def a() -> str { return 'a' } }\n"
         "class B { public def b() -> str { return 'b' } }\n"
-        "class C(A, B) { }\n"
+        "class C extends A, B { }\n"
         "def main() { let c = C()\n print(c.a() + c.b()) }"
     )
     assert out == "ab\n"
@@ -148,7 +148,7 @@ def test_super_constructor_chain():
     out = run(
         "class A {\n  public let x: int = 0\n"
         "  public def new(x: int) { self.x = x }\n}\n"
-        "class B(A) {\n  public let y: int = 0\n"
+        "class B extends A {\n  public let y: int = 0\n"
         "  public def new(x: int, y: int) { super.new(x)\n self.y = y }\n}\n"
         "def main() { let b = B(1, 2)\n print(b.x, b.y) }"
     )
@@ -158,7 +158,7 @@ def test_super_constructor_chain():
 def test_inherited_field_default():
     out = run(
         "class Base { public let kind: str = 'base' }\n"
-        "class Derived(Base) { public let extra: int = 7 }\n"
+        "class Derived extends Base { public let extra: int = 7 }\n"
         "def main() { let d = Derived()\n print(d.kind, d.extra) }"
     )
     assert out == "base 7\n"
@@ -201,17 +201,25 @@ def test_classmethod_factory():
 
 def test_private_field_via_accessors():
     out = run(
-        "class Account {\n  private let balance: float = 0.0\n}\n"
+        "class Account {\n  private let mut balance: float = 0.0\n}\n"
         "def main() {\n  let a = Account()\n"
         "  a.set_balance(100.0)\n  print(a.get_balance()) }"
     )
     assert out == "100.0\n"
 
 
+def test_private_immutable_field_has_no_setter():
+    # A plain `let` field is immutable: it gets a getter but never a setter.
+    code = transpile(
+        "class Account {\n  private let balance: float = 0.0\n}\n")
+    assert "def get_balance" in code
+    assert "def set_balance" not in code
+
+
 def test_protected_accessible_in_subclass():
     out = run(
         "class A { protected let x: int = 5\n  public def read() -> int { return self.x } }\n"
-        "class B(A) { public def double() -> int { return self.x * 2 } }\n"
+        "class B extends A { public def double() -> int { return self.x * 2 } }\n"
         "def main() { print(B().double()) }"
     )
     assert out == "10\n"
@@ -220,7 +228,7 @@ def test_protected_accessible_in_subclass():
 def test_abstract_method_enforced_then_implemented():
     out = run(
         "trait Shape { public def area() -> float }\n"
-        "class Square implements Shape {\n  public let s: float = 3.0\n"
+        "class Square extends Shape {\n  public let s: float = 3.0\n"
         "  public def area() -> float { return self.s * self.s }\n}\n"
         "def main() { print(Square().area()) }"
     )
@@ -230,7 +238,7 @@ def test_abstract_method_enforced_then_implemented():
 def test_trait_default_method():
     out = run(
         "trait Greeter { public def greet(n: str) -> str { return 'hi ' + n } }\n"
-        "class P implements Greeter { }\n"
+        "class P extends Greeter { }\n"
         "def main() { print(P().greet('bob')) }"
     )
     assert out == "hi bob\n"
@@ -239,8 +247,8 @@ def test_trait_default_method():
 def test_trait_inheritance_chain():
     out = run(
         "trait A { public def a() -> str }\n"
-        "trait B implements A { public def b() -> str }\n"
-        "class C implements B {\n"
+        "trait B extends A { public def b() -> str }\n"
+        "class C extends B {\n"
         "  public def a() -> str { return 'a' }\n"
         "  public def b() -> str { return 'b' }\n}\n"
         "def main() { let c = C()\n print(c.a() + c.b()) }"
@@ -355,8 +363,8 @@ def test_match_guards():
 def test_polymorphism_via_base_list():
     out = run(
         "class Shape { public def area() -> float { return 0.0 } }\n"
-        "class Sq(Shape) { public let s: float = 2.0\n public def area() -> float { return self.s * self.s } }\n"
-        "class Ci(Shape) { public let r: float = 1.0\n public def area() -> float { return 3.0 * self.r * self.r } }\n"
+        "class Sq extends Shape { public let s: float = 2.0\n public def area() -> float { return self.s * self.s } }\n"
+        "class Ci extends Shape { public let r: float = 1.0\n public def area() -> float { return 3.0 * self.r * self.r } }\n"
         "def main() {\n  let shapes = [Sq(), Ci()]\n  let mut t = 0.0\n"
         "  for s in shapes { t += s.area() }\n  print(t)\n}"
     )

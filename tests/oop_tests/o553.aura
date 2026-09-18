@@ -3,11 +3,11 @@ class ConcreteC22445Kg {
     public def process(x: int) -> int { return x; }
 }
 
-class ConcreteC66470Mz(ConcreteC22445Kg) {
+class ConcreteC66470Mz extends ConcreteC22445Kg {
     public def process(x: int) -> int { return x * 2; }
 }
 
-class BaseC35153Ep(ConcreteC22445Kg) {
+class BaseC35153Ep extends ConcreteC22445Kg {
     public def process(x: int) -> int { return x + 10; }
 }
 

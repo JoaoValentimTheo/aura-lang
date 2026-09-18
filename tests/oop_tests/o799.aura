@@ -4,11 +4,11 @@ class AbstractC62012Lb {
     public def get_val() -> int { return self.base_val; }
 }
 
-class BaseC75983Ss(AbstractC62012Lb) {
+class BaseC75983Ss extends AbstractC62012Lb {
     public def get_val() -> int { return self.base_val * 2; }
 }
 
-class ImplC84674Un(BaseC75983Ss) {
+class ImplC84674Un extends BaseC75983Ss {
     public def get_val() -> int { return self.base_val * 3; }
 }
 

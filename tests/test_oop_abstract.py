@@ -58,7 +58,7 @@ def run_aura(source):
 def test_unimplemented_trait_method_is_rejected():
     src = (
         "trait Shape { public def area() -> float }\n"
-        "class Square implements Shape { public let s: float = 2.0 }"
+        "class Square extends Shape { public let s: float = 2.0 }"
     )
     assert rule_codes(src) == ["[E309]"]
 
@@ -66,7 +66,7 @@ def test_unimplemented_trait_method_is_rejected():
 def test_implemented_trait_method_is_accepted():
     src = (
         "trait Shape { public def area() -> float }\n"
-        "class Square implements Shape {\n"
+        "class Square extends Shape {\n"
         "  public let s: float = 2.0\n"
         "  public def area() -> float { return self.s * self.s }\n"
         "}"
@@ -77,7 +77,7 @@ def test_implemented_trait_method_is_accepted():
 def test_error_names_class_method_and_trait():
     src = (
         "trait Shape { public def area() -> float }\n"
-        "class Square implements Shape { public let s: float = 2.0 }"
+        "class Square extends Shape { public let s: float = 2.0 }"
     )
     message = rule_errors(src)[0]
     assert "'Square'" in message
@@ -93,7 +93,7 @@ def test_trait_itself_is_not_required_to_implement():
 def test_trait_with_body_is_not_abstract():
     src = (
         "trait Greeter { public def greet() -> str { return 'hi' } }\n"
-        "class Person implements Greeter { }"
+        "class Person extends Greeter { }"
     )
     assert rule_codes(src) == []
 
@@ -102,7 +102,7 @@ def test_multiple_traits_all_required():
     src = (
         "trait A { public def a() -> int }\n"
         "trait B { public def b() -> int }\n"
-        "class C implements A, B { public def a() -> int { return 1 } }"
+        "class C extends A, B { public def a() -> int { return 1 } }"
     )
     assert rule_codes(src) == ["[E309]"]
 
@@ -111,7 +111,7 @@ def test_multiple_traits_all_implemented():
     src = (
         "trait A { public def a() -> int }\n"
         "trait B { public def b() -> int }\n"
-        "class C implements A, B {\n"
+        "class C extends A, B {\n"
         "  public def a() -> int { return 1 }\n"
         "  public def b() -> int { return 2 }\n"
         "}"
@@ -122,10 +122,10 @@ def test_multiple_traits_all_implemented():
 def test_inherited_implementation_satisfies_trait():
     src = (
         "trait Shape { public def area() -> float }\n"
-        "class Base implements Shape {\n"
+        "class Base extends Shape {\n"
         "  public def area() -> float { return 0.0 }\n"
         "}\n"
-        "class Circle(Base) { }"
+        "class Circle extends Base { }"
     )
     assert rule_codes(src) == []
 
@@ -133,10 +133,10 @@ def test_inherited_implementation_satisfies_trait():
 def test_override_still_satisfies_trait():
     src = (
         "trait Shape { public def area() -> float }\n"
-        "class Base implements Shape {\n"
+        "class Base extends Shape {\n"
         "  public def area() -> float { return 0.0 }\n"
         "}\n"
-        "class Circle(Base) {\n"
+        "class Circle extends Base {\n"
         "  public def area() -> float { return 1.0 }\n"
         "}"
     )
@@ -146,7 +146,7 @@ def test_override_still_satisfies_trait():
 def test_runtime_abstract_instantiation_fails():
     src = (
         "trait Shape { public def area() -> float }\n"
-        "class Square implements Shape { public let s: float = 2.0 }\n"
+        "class Square extends Shape { public let s: float = 2.0 }\n"
         "let q = Square()"
     )
     with pytest.raises(TypeError):
@@ -154,16 +154,16 @@ def test_runtime_abstract_instantiation_fails():
 
 
 # ============================================================================
-# Trait inheritance: `trait B implements A` and `trait B(A)`
+# Trait inheritance: `trait B extends A` and `trait B extends A`
 # ============================================================================
 
-def test_trait_extends_trait_implements_keyword():
+def test_trait_extends_trait_keyword():
     src = (
         "trait Greeter { public def greet() -> str }\n"
-        "trait Loud implements Greeter {\n"
+        "trait Loud extends Greeter {\n"
         "  public def shout() -> str\n"
         "}\n"
-        "class Person implements Loud {\n"
+        "class Person extends Loud {\n"
         "  public def greet() -> str { return 'hi' }\n"
         "  public def shout() -> str { return 'HEY' }\n"
         "}"
@@ -174,8 +174,8 @@ def test_trait_extends_trait_implements_keyword():
 def test_trait_extends_trait_parenthesised():
     src = (
         "trait Greeter { public def greet() -> str }\n"
-        "trait Loud(Greeter) { public def shout() -> str }\n"
-        "class Person implements Loud {\n"
+        "trait Loud extends Greeter { public def shout() -> str }\n"
+        "class Person extends Loud {\n"
         "  public def greet() -> str { return 'hi' }\n"
         "  public def shout() -> str { return 'HEY' }\n"
         "}"
@@ -186,8 +186,8 @@ def test_trait_extends_trait_parenthesised():
 def test_trait_inheritance_requires_parent_methods():
     src = (
         "trait Greeter { public def greet() -> str }\n"
-        "trait Loud implements Greeter { public def shout() -> str }\n"
-        "class Person implements Loud {\n"
+        "trait Loud extends Greeter { public def shout() -> str }\n"
+        "class Person extends Loud {\n"
         "  public def shout() -> str { return 'HEY' }\n"
         "}"
     )
@@ -197,8 +197,8 @@ def test_trait_inheritance_requires_parent_methods():
 def test_trait_inheritance_runtime_behaviour():
     out, _ = run_aura(
         "trait Greeter { public def greet() -> str }\n"
-        "trait Loud(Greeter) { public def shout() -> str }\n"
-        "class Person implements Loud {\n"
+        "trait Loud extends Greeter { public def shout() -> str }\n"
+        "class Person extends Loud {\n"
         "  public def greet() -> str { return 'hi' }\n"
         "  public def shout() -> str { return 'HEY' }\n"
         "}\n"
@@ -210,9 +210,9 @@ def test_trait_inheritance_runtime_behaviour():
 def test_trait_inheritance_chained_three_levels():
     src = (
         "trait A { public def a() -> int }\n"
-        "trait B implements A { public def b() -> int }\n"
-        "trait C implements B { public def c() -> int }\n"
-        "class Impl implements C {\n"
+        "trait B extends A { public def b() -> int }\n"
+        "trait C extends B { public def c() -> int }\n"
+        "class Impl extends C {\n"
         "  public def a() -> int { return 1 }\n"
         "  public def b() -> int { return 2 }\n"
         "  public def c() -> int { return 3 }\n"
@@ -224,9 +224,9 @@ def test_trait_inheritance_chained_three_levels():
 def test_trait_inheritance_chain_missing_leaf_method():
     src = (
         "trait A { public def a() -> int }\n"
-        "trait B implements A { public def b() -> int }\n"
-        "trait C implements B { public def c() -> int }\n"
-        "class Impl implements C {\n"
+        "trait B extends A { public def b() -> int }\n"
+        "trait C extends B { public def c() -> int }\n"
+        "class Impl extends C {\n"
         "  public def a() -> int { return 1 }\n"
         "  public def b() -> int { return 2 }\n"
         "}"

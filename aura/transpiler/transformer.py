@@ -28,7 +28,7 @@ class Transformer:
     def transform(self, node):
         if isinstance(node, Program):
             return self._transform_program(node)
-        elif isinstance(node, (Import, ImportStmt, FromImport)):
+        elif isinstance(node, (ImportStmt, FromImport)):
             return self.stmt_transformer.transform(node)
         elif isinstance(node, Module):
             return self._transform_module(node)
@@ -37,10 +37,9 @@ class Transformer:
         elif isinstance(node, Expr):
             return self.expr_transformer.transform(node)
         else:
-            try:
-                return self.expr_transformer.transform(node)
-            except NotImplementedError:
-                return self._transform_legacy(node)
+            # Let the expression transformer raise its NotImplementedError so
+            # the failing node type is named in the message.
+            return self.expr_transformer.transform(node)
 
     def _transform_program(self, program):
         expr = self.expr_transformer
@@ -117,12 +116,4 @@ class Transformer:
     def _transform_module(self, node):
         return self.stmt_transformer.transform(node)
 
-    def _transform_legacy(self, node):
-        if hasattr(node, 'value') and isinstance(node.value, (Identifier, IntLiteral, FloatLiteral, StrLiteral)):
-            return self.expr_transformer.transform(node.value)
-        if isinstance(node, Identifier):
-            return self.expr_transformer.transform(node)
-        if isinstance(node, (IntLiteral, FloatLiteral, StrLiteral)):
-            return self.expr_transformer.transform(node)
-        raise NotImplementedError(f"Transformer for {node.__class__.__name__} not implemented")
 

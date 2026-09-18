@@ -103,7 +103,7 @@ def test_external_protected_access_is_rejected():
 def test_subclass_private_access_is_rejected():
     assert rule_codes(
         "class B { private let x = 1 }\n"
-        "class D(B) { public def m() { return self.x } }"
+        "class D extends B { public def m() { return self.x } }"
     ) == ["[E308]"]
 
 
@@ -116,7 +116,7 @@ def test_internal_private_access_is_accepted():
 def test_subclass_protected_access_is_accepted():
     assert rule_errors(
         "class B { protected let x = 1 }\n"
-        "class D(B) { public def m() { return self.x } }"
+        "class D extends B { public def m() { return self.x } }"
     ) == []
 
 
@@ -140,8 +140,8 @@ def test_accessor_call_is_accepted():
 def test_private_and_protected_get_auto_accessors():
     out, code = run_aura(
         "class C {\n"
-        "  private let x = 5\n"
-        "  protected let y = 6\n"
+        "  private let mut x = 5\n"
+        "  protected let mut y = 6\n"
         "  public let z = 7\n"
         "}\n"
         "let c = C()\n"
@@ -152,8 +152,9 @@ def test_private_and_protected_get_auto_accessors():
     assert out.strip() == "10 20 7"
     assert "def get_x" in code and "def set_x" in code
     assert "def get_y" in code and "def set_y" in code
-    # Public fields get no accessors.
-    assert "def get_z" not in code and "def set_z" not in code
+    # Every field gets a getter. `let` fields are immutable, so no setter.
+    assert "def get_z" in code
+    assert "def set_z" not in code
 
 
 def test_manual_accessor_override_wins():
@@ -177,7 +178,7 @@ def test_subclass_reads_inherited_private_via_getter():
         "  private let secret = 42\n"
         "  public def get_secret() { return self.secret }\n"
         "}\n"
-        "class Derived(Base) {\n"
+        "class Derived extends Base {\n"
         "  public def reveal() { return self.secret }\n"
         "}\n"
         "let d = Derived()\n"
@@ -192,7 +193,7 @@ def test_subclass_private_keeps_its_own_owner():
         "  private let b = 1\n"
         "  public def get_b() { return self.b }\n"
         "}\n"
-        "class Derived(Base) {\n"
+        "class Derived extends Base {\n"
         "  private let d = 2\n"
         "  public def get_d() { return self.d }\n"
         "}\n"
@@ -212,7 +213,7 @@ def test_protected_is_shared_with_subclass_at_runtime():
         "  protected let shared = 10\n"
         "  public def get_shared() { return self.shared }\n"
         "}\n"
-        "class Derived(Base) {\n"
+        "class Derived extends Base {\n"
         "  public def bump() { self.shared = self.shared + 1 }\n"
         "}\n"
         "let d = Derived()\n"

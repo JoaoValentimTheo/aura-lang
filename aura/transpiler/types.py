@@ -1,6 +1,6 @@
 """Complete type system with inference, checking, and narrowing for Aura."""
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 # AST nodes are imported once at module scope (not per visited node) to keep the
 # checker's hot paths fast.
@@ -18,7 +18,6 @@ from aura.transpiler.ast import (
     ConstDecl,
     ConstructorPattern,
     DictLiteral,
-    ElvisExpr,
     EnumDecl,
     ExprStmt,
     FloatLiteral,
@@ -209,7 +208,9 @@ class ClassType(Type):
     name: str
     fields: dict[str, Type] = field(default_factory=dict)
     methods: dict[str, FunctionType] = field(default_factory=dict)
-    parent: Optional['ClassType'] = None
+    # Direct base classes. Aura allows multiple inheritance (`extends A, B`),
+    # so this is a list, not a single parent. Populated during registration.
+    bases: list['ClassType'] = field(default_factory=list)
     type_params: list[str] = field(default_factory=list)
 
     def __str__(self):
@@ -225,19 +226,23 @@ class ClassType(Type):
         return hash(('ClassType', self.name))
 
     def get_field_type(self, field_name: str) -> Type:
-        """Get field type with inheritance."""
+        """Get field type, searching the base classes' fields too."""
         if field_name in self.fields:
             return self.fields[field_name]
-        if self.parent:
-            return self.parent.get_field_type(field_name)
+        for base in self.bases:
+            found = base.get_field_type(field_name)
+            if not isinstance(found, AnyType):
+                return found
         return AnyType()
 
     def get_method_type(self, method_name: str) -> FunctionType | None:
-        """Get method type with inheritance."""
+        """Get method type, searching the base classes' methods too."""
         if method_name in self.methods:
             return self.methods[method_name]
-        if self.parent:
-            return self.parent.get_method_type(method_name)
+        for base in self.bases:
+            found = base.get_method_type(method_name)
+            if found is not None:
+                return found
         return None
 
 @dataclass(eq=False)
@@ -352,7 +357,7 @@ class TypeInference:
             return self._infer_binary_op(node)
         if isinstance(node, UnaryOp):
             return self._infer_unary_op(node)
-        if isinstance(node, (ElvisExpr, CoalesceExpr)):
+        if isinstance(node, CoalesceExpr):
             return self.infer(node.value)
         if isinstance(node, CondExpr):
             return self._union(self.infer(node.true_expr), self.infer(node.false_expr))
@@ -586,13 +591,22 @@ class TypeChecker:
         self.errors = []
         self.diagnostics = []
         self._current_loc = None
+        # Reset per-program state so a reused checker (the REPL) does not carry
+        # stale class types from a previous chunk.
+        self.classes = {}
+        self.functions = {}
+        self.context = {}
         # Names usable as a generic constraint. Collected up front so a
         # constraint may reference a class declared later in the file.
         self._declared_types = self._collect_declared_types(program)
         self._enum_decls = self._collect_enum_decls(program)
+        self._enum_typed = {}
         try:
             for stmt in getattr(program, 'statements', []):
                 self.visit(stmt)
+            # Resolve inheritance once every class is registered, so a base
+            # declared later in the file is still linked.
+            self._link_bases(program)
         except TypeError as exc:
             self.errors.append(str(exc))
         return len(self.errors) == 0
@@ -877,6 +891,20 @@ class TypeChecker:
                 class_type.fields[item.name] = field_type
             elif isinstance(item, Method):
                 class_type.methods[item.name] = self._method_to_function_type(item)
+        # Header fields are instance fields too, so they participate in
+        # inherited-field lookups exactly like body-declared fields.
+        for entry in getattr(node, 'header_fields', None) or []:
+            param, _visibility, _mutable = entry
+            field_type = self._parse_type_annotation(param.type_annotation) \
+                if param.type_annotation is not None else AnyType()
+            class_type.fields[param.name] = field_type
+        # Resolve base classes. Bases are resolved against `self.classes`,
+        # which may not yet contain a class declared later in the file, so this
+        # runs again after the whole program is registered (see `_link_bases`).
+        for base_name in self._base_class_names(node):
+            base_type = self.classes.get(base_name)
+            if base_type is not None:
+                class_type.bases.append(base_type)
         self.classes[node.name] = class_type
 
         # Every declared type parameter should be referenced, otherwise it is
@@ -904,6 +932,53 @@ class TypeChecker:
                 self._check_function_decl(item)
         self.context = old_context
         self._type_params = old_type_params
+
+    @staticmethod
+    def _base_class_names(node) -> list:
+        """Split a ClassDecl/TraitDecl `base_class` string into bare names.
+
+        Dotted bases (`pkg.Base`) contribute their final component, which is
+        the name registered in `self.classes`.
+        """
+        base_class = getattr(node, 'base_class', None)
+        if not base_class:
+            return []
+        names = []
+        for part in str(base_class).split(','):
+            name = part.strip()
+            if name:
+                names.append(name.split('.')[-1])
+        return names
+
+    def _link_bases(self, program):
+        """Re-resolve every class's bases now that all classes are registered.
+
+        `_check_class_decl` resolves bases as it walks, so a base declared later
+        in the file would be missing. This second pass fills those in.
+        """
+        for node in getattr(program, 'statements', []):
+            self._link_bases_in(node)
+
+    def _link_bases_in(self, node):
+        if node is None:
+            return
+        if isinstance(node, (list, tuple)):
+            for item in node:
+                self._link_bases_in(item)
+            return
+        if isinstance(node, ClassDecl):
+            class_type = self.classes.get(node.name)
+            if class_type is not None:
+                resolved = []
+                for base_name in self._base_class_names(node):
+                    base_type = self.classes.get(base_name)
+                    if base_type is not None and base_type not in resolved:
+                        resolved.append(base_type)
+                class_type.bases = resolved
+        if isinstance(node, Node):
+            for value in vars(node).values():
+                if isinstance(value, (Node, list, tuple)):
+                    self._link_bases_in(value)
 
     @staticmethod
     def _type_variables_in(tp) -> set:
@@ -1110,6 +1185,17 @@ class TypeChecker:
         if base in self._enum_decls:
             self._enum_typed[name] = base
 
+    def _expr_type(self, expr):
+        """Resolve an expression's type, preferring the checker context.
+
+        ``TypeInference`` is context-free, so a bare variable infers as ``Any``
+        even when its declared type is a class. The checker's ``context`` holds
+        the real type, which inheritance-aware method resolution needs.
+        """
+        if isinstance(expr, Identifier) and expr.name in self.context:
+            return self.context[expr.name]
+        return self.inference.infer(expr)
+
     def _subject_type(self, expr):
         """Resolve the type of a match subject, preferring the checker context.
 
@@ -1228,7 +1314,7 @@ class TypeChecker:
             self._check_condition(node.condition, "ternary")
             self._check_expr(node.true_expr)
             self._check_expr(node.false_expr)
-        elif isinstance(node, (ElvisExpr, CoalesceExpr)):
+        elif isinstance(node, CoalesceExpr):
             self._check_expr(node.value)
             self._check_expr(node.default)
         elif isinstance(node, SafeNavExpr):
@@ -1321,8 +1407,11 @@ class TypeChecker:
             func_type = self.functions[node.func.name]
             func_name = node.func.name
         elif isinstance(node.func, MemberExpr):
-            # Resolve a method on a known class instance, if we can infer it.
-            obj_type = self.inference.infer(node.func.obj)
+            # Resolve a method on a known class instance. The checker's
+            # `context` holds the declared/param type (which can be a
+            # ClassType); the context-free inference would return Any here and
+            # the inheritance lookup would never run.
+            obj_type = self._expr_type(node.func.obj)
             if isinstance(obj_type, ClassType):
                 func_type = obj_type.get_method_type(node.func.member)
                 func_name = node.func.member

@@ -5,7 +5,7 @@ class AbstractC28362Em {
     public def double_value() -> int { return self.value * 2; }
 }
 
-class C58421In(AbstractC28362Em) {
+class C58421In extends AbstractC28362Em {
     public def double_value() -> int { return self.value * 3; }
 }
 

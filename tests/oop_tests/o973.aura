@@ -3,11 +3,11 @@ class C30474Sz {
     public def process(x: int) -> int { return x; }
 }
 
-class C60989Yu(C30474Sz) {
+class C60989Yu extends C30474Sz {
     public def process(x: int) -> int { return x * 2; }
 }
 
-class C56494Uu(C30474Sz) {
+class C56494Uu extends C30474Sz {
     public def process(x: int) -> int { return x + 10; }
 }
 

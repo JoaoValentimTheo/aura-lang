@@ -3,11 +3,11 @@ class MockC73891Vk {
     public def render() -> str { return "base"; }
 }
 
-class AbstractC52553Br(MockC73891Vk) {
+class AbstractC52553Br extends MockC73891Vk {
     public def render() -> str { return "child1"; }
 }
 
-class ConcreteC98552Je(MockC73891Vk) {
+class ConcreteC98552Je extends MockC73891Vk {
     public def render() -> str { return "child2"; }
 }
 

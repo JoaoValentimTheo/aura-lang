@@ -3,11 +3,11 @@ class AbstractC16872Al {
     public def render() -> str { return "base"; }
 }
 
-class BaseC91106Hp(AbstractC16872Al) {
+class BaseC91106Hp extends AbstractC16872Al {
     public def render() -> str { return "child1"; }
 }
 
-class RealC11803Pt(AbstractC16872Al) {
+class RealC11803Pt extends AbstractC16872Al {
     public def render() -> str { return "child2"; }
 }
 

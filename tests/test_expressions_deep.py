@@ -268,8 +268,6 @@ def test_transform_cond_elvis_coalesce_nodes():
     t = xf()
     assert t.transform(ast.CondExpr(ast.BoolLiteral(True), ast.IntLiteral(1),
                                     ast.IntLiteral(0))) == '(1 if True else 0)'
-    assert t.transform(ast.ElvisExpr(ast.Identifier('a'),
-                                     ast.IntLiteral(0))) == '(a if a else 0)'
     assert t.transform(ast.CoalesceExpr(ast.Identifier('a'),
                                         ast.IntLiteral(0))) == '(a if a is not None else 0)'
 

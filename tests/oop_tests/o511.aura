@@ -3,11 +3,11 @@ class RealC83781Zq {
     public def process(x: int) -> int { return x; }
 }
 
-class BaseC35367Ek(RealC83781Zq) {
+class BaseC35367Ek extends RealC83781Zq {
     public def process(x: int) -> int { return x * 2; }
 }
 
-class AbstractC19300Wc(RealC83781Zq) {
+class AbstractC19300Wc extends RealC83781Zq {
     public def process(x: int) -> int { return x + 10; }
 }
 

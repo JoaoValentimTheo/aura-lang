@@ -1,48 +1,70 @@
 # Aura Examples
 
-Runnable Aura programs demonstrating the language.
-
-| File | What it shows |
-|------|---------------|
-| `hello.aura` | Basic output |
-| `fibonacci.aura` | Loops and variables |
-| `prime_checker.aura` | Functions, conditionals, loops |
-| `classes.aura` | Classes, constructors, inheritance, properties |
-| `functional.aura` | Lambdas, pipe operator, comprehensions |
-| `pattern_matching.aura` | `match` with guards and destructuring |
-| `error_handling.aura` | `try`/`catch`/`finally`, `guard`, `throw` |
-| `macros.aura` | Built-in decorators (`@debug`, `@timeit`, `@memoize`, `@cache`) |
-| `tour.aura` | A tour of the whole language |
-
-Run any example with:
+Runnable Aura programs demonstrating the language. Every file here passes
+`aura check` and runs with `aura run`.
 
 ```bash
-python3 main.py run examples/tour.aura
+aura run examples/tour.aura
 ```
+
+## Learning path
+
+Start here and follow the order; each file introduces one idea.
+
+| # | File | What it shows |
+|---|------|---------------|
+| 1 | `hello.aura` | The smallest program: `main` and `print` |
+| 2 | `fibonacci.aura` | Loops and mutable bindings (`let mut`) |
+| 3 | `prime_checker.aura` | Functions, conditionals, and comprehensions |
+| 4 | `functional.aura` | Lambdas, the pipe operator `\|>`, comprehensions, closures |
+| 5 | `pattern_matching.aura` | `match` with guards, literals, and list destructuring |
+| 6 | `error_handling.aura` | `try`/`catch`/`finally`, typed catches, `guard`, `throw`, `assert` |
+| 7 | `classes.aura` | Classes, constructors, `extends`, `@property`, visibility |
+| 8 | `macros.aura` | Built-in decorators (`@debug`, `@timeit`, `@memoize`, `@cache`) |
+| 9 | `crypto.aura` | Hashing, HMAC, HKDF, and post-quantum KEM/signatures via `stdlib.crypto` |
+| 10 | `python_interop.aura` | Calling Python from Aura (`import os`, `math`, `json`, the `python` bridge) |
+| 11 | `tour.aura` | A single-file tour of the whole language |
+
+## Patterns (AUP)
+
+`aup/` contains the Aura Patterns — idiomatic solutions to recurring problems,
+each explained in [docs/AUP.md](../docs/AUP.md).
+
+| File | Pattern |
+|------|---------|
+| `aup/option.aura` | Representing an optional result with `T \| none` |
+| `aup/error_handling.aura` | Typed catches with try-as-an-expression |
+| `aup/builder.aura` | Builder with a chainable API |
+| `aup/strategy.aura` | Strategy selected from a trait |
+| `aup/pipeline.aura` | Data pipeline with `\|>` |
+| `aup/memoize.aura` | `@memoize` (unbounded) vs `@cache(64)` (bounded LRU) |
+| `aup/observer.aura` | Observer using a dict of callback lists |
+| `aup/resource.aura` | Resource management with `with` |
+| `aup/worker_pool.aura` | Concurrency with `threading.map_concurrent` |
+| `aup/hybrid_crypto.aura` | Hybrid post-quantum handshake |
 
 ## Style notes
 
-Aura follows a single, explicit syntax (see `docs/GRAMMAR.md`):
+Aura follows a single, explicit syntax (see [docs/GRAMMAR.md](../docs/GRAMMAR.md)):
 
 - Functions use `def`; `fn` does not exist.
 - Constructors use `new`; `init` does not exist.
-- Inheritance uses parentheses: `class Dog(Animal) { ... }`.
-- Generics use square brackets: `class Box[T] { ... }`; `<T>` does not exist.
+- Inheritance uses `extends`: `class Dog extends Animal { ... }`. The
+  parenthesised form (`class Dog(Animal)`) and `implements` are not Aura.
+- Class fields may be declared in the header:
+  `class User(private name: str, mut age: int = 0) { ... }`.
+- A `let` field is immutable; use `let mut` when a field must change.
+- Generics use square brackets: `class Box[T] { ... }`, `List[Int]`; `<T>` does
+  not exist.
 - Logical negation is `not`; `!` does not exist.
 - `and`/`or` are the boolean operators; `&&`/`||` do not exist.
 - The null literal is `none`; `null` does not exist.
 - Visibility modifiers come before the declaration: `private let x`, not
-  `let private x`.
+  `let private x`. Every class/trait member needs one.
 - `unless`, `until`, `loop` and `guard` are first-class statements.
 
-## Testing
+## Verifying the examples
 
-The project is verified by a large automated test suite:
-
-- `tests/test_syntax_complete.py` - every syntax construct, end to end
-- `tests/test_syntax_standard.py` - canonical syntax and removed spellings
-- `tests/test_oop_complete.py` - the full object system
-- `tests/test_aura_corpora.py` - runs the generated `.aura` corpora
-- `tests/test_massive_aura_v2.py` - stochastic fuzzing (200 seeds by default;
-  set `AURA_FUZZ_SEEDS` for a longer campaign)
-- `tests/test_runtime.py` and `tests/test_regressions.py` - end-to-end checks
+The whole `examples/` tree is checked by the test suite
+(`tests/test_examples.py`), which parses, type-checks, transpiles, and runs each
+file so a stale example cannot slip through.

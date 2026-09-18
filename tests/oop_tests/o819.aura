@@ -3,11 +3,11 @@ class BaseC66408Oe {
     public def process(x: int) -> int { return x; }
 }
 
-class ConcreteC47558Ff(BaseC66408Oe) {
+class ConcreteC47558Ff extends BaseC66408Oe {
     public def process(x: int) -> int { return x * 2; }
 }
 
-class RealC78166Pr(BaseC66408Oe) {
+class RealC78166Pr extends BaseC66408Oe {
     public def process(x: int) -> int { return x + 10; }
 }
 

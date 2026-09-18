@@ -148,7 +148,7 @@ def test_protected_field_uses_single_underscore(field):
 def test_private_field_roundtrips_through_accessor(field, value):
     src = (
         f"class Box {{\n"
-        f"  private let {field}: int = 0\n"
+        f"  private let mut {field}: int = 0\n"
         f"}}\n"
         f"def main() {{\n"
         f"  let b = Box()\n"
@@ -173,7 +173,7 @@ def test_inheritance_chain_depth_is_valid_python(depth):
     parts = ["class C0 { public def v() -> int { return 0 } }"]
     for i in range(1, depth + 1):
         parts.append(
-            f"class C{i}(C{i - 1}) {{ public def v() -> int {{ return {i} }} }}")
+            f"class C{i} extends C{i - 1} {{ public def v() -> int {{ return {i} }} }}")
     src = "\n".join(parts)
     program = Parser(Tokenizer(src).tokenize()).parse()
     py_ast.parse(Transformer().transform(program))
@@ -186,6 +186,6 @@ def test_multiple_trait_implementation_is_valid_python(n):
     impls = "\n".join(
         f"  public def m{i}() -> int {{ return {i} }}" for i in range(n))
     names = ", ".join(f"T{i}" for i in range(n))
-    src = "\n".join(traits) + f"\nclass C implements {names} {{\n{impls}\n}}"
+    src = "\n".join(traits) + f"\nclass C extends {names} {{\n{impls}\n}}"
     program = Parser(Tokenizer(src).tokenize()).parse()
     py_ast.parse(Transformer().transform(program))

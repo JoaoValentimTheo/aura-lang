@@ -3,11 +3,11 @@ class BaseC73185Bw {
     public def process(x: int) -> int { return x; }
 }
 
-class ImplC53899Py(BaseC73185Bw) {
+class ImplC53899Py extends BaseC73185Bw {
     public def process(x: int) -> int { return x * 2; }
 }
 
-class ImplC97297Tw(BaseC73185Bw) {
+class ImplC97297Tw extends BaseC73185Bw {
     public def process(x: int) -> int { return x + 10; }
 }
 

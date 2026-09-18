@@ -5,7 +5,7 @@ class ImplC22353Nf {
     public def double_value() -> int { return self.value * 2; }
 }
 
-class AbstractC43072Dt(ImplC22353Nf) {
+class AbstractC43072Dt extends ImplC22353Nf {
     public def double_value() -> int { return self.value * 3; }
 }
 

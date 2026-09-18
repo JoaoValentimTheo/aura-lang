@@ -2,12 +2,14 @@
 
 Aura spells the exception root ``Error`` (aliased to Python's ``Exception``),
 so a program can define its own error types with either supported inheritance
-syntax — ``class MyError extends Error`` or ``class MyError(Error)`` — and
+syntax — ``class MyError extends Error`` or ``class MyError extends Error`` — and
 ``throw``/``catch`` them just like the builtins. ``super(args)`` maps to
 ``super().__init__(args)`` for message-passing constructors.
 """
 import sys
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
@@ -15,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 from aura_test_helpers import run_aura, transpile  # noqa: E402
 
 # ============================================================================
-# Syntax: both inheritance spellings
+# Syntax: `extends` is the only inheritance spelling
 # ============================================================================
 
 class TestErrorSyntax:
@@ -26,20 +28,18 @@ class TestErrorSyntax:
             '}\n'
         )
         assert 'Error = Exception' in code
+        # The generated Python uses the parenthesised form.
         assert 'class MyError(Error):' in code
 
-    def test_parens_error_parses(self):
-        code = transpile(
-            'class MyError(Error) {\n'
-            '  public def new(msg: str) { super(msg) }\n'
-            '}\n'
-        )
-        assert 'class MyError(Error):' in code
+    def test_parenthesised_base_is_rejected(self):
+        # Inheritance is spelled with `extends` only. `(` after a class name
+        # introduces header fields, so a bare name there is an error.
+        with pytest.raises(SyntaxError):
+            transpile('class MyError(Error) { }\n')
 
-    def test_extends_and_parens_are_equivalent(self):
-        extends = transpile('class E extends Error { public def new(m: str) { super(m) } }\n')
-        parens = transpile('class E(Error) { public def new(m: str) { super(m) } }\n')
-        assert extends == parens
+    def test_implements_is_rejected(self):
+        with pytest.raises(SyntaxError):
+            transpile('class C implements T { }\n')
 
     def test_super_maps_to_init(self):
         code = transpile(

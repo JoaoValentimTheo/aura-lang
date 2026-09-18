@@ -150,7 +150,7 @@ def test_single_inheritance_override():
         "class Animal {\n"
         "  def speak() -> str { return '...' }\n"
         "}\n"
-        "class Dog(Animal) {\n"
+        "class Dog extends Animal {\n"
         "  def speak() -> str { return 'woof' }\n"
         "}\n"
         "print(Dog().speak())"
@@ -163,7 +163,7 @@ def test_super_method_call():
         "class A {\n"
         "  def greet() -> str { return 'A' }\n"
         "}\n"
-        "class B(A) {\n"
+        "class B extends A {\n"
         "  def greet() -> str { return super.greet() + 'B' }\n"
         "}\n"
         "print(B().greet())"
@@ -177,7 +177,7 @@ def test_super_constructor_call():
         "  let name: str = ''\n"
         "  def new(name: str) { self.name = name }\n"
         "}\n"
-        "class B(A) {\n"
+        "class B extends A {\n"
         "  def new(name: str) { super.new(name) }\n"
         "}\n"
         "print(B('Zed').name)"
@@ -189,7 +189,7 @@ def test_multiple_inheritance():
     out = run_aura(
         "class A { def a() -> str { return 'a' } }\n"
         "class B { def b() -> str { return 'b' } }\n"
-        "class C(A, B) { }\n"
+        "class C extends A, B { }\n"
         "let c = C()\n"
         "print(c.a() + c.b())"
     )
@@ -199,7 +199,7 @@ def test_multiple_inheritance():
 def test_inherited_fields_available():
     out = run_aura(
         "class Base { let kind: str = 'base' }\n"
-        "class Derived(Base) { let extra: int = 1 }\n"
+        "class Derived extends Base { let extra: int = 1 }\n"
         "let d = Derived()\n"
         "print(d.kind)\nprint(d.extra)"
     )
@@ -467,7 +467,7 @@ def test_trait_default_method():
         "trait Greeter {\n"
         "  def greet(name: str) -> str { return 'hi ' + name }\n"
         "}\n"
-        "class Person implements Greeter { }\n"
+        "class Person extends Greeter { }\n"
         "print(Person().greet('bob'))"
     )
     assert out == "hi bob\n"
@@ -478,7 +478,7 @@ def test_trait_with_implementation():
         "trait Shape {\n"
         "  def area() -> float { return 0.0 }\n"
         "}\n"
-        "class Square implements Shape {\n"
+        "class Square extends Shape {\n"
         "  let side: float = 3.0\n"
         "  def area() -> float { return self.side * self.side }\n"
         "}\n"
@@ -492,17 +492,17 @@ def test_trait_field_default():
         "trait Named {\n"
         "  let name: str = 'anon'\n"
         "}\n"
-        "class Thing implements Named { }\n"
+        "class Thing extends Named { }\n"
         "print(Thing().name)"
     )
     assert out == "anon\n"
 
 
-def test_class_implements_multiple_traits():
+def test_class_extends_multiple_traits():
     out = run_aura(
         "trait A { def a() -> str { return 'a' } }\n"
         "trait B { def b() -> str { return 'b' } }\n"
-        "class C implements A, B { }\n"
+        "class C extends A, B { }\n"
         "print(C().a() + C().b())"
     )
     assert out == "ab\n"
@@ -615,11 +615,11 @@ def test_polymorphism_via_base_list():
         "class Shape {\n"
         "  def area() -> float { return 0.0 }\n"
         "}\n"
-        "class Square(Shape) {\n"
+        "class Square extends Shape {\n"
         "  let s: float = 2.0\n"
         "  def area() -> float { return self.s * self.s }\n"
         "}\n"
-        "class Circle(Shape) {\n"
+        "class Circle extends Shape {\n"
         "  let r: float = 1.0\n"
         "  def area() -> float { return 3.0 * self.r * self.r }\n"
         "}\n"

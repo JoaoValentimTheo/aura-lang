@@ -1,6 +1,6 @@
 // Class Test 89
 class Base_89 { public let val: int = 89 }
-class Sub_89(Base_89) {
+class Sub_89 extends Base_89 {
     public let extra: str = "hi"
     public def show() { print(self.val); print(self.extra); }
 }

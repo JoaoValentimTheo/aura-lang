@@ -4,15 +4,15 @@ class AbstractC48982Gq {
     public def get_val() -> int { return self.base_val; }
 }
 
-class ImplC89944Jg(AbstractC48982Gq) {
+class ImplC89944Jg extends AbstractC48982Gq {
     public def get_val() -> int { return self.base_val * 2; }
 }
 
-class MockC98361Wx(ImplC89944Jg) {
+class MockC98361Wx extends ImplC89944Jg {
     public def get_val() -> int { return self.base_val * 3; }
 }
 
-class MockC96306Av(MockC98361Wx) {
+class MockC96306Av extends MockC98361Wx {
     public def get_val() -> int { return self.base_val * 4; }
 }
 

@@ -3,11 +3,11 @@ class ImplC99939Me {
     public def render() -> str { return "base"; }
 }
 
-class AbstractC86214Kk(ImplC99939Me) {
+class AbstractC86214Kk extends ImplC99939Me {
     public def render() -> str { return "child1"; }
 }
 
-class ImplC23788Eh(ImplC99939Me) {
+class ImplC23788Eh extends ImplC99939Me {
     public def render() -> str { return "child2"; }
 }
 
