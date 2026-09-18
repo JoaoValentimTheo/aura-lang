@@ -160,13 +160,27 @@ def _json_headers(headers, data):
     return merged
 
 
+def _same_origin(a, b):
+    """True when two absolute URLs share scheme, host and port."""
+    pa, pb = _urlparse.urlparse(a), _urlparse.urlparse(b)
+    return (pa.scheme, pa.hostname, pa.port) == (pb.scheme, pb.hostname, pb.port)
+
+
+# Headers that must not follow a redirect to a different origin, because they
+# carry credentials or would let the new host impersonate the original.
+_SENSITIVE_REDIRECT_HEADERS = frozenset({
+    'authorization', 'proxy-authorization', 'cookie', 'cookie2',
+})
+
+
 def _request_with_requests(method, url, data, headers, timeout, max_bytes):
     """``requests`` backend that follows redirects with SSRF re-validation.
 
     Redirects are followed manually so every hop is re-validated (unlike
     ``requests``' own handler, which would happily land on a private host).
     The body is streamed and capped, so an oversized response cannot exhaust
-    memory before it is rejected.
+    memory before it is rejected. Credential headers are dropped when a
+    redirect leaves the original origin, so an open redirect cannot leak them.
     """
     import requests
 
@@ -175,11 +189,12 @@ def _request_with_requests(method, url, data, headers, timeout, max_bytes):
         req_data = _json.dumps(data)
 
     current = url
+    current_headers = headers
     for _ in range(10):  # bounded redirect chain
         _validate_url(current)
         response = requests.request(
             method.upper(), current,
-            data=req_data, headers=_json_headers(headers, data),
+            data=req_data, headers=_json_headers(current_headers, data),
             timeout=timeout, allow_redirects=False, stream=True,
         )
         if response.status_code in (301, 302, 303, 307, 308):
@@ -187,7 +202,14 @@ def _request_with_requests(method, url, data, headers, timeout, max_bytes):
             response.close()
             if not location:
                 break
-            current = _urlparse.urljoin(current, location)
+            target = _urlparse.urljoin(current, location)
+            if not _same_origin(current, target) and current_headers:
+                # Never forward credentials to a different origin.
+                current_headers = {
+                    k: v for k, v in current_headers.items()
+                    if k.lower() not in _SENSITIVE_REDIRECT_HEADERS
+                }
+            current = target
             # A redirect turns the request into a GET for 301/302/303.
             if response.status_code in (301, 302, 303):
                 method = 'GET'

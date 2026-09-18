@@ -22,6 +22,7 @@ Example::
 """
 
 import asyncio as _asyncio
+import warnings as _warnings
 
 
 def run(coro):
@@ -137,5 +138,25 @@ def set_event_loop(loop):
 
 
 def get_event_loop():
-    """Return the current event loop."""
-    return _asyncio.get_event_loop()
+    """Return the running loop, or a usable current loop.
+
+    Python 3.12 deprecated ``asyncio.get_event_loop`` when no loop is running
+    and 3.14 can raise when nothing is set. This returns the running loop, then
+    a loop already installed on the thread, and finally creates and installs a
+    fresh one, so a program never crashes or warns just for asking.
+    """
+    try:
+        return _asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    # A loop may have been installed explicitly with `set_event_loop`. The
+    # accessor warns when called with no running loop, so silence that only.
+    with _warnings.catch_warnings():
+        _warnings.simplefilter('ignore', DeprecationWarning)
+        try:
+            return _asyncio.get_event_loop()
+        except RuntimeError:
+            pass
+    loop = _asyncio.new_event_loop()
+    _asyncio.set_event_loop(loop)
+    return loop

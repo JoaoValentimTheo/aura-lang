@@ -4,6 +4,24 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.0a19] - 2026-09-18
+
+Post-release audit fixes found while reviewing the a18 batch.
+
+### Fixed — standard library security
+
+- **Credentials no longer follow a cross-origin redirect**: `Authorization`,
+  `Proxy-Authorization` and `Cookie` headers are dropped when a redirect
+  leaves the original scheme/host/port, so an open redirect cannot leak them.
+- **`stdlib.asyncio.get_event_loop()`** no longer emits a deprecation warning
+  or raises on Python 3.12+: it returns the running loop, a loop already
+  installed on the thread, or a fresh installed loop.
+
+### Tests
+
+- Extended `tests/test_audit_round2.py` with the redirect credential rule, the
+  same-origin helper and the event-loop accessor.
+
 ## [0.1.0a18] - 2026-09-18
 
 Second audit round. Fixed the remaining silent miscompilations in the parser
@@ -58,6 +76,8 @@ compilation time on large sources.
   conversions and validation, destructuring, single-evaluation coalescing, the
   SSRF and CGNAT blocks, the reference-backend warning and `AuraDict`
   collisions.
+
+## [0.1.0a17] - 2026-09-18
 
 Internal audit hardening. A full pass over the tokenizer, parser, transformers,
 type checker and developer tooling fixed silent miscompilations, crashes on

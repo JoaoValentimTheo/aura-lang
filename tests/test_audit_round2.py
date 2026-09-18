@@ -165,6 +165,85 @@ def test_loopback_still_blocked():
         http._validate_url('http://127.0.0.1/')
 
 
+def test_same_origin_helper():
+    from aura.stdlib import http
+    assert http._same_origin('http://a.example/x', 'http://a.example/y')
+    assert not http._same_origin('http://a.example/x', 'http://b.example/y')
+    assert not http._same_origin('http://a.example/x', 'https://a.example/y')
+    assert not http._same_origin('http://a.example/x', 'http://a.example:8080/y')
+
+
+def test_redirect_to_other_origin_drops_credentials(monkeypatch):
+    import sys
+    import types
+
+    from aura.stdlib import http
+
+    seen_headers = []
+
+    class _FakeResponse:
+        def __init__(self, status, headers, body=b'ok', url=''):
+            self.status_code = status
+            self.headers = headers
+            self._body = body
+            self.url = url
+            self.ok = 200 <= status < 400
+            self.raw = io.BytesIO(body)
+
+        def close(self):
+            pass
+
+    calls = {'n': 0}
+
+    def fake_request(method, url, **kwargs):
+        seen_headers.append((url, dict(kwargs.get('headers') or {})))
+        calls['n'] += 1
+        if calls['n'] == 1:
+            return _FakeResponse(302, {'Location': 'http://other.example/final'})
+        return _FakeResponse(200, {}, url=url)
+
+    fake = types.ModuleType('requests')
+    fake.request = fake_request
+    monkeypatch.setitem(sys.modules, 'requests', fake)
+    # The fake hosts do not resolve; skip the SSRF check so the test exercises
+    # the redirect/credential logic only.
+    monkeypatch.setattr(http, '_is_blocked_host', lambda host: False)
+
+    http._request_with_requests(
+        'GET', 'http://a.example/start', None,
+        {'Authorization': 'Bearer secret', 'X-Trace': '1'},
+        timeout=5, max_bytes=1024,
+    )
+    first_url, first_headers = seen_headers[0]
+    second_url, second_headers = seen_headers[1]
+    assert first_headers.get('Authorization') == 'Bearer secret'
+    assert second_url == 'http://other.example/final'
+    assert 'Authorization' not in second_headers
+    assert second_headers.get('X-Trace') == '1'
+
+
+# ---------------------------------------------------------------------------
+# Event loop accessor does not warn or crash
+# ---------------------------------------------------------------------------
+
+def test_get_event_loop_does_not_warn():
+    from aura.stdlib import asyncio as aio
+    with warnings.catch_warnings():
+        warnings.simplefilter('error')
+        loop = aio.get_event_loop()
+    assert loop is not None
+
+
+def test_get_event_loop_returns_installed_loop():
+    from aura.stdlib import asyncio as aio
+    loop = aio.new_event_loop()
+    try:
+        aio.set_event_loop(loop)
+        assert aio.get_event_loop() is loop
+    finally:
+        loop.close()
+
+
 # ---------------------------------------------------------------------------
 # Reference PQC backend warns
 # ---------------------------------------------------------------------------
