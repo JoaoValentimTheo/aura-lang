@@ -19,6 +19,8 @@ conservative: it never reports a problem it cannot prove, so it stays quiet on
 dynamically shaped code.
 """
 
+from pathlib import Path
+
 from aura.transpiler.ast import (
     AssertStmt,
     BinaryOp,
@@ -121,6 +123,11 @@ class RuleChecker:
         self._register_classes(program)
         if require_main:
             self._check_main(program)
+        # A `main` inside a `module` body never runs, in any file.
+        self._check_no_main_in_modules(program)
+        # A bare `export Name` must resolve to a sibling source or a local
+        # declaration.
+        self._check_reexports(program)
         for stmt in getattr(program, 'statements', []) or []:
             self.visit(stmt)
         return not self.collector.has_errors()
@@ -133,6 +140,10 @@ class RuleChecker:
         arguments; any other signature is rejected. ``main`` is invoked by the
         runtime, never by the programmer, so a bare trailing ``main()`` call is
         unnecessary.
+
+        A ``main`` declared inside a ``module`` body is always an error (E312):
+        a module is a library namespace, and the runtime only ever calls the
+        entry file's top-level ``main``.
         """
         main = None
         for stmt in getattr(program, 'statements', []) or []:
@@ -165,6 +176,77 @@ class RuleChecker:
             location=self._loc(main),
             hint="use 'def main()' or 'def main(args: [string])'",
         )
+
+    @staticmethod
+    def _walk(node):
+        """Yield every AST node reachable from ``node`` (depth-first)."""
+        stack = [node]
+        while stack:
+            current = stack.pop()
+            if current is None:
+                continue
+            if isinstance(current, (list, tuple)):
+                stack.extend(current)
+                continue
+            yield current
+            if isinstance(current, Node):
+                for value in vars(current).values():
+                    if isinstance(value, (list, tuple)):
+                        stack.extend(value)
+                    elif isinstance(value, Node):
+                        stack.append(value)
+
+    def _check_no_main_in_modules(self, program):
+        """Report a `main` declared inside a module body (E312).
+
+        The runtime calls only the entry file's top-level `main`; a `main` in a
+        module namespace would never run, so it is almost certainly a mistake
+        (a module is a library, not a program).
+        """
+        for node in self._walk(program):
+            if isinstance(node, Module):
+                for member in node.members:
+                    if isinstance(member, FunctionDecl) and member.name == 'main':
+                        self.collector.add(
+                            ErrorCode.MAIN_IN_MODULE,
+                            f"'main' is declared inside module '{node.name}'",
+                            location=self._loc(member),
+                            hint="'main' belongs to the entry file; modules "
+                                 "expose named functions instead",
+                        )
+
+    def _check_reexports(self, program):
+        """Report a `export Name` that cannot be resolved (E313).
+
+        The transformer resolves a bare re-export against a sibling source
+        file; checking it here means `aura check` reports the problem instead
+        of only the later transpile step.
+        """
+        from aura.transpiler.modules import resolve_reexport
+
+        source_path = getattr(program, 'source_path', None)
+        base_dir = None if source_path is None else Path(source_path).resolve().parent
+        for node in self._walk(program):
+            if not isinstance(node, Module):
+                continue
+            declared = {getattr(m, 'name', None) for m in node.members}
+            for item in getattr(node, 'reexports', None) or []:
+                for name in item.names:
+                    if name in declared:
+                        continue
+                    if base_dir is None:
+                        continue  # no file context (REPL): cannot resolve
+                    if resolve_reexport(name, base_dir, item.source) is None:
+                        where = (f' from "{item.source}"' if item.source
+                                 else "")
+                        self.collector.add(
+                            ErrorCode.UNRESOLVED_REEXPORT,
+                            f"module '{node.name}' exports '{name}'{where}, "
+                            f"but no sibling source defines it",
+                            location=self._loc(item) or self._loc(node),
+                            hint=f"add '{name.lower()}.aura' next to this file, "
+                                 f"or declare '{name}' here",
+                        )
 
     def _register_classes(self, node):
         """Collect class/trait member maps and base names, recursively."""
@@ -219,6 +301,11 @@ class RuleChecker:
                 is_const = isinstance(member, ConstDecl)
                 members[name] = ('public' if name in exports else 'private',
                                  is_const)
+            # A bare `export Name` re-exports a symbol from a sibling file or
+            # another namespace; it is public by definition.
+            for item in getattr(node, 'reexports', None) or []:
+                for name in item.names:
+                    members.setdefault(name, ('public', False))
             # Nested modules register under their dotted path too, so a member
             # access through the outer namespace resolves.
             self._classes[node.name] = {

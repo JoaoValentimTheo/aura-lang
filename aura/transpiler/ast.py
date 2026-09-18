@@ -38,8 +38,12 @@ class Stmt(Node):
 # ============================================================================
 
 class Program(Node):
-    def __init__(self, statements):
+    def __init__(self, statements, source_path=None):
         self.statements = statements
+        # Path of the file this program was parsed from, when known. The
+        # transformer uses it to resolve a module's sibling re-exports
+        # (`module App { export Components }` -> `components.aura`).
+        self.source_path = source_path
 
 class Module(Node):
     """A `module Name { ... }` declaration.
@@ -50,10 +54,27 @@ class Module(Node):
     so the rule checker can reject an external access to a private member and
     the transformer can mangle the private ones.
     """
-    def __init__(self, name, members, exports=None):
+    def __init__(self, name, members, exports=None, reexports=None):
         self.name = name
         self.members = members
         self.exports = set(exports or ())
+        self.reexports = list(reexports or [])
+
+class ItemExport(Node):
+    """A bare `export Name` inside a module: re-export a name from a sibling.
+
+    The parser records the request; the transformer resolves it against the
+    source folder at compile time and emits the binding. ``source`` is an
+    optional explicit module path (`export Name from "other"`); when omitted,
+    the name is resolved by convention: a sibling file or subfolder whose name
+    matches (case-insensitively), or a declaration in the same file.
+    """
+    def __init__(self, names, source=None):
+        self.names = list(names)
+        self.source = source
+        # First requested name, so downstream code can treat an ItemExport like
+        # a declaration that has a `name`.
+        self.name = self.names[0] if self.names else None
 
 # ============================================================================
 # Declarations

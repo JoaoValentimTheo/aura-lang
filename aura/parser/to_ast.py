@@ -3,8 +3,14 @@ Complete recursive descent parser for Aura.
 Handles expressions, control flow, functions, classes, and more.
 """
 import contextlib
+import re
 
 from aura.transpiler.ast import *
+
+# A module path in `export Name from "..."` must be a plain dotted name. This
+# rejects separators, traversal and NUL so the value can never escape the
+# source folder when the transformer resolves it.
+_INVALID_MODULE_PATH = re.compile(r'[\\/\x00]|\.\.')
 
 # ==============================================================================
 # Tokenizer
@@ -450,7 +456,10 @@ class Parser:
                     statements.append(stmt)
         except RecursionError:
             raise self.error("source is nested too deeply to parse") from None
-        return Program(statements)
+        # A real file path (not the `<aura>` placeholder) is kept so the
+        # transformer can resolve sibling re-exports relative to it.
+        source_path = None if self.filename in (None, '<aura>') else self.filename
+        return Program(statements, source_path=source_path)
 
     # --- Statements ---
     def parse_modifiers(self):
@@ -1145,29 +1154,78 @@ class Parser:
         self.consume(expected_value='{')
         members = []
         exports = set()
+        reexports = []
         while not self.check('}') and not self.check('EOF'):
             is_exported = self.match('export')
-            if is_exported and (self.check('}') or self.check('EOF')
-                                or self.check(';')):
-                raise self.error(
-                    "`export` must precede a declaration (def, class, trait, "
-                    "enum, type, let, const or module)")
-            member = self.parse_statement()
-            if member is None:
+            if not is_exported:
+                member = self.parse_statement()
+                if member is None:
+                    continue
+                member.is_exported = False
+                members.append(member)
                 continue
-            member_name = getattr(member, 'name', None)
-            if is_exported:
+
+            # `export` is either a modifier on a declaration, or a bare
+            # re-export of a name declared elsewhere.
+            if self.check('}') or self.check('EOF') or self.check(';'):
+                raise self.error(
+                    "`export` must be followed by a declaration or a name "
+                    "(def, class, trait, enum, type, let, const, module, or "
+                    "`export Name`)")
+            if self._starts_exported_declaration():
+                member = self.parse_statement()
+                if member is None:
+                    continue
+                member_name = getattr(member, 'name', None)
                 if member_name is None:
                     raise self.error(
                         "`export` must precede a named declaration "
                         "(def, class, trait, enum, type, let, const or module)")
                 exports.add(member_name)
-            # Every declaration node carries `is_exported`; setting it is part
-            # of the node's contract, not a dynamic attribute.
-            member.is_exported = is_exported
-            members.append(member)
+                member.is_exported = True
+                members.append(member)
+                continue
+
+            # Otherwise: re-export one or more names.
+            item = self._parse_item_export()
+            reexports.append(item)
+            for requested in item.names:
+                exports.add(requested)
+
         self.consume(expected_value='}')
-        return Module(name, members, exports)
+        return Module(name, members, exports, reexports)
+
+    # Keywords that begin a declaration and so prove `export` is a modifier
+    # rather than the start of a bare re-export.
+    _DECLARATION_KEYWORDS = (
+        'def', 'class', 'trait', 'enum', 'type', 'let', 'const', 'module',
+        'async', 'public', 'private', 'protected', 'static', 'volatile', '@',
+    )
+
+    def _starts_exported_declaration(self):
+        """True when the next tokens begin a declaration (so `export` is a
+        modifier). False for a bare name, which is a re-export."""
+        return self.peek().value in self._DECLARATION_KEYWORDS
+
+    def _parse_item_export(self):
+        """Parse the body of a bare `export Name[, Name2] [from "module"]`."""
+        names = [self.consume(expected_type='IDENT').value]
+        while self.match(','):
+            names.append(self.consume(expected_type='IDENT').value)
+        source = None
+        if self.match('from'):
+            token = self.peek()
+            if token.type != 'STRING':
+                raise self.error(
+                    "`export ... from` needs a quoted module path "
+                    '(e.g. export Name from "components")', token)
+            source = self.consume().value
+            if not source or _INVALID_MODULE_PATH.search(source):
+                raise self.error(
+                    f"invalid module path {source!r} in `export ... from`")
+        if self.check(';'):
+            self.consume()
+        return ItemExport(names, source)
 
     def parse_type_decl(self):
         self.consume(expected_value='type')

@@ -92,6 +92,7 @@ real multi-file projects". Ratings below 100 % name the concrete gap.
 | Import PyPI packages | 98 % | `import requests`, `pyyaml` verified; any installed package works |
 | Import local Aura modules | 98 % | Sibling `.aura`, dotted packages, `from pkg.util import x` |
 | `module { }` namespaces | 98 % | Private by default, `export` makes a member public, dotted names nest, state not writable from outside (E303/E308), mangled at runtime |
+| Module facades | 95 % | `module App { export Components, Utils }` re-exports siblings by convention or `from "mod"`; package entry `App/App.aura`; E313/E312 | No alias renaming on re-export |
 | Python literals | 99 % | Escapes (`\n`, `\t`, `\uXXXX`), raw/bytes, f-strings, triples, numeric forms |
 | Python slicing | 98 % | `x[start:stop:step]` for lists and strings, including `[::-1]` |
 | Call Python callables | 100 % | Native attribute/`from` imports; lambdas as callbacks |

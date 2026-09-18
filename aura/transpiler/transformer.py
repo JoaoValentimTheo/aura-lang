@@ -64,6 +64,9 @@ class Transformer:
         stmt.has_label = False
         stmt.module_bindings = set()
         stmt._global_assignments = []
+        # Source file path, used to resolve a module's sibling re-exports.
+        stmt.source_path = getattr(program, 'source_path', None)
+        stmt._module_reexport_imports = []
         # Collect module-level binding names so functions that assign to them
         # get a `global` declaration in the generated Python.
         from aura.transpiler.ast import ConstDecl, VarDecl
@@ -108,6 +111,9 @@ class Transformer:
         hoisted = expr.hoisted_functions
         if hoisted:
             preludes.append("\n".join(hoisted))
+        # A facade module's sibling imports are hoisted above the class body.
+        if stmt._module_reexport_imports:
+            preludes.append("\n".join(stmt._module_reexport_imports))
 
         if preludes:
             return "\n".join(preludes) + "\n" + body

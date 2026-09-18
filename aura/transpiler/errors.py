@@ -54,6 +54,8 @@ class ErrorCode(Enum):
     UNIMPLEMENTED_ABSTRACT = "E309"
     MISSING_MAIN = "E310"
     INVALID_MAIN = "E311"
+    MAIN_IN_MODULE = "E312"
+    UNRESOLVED_REEXPORT = "E313"
 
     # -- I/O and configuration (E4xx) ------------------------------------
     # The CLI reports I/O and configuration failures as plain messages plus a
@@ -206,6 +208,8 @@ ERROR_TEMPLATES = {
     ErrorCode.UNIMPLEMENTED_ABSTRACT: "'{class}' must implement abstract method '{method}'",
     ErrorCode.MISSING_MAIN: "Program has no 'main' function",
     ErrorCode.INVALID_MAIN: "'main' must take no parameters, or a single 'args'",
+    ErrorCode.MAIN_IN_MODULE: "'main' belongs to the entry file, not to a module or an imported file",
+    ErrorCode.UNRESOLVED_REEXPORT: "no sibling source defines the re-exported name '{name}'",
     # I/O
     # Warnings
     ErrorCode.LINE_TOO_LONG: "Line {line} is too long ({length} > {limit} columns)",

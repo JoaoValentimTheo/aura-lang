@@ -792,8 +792,8 @@ privacy is enforced at runtime as well as at check time.
 A whole file is also importable; see [Imports](#12-imports-and-modules):
 
 ```aura
-// lib.aura
-export def greet(name: str) -> str {
+// lib.aura — a plain module file needs no export marker at top level
+def greet(name: str) -> str {
   return "hi " + name
 }
 
@@ -801,6 +801,68 @@ export def greet(name: str) -> str {
 import lib
 def main() { print(lib.greet("ana")) }
 ```
+
+### Module facades (re-exports)
+
+A module can be the **facade** for a source folder: a bare `export Name` (with
+no `def`/`class`) re-exports a symbol defined in a sibling file. Put the module
+in a folder named after itself, so `App/App.aura` is the entry point of the
+`App` package:
+
+```text
+App/
+  App.aura          module App { export Components, Utils }
+  components.aura   class Components { ... }
+  utils.aura        def double(...) / const VERSION
+main.aura           import App
+```
+
+```aura
+// App/App.aura
+module App {
+  export Components, Utils
+}
+```
+
+```aura
+// main.aura
+import App
+
+def main() {
+  print(App.Components("header").describe())  // a class from components.aura
+  print(App.Utils.double(21))                 // the utils module as a namespace
+  print(App.Utils.VERSION)
+}
+```
+
+A name is resolved by convention, in this order:
+
+1. a declaration in the same file (the facade re-exports its own member);
+2. a sibling file whose name matches, case-insensitively
+   (`Components` → `components.aura`);
+3. a subfolder named after the symbol (`Components/Components.aura` or
+   `Components/__init__.aura`).
+
+When the resolved file **declares** the name, the binding is that declaration
+(`App.Components` is the class). When it does not, the whole sibling module is
+exposed as the namespace (`App.Utils` is the `utils` module), so its functions
+and constants are reached as `App.Utils.double(...)`.
+
+An explicit source is also accepted:
+
+```aura
+module App {
+  export Widgets from "widgets"      // resolves widgets.aura
+  export X from "pkg.sub"            // resolves pkg/sub.aura
+}
+```
+
+The path must be a plain dotted name: separators (`/`, `\`), traversal (`..`)
+and absolute paths are rejected, and resolution is confined to the facade's own
+folder. An unresolvable re-export reports `E313`.
+
+A `main` is only meaningful in the entry file: `def main` inside a `module`
+body is rejected with `E312`.
 
 ---
 

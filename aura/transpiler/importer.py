@@ -7,11 +7,41 @@ subdirectory for dotted imports such as ``import pkg.util``).
 
 The imported Aura file is transpiled with the regular ``Transformer`` and then
 executed in its own module namespace, so it behaves like a Python module.
+
+Every imported file is checked with the same rules as the entry file, except
+the entry-point rule: a library needs no ``main`` (and in fact must not declare
+one, since a module's ``main`` would never run — see ``E312``).
 """
 
 import sys
 from pathlib import Path
 
+
+def _load_aura_source(path):
+    """Parse, check and transpile an Aura file; return the Python source.
+
+    Raises ``SyntaxError`` with the offending file and messages when the file
+    violates Aura's rules, so an invalid import fails loudly at the import
+    site instead of misbehaving later.
+    """
+    from aura.parser.to_ast import parse_file
+    from aura.transpiler.rules import RuleChecker
+    from aura.transpiler.semantics import MutabilityChecker
+    from aura.transpiler.transformer import Transformer
+
+    ast = parse_file(str(path))
+
+    checker = MutabilityChecker()
+    if not checker.check_program(ast):
+        message = "; ".join(str(e) for e in checker.errors)
+        raise SyntaxError(f"{path}: semantic error: {message}")
+
+    rules = RuleChecker()
+    if not rules.check_program(ast, require_main=False):
+        message = "; ".join(str(e) for e in rules.collector.errors)
+        raise SyntaxError(f"{path}: rule error: {message}")
+
+    return Transformer().transform(ast)
 
 class AuraFinder:
     """Meta path finder for ``.aura`` modules."""
@@ -22,27 +52,57 @@ class AuraFinder:
         self.roots = [Path(r).resolve() for r in roots if r]
 
     def _candidates(self, fullname):
-        parts = fullname.split('.')
+        # A malformed name (empty, or with a component that has no stem) can
+        # come from a direct `find_spec` call; refuse it rather than letting
+        # `with_suffix` raise.
+        parts = [part for part in str(fullname).split('.') if part]
+        if not parts or any(part in ('.', '..') for part in parts):
+            return
         rel = Path(*parts)
         for root in self.roots:
             yield root / rel.with_suffix('.aura')
             # Package form: `pkg/__init__.aura`
             yield root / rel / '__init__.aura'
 
+    def _is_within(self, candidate: Path) -> bool:
+        """True when ``candidate`` resolves inside one of the search roots.
+
+        Module names come from the parser's IDENT-only grammar, so this is
+        normally trivially true. It is enforced anyway so a direct, crafted
+        ``find_spec`` call cannot resolve a path outside the project (for
+        example through a symlink or a ``..`` component).
+        """
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            return False
+        for root in self.roots:
+            try:
+                if resolved == root or root in resolved.parents:
+                    return True
+            except OSError:
+                continue
+        return False
+
     def find_spec(self, fullname, path=None, target=None):
+        # Reject a malformed or traversal-shaped name up front: only dot-
+        # separated identifiers can name an Aura module.
+        parts = [part for part in str(fullname).split('.') if part]
+        if not parts or any(part in ('.', '..') for part in parts):
+            return None
         # A dotted import first resolves its parent package. Treat any
         # directory that contains Aura sources as a package so that
         # `import pkg.util` can find `pkg/` and then `pkg/util.aura`.
         for root in self.roots:
-            package_dir = root / Path(*fullname.split('.'))
-            if package_dir.is_dir() and (
+            package_dir = root / Path(*parts)
+            if package_dir.is_dir() and self._is_within(package_dir) and (
                 (package_dir / '__init__.aura').is_file()
                 or any(package_dir.glob('*.aura'))
             ):
                 return self._package_spec(fullname, package_dir)
 
         for candidate in self._candidates(fullname):
-            if candidate.is_file():
+            if candidate.is_file() and self._is_within(candidate):
                 return self._spec_for(fullname, candidate)
         return None
 
@@ -73,20 +133,7 @@ class AuraLoader:
         return None  # use default module creation
 
     def exec_module(self, module):
-        from aura.parser.to_ast import parse_file
-        from aura.transpiler.semantics import MutabilityChecker
-        from aura.transpiler.transformer import Transformer
-
-        ast = parse_file(str(self.file_path))
-
-        checker = MutabilityChecker()
-        if not checker.check_program(ast):
-            message = "; ".join(checker.errors)
-            raise SyntaxError(
-                f"{self.file_path}: semantic error: {message}"
-            )
-
-        code = Transformer().transform(ast)
+        code = _load_aura_source(self.file_path)
         module.__file__ = str(self.file_path)
         compiled = compile(code, str(self.file_path), 'exec')
         exec(compiled, module.__dict__)
@@ -113,19 +160,16 @@ class AuraPackageLoader:
         return None
 
     def exec_module(self, module):
+        # A package's entry point is `__init__.aura`, or a file named after
+        # the package itself (`App/App.aura`), which is how a facade module
+        # lives next to its own source files.
         init = self.package_dir / '__init__.aura'
         if not init.is_file():
-            return
-        from aura.parser.to_ast import parse_file
-        from aura.transpiler.semantics import MutabilityChecker
-        from aura.transpiler.transformer import Transformer
-
-        ast = parse_file(str(init))
-        checker = MutabilityChecker()
-        if not checker.check_program(ast):
-            message = "; ".join(checker.errors)
-            raise SyntaxError(f"{init}: semantic error: {message}")
-        code = Transformer().transform(ast)
+            entry = self.package_dir / (self.package_dir.name + '.aura')
+            if not entry.is_file():
+                return
+            init = entry
+        code = _load_aura_source(init)
         module.__file__ = str(init)
         exec(compile(code, str(init), 'exec'), module.__dict__)
 

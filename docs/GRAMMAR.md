@@ -282,15 +282,21 @@ type_alias     = "type" , identifier , [ type_params ] , "=" , type ;
 
 ```
 module_decl    = "module" , dotted_name , "{" , { module_member } , "}" ;
-module_member  = [ "export" ] , statement ;
+module_member  = [ "export" ] , statement
+               | "export" , name_list , [ "from" , string ] ;   // re-export
+name_list      = identifier , { "," , identifier } ;
 ```
 
 A module member is private to the declaring file unless prefixed with `export`.
 `export` must precede a named declaration (`def`, `class`, `trait`, `enum`,
-`type`, `let`, `const` or a nested `module`); a bare `export` is a syntax
-error. Non-exported members are mangled in the generated Python, so privacy is
-enforced at runtime as well as by the rule checker (`E308`), and module state
-is not assignable from outside (`E303`).
+`type`, `let`, `const` or a nested `module`), or it may introduce a **re-export**
+— a bare name (or comma-separated names) resolved against a sibling source
+file. The optional `from "module"` names that source explicitly. A `from` path
+must be a plain dotted name (no `/`, `\`, `..` or absolute paths). Non-exported
+members are mangled in the generated Python, so privacy is enforced at runtime
+as well as by the rule checker (`E308`), and module state is not assignable from
+outside (`E303`). An unresolvable re-export is `E313`; a `main` inside a module
+body is `E312`.
 
 ### 3.8 Imports
 

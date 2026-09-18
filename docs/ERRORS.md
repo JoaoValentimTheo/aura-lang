@@ -71,6 +71,8 @@ to Python rather than reported. See "Removed codes" below.
 | `E309` | `UNIMPLEMENTED_ABSTRACT` | concrete class missing an abstract method | rule checker |
 | `E310` | `MISSING_MAIN` | entry file has no `main` | rule checker |
 | `E311` | `INVALID_MAIN` | `main` has a bad signature | rule checker |
+| `E312` | `MAIN_IN_MODULE` | `main` declared inside a `module` body (never runs) | rule checker |
+| `E313` | `UNRESOLVED_REEXPORT` | a `module` re-exports a name no sibling source defines | rule checker |
 
 ## Errors — I/O and configuration (`E4xx`)
 

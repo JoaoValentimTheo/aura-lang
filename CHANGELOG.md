@@ -4,6 +4,84 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.0a16] - 2026-09-18
+
+Module facades. A module can now be the entry point of a source folder and
+re-export the classes and helpers defined in its sibling files, so a folder of
+`.aura` files is a single namespaced package from the outside.
+
+### Added
+
+- **Facade re-exports.** A bare `export Name` inside a module (no
+  `def`/`class`) re-exports a symbol defined in a sibling source file:
+
+  ```text
+  App/
+    App.aura          module App { export Components, Utils }
+    components.aura   class Components { ... }
+    utils.aura        def double(...) / const VERSION
+  ```
+
+  ```aura
+  import App
+  App.Components("header")   // the class from components.aura
+  App.Utils.double(21)       // the utils module as a namespace
+  ```
+
+  Resolution order: a declaration in the same file, then a sibling file whose
+  name matches case-insensitively, then a subfolder named after the symbol
+  (`Components/Components.aura` or `Components/__init__.aura`). When the file
+  declares the name the binding is that declaration; otherwise the whole
+  sibling module becomes the namespace.
+
+- **Explicit re-export source**: `export Widgets from "widgets"` or
+  `export X from "pkg.sub"`. The path must be a plain dotted name — separators,
+  `..` and absolute paths are rejected, and resolution is confined to the
+  facade's folder.
+
+- **`App/App.aura` is a package entry point.** A folder is importable as a
+  package when it has `__init__.aura` *or* a file named after the folder. A
+  module named `App` in a folder named `App` backs the package directly, so
+  `import App` gives `App.Components` without an extra namespace level.
+
+- Multiple names per statement: `export Components, Utils`.
+
+### Changed
+
+- **`E312`: `main` inside a `module` body is an error.** A module is a library
+  namespace and the runtime only calls the entry file's top-level `main`, so a
+  module's `main` would never run. A top-level `main` in an imported file stays
+  allowed (it is simply never called).
+
+- **`E313`: an unresolved re-export is reported by `aura check`**, not only at
+  transpile time, with a hint naming the expected sibling file.
+
+- **Imported files are checked with the same rules as the entry file.** The
+  import hook previously ran only the mutability checker; it now also runs the
+  rule checker, so an invalid import fails loudly at the import site.
+
+- **The import finder confines every resolution to its search roots.** A
+  crafted module name (traversal components, empty names, or a symlink pointing
+  outside) resolves to nothing instead of building an out-of-tree path, and a
+  malformed name no longer raises.
+
+- `docs/LANGUAGE.md`, `docs/GRAMMAR.md`, `docs/ERRORS.md` and
+  `docs/COMPLETENESS.md` document the facade syntax; a stale top-level
+  `export def` example in the import section was corrected (`export` outside a
+  module body is not valid).
+
+### Tests
+
+- `tests/test_module_facade.py` (54 tests): re-export parsing (single, multiple,
+  explicit source, mixed with declarations, rejection of traversal paths),
+  convention resolution (case-insensitivity, subfolders, `__init__.aura`,
+  explicit dotted sources), generated Python (hoisted imports, no nested class
+  for a package facade, valid Python), end-to-end programs (class and module
+  re-exports, explicit source, local declaration, mixed, facade class used as a
+  base, re-import idempotency), diagnostics (`E313`, `E312`, `E308` after a
+  re-export), imported-file rule enforcement, and import-hook security
+  (traversal, symlinks, stdlib names).
+
 ## [0.1.0a15] - 2026-09-18
 
 Project-environment tooling. An Aura project can now manage its own virtual
