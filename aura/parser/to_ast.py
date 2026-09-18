@@ -1082,6 +1082,13 @@ class Parser:
             if type_annotation is None and default is None:
                 # A bare name in the header would be indistinguishable from the
                 # removed parenthesised base form; require a type or default.
+                # If it is a lone uppercase name, the writer almost certainly
+                # meant a base class, so point them at `extends`.
+                if field_name[:1].isupper() and self.check(')'):
+                    raise self.error(
+                        f"'{class_name}({field_name})' looks like a base class; "
+                        f"Aura spells inheritance 'extends' "
+                        f"(write 'class {class_name} extends {field_name}')")
                 raise self.error(
                     f"header field '{field_name}' needs a type annotation or a "
                     f"default (write '{field_name}: Type')")

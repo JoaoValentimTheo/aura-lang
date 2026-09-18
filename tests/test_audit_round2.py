@@ -114,6 +114,27 @@ def test_dict_destructuring_alias_still_works():
 
 
 # ---------------------------------------------------------------------------
+# Syntax guidance diagnostics
+# ---------------------------------------------------------------------------
+
+def test_bare_mut_statement_is_rejected():
+    with pytest.raises(SyntaxError) as info:
+        gen('def main() {\n  mut x = 1\n}\n')
+    assert 'let mut' in str(info.value)
+
+
+def test_parenthesized_base_class_hint():
+    with pytest.raises(SyntaxError) as info:
+        gen('class Dog(Animal) {\n}\n')
+    assert 'extends' in str(info.value)
+
+
+def test_header_field_with_type_still_works():
+    code = compiles('class Point(x: int, y: int) {\n}\n')
+    assert 'class Point' in code
+
+
+# ---------------------------------------------------------------------------
 # Coalescing evaluates the left side once
 # ---------------------------------------------------------------------------
 
