@@ -160,9 +160,11 @@ def test_long_operator_chain_compiles():
 # ---------------------------------------------------------------------------
 
 def test_manifest_preserves_unknown_tables_and_values():
-    import tomllib
-
     from aura.tools import deps
+
+    tomllib = deps.tomllib
+    if tomllib is None:  # pragma: no cover - only without tomli on 3.10
+        pytest.skip('no TOML parser available')
 
     source = (
         '[project]\nname = "app"\nversion = "0.1.0"\n\n'
