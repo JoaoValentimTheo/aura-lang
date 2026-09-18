@@ -469,6 +469,7 @@ class Parser:
 
     def __init__(self, tokens, filename: str = "<aura>"):
         self.tokens = tokens
+        self._ntokens = len(tokens)
         self.pos = 0
         self.filename = filename
         # Depth of `case`-pattern parsing. Inside a pattern, `{` starts the
@@ -515,16 +516,19 @@ class Parser:
 
     # --- Token Management ---
     def peek(self, offset=0):
-        if self.pos + offset < len(self.tokens):
-            return self.tokens[self.pos + offset]
+        # `self.tokens` always ends with an EOF token, so an index within range
+        # is the common case; the cached length avoids a `len()` subcall on the
+        # hot path (peek is called hundreds of thousands of times).
+        index = self.pos + offset
+        if index < self._ntokens:
+            return self.tokens[index]
         return self.tokens[-1]
 
     def consume(self, expected_type=None, expected_value=None):
-        if self.pos >= len(self.tokens):
+        if self.pos >= self._ntokens:
             raise self.error("Unexpected end of file",
                              self.tokens[-1] if self.tokens else Token('EOF', '', 1, 1))
         token = self.tokens[self.pos]
-        # print(f"DEBUG: consume {token} pos={self.pos}")
         self.pos += 1
         if expected_type and token.type != expected_type:
             raise self.error(
@@ -536,17 +540,16 @@ class Parser:
         return token
 
     def match(self, value):
-        token = self.peek()
-        if token.value == value:
+        if self.tokens[self.pos].value == value:
             self.pos += 1
             return True
         return False
 
     def check(self, value):
-        return self.peek().value == value
+        return self.tokens[self.pos].value == value
 
     def check_type(self, type_name):
-        return self.peek().type == type_name
+        return self.tokens[self.pos].type == type_name
 
     # --- Main Entry Point ---
     def parse(self):
