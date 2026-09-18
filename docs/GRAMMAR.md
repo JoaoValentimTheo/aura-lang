@@ -426,6 +426,11 @@ by type, and `catch as e { }` binds every exception. The old ambiguous
 | 12 | unary `-`, `+`, `~`, `not`, `await`, `...` (spread) | prefix |
 | 13 | call, index, slice, member, safe-nav, struct-init | postfix |
 
+`yield` is a statement-level prefix form, not part of `expression`: the parser
+recognizes it before the Pratt loop and parses its operand at the lowest
+expression precedence, so `yield x + 1` yields `x + 1` and `yield a, b` yields
+the tuple `(a, b)`.
+
 ### 6.2 Expression grammar
 
 ```
@@ -445,7 +450,6 @@ additive       = multiplicative , { ( "+" | "-" ) , multiplicative } ;
 multiplicative = power_expr , { ( "*" | "/" | "%" ) , power_expr | "as" , type } ;
 power_expr     = unary , [ "**" , unary ] ;
 unary          = ( "-" | "+" | "~" | "not" | "await" | "..." ) , unary
-               | "yield" , [ expression ]
                | postfix ;
 postfix        = primary , { postfix_op } ;
 postfix_op     = "(" , [ arg_list ] , ")"

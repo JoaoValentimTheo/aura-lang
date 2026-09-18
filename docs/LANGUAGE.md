@@ -1108,26 +1108,36 @@ guard may reject the value. `case name` binds the value and does count.
 
 ### Operator precedence (highest to lowest)
 
+This table matches the parser. It follows Python's ordering for the shared
+operators (shifts bind tighter than `&`, which binds tighter than `^`, which
+binds tighter than `|`).
+
 | Prec | Operator | Description |
 |------|----------|-------------|
-| 1 | `**` | Exponentiation |
-| 2 | `+x`, `-x`, `~x` | Unary plus, minus, bitwise NOT |
-| 3 | `*`, `/`, `%` | Multiplication, division, modulo |
-| 4 | `+`, `-` | Addition, subtraction |
-| 5 | `<<`, `>>` | Bitwise shifts |
-| 6 | `&` | Bitwise AND |
-| 7 | `^` | Bitwise XOR |
-| 8 | `|` | Bitwise OR |
-| 9 | `<`, `>`, `<=`, `>=` | Comparisons |
-| 10 | `==`, `!=`, `is`, `in` | Equality, identity, membership |
-| 11 | `not` | Logical NOT |
+| 1 | `**` | Exponentiation (right-associative) |
+| 2 | `*`, `/`, `%`, `as` | Multiplication, division, modulo, cast |
+| 3 | `+`, `-` | Addition, subtraction |
+| 4 | `??`, `?:` | Null coalescing / Elvis (right-associative) |
+| 5 | `..`, `..<` | Ranges |
+| 6 | `<`, `>`, `<=`, `>=`, `in`, `not in`, `is`, `is not` | Comparison, membership, identity |
+| 7 | `<<`, `>>` | Bitwise shifts (tighter than `&`) |
+| 8 | `==`, `!=` | Equality |
+| 9 | `&` | Bitwise AND |
+| 10 | `^` | Bitwise XOR |
+| 11 | `\|` | Bitwise OR |
 | 12 | `and` | Logical AND |
 | 13 | `or` | Logical OR |
-| 14 | `?:` | Elvis operator |
-| 15 | `??` | Null coalescing |
-| 16 | `? :` | Ternary conditional |
-| 17 | `\|>` | Pipe |
-| 18 | `=`, `+=`, etc. | Assignment |
+| 14 | `? :` | Ternary conditional |
+| 15 | `\|>` | Pipe |
+| 16 | `=`, `+=`, etc. | Assignment |
+
+Pipe is the loosest expression operator and is grouped with assignment; it is
+parsed specially so `a \|> f \|> g` chains left to right.
+
+Unary `-`, `+`, `~`, `not`, `await` and prefix spread bind tighter than the
+binary operators above. `not` is looser than comparison, so `not a in b` means
+`not (a in b)`. `yield` is the loosest prefix form: `yield x + 1` yields
+`x + 1`.
 
 ### Ternary
 
