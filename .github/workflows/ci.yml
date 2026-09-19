@@ -68,7 +68,8 @@ jobs:
           aura run examples/hello.aura
           aura transpile examples/fibonacci.aura
           aura check examples/classes.aura
-          aura test examples/hello.aura examples/fibonacci.aura
+          aura test examples/hello.aura
+          aura test examples/fibonacci.aura
 
   build:
     name: Build distributions
