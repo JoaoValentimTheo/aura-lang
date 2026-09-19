@@ -4,7 +4,7 @@ title: "Aura Language Reference"
 nav_exclude: true
 ---
 
-[English](README.md) | [Português](README.pt_BR.md)
+[English](index.md) | [Português](index.pt_BR.md)
 
 # Aura Language Reference
 
@@ -85,6 +85,6 @@ Quando código, teste e documentação divergem, a divergência é um bug a corr
 
 ## Trilha de aprendizado
 
-Novo em Aura? Leia primeiro [`../learn/`](../learn/README.md) — um tutorial
+Novo em Aura? Leia primeiro [`../learn/`](../learn/index.md) — um tutorial
 numerado que constrói a linguagem — e depois use esta referência para as regras
 exatas.

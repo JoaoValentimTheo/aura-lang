@@ -5,7 +5,7 @@ nav_order: 2
 has_children: true
 ---
 
-[English](README.md) | [Português](README.pt_BR.md)
+[English](index.md) | [Português](index.pt_BR.md)
 
 # Learn Aura
 
@@ -26,7 +26,7 @@ the **syntax and the checking**, not in a new runtime.
 ## What Aura is today
 
 **Version:** `0.2.0a4`. The language reference in
-[`../language-reference/`](../language-reference/README.md) is the exact source
+[`../language-reference/`](../language-reference/index.md) is the exact source
 of truth; this tutorial builds intuition and links there for detail.
 
 * Gradually typed: annotations are optional and, except for the checks in the
@@ -121,7 +121,7 @@ aura run examples/tour.aura
 * **Verified** — the snippet was executed with `aura run` while writing this
   tutorial.
 * **Reference** — a link to the exact rule lives in
-  [`../language-reference/`](../language-reference/README.md); the tutorial does
+  [`../language-reference/`](../language-reference/index.md); the tutorial does
   not repeat it in depth.
 * **Limitation** — behaviour the reference describes but the current build
   rejects or does not enforce; called out where it matters.

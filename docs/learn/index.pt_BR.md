@@ -4,7 +4,7 @@ title: "Aprenda Aura"
 nav_exclude: true
 ---
 
-[English](README.md) | [Português](README.pt_BR.md)
+[English](index.md) | [Português](index.pt_BR.md)
 
 # Aprenda Aura
 
@@ -25,7 +25,7 @@ na **sintaxe e na checagem**, não em um novo runtime.
 ## O que Aura é hoje
 
 **Versão:** `0.2.0a4`. A referência da linguagem em
-[`../language-reference/`](../language-reference/README.md) é a fonte de verdade
+[`../language-reference/`](../language-reference/index.md) é a fonte de verdade
 exata; este tutorial constrói intuição e aponta para lá para detalhes.
 
 * Gradualmente tipada: anotações são opcionais e, exceto pelas checagens no type
@@ -119,7 +119,7 @@ aura run examples/tour.aura
 * **Verified** — o trecho foi executado com `aura run` durante a escrita deste
   tutorial.
 * **Reference** — um link para a regra exata vive em
-  [`../language-reference/`](../language-reference/README.md); o tutorial não a
+  [`../language-reference/`](../language-reference/index.md); o tutorial não a
   repete em profundidade.
 * **Limitation** — comportamento que a referência descreve mas que o build atual
   rejeita ou não aplica; apontado onde importa.

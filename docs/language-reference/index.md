@@ -5,6 +5,8 @@ nav_order: 3
 has_children: true
 ---
 
+[English](index.md) | [Português](index.pt_BR.md)
+
 # Aura Language Reference
 
 **Version:** 0.2.0a4 · **Extracted from:** `aura/parser/to_ast.py` and
@@ -84,5 +86,5 @@ never silently resolved in favour of one source.
 
 ## Learning path
 
-New to Aura? Read [`../learn/`](../learn/README.md) first — a numbered tutorial
+New to Aura? Read [`../learn/`](../learn/index.md) first — a numbered tutorial
 that builds up the language, then use this reference for exact rules.

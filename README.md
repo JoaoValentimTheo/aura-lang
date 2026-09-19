@@ -430,9 +430,9 @@ Commands: `:help`, `:vars`, `:type <expr>`, `:ast <expr>`, `:load <file>`,
 | Document | Covers |
 |----------|--------|
 | [Documentation site](https://joaovalentimtheo.github.io/aura-lang/) | The browsable docs (tutorial + reference) |
-| [docs/README.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/README.md) | Documentation index and reading order |
-| [docs/language-reference/](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/language-reference/README.md) | Complete language reference (lexical, grammar, types, expressions, statements, classes, modules, semantics, interop) |
-| [docs/learn/](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/learn/README.md) | Numbered tutorial path |
+| [docs/index.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/index.md) | Documentation index and reading order |
+| [docs/language-reference/](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/language-reference/index.md) | Complete language reference (lexical, grammar, types, expressions, statements, classes, modules, semantics, interop) |
+| [docs/learn/](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/learn/index.md) | Numbered tutorial path |
 | [docs/language-reference/grammar.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/language-reference/grammar.md) | Canonical EBNF grammar (source of truth) |
 | [docs/ERRORS.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/ERRORS.md) | Every diagnostic code (`E##` / `W##`) |
 | [docs/AUP.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/AUP.md) | Aura Patterns catalog |

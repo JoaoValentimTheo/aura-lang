@@ -9,7 +9,7 @@ nav_order: 1
 **Aura** is a gradually-typed programming language that transpiles to Python.
 One spelling per construct, no synonyms.
 
-**[Start learning →](learn/README.md)** · **[Language reference →](language-reference/README.md)**
+**[Start learning →](learn/index.md)** · **[Language reference →](language-reference/index.md)**
 
 ---
 
@@ -17,8 +17,8 @@ One spelling per construct, no synonyms.
 
 | Document | What it covers |
 |----------|----------------|
-| [learn/](learn/README.md) | A numbered tutorial path — **start here** |
-| [language-reference/](language-reference/README.md) | Complete language reference |
+| [learn/](learn/index.md) | A numbered tutorial path — **start here** |
+| [language-reference/](language-reference/index.md) | Complete language reference |
 | [language-reference/grammar.md](language-reference/grammar.md) | Canonical EBNF grammar |
 | [ERRORS.md](ERRORS.md) | Every diagnostic code (`E##` / `W##`) |
 | [AUP.md](AUP.md) | Aura Patterns catalog |
