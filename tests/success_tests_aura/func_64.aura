@@ -1,5 +1,0 @@
-// Function Test 64
-def test_func_64(a: int, b: int) -> int { return a + b + 64; }
-let lambda_64 = (x) => x * 64;
-print(test_func_64(1, 2));
-print(lambda_64(10));

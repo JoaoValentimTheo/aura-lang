@@ -1,6 +1,0 @@
-// Pattern Match Test 41
-let data_41 = 3.14;
-match data_41 {
-    case 3.14 { print("exact"); }
-    case _ { print("default"); }
-}

@@ -1,7 +1,0 @@
-// Control Flow Test 74
-let x = 74;
-guard x >= 0 else { return; }
-print("positive");
-let mut j = 0;
-while j < 5 { print(j); j = j + 1; }
-for k in 0..3 { print(k); }

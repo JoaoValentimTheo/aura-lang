@@ -1,7 +1,0 @@
-// Basic Type Test 37
-let x: list[int] = [1, 2, 3];
-let mut y = [1, 2, 3];
-const Z = [1, 2, 3];
-print(x);
-print(y);
-print(Z);

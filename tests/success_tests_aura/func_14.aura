@@ -1,5 +1,0 @@
-// Function Test 14
-def test_func_14(a: int, b: int) -> int { return a + b + 14; }
-let lambda_14 = (x) => x * 14;
-print(test_func_14(1, 2));
-print(lambda_14(10));

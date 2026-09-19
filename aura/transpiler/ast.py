@@ -561,17 +561,22 @@ class Decorator(Node):
         self.kwargs = kwargs or {}
 
 class ImportStmt(Stmt):
-    def __init__(self, module, items=None, alias=None, modules=None):
+    def __init__(self, module, items=None, alias=None, modules=None, is_python=False):
         self.module = module
         self.items = items or []
         self.alias = alias
         # For `import a, b as c`: list of (module_path, optional_alias).
         self.modules = modules or []
+        # True when written with the `py.` prefix (`import py.re`): the module
+        # is a host Python module, not an Aura module.
+        self.is_python = is_python
 
 class FromImport(Stmt):
-    def __init__(self, module, items):
+    def __init__(self, module, items, is_python=False):
         self.module = module
         self.items = items  # list of (name, optional_alias)
+        # True when written with the `py.` prefix (`from py.re import x`).
+        self.is_python = is_python
 
 # Backward compatibility (old names)
 Number = IntLiteral

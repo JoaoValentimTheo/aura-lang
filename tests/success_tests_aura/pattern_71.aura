@@ -1,6 +1,0 @@
-// Pattern Match Test 71
-let data_71 = (10, "bin");
-match data_71 {
-    case (10, "bin") { print("exact"); }
-    case _ { print("default"); }
-}

@@ -1,5 +1,0 @@
-// Function Test 69
-def test_func_69(a: int, b: int) -> int { return a + b + 69; }
-let lambda_69 = (x) => x * 69;
-print(test_func_69(1, 2));
-print(lambda_69(10));

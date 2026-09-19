@@ -9,15 +9,15 @@
 // Aura's `extends`-only class syntax and explicit `return` keep the view code
 // identical in shape to idiomatic Django.
 
-import django.http
-from django.urls import path
+import py.django.http as http
+from py.django.urls import path
 
 def home(request) {
-  return django.http.HttpResponse("Aura + Django")
+  return http.HttpResponse("Aura + Django")
 }
 
 def health(request) {
-  return django.http.JsonResponse({"status": "ok"})
+  return http.JsonResponse({"status": "ok"})
 }
 
 let urlpatterns = [

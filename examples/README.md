@@ -58,7 +58,7 @@ each explained in [docs/AUP.md](../docs/AUP.md).
 
 ## Style notes
 
-Aura follows a single, explicit syntax (see [docs/GRAMMAR.md](../docs/GRAMMAR.md)):
+Aura follows a single, explicit syntax (see [docs/language-reference/grammar.md](../docs/language-reference/grammar.md)):
 
 - Functions use `def`; `fn` does not exist.
 - Constructors use `new`; `init` does not exist.

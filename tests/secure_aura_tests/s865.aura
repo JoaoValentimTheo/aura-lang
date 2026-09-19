@@ -1,9 +1,0 @@
-// Security: Boundary Values
-let min_int = -2147483648;
-let max_int = 2147483647;
-let zero = 0;
-let one = 1;
-let large = 7350690;
-
-let results = [-2147483648, 2147483647, 0, 1, 7350690];
-print(results);

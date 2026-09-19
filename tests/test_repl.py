@@ -95,18 +95,15 @@ def test_repl_classes():
     out, loc = run_repl_session(lines)
     assert loc['p'].x == 10
 
-# Generate 96 more tests programmatically for robustness
-@pytest.mark.parametrize("i", range(100))
-def test_repl_stability_stress(i):
-    """Run random simple logic to ensure REPL doesn't crash repeatedly."""
-    val = i
-    lines = [
-        f"let mut val = {val}",
-        "val = val + 1",
-        "print(val)"
-    ]
-    out, loc = run_repl_session(lines)
-    assert loc['val'] == val + 1
+def test_repl_stability_stress():
+    """Run repeated mutations to ensure the REPL keeps state without crashing."""
+    for value in range(100):
+        out, loc = run_repl_session([
+            f"let mut counter = {value}",
+            "counter = counter + 1",
+            "print(counter)",
+        ])
+        assert loc['counter'] == value + 1
 
 def test_repl_syntax_error_recovery():
     # Should not crash on error

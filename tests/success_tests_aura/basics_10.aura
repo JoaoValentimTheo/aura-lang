@@ -1,7 +1,0 @@
-// Basic Type Test 10
-let x: str = "Aura";
-let mut y = "Aura";
-const Z = "Aura";
-print(x);
-print(y);
-print(Z);

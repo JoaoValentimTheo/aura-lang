@@ -1,7 +1,0 @@
-// Basic Type Test 8
-let x: int = 42;
-let mut y = 42;
-const Z = 42;
-print(x);
-print(y);
-print(Z);

@@ -1,9 +1,0 @@
-// Scope: Closure Capture
-let outer_15879 = 29;
-let inner_19747 = (x) => x * 5 + outer_15879 + 6;
-
-let result1 = inner_19747(10);
-let result2 = inner_19747(20);
-
-print(result1);
-print(result2);

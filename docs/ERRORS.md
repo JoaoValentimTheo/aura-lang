@@ -1,3 +1,9 @@
+---
+layout: default
+title: "Aura Diagnostics Reference"
+nav_order: 4
+---
+
 # Aura Diagnostics Reference
 
 Single source of truth for every diagnostic the Aura toolchain can report.

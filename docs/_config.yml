@@ -1,0 +1,35 @@
+title: Aura
+description: A gradually-typed programming language that transpiles to Python.
+remote_theme: just-the-docs/just-the-docs
+
+# Serve the whole docs/ folder; the repo root files are linked explicitly from
+# the pages so the site stays self-contained.
+url: https://joaovalentimtheo.github.io
+baseurl: /aura-lang
+
+# The reference pages are plain Markdown; no plugins beyond the remote theme.
+plugins:
+  - jekyll-remote-theme
+
+# Show a "Back to top" link and enable the search box.
+search_enabled: true
+back_to_top: true
+back_to_top_text: "Back to top"
+
+aux_links:
+  "GitHub":
+    - "https://github.com/JoaoValentimTheo/aura-lang"
+  "PyPI":
+    - "https://pypi.org/project/aura-language/"
+
+color_scheme: light
+
+# Exclude internal/research notes from the built site.
+exclude:
+  - PHASE8_MACHINE_CODE_RESEARCH.md
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default

@@ -4,6 +4,66 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.0a4] - 2026-09-19
+
+**Espelhagem/Kof na sintaxe** — a full syntax pass plus a documentation
+restructure that mirrors the Kof language reference.
+
+### Added
+
+- **Documentation site**: GitHub Pages serves `docs/` (just-the-docs), with
+  `docs/index.md` as the home and navigation for the tutorial and reference.
+  The project README now uses absolute GitHub URLs so every documentation link
+  resolves on **both** GitHub and PyPI, and the logo renders on both.
+- **Explicit Python interop through `py.`**: `import py.re`, `import py.os.path`
+  (binds the last segment), `import py.re as regex`, `import py.re, py.json`,
+  and `from py.math import sqrt, pi as PI`. The `py.` prefix separates host
+  Python modules from Aura modules; a name that collides with an Aura keyword
+  must be aliased (`from py.re import type as re_type`), otherwise it is a
+  pointed error. The dynamic `python` bridge remains for run-time access
+  (`python.import_module`, `python.getattr`, `python.eval`, ...).
+- **Set `{T}` and tuple `(A, B)` type annotations** parse (mapping to
+  `Set[T]` / `Tuple[A, B]`), matching the set/tuple literal values.
+- `docs/language-reference/` — a complete, evidence-based language reference
+  (lexical structure, grammar, syntax, types, type system, expressions,
+  statements, functions, closures, classes, modules, semantics, Python
+  interop) with `*.pt_BR.md` siblings, replacing the `LANGUAGE.md` /
+  `LANGUAGE_PT.md` / `TYPES.md` / `TYPES_PT.md` monoliths.
+- `docs/learn/` — a numbered tutorial path.
+
+### Changed
+
+- Foreign spellings from other languages are now rejected with pointed
+  messages instead of silently mis-parsing: `elif`/`elsif` (use `else if`),
+  `var`, `val`, `fun`/`func`/`function`, `lambda`, `foreach`, `switch`,
+  `repeat`, `do`, and `new C()` (use `C()`). `var`, `val`, `fun`, `func`,
+  `function`, `foreach`, `switch` and `repeat` are now reserved words.
+- Keyword-colliding declaration and parameter names are rejected uniformly
+  (`def if() {}`, `let var = 1`, `def f(var) {}`), while `self`/`cls` remain
+  valid as explicit receiver parameters and `match`/`case` as method names.
+
+### Fixed
+
+- **A bare `return`/`break`/`continue` no longer swallows the next line's
+  identifier** as its value or loop label. A value/label must be on the same
+  line as the keyword (`break` newline `print(x)` no longer becomes
+  `break print`).
+- **Union type aliases**: `type Maybe = int | none` now records the full type
+  and emits valid Python (`Maybe = int | None`); previously the union tail after
+  `|` was dropped and leaked as a stray statement (invalid `Maybe = int |`), and
+  the `none` component was not translated to Python's `None`.
+- `enum` members may be separated by `,`, `;`, or a newline (a member per line
+  now parses, as documented).
+- `match` case bodies now require `->` or `{ ... }`; foreign `case x:` / `case
+  x =>` and a missing body give a pointed error instead of silent mis-parse.
+
+### Removed
+
+- The generated test corpora (`tests/*_tests/`, 5550 `.aura` files) and their
+  runner, plus the mass generators that produced them. The suite dropped from
+  ~11.5k to ~4.4k tests, all behavioural (the removed files were compile-only
+  permutations with no assertions).
+
 ## [0.2.0a3] - 2026-09-19
 
 **Lexical/structure coherence audit** — keywords, variables, constants,

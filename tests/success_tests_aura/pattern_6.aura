@@ -1,6 +1,0 @@
-// Pattern Match Test 6
-let data_6 = {"a": 1};
-match data_6 {
-    case {"a": 1} { print("exact"); }
-    case _ { print("default"); }
-}

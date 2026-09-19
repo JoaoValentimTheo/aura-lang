@@ -1,8 +1,0 @@
-// Class Test 64
-class Base_64 { public let val: int = 64 }
-class Sub_64 extends Base_64 {
-    public let extra: str = "hi"
-    public def show() { print(self.val); print(self.extra); }
-}
-let obj_64 = Sub_64(val: 128, extra: "test_64");
-obj_64.show();

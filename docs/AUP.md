@@ -1,3 +1,9 @@
+---
+layout: default
+title: "AUP — Aura Patterns"
+nav_order: 5
+---
+
 # AUP — Aura Patterns
 
 **AUP** (Aura Uniform Patterns, or simply *Aura Patterns*) is a catalog of
@@ -109,7 +115,10 @@ for ordinary control flow — use Option (#01) for expected absence.
 
 ```aura
 @memoize
-def fib(n) -> int { if n < 2 { return n }\nreturn fib(n - 1) + fib(n - 2) }
+def fib(n) -> int {
+  if n < 2 { return n }
+  return fib(n - 1) + fib(n - 2)
+}
 ```
 
 Use `@memoize` for pure functions with a small input domain; use `@cache(N)`
@@ -177,7 +186,7 @@ ChaCha20-Poly1305) in production.
 ## Conventions
 
 - **One spelling.** Use canonical syntax (`def`, `new`, `none`, `and`, `not`).
-  See [GRAMMAR.md](GRAMMAR.md).
+  See [grammar.md](language-reference/grammar.md).
 - **Immutability by default.** `let` binds an immutable name; use `let mut`
   only when reassignment is genuinely needed.
 - **Early exit with `guard`.** Validate preconditions at the top of a function.

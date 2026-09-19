@@ -1,6 +1,0 @@
-// Pattern Match Test 2
-let data_2 = "Aura";
-match data_2 {
-    case "Aura" { print("exact"); }
-    case _ { print("default"); }
-}

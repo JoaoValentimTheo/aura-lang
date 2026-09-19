@@ -1,7 +1,7 @@
 """Tests locking in Aura's standardized (canonical) syntax.
 
 Removed spellings must raise a clear ``SyntaxError`` rather than silently
-miscompiling, and the canonical forms must keep working. See `docs/GRAMMAR.md`
+miscompiling, and the canonical forms must keep working. See `docs/language-reference/grammar.md`
 and its Appendix A.
 """
 import contextlib

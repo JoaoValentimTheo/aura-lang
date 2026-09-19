@@ -534,7 +534,7 @@ def test_with_statement():
 
 def test_decorator():
     out = run_aura(
-        "def twice(fn) { return (x) => fn(fn(x)) }\n"
+        "def twice(g) { return (x) => g(g(x)) }\n"
         "@twice\n"
         "def inc(x) { return x + 1 }\n"
         "print(inc(5))"

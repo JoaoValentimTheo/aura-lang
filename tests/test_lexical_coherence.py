@@ -3,7 +3,7 @@
 Locks in the fixes from the lexical/structure audit:
 
 * Operator precedence matches Python for the shared operators (comparison is
-  looser than the bitwise operators and the shifts) and matches `GRAMMAR.md`.
+  looser than the bitwise operators and the shifts) and matches `docs/language-reference/grammar.md`.
 * `x is <literal>` is rejected (identity against a literal is a mistake and
   would leak a Python ``SyntaxWarning``); `x is none` stays valid.
 * Collections expose a coherent length/append surface: `.size()`, `.length()`,

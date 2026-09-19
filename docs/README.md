@@ -1,8 +1,14 @@
+---
+layout: default
+title: "Aura Documentation"
+nav_exclude: true
+---
+
 # Aura Documentation
 
 The complete documentation for the Aura language and toolchain. If you are new
-here, read [LANGUAGE.md](LANGUAGE.md) and then run the programs in
-[`examples/`](https://github.com/JoaoValentimTheo/aura-lang/tree/master/examples).
+here, start with the [learning path](learn/README.md), then use the
+[language reference](language-reference/README.md) for exact rules.
 
 ---
 
@@ -10,11 +16,9 @@ here, read [LANGUAGE.md](LANGUAGE.md) and then run the programs in
 
 | Document | What it covers |
 |----------|----------------|
-| [LANGUAGE.md](LANGUAGE.md) | Complete syntax reference (English) — **start here** |
-| [LANGUAGE_PT.md](LANGUAGE_PT.md) | Referência completa de sintaxe (Português) |
-| [GRAMMAR.md](GRAMMAR.md) | Canonical EBNF grammar (the source of truth for syntax) |
-| [TYPES.md](TYPES.md) | Type system reference (English) |
-| [TYPES_PT.md](TYPES_PT.md) | Referência do sistema de tipos (Português) |
+| [learn/](learn/README.md) | A numbered tutorial path — **start here** |
+| [language-reference/](language-reference/README.md) | The language reference (lexical, grammar, types, expressions, statements, classes, modules, semantics, interop) |
+| [language-reference/grammar.md](language-reference/grammar.md) | Canonical EBNF grammar (the source of truth for syntax) |
 | [ERRORS.md](ERRORS.md) | Diagnostics reference: every `E##`/`W##` code |
 | [AUP.md](AUP.md) | Aura Patterns: idiomatic solutions to common problems |
 
@@ -38,7 +42,7 @@ here, read [LANGUAGE.md](LANGUAGE.md) and then run the programs in
 
 ## Where to go next
 
-**Learning Aura** — read [LANGUAGE.md](LANGUAGE.md), then work through
+**Learning Aura** — read [learn/](learn/README.md), then work through
 [`examples/`](https://github.com/JoaoValentimTheo/aura-lang/tree/master/examples)
 in order. The [AUP catalog](AUP.md) shows idiomatic solutions once the basics
 are clear.

@@ -1,11 +1,10 @@
-// Python interop: import any Python standard-library module or PyPI package.
-import os
-import sys
-import math
+// Python interop: reach host Python through the `py.` namespace.
+import py.os as os
+import py.sys as sys
+import py.math as math
+from py.json import dumps, loads
 
-from json import dumps, loads
-
-// Aura also ships first-class helpers in `python` for dynamic access.
+// For dynamic access, Aura also ships the `python` bridge.
 import python
 
 def main() {
@@ -17,4 +16,8 @@ def main() {
   print("os.name:", os.name)
   print("sqrt(2):", math.sqrt(2))
   print("platform:", sys.platform)
+
+  // The bridge handles dynamic names and introspection.
+  let re = python.import_module("re")
+  print("has match:", python.hasattr(re, "match"))
 }

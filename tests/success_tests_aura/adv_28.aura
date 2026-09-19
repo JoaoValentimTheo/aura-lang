@@ -1,6 +1,0 @@
-// Advanced Features Test 28
-let x_28: int? = 28
-let res_28 = x_28 ?? 0
-let mapped_28 = [x * 2 for x in 1..5 if x > 2]
-print(res_28)
-print(mapped_28)

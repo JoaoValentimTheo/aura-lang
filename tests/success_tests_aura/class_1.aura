@@ -1,8 +1,0 @@
-// Class Test 1
-class Base_1 { public let val: int = 1 }
-class Sub_1 extends Base_1 {
-    public let extra: str = "hi"
-    public def show() { print(self.val); print(self.extra); }
-}
-let obj_1 = Sub_1(val: 2, extra: "test_1");
-obj_1.show();

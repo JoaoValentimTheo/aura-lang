@@ -1,3 +1,9 @@
+---
+layout: default
+title: "Aura Transpiler - Architecture"
+nav_order: 6
+---
+
 # Aura Transpiler - Architecture
 
 Internal documentation for the Aura transpiler implementation.

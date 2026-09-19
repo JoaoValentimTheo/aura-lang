@@ -148,14 +148,10 @@ def test_dict_literals_parse(mapping):
        st.integers(min_value=0, max_value=50))
 @SETTINGS
 def test_function_declarations_parse(name, nparams):
-    if name in {"def", "let", "if", "else", "for", "while", "return", "class",
-                "trait", "match", "case", "import", "from", "with", "try",
-                "catch", "finally", "throw", "self", "true", "false", "none",
-                "and", "or", "not", "in", "is", "async", "await", "yield",
-                "break", "continue", "pass", "mut", "const", "public",
-                "private", "protected", "static", "volatile", "super", "spawn",
-                "guard", "loop", "until", "unless", "enum", "type", "module",
-                "export", "implements", "assert", "new", "volatily"}:
+    # Only non-reserved identifiers can name a declaration. Use the parser's
+    # own reserved-name set so this stays in sync automatically.
+    from aura.parser.to_ast import _RESERVED_BINDING_NAMES
+    if name in _RESERVED_BINDING_NAMES or not name.isidentifier():
         return
     params = ", ".join(f"p{i}" for i in range(nparams))
     src = f"def {name}({params}) {{ return 1 }}"

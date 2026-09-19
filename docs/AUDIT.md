@@ -1,9 +1,15 @@
+---
+layout: default
+title: "Aura Audit Report"
+nav_order: 8
+---
+
 # Aura Audit Report
 
 > **Historical document.** This report reflects an earlier state of the
 > project. It references files that have since been removed (the ANTLR grammar
 > `parser/aura.g4` and generated parser) and pre-0.1.0a5 paths. The current
-> grammar lives in [GRAMMAR.md](GRAMMAR.md) and the code in `aura/`.
+> grammar lives in [language-reference/grammar.md](language-reference/grammar.md) and the code in `aura/`.
 
 Record of the code audit performed against the documentation. Every item
 below was verified against the ANTLR grammar (`parser/aura.g4`), the
@@ -216,7 +222,7 @@ Every item below has a regression test in `tests/test_regressions.py`.
 
 ### Documentation alignment
 
-* `docs/LANGUAGE.md` / `docs/LANGUAGE_PT.md`: Imports chapter rewritten with
+* `docs/language-reference/`: Imports chapter rewritten with
   the three supported forms; removed `read_file`/`write_file`.
 * `stdlib/README.md`: documents `split` `maxsplit`, strict JSON, and the
   corrected `read_lines`/`write_lines` semantics.

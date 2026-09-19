@@ -1,3 +1,9 @@
+---
+layout: default
+title: "Aura Language Completeness Report"
+nav_order: 7
+---
+
 # Aura Language Completeness Report
 
 Status after the Phase 4 audit (mutability, closures, modules, imports).

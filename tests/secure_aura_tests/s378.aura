@@ -1,8 +1,0 @@
-// Security: Recursion Depth (15)
-def fib_35479(n: int) -> int {
-    if n <= 1 { return n; }
-    return fib_35479(n - 1) + fib_35479(n - 2);
-}
-
-let result = fib_35479(15);
-print(result);

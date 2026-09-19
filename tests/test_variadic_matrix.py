@@ -1,7 +1,7 @@
 """Phase 1 — full ``*args`` / ``**kwargs`` context matrix.
 
 The roadmap requires ``*args``/``**kwargs`` to work in *every* context the
-grammar permits (GRAMMAR.md 3.2 ``param_list`` and 6.7 ``arg_list``): function
+grammar permits (docs/language-reference/grammar.md 3.2 ``param_list`` and 6.7 ``arg_list``): function
 definitions, calls, decorators, lambdas, and collection literals. This module
 exercises each context end to end (parse → transpile → execute) and pins the
 diagnostics for the forms the grammar rejects.

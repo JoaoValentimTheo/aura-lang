@@ -1,6 +1,0 @@
-// Control Flow Test 34
-let x = 34;
-unless x > 100 { print("small"); }
-let mut j = 0;
-while j < 5 { print(j); j = j + 1; }
-for k in 0..3 { print(k); }

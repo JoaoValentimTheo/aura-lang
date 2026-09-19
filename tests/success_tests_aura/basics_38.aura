@@ -1,7 +1,0 @@
-// Basic Type Test 38
-let x: dict[str, any] = {"a": 1};
-let mut y = {"a": 1};
-const Z = {"a": 1};
-print(x);
-print(y);
-print(Z);

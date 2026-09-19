@@ -1,6 +1,0 @@
-// Control Flow Test 93
-let x = 93;
-if x % 2 == 0 { print("even"); } else { print("odd"); }
-let mut j = 0;
-while j < 5 { print(j); j = j + 1; }
-for k in 0..3 { print(k); }

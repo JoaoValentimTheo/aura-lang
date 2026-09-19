@@ -1,9 +1,0 @@
-// Scope: Lifetime Tracking
-let v_80730 = 100;
-
-{
-    let v_14734 = v_80730 * 2;
-    print(v_14734);
-}
-
-print(v_80730);

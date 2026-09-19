@@ -9,7 +9,7 @@
 // so the example verifies end to end without blocking on a server. To serve
 // it, call `app.run(host="127.0.0.1", port=5000)` instead.
 
-import flask
+import py.flask as flask
 
 let app = flask.Flask(__name__)
 

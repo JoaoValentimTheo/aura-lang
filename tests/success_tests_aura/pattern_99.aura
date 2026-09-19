@@ -1,6 +1,0 @@
-// Pattern Match Test 99
-let data_99 = true;
-match data_99 {
-    case true { print("exact"); }
-    case _ { print("default"); }
-}

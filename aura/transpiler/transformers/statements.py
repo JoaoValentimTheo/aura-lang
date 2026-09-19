@@ -792,7 +792,9 @@ class StatementTransformer:
         if '->' in text or text.startswith('('):
             return 'object'
         if '|' in text:
-            return text
+            # Translate each union component: `int | none` → `int | None`.
+            parts = [self._aura_type_to_python(p.strip()) for p in text.split('|')]
+            return ' | '.join(parts)
         if text.isidentifier():
             return text
         return 'object'
@@ -1336,6 +1338,9 @@ class StatementTransformer:
         # import a, b as c -> import a, b as c
         # import a.b {x, y} -> from a.b import x, y
         # import a.b as c -> import a.b as c
+        # import py.re -> import re ; import py.os.path -> import os.path as path
+        if getattr(node, 'is_python', False):
+            return self._transform_python_import(node)
         self._record_import_names(
             [mod for mod, _alias in getattr(node, 'modules', None) or []],
             [module for module, _alias in getattr(node, 'modules', None) or []])
@@ -1365,6 +1370,25 @@ class StatementTransformer:
         self._record_import_names([node.module], [node.module])
         return f"import {node.module}"
 
+    def _transform_python_import(self, node):
+        """Emit a host-Python import written with the `py.` prefix.
+
+        `import py.re` binds the last path segment (`re`), matching the Aura
+        rule that `py.re` brings in `re`; `import py.os.path` therefore binds
+        `path` (unlike Python's `import os.path`, which binds `os`). An explicit
+        `as` alias always wins.
+        """
+        parts = []
+        for mod, mod_alias in getattr(node, 'modules', None) or []:
+            bound = mod_alias or mod.split('.')[-1]
+            parts.append(f"{mod} as {bound}")
+            self.imported_modules.add(bound)
+        if parts:
+            return "import " + ", ".join(parts)
+        bound = node.alias or node.module.split('.')[-1]
+        self.imported_modules.add(bound)
+        return f"import {node.module} as {bound}"
+
     def transform_FromImport(self, node):
         items = []
         bindings = []
@@ -1379,7 +1403,8 @@ class StatementTransformer:
                 bindings.append(name)
         # `from enum import Enum` binds a library class name; `from App import X`
         # binds an Aura sibling, which must not be treated as external.
-        if not self._is_local_module(node.module):
+        # A `py.` import is always external, whatever the module looks like.
+        if getattr(node, 'is_python', False) or not self._is_local_module(node.module):
             self.imported_modules.update(bindings)
         return f"from {node.module} import {', '.join(items)}"
 

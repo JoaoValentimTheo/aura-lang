@@ -1,6 +1,0 @@
-// Advanced Features Test 4
-let x_4: int? = 4
-let res_4 = x_4 ?? 0
-let mapped_4 = [x * 2 for x in 1..5 if x > 2]
-print(res_4)
-print(mapped_4)

@@ -33,10 +33,10 @@ def test_private_visibility_enforcement():
         public def get_x() { return self.x }
     }
     let s = Secret()
-    let val = s.get_x()
+    let got = s.get_x()
     """
     loc = transpile_and_run(valid_code)
-    assert loc['val'] == 10
+    assert loc['got'] == 10
     
     # 2. Test Invalid Access (Runtime Error)
     invalid_code = """
@@ -44,7 +44,7 @@ def test_private_visibility_enforcement():
         private let x = 10
     }
     let s = Secret()
-    let val = s.x  // Should fail
+    let got = s.x  // Should fail
     """
     
     with pytest.raises(AttributeError):

@@ -1,6 +1,0 @@
-// Advanced Features Test 8
-let x_8: int? = 8
-let res_8 = x_8 ?? 0
-let mapped_8 = [x * 2 for x in 1..5 if x > 2]
-print(res_8)
-print(mapped_8)

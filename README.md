@@ -12,7 +12,7 @@ package — is one import away.
 [![Release](https://github.com/JoaoValentimTheo/aura-lang/actions/workflows/release.yml/badge.svg)](https://github.com/JoaoValentimTheo/aura-lang/releases)
 [![PyPI](https://img.shields.io/pypi/v/aura-language.svg)](https://pypi.org/project/aura-language/)
 [![Python](https://img.shields.io/pypi/pyversions/aura-language.svg)](https://pypi.org/project/aura-language/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/JoaoValentimTheo/aura-lang/blob/master/LICENSE)
 
 </div>
 
@@ -20,14 +20,14 @@ package — is one import away.
 
 ## Status
 
-Aura is **alpha** (`0.2.0a3`). The compiler, type checker, rule checker, REPL,
+Aura is **alpha** (`0.2.0a4`). The compiler, type checker, rule checker, REPL,
 language server, formatter, linter, project tooling, and standard library are
 implemented and covered by a test suite of **11,000+ tests**.
 
 > **Syntax freeze.** As of `0.2.0a1`, Aura's syntax is officially frozen.
 > No syntax changes will be made before the stable 1.0 release. The
-> canonical grammar is [docs/GRAMMAR.md](docs/GRAMMAR.md) and every change is
-> recorded in [CHANGELOG.md](CHANGELOG.md).
+> canonical grammar is [docs/language-reference/grammar.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/language-reference/grammar.md) and every change is
+> recorded in [CHANGELOG.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/CHANGELOG.md).
 
 What exists today:
 
@@ -99,7 +99,7 @@ python3 main.py run examples/hello.aura
 ## The language
 
 Aura has exactly **one spelling per construct** — no synonyms. The full grammar
-is in [docs/GRAMMAR.md](docs/GRAMMAR.md).
+is in [docs/language-reference/grammar.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/language-reference/grammar.md).
 
 ```aura
 // Bindings: `let` is immutable, `let mut` opts into reassignment.
@@ -249,12 +249,13 @@ def main() {
 
 ## Python interop
 
-Any PyPI package is one import away; the `python` bridge reaches anything else.
+Host Python is reached through the explicit `py.` namespace; the `python`
+bridge handles dynamic access.
 
 ```aura
-import os
-import math
-import json
+import py.os as os
+import py.math as math
+import py.json as json
 import python
 
 def main() {
@@ -306,21 +307,21 @@ program's own declaration always shadows a built-in macro of the same name.
 
 ## Aura Patterns (AUP)
 
-[AUP](docs/AUP.md) is a catalog of idiomatic solutions, each with a runnable
-example under [`examples/aup/`](examples/aup):
+[AUP](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/AUP.md) is a catalog of idiomatic solutions, each with a runnable
+example under [`examples/aup/`](https://github.com/JoaoValentimTheo/aura-lang/tree/master/examples/aup):
 
 | Pattern | Example |
 |---------|---------|
-| Optional results (`T \| none`) | [`option.aura`](examples/aup/option.aura) |
-| Typed error handling | [`error_handling.aura`](examples/aup/error_handling.aura) |
-| Builder | [`builder.aura`](examples/aup/builder.aura) |
-| Strategy | [`strategy.aura`](examples/aup/strategy.aura) |
-| Pipeline (`\|>`) | [`pipeline.aura`](examples/aup/pipeline.aura) |
-| Memoize / cache | [`memoize.aura`](examples/aup/memoize.aura) |
-| Observer | [`observer.aura`](examples/aup/observer.aura) |
-| Resource management (`with`) | [`resource.aura`](examples/aup/resource.aura) |
-| Worker pool | [`worker_pool.aura`](examples/aup/worker_pool.aura) |
-| Hybrid post-quantum crypto | [`hybrid_crypto.aura`](examples/aup/hybrid_crypto.aura) |
+| Optional results (`T \| none`) | [`option.aura`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/examples/aup/option.aura) |
+| Typed error handling | [`error_handling.aura`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/examples/aup/error_handling.aura) |
+| Builder | [`builder.aura`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/examples/aup/builder.aura) |
+| Strategy | [`strategy.aura`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/examples/aup/strategy.aura) |
+| Pipeline (`\|>`) | [`pipeline.aura`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/examples/aup/pipeline.aura) |
+| Memoize / cache | [`memoize.aura`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/examples/aup/memoize.aura) |
+| Observer | [`observer.aura`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/examples/aup/observer.aura) |
+| Resource management (`with`) | [`resource.aura`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/examples/aup/resource.aura) |
+| Worker pool | [`worker_pool.aura`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/examples/aup/worker_pool.aura) |
+| Hybrid post-quantum crypto | [`hybrid_crypto.aura`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/examples/aup/hybrid_crypto.aura) |
 
 ## CLI
 
@@ -423,18 +424,16 @@ Commands: `:help`, `:vars`, `:type <expr>`, `:ast <expr>`, `:load <file>`,
 
 | Document | Covers |
 |----------|--------|
-| [docs/README.md](docs/README.md) | Documentation index and reading order |
-| [docs/GRAMMAR.md](docs/GRAMMAR.md) | Canonical EBNF grammar (source of truth) |
-| [docs/LANGUAGE.md](docs/LANGUAGE.md) | Complete language reference (English) |
-| [docs/LANGUAGE_PT.md](docs/LANGUAGE_PT.md) | Referencia completa da linguagem (Portugues) |
-| [docs/TYPES.md](docs/TYPES.md) | Type system (English) |
-| [docs/TYPES_PT.md](docs/TYPES_PT.md) | Sistema de tipos (Portugues) |
-| [docs/ERRORS.md](docs/ERRORS.md) | Every diagnostic code (`E##` / `W##`) |
-| [docs/AUP.md](docs/AUP.md) | Aura Patterns catalog |
-| [docs/DESIGN.md](docs/DESIGN.md) | Transpiler architecture |
-| [docs/COMPLETENESS.md](docs/COMPLETENESS.md) | Language coverage and remaining gaps |
-| [CHANGELOG.md](CHANGELOG.md) | Release history |
-| [examples/](examples/) | Runnable example programs |
+| [docs/README.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/README.md) | Documentation index and reading order |
+| [docs/language-reference/](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/language-reference/README.md) | Complete language reference (lexical, grammar, types, expressions, statements, classes, modules, semantics, interop) |
+| [docs/learn/](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/learn/README.md) | Numbered tutorial path |
+| [docs/language-reference/grammar.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/language-reference/grammar.md) | Canonical EBNF grammar (source of truth) |
+| [docs/ERRORS.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/ERRORS.md) | Every diagnostic code (`E##` / `W##`) |
+| [docs/AUP.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/AUP.md) | Aura Patterns catalog |
+| [docs/DESIGN.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/DESIGN.md) | Transpiler architecture |
+| [docs/COMPLETENESS.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/COMPLETENESS.md) | Language coverage and remaining gaps |
+| [CHANGELOG.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/CHANGELOG.md) | Release history |
+| [examples/](https://github.com/JoaoValentimTheo/aura-lang/tree/master/examples) | Runnable example programs |
 
 ## Development
 
@@ -448,9 +447,9 @@ ruff check aura/          # lint
 mypy aura/                # type-check the compiler
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and
-[SECURITY.md](SECURITY.md) to report a vulnerability.
+See [CONTRIBUTING.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/CONTRIBUTING.md) for the workflow and
+[SECURITY.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/SECURITY.md) to report a vulnerability.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](https://github.com/JoaoValentimTheo/aura-lang/tree/master/LICENSE).

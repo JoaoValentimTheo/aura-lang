@@ -1,3 +1,9 @@
+---
+layout: default
+title: "Phase 8 — Research Report: Machine Code Compilation for Aura"
+nav_exclude: true
+---
+
 # Phase 8 — Research Report: Machine Code Compilation for Aura
 
 Date: 2026-09-18

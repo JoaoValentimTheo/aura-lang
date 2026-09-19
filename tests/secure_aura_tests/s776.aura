@@ -1,8 +1,0 @@
-// Security: Nested Structures (depth=5)
-let nested = {"value": 0};
-let nested = {"level_1": nested};
-let nested = {"level_2": nested};
-let nested = {"level_3": nested};
-let nested = {"level_4": nested};
-
-print(nested);

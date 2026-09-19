@@ -1,7 +1,0 @@
-// Basic Type Test 15
-let x: tuple[int, str] = (10, "bin");
-let mut y = (10, "bin");
-const Z = (10, "bin");
-print(x);
-print(y);
-print(Z);

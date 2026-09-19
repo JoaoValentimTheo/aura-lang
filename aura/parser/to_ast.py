@@ -491,6 +491,20 @@ _PRECEDENCE = {
 MAX_SOURCE_BYTES = 16 * 1024 * 1024
 
 
+def _split_python_prefix(module):
+    """Split an optional ``py.`` prefix from a module path.
+
+    ``py.re``, ``py.os.path`` and bare ``py`` mark a host Python import: the
+    ``py.`` segment is stripped before code generation and ``is_python`` is
+    returned True. A path without the prefix is an Aura module.
+    """
+    if module == 'py':
+        return 'py', True
+    if module.startswith('py.'):
+        return module[len('py.'):], True
+    return module, False
+
+
 def _is_literal(node):
     """True when ``node`` is a literal expression.
 
@@ -513,6 +527,9 @@ _RESERVED_BINDING_NAMES = frozenset({
     'or', 'not', 'is', 'true', 'false', 'none', 'self', 'super', 'new',
     'public', 'private', 'protected', 'static', 'volatile', 'abstract',
     'export', 'with', 'assert', 'fn',
+    # Foreign spellings: not Aura keywords, but reserved so they cannot be
+    # declared, avoiding code that reads like another language.
+    'var', 'val', 'fun', 'func', 'function', 'foreach', 'switch', 'repeat',
 })
 
 # Python boolean/None spellings that Aura deliberately spells differently.
@@ -564,6 +581,38 @@ class Parser:
             raise self.error(
                 f"'{token.value}' is not an Aura literal; write '{alias}' "
                 "instead (and choose a different binding name)", token)
+        return token.value
+
+    def _check_param_name(self, token):
+        """Validate a parameter name.
+
+        Parameters are ordinary bindings, with one exception: `self` and `cls`
+        are reserved words but must be usable as the *explicit* receiver
+        parameter of a method (`def __str__(self) { ... }`), which Aura allows.
+        """
+        if token.value in ('self', 'cls'):
+            return token.value
+        return self._check_binding_name(token)
+
+    # Soft keywords: reserved in statement position, but valid as the *name* of
+    # a declaration (`def match()`, `def case()`), matching Python's pattern
+    # keywords. `new` is reserved as a binding but is the canonical constructor
+    # method name.
+    _SOFT_KEYWORD_NAMES = frozenset({'match', 'case', 'step', 'new'})
+
+    def _check_declarable_name(self, token):
+        """Validate a function/method name.
+
+        Reserved keywords and foreign spellings are rejected here too, so
+        `def if() {}` and `def var() {}` fail at the declaration site instead of
+        producing broken output. Soft pattern keywords (`match`, `case`, `step`)
+        are allowed as names.
+        """
+        if (token.value in _RESERVED_BINDING_NAMES
+                and token.value not in self._SOFT_KEYWORD_NAMES):
+            raise self.error(
+                f"'{token.value}' is a reserved keyword and cannot be used as "
+                f"a name", token)
         return token.value
 
     def error(self, message, token=None):
@@ -769,6 +818,26 @@ class Parser:
 
         token = self.peek()
 
+        # Foreign keywords: spellings from other languages that Aura does not
+        # have. Without this guard they parse as bare identifiers and produce
+        # silently wrong Python (`var x = 1` → two statements, `new C()` →
+        # `new` then `C()`). Each maps to its Aura replacement.
+        foreign_stmt = {
+            'var': "use 'let mut' (mutable) or 'let' (immutable)",
+            'foreach': "use 'for x in xs'",
+            'function': "use 'def'",
+            'fun': "use 'def'",
+            'lambda': "use an arrow lambda: '(x) => expr'",
+            'new': "Aura constructs with 'Type(args)', without 'new'",
+            'repeat': "use 'loop { ... }' or 'until'",
+            'switch': "use 'match x { case ... -> ... }'",
+            'do': "use 'loop { ... }' with a 'break'",
+        }
+        if token.value in foreign_stmt and token.type == 'IDENT':
+            raise self.error(
+                f"'{token.value}' is not part of Aura; "
+                f"{foreign_stmt[token.value]}", token)
+
         if token.value == 'let':
             return self.parse_var_decl(visibility, is_static, is_volatile)
         elif token.value == 'mut':
@@ -782,6 +851,10 @@ class Parser:
         elif token.value == 'fn':
             raise self.error(
                 "'fn' is not part of Aura; use 'def' instead", token)
+        elif token.value in ('elif', 'elsif'):
+            raise self.error(
+                f"'{token.value}' is not part of Aura; write 'else if' "
+                f"(chained) or 'else {{ if ... }}'", token)
         elif token.value in ('def', 'async'):
             # `async def` declares an async function; `async with` opens an
             # async context manager. Anything else after `async` is an error.
@@ -823,16 +896,21 @@ class Parser:
         elif token.value == 'return':
             return self.parse_return_stmt()
         elif token.value == 'break':
-            self.consume()
+            kw_line = self.consume().line
             label = None
-            if self.check_type('IDENT'):
+            # A label must sit on the same line as `break`; otherwise a bare
+            # `break` followed by a new statement (`break` newline `print(x)`)
+            # would swallow the next identifier as a label.
+            if (self.check_type('IDENT')
+                    and getattr(self.peek(), 'line', kw_line) == kw_line):
                 label = self.consume().value
             if self.check(';'): self.consume()
             return BreakStmt(label)
         elif token.value == 'continue':
-            self.consume()
+            kw_line = self.consume().line
             label = None
-            if self.check_type('IDENT'):
+            if (self.check_type('IDENT')
+                    and getattr(self.peek(), 'line', kw_line) == kw_line):
                 label = self.consume().value
             if self.check(';'): self.consume()
             return ContinueStmt(label)
@@ -1088,7 +1166,7 @@ class Parser:
                 "'fn' is not part of Aura; use 'def' instead", tok)
         self.consume(expected_value='def')
 
-        name = self.consume(expected_type='IDENT').value
+        name = self._check_declarable_name(self.consume(expected_type='IDENT'))
         if name_override is not None:
             name = name_override
 
@@ -1116,7 +1194,7 @@ class Parser:
                         continue
                     is_variadic = True
 
-                p_name = self.consume(expected_type='IDENT').value
+                p_name = self._check_param_name(self.consume(expected_type='IDENT'))
                 p_type = None
                 if self.match(':'):
                     p_type = self.parse_type()
@@ -1628,7 +1706,13 @@ class Parser:
                     consumed_any = True
                     continue
                 # A bare identifier immediately after a complete type begins a
-                # new statement, unless it is a continuation operator.
+                # new statement — unless the type is still open on a
+                # continuation operator (`int | none`, `A & B`), in which case
+                # the identifier is the next union/intersection member.
+                last = self.tokens[self.pos - 1].value if self.pos > start else None
+                if last in self._TYPE_CONTINUATIONS:
+                    self.consume()
+                    continue
                 break
             if tok.value in self._TYPE_CONTINUATIONS:
                 self.consume()
@@ -1680,7 +1764,7 @@ class Parser:
         token = self.consume()
         t_name = str(token.value)
 
-        # Function type: (T) -> R
+        # Function type: (T) -> R, or tuple type: (A, B)
         if t_name == '(':
              # Parse arg types
              args = []
@@ -1689,9 +1773,13 @@ class Parser:
                      args.append(self.parse_type())
                      if not self.match(','): break
              self.consume(expected_value=')')
-             self.consume(expected_value='->')
-             ret = self.parse_type()
-             return f"({', '.join(str(a) for a in args)}) -> {ret}"
+             if self.match('->'):
+                 ret = self.parse_type()
+                 return f"({', '.join(str(a) for a in args)}) -> {ret}"
+             # No `->`: a tuple type `(A, B)`.
+             if len(args) == 1:
+                 return f"Tuple[{args[0]}]"
+             return f"Tuple[{', '.join(str(a) for a in args)}]"
 
         if t_name == '[':
              # Array/List type [T] or [T, U]
@@ -1702,6 +1790,14 @@ class Parser:
              return f"List[{arg}]" # Map to List type for Python
 
         if t_name == '{':
+             # Either a set type `{T}` or a structural type
+             # `{name: str, age: int}`. A set type has a single type and no
+             # `:`; a structural type has named fields with `:`.
+             if not (self.check_type('IDENT')
+                     and self.peek(1).value in (':', '?')):
+                 elem = self.parse_type()
+                 self.consume(expected_value='}')
+                 return f"Set[{elem}]"
              # Structural type: {name: str, age: int}
              fields = []
              while not self.check('}'):
@@ -1752,6 +1848,8 @@ class Parser:
             self.consume()  # consume '.'
             module += "." + self.consume(expected_type='IDENT').value
 
+        module, is_python = _split_python_prefix(module)
+
         items = []
         if self.match('{'):
             while True:
@@ -1759,6 +1857,8 @@ class Parser:
                 item_alias = None
                 if self.match('as'):
                     item_alias = self.consume(expected_type='IDENT').value
+                if is_python:
+                    self._reject_python_keyword_binding(name, item_alias)
                 items.append((name, item_alias))
                 if not self.match(','): break
             self.consume(expected_value='}')
@@ -1775,15 +1875,31 @@ class Parser:
                 while self.check('.') and self.peek(1).type == 'IDENT':
                     self.consume()
                     next_module += "." + self.consume(expected_type='IDENT').value
+                next_module, next_is_python = _split_python_prefix(next_module)
+                is_python = is_python or next_is_python
                 next_alias = None
                 if self.match('as'):
                     next_alias = self.consume(expected_type='IDENT').value
                 modules.append((next_module, next_alias))
             if self.check(';'): self.consume()
-            return ImportStmt(module, items, alias, modules)
+            return ImportStmt(module, items, alias, modules, is_python=is_python)
 
         if self.check(';'): self.consume()
-        return ImportStmt(module, items, alias)
+        return ImportStmt(module, items, alias, is_python=is_python)
+
+    def _reject_python_keyword_binding(self, name, alias):
+        """Reject importing a Python name that collides with an Aura keyword.
+
+        `from py.re import type` cannot bind `type` (a reserved word). The
+        writer must alias it (`... import type as re_type`); the dynamic bridge
+        (`py.getattr(mod, "type")`) covers names that have no alias.
+        """
+        if alias is None and name in _RESERVED_BINDING_NAMES:
+            raise self.error(
+                f"'{name}' is a reserved Aura keyword and cannot be imported "
+                f"under that name; import it with an alias "
+                f"(from py.<module> import {name} as <alias>)",
+                self.peek())
 
     def parse_from_import_stmt(self):
         self.consume(expected_value='from')
@@ -1791,6 +1907,7 @@ class Parser:
         while self.check('.') and self.peek(1).type == 'IDENT':
             self.consume()
             module += "." + self.consume(expected_type='IDENT').value
+        module, is_python = _split_python_prefix(module)
         self.consume(expected_value='import')
 
         items = []
@@ -1802,11 +1919,13 @@ class Parser:
                 alias = None
                 if self.match('as'):
                     alias = self.consume(expected_type='IDENT').value
+                if is_python:
+                    self._reject_python_keyword_binding(name, alias)
                 items.append((name, alias))
                 if not self.match(','):
                     break
         if self.check(';'): self.consume()
-        return FromImport(module, items)
+        return FromImport(module, items, is_python=is_python)
 
     def parse_trait_decl(self, visibility='public'):
         self.consume(expected_value='trait')
@@ -2026,13 +2145,23 @@ class Parser:
         self.consume(expected_value='{')
         members = []
         while not self.check('}') and not self.check('EOF'):
+            member_line = self.peek().line
             member_name = self.consume(expected_type='IDENT').value
             value = None
             if self.match('='):
                 value = self.parse_expression()
             members.append((member_name, value))
-            if not self.match(','):
+            # A member ends at `,`, `;`, or a newline. Newlines are not tokens
+            # in Aura, so a member on its own line needs no separator; a comma
+            # (or `;`) is still accepted on the same line.
+            if self.match(',') or self.match(';'):
+                continue
+            if self.check('}'):
                 break
+            if getattr(self.peek(), 'line', member_line) > member_line:
+                continue
+            raise self.error(
+                "expected ',' between enum members", self.peek())
         self.consume(expected_value='}')
         if self.check(';'):
             self.consume()
@@ -2152,9 +2281,13 @@ class Parser:
                 f"literals", tok)
 
     def parse_return_stmt(self):
-        self.consume(expected_value='return')
+        kw_line = self.consume(expected_value='return').line
         val = None
-        if not self.check(';') and not self.check('}'):
+        # A return value counts only when it is on the same line as `return`.
+        # A bare `return` followed by a new statement must not swallow that
+        # statement as its value (`return` newline `print(x)`).
+        same_line = getattr(self.peek(), 'line', kw_line) == kw_line
+        if (same_line and not self.check(';') and not self.check('}')):
             self._reject_bare_spread("a return value")
             val = self.parse_expression()
             val = self.parse_trailing_tuple(val)
@@ -2246,9 +2379,19 @@ class Parser:
              elif self.match('->'):
                  stmt = self.parse_statement()
                  if stmt: body = [stmt]
+             elif self.check(':') or self.check('=>'):
+                 # Foreign case syntax: `case x:` / `case x =>` belong to
+                 # other languages. Aura uses `case x ->` or `case x { ... }`.
+                 bad = self.peek()
+                 raise self.error(
+                     f"'{bad.value}' is not Aura case syntax; write "
+                     f"'case <pattern> -> <expr>' or 'case <pattern> {{ ... }}'",
+                     bad)
              else:
-                 # Maybe implicit block or just expr?
-                 pass
+                 # A case with no body is almost always a forgotten `->`.
+                 raise self.error(
+                     "expected a case body; write 'case <pattern> -> <expr>' "
+                     "or 'case <pattern> { ... }'", self.peek())
 
              cases.append(MatchCase(pat_node, guard, body))
 
@@ -2566,6 +2709,20 @@ class Parser:
             elif token.value == 'null':
                 raise self.error(
                     "'null' is not part of Aura; use 'none' instead", token)
+            elif token.value == 'new':
+                # `new C()` is a foreign constructor form; Aura constructs with
+                # `C(args)`. Reject it here so `let x = new C()` cannot slip
+                # through as `new` followed by `C()`.
+                raise self.error(
+                    "'new' is not part of Aura; construct with 'Type(args)'",
+                    token)
+            elif token.value in ('function', 'fun'):
+                raise self.error(
+                    f"'{token.value}' is not part of Aura; use 'def'", token)
+            elif token.value == 'lambda':
+                raise self.error(
+                    "'lambda' is not part of Aura; use an arrow lambda "
+                    "'(x) => expr'", token)
             elif token.value == 'none':
                 self.consume()
                 return NoneLiteral()
@@ -2810,7 +2967,7 @@ class Parser:
 
         The opening `(` has already been consumed; the caller consumes the
         closing `)`. Mirrors `_parse_function`'s parameter loop so lambdas and
-        functions accept the same forms (see GRAMMAR.md 6.4).
+        functions accept the same forms (see docs/language-reference/grammar.md 6.4).
         """
         params = []
         seen_star = False

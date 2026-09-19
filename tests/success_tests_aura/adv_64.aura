@@ -1,6 +1,0 @@
-// Advanced Features Test 64
-let x_64: int? = 64
-let res_64 = x_64 ?? 0
-let mapped_64 = [x * 2 for x in 1..5 if x > 2]
-print(res_64)
-print(mapped_64)

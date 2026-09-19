@@ -1,7 +1,0 @@
-// Basic Type Test 3
-let x: bool = true;
-let mut y = true;
-const Z = true;
-print(x);
-print(y);
-print(Z);

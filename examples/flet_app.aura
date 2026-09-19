@@ -5,7 +5,7 @@
 // can be exercised without opening a window: `main` builds the controls and
 // reports them. To run the real app, pass the builder to `flet.app(target=build)`.
 
-import flet
+import py.flet as flet
 
 // The tiny slice of Flet's page API the builder uses. A real `flet.Page` is
 // created by the runtime, so tests and headless runs use this stand-in.

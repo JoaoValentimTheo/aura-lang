@@ -1,7 +1,0 @@
-// Basic Type Test 41
-let x: float = 3.14;
-let mut y = 3.14;
-const Z = 3.14;
-print(x);
-print(y);
-print(Z);

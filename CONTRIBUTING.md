@@ -30,12 +30,12 @@ Aura is a source-to-source transpiler. The pipeline is:
   └─ Python source → compile()/exec()
 ```
 
-`docs/GRAMMAR.md` is the **single source of truth** for the concrete syntax. If
+`docs/language-reference/grammar.md` is the **single source of truth** for the concrete syntax. If
 the parser and the grammar disagree, one of them is a bug.
 
 ## Adding a language feature
 
-1. **Grammar first.** Update `docs/GRAMMAR.md` so the intended syntax is written
+1. **Grammar first.** Update `docs/language-reference/grammar.md` so the intended syntax is written
    down before you implement it.
 2. **AST.** Add the node to `aura/transpiler/ast.py` if needed.
 3. **Parser.** Implement the construct in `aura/parser/to_ast.py`. Prefer a
@@ -49,14 +49,14 @@ the parser and the grammar disagree, one of them is a bug.
 6. **Tests.** Add focused tests. `tests/test_syntax_complete.py` covers every
    construct end to end; `tests/test_syntax_standard.py` locks canonical vs.
    removed spellings.
-7. **Docs.** Update `docs/LANGUAGE.md` (and `LANGUAGE_PT.md`).
+7. **Docs.** Update the affected document under `docs/language-reference/` (and its `*.pt_BR.md` sibling).
 
 ## Syntax rules
 
 Aura has exactly one spelling per construct — no synonyms. Do not add aliases.
 Removed spellings (`fn`, `init`, `!`, `&&`, `||`, `null`, `<T>`, `volatily`)
 must raise a clear `SyntaxError` that names the canonical form. See
-`docs/GRAMMAR.md` Appendix A.
+`docs/language-reference/grammar.md` Appendix A.
 
 ## Tests
 

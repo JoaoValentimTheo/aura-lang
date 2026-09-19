@@ -1,6 +1,0 @@
-// Advanced Features Test 56
-let x_56: int? = 56
-let res_56 = x_56 ?? 0
-let mapped_56 = [x * 2 for x in 1..5 if x > 2]
-print(res_56)
-print(mapped_56)

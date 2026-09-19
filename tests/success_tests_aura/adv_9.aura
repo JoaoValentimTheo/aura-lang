@@ -1,6 +1,0 @@
-// Advanced Features Test 9
-let x_9: int? = 9
-let res_9 = x_9 ?? 0
-let mapped_9 = [x * 2 for x in 1..5 if x > 2]
-print(res_9)
-print(mapped_9)

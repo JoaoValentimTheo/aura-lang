@@ -1,7 +1,0 @@
-// Basic Type Test 28
-let x: none = none;
-let mut y = none;
-const Z = none;
-print(x);
-print(y);
-print(Z);
