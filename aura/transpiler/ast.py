@@ -109,7 +109,7 @@ class ConstDecl(Stmt):
 
 class FunctionDecl(Stmt):
     def __init__(self, name, params, return_type=None, body=None,
-                 is_async=False, type_params=None, decorators=None, visibility=None, is_static=False, is_volatile=False, type_constraints=None):
+                 is_async=False, type_params=None, decorators=None, visibility=None, is_static=False, is_volatile=False, type_constraints=None, is_abstract=False):
         self.name = name
         self.params = params or []
         self.return_type = return_type
@@ -123,9 +123,12 @@ class FunctionDecl(Stmt):
         self.visibility = visibility
         self.is_static = is_static
         self.is_volatile = is_volatile
+        # An `abstract def` declares a signature with no body (`body is None`);
+        # the implementation must be provided by a subclass.
+        self.is_abstract = is_abstract
 
 class ClassDecl(Stmt):
-    def __init__(self, name, body, base_class=None, type_params=None, decorators=None, visibility=None, type_constraints=None, header_fields=None):
+    def __init__(self, name, body, base_class=None, type_params=None, decorators=None, visibility=None, type_constraints=None, header_fields=None, is_abstract=False):
         self.name = name
         self.body = body
         self.base_class = base_class
@@ -139,6 +142,9 @@ class ClassDecl(Stmt):
         # the accessors. Only the class's *own* fields are listed; inherited
         # fields arrive through `extends`.
         self.header_fields = header_fields or []
+        # `abstract class C` cannot be instantiated; it may declare `abstract
+        # def` members that a concrete subclass must implement.
+        self.is_abstract = is_abstract
 
 class TraitDecl(Stmt):
     def __init__(self, name, members, type_params=None, visibility=None, base_class=None, type_constraints=None):
@@ -177,7 +183,7 @@ class Method(Node):
     def __init__(self, name, params, return_type=None, body=None,
                  is_static=False, is_classmethod=False, is_property=False,
                  visibility=None, is_volatile=False, decorators=None, owner=None,
-                 is_async=False):
+                 is_async=False, is_abstract=False):
         self.name = name
         self.params = params
         self.return_type = return_type
@@ -190,6 +196,9 @@ class Method(Node):
         self.decorators = decorators or []
         # `async def` methods use the coroutine protocol.
         self.is_async = is_async
+        # `abstract def` declares a signature with no body; the class must be
+        # abstract and a concrete subclass must implement it.
+        self.is_abstract = is_abstract
         # Name of the class that declared this member (for owner-aware
         # private name mangling); filled in by the parser.
         self.owner = owner
@@ -654,4 +663,17 @@ SPECIAL_METHOD_NAMES = {
 def python_method_name(name):
     """Return the Python method name for an Aura method name."""
     return SPECIAL_METHOD_NAMES.get(name, name)
+
+
+_PYTHON_TO_AURA_METHOD = {py: aura for aura, py in SPECIAL_METHOD_NAMES.items()}
+
+
+def aura_method_name(name):
+    """Return the Aura spelling for a mapped Python method name.
+
+    The parser stores the Python dunder in ``Method.name`` (``new`` becomes
+    ``__init__``), so diagnostics that mention a member should map it back to
+    the spelling the author wrote. Identity for names that were never mapped.
+    """
+    return _PYTHON_TO_AURA_METHOD.get(name, name)
 Let = VarDecl

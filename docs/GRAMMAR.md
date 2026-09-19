@@ -59,7 +59,7 @@ let  mut  const  def  class  trait  enum  type  module  import  from
 if  else  unless  guard  while  until  for  in  loop  break  continue
 return  throw  try  catch  finally  with  match  case  assert
 async  await  yield  spawn  true  false
-public  private  protected  static  volatile  export
+public  private  protected  static  volatile  abstract  export
 self  super
 ```
 
@@ -159,7 +159,7 @@ declaration    = var_decl
                | module_decl
                | import_stmt ;
 
-modifiers      = { "public" | "private" | "protected" | "static" | "volatile" } ;
+modifiers      = { "public" | "private" | "protected" | "static" | "volatile" | "abstract" } ;
 ```
 
 Modifiers appear **before** the declaration keyword
@@ -215,6 +215,8 @@ class_decl     = modifiers , "class" , identifier , [ type_params ]
                  , [ "(" , [ header_field_list ] , ")" ]
                  , "{" , { class_member } , "}" ;
 
+abstract_decl  = "abstract" , class_decl ;        // an `abstract class`
+
 header_field_list = header_field , { "," , header_field } ;
 header_field   = { "public" | "private" | "protected" | "mut" | "let" [ "mut" ] }
                  , identifier , ( ":" , type | "=" , expression )
@@ -226,11 +228,13 @@ dotted_name    = identifier , { "." , identifier } ;
 
 class_member   = member_prefixes , ( method | nested_class | field | const_field ) ;
 
-member_prefixes = { visibility | "static" | "volatile" | decorator } ;
+member_prefixes = { visibility | "static" | "volatile" | "abstract" | decorator } ;
 visibility     = "public" | "private" | "protected" ;   // mandatory on every member
 decorator      = "@" , dotted_name , [ "(" , [ arg_list ] , ")" ] ;
 
 method         = [ "async" ] , "def" , identifier , [ type_params ] , "(" , [ param_list ] , ")" , [ "->" , type ] , block ;
+abstract_method = "abstract" , "def" , identifier , [ type_params ] , "(" , [ param_list ] , ")" , [ "->" , type ] , [ ";" ] ;
+                 // no body: `{ ... }` or `= expr` here is an error
 nested_class   = class_decl ;
 field          = ( "let" , [ "mut" ] | "mut" ) , identifier , [ ":" , type ] , [ "=" , expression ] , [ ";" ] ;
 const_field    = "const" , identifier , [ ":" , type ] , "=" , expression , [ ";" ] ;
@@ -250,8 +254,21 @@ header fields alongside such a base opts back in to the generated constructor.
 
 Every base must resolve to a declared class/trait or a builtin exception root.
 A base that does not exist is `E314`; a base listed twice or an `extends` cycle
-is `E315`. Traits and classes with unimplemented abstract methods cannot be
-instantiated (`E316`). `super.m()` on an abstract (body-less) method is `E321`.
+is `E315`. Traits, `abstract class`es and classes with unimplemented abstract
+methods cannot be instantiated (`E316`). `super.m()` on an abstract (body-less)
+method is `E321`.
+
+An `abstract class` cannot be instantiated and may declare `abstract def`
+members — signatures with no body. A concrete class must implement every
+abstract method it inherits (from an `abstract class` or a trait), or it is
+`E309`. An `abstract def` may appear only in an `abstract class`; one in a
+concrete class is also `E309`. A class has exactly one constructor style:
+header fields generate the constructor, so a header plus a manual `new` is a
+syntax error.
+
+Overriding is implicit: there is no `override` modifier (`override def` is a
+syntax error). A trait does not use `abstract` either — a body-less trait method
+is already abstract (`trait T { abstract def f() }` is a syntax error).
 
 Header fields become instance fields, constructor parameters and accessors.
 The default visibility is `private`, and fields are immutable unless declared

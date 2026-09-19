@@ -94,13 +94,14 @@ identificador ::= [a-zA-Z_] [a-zA-Z0-9_]*
 ### Palavras-chave
 
 ```
-async      break      case       catch      class      const
-continue   def        else       finally    for        from
-guard      if         import     in         is         let
-loop       match      module     mut        none       null
-return     self       static     super      trait      true
-false      try        type       unless     until      while
-with       assert
+abstract   async      break      case       catch      class
+const      continue   def        else       enum       export
+extends    finally    for        from       guard      if
+import     in         is         let        loop       match
+module     mut        none       private    protected  public
+return     self       spawn      static     super      trait
+true       false      try        type       unless     until
+volatile   while      with       yield      assert
 ```
 
 ### Literais
@@ -444,7 +445,7 @@ let p = Ponto(3, 4)
 print(p.distancia())  // 5.0
 ```
 
-> **Nota:** `def new(...)` corresponde ao `__init__` do Python. Instancie com `Ponto(args)`, nao `Ponto.new(args)`.
+> **Nota:** `def new(...)` corresponde ao `__init__` do Python. Instancie com `Ponto(args)`, nao `Ponto.new(args)`. Uma classe tem **um** estilo de construtor: ou campos no cabecalho, ou campos no corpo com um `def new` manual. Misturar cabecalho com `new` manual e erro de sintaxe — o cabecalho ja gera um construtor, e um segundo deixaria os campos do cabecalho sem atribuicao.
 
 ### Heranca
 
@@ -490,6 +491,61 @@ let a = Admin(email: "a@x.com", nome: "bob")
 print(a.get_nome())   // bob
 print(a.get_email())  // a@x.com
 ```
+
+### Classes abstratas
+
+Uma `abstract class` e uma classe real — campos, metodos concretos e
+construtor — que nao pode ser instanciada e pode adiar metodos para uma
+subclasse. Um metodo escrito `abstract def` **nao tem corpo**: e uma assinatura
+que a subclasse concreta deve implementar.
+
+```aura
+abstract class Forma {
+  public let nome: str = "forma"
+
+  public def descrever() -> str {
+    return "uma " + self.nome
+  }
+
+  public abstract def area() -> float
+}
+
+class Quadrado extends Forma {
+  public let lado: float = 2.0
+
+  public def area() -> float {
+    return self.lado * self.lado
+  }
+}
+
+print(Quadrado().area())      // 4.0
+print(Quadrado().descrever()) // uma forma
+// let f = Forma()            // E316: abstrata, nao pode ser instanciada
+```
+
+Regras:
+
+* `abstract` e um modificador antes de `class` ou antes de `def`:
+  `abstract class C { public abstract def f() -> int }`. Um `abstract def` so
+  pode aparecer em uma `abstract class`.
+* Um `abstract def` **nao** pode ter corpo: `abstract def f() { ... }` e
+  `abstract def f() = expr` sao erros de sintaxe.
+* Uma classe concreta que nao implementa todos os metodos abstratos herdados —
+  de uma `abstract class` ou de uma trait — e `E309`, nomeando a classe, o
+  metodo e quem o declarou.
+* Uma `abstract class` pode ela mesma adiar: `abstract class Meio extends Forma`
+  compila e transfere a obrigacao para a subclasse concreta (transitivamente).
+* Instanciar uma `abstract class` e `E316` em tempo de compilacao; a classe
+  tambem compila para uma ABC do Python, entao a mesma falha e imposta em
+  runtime.
+* A sobrescrita e implicita — nao existe a palavra-chave `override`; escrever
+  `override def` e erro de sintaxe.
+* `abstract` **nao** e usado dentro de uma trait: todo metodo de trait sem corpo
+  ja e abstrato. `trait T { abstract def f() }` e erro de sintaxe.
+
+Uma trait continua sendo um contrato puro (metodos sem corpo, sem construtor);
+uma `abstract class` e a escolha quando a base precisa de estado ou de
+comportamento concreto compartilhado.
 
 ### @property
 

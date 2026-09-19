@@ -113,8 +113,8 @@ def test_lint_trailing_whitespace_is_w002(tmp_path):
     path = write(tmp_path, "t.aura", "def main() {\n    let x = 1   \n}\n")
     result = run("lint", path)
     assert result.returncode == 1
-    assert "[W002]" in result.stdout
-    assert "t.aura:2:" in result.stdout
+    assert "[W002]" in result.stderr
+    assert "t.aura:2:" in result.stderr
 
 
 def test_lint_long_line_is_w001(tmp_path):
@@ -123,7 +123,7 @@ def test_lint_long_line_is_w001(tmp_path):
                  f"def main() {{\n    let x = {long_value}\n}}\n")
     result = run("lint", path)
     assert result.returncode == 1
-    assert "[W001]" in result.stdout
+    assert "[W001]" in result.stderr
 
 
 def test_lint_clean_file(tmp_path):
@@ -137,5 +137,5 @@ def test_lint_clean_file(tmp_path):
 def test_lint_never_uses_e_codes(tmp_path):
     path = write(tmp_path, "t.aura", "def main() {\n    let x = 1 \n}\n")
     result = run("lint", path)
-    assert "[E004]" not in result.stdout
-    assert "[W" in result.stdout
+    assert "[E004]" not in result.stderr
+    assert "[W" in result.stderr

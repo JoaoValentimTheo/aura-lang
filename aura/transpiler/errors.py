@@ -29,7 +29,6 @@ def recursion_budget(size: int):
 
 class ErrorSeverity(Enum):
     """Error severity levels."""
-    NOTE = "note"
     WARNING = "warning"
     ERROR = "error"
     FATAL = "fatal"
@@ -211,71 +210,3 @@ class ErrorCollector:
     def __bool__(self):
         return self.has_errors()
 
-# ============================================================================
-# Error message catalogue
-#
-# Canonical message templates for every code. Checkers may phrase a specific
-# diagnostic differently, but the catalogue is the reference used by
-# docs/ERRORS.md and is kept complete by tests/test_diagnostics.py.
-# ============================================================================
-
-ERROR_TEMPLATES = {
-    # Syntax
-    ErrorCode.INVALID_SYNTAX: "{detail}",
-    # Types
-    ErrorCode.TYPE_MISMATCH: "Type mismatch: expected {expected}, got {actual}",
-    ErrorCode.WRONG_ARGUMENT_COUNT: "Function '{name}' expects {expected} arguments, got {actual}",
-    ErrorCode.WRONG_ARGUMENT_TYPE: "Argument {index} of '{name}': expected {expected}, got {actual}",
-    ErrorCode.INCOMPATIBLE_OPERANDS: "Incompatible operands for {op}: {left} and {right}",
-    ErrorCode.NON_EXHAUSTIVE_MATCH: "'match' over {subject} is not exhaustive: no case handles {missing}",
-    ErrorCode.UNKNOWN_TYPE_CONSTRAINT: "type parameter '{name}' has unknown constraint '{constraint}'",
-    # Semantic
-    ErrorCode.DUPLICATE_DEFINITION: "'{name}' is already defined",
-    ErrorCode.UNREACHABLE_CODE: "Unreachable code after '{terminator}'",
-    ErrorCode.REASSIGN_IMMUTABLE: "Cannot reassign immutable binding '{name}'",
-    ErrorCode.MISSING_VISIBILITY: "{kind} '{name}' has no visibility modifier",
-    ErrorCode.INACCESSIBLE_MEMBER: "'{name}' is {visibility} in '{owner}'",
-    ErrorCode.UNIMPLEMENTED_ABSTRACT: "'{class}' must implement abstract method '{method}'",
-    ErrorCode.MISSING_MAIN: "Program has no 'main' function",
-    ErrorCode.INVALID_MAIN: "'main' must take no parameters, or a single 'args'",
-    ErrorCode.MAIN_IN_MODULE: "'main' belongs to the entry file, not to a module or an imported file",
-    ErrorCode.UNRESOLVED_REEXPORT: "no sibling source defines the re-exported name '{name}'",
-    ErrorCode.UNKNOWN_BASE_CLASS: "base class '{name}' is not defined",
-    ErrorCode.INVALID_INHERITANCE: "invalid inheritance for '{name}'",
-    ErrorCode.INSTANTIATE_ABSTRACT: "'{name}' is abstract and cannot be instantiated",
-    ErrorCode.SELF_IN_STATIC: "'{name}' is not available in a static method",
-    ErrorCode.UNKNOWN_LABEL: "no enclosing loop is labeled '{label}'",
-    ErrorCode.USED_BEFORE_DECLARED: "'{name}' is used before it is declared",
-    ErrorCode.DECORATOR_ON_FIELD: "decorator '@{decorator}' cannot be applied to a field",
-    ErrorCode.ABSTRACT_SUPER_CALL: "cannot call 'super.{name}' because it has no implementation",
-    # I/O
-    # Warnings
-    ErrorCode.LINE_TOO_LONG: "Line {line} is too long ({length} > {limit} columns)",
-    ErrorCode.TRAILING_WHITESPACE: "Line {line} has trailing whitespace",
-    ErrorCode.NAMING_CONVENTION: "'{name}' does not follow the {convention} convention",
-    ErrorCode.SPACING: "Multiple spaces after '{keyword}'",
-    ErrorCode.UNUSED_TYPE_PARAMETER: "Type parameter '{name}' is never used",
-    # Fatal
-    ErrorCode.FATAL: "Too many errors; compilation stopped",
-}
-
-
-def code_area(code: ErrorCode) -> str:
-    """Return the human-readable area a code belongs to."""
-    value = code.value
-    if code in (ErrorCode.FATAL,):
-        return "fatal"
-    if value.startswith('W0'):
-        return "style warning"
-    if value.startswith('W1'):
-        return "warning"
-    if value.startswith('W'):
-        return "semantic warning"
-    prefix = value[1:2]
-    return {
-        '0': "syntax",
-        '1': "type",
-        '3': "semantic",
-        '4': "configuration",
-        '9': "fatal",
-    }.get(prefix, "error")

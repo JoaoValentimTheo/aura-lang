@@ -94,14 +94,15 @@ identifier ::= [a-zA-Z_] [a-zA-Z0-9_]*
 ### Keywords
 
 ```
-async      await      break      case       catch      class
-const      continue   def        else       enum       export
-extends    false      finally    for        from       guard
-if         import     in         is         let        loop
-match      module     mut        none       private    protected
-public     return     self       spawn      static     super
-throw      trait      true       try        type       unless
-until      volatile   while      with       yield      assert
+abstract   and        async      await      break      case
+catch      class      const      continue   def        else
+enum       export     extends    false      finally    for
+from       guard      if         import     in         is
+let        loop       match      module     mut        none
+not        or         private    protected  public     return
+self       spawn      static     super      throw      trait
+true       try        type       unless     until      volatile
+while      with       yield      assert
 ```
 
 > `null`, `fn`, `init`, `volatily`, `implements`, `!`, `&&`, `||` and `<T>` are
@@ -487,9 +488,11 @@ class Counter(start: int = 0) {
 ```
 
 > **Note:** `def new(...)` maps to Python's `__init__`. Instantiate with
-> `User(args)`, not `User.new(args)`. When a class declares `def new`, that
-> constructor wins over the generated one, but its accessors are still
-> generated.
+> `User(args)`, not `User.new(args)`. A class has **one** constructor style:
+> either header fields, or body fields with a manual `def new`. Mixing a header
+> with a manual `new` is a syntax error — the header already generates a
+> constructor, and a second one would silently leave the header fields
+> unassigned.
 
 ### Basic class
 
@@ -565,6 +568,61 @@ print(a.get_email())  // a@x.com
 
 The transformer forwards the remaining arguments to `super().__init__(**kwargs)`
 when a base class exists.
+
+### Abstract classes
+
+An `abstract class` is a real class — fields, concrete methods and a
+constructor — that cannot be instantiated and may defer some methods to a
+subclass. A method written `abstract def` has **no body**: it is a signature a
+concrete subclass must implement.
+
+```aura
+abstract class Shape {
+  public let name: str = "shape"
+
+  public def describe() -> str {
+    return "a " + self.name
+  }
+
+  public abstract def area() -> float
+}
+
+class Square extends Shape {
+  public let side: float = 2.0
+
+  public def area() -> float {
+    return self.side * self.side
+  }
+}
+
+print(Square().area())      // 4.0
+print(Square().describe())  // a shape
+// let s = Shape()          // E316: abstract, cannot be instantiated
+```
+
+Rules for the freeze:
+
+* `abstract` is a modifier before `class`, or before `def`:
+  `abstract class C { public abstract def f() -> int }`. `abstract def` may
+  only appear in an `abstract class`.
+* An `abstract def` must have **no** body. `abstract def f() { ... }` and
+  `abstract def f() = expr` are syntax errors. Removing `abstract` gives the
+  method an ordinary body.
+* A concrete class that does not implement every abstract method it inherits —
+  from an `abstract class` or a trait — is `E309`, naming the class, the method
+  and its declarer.
+* An `abstract class` may itself defer: `abstract class Mid extends Shape`
+  compiles and charges the obligation to its concrete subclass (transitively).
+* Instantiating an `abstract class` is `E316` at compile time; the class also
+  compiles to a Python ABC, so the same failure is enforced at runtime.
+* Overriding is implicit — there is no `override` keyword. Declaring a method
+  with the same name in a subclass overrides the inherited one; writing
+  `override def` is a syntax error.
+* `abstract` is **not** used inside a `trait`: every trait method without a body
+  is already abstract. `trait T { abstract def f() }` is a syntax error.
+
+A trait stays a pure contract (body-less methods, no constructor); an abstract
+class is the choice when the base needs state or shared concrete behaviour.
 
 ### @property
 
@@ -652,6 +710,11 @@ class Circle extends Drawable {
 A trait transpiles to a base class, and `extends` becomes inheritance.
 Multiple traits can be listed: `class C extends A, B`.
 
+A body-less method in a trait is a pure signature — no `abstract` keyword is
+needed there, because every trait method without a body is abstract. For a
+class that needs state or shared concrete behaviour *and* abstract methods, use
+an [`abstract class`](#abstract-classes) with explicit `abstract def` members.
+
 A method declared without a body is abstract: the trait compiles it to an
 `@abstractmethod`, and a concrete class that does not implement every abstract
 method it inherits is rejected at compile time (`E309`):
@@ -700,8 +763,9 @@ error.
 Enforcement happens at **compile time and at runtime**:
 
 * The rule checker rejects an access to a non-public member from outside the
-  class (`E308`). It resolves the class of a `self`/`cls` access and of simple
-  `let x = Class(...)` instances.
+  class (`E308`). It resolves the class of a `self`/`cls` access, of simple
+  `let x = Class(...)` instances, and of a direct instantiation such as
+  `Class(...).member`, so every spelling is enforced the same way.
 * The transpiler emits owner-aware mangled names, so the restriction also holds
   at runtime even for code the checker cannot prove.
 
@@ -731,6 +795,27 @@ For every instance field, `get_<name>()` is generated automatically. A
 `set_<name>(value)` is generated only for a **mutable** field (`mut`/`let mut`),
 so an immutable field has no setter at all. A method you declare with the same
 name wins over the generated one.
+
+### Unique members
+
+A class or trait body is a scope: every member name — field, method, constant
+or nested class — must be **unique** within it. A repeated name is `E301`, not
+an overload:
+
+```aura
+class Point {
+  public let x: int = 0
+  public let y: int = 0
+  // E301: 'new' is already declared
+  // public def new(x: int) { ... }
+  // public def new(x: int, y: int) { ... }
+}
+```
+
+Aura has no method or constructor overloading: two `new` methods (or two
+methods with the same name) would silently overwrite one another in the
+generated class, so the checker rejects them. Give each one a distinct name,
+or move the shared logic into a helper method.
 
 A plain `let` field is immutable, exactly like `let` at module and local scope;
 use `let mut` (or `mut in a class header) when the value must change.

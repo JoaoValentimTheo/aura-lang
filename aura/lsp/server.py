@@ -24,6 +24,7 @@ KEYWORDS = [
     'type', 'import', 'from', 'as', 'return', 'if', 'else', 'unless',
     'guard', 'match', 'case', 'for', 'while', 'until', 'loop', 'break',
     'continue', 'try', 'catch', 'finally', 'throw', 'await', 'async',
+    'abstract', 'public', 'private', 'protected', 'static', 'volatile',
     'and', 'or', 'not', 'in', 'is', 'true', 'false', 'none',
 ]
 

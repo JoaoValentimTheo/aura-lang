@@ -14,7 +14,6 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from aura.parser.to_ast import Parser, Tokenizer  # noqa: E402
-from aura.transpiler import errors as errors_mod  # noqa: E402
 from aura.transpiler.errors import (  # noqa: E402
     ErrorCode,
     ErrorCollector,
@@ -173,11 +172,3 @@ def test_warning_format_includes_code_and_location():
     assert "[W002]" in text
     assert "f.aura:2:9" in text
     assert "1 warning(s)" in text
-
-
-def test_code_area_classification():
-    assert errors_mod.code_area(ErrorCode.TYPE_MISMATCH) == "type"
-    assert errors_mod.code_area(ErrorCode.MISSING_MAIN) == "semantic"
-    assert errors_mod.code_area(ErrorCode.LINE_TOO_LONG) == "style warning"
-    assert errors_mod.code_area(ErrorCode.UNUSED_TYPE_PARAMETER) == "warning"
-    assert errors_mod.code_area(ErrorCode.FATAL) == "fatal"

@@ -14,9 +14,6 @@ SECURE_DIR = ROOT / "secure_aura_tests"
 SCOPE_DIR = ROOT / "syntax_scope_tests"
 COLL_DIR = ROOT / "collections_tests"
 
-for d in [OOP_DIR, SECURE_DIR, SCOPE_DIR, COLL_DIR]:
-    os.makedirs(d, exist_ok=True)
-
 
 class EnhancedAuraGenerator:
     def __init__(self, seed):
@@ -291,6 +288,8 @@ def generate_all_enhanced(num=1000):
 
 
 if __name__ == "__main__":
+    for d in [OOP_DIR, SECURE_DIR, SCOPE_DIR, COLL_DIR]:
+        os.makedirs(d, exist_ok=True)
     NUM = 1000
     generate_all_enhanced(NUM)
     print("✨ Enhanced test generation complete!")

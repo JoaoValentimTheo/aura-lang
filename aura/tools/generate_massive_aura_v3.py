@@ -8,11 +8,6 @@ COLLECTIONS_DIR = ROOT / "collections_tests"
 OOP_DIR = ROOT / "oop_tests"
 INTEGRATION_DIR = ROOT / "integration_tests"
 
-os.makedirs(SYNTAX_DIR, exist_ok=True)
-os.makedirs(COLLECTIONS_DIR, exist_ok=True)
-os.makedirs(OOP_DIR, exist_ok=True)
-os.makedirs(INTEGRATION_DIR, exist_ok=True)
-
 def write_aura(path, content):
     with open(path, "w") as f:
         f.write(content)
@@ -105,6 +100,10 @@ print(s.process());
         write_aura(INTEGRATION_DIR / f"integ_{i}.aura", content)
 
 if __name__ == "__main__":
+    os.makedirs(SYNTAX_DIR, exist_ok=True)
+    os.makedirs(COLLECTIONS_DIR, exist_ok=True)
+    os.makedirs(OOP_DIR, exist_ok=True)
+    os.makedirs(INTEGRATION_DIR, exist_ok=True)
     gen_syntax()
     gen_collections()
     gen_oop()

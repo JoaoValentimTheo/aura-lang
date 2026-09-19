@@ -187,30 +187,35 @@ class TestHeaderCodegen:
         code = transpile('class U(private a: int, public b: int) {\n}\n')
         assert "__match_args__ = ('_U__a', 'b')" in code
 
-    def test_manual_new_wins(self):
-        code = transpile(
-            'class U(name: str) {\n'
+    def test_header_plus_manual_new_is_rejected(self):
+        # A header already generates a constructor; a manual `new` would
+        # silently shadow it and leave the header fields unassigned, so the mix
+        # is a syntax error. Each class has exactly one constructor style.
+        with pytest.raises(SyntaxError, match='header fields and a manual'):
+            parse(
+                'class U(name: str) {\n'
+                '  public def new(name: str) { self.name = name }\n'
+                '}\n')
+
+    def test_constructor_only_in_body_has_no_header(self):
+        # The accepted constructor style: fields in the body, one `new`.
+        program = parse(
+            'class U {\n'
+            '  public let name: str = ""\n'
             '  public def new(name: str) { self.name = name }\n'
             '}\n')
-        # Exactly one __init__, the manual one.
+        decl = program.statements[0]
+        assert decl.header_fields == []
+        assert any(m.name == '__init__' for m in decl.body)
+
+    def test_body_fields_with_manual_new_emit_one_init(self):
+        code = transpile(
+            'class U {\n'
+            '  public let name: str = ""\n'
+            '  public def new(name: str) { self.name = name }\n'
+            '}\n')
         assert code.count('def __init__') == 1
         assert 'def __init__(self, name):' in code
-
-    def test_manual_new_still_gets_accessors(self):
-        code = transpile(
-            'class U(name: str) {\n'
-            '  public def new(name: str) { self.name = name }\n'
-            '}\n')
-        assert 'def get_name' in code
-
-    def test_manual_new_emits_field_defaults(self):
-        # With a manual ctor, header fields also exist as class-level defaults
-        # so the generated accessors always resolve.
-        code = transpile(
-            'class U(name: str) {\n'
-            '  public def new(name: str) { self.name = name }\n'
-            '}\n')
-        assert '_U__name = None' in code
 
     def test_custom_accessor_wins(self):
         code = transpile(

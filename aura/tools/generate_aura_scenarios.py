@@ -5,9 +5,6 @@ from pathlib import Path
 SUCCESS_DIR = Path("tests/success_tests_aura")
 SYNTAX_DIR = Path("tests/syntax_checker_aura")
 
-os.makedirs(SUCCESS_DIR, exist_ok=True)
-os.makedirs(SYNTAX_DIR, exist_ok=True)
-
 def write_aura(path, content):
     with open(path, "w") as f:
         f.write(content)
@@ -80,6 +77,8 @@ def gen_syntax_tests():
         write_aura(SYNTAX_DIR / f"tricky_{i}.aura", content)
 
 if __name__ == "__main__":
+    os.makedirs(SUCCESS_DIR, exist_ok=True)
+    os.makedirs(SYNTAX_DIR, exist_ok=True)
     gen_success_basics() # 50
     gen_success_control_flow() # 100
     gen_success_functions() # 100

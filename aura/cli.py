@@ -332,8 +332,11 @@ def cmd_lint(path: str, allow_warnings: bool = False) -> int:
                     )
 
         # Check for common style issues
-        idx = source.find('def  ')
-        if idx != -1:
+        search_start = 0
+        while True:
+            idx = source.find('def  ', search_start)
+            if idx == -1:
+                break
             line = source.count('\n', 0, idx) + 1
             col = idx - source.rfind('\n', 0, idx)
             errors.add_warning(
@@ -342,9 +345,10 @@ def cmd_lint(path: str, allow_warnings: bool = False) -> int:
                 location=SourceLocation(path, line, col, 5),
                 hint="Use a single space: 'def name'"
             )
+            search_start = idx + 1
 
         if errors.errors:
-            print(errors.format())
+            print(errors.format(), file=sys.stderr)
             return 0 if allow_warnings else 1
         else:
             print(f"✓ {path}: no style issues")
@@ -552,6 +556,9 @@ def cmd_run(path: str, verbose: bool = False, program_args=None,
         # That is a *successful* early exit, so treat a missing/None code as 0.
         if e.code is None:
             return 0
+        if isinstance(e.code, str):
+            print(e.code, file=sys.stderr)
+            return 1
         return e.code if isinstance(e.code, int) else 1
     except RecursionError:
         print(_recursion_error(path), file=sys.stderr)

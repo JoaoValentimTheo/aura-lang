@@ -94,8 +94,8 @@ FUNC_CASES = [
     ("lambda_no_params", "let f = () => 42"),
     ("method", "class C { public def m() -> int { return 1 } }"),
     ("static_method", "class C { static def m() -> int { return 1 } }"),
-    ("abstract_method", "abstract class C { abstract def m() {} }"),
-    ("override_method", "class C extends B { override def m() { } }"),
+    ("abstract_method", "abstract class C { abstract def m() -> int }"),
+    ("override_method", "class C extends B { public def m() { } }"),
 ]
 
 
@@ -154,7 +154,7 @@ OOP_CASES = [
     ("class_header_fields", "class User(private name: str, mut age: int = 0) { }"),
     ("trait_simple", "trait Drawable { public def draw() }"),
     ("trait_impl", "class Circle extends Drawable { public def draw() { print(\"circle\") } }"),
-    ("abstract_class", "abstract class Shape { abstract def area() -> float {} }"),
+    ("abstract_class", "abstract class Shape { abstract def area() -> float }"),
     ("enum_simple", "enum Color { Red, Green, Blue }"),
     ("enum_with_values", "enum Status { Ok = 0, Error = 1 }"),
     ("type_alias", "type ID = int"),

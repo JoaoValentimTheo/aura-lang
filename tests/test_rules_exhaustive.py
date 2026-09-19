@@ -78,8 +78,8 @@ def test_guard_valid(name, src):
 
 
 ABSTRACT_CASES = [
-    ("abstract_class", "abstract class C { abstract def m() {} }"),
-    ("abstract_extends", "class D extends C { override def m() {} }"),
+    ("abstract_class", "abstract class C { abstract def m() }"),
+    ("abstract_extends", "class D extends C { public def m() {} }"),
 ]
 
 
@@ -114,7 +114,7 @@ def test_trait(name, src):
 
 CLASS_EXTENDS_CASES = [
     ("simple_extends", "class B {}\nclass C extends B {}"),
-    ("method_override", "class B { public def m() {} }\nclass C extends B { override def m() {} }"),
+    ("method_override", "class B { public def m() {} }\nclass C extends B { public def m() {} }"),
     ("field_inherit", "class B { public x: int }\nclass C extends B {}"),
 ]
 

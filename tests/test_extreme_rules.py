@@ -2,8 +2,6 @@
 
 Each enforced diagnostic code gets a dedicated test that pins the boundary:
 the minimal program that triggers it and a near-miss that must stay clean.
-The suite also checks that every catalogue code is either emitted or explicitly
-documented as reserved, so the diagnostic set cannot silently drift.
 """
 import subprocess
 import sys
@@ -15,7 +13,6 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from aura.parser.to_ast import Parser, Tokenizer  # noqa: E402
-from aura.transpiler import errors as errors_mod  # noqa: E402
 from aura.transpiler.errors import ErrorCode  # noqa: E402
 from aura.transpiler.rules import RuleChecker  # noqa: E402
 from aura.transpiler.semantics import MutabilityChecker  # noqa: E402
@@ -372,17 +369,3 @@ def test_cli_unicode_identifier_string_ok(tmp_path):
     result = run_cli("run", str(src))
     assert result.returncode == 0, result.stderr
     assert "olá" in result.stdout
-
-
-# ============================================================================
-# Catalogue completeness
-# ============================================================================
-
-def test_every_code_has_a_canonical_template():
-    missing = [c.value for c in ErrorCode if c not in errors_mod.ERROR_TEMPLATES]
-    assert not missing, f"codes without a canonical message: {missing}"
-
-
-def test_code_areas_are_classified():
-    for code in ErrorCode:
-        assert errors_mod.code_area(code)

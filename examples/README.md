@@ -25,6 +25,7 @@ Start here and follow the order; each file introduces one idea.
 | 10 | `crypto.aura` | Hashing, HMAC, HKDF, and post-quantum KEM/signatures via `stdlib.crypto` |
 | 11 | `python_interop.aura` | Calling Python from Aura (`import os`, `math`, `json`, the `python` bridge) |
 | 12 | `tour.aura` | A single-file tour of the whole language |
+| 13 | `abstract_classes.aura` | `abstract class` + `abstract def`, and polymorphism over the abstract base |
 
 ## Framework integration
 

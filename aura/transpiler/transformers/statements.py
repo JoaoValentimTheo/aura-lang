@@ -403,6 +403,13 @@ class StatementTransformer:
                 bases.append(node.base_class)
             else:
                 bases.append(self.expr_transformer.transform(node.base_class))
+        if getattr(node, 'is_abstract', False):
+            # An abstract class cannot be instantiated. Making it an ABC gives
+            # the same guarantee at runtime that the rule checker enforces at
+            # compile time, and pairs with the `@abstractmethod` markers on its
+            # `abstract def` members.
+            bases.append('_aura_abc.ABC')
+            self.uses_oop_prelude = True
         if getattr(node, 'type_params', None):
             bases.append(self._generic_bases(node.type_params))
             self.uses_oop_prelude = True
@@ -660,6 +667,13 @@ class StatementTransformer:
 
     def transform_Method(self, node):
         decorators_code = ""
+        if getattr(node, 'is_abstract', False):
+            # `abstract def` is a signature only. Marking it with
+            # `@abstractmethod` makes Python refuse to instantiate any concrete
+            # subclass that forgets to implement it, mirroring the compile-time
+            # E309 check.
+            decorators_code += "@_aura_abc.abstractmethod\n"
+            self.uses_oop_prelude = True
         if node.is_property:
             decorators_code += "@property\n"
         if node.is_static:

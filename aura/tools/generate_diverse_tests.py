@@ -16,9 +16,6 @@ SECURE_DIR = ROOT / "secure_aura_tests"
 SCOPE_DIR = ROOT / "syntax_scope_tests"
 COLL_DIR = ROOT / "collections_tests"
 
-for d in [OOP_DIR, SECURE_DIR, SCOPE_DIR, COLL_DIR]:
-    os.makedirs(d, exist_ok=True)
-
 # Test templates and variations
 class TestVariations:
     # OOP Patterns
@@ -1159,8 +1156,9 @@ def generate_all_tests(num_tests: int = 1000):
 
 
 if __name__ == "__main__":
-    # Generate comprehensive test suite
-    # Can be adjusted: 1000 = 4000 total, 5000 = 20000 total, etc.
+    for d in [OOP_DIR, SECURE_DIR, SCOPE_DIR, COLL_DIR]:
+        os.makedirs(d, exist_ok=True)
+
     NUM_PER_CATEGORY = 1000
 
     print("🚀 Aura Diverse Test Generator")

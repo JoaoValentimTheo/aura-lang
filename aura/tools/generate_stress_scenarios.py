@@ -5,9 +5,6 @@ from pathlib import Path
 SPEED_DIR = Path("tests/speed_aura_tests")
 SECURE_DIR = Path("tests/secure_aura_tests")
 
-os.makedirs(SPEED_DIR, exist_ok=True)
-os.makedirs(SECURE_DIR, exist_ok=True)
-
 def write_aura(path, content):
     with open(path, "w") as f:
         f.write(content)
@@ -55,6 +52,8 @@ while j < 100 {{ // 100 * stress_level
         write_aura(SECURE_DIR / f"secure_{i}.aura", content)
 
 if __name__ == "__main__":
+    os.makedirs(SPEED_DIR, exist_ok=True)
+    os.makedirs(SECURE_DIR, exist_ok=True)
     gen_speed_scenarios()
     gen_secure_scenarios()
     print("Generated 2,000 Stress Scenarios (1000 Speed, 1000 Secure).")

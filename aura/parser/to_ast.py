@@ -450,7 +450,7 @@ _STATEMENT_KEYWORDS = frozenset({
     'module', 'import', 'from', 'if', 'unless', 'until', 'while', 'for',
     'loop', 'guard', 'throw', 'return', 'break', 'continue', 'assert', 'try',
     'with', 'match', 'case', 'else', 'catch', 'finally', 'public', 'private',
-    'protected', 'static', 'export',
+    'protected', 'static', 'abstract', 'export',
 })
 
 # Operator precedence, hoisted out of `Parser.get_precedence` so the parser
@@ -491,8 +491,8 @@ _RESERVED_BINDING_NAMES = frozenset({
     'continue', 'yield', 'def', 'class', 'trait', 'enum', 'module', 'import',
     'from', 'as', 'let', 'const', 'type', 'async', 'await', 'spawn', 'and',
     'or', 'not', 'is', 'true', 'false', 'none', 'self', 'super', 'new',
-    'public', 'private', 'protected', 'static', 'volatile', 'export', 'with',
-    'assert', 'fn',
+    'public', 'private', 'protected', 'static', 'volatile', 'abstract',
+    'export', 'with', 'assert', 'fn',
 })
 
 # Python boolean/None spellings that Aura deliberately spells differently.
@@ -620,8 +620,9 @@ class Parser:
         visibility = None
         is_static = False
         is_volatile = False
+        is_abstract = False
 
-        while self.peek().value in ['public', 'private', 'protected', 'static', 'volatile']:
+        while self.peek().value in ['public', 'private', 'protected', 'static', 'volatile', 'abstract']:
             val = self.consume().value
             if val in ['public', 'private', 'protected']:
                 visibility = val
@@ -629,8 +630,10 @@ class Parser:
                 is_static = True
             elif val == 'volatile':
                 is_volatile = True
+            elif val == 'abstract':
+                is_abstract = True
 
-        return visibility, is_static, is_volatile
+        return visibility, is_static, is_volatile, is_abstract
 
     def _parse_decorator_name(self):
         """Parse a decorator's callee, which may be a dotted member path.
@@ -696,6 +699,7 @@ class Parser:
         visibility = 'public'
         is_static = False
         is_volatile = False
+        is_abstract = False
 
 
         while True:
@@ -712,16 +716,26 @@ class Parser:
                     dec_name = self._parse_decorator_name()
                     dec_args, dec_kwargs = self._parse_decorator_arguments()
                     decorators.append(Decorator(dec_name, dec_args, dec_kwargs))
-            elif token.value in ['public', 'private', 'protected', 'static', 'volatile']:
-                v, s, vol = self.parse_modifiers()
+            elif token.value in ['public', 'private', 'protected', 'static', 'volatile', 'abstract']:
+                v, s, vol, abst = self.parse_modifiers()
                 # Last visibility wins, flags accumulate. At module scope
                 # visibility is metadata only, so an omitted modifier means
                 # public (class members are handled separately).
                 if v is not None: visibility = v
                 if s: is_static = True
                 if vol: is_volatile = True
+                if abst: is_abstract = True
             else:
                 break
+
+        if is_abstract and not (self.check('class') or
+                                self.check('def') or
+                                (self.check('async')
+                                 and self.peek(1).value == 'def')):
+            raise self.error(
+                "'abstract' applies to a class or a method "
+                "(write 'abstract class C' or 'abstract def f()')",
+                self.peek())
 
         # Labeled loop: `outer: for x in ... { ... }`.
         if (self.check_type('IDENT') and self.peek(1).value == ':'
@@ -754,9 +768,10 @@ class Parser:
             if token.value == 'async' and self.peek(1).value == 'with':
                 self.consume()
                 return self.parse_with_stmt(is_async=True)
-            return self.parse_function_decl(decorators, visibility, is_static, is_volatile)
+            return self.parse_function_decl(decorators, visibility, is_static, is_volatile,
+                                             is_abstract=is_abstract)
         elif token.value == 'class':
-            return self.parse_class_decl(decorators, visibility)
+            return self.parse_class_decl(decorators, visibility, is_abstract=is_abstract)
         elif token.value == 'module':
             return self.parse_module_decl()
         elif token.value == 'type':
@@ -1035,7 +1050,7 @@ class Parser:
                 f"(write '[T]' on {owner_name!r})", tok)
         return names, constraints
 
-    def parse_function_decl(self, decorators=None, visibility='public', is_static=False, is_volatile=False, name_override=None):
+    def parse_function_decl(self, decorators=None, visibility='public', is_static=False, is_volatile=False, name_override=None, is_abstract=False):
         # Support 'def' (async def also supported). 'fn' is not part of Aura.
         is_async = False
         if self.check('async'):
@@ -1094,6 +1109,31 @@ class Parser:
         if self.match('->'):
             return_type = self.parse_type()
 
+        if is_abstract:
+            # An `abstract def` is a pure signature: it has no body. A `{`
+            # or `=` here would give it an implementation, which contradicts
+            # the declaration, so reject it with a pointed message.
+            if self.check('{'):
+                raise self.error(
+                    f"abstract method '{name}' cannot have a body; "
+                    f"remove 'abstract' or provide the implementation in a "
+                    f"subclass",
+                    self.peek())
+            if self.check('='):
+                raise self.error(
+                    f"abstract method '{name}' cannot have an expression body; "
+                    f"remove 'abstract' or provide the implementation in a "
+                    f"subclass",
+                    self.peek())
+            if self.check(';'):
+                self.consume()
+            return FunctionDecl(name, params, return_type, None,
+                                is_async=is_async, type_params=type_params,
+                                type_constraints=type_constraints,
+                                decorators=decorators, visibility=visibility,
+                                is_static=is_static, is_volatile=is_volatile,
+                                is_abstract=True)
+
         # Handle expression body: fn foo() = expr
         if self.match('='):
              expr = self.parse_expression()
@@ -1102,7 +1142,7 @@ class Parser:
         else:
             body = self.parse_block()
 
-        return FunctionDecl(name, params, return_type, body, is_async=is_async, type_params=type_params, type_constraints=type_constraints, decorators=decorators, visibility=visibility, is_static=is_static, is_volatile=is_volatile)
+        return FunctionDecl(name, params, return_type, body, is_async=is_async, type_params=type_params, type_constraints=type_constraints, decorators=decorators, visibility=visibility, is_static=is_static, is_volatile=is_volatile, is_abstract=is_abstract)
 
     def _parse_class_header_fields(self, class_name):
         """Parse `(private name: str, age: int = 0)` after a class name.
@@ -1183,7 +1223,7 @@ class Parser:
         self.consume(expected_value=')')
         return fields
 
-    def parse_class_decl(self, decorators=None, visibility='public'):
+    def parse_class_decl(self, decorators=None, visibility='public', is_abstract=False):
         self.consume(expected_value='class')
         name = self.consume(expected_type='IDENT').value
 
@@ -1237,12 +1277,23 @@ class Parser:
             member_decorators = []
             is_classmethod = False
             is_property = False
+            member_abstract = False
             while True:
                 if self.match('public'): visibility = 'public'
                 elif self.match('private'): visibility = 'private'
                 elif self.match('protected'): visibility = 'protected'
                 elif self.match('static'): is_static = True
                 elif self.match('volatile'): is_volatile = True
+                elif self.match('abstract'): member_abstract = True
+                elif self.check('override'):
+                    # Overriding is implicit: declaring a method with the same
+                    # name in a subclass replaces the inherited one. Accepting
+                    # `override` silently would turn it into a field named
+                    # `override`, so point the writer at the Aura rule.
+                    raise self.error(
+                        "'override' is not Aura: overriding is implicit "
+                        "(declare 'public def name(...)' with the same name)",
+                        self.peek())
                 elif self.match('@'):
                     dec_name = self._parse_decorator_name()
                     dec_args, dec_kwargs = self._parse_decorator_arguments()
@@ -1252,6 +1303,30 @@ class Parser:
                     elif dec_name == 'property': is_property = True
                 else:
                     break
+
+            if member_abstract and not (
+                    self.check('def')
+                    or self.check('class')
+                    or (self.check('async') and self.peek(1).value == 'def')):
+                raise self.error(
+                    "'abstract' applies to a method or a nested class; write "
+                    "'abstract def name(...)' or 'abstract class Name'",
+                    self.peek())
+
+            # A bare identifier followed directly by a member keyword is a
+            # modifier Aura does not have (`final def`, `open class`,
+            # `implements def`, ...). Without this guard it would parse as a
+            # field with that name and the real member would follow, silently
+            # accepting the foreign spelling. `async def` is the one real
+            # spelling in this shape.
+            if (self.peek().type == 'IDENT'
+                    and self.peek().value != 'async'
+                    and self.peek(1).value in ('def', 'class', 'fn', 'async')):
+                foreign = self.peek().value
+                raise self.error(
+                    f"'{foreign}' is not an Aura modifier; remove it and "
+                    f"declare the member directly",
+                    self.peek())
 
             if self.check('def') or self.check('fn') or (
                     self.check('async') and self.peek(1).value == 'def'):
@@ -1276,12 +1351,14 @@ class Parser:
                 func = self.parse_function_decl(
                     decorators=member_decorators,
                     name_override=override,
+                    is_abstract=member_abstract,
                 )
                 method = Method(func.name, func.params, func.return_type, func.body,
                                 is_static=is_static, is_classmethod=is_classmethod,
                                 is_property=is_property, visibility=visibility,
                                 is_volatile=is_volatile, decorators=member_decorators,
-                                owner=name, is_async=func.is_async)
+                                owner=name, is_async=func.is_async,
+                                is_abstract=member_abstract)
                 method.with_location(self._member_location(member_start))
                 members.append(method)
             elif self.check('class'):
@@ -1289,6 +1366,7 @@ class Parser:
                 inner = self.parse_class_decl(
                     decorators=member_decorators,
                     visibility=visibility,
+                    is_abstract=member_abstract,
                 )
                 inner.with_location(self._member_location(member_start))
                 members.append(inner)
@@ -1348,7 +1426,24 @@ class Parser:
                     raise self.error(f"Unexpected token in class: {self.peek().value}")
 
         self.consume(expected_value='}')
-        return ClassDecl(name, members, base_class, type_params, decorators, visibility, type_constraints=type_constraints, header_fields=header_fields)
+        if header_fields:
+            # A class that declares its fields in the header already gets a
+            # generated constructor from those fields. A manual `new` would
+            # silently shadow it, leaving the header fields declared but never
+            # assigned: `class C(x: int) { def new(...) {} }` produces a
+            # `get_x` accessor that reads a value nobody set. Reject the mix so
+            # each class has exactly one constructor style.
+            manual_new = next(
+                (m for m in members
+                 if isinstance(m, Method) and m.name in ('__init__', 'new')),
+                None)
+            if manual_new is not None:
+                raise self.error(
+                    f"class '{name}' declares header fields and a manual "
+                    f"'new'; the header already generates a constructor, so "
+                    f"declare the fields in the body (or drop 'new')",
+                    getattr(manual_new, 'location', None) or self.peek())
+        return ClassDecl(name, members, base_class, type_params, decorators, visibility, type_constraints=type_constraints, header_fields=header_fields, is_abstract=is_abstract)
 
     def _member_location(self, tok):
         """Build a SourceLocation for a class member's first token."""
@@ -1719,6 +1814,7 @@ class Parser:
             # `public @staticmethod def f` are equivalent.
             member_visibility = None
             is_static = False
+            is_volatile = False
             member_decorators = []
             is_classmethod = False
             is_property = False
@@ -1727,6 +1823,20 @@ class Parser:
                 elif self.match('private'): member_visibility = 'private'
                 elif self.match('protected'): member_visibility = 'protected'
                 elif self.match('static'): is_static = True
+                elif self.match('volatile'): is_volatile = True
+                elif self.check('abstract'):
+                    # Every trait method without a body is already abstract, so
+                    # `abstract` is redundant here. Rejecting it stops the
+                    # keyword from being silently consumed as a field name.
+                    raise self.error(
+                        "'abstract' is not used in a trait: a method with no "
+                        "body is already abstract (write 'def f() -> T')",
+                        self.peek())
+                elif self.check('override'):
+                    raise self.error(
+                        "'override' is not Aura: overriding is implicit "
+                        "(declare 'public def name(...)' with the same name)",
+                        self.peek())
                 elif self.match('@'):
                     dec_name = self._parse_decorator_name()
                     dec_args, dec_kwargs = self._parse_decorator_arguments()
@@ -1736,6 +1846,17 @@ class Parser:
                     elif dec_name == 'property': is_property = True
                 else:
                     break
+
+            # A bare identifier followed directly by a member keyword is a
+            # modifier Aura does not have (see the class member loop).
+            if (self.peek().type == 'IDENT'
+                    and self.peek().value != 'async'
+                    and self.peek(1).value in ('def', 'class', 'fn', 'async')):
+                foreign = self.peek().value
+                raise self.error(
+                    f"'{foreign}' is not an Aura modifier; remove it and "
+                    f"declare the member directly",
+                    self.peek())
 
             if self.check('def') or self.check('fn') or (
                     self.check('async') and self.peek(1).value == 'def'):
@@ -1752,6 +1873,7 @@ class Parser:
                     func.name, func.params, func.return_type, func.body,
                     is_static=is_static, is_classmethod=is_classmethod,
                     is_property=is_property, visibility=member_visibility,
+                    is_volatile=is_volatile,
                     decorators=member_decorators, owner=name,
                     is_async=func.is_async,
                 )
@@ -1794,11 +1916,11 @@ class Parser:
                     field = ConstDecl(
                         member_name, field_type, default,
                         visibility=member_visibility, is_static=is_static,
-                        owner=name)
+                        is_volatile=is_volatile, owner=name)
                 else:
                     field = VarDecl(member_name, field_mutable, field_type, default,
                                     visibility=member_visibility, is_static=is_static,
-                                    owner=name)
+                                    is_volatile=is_volatile, owner=name)
                 field.with_location(self._member_location(member_start))
                 members.append(field)
             else:

@@ -20,7 +20,7 @@ package — is one import away.
 
 ## Status
 
-Aura is **alpha** (`0.2.0a1`). The compiler, type checker, rule checker, REPL,
+Aura is **alpha** (`0.2.0a2`). The compiler, type checker, rule checker, REPL,
 language server, formatter, linter, project tooling, and standard library are
 implemented and covered by a test suite of **11,000+ tests**.
 
@@ -148,6 +148,9 @@ u.set_age(31)          // setter exists because `age` is `mut`
 print(u.id)            // 0    -- public field, direct access
 ```
 
+A class has **one** constructor style: header fields *or* body fields with a
+manual `def new` — never both. Mixing them is a syntax error.
+
 Inheritance uses `extends`; a subclass header declares only its own fields:
 
 ```aura
@@ -155,6 +158,41 @@ class Admin extends User(email: str) { }
 
 let a = Admin(email: "a@x.com", name: "bob")
 print(a.get_email())
+```
+
+Overriding is implicit: declare a method with the same name in the subclass.
+There is no `override` keyword.
+
+### Traits and abstract classes
+
+A `trait` is a pure contract: methods without a body are abstract, and a
+concrete class must implement every one it inherits.
+
+```aura
+trait Drawable {
+  public def draw() -> void
+}
+
+class Circle extends Drawable {
+  public let radius: float = 1.0
+  public def draw() -> void { print("circle") }
+}
+```
+
+An `abstract class` is a real base — fields, concrete methods and a constructor
+— that cannot be instantiated and may defer methods with `abstract def`:
+
+```aura
+abstract class Shape {
+  public abstract def area() -> float
+}
+
+class Square extends Shape {
+  public let side: float = 2.0
+  public def area() -> float { return self.side * self.side }
+}
+
+// let s = Shape()   // E316: abstract, cannot be instantiated
 ```
 
 Aura honours Python's object protocols: dunder methods, descriptors, context

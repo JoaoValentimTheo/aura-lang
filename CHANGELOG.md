@@ -4,7 +4,54 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.0a2] - 2026-09-19
+
+**OOP syntax freeze** — Alpha 0.2.0 codename: **"Equinox"**, OOP completion.
+
+This release completes the OOP portion of the Equinox syntax freeze: abstract
+classes, one constructor style per class, and pointed diagnostics for foreign
+modifiers that used to be silently accepted.
+
+### Added
+
+- **Abstract classes** (`abstract class` + `abstract def`): an abstract class
+  cannot be instantiated (`E316`) and may declare body-less `abstract def`
+  members that a concrete subclass must implement (`E309`). An abstract class
+  may defer, charging the obligation transitively to its concrete subclass. It
+  compiles to a Python ABC with `@abstractmethod` members, so the same rule is
+  enforced at runtime. A trait remains a pure contract; use an abstract class
+  when the base needs state or shared concrete behaviour.
+
+### Changed
+
+- **One constructor style per class**: a class may declare header fields *or* a
+  manual `def new`, never both. Mixing them is a syntax error, because the
+  header already generates a constructor and a second one would leave the
+  header fields unassigned.
+- `abstract` is now a reserved word.
+- `override def` and `abstract def` inside a `trait` are now rejected with a
+  pointed message instead of being silently parsed as fields named `override`
+  or `abstract`. Foreign member modifiers (`final`, `open`, `sealed`,
+  `implements`, ...) are rejected the same way.
+
+### Fixed
+
+- **Transitive abstract obligations**: a concrete class extending a chain of
+  abstract classes now correctly satisfies every inherited abstract method once
+  it implements them, instead of being flagged because an intermediate abstract
+  class left a method open.
+- `aura lint` now reports every `def  ` (double-space) occurrence, prints
+  diagnostics to `stderr`, and exits non-zero on warnings unless
+  `--allow-warnings` is given.
+- `aura run` no longer prints a raw `SystemExit` string code; a string exit
+  code is written to `stderr` and mapped to exit status 1.
+- The generated test-scenario tools only create their output directories when
+  run as scripts, so importing them no longer has filesystem side effects.
+
+### Removed
+
+- The unused `ERROR_TEMPLATES` catalogue and `ErrorSeverity.NOTE` (dead code;
+  `docs/ERRORS.md` is the reference) and the associated obsolete tests.
 
 ## [0.2.0a1] - 2026-09-18
 

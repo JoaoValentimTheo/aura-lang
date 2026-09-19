@@ -463,7 +463,7 @@ def test_type_programs(name, src):
     _compile(src)
 
 ABSTRACT_PROGRAMS = [
-    ("abstract_single", "abstract class Shape { abstract def area() -> float {} }"),
+    ("abstract_single", "abstract class Shape { abstract def area() -> float }"),
 ]
 
 @pytest.mark.parametrize("name,src", ABSTRACT_PROGRAMS, ids=[i[0] for i in ABSTRACT_PROGRAMS])

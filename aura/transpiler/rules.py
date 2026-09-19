@@ -63,6 +63,7 @@ from aura.transpiler.ast import (
     VarDecl,
     WhileStmt,
     WithStmt,
+    aura_method_name,
 )
 from aura.transpiler.errors import ErrorCode, ErrorCollector
 
@@ -386,6 +387,14 @@ class RuleChecker:
                     hint="extend it with a class and instantiate the class",
                 )
                 continue
+            if info.get('is_abstract'):
+                self.collector.add(
+                    ErrorCode.INSTANTIATE_ABSTRACT,
+                    f"'{func.name}' is abstract and cannot be instantiated",
+                    location=self._loc(node),
+                    hint="extend it with a concrete class and instantiate the class",
+                )
+                continue
             missing = self._unimplemented_abstracts(func.name)
             if missing:
                 self.collector.add(
@@ -395,24 +404,37 @@ class RuleChecker:
                     hint="implement the abstract method(s) before instantiating",
                 )
 
-    def _unimplemented_abstracts(self, class_name, seen=None):
-        """Names of abstract methods still unimplemented for ``class_name``."""
-        if seen is None:
-            seen = set()
+    def _unimplemented_abstracts(self, class_name):
+        """Names of abstract methods still unimplemented for ``class_name``.
+
+        The obligation is transitive: an abstract method declared by any
+        ancestor must be implemented somewhere on the path down to this class.
+        A concrete method of the same name — declared on this class or inherited
+        from any ancestor that overrides the abstract declaration — satisfies
+        it. Comparing the *whole* transitive abstract set against the whole set
+        of concrete implementations is what makes a chain of abstract classes
+        work: an intermediate `abstract class B extends A` legitimately leaves
+        A's method open, and a concrete `C extends B` that implements it must
+        not be flagged because B did not.
+        """
+        abstracts = self._collect_abstracts(class_name, set())
+        if not abstracts:
+            return set()
+        implemented = self._collect_concrete(class_name, set())
+        return {name for name in abstracts if name not in implemented}
+
+    def _collect_concrete(self, class_name, seen):
+        """Names of concrete (implemented) methods on ``class_name`` and its
+        ancestors, transitively. Only methods count: a field cannot satisfy an
+        abstract method, even when the names collide across a hierarchy."""
         if class_name in seen:
             return set()
         seen.add(class_name)
         info = self._classes.get(class_name) or {}
-        own = set(info.get('members') or {})
-        missing = set()
+        result = set(info.get('methods') or ())
         for base in info.get('bases') or []:
-            bare = base.split('.')[-1]
-            base_info = self._classes.get(bare) or {}
-            for abstract in (base_info.get('abstracts') or {}):
-                if abstract not in own:
-                    missing.add(abstract)
-            missing |= self._unimplemented_abstracts(bare, seen)
-        return missing
+            result |= self._collect_concrete(base.split('.')[-1], seen)
+        return result
 
     def _check_reexports(self, program, modules=None):
         """Report a `export Name` that cannot be resolved (E313).
@@ -457,8 +479,10 @@ class RuleChecker:
             return
         if isinstance(node, (ClassDecl, TraitDecl)):
             is_trait = isinstance(node, TraitDecl)
+            is_abstract = bool(getattr(node, 'is_abstract', False))
             members = {}
             abstracts = {}
+            method_names = set()
             body = getattr(node, 'body', None) or getattr(node, 'members', None) or []
             # Header fields (`class User(private name: str)`) are instance
             # fields: register them so visibility checks and inherited-member
@@ -473,15 +497,22 @@ class RuleChecker:
                     # assigned through a member expression.
                     members[name] = (getattr(member, 'visibility', None),
                                      isinstance(member, ConstDecl))
-                # A trait method with no body is a pure signature: subclasses
-                # must provide the implementation.
-                if is_trait and isinstance(member, Method) and not member.body:
+                # A method with no body is a pure signature: a trait method is
+                # always one, and `abstract def` declares one in a class.
+                # Subclasses must provide the implementation.
+                if isinstance(member, Method) and (
+                        getattr(member, 'is_abstract', False)
+                        or (is_trait and not member.body)):
                     abstracts[name] = node.name
+                elif isinstance(member, Method):
+                    method_names.add(name)
             bases = []
             if node.base_class:
                 bases = [b.strip() for b in str(node.base_class).split(',') if b.strip()]
             self._classes[node.name] = {'members': members, 'bases': bases,
                                         'is_trait': is_trait, 'abstracts': abstracts,
+                                        'methods': method_names,
+                                        'is_abstract': is_abstract,
                                         'is_module': False,
                                         'exports': None}
             # Recurse into nested classes.
@@ -614,6 +645,7 @@ class RuleChecker:
             self._declare(node.name, node)
             # Trait members also require explicit visibility, and trait method
             # bodies (when present) are real function bodies.
+            self._check_duplicate_members(node)
             self._class_stack.append(node.name)
             self._class_depth += 1
             try:
@@ -831,6 +863,7 @@ class RuleChecker:
     def _visit_class(self, node):
         self._declare(node.name, node)
         self._check_abstract_implemented(node)
+        self._check_duplicate_members(node)
         self._push_scope()
         self._class_depth += 1
         self._class_stack.append(node.name)
@@ -853,34 +886,112 @@ class RuleChecker:
                 self.visit(getattr(param, 'default', None))
             for member in node.body or []:
                 self._check_member_visibility(member, node.name)
+                if (isinstance(member, Method)
+                        and getattr(member, 'is_abstract', False)
+                        and not getattr(node, 'is_abstract', False)):
+                    # An `abstract def` promises a subclass will provide the
+                    # body, but a concrete class can be instantiated directly,
+                    # so the promise cannot be kept. The method must either get
+                    # a body or move to an `abstract class`.
+                    self.collector.add(
+                        ErrorCode.UNIMPLEMENTED_ABSTRACT,
+                        f"abstract method '{aura_method_name(member.name)}' "
+                        f"requires class '{node.name}' to be abstract",
+                        location=self._loc(member) or self._loc(node),
+                        hint=f"add 'abstract' to 'class {node.name}' or give "
+                             f"'{aura_method_name(member.name)}' a body",
+                    )
                 self.visit(member)
         finally:
             self._class_stack.pop()
             self._class_depth -= 1
             self._pop_scope()
 
+    def _check_duplicate_members(self, node):
+        """Reject two members of a class/trait sharing a name (E301).
+
+        Fields, methods, constants and nested classes all live in one namespace
+        on the generated Python class, so a repeated name silently overwrites
+        the earlier definition: `class C { def f() {...} def f() {...} }` keeps
+        only the second `f`, and `class C { let x = 1  def x() {} }` turns the
+        field into a method. Neither is caught by the plain scope check because
+        methods do not declare themselves there, so the collision is reported
+        here with the name and kind of the later declaration.
+        """
+        body = list(getattr(node, 'body', None)
+                    or getattr(node, 'members', None) or [])
+        seen = {}
+        for entry in getattr(node, 'header_fields', None) or []:
+            param, _visibility, _mutable = entry
+            seen.setdefault(param.name, ('header field', param))
+        for member in body:
+            name = getattr(member, 'name', None)
+            if not name or name == '*':
+                continue
+            if isinstance(member, Method):
+                kind = 'method'
+            elif isinstance(member, ConstDecl):
+                kind = 'constant'
+            elif isinstance(member, (ClassDecl, TraitDecl)):
+                kind = 'nested class'
+            else:
+                kind = 'field'
+            if name in seen:
+                first_kind, first = seen[name]
+                # Fields, constants and nested classes all declare themselves
+                # in the class scope, so `_declare` already reports a collision
+                # between two of them. Methods do not, which is the gap this
+                # check closes: report only when a method is involved.
+                if kind == 'method' or first_kind == 'method':
+                    display = aura_method_name(name)
+                    self.collector.add(
+                        ErrorCode.DUPLICATE_DEFINITION,
+                        f"{kind} '{display}' is already declared as a "
+                        f"{first_kind} in '{node.name}'",
+                        location=self._loc(member) or self._loc(node),
+                        hint=f"rename one of the two '{display}' members",
+                    )
+                continue
+            seen[name] = (kind, member)
+
     def _check_abstract_implemented(self, node):
-        """A concrete class must implement every abstract trait method it
-        inherits; otherwise instantiating it would fail at runtime."""
+        """Check abstract-method obligations for a class.
+
+        An `abstract class` may defer implementation, so it is exempt. A
+        concrete class must implement every abstract method it inherits (from a
+        trait or an abstract class); otherwise instantiating it would fail at
+        runtime. An `abstract def` may only appear in an abstract class.
+        """
         if not isinstance(node, ClassDecl):
+            return
+        if getattr(node, 'is_abstract', False):
             return
         abstracts = self._collect_abstracts(node.name, set())
         if not abstracts:
             return
-        implemented = self._collect_implemented(node.name, set())
+        # An `abstract def` declared by this concrete class is reported by the
+        # member check with a pointed message ("requires class to be abstract"),
+        # so skip it here to avoid a second, generic diagnostic for the same
+        # method.
+        own_abstracts = {
+            m.name for m in (node.body or [])
+            if isinstance(m, Method) and getattr(m, 'is_abstract', False)
+        }
+        implemented = self._collect_concrete(node.name, set())
         for name, decl_class in sorted(abstracts.items()):
-            if name not in implemented:
+            if name not in implemented and name not in own_abstracts:
                 self.collector.add(
                     ErrorCode.UNIMPLEMENTED_ABSTRACT,
                     f"'{node.name}' must implement abstract method '{name}' "
                     f"declared by '{decl_class}'",
                     location=self._loc(node),
-                    hint=f"add 'public def {name}(...)' to '{node.name}'",
+                    hint=f"add 'public def {name}(...)' to '{node.name}', "
+                         f"or mark '{node.name}' abstract",
                 )
 
     def _collect_abstracts(self, class_name, seen):
-        """Map every abstract method name to its declaring trait, following
-        bases transitively."""
+        """Map every abstract method name to its declaring trait or abstract
+        class, following bases transitively."""
         if class_name in seen:
             return {}
         seen.add(class_name)
@@ -889,26 +1000,11 @@ class RuleChecker:
             return {}
         result = dict(info.get('abstracts') or {})
         for base in info.get('bases', []):
-            for name, decl in self._collect_abstracts(base, seen).items():
+            # A dotted base (`pkg.Base`) is registered by its bare class name,
+            # so normalize the same way `_collect_concrete` does.
+            for name, decl in self._collect_abstracts(
+                    base.split('.')[-1], seen).items():
                 result.setdefault(name, decl)
-        return result
-
-    def _collect_implemented(self, class_name, seen):
-        """Names of all concrete (bodied) methods available on a class,
-        following bases transitively."""
-        if class_name in seen:
-            return set()
-        seen.add(class_name)
-        info = self._classes.get(class_name)
-        if not info:
-            return set()
-        result = set()
-        abstracts = info.get('abstracts') or {}
-        for name in info.get('members', {}):
-            if name not in abstracts:
-                result.add(name)
-        for base in info.get('bases', []):
-            result |= self._collect_implemented(base, seen)
         return result
 
     def _check_member_visibility(self, member, class_name):
@@ -1002,7 +1098,10 @@ class RuleChecker:
             # `C.K` resolves against C even though no instance is instantiated.
             if name in self._classes:
                 return name
-        return None
+        # A direct instantiation `C().x` denotes an instance of C. Resolving it
+        # keeps visibility enforcement consistent with the `let c = C(); c.x`
+        # form, which would otherwise be the only checked spelling.
+        return self._instantiated_class(obj)
 
     def _visit_member_access(self, obj, member, node):
         """Visit an ``obj.member`` access, visiting both sides and enforcing

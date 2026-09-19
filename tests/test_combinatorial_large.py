@@ -108,7 +108,7 @@ CLASS_PROGS = [
     ('simple', 'class Point { public x: int\npublic y: int }'),
     ('with_method', 'class Point { public x: int\npublic y: int\npublic def dist() -> int { return self.x + self.y } }'),
     ('extends', 'class Animal { public name: str }\nclass Dog extends Animal {}'),
-    ('abstract', 'abstract class Shape { abstract def area() -> float {} }'),
+    ('abstract', 'abstract class Shape { abstract def area() -> float }'),
     ('multi_field', 'class Record { public a: int\npublic b: int\npublic c: int\npublic d: int\npublic e: int }'),
     ('trait', 'trait Drawable { public def draw() {} }'),
     ('trait_impl', 'trait Drawable { public def draw() {} }\nclass Circle extends Drawable { public def draw() {} }'),

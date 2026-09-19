@@ -1,0 +1,50 @@
+// Abstract classes: a base that cannot be instantiated and defers methods.
+
+abstract class Shape {
+  public let name: str = "shape"
+
+  public def describe() -> str {
+    return "a " + self.name
+  }
+
+  // No body: a concrete subclass must implement it.
+  public abstract def area() -> float
+}
+
+class Square extends Shape {
+  public let side: float = 2.0
+
+  public def new(side: float) {
+    self.name = "square"
+    self.side = side
+  }
+
+  public def area() -> float {
+    return self.side * self.side
+  }
+}
+
+class Circle extends Shape {
+  public let radius: float = 1.0
+
+  public def new(radius: float) {
+    self.name = "circle"
+    self.radius = radius
+  }
+
+  public def area() -> float {
+    return 3.14159 * self.radius * self.radius
+  }
+}
+
+// Polymorphism: the parameter type is the abstract base.
+def print_area(shape: Shape) {
+  print(f"{shape.describe()}: {shape.area()}")
+}
+
+def main() {
+  print_area(Square(3.0))
+  print_area(Circle(2.0))
+
+  // let s = Shape()   // E316: an abstract class cannot be instantiated
+}

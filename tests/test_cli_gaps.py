@@ -158,28 +158,28 @@ def test_lint_long_line(tmp_path, capsys):
     path = write(tmp_path, 'p.aura', 'let x = ' + '1' * 120 + '\n')
     code, out, err = capture(cli.cmd_lint, path)
     assert code == 1
-    assert 'W001' in out
+    assert 'W001' in err
 
 
 def test_lint_trailing_whitespace(tmp_path, capsys):
     path = write(tmp_path, 'p.aura', 'let x = 1   \n')
     code, out, err = capture(cli.cmd_lint, path)
     assert code == 1
-    assert 'W002' in out
+    assert 'W002' in err
 
 
 def test_lint_upper_case_variable(tmp_path, capsys):
     path = write(tmp_path, 'p.aura', 'let TOTAL = 1\n')
     code, out, err = capture(cli.cmd_lint, path)
     assert code == 1
-    assert 'W003' in out
+    assert 'W003' in err
 
 
 def test_lint_multiple_spaces_after_def(tmp_path, capsys):
     path = write(tmp_path, 'p.aura', 'def  main() { }\n')
     code, out, err = capture(cli.cmd_lint, path)
     assert code == 1
-    assert 'W004' in out
+    assert 'W004' in err
 
 
 def test_lint_clean_file(tmp_path, capsys):

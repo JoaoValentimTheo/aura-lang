@@ -240,7 +240,7 @@ CLASS_CASES = [
     "class C extends B {}",
     "class C extends B { public x: int }",
     "class C { public def m() { return self.x } }",
-    "abstract class C { abstract def m() {} }",
+    "abstract class C { abstract def m() }",
     "class C { private def m() {} }",
     "class C { protected def m() {} }",
 ]
