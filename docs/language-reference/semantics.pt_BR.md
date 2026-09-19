@@ -4,7 +4,7 @@ title: "Semântica — Modelo de Execução"
 nav_exclude: true
 ---
 
-[English](semantics.md) | [Português](semantics.pt_BR.md)
+[English](semantics.md) · [Português](semantics.pt_BR.md)
 
 # Semântica — Modelo de Execução
 

@@ -5,7 +5,7 @@ nav_order: 3
 has_children: true
 ---
 
-[English](index.md) | [Português](index.pt_BR.md)
+[English](index.md) · [Português](index.pt_BR.md)
 
 # Aura Language Reference
 

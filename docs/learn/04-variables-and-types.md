@@ -5,7 +5,7 @@ parent: Learn Aura
 nav_order: 14
 ---
 
-[English](04-variables-and-types.md) | [Português](04-variables-and-types.pt_BR.md)
+[English](04-variables-and-types.md) · [Português](04-variables-and-types.pt_BR.md)
 
 # 04 — Variables and Types
 

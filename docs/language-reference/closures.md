@@ -5,7 +5,7 @@ parent: Aura Language Reference
 nav_order: 2
 ---
 
-[English](closures.md) | [Português](closures.pt_BR.md)
+[English](closures.md) · [Português](closures.pt_BR.md)
 
 # Closures and Lambdas
 

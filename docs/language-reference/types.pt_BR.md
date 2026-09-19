@@ -4,7 +4,7 @@ title: "Tipos — Catálogo e Sintaxe"
 nav_exclude: true
 ---
 
-[English](types.md) | [Português](types.pt_BR.md)
+[English](types.md) · [Português](types.pt_BR.md)
 
 # Tipos — Catálogo e Sintaxe
 

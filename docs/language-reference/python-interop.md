@@ -5,7 +5,7 @@ parent: Aura Language Reference
 nav_order: 8
 ---
 
-[English](python-interop.md) | [Português](python-interop.pt_BR.md)
+[English](python-interop.md) · [Português](python-interop.pt_BR.md)
 
 # Python Interop
 

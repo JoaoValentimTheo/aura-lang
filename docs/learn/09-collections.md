@@ -5,7 +5,7 @@ parent: Learn Aura
 nav_order: 19
 ---
 
-[English](09-collections.md) | [Português](09-collections.pt_BR.md)
+[English](09-collections.md) · [Português](09-collections.pt_BR.md)
 
 # 09 — Collections
 

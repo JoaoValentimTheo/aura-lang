@@ -4,7 +4,7 @@ title: "09 — Coleções"
 nav_exclude: true
 ---
 
-[English](09-collections.md) | [Português](09-collections.pt_BR.md)
+[English](09-collections.md) · [Português](09-collections.pt_BR.md)
 
 # 09 — Coleções
 

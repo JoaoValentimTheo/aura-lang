@@ -4,7 +4,7 @@ title: "Módulos, Pacotes e Imports"
 nav_exclude: true
 ---
 
-[English](modules.md) | [Português](modules.pt_BR.md)
+[English](modules.md) · [Português](modules.pt_BR.md)
 
 # Módulos, Pacotes e Imports
 

@@ -5,7 +5,7 @@ parent: Learn Aura
 nav_order: 20
 ---
 
-[English](10-lambdas-and-functional.md) | [Português](10-lambdas-and-functional.pt_BR.md)
+[English](10-lambdas-and-functional.md) · [Português](10-lambdas-and-functional.pt_BR.md)
 
 # 10 — Lambdas and Functional Programming
 

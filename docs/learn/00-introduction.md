@@ -5,7 +5,7 @@ parent: Learn Aura
 nav_order: 10
 ---
 
-[English](00-introduction.md) | [Português](00-introduction.pt_BR.md)
+[English](00-introduction.md) · [Português](00-introduction.pt_BR.md)
 
 # 00 — Introduction
 

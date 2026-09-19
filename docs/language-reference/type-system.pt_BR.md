@@ -4,7 +4,7 @@ title: "Sistema de Tipos e Checagem de Tipos"
 nav_exclude: true
 ---
 
-[English](type-system.md) | [Português](type-system.pt_BR.md)
+[English](type-system.md) · [Português](type-system.pt_BR.md)
 
 # Sistema de Tipos e Checagem de Tipos
 
@@ -193,7 +193,7 @@ não-opcional usado onde um opcional é esperado — sempre aceito).
 - Uma função **sem anotação** tem tipo de retorno `Any`; todo `return` é aceito.
 - Uma função com retorno declarado não-`Any` e **nenhum** `return` em lugar algum
   **não** é reportada pelo type checker (`E304 MISSING_RETURN` é documentado como
-  não aplicado; `docs/ERRORS.md:137`). O Python emitido simplesmente retorna
+  não aplicado; the *Removed codes* table in [ERRORS.md](../ERRORS.md)). O Python emitido simplesmente retorna
   `None`.
 - A inferência de tipo de retorno a partir do corpo **não** é implementada (§3).
 

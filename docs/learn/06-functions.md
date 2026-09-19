@@ -5,7 +5,7 @@ parent: Learn Aura
 nav_order: 16
 ---
 
-[English](06-functions.md) | [Português](06-functions.pt_BR.md)
+[English](06-functions.md) · [Português](06-functions.pt_BR.md)
 
 # 06 — Functions
 

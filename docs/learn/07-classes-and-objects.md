@@ -5,7 +5,7 @@ parent: Learn Aura
 nav_order: 17
 ---
 
-[English](07-classes-and-objects.md) | [Português](07-classes-and-objects.pt_BR.md)
+[English](07-classes-and-objects.md) · [Português](07-classes-and-objects.pt_BR.md)
 
 # 07 — Classes and Objects
 

@@ -4,7 +4,7 @@ title: "13 — Módulos e Imports"
 nav_exclude: true
 ---
 
-[English](13-modules-and-imports.md) | [Português](13-modules-and-imports.pt_BR.md)
+[English](13-modules-and-imports.md) · [Português](13-modules-and-imports.pt_BR.md)
 
 # 13 — Módulos e Imports
 

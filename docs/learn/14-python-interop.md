@@ -5,7 +5,7 @@ parent: Learn Aura
 nav_order: 24
 ---
 
-[English](14-python-interop.md) | [Português](14-python-interop.pt_BR.md)
+[English](14-python-interop.md) · [Português](14-python-interop.pt_BR.md)
 
 # 14 — Python Interop
 

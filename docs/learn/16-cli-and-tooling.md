@@ -5,7 +5,7 @@ parent: Learn Aura
 nav_order: 26
 ---
 
-[English](16-cli-and-tooling.md) | [Português](16-cli-and-tooling.pt_BR.md)
+[English](16-cli-and-tooling.md) · [Português](16-cli-and-tooling.pt_BR.md)
 
 # 16 — CLI and Tooling
 

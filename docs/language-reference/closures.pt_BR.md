@@ -4,7 +4,7 @@ title: "Closures e Lambdas"
 nav_exclude: true
 ---
 
-[English](closures.md) | [Português](closures.pt_BR.md)
+[English](closures.md) · [Português](closures.pt_BR.md)
 
 # Closures e Lambdas
 

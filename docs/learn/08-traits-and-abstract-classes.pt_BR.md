@@ -4,7 +4,7 @@ title: "08 — Traits e Classes Abstratas"
 nav_exclude: true
 ---
 
-[English](08-traits-and-abstract-classes.md) | [Português](08-traits-and-abstract-classes.pt_BR.md)
+[English](08-traits-and-abstract-classes.md) · [Português](08-traits-and-abstract-classes.pt_BR.md)
 
 # 08 — Traits e Classes Abstratas
 

@@ -5,7 +5,7 @@ parent: Learn Aura
 nav_order: 25
 ---
 
-[English](15-macros-and-decorators.md) | [Português](15-macros-and-decorators.pt_BR.md)
+[English](15-macros-and-decorators.md) · [Português](15-macros-and-decorators.pt_BR.md)
 
 # 15 — Macros and Decorators
 

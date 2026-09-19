@@ -5,7 +5,7 @@ parent: Aura Language Reference
 nav_order: 3
 ---
 
-[English](expressions.md) | [Português](expressions.pt_BR.md)
+[English](expressions.md) · [Português](expressions.pt_BR.md)
 
 # Expressions
 

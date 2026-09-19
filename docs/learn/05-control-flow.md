@@ -5,7 +5,7 @@ parent: Learn Aura
 nav_order: 15
 ---
 
-[English](05-control-flow.md) | [Português](05-control-flow.pt_BR.md)
+[English](05-control-flow.md) · [Português](05-control-flow.pt_BR.md)
 
 # 05 — Control Flow
 

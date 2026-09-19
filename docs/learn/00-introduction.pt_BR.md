@@ -4,7 +4,7 @@ title: "00 — Introdução"
 nav_exclude: true
 ---
 
-[English](00-introduction.md) | [Português](00-introduction.pt_BR.md)
+[English](00-introduction.md) · [Português](00-introduction.pt_BR.md)
 
 # 00 — Introdução
 

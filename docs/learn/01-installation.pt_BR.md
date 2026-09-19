@@ -4,7 +4,7 @@ title: "01 — Instalação"
 nav_exclude: true
 ---
 
-[English](01-installation.md) | [Português](01-installation.pt_BR.md)
+[English](01-installation.md) · [Português](01-installation.pt_BR.md)
 
 # 01 — Instalação
 

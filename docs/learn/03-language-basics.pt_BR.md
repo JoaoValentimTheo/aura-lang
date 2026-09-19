@@ -4,7 +4,7 @@ title: "03 — Noções Básicas"
 nav_exclude: true
 ---
 
-[English](03-language-basics.md) | [Português](03-language-basics.pt_BR.md)
+[English](03-language-basics.md) · [Português](03-language-basics.pt_BR.md)
 
 # 03 — Noções Básicas
 

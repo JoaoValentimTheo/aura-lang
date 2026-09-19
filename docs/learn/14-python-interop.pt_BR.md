@@ -4,7 +4,7 @@ title: "14 — Interop com Python"
 nav_exclude: true
 ---
 
-[English](14-python-interop.md) | [Português](14-python-interop.pt_BR.md)
+[English](14-python-interop.md) · [Português](14-python-interop.pt_BR.md)
 
 # 14 — Interop com Python
 

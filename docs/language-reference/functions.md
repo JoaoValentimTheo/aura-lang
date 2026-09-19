@@ -5,7 +5,7 @@ parent: Aura Language Reference
 nav_order: 4
 ---
 
-[English](functions.md) | [Português](functions.pt_BR.md)
+[English](functions.md) · [Português](functions.pt_BR.md)
 
 # Functions
 

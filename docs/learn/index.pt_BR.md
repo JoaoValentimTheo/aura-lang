@@ -4,7 +4,7 @@ title: "Aprenda Aura"
 nav_exclude: true
 ---
 
-[English](index.md) | [Português](index.pt_BR.md)
+[English](index.md) · [Português](index.pt_BR.md)
 
 # Aprenda Aura
 

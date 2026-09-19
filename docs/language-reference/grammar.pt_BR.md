@@ -4,7 +4,7 @@ title: "Especificação da Gramática de Aura"
 nav_exclude: true
 ---
 
-[English](grammar.md) | [Português](grammar.pt_BR.md)
+[English](grammar.md) · [Português](grammar.pt_BR.md)
 
 # Especificação da Gramática de Aura
 

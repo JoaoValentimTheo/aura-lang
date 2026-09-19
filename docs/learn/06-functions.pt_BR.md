@@ -4,7 +4,7 @@ title: "06 — Funções"
 nav_exclude: true
 ---
 
-[English](06-functions.md) | [Português](06-functions.pt_BR.md)
+[English](06-functions.md) · [Português](06-functions.pt_BR.md)
 
 # 06 — Funções
 

@@ -5,7 +5,7 @@ parent: Learn Aura
 nav_order: 22
 ---
 
-[English](12-error-handling.md) | [Português](12-error-handling.pt_BR.md)
+[English](12-error-handling.md) · [Português](12-error-handling.pt_BR.md)
 
 # 12 — Error Handling
 

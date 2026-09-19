@@ -5,7 +5,7 @@ parent: Aura Language Reference
 nav_order: 7
 ---
 
-[English](modules.md) | [Português](modules.pt_BR.md)
+[English](modules.md) · [Português](modules.pt_BR.md)
 
 # Modules, Packages and Imports
 

@@ -4,7 +4,7 @@ title: "Aura Language Reference"
 nav_exclude: true
 ---
 
-[English](index.md) | [Português](index.pt_BR.md)
+[English](index.md) · [Português](index.pt_BR.md)
 
 # Aura Language Reference
 

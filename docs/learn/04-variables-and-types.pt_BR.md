@@ -4,7 +4,7 @@ title: "04 — Variáveis e Tipos"
 nav_exclude: true
 ---
 
-[English](04-variables-and-types.md) | [Português](04-variables-and-types.pt_BR.md)
+[English](04-variables-and-types.md) · [Português](04-variables-and-types.pt_BR.md)
 
 # 04 — Variáveis e Tipos
 

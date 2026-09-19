@@ -4,7 +4,7 @@ title: "02 — Primeiro Programa"
 nav_exclude: true
 ---
 
-[English](02-first-program.md) | [Português](02-first-program.pt_BR.md)
+[English](02-first-program.md) · [Português](02-first-program.pt_BR.md)
 
 # 02 — Primeiro Programa
 

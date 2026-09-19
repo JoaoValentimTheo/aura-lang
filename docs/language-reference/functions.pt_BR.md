@@ -4,7 +4,7 @@ title: "Funções"
 nav_exclude: true
 ---
 
-[English](functions.md) | [Português](functions.pt_BR.md)
+[English](functions.md) · [Português](functions.pt_BR.md)
 
 # Funções
 

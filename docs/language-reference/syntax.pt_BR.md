@@ -4,7 +4,7 @@ title: "Sintaxe Concreta (formas e exemplos)"
 nav_exclude: true
 ---
 
-[English](syntax.md) | [Português](syntax.pt_BR.md)
+[English](syntax.md) · [Português](syntax.pt_BR.md)
 
 # Sintaxe Concreta (formas e exemplos)
 

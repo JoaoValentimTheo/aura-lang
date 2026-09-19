@@ -5,7 +5,7 @@ parent: Aura Language Reference
 nav_order: 9
 ---
 
-[English](semantics.md) | [Português](semantics.pt_BR.md)
+[English](semantics.md) · [Português](semantics.pt_BR.md)
 
 # Semantics — Execution Model
 

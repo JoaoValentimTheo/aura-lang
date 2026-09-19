@@ -5,7 +5,7 @@ parent: Learn Aura
 nav_order: 12
 ---
 
-[English](02-first-program.md) | [Português](02-first-program.pt_BR.md)
+[English](02-first-program.md) · [Português](02-first-program.pt_BR.md)
 
 # 02 — First Program
 

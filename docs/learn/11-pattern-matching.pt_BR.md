@@ -4,7 +4,7 @@ title: "11 — Pattern Matching"
 nav_exclude: true
 ---
 
-[English](11-pattern-matching.md) | [Português](11-pattern-matching.pt_BR.md)
+[English](11-pattern-matching.md) · [Português](11-pattern-matching.pt_BR.md)
 
 # 11 — Pattern Matching
 

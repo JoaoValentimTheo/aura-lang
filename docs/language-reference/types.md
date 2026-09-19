@@ -5,7 +5,7 @@ parent: Aura Language Reference
 nav_order: 13
 ---
 
-[English](types.md) | [Português](types.pt_BR.md)
+[English](types.md) · [Português](types.pt_BR.md)
 
 # Types — Catalog and Syntax
 

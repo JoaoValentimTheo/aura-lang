@@ -5,7 +5,7 @@ parent: Aura Language Reference
 nav_order: 6
 ---
 
-[English](lexical-structure.md) | [Português](lexical-structure.pt_BR.md)
+[English](lexical-structure.md) · [Português](lexical-structure.pt_BR.md)
 
 # Lexical Structure
 

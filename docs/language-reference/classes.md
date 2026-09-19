@@ -5,7 +5,7 @@ parent: Aura Language Reference
 nav_order: 1
 ---
 
-[English](classes.md) | [Português](classes.pt_BR.md)
+[English](classes.md) · [Português](classes.pt_BR.md)
 
 # Classes, Traits and Inheritance
 

@@ -5,7 +5,7 @@ parent: Aura Language Reference
 nav_order: 12
 ---
 
-[English](type-system.md) | [Português](type-system.pt_BR.md)
+[English](type-system.md) · [Português](type-system.pt_BR.md)
 
 # Type System and Type Checking
 
@@ -192,7 +192,7 @@ non-optional value used where an optional is expected — always accepted).
 - An **unannotated** function has return type `Any`; every `return` is accepted.
 - A function with a declared non-`Any` return and **no** `return` anywhere is
   **not** reported by the type checker (`E304 MISSING_RETURN` is documented as
-  not enforced; `docs/ERRORS.md:137`). The emitted Python simply returns `None`.
+  not enforced; the *Removed codes* table in [ERRORS.md](../ERRORS.md)). The emitted Python simply returns `None`.
 - Return-type inference from the body is **not** implemented (§3).
 
 ```aura

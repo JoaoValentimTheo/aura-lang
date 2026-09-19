@@ -4,7 +4,7 @@ title: "Statements"
 nav_exclude: true
 ---
 
-[English](statements.md) | [Português](statements.pt_BR.md)
+[English](statements.md) · [Português](statements.pt_BR.md)
 
 # Statements
 

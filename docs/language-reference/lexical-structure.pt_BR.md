@@ -4,7 +4,7 @@ title: "Estrutura Léxica"
 nav_exclude: true
 ---
 
-[English](lexical-structure.md) | [Português](lexical-structure.pt_BR.md)
+[English](lexical-structure.md) · [Português](lexical-structure.pt_BR.md)
 
 # Estrutura Léxica
 

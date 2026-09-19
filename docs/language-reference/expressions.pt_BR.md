@@ -4,7 +4,7 @@ title: "Expressões"
 nav_exclude: true
 ---
 
-[English](expressions.md) | [Português](expressions.pt_BR.md)
+[English](expressions.md) · [Português](expressions.pt_BR.md)
 
 # Expressões
 

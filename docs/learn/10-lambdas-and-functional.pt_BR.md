@@ -4,7 +4,7 @@ title: "10 — Lambdas e Programação Funcional"
 nav_exclude: true
 ---
 
-[English](10-lambdas-and-functional.md) | [Português](10-lambdas-and-functional.pt_BR.md)
+[English](10-lambdas-and-functional.md) · [Português](10-lambdas-and-functional.pt_BR.md)
 
 # 10 — Lambdas e Programação Funcional
 

@@ -4,7 +4,7 @@ title: "Classes, Traits e Herança"
 nav_exclude: true
 ---
 
-[English](classes.md) | [Português](classes.pt_BR.md)
+[English](classes.md) · [Português](classes.pt_BR.md)
 
 # Classes, Traits e Herança
 

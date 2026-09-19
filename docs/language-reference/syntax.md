@@ -5,7 +5,7 @@ parent: Aura Language Reference
 nav_order: 11
 ---
 
-[English](syntax.md) | [Português](syntax.pt_BR.md)
+[English](syntax.md) · [Português](syntax.pt_BR.md)
 
 # Concrete Syntax (forms and examples)
 

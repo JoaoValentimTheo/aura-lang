@@ -5,7 +5,7 @@ parent: Learn Aura
 nav_order: 11
 ---
 
-[English](01-installation.md) | [Português](01-installation.pt_BR.md)
+[English](01-installation.md) · [Português](01-installation.pt_BR.md)
 
 # 01 — Installation
 

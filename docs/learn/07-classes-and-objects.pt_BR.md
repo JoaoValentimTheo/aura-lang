@@ -4,7 +4,7 @@ title: "07 — Classes e Objetos"
 nav_exclude: true
 ---
 
-[English](07-classes-and-objects.md) | [Português](07-classes-and-objects.pt_BR.md)
+[English](07-classes-and-objects.md) · [Português](07-classes-and-objects.pt_BR.md)
 
 # 07 — Classes e Objetos
 

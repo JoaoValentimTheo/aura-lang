@@ -5,7 +5,7 @@ nav_order: 2
 has_children: true
 ---
 
-[English](index.md) | [Português](index.pt_BR.md)
+[English](index.md) · [Português](index.pt_BR.md)
 
 # Learn Aura
 

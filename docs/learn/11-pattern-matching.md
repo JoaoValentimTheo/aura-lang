@@ -5,7 +5,7 @@ parent: Learn Aura
 nav_order: 21
 ---
 
-[English](11-pattern-matching.md) | [Português](11-pattern-matching.pt_BR.md)
+[English](11-pattern-matching.md) · [Português](11-pattern-matching.pt_BR.md)
 
 # 11 — Pattern Matching
 

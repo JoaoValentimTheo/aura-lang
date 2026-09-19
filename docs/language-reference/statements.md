@@ -5,7 +5,7 @@ parent: Aura Language Reference
 nav_order: 10
 ---
 
-[English](statements.md) | [Português](statements.pt_BR.md)
+[English](statements.md) · [Português](statements.pt_BR.md)
 
 # Statements
 

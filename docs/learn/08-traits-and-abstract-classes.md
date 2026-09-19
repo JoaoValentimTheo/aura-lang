@@ -5,7 +5,7 @@ parent: Learn Aura
 nav_order: 18
 ---
 
-[English](08-traits-and-abstract-classes.md) | [Português](08-traits-and-abstract-classes.pt_BR.md)
+[English](08-traits-and-abstract-classes.md) · [Português](08-traits-and-abstract-classes.pt_BR.md)
 
 # 08 — Traits and Abstract Classes
 

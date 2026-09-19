@@ -4,7 +4,7 @@ title: "16 — CLI e Tooling"
 nav_exclude: true
 ---
 
-[English](16-cli-and-tooling.md) | [Português](16-cli-and-tooling.pt_BR.md)
+[English](16-cli-and-tooling.md) · [Português](16-cli-and-tooling.pt_BR.md)
 
 # 16 — CLI e Tooling
 
