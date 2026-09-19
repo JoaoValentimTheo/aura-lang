@@ -20,7 +20,7 @@ package — is one import away.
 
 ## Status
 
-Aura is **alpha** (`0.2.0a2`). The compiler, type checker, rule checker, REPL,
+Aura is **alpha** (`0.2.0a3`). The compiler, type checker, rule checker, REPL,
 language server, formatter, linter, project tooling, and standard library are
 implemented and covered by a test suite of **11,000+ tests**.
 

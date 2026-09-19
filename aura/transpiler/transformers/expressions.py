@@ -75,6 +75,8 @@ class ExpressionTransformer:
         self.has_dict = False
         # Set when `??`/`?:` are used and the coalescing prelude is required.
         self.uses_coalesce = False
+        # Set when an open-ended range (`0..`) is used; needs `import itertools`.
+        self.uses_infinite_range = False
         # Module-scope resolution. A module transpiles to a class whose data
         # members (const/let/static) live on the class, so a bare reference to
         # one inside a module function must become `Module.name`. Each stack
@@ -411,10 +413,19 @@ class ExpressionTransformer:
 
             if member == 'length' and not args:
                 return f"len({obj})"
+            if member in ('size', 'len') and not args:
+                # Collection length convenience, Kof-style (`list.size()`) and
+                # Python-style (`list.len()`); both mean `len(list)`. A user
+                # method with the same name is a `known_member` and wins above.
+                return f"len({obj})"
             if member == 'is_empty' and not args:
                 return f"(not {obj})"
             if member == 'contains' and len(args) == 1:
                 return f"({args[0]} in {obj})"
+            if member == 'add' and len(args) == 1:
+                # `list.add(x)` appends, matching Kof's List API. A user class
+                # that declares `add` is a `known_member` and keeps its method.
+                return f"{obj}.append({args[0]})"
             if member == 'slice':
                 if len(args) == 1:
                     return f"{obj}[{args[0]}:]"
@@ -622,7 +633,9 @@ class ExpressionTransformer:
     def transform_RangeExpr(self, node):
         start = self.transform(node.start)
         if node.end is None:
-            # Infinite range: use a large number or itertools.count
+            # Infinite range (`0..`): an unbounded counter. The transformer
+            # injects `import itertools` for this form.
+            self.uses_infinite_range = True
             return f"itertools.count({start})"
         end = self.transform(node.end)
         end_val = f"{end}" if node.exclusive else f"{end} + 1"

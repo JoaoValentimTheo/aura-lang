@@ -189,6 +189,9 @@ def error_prelude_needed(free_names) -> bool:
 # Traits compile to ABCs and generic classes compile to Generic[...]
 OOP_PRELUDE = "import abc as _aura_abc\nfrom typing import Generic as _aura_Generic, TypeVar as _aura_TypeVar\n"
 
+# An open-ended range (`0..`) lowers to `itertools.count`.
+ITERTOOLS_PRELUDE = "import itertools\n"
+
 
 def stdlib_prelude_needed(free_names) -> bool:
     """Return True if any data-first stdlib helper is referenced."""

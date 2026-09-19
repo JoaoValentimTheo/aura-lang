@@ -443,18 +443,23 @@ by type, and `catch as e { }` binds every exception. The old ambiguous
 | 2 | `? :` (ternary) | right |
 | 3 | `or` | left |
 | 4 | `and` | left |
-| 5 | `\|` (bitwise) | left |
-| 5.2 | `^` | left |
-| 5.4 | `&` | left |
-| 5.5 | `<<`, `>>` | left |
-| 6 | `==`, `!=`, `<`, `>`, `<=`, `>=`, `in`, `not in`, `is`, `is not` | left |
-| 7 | `..`, `..<` (range) | none |
-| 8 | `??`, `?:` (coalescing) | left |
-| 9 | `+`, `-` | left |
-| 10 | `*`, `/`, `%`, `as` (cast) | left |
-| 11 | `**` | right |
-| 12 | unary `-`, `+`, `~`, `not`, `await`, `...` (spread) | prefix |
-| 13 | call, index, slice, member, safe-nav, struct-init | postfix |
+| 5 | `==`, `!=`, `<`, `>`, `<=`, `>=`, `in`, `not in`, `is`, `is not` | left |
+| 6 | `\|` (bitwise) | left |
+| 7 | `^` | left |
+| 8 | `&` | left |
+| 9 | `<<`, `>>` | left |
+| 10 | `..`, `..<` (range) | none |
+| 11 | `??`, `?:` (coalescing) | left |
+| 12 | `+`, `-` | left |
+| 13 | `*`, `/`, `%`, `as` (cast) | left |
+| 14 | `**` | right |
+| 15 | unary `-`, `+`, `~`, `not`, `await`, `...` (spread) | prefix |
+| 16 | call, index, slice, member, safe-nav, struct-init | postfix |
+
+Comparison (`==`, `<`, `in`, `is`, …) is **looser** than the bitwise operators
+and the shifts, exactly as in Python: `1 & 2 == 2` is `(1 & 2) == 2` and
+`1 < 2 | 3` is `1 < (2 | 3)`. Comparison does **not** chain like Python's
+`a < b < c`; use `a < b and b < c`.
 
 `yield` is a statement-level prefix form, not part of `expression`: the parser
 recognizes it before the Pratt loop and parses its operand at the lowest

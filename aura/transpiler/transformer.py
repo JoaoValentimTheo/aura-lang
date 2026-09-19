@@ -5,6 +5,7 @@ from aura.transpiler.macros import (
     DICT_PRELUDE,
     ENUM_PRELUDE,
     ERROR_PRELUDE,
+    ITERTOOLS_PRELUDE,
     LABEL_PRELUDE,
     OOP_PRELUDE,
     PRELUDE,
@@ -106,6 +107,8 @@ class Transformer:
             preludes.append(DICT_PRELUDE)
         if expr.uses_coalesce:
             preludes.append(COALESCE_PRELUDE)
+        if expr.uses_infinite_range:
+            preludes.append(ITERTOOLS_PRELUDE)
         if stmt.has_enum:
             preludes.append(ENUM_PRELUDE)
         if stmt.has_label:

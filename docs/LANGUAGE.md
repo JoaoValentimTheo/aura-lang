@@ -1191,38 +1191,61 @@ guard may reject the value. `case name` binds the value and does count.
 
 ## 13. Expressions and Operators
 
-### Operator precedence (highest to lowest)
+### Operator precedence (lowest to highest)
 
-This table matches the parser. It follows Python's ordering for the shared
-operators (shifts bind tighter than `&`, which binds tighter than `^`, which
-binds tighter than `|`).
+This table matches the parser and [GRAMMAR.md](GRAMMAR.md) §6.1. Comparison and
+equality are **looser** than the bitwise operators and the shifts, exactly as in
+Python: `1 & 2 == 2` is `(1 & 2) == 2`, and `1 < 2 | 3` is `1 < (2 | 3)`.
 
-| Prec | Operator | Description |
-|------|----------|-------------|
-| 1 | `**` | Exponentiation (right-associative) |
-| 2 | `*`, `/`, `%`, `as` | Multiplication, division, modulo, cast |
-| 3 | `+`, `-` | Addition, subtraction |
-| 4 | `??`, `?:` | Null coalescing / Elvis (right-associative) |
-| 5 | `..`, `..<` | Ranges |
-| 6 | `<`, `>`, `<=`, `>=`, `in`, `not in`, `is`, `is not` | Comparison, membership, identity |
-| 7 | `<<`, `>>` | Bitwise shifts (tighter than `&`) |
-| 8 | `==`, `!=` | Equality |
-| 9 | `&` | Bitwise AND |
-| 10 | `^` | Bitwise XOR |
-| 11 | `\|` | Bitwise OR |
-| 12 | `and` | Logical AND |
-| 13 | `or` | Logical OR |
-| 14 | `? :` | Ternary conditional |
-| 15 | `\|>` | Pipe |
-| 16 | `=`, `+=`, etc. | Assignment |
+| Level | Operator | Description |
+|-------|----------|-------------|
+| 1 | `=`, `+=`, … , `\|>` | Assignment; pipe (parsed left to right) |
+| 2 | `? :` | Ternary conditional (right-associative) |
+| 3 | `or` | Logical OR |
+| 4 | `and` | Logical AND |
+| 5 | `==`, `!=`, `<`, `>`, `<=`, `>=`, `in`, `not in`, `is`, `is not` | Equality, comparison, membership, identity |
+| 6 | `\|` | Bitwise OR |
+| 7 | `^` | Bitwise XOR |
+| 8 | `&` | Bitwise AND |
+| 9 | `<<`, `>>` | Bitwise shifts |
+| 10 | `..`, `..<` | Ranges |
+| 11 | `??`, `?:` | Null coalescing / Elvis |
+| 12 | `+`, `-` | Addition, subtraction |
+| 13 | `*`, `/`, `%`, `as` | Multiplication, true division, modulo, cast |
+| 14 | `**` | Exponentiation (right-associative) |
+
+> The table is ordered **lowest precedence first** (row 1 binds loosest), the
+> same direction as `GRAMMAR.md` §6.1. Comparison does **not** chain: `a < b < c`
+> parses as `(a < b) < c`, so write `a < b and b < c`.
 
 Pipe is the loosest expression operator and is grouped with assignment; it is
 parsed specially so `a \|> f \|> g` chains left to right.
 
 Unary `-`, `+`, `~`, `not`, `await` and prefix spread bind tighter than the
 binary operators above. `not` is looser than comparison, so `not a in b` means
-`not (a in b)`. `yield` is the loosest prefix form: `yield x + 1` yields
-`x + 1`.
+`not (a in b)` and `not a | b` means `not (a | b)`. `yield` is the loosest
+prefix form: `yield x + 1` yields `x + 1`.
+
+### Arithmetic and comparison semantics
+
+Aura follows Python for the arithmetic operators, which differs from JVM/Kof:
+
+| Expression | Aura result | Why |
+|------------|-------------|-----|
+| `7 / 2` | `3.5` | `/` is **true division**; it never truncates |
+| `-7 % 3` | `2` | `%` follows the **divisor's sign** (Python); JVM/Kof follows the dividend (`-1`) |
+| `2 ** 3 ** 2` | `512` | `**` is right-associative |
+| `-2 ** 2` | `-4` | unary `-` binds looser than `**` |
+| `x is none` | identity | `is`/`is not` test identity; `x is none` is the null check |
+
+Integer floor division is deliberately absent (`//` always starts a line
+comment); cast the true division to get an integer result:
+`let q = int(total / count)`.
+
+`is`/`is not` are **identity** tests. Comparing against a literal is rejected
+(`x is "a"` → parse error), because it means "the same object" rather than
+"equal"; use `==`/`!=` for value equality. The only literal form allowed with
+identity is `none` (`x is none`, `x is not none`).
 
 ### Ternary
 
@@ -1264,8 +1287,21 @@ let result = [1, 2, 3, 4, 5]
 ```aura
 1..10          // inclusive: 1, 2, ..., 10
 0..<100        // exclusive: 0, 1, ..., 99
-1..            // infinite
+1..            // infinite: 1, 2, 3, ...
 0..100 step 5  // 0, 5, 10, ..., 100
+```
+
+An open-ended range (`1..`) is an infinite counter (`itertools.count`). Because
+Aura ignores newlines, an open range ends when the next token cannot begin its
+end — the block `{` of a `for`, a closer, `step`, or a token on a **later line**:
+
+```aura
+for i in 0.. {          // infinite; `{` ends the range
+  if i > 9 { break }
+  print(i)
+}
+
+let r = 1..             // ends at the newline, not at the next statement
 ```
 
 ### Null-safe navigation
@@ -1308,6 +1344,43 @@ let mixed = [1, "two", 3.0, true]
 let empty = []
 print(numbers[0])  // 1
 print(len(numbers))  // 5
+```
+
+A list supports indexing (including negative indices), slicing with a step, the
+`in` membership test, `+` concatenation and `*` repetition:
+
+```aura
+let xs = [1, 2, 3, 4, 5]
+print(xs[-1])       // 5
+print(xs[1:4])      // [2, 3, 4]
+print(xs[::2])      // [1, 3, 5]
+print(3 in xs)      // true
+print(xs + [6])     // [1, 2, 3, 4, 5, 6]
+print([0] * 3)      // [0, 0, 0]
+```
+
+Length and membership have method spellings alongside the builtin. `.size()`,
+`.length()` and `.len()` all mean `len(...)`, and `.add(x)` appends:
+
+```aura
+let mut ys = [1, 2]
+ys.add(3)             // [1, 2, 3]
+print(ys.size())      // 3
+print(ys.contains(2)) // true
+print(ys.is_empty())  // false
+```
+
+`.size()`, `.length()` and `.len()` are equivalent; a method you declare with
+one of those names on your own class wins over the convenience.
+
+Python list methods work unchanged (`append`, `pop`, `remove`, `sort`,
+`reverse`, `insert`, `index`, `count`, `extend`, `clear`):
+
+```aura
+let mut zs = [3, 1, 2]
+zs.sort()             // [1, 2, 3]
+zs.append(4)
+zs.reverse()          // [4, 3, 2, 1]
 ```
 
 ### Dictionaries
@@ -1680,7 +1753,7 @@ s.ends_with("ld")    // true
 s.contains("ell")    // true
 s.index_of("ell")    // 1
 s.slice(0, 5)        // "Hello"
-s.length()           // 13
+s.length()           // 12
 s.is_alpha()         // false
 s.is_digit()         // false
 ```

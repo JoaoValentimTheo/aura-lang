@@ -4,6 +4,40 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.0a3] - 2026-09-19
+
+**Lexical/structure coherence audit** — keywords, variables, constants,
+structures, operators and lists.
+
+### Fixed
+
+- **Operator precedence now matches Python for the shared operators.** The
+  bitwise group (`|` < `^` < `&` < shifts) and comparison were previously
+  misordered: `1 & 2 == 2` parsed as `1 & (2 == 2)` instead of `(1 & 2) == 2`,
+  and `1 == 1 << 2` as `(1 == 1) << 2`. Comparison/equality/membership/identity
+  now share one level, looser than bitwise and shifts, exactly as in Python and
+  as `docs/GRAMMAR.md` already specified. Values are spaced so left-associative
+  nesting is unambiguous.
+- The precedence table in `docs/LANGUAGE.md` §13 contradicted the parser and
+  `docs/GRAMMAR.md`; it has been corrected.
+- `x is <literal>` (e.g. `x is "a"`) is now a pointed parse error instead of
+  emitting Python's `SyntaxWarning`; `x is none` / `x is not none` stay valid.
+- An open-ended range (`0..`) is now recognised and lowers to `itertools.count`
+  (with the import injected). Previously `let r = 1..` silently swallowed the
+  next token as the range end (`range(1, print(1) + 1)`); a range now ends at a
+  newline, a block `{`, a closer, or `step`.
+- `let private x` (trailing modifier) inside a class body now raises a pointed
+  error instead of creating a field named `private`.
+- `const NAME` without a value now reports "constant 'NAME' requires a value"
+  instead of the opaque "Expected '='".
+
+### Changed
+
+- **Collection conveniences unified**: `.size()`, `.length()` and `.len()` all
+  mean `len(...)`, and `.add(x)` appends. A user method with the same name still
+  wins. Documented the list method surface in `docs/LANGUAGE.md`.
+- Documented `/` (true division) and `%` (divisor sign) as Python semantics.
+
 ## [0.2.0a2] - 2026-09-19
 
 **OOP syntax freeze** — Alpha 0.2.0 codename: **"Equinox"**, OOP completion.

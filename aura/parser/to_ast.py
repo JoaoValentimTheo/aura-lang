@@ -455,33 +455,53 @@ _STATEMENT_KEYWORDS = frozenset({
 
 # Operator precedence, hoisted out of `Parser.get_precedence` so the parser
 # does not rebuild a ~40-entry dict on every operator token.
+#
+# Higher number = higher precedence (tighter binding). Values are spaced by at
+# least 1 because a left-associative operator parses its right operand at
+# ``prec + 1``: two operators whose values differ by less than 1 cannot nest in
+# the intended order. The Python-shared operators follow Python exactly
+# (comparison looser than `|` < `^` < `&` < shifts); the Aura-only operators
+# (range, `??`/`?:`, pipe, ternary) slot in without disturbing that order.
 _PRECEDENCE = {
     '=': 1, '+=': 1, '-=': 1, '*=': 1, '/=': 1, '%=': 1,
     '**=': 1, '&=': 1, '|=': 1, '^=': 1, '<<=': 1, '>>=': 1, '??=': 1,
+    '|>': 1,  # Pipe is the loosest expression operator.
     '?': 2,  # Ternary
     'or': 3,
     'and': 4,
-    # Bitwise operators bind looser than equality but tighter than
-    # `and`/`or`, mirroring the grammar's bitwiseOr/Xor/And chain.
-    '|': 4.2,
-    '^': 4.4,
-    '&': 4.6,
-    '==': 5, '!=': 5, '<': 6, '>': 6, '<=': 6, '>=': 6,
-    'in': 6, 'not in': 6, 'is': 6, 'is not': 6,
-    '..': 7, '..<': 7,  # Range
-    '??': 8, '?:': 8,  # Null coalescing/Elvis
-    # Shifts bind looser than additive but tighter than comparison,
-    # matching Python (`1 << 2 + 1` == `1 << 3`).
-    '<<': 5.5, '>>': 5.5,
-    '+': 9, '-': 9,
-    '*': 10, '/': 10, '%': 10, 'as': 10,
-    '**': 11,
-    '|>': 1,  # Pipe has the lowest precedence, handled separately
-    '.': 12, '[': 12, '(': 12, '?.': 12,
+    # Comparison sits looser than the bitwise operators, exactly as in Python:
+    # `1 & 2 == 2` is `(1 & 2) == 2`. Within the bitwise group `|` is loosest,
+    # then `^`, then `&`, then the shifts; range and `??`/`?:` (Aura-only) sit
+    # just tighter than the shifts.
+    '==': 5, '!=': 5, '<': 5, '>': 5, '<=': 5, '>=': 5,
+    'in': 5, 'not in': 5, 'is': 5, 'is not': 5,
+    '|': 6,
+    '^': 7,
+    '&': 8,
+    '<<': 9, '>>': 9,
+    '..': 10, '..<': 10,  # Range
+    '??': 11, '?:': 11,  # Null coalescing/Elvis
+    '+': 12, '-': 12,
+    '*': 13, '/': 13, '%': 13, 'as': 13,
+    '**': 14,
+    '.': 15, '[': 15, '(': 15, '?.': 15,
 }
 
 # Upper bound on source size, guarding against accidental multi-gigabyte input.
 MAX_SOURCE_BYTES = 16 * 1024 * 1024
+
+
+def _is_literal(node):
+    """True when ``node`` is a literal expression.
+
+    Used to reject ``x is <literal>``: identity comparison against a literal is
+    always a mistake and Python would warn about it. ``none`` is deliberately
+    excluded — ``x is none`` / ``x is not none`` is the idiomatic Aura spelling
+    and the one case where identity against a literal is intended.
+    """
+    return isinstance(node, (IntLiteral, FloatLiteral, StrLiteral,
+                             FStringLiteral, BoolLiteral, ListLiteral,
+                             DictLiteral, SetLiteral, TupleLiteral))
 
 # Aura keywords that cannot be used as a binding name. Declaring one is a
 # parse-time error rather than a confusing downstream failure.
@@ -1019,6 +1039,11 @@ class Parser:
         if self.match(':'):
             type_annotation = self.parse_type()
 
+        if not self.check('='):
+            # A constant must be initialised where it is declared.
+            raise self.error(
+                f"constant '{name}' requires a value; write "
+                f"'const {name} = ...'", self.peek())
         self.consume(expected_value='=')
         value = self.parse_expression()
         if self.check(';'): self.consume()
@@ -1396,6 +1421,15 @@ class Parser:
                     self.consume()
                     if self.match('mut'):
                         field_mutable = True
+                    # Visibility/modifier keywords belong *before* `let`:
+                    # `private let x`, not `let private x`. Without this guard
+                    # the trailing keyword would parse as the field name.
+                    if self.peek().value in ('public', 'private', 'protected',
+                                             'static', 'volatile'):
+                        tok = self.peek()
+                        raise self.error(
+                            "visibility/modifier must come before 'let', not "
+                            f"after it (write '{tok.value} let ...')", tok)
                 elif self.match('mut'):
                     field_mutable = True
                 if self.peek().type == 'IDENT':
@@ -2170,7 +2204,7 @@ class Parser:
         self.consume(expected_value='with')
         items = []
         while True:
-            expr = self.parse_expression(11) # Precedence > 10 to avoid consuming 'as'
+            expr = self.parse_expression(14) # Precedence > 13 to avoid consuming 'as'
             var_name = None
             if self.match('as'):
                 var_name = self.consume(expected_type='IDENT').value
@@ -2332,9 +2366,11 @@ class Parser:
                 "'!' is not part of Aura; use 'not' instead", token)
         elif token.type == 'IDENT' and token.value == 'not':
             self.consume()
-            # `not` binds looser than comparisons (so `not a in b` is
-            # `not (a in b)`) but tighter than `and`/`or`, matching Python.
-            rhs = self.parse_expression(6)
+            # `not` binds looser than comparison and the bitwise operators (so
+            # `not a in b` is `not (a in b)` and `not a | b` is `not (a | b)`)
+            # but tighter than `and`/`or`, matching Python. Parsing the operand
+            # just above `and` (4) captures everything down to `|` (5).
+            rhs = self.parse_expression(5)
             lhs = UnaryOp('not', operand=rhs)
         elif ((token.type == 'OP' and token.value in ('-', '+', '~'))
                 or (token.type == 'IDENT' and token.value == 'await')):
@@ -2342,7 +2378,9 @@ class Parser:
             self.consume()
             # Arithmetic unary binds looser than `**` (so `-2 ** 2` is
             # `-(2 ** 2)`) but tighter than `*`/`/` (so `-2 * 3` is `(-2) * 3`).
-            rhs = self.parse_expression(11)
+            # `**` is 14, so parsing the operand at 14 lets it capture `**` while
+            # stopping before `*`/`/` at 13.
+            rhs = self.parse_expression(14)
             lhs = UnaryOp(op, operand=rhs)
         elif token.type == 'OP' and token.value in ('*', '**', '...'):
             # `*`/`**`/`...` are spread markers, not prefix operators. Every
@@ -2406,8 +2444,16 @@ class Parser:
 
             # Special case for range ..
             if op == '..' or op == '..<':
+                op_line = self.peek().line
                 self.consume()
-                rhs = self.parse_expression(prec + 1)
+                # An open-ended range (`0..`) has no end expression. It is
+                # recognised when the next token cannot begin one (a closer,
+                # the block `{`, `step`, ...) or when it sits on a later line,
+                # which ends the range rather than becoming its end expression
+                # (`for i in 0.. { ... }`, or `let r = 1..` followed by a new
+                # statement).
+                rhs = (None if self._range_ends_here(op_line)
+                       else self.parse_expression(prec + 1))
 
                 step = None
                 if self.match('step'):
@@ -2446,6 +2492,19 @@ class Parser:
                 self.consume() # consume 2nd part ('in' or 'not')
 
             rhs = self.parse_expression(prec + 1 if self.is_left_assoc(op) else prec)
+
+            if op in ('is', 'is not') and _is_literal(rhs):
+                # `is` is identity. Comparing a literal with `is` is always a
+                # mistake (`x is "a"` means "the same object", not "equal"), and
+                # Python emits a SyntaxWarning for it, which would leak into
+                # Aura output. Point the writer at `==` instead. The one
+                # intentional spelling is `x is none` / `x is not none`.
+                target = 'is not' if op == 'is not' else 'is'
+                raise self.error(
+                    f"'{target}' compares identity; use '==' (or '!=') to "
+                    f"compare with a literal",
+                    self.peek())
+
             lhs = BinaryOp(lhs, op, rhs)
 
         return lhs
@@ -2453,6 +2512,24 @@ class Parser:
     def get_precedence(self, op):
         # Higher number = higher precedence
         return _PRECEDENCE.get(op, 0)
+
+    def _range_ends_here(self, op_line):
+        """True when the current token cannot start a range's end expression.
+
+        Used to recognise an open-ended range (`0..`, `0..<`). A closer, the
+        block opener `{`, `step`, a statement keyword, the end of input, or a
+        token on a later line than the `..` all mean "no end was written".
+        """
+        tok = self.peek()
+        if tok.type == 'EOF':
+            return True
+        if getattr(tok, 'line', op_line) > op_line:
+            return True
+        if tok.type == 'OP' and tok.value in ('{', '}', ';', ')', ']', ',', ':', '='):
+            return True
+        if tok.value == 'step':
+            return True
+        return tok.type == 'IDENT' and tok.value in _STATEMENT_KEYWORDS
 
     def is_left_assoc(self, op):
         return op != '**' and op != '=' and op != '??'
@@ -2554,11 +2631,11 @@ class Parser:
                 self.consume(expected_value='for')
                 comprehensions = []
                 while True:
-                    pattern = self.parse_expression(7)
+                    pattern = self.parse_expression(10)
                     if self.match(','):
                         pats = [pattern]
                         while True:
-                            pats.append(self.parse_expression(7))
+                            pats.append(self.parse_expression(10))
                             if not self.match(','): break
                         pattern = TupleLiteral(pats)
                     self.consume(expected_value='in')
@@ -2882,11 +2959,11 @@ class Parser:
                                 self.consume(expected_value='for')
                                 comprehensions = []
                                 while True:
-                                    pattern = self.parse_expression(7)
+                                    pattern = self.parse_expression(10)
                                     if self.match(','):
                                         pats = [pattern]
                                         while True:
-                                            pats.append(self.parse_expression(7))
+                                            pats.append(self.parse_expression(10))
                                             if not self.match(','): break
                                         pattern = TupleLiteral(pats)
                                     self.consume(expected_value='in')
@@ -2967,11 +3044,11 @@ class Parser:
              # First for was already matched
              while True:
                  # Support full pattern (e.g. k, v or (k, v))
-                 pattern = self.parse_expression(7)
+                 pattern = self.parse_expression(10)
                  if self.match(','):
                      pats = [pattern]
                      while True:
-                         pats.append(self.parse_expression(7))
+                         pats.append(self.parse_expression(10))
                          if not self.match(','): break
                      pattern = TupleLiteral(pats)
 
@@ -3097,11 +3174,11 @@ class Parser:
     def parse_dict_comp_body(self, key, val):
         comprehensions = []
         while True:
-            pattern = self.parse_expression(7)
+            pattern = self.parse_expression(10)
             if self.match(','):
                 pats = [pattern]
                 while True:
-                    pats.append(self.parse_expression(7))
+                    pats.append(self.parse_expression(10))
                     if not self.match(','): break
                 pattern = TupleLiteral(pats)
             self.consume(expected_value='in')
@@ -3117,11 +3194,11 @@ class Parser:
     def parse_set_comp_body(self, first):
         comprehensions = []
         while True:
-            pattern = self.parse_expression(7)
+            pattern = self.parse_expression(10)
             if self.match(','):
                 pats = [pattern]
                 while True:
-                    pats.append(self.parse_expression(7))
+                    pats.append(self.parse_expression(10))
                     if not self.match(','): break
                 pattern = TupleLiteral(pats)
             self.consume(expected_value='in')
