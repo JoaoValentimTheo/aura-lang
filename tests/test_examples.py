@@ -30,6 +30,9 @@ EXAMPLES = sorted(EXAMPLES_DIR.rglob("*.aura"))
 # Examples that reach the network or a long computation: checked but not run.
 NETWORK_EXAMPLES = {"crypto.aura"}
 
+# Examples that require third-party packages not installed in CI.
+EXTERNAL_DEPS_EXAMPLES = {"django_views.aura", "flask_app.aura", "flet_app.aura"}
+
 # Examples whose output is inherently non-deterministic (timeit, threads).
 NONDETERMINISTIC = {"macros.aura", "worker_pool.aura"}
 
@@ -71,6 +74,8 @@ def test_example_transpiles_to_valid_python(path):
 def test_example_runs(path):
     if path.name in NETWORK_EXAMPLES:
         pytest.skip("requires network access")
+    if path.name in EXTERNAL_DEPS_EXAMPLES:
+        pytest.skip("requires third-party package not installed in CI")
     result = subprocess.run(
         [sys.executable, "-m", "aura.cli", "run", str(path)],
         capture_output=True, text=True, timeout=60, cwd=str(path.parent),
@@ -81,7 +86,7 @@ def test_example_runs(path):
 
 @pytest.mark.parametrize("path", EXAMPLES, ids=lambda p: str(p.relative_to(ROOT)))
 def test_example_produces_output(path):
-    if path.name in NETWORK_EXAMPLES or path.name in NONDETERMINISTIC:
+    if path.name in NETWORK_EXAMPLES or path.name in NONDETERMINISTIC or path.name in EXTERNAL_DEPS_EXAMPLES:
         pytest.skip("output is not deterministic or needs the network")
     result = subprocess.run(
         [sys.executable, "-m", "aura.cli", "run", str(path)],

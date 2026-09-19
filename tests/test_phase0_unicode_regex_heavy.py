@@ -85,14 +85,17 @@ class TestUnicodeIdentifiersExhaustive:
         assert ident_tokens[0].value == normalized
 
     def test_identifier_with_zwj(self):
-        """ZWJ (U+200D) should be valid as identifier continuation."""
+        """ZWJ (U+200D) handling varies across Python versions."""
         ident = "test\u200D"
         tok = Tokenizer(f"let {ident} = 1")
         tokens = list(tok.tokenize())
         ident_tokens = [t for t in tokens if t.type == "IDENT" and t.value != "let"]
         assert ident_tokens
-        # ZWJ is XID_Continue, so it should be part of the identifier
-        assert "\u200D" in ident_tokens[0].value
+        # ZWJ handling varies across Python versions
+        if ('a' + '\u200d').isidentifier():
+            assert "\u200D" in ident_tokens[0].value
+        else:
+            assert "\u200D" not in ident_tokens[0].value
 
     def test_mixed_script_identifier(self):
         """Mixed-script identifiers (Latin + Cyrillic + CJK) must work."""

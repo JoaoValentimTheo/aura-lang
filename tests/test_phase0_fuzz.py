@@ -13,7 +13,7 @@ import re
 import sys
 from pathlib import Path
 
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 
 ROOT = Path(__file__).parent.parent
@@ -72,7 +72,8 @@ def test_valid_python_identifiers_roundtrip(name):
     """A valid Python identifier is lexed as a single IDENT (NFC-normalized)."""
     import unicodedata
 
-    assert name.isidentifier()
+    if not name.isidentifier():
+        assume(False)  # skip names not valid on this Python version (e.g. ZWJ)
     idents = _idents(f"let {name} = 1")
     assert unicodedata.normalize("NFC", name) in idents
 

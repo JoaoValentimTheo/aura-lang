@@ -109,10 +109,16 @@ class TestUnicodeIdentifiers:
         assert 'x\u2118' in idents
 
     def test_zwj_continuation(self):
-        """ZWJ (U+200D) is XID_Continue and part of a Python identifier."""
+        """ZWJ (U+200D) is XID_Continue on some Python versions."""
         tokens = _tokenize('let a\u200db = 1')
         idents = [v for t, v in tokens if t == 'IDENT']
-        assert 'a\u200db' in idents
+        # ZWJ handling varies across Python versions
+        if ('a' + '\u200d').isidentifier():
+            assert 'a\u200db' in idents
+        else:
+            assert 'a\u200db' not in idents
+            assert 'a' in idents
+            assert 'b' in idents
 
     def test_arabic_ligature_not_identifier_start(self):
         """U+FC5E is rejected by Python as a start, so it must not begin a name."""

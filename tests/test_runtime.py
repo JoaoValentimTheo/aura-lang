@@ -462,10 +462,15 @@ def test_cache_with_args():
 # End-to-end example files
 # ============================================================================
 
+_EXTERNAL_DEPS = {"django_views.aura", "flask_app.aura", "flet_app.aura"}
+
+
 def test_all_examples_run():
     examples = sorted(Path(__file__).parent.parent.glob("examples/*.aura"))
     assert examples, "expected example files"
     for example in examples:
+        if example.name in _EXTERNAL_DEPS:
+            continue
         out, code, _ = run_aura_file(example)
         assert code.strip(), f"{example.name} produced no code"
 
