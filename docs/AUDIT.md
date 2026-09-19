@@ -8,8 +8,10 @@ nav_order: 8
 
 > **Historical document.** This report reflects an earlier state of the
 > project. It references files that have since been removed (the ANTLR grammar
-> `parser/aura.g4` and generated parser) and pre-0.1.0a5 paths. The current
-> grammar lives in [language-reference/grammar.md](language-reference/grammar.md) and the code in `aura/`.
+> `parser/aura.g4` and generated parser, the generated `*_tests/` corpora, and
+> the mass test generators) and pre-0.1.0a5 paths. The current grammar lives in
+> [language-reference/grammar.md](language-reference/grammar.md) and the code in
+> `aura/`.
 
 Record of the code audit performed against the documentation. Every item
 below was verified against the ANTLR grammar (`parser/aura.g4`), the
@@ -39,7 +41,7 @@ python3 tests/test_regressions.py
 | 5 | `**kwargs` parameter broken | `SyntaxError: Expected IDENT but got '**'` | Distinguish `*` from `**`; emit `**name` |
 | 6 | Multiple assignment unsupported | `let a, b = 0, 1` failed | Tuple target + `parse_trailing_tuple` |
 | 7 | Multiple return unsupported | `return a, b` failed | `parse_trailing_tuple` in `parse_return_stmt` |
-| 8 | Bitwise operators missing | `5 & 3` failed | Added `&`, `|`, `^`, `<<`, `>>` precedence and tokenizer entries |
+| 8 | Bitwise operators missing | `5 & 3` failed | Added `&`, `\|`, `^`, `<<`, `>>` precedence and tokenizer entries |
 | 9 | `implements` trait syntax unsupported | `Expected '{' but got 'implements'` | Parse `implements` into base classes |
 | 10 | Structural type annotations unsupported | `let u: {name: str}` failed | `parse_type` handles `{...}` |
 | 11 | `...rest` destructuring generated `... rest` | Invalid Python | Normalize `...`/`*` spreads |
@@ -105,7 +107,7 @@ python3 tests/test_regressions.py
   All 6600 `.aura` files in `tests/` now transpile successfully.
 * The generator scripts in `tools/` were updated to emit the standardized
   syntax, so regenerated corpora stay consistent.
-* **Fuzz suite** – `tests/test_massive_aura_v2.py` parametrized 500,000 seeds
+* **Fuzz suite** – `test_massive_aura_v2` parametrized 500,000 seeds
   (≈40 days of runtime). It now defaults to 200 seeds; set
   `AURA_FUZZ_SEEDS=100000` to run a larger campaign.
 * **Type aliases** now emit a real runtime name (`type UserId = int` →
@@ -171,7 +173,7 @@ Every item below has a regression test in `tests/test_regressions.py`.
 | 32 | Docs taught non-existent API | `from stdlib.io import read_file, write_file` failed with `ImportError` | Corrected to `read`/`write`; rewrote the Imports section (EN + PT) to document the three real forms |
 | 33 | Ambiguous alias+brace combination | `import m as x { a }` parsed the block as a separate statement (alias silently dropped) | Documented the supported forms; the transformer emits both bindings if the AST ever carries both |
 
-### Standard library
+### Standard library (Phase 3)
 
 | # | Bug | Symptom | Fix |
 |---|-----|---------|-----|
@@ -274,7 +276,7 @@ the rule at every entry point (`transpile`, `run`, `check`, `test`).
 | 65 | `throw "message"` emitted `raise 'message'` | `TypeError: exceptions must derive from BaseException` | String throws are wrapped in `Exception(...)`; `throw ValueError(...)` still works |
 | 66 | Local Aura modules could not be imported | `import sibling` failed with `No module named 'sibling'` | New import hook (`transpiler/importer.py`) transpiles `.aura` files next to the script, including dotted packages (`import pkg.util`) and `from pkg.util import x`; Python stdlib/PyPI imports are untouched |
 
-### Verification
+### Verification (Phase 4)
 
 * `1845` automated tests pass (core + generated corpus).
 * All `6,609` `.aura` files transpile to syntactically valid Python and pass
@@ -313,7 +315,7 @@ Python code. Three real gaps were found and fixed.
   unlike Python's fn-first builtins. Use the pipe form or the stdlib signature.
 * Generics are erased; Python values reaching Aura are typed as `Any`.
 
-### Verification
+### Verification (Phase 5)
 
 * `6,609` corpus files still transpile to valid Python after the tokenizer change.
 * New regression tests cover multi-import, raw/byte strings, slicing, and the
@@ -334,7 +336,7 @@ Aura is now an installable Python package with a console entry point.
 | 75 | `aura test` fix | Was shelling out to a non-existent `main.py`; now invokes `python -m aura.cli` and runs in the test file's directory |
 | 76 | Formatter safety | `->`/`=>`/compound operators are masked before single-character spacing; string literals and comments are protected; unary `-`/`+` and one-line blocks are preserved; verified across all 6,609 corpus files |
 
-### Verification
+### Verification (Phase 6)
 
 * `1845` tests pass; the full 6,609-file corpus transpiles and formats safely.
 * Wheel and sdist both install into clean virtualenvs; `aura run`, `aura test`,
@@ -348,7 +350,7 @@ Aura is now an installable Python package with a console entry point.
 
 Closing the remaining interoperability and developer-experience gaps.
 
-### Standard library
+### Standard library (Phase 7)
 
 | # | Change | Detail |
 |---|--------|--------|
@@ -378,14 +380,14 @@ Closing the remaining interoperability and developer-experience gaps.
 | # | Change | Detail |
 |---|--------|--------|
 | 87 | Dependency manager | `aura init/add/install/deps` backed by `aura.toml` |
-| 88 | Version tooling | `aura version [major|minor|patch|x.y.z]` keeps `pyproject.toml` and `aura/__init__.py` in sync |
+| 88 | Version tooling | `aura version [major\|minor\|patch\|x.y.z]` keeps `pyproject.toml` and `aura/__init__.py` in sync |
 | 89 | Trace debugger | `aura debug [--trace] [--show-code]` with generated→Aura line mapping |
 | 90 | Language server | `aura lsp`: diagnostics, hover, completion, document symbols over stdio |
 | 91 | CI | GitHub Actions: tests on Python 3.10–3.13, CLI smoke test, distribution build |
 | 92 | Release workflow | Tag-driven build, version/tag consistency check, PyPI trusted publishing, GitHub release |
 | 93 | `aura version` installed mode | Falls back to package metadata when no `pyproject.toml` is present |
 
-### Verification
+### Verification (Phase 7)
 
 * `541` automated tests pass (core + tooling + generated corpus).
 * All `6,609` corpus files transpile to valid Python and pass the mutability

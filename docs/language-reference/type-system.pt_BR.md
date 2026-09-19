@@ -128,8 +128,8 @@ A compatibilidade é `declared.is_compatible(actual)` (note a **direção**:
 | `bool → int` | ❌ | `BoolType().is_compatible(IntType())` é `False` (*probe*) |
 | `int → int?` (tornar opcional) | ✅ | `UnionType.is_compatible` é `any(...)` (*probe*) |
 | **`int? → int`** (desempacotar opcional) | ✅ **de forma não sólida** | `UnionType({int,None}).is_compatible(int)` é `True` (*probe*) |
-| `int | str → int` | ✅ | união aceita cada membro |
-| `int → int | str` | ❌ (como *declarado*) | `IntType().is_compatible(union)` é `False` (*probe*) |
+| `int \| str → int` | ✅ | união aceita cada membro |
+| `int → int \| str` | ❌ (como *declarado*) | `IntType().is_compatible(union)` é `False` (*probe*) |
 | `[int] → [int]` | ✅ | `ListType.is_compatible` recorre no elemento |
 | `[int] → [str]` | ❌ | `ListType.is_compatible` recorre no elemento |
 | `{str:int} → {str:str}` | ❌ | `DictType.is_compatible` recorre em ambos os slots |
@@ -280,7 +280,7 @@ anotação **não** chega ao Python como uma checagem de tipo.
 | `{K: V}` | `dict` |
 | `[T]` chaves uniformes | `list` |
 | `(A) -> B` ou outro `->` | `object` |
-| uma união `T | U` | o texto **literal** `T | U` |
+| uma união `T \| U` | o texto **literal** `T \| U` |
 | um nome nu | esse nome |
 
 Consequências, verificadas por *probe*:

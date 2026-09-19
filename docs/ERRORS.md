@@ -90,13 +90,9 @@ to Python rather than reported. See "Removed codes" below.
 
 ## Errors — I/O and configuration (`E4xx`)
 
-| Code | Name | Message | Emitted by |
-|------|------|---------|------------|
-
-## Errors — I/O and configuration (`E4xx`)
-
-There is no code for these: the CLI prints a plain message and returns a
-non-zero exit status. The former E401/E402 codes were removed.
+There is **no** code in this range. I/O and configuration failures (a missing
+file, an unreadable path, a bad project layout) are reported by the CLI as a
+plain message with a non-zero exit status, not as a numbered diagnostic.
 
 ## Errors — fatal (`E9xx`)
 
@@ -140,6 +136,7 @@ catalogue honest.
 | Code | Reason |
 |------|--------|
 | `E201`–`E204` | runtime faults are surfaced as native Python exceptions; no Aura diagnostic is emitted |
+| `E401`, `E402` | I/O and configuration failures are printed by the CLI as plain messages with a non-zero exit status; no numbered diagnostic is emitted |
 | `E304` | `MISSING_RETURN` is not enforced; the type checker reports `E101` instead |
 | `W101` | `UNUSED_VARIABLE` was documented but never emitted; removed rather than shipped as half-working |
 | `W102` | `UNUSED_IMPORT` was documented but never emitted; removed rather than shipped as half-working |

@@ -453,7 +453,7 @@ filtra por tipo, e `catch as e { }` vincula toda exceção. A antiga forma ambí
 
 | Nível | Operadores | Associatividade |
 |-------|-----------|---------------|
-| 1 | `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `&=`, `|=`, `^=`, `<<=`, `>>=`, `??=`, `\|>` | direita (pipe esquerda) |
+| 1 | `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `&=`, `\|=`, `^=`, `<<=`, `>>=`, `??=`, `\|>` | direita (pipe esquerda) |
 | 2 | `? :` (ternário) | direita |
 | 3 | `or` | esquerda |
 | 4 | `and` | esquerda |

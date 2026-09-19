@@ -446,7 +446,7 @@ by type, and `catch as e { }` binds every exception. The old ambiguous
 
 | Level | Operators | Associativity |
 |-------|-----------|---------------|
-| 1 | `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `&=`, `|=`, `^=`, `<<=`, `>>=`, `??=`, `\|>` | right (pipe left) |
+| 1 | `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `&=`, `\|=`, `^=`, `<<=`, `>>=`, `??=`, `\|>` | right (pipe left) |
 | 2 | `? :` (ternary) | right |
 | 3 | `or` | left |
 | 4 | `and` | left |

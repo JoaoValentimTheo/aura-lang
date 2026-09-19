@@ -23,7 +23,7 @@ real multi-file projects". Ratings below 100 % name the concrete gap.
 |-----------|--------------|-------|
 | **Core language** | **~95 %** | Syntax, types, control flow, functions, OOP, pattern matching, generics checked; escape sequences and slicing fixed |
 | **Tooling** | **~92 %** | CLI (14 commands), type checker, semantic checker, formatter, debugger, LSP, pip-installable, dependency manifest |
-| **Stdlib** | **~92 %** | 210+ functions across 10 modules incl. `regex`, `os`, `http`, `testing`, and native `*_async` file/HTTP helpers | No ORM or streaming sockets |
+| **Stdlib** | **~92 %** | 210+ functions across 10 modules incl. `regex`, `os`, `http`, `testing`, and native `*_async` file/HTTP helpers — no ORM or streaming sockets |
 | **Interop (Python)** | **~98 %** | stdlib and PyPI imports, escapes, slicing, generics/builtin types; no typed stubs for arbitrary packages |
 | **Ecosystem / DX** | **~88 %** | Installable wheel/sdist, CI, release tooling, dependency manager, LSP; PyPI publication pending |
 | **Production readiness for a general developer** | **~93 %** | Usable for scripts, services and libraries; remaining gaps listed below |
@@ -45,7 +45,7 @@ real multi-file projects". Ratings below 100 % name the concrete gap.
 | Control flow | 100 % | `if`/`unless`/`guard`/`match`/`while`/`until`/`loop`; labeled break/continue | — |
 | Pattern matching | 95 % | Literals, tuples/lists, guards, constructor patterns, enum members, wildcard; exhaustiveness warned (`E109`) | No nested-or-pattern coverage analysis |
 | Error handling | 95 % | `try`/`catch`/`finally`, typed catches, `throw`; custom hierarchies via `extends Error` or `(Error)` | No `finally` return-value rules |
-| Operators | 95 % | Full precedence table, bitwise, `?:`, `??`, `??=`, `?.`, `?[`, `|>`, ranges, spreads, slicing | — |
+| Operators | 95 % | Full precedence table, bitwise, `?:`, `??`, `??=`, `?.`, `?[`, `\|>`, ranges, spreads, slicing | — |
 | String literals | 98 % | Escapes (`\n`, `\t`, `\uXXXX`), raw/byte prefixes, f-strings, triples | — |
 | Mutability rules | 98 % | `E303` with a real source location, enforced at every CLI entry point | Not surfaced by `aura lint` (which is style-only by design) |
 | Diagnostics | 98 % | Every diagnostic is a coded `E##`/`W##` with `file:line:column`; `docs/ERRORS.md` is the source of truth, kept in sync by a test | — |
@@ -98,7 +98,7 @@ real multi-file projects". Ratings below 100 % name the concrete gap.
 | Import PyPI packages | 98 % | `import requests`, `pyyaml` verified; any installed package works |
 | Import local Aura modules | 98 % | Sibling `.aura`, dotted packages, `from pkg.util import x` |
 | `module { }` namespaces | 98 % | Private by default, `export` makes a member public, dotted names nest, state not writable from outside (E303/E308), mangled at runtime |
-| Module facades | 95 % | `module App { export Components, Utils }` re-exports siblings by convention or `from "mod"`; package entry `App/App.aura`; E313/E312 | No alias renaming on re-export |
+| Module facades | 95 % | `module App { export Components, Utils }` re-exports siblings by convention or `from "mod"`; package entry `App/App.aura`; E313/E312 — no alias renaming on re-export |
 | Python literals | 99 % | Escapes (`\n`, `\t`, `\uXXXX`), raw/bytes, f-strings, triples, numeric forms |
 | Python slicing | 98 % | `x[start:stop:step]` for lists and strings, including `[::-1]` |
 | Call Python callables | 100 % | Native attribute/`from` imports; lambdas as callbacks |
