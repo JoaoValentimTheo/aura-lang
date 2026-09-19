@@ -21,9 +21,21 @@ Start here and follow the order; each file introduces one idea.
 | 6 | `error_handling.aura` | `try`/`catch`/`finally`, typed catches, `guard`, `throw`, `assert` |
 | 7 | `classes.aura` | Classes, constructors, `extends`, `@property`, visibility |
 | 8 | `macros.aura` | Built-in decorators (`@debug`, `@timeit`, `@memoize`, `@cache`) |
-| 9 | `crypto.aura` | Hashing, HMAC, HKDF, and post-quantum KEM/signatures via `stdlib.crypto` |
-| 10 | `python_interop.aura` | Calling Python from Aura (`import os`, `math`, `json`, the `python` bridge) |
-| 11 | `tour.aura` | A single-file tour of the whole language |
+| 9 | `compile_time_macros.aura` | Compile-time macros (`assert_eq`, `static_assert`, `swap`, `stringify`, ...) |
+| 10 | `crypto.aura` | Hashing, HMAC, HKDF, and post-quantum KEM/signatures via `stdlib.crypto` |
+| 11 | `python_interop.aura` | Calling Python from Aura (`import os`, `math`, `json`, the `python` bridge) |
+| 12 | `tour.aura` | A single-file tour of the whole language |
+
+## Framework integration
+
+Real Python frameworks driven from Aura. Each installs its dependency and
+verifies the app end to end without blocking on a server or a window.
+
+| File | What it shows |
+|------|---------------|
+| `flask_app.aura` | A Flask app with dotted `@app.route(...)` decorators, exercised through Flask's test client |
+| `django_views.aura` | Django views and `urlpatterns` built with `django.http` / `django.urls` |
+| `flet_app.aura` | A Flet view builder over real controls, run headless against a page stand-in |
 
 ## Patterns (AUP)
 

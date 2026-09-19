@@ -1,85 +1,85 @@
 <div align="center">
 
-<img src="aura_logo.png" alt="Aura" width="220">
+<img src="https://raw.githubusercontent.com/JoaoValentimTheo/aura-lang/master/aura_logo.png" alt="Aura" width="220">
 
 # Aura
 
-**Aura** is a gradually-typed programming language that transpiles to Python. It
-pairs a clean, unambiguous syntax with the entire Python ecosystem: first-class
-PyPI interop, a standard library, native threads and coroutines, and
-post-quantum cryptography.
+**Aura** is a gradually-typed programming language that transpiles to Python.
+One spelling per construct, no synonyms. The whole Python ecosystem — any PyPI
+package — is one import away.
 
 [![CI](https://github.com/JoaoValentimTheo/aura-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/JoaoValentimTheo/aura-lang/actions/workflows/ci.yml)
 [![Release](https://github.com/JoaoValentimTheo/aura-lang/actions/workflows/release.yml/badge.svg)](https://github.com/JoaoValentimTheo/aura-lang/releases)
 [![PyPI](https://img.shields.io/pypi/v/aura-language.svg)](https://pypi.org/project/aura-language/)
 [![Python](https://img.shields.io/pypi/pyversions/aura-language.svg)](https://pypi.org/project/aura-language/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/JoaoValentimTheo/aura-lang/blob/master/LICENSE)
-
-> **Status:** alpha (`0.1.0a20`). The syntax is standardized and frozen for the
-> alpha series; see the [grammar](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/GRAMMAR.md)
-> and the [changelog](https://github.com/JoaoValentimTheo/aura-lang/blob/master/CHANGELOG.md).
-
-> **Roadmap active** -- Aura is on a phased roadmap toward alpha `0.2.0`.
-> See [CONTRIBUTING.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/CONTRIBUTING.md)
-> for current priorities.
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 </div>
 
 ---
 
-## Table of contents
+## Status
 
-- [Installation](#installation)
-- [Quick start](#quick-start)
-- [The language](#the-language)
-- [Classes](#classes)
-- [Concurrency](#concurrency)
-- [Cryptography](#cryptography)
-- [Python interop](#python-interop)
-- [Aura Patterns (AUP)](#aura-patterns-aup)
-- [CLI](#cli)
-- [Projects and dependencies](#projects-and-dependencies)
-- [REPL](#repl)
-- [Standard library](#standard-library)
-- [Documentation](#documentation)
-- [Development](#development)
-- [License](#license)
+Aura is **alpha** (`0.2.0a1`). The compiler, type checker, rule checker, REPL,
+language server, formatter, linter, project tooling, and standard library are
+implemented and covered by a test suite of **11,000+ tests**.
+
+> **Syntax freeze.** As of `0.2.0a1`, Aura's syntax is officially frozen.
+> No syntax changes will be made before the stable 1.0 release. The
+> canonical grammar is [docs/GRAMMAR.md](docs/GRAMMAR.md) and every change is
+> recorded in [CHANGELOG.md](CHANGELOG.md).
+
+What exists today:
+
+| Area | State |
+|------|-------|
+| Language, parser, type/rule/mutability checkers | Implemented |
+| Transpiler to Python (Python 3.10+) | Implemented |
+| CLI (17 subcommands) | Implemented |
+| Project tooling (init, venv, add, remove, install, deps, doctor) | Implemented |
+| Language server (diagnostics, completion, hover, go-to-definition) | Implemented |
+| Standard library (18 modules) | Implemented |
+| Compile-time macros | Implemented |
+| Security hardening (SSRF guards, input limits, no traceback leaks) | Implemented |
+| Compilation to native machine code | Not planned for 1.0 |
+
+## Requirements
+
+- Python **3.10+** (the generated code targets 3.10+).
+- No mandatory third-party runtime dependencies. On Python 3.10, `tomli` is
+  installed automatically to read `aura.toml`.
+- Optional: `cryptography>=44` (the `[pqc]` extra) enables the production
+  post-quantum backend for `stdlib.crypto`.
 
 ## Installation
 
+From PyPI:
+
 ```bash
-pip install aura-language            # from PyPI
+pip install aura-language
 ```
 
-Or from a checkout:
+From a checkout:
 
 ```bash
 git clone https://github.com/JoaoValentimTheo/aura-lang.git
 cd aura-lang
-pip install .
+pip install -e .
 aura run examples/hello.aura
 ```
 
-Optional post-quantum backend (recommended for real secrets):
+Optional post-quantum backend:
 
 ```bash
-pip install "aura-language[pqc]"     # adds cryptography>=44 (ML-KEM/ML-DSA)
+pip install "aura-language[pqc]"
 ```
-
-Requires Python 3.10+. The runtime has no mandatory third-party dependencies
-(on 3.10, `tomli` is installed automatically for reading `aura.toml`).
 
 ## Quick start
 
 ```bash
-aura init myapp
-aura run myapp/src/main.aura
-```
-
-From a source checkout without installing:
-
-```bash
-python3 main.py run examples/hello.aura
+aura init myapp          # scaffolds aura.toml and src/main.aura
+cd myapp
+aura run src/main.aura
 ```
 
 The smallest Aura program:
@@ -90,18 +90,24 @@ def main() {
 }
 ```
 
+From a source checkout without installing, the `main.py` shim works too:
+
+```bash
+python3 main.py run examples/hello.aura
+```
+
 ## The language
 
-Aura has exactly **one spelling per construct** -- no synonyms. The full grammar
-lives in [docs/GRAMMAR.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/GRAMMAR.md).
+Aura has exactly **one spelling per construct** — no synonyms. The full grammar
+is in [docs/GRAMMAR.md](docs/GRAMMAR.md).
 
 ```aura
-// Bindings. `let` is immutable; `let mut` opts in.
+// Bindings: `let` is immutable, `let mut` opts into reassignment.
 let name = "Aura"
 let mut count = 0
 
-// Functions and generics.
-def max[T](a: T, b: T) -> T {
+// Functions; types are optional and checked before execution.
+def max(a: int, b: int) -> int {
   return a > b ? a : b
 }
 
@@ -116,14 +122,17 @@ match command {
 Key rules:
 
 - `let`/`const` are immutable; `let mut` is required to reassign.
-- Types are optional and checked before execution by `aura check`.
-- `none` is the null literal, `not`/`and`/`or` are the logical operators.
-- Only `def` declares functions, only `new` declares constructors, and only
-  `extends` declares inheritance.
+- `none` is the null literal; `not`, `and`, `or` are the logical operators.
+- Only `def` declares functions; only `new` declares constructors; only
+  `extends` declares inheritance (`class X(Y)` and `implements` are rejected).
+- Every class/trait member declares its visibility (`public`/`private`/
+  `protected`).
+- `*args` and `**kwargs` work in every context the grammar permits: function
+  declarations, calls, decorators, and lambdas.
 
 ## Classes
 
-Fields can be declared in the class header, which builds the constructor and
+Fields may be declared in the class header, which builds the constructor and
 generates accessors:
 
 ```aura
@@ -134,12 +143,12 @@ class User(private name: str, mut age: int = 0, public id: int = 0) {
 }
 
 let u = User("ana", 30)
-print(u.get_name())    // ana
+print(u.get_name())    // ana  -- getter is always generated
 u.set_age(31)          // setter exists because `age` is `mut`
-print(u.id)            // 0      -- public field, direct access
+print(u.id)            // 0    -- public field, direct access
 ```
 
-Inheritance uses `extends`, and a subclass header declares only its own fields:
+Inheritance uses `extends`; a subclass header declares only its own fields:
 
 ```aura
 class Admin extends User(email: str) { }
@@ -148,21 +157,22 @@ let a = Admin(email: "a@x.com", name: "bob")
 print(a.get_email())
 ```
 
+Aura honours Python's object protocols: dunder methods, descriptors, context
+managers (`with` / `async with`), generators, and the MRO are all supported when
+extending Python classes.
+
 ## Concurrency
 
 ```aura
 import stdlib.threading as threading
 
 def main() {
-  let results = threading.map_concurrent(
-    (n) => n * n,
-    [1, 2, 3, 4],
-  )
+  let results = threading.map_concurrent((n) => n * n, [1, 2, 3, 4])
   print(results)
 }
 ```
 
-Async is native too, including file and HTTP helpers that do not block the loop:
+Async is native, including file and HTTP helpers that do not block the loop:
 
 ```aura
 import stdlib.io as io
@@ -180,7 +190,7 @@ async def main() {
 ## Cryptography
 
 `stdlib.crypto` provides hashing, HMAC, HKDF, and post-quantum primitives
-(ML-KEM / ML-DSA). Install the `[pqc]` extra for the production backend.
+(ML-KEM / ML-DSA).
 
 ```aura
 import stdlib.crypto as crypto
@@ -196,21 +206,17 @@ def main() {
 }
 ```
 
-> The pure-Python reference backend is **not** cryptographically secure and
-> reports `production = false`. Use the `[pqc]` extra for real secrets.
-
-See [examples/crypto.aura](https://github.com/JoaoValentimTheo/aura-lang/blob/master/examples/crypto.aura).
+> The bundled pure-Python reference backend reports `production = false` and is
+> **not** cryptographically secure. Install the `[pqc]` extra for real secrets.
 
 ## Python interop
 
-Any PyPI package is one import away, and the `python` bridge reaches anything
-else.
+Any PyPI package is one import away; the `python` bridge reaches anything else.
 
 ```aura
 import os
 import math
-import json as json
-
+import json
 import python
 
 def main() {
@@ -221,45 +227,83 @@ def main() {
 }
 ```
 
+Aura apps can drive real frameworks directly — for example a Flask app with
+dotted `@app.route(...)` decorators:
+
+```aura
+import flask
+
+let app = flask.Flask(__name__)
+
+@app.route("/hello/<name>")
+def hello(name) {
+  return f"Hello, {name}!"
+}
+```
+
+## Compile-time macros
+
+Beyond runtime decorators such as `@debug`, `@memoize`, and `@cache`, Aura has
+compile-time macros expanded by the transpiler *before* any Python is emitted.
+A macro receives its operands as quoted AST, returns replacement AST, and
+leaves no trace at runtime unless it chooses to emit one.
+
+```aura
+import macros
+
+def main() {
+  assert_eq(2 + 2, 4)       // evaluate both once, assert equality
+  static_assert(true)       // checked at compile time
+  print(stringify(42))      // folds the literal to "42" during compilation
+  let mut a = 1
+  let mut b = 2
+  swap(a, b)                // a binding plus two assignments
+}
+```
+
+Built-ins: `assert_eq`, `assert_ne`, `static_assert`, `identity`, `discard`,
+`stringify`, `swap`, `debug_value`, `todo`, `unreachable`. Macro expansion is
+hygienic — introduced bindings can never capture a call-site name — and a
+program's own declaration always shadows a built-in macro of the same name.
+
 ## Aura Patterns (AUP)
 
-[AUP](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/AUP.md) is a
-catalog of idiomatic solutions, each with a runnable example in
-[`examples/aup/`](https://github.com/JoaoValentimTheo/aura-lang/tree/master/examples/aup):
+[AUP](docs/AUP.md) is a catalog of idiomatic solutions, each with a runnable
+example under [`examples/aup/`](examples/aup):
 
 | Pattern | Example |
 |---------|---------|
-| Optional results (`T \| none`) | [`option.aura`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/examples/aup/option.aura) |
-| Typed error handling | [`error_handling.aura`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/examples/aup/error_handling.aura) |
-| Builder | [`builder.aura`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/examples/aup/builder.aura) |
-| Strategy | [`strategy.aura`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/examples/aup/strategy.aura) |
-| Pipeline | [`pipeline.aura`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/examples/aup/pipeline.aura) |
-| Memoize / cache | [`memoize.aura`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/examples/aup/memoize.aura) |
-| Observer | [`observer.aura`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/examples/aup/observer.aura) |
-| Resource management | [`resource.aura`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/examples/aup/resource.aura) |
-| Worker pool | [`worker_pool.aura`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/examples/aup/worker_pool.aura) |
-| Hybrid post-quantum crypto | [`hybrid_crypto.aura`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/examples/aup/hybrid_crypto.aura) |
+| Optional results (`T \| none`) | [`option.aura`](examples/aup/option.aura) |
+| Typed error handling | [`error_handling.aura`](examples/aup/error_handling.aura) |
+| Builder | [`builder.aura`](examples/aup/builder.aura) |
+| Strategy | [`strategy.aura`](examples/aup/strategy.aura) |
+| Pipeline (`\|>`) | [`pipeline.aura`](examples/aup/pipeline.aura) |
+| Memoize / cache | [`memoize.aura`](examples/aup/memoize.aura) |
+| Observer | [`observer.aura`](examples/aup/observer.aura) |
+| Resource management (`with`) | [`resource.aura`](examples/aup/resource.aura) |
+| Worker pool | [`worker_pool.aura`](examples/aup/worker_pool.aura) |
+| Hybrid post-quantum crypto | [`hybrid_crypto.aura`](examples/aup/hybrid_crypto.aura) |
 
 ## CLI
 
 | Command | Purpose |
 |---------|---------|
-| `aura run <file>` | Transpile and execute an Aura file |
+| `aura run <file>` | Transpile and execute an Aura file (`-v` prints the generated Python) |
 | `aura check <file>` | Type-check and rule-check without running |
-| `aura transpile <file>` | Print the generated Python |
-| `aura format <file>` | Reformat source; `-i` writes in place, `-o <file>` writes to a file |
+| `aura transpile <file>` | Print the generated Python (`-o <file>` writes it) |
+| `aura format <file>` | Reformat source (`-i` in place, `-o <file>` to a file) |
 | `aura lint <file>` | Style warnings (`--allow-warnings` to exit 0) |
-| `aura test [dir]` | Run `.aura` test files |
+| `aura test [dir]` | Run `.aura` test files (`-v` verbose) |
 | `aura repl` | Interactive REPL |
-| `aura init [name]` | Scaffold a project (`--venv` to set up `.venv`) |
+| `aura init [name]` | Scaffold a project (`--venv` to also create an environment) |
 | `aura venv [action]` | Manage `.venv`: `init`, `info`, `shell`, `remove` |
-| `aura add <pkg>` | Add a dependency (`-D` for dev, `--no-install`) |
-| `aura remove <pkg>` | Remove a dependency (`--uninstall` too) |
+| `aura add <pkg>` | Add a dependency (`-D` dev, `--no-install`, `-V <spec>`) |
+| `aura remove <pkg>` | Remove a declared dependency |
 | `aura install` | Install everything declared in `aura.toml` |
 | `aura deps` | List dependencies (`--lock` writes `aura.lock`) |
 | `aura doctor` | Check Python, venv, and installed dependencies |
-| `aura debug <file>` | Trace execution / inspect a crash |
-| `aura lsp` | Language server (stdio) |
+| `aura debug <file>` | Run under the trace debugger |
+| `aura lsp` | Language server over stdio |
 | `aura version` | Print or bump the version |
 
 Run `aura --help` or `aura <command> --help` for details.
@@ -292,18 +336,17 @@ requests = ">=2.28"
 pytest = ">=8"
 ```
 
-Dependencies install into the project's `.venv` when it exists, and into the
+Dependencies install into the project's `.venv` when one exists, and into the
 current interpreter otherwise. `aura venv shell` prints the activation command.
 
 ## REPL
 
 `aura repl` shares the real parser and every checker (types, structural rules,
-and mutability), so what you type is validated the way `aura check` validates
-it. State persists across lines:
+and mutability), so each line is validated the way `aura check` validates it.
+State persists across lines:
 
 ```text
 $ aura repl
-Aura REPL v0.4 (type ':help' for help, ':q' to quit)
 aura> let mut x = 1
 aura> x = x + 1
 aura> x
@@ -319,45 +362,41 @@ Commands: `:help`, `:vars`, `:type <expr>`, `:ast <expr>`, `:load <file>`,
 
 ## Standard library
 
-Aura ships with a standard library covering common tasks:
-
 | Module | Purpose |
 |--------|---------|
 | `stdlib.threading` | Thread pool, `map_concurrent` |
+| `stdlib.asyncio` | Async event-loop helpers |
 | `stdlib.io` | File I/O (sync + async) |
 | `stdlib.http` | HTTP client (sync + async) |
 | `stdlib.crypto` | Hashing, HMAC, HKDF, post-quantum (ML-KEM/ML-DSA) |
 | `stdlib.json` | JSON encode/decode |
-| `stdlib.math` | Mathematical functions |
 | `stdlib.regex` | Regular expressions |
 | `stdlib.string` | String manipulation |
+| `stdlib.math` | Mathematical functions |
 | `stdlib.collections` | Collection utilities |
 | `stdlib.itertools` | Iterator combinators |
 | `stdlib.os` | OS-level utilities |
-| `stdlib.python` | Python bridge (`python.is_instance`, etc.) |
+| `stdlib.python` | Python bridge (`python.is_instance`, ...) |
 | `stdlib.time` | Time functions |
-| `stdlib.asyncio` | Async event loop helpers |
 | `stdlib.testing` | Test framework support |
+| `stdlib.macros` | Compile-time macro surface |
 
 ## Documentation
 
-Everything lives under [`docs/`](https://github.com/JoaoValentimTheo/aura-lang/tree/master/docs).
-Start with the index or jump straight in:
-
-| Document | What it covers |
-|----------|----------------|
-| [docs/README.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/README.md) | Documentation index and recommended reading order |
-| [GRAMMAR.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/GRAMMAR.md) | Canonical EBNF grammar (the source of truth for syntax) |
-| [LANGUAGE.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/LANGUAGE.md) | Complete language reference (English) |
-| [LANGUAGE_PT.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/LANGUAGE_PT.md) | Referencia completa da linguagem (Portugues) |
-| [TYPES.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/TYPES.md) | Type system (English) |
-| [TYPES_PT.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/TYPES_PT.md) | Sistema de tipos (Portugues) |
-| [ERRORS.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/ERRORS.md) | Every diagnostic code (`E##`/`W##`) |
-| [AUP.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/AUP.md) | Aura Patterns catalog |
-| [DESIGN.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/DESIGN.md) | Compiler architecture |
-| [COMPLETENESS.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/COMPLETENESS.md) | Language coverage and remaining gaps |
-| [CHANGELOG.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/CHANGELOG.md) | Release history |
-| [examples/](https://github.com/JoaoValentimTheo/aura-lang/tree/master/examples) | Runnable example programs |
+| Document | Covers |
+|----------|--------|
+| [docs/README.md](docs/README.md) | Documentation index and reading order |
+| [docs/GRAMMAR.md](docs/GRAMMAR.md) | Canonical EBNF grammar (source of truth) |
+| [docs/LANGUAGE.md](docs/LANGUAGE.md) | Complete language reference (English) |
+| [docs/LANGUAGE_PT.md](docs/LANGUAGE_PT.md) | Referencia completa da linguagem (Portugues) |
+| [docs/TYPES.md](docs/TYPES.md) | Type system (English) |
+| [docs/TYPES_PT.md](docs/TYPES_PT.md) | Sistema de tipos (Portugues) |
+| [docs/ERRORS.md](docs/ERRORS.md) | Every diagnostic code (`E##` / `W##`) |
+| [docs/AUP.md](docs/AUP.md) | Aura Patterns catalog |
+| [docs/DESIGN.md](docs/DESIGN.md) | Transpiler architecture |
+| [docs/COMPLETENESS.md](docs/COMPLETENESS.md) | Language coverage and remaining gaps |
+| [CHANGELOG.md](CHANGELOG.md) | Release history |
+| [examples/](examples/) | Runnable example programs |
 
 ## Development
 
@@ -366,15 +405,14 @@ git clone https://github.com/JoaoValentimTheo/aura-lang.git
 cd aura-lang
 pip install -e ".[dev]"
 
-pytest                    # full test suite (coverage floor: 90%)
+pytest                    # full test suite (3,000+ tests)
 ruff check aura/          # lint
 mypy aura/                # type-check the compiler
 ```
 
-See [CONTRIBUTING.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/CONTRIBUTING.md)
-for the contribution workflow and [SECURITY.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/SECURITY.md)
-to report a vulnerability.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and
+[SECURITY.md](SECURITY.md) to report a vulnerability.
 
 ## License
 
-MIT -- see [LICENSE](https://github.com/JoaoValentimTheo/aura-lang/blob/master/LICENSE).
+MIT — see [LICENSE](LICENSE).

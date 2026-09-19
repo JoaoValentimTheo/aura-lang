@@ -311,6 +311,21 @@ def venv_exists(root=None) -> bool:
     return venv_python(root) is not None
 
 
+def venv_site_packages(root=None) -> Path | None:
+    """Return the site-packages directory of the project's venv, or None."""
+    directory = venv_dir(root)
+    if not directory.is_dir():
+        return None
+    if os.name == 'nt':  # pragma: no cover - Windows layout
+        candidate = directory / 'Lib' / 'site-packages'
+        return candidate if candidate.is_dir() else None
+    # Unix: lib/pythonX.Y/site-packages (take the highest version)
+    for candidate in sorted(directory.glob('lib/python*/site-packages'), reverse=True):
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
 def environment_python(root=None) -> str:
     """Interpreter that dependencies should be installed into.
 

@@ -87,6 +87,13 @@ class ExpressionTransformer:
         # Names bound locally (params, locals, loop vars) in the current
         # function, which shadow module members and must not be rewritten.
         self._local_scopes = []
+        # Compile-time macros (AuraMacroFactory). A bare-identifier call whose
+        # name is registered here is expanded to its replacement AST before any
+        # ordinary call codegen. Defaults to the built-in registry.
+        from aura.transpiler.macro_factory import default_registry
+        self.macro_registry = default_registry()
+        # Guards a macro whose expansion contains another call to itself.
+        self._macro_depth = 0
 
     # Aura string/collection methods with a direct Python method equivalent.
     # Only applied to *calls* on members that are not user-defined methods.
@@ -291,6 +298,18 @@ class ExpressionTransformer:
     # ========== Unary Operations ==========
     def transform_UnaryOp(self, node):
         if node.op == 'yield':
+            # Python rejects a `yield` outside a function, so emitting one at
+            # module level would produce code that cannot compile. The rule
+            # checker reports this as E004; this guard keeps the transformer's
+            # own invariant ("output is always valid Python") even when it is
+            # invoked directly, without the checker. A standalone transformer
+            # (no statement transformer attached) is treated as a fragment and
+            # left alone, which keeps `transform_UnaryOp` unit-testable.
+            stmt = getattr(self, 'stmt_transformer', None)
+            if stmt is not None and not getattr(stmt, 'function_scopes', None):
+                raise SyntaxError(
+                    "'yield' outside of a function; 'yield' is only valid "
+                    "inside a 'def' (it makes that function a generator)")
             if node.operand is None:
                 return "yield"
             operand = self.transform(node.operand)
@@ -306,11 +325,71 @@ class ExpressionTransformer:
         return f"({py_op} {operand})"
 
     # ========== Function Calls ==========
+    def _maybe_expand_macro(self, node, render=True):
+        """Expand ``node`` when it calls a registered compile-time macro.
+
+        Returns the rendered Python for the expansion, or ``None`` when the
+        call is not a macro invocation. Keyword arguments are passed through to
+        the macro implementation; operands are *not* pre-transformed, so a
+        macro sees raw AST and may choose to quote an argument (inspect it)
+        rather than evaluate it.
+
+        With ``render=False`` the replacement AST node is returned instead of
+        its Python string, which lets the statement transformer inspect the
+        expansion (e.g. to emit a block's statements directly).
+        """
+        registry = getattr(self, 'macro_registry', None)
+        if registry is None or not len(registry):
+            return None
+        if not isinstance(node.func, Identifier):
+            return None
+        if node.func.name not in registry:
+            return None
+        # A name the program declares itself (function, class, import) shadows
+        # the built-in macro of the same name, so `def swap(...)` is a normal
+        # call rather than an expansion.
+        if node.func.name in getattr(self, 'user_declared_names', set()):
+            return None
+        if self._is_shadowed(node.func.name):
+            return None
+        if self._macro_depth > 100:
+            from aura.transpiler.macro_factory import MacroError
+            raise MacroError(
+                f"macro '{node.func.name}' expanded too deeply (recursive?)")
+        from aura.transpiler.macro_factory import MacroError
+        try:
+            self._macro_depth += 1
+            replacement = registry.expand_call(node)
+        except MacroError:
+            raise
+        finally:
+            self._macro_depth -= 1
+        if replacement is None:
+            return None
+        if not render:
+            return replacement
+        return self.transform(replacement)
+
     def transform_CallExpr(self, node):
+        # Compile-time macro expansion (AuraMacroFactory). A registered bare
+        # name is replaced by its expansion before ordinary call codegen.
+        expansion = self._maybe_expand_macro(node)
+        if expansion is not None:
+            return expansion
+
         # Aura method conveniences: str.length(), str.is_empty(), str.contains(x),
         # str.slice(a, b), plus the alias table above.
         if isinstance(node.func, MemberExpr):
             member = node.func.member
+            # Adaptive `...value` as the sole argument of a member call:
+            # resolve dict-vs-iterable at runtime, same as a bare-name call.
+            adaptive = [a for a in node.args if isinstance(a, SpreadExpr)
+                        and a.is_dict is None]
+            if len(adaptive) == 1 and len(node.args) == 1 and not node.kwargs:
+                target = self.transform(node.func)
+                value = self.transform(adaptive[0].expr)
+                self._needs_aura_call = True
+                return f"_aura_call({target}, {value})"
             # Aura protocol methods keep their bare name at the call site
             # (`obj.str()`, `obj.eq(other)`) but are defined and called by their
             # Python dunder name (`__str__`, `__eq__`). Constructors are always
@@ -554,8 +633,21 @@ class ExpressionTransformer:
         return f"range({start}, {end_val})"
 
     # ========== Lambda ==========
+    def _render_param(self, param):
+        """Render one lambda parameter, honouring `*args`/`**kwargs`/bare `*`."""
+        if param.name == '*' and not param.is_variadic and not param.is_kwonly:
+            return '*'
+        if param.is_kwonly:
+            return f"**{py_safe_name(param.name)}"
+        if param.is_variadic:
+            return f"*{py_safe_name(param.name)}"
+        if param.default:
+            default = self.transform(param.default)
+            return f"{py_safe_name(param.name)}={default}"
+        return py_safe_name(param.name)
+
     def transform_LambdaExpr(self, node):
-        params = ", ".join(p.name for p in node.params)
+        params = ", ".join(self._render_param(p) for p in node.params)
         if isinstance(node.body, BlockExpr):
             # Block lambdas may contain statements/return, which cannot live
             # inside a Python lambda expression. Hoist a real function instead.
@@ -591,7 +683,7 @@ class ExpressionTransformer:
 
         self._lambda_counter += 1
         fname = f"_aura_lambda_{self._lambda_counter}"
-        param_str = ", ".join(p.name for p in params)
+        param_str = ", ".join(self._render_param(p) for p in params)
 
         nonlocal_line = self._nonlocal_declaration(block.statements, {p.name for p in params})
 
@@ -800,6 +892,11 @@ class ExpressionTransformer:
             stmts_to_run = statements[:-1]
         elif last.__class__.__name__ == 'ReturnStmt':
             tail = self.transform(last.value) if last.value else "None"
+            stmts_to_run = statements[:-1]
+        elif isinstance(last, Expr):
+            # A macro may end its block with a bare expression (the value to
+            # yield); treat it as the block's result rather than dropping it.
+            tail = self.transform(last)
             stmts_to_run = statements[:-1]
         else:
             tail = "None"

@@ -1,0 +1,30 @@
+// Flask web app written in Aura.
+//
+// Aura transpiles to Python, so a real Flask app is just Python interop with
+// Aura syntax. The routing decorator is a *dotted* decorator
+// (`@app.route(...)`), which is why Aura accepts member paths in decorator
+// position.
+//
+// `main` builds the app and exercises its routes through Flask's test client,
+// so the example verifies end to end without blocking on a server. To serve
+// it, call `app.run(host="127.0.0.1", port=5000)` instead.
+
+import flask
+
+let app = flask.Flask(__name__)
+
+@app.route("/", methods=["GET"])
+def index() {
+  return "Aura + Flask"
+}
+
+@app.route("/hello/<name>", methods=["GET"])
+def hello(name) {
+  return f"Hello, {name}!"
+}
+
+def main() {
+  let client = app.test_client()
+  print(client.get("/").get_data(as_text=True))
+  print(client.get("/hello/Aura").get_data(as_text=True))
+}

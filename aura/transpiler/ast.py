@@ -176,7 +176,8 @@ class Parameter(Node):
 class Method(Node):
     def __init__(self, name, params, return_type=None, body=None,
                  is_static=False, is_classmethod=False, is_property=False,
-                 visibility=None, is_volatile=False, decorators=None, owner=None):
+                 visibility=None, is_volatile=False, decorators=None, owner=None,
+                 is_async=False):
         self.name = name
         self.params = params
         self.return_type = return_type
@@ -187,6 +188,8 @@ class Method(Node):
         self.visibility = visibility
         self.is_volatile = is_volatile
         self.decorators = decorators or []
+        # `async def` methods use the coroutine protocol.
+        self.is_async = is_async
         # Name of the class that declared this member (for owner-aware
         # private name mangling); filled in by the parser.
         self.owner = owner
@@ -275,9 +278,12 @@ class CatchClause(Node):
         self.body = body
 
 class WithStmt(Stmt):
-    def __init__(self, items, body):
+    def __init__(self, items, body, is_async=False):
         self.items = items  # list of (expr, optional_var_name) tuples
         self.body = body
+        # `async with` uses the `__aenter__`/`__aexit__` protocol; plain
+        # `with` uses `__enter__`/`__exit__`.
+        self.is_async = is_async
 
 class MatchStmt(Stmt):
     def __init__(self, expr, cases):

@@ -9,9 +9,11 @@ __all__ = [
     "match", "full_match", "search", "find_all", "find_iter",
     "split", "replace", "replace_fn", "subn",
     "groups", "group_dict", "group",
-    "escape", "compile_pattern", "purge",
+    "escape", "compile_pattern", "purge", "error",
     "IGNORECASE", "MULTILINE", "DOTALL", "VERBOSE", "ASCII", "UNICODE",
 ]
+
+error = _re.error
 
 
 def match(pattern, text, flags=0):
@@ -89,7 +91,11 @@ def group(match_obj, *indices):
     ``group(m)`` returns the entire match; ``group(m, 0)`` does the same.
     ``group(m, 1)`` returns the first captured group; ``group(m, 1, 2)``
     returns a tuple.
+
+    Returns ``None`` if ``match_obj`` is ``None``.
     """
+    if match_obj is None:
+        return None
     if not indices:
         return match_obj.group(0)
     if len(indices) == 1:

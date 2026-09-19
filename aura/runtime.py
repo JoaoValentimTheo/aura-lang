@@ -22,6 +22,7 @@ _lock = threading.Lock()
 # available without a top-level package named `python`.
 _SUBMODULE_ALIASES = {
     'python': 'aura.stdlib.python',
+    'macros': 'aura.stdlib.macros',
 }
 
 

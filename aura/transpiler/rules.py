@@ -723,6 +723,20 @@ class RuleChecker:
                         location=self._loc(node),
                         hint="mark the enclosing function 'async def'",
                     )
+            elif node.op == 'yield':
+                # `yield` turns the enclosing function into a generator. At
+                # module level there is no function to convert, so Python
+                # rejects the emitted `yield` with "'yield' outside function".
+                # Reject it here, with a position, instead of emitting Python
+                # that cannot compile.
+                if self._function_depth == 0:
+                    self.collector.add(
+                        ErrorCode.INVALID_SYNTAX,
+                        "'yield' outside of a function",
+                        location=self._loc(node),
+                        hint="move it into a 'def'; a 'yield' makes that "
+                             "function a generator",
+                    )
             self.visit(node.operand)
         elif isinstance(node, MemberExpr):
             self._visit_member_access(node.obj, node.member, node)

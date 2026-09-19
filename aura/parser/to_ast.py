@@ -136,7 +136,10 @@ class Tokenizer:
                         out.append(nxt)
                 elif nxt == 'u' and i + 5 < n:
                     try:
-                        out.append(chr(int(raw[i + 2:i + 6], 16)))
+                        cp = int(raw[i + 2:i + 6], 16)
+                        if 0xD800 <= cp <= 0xDFFF:
+                            raise ValueError("lone surrogate")
+                        out.append(chr(cp))
                         i += 6
                         continue
                     except ValueError:
@@ -292,7 +295,11 @@ class Tokenizer:
                     prefix = self.source[self.pos + 1].lower()
                     self.pos += 2
                     digits = ''
-                    while self.pos < length and (self.source[self.pos].isalnum() or self.source[self.pos] == '_'):
+                    while self.pos < length and (
+                        '0' <= self.source[self.pos] <= '9'
+                        or 'a' <= self.source[self.pos].lower() <= 'f'
+                        or self.source[self.pos] == '_'
+                    ):
                         if self.source[self.pos] != '_':
                             digits += self.source[self.pos]
                         self.pos += 1
@@ -625,6 +632,20 @@ class Parser:
 
         return visibility, is_static, is_volatile
 
+    def _parse_decorator_name(self):
+        """Parse a decorator's callee, which may be a dotted member path.
+
+        A decorator is usually a bare name (``@memoize``), but framework-style
+        routing attaches one to an attribute of an object
+        (``@app.route("/")``). Member paths are stored as a dotted string so
+        the transformer can render ``@{name}`` verbatim.
+        """
+        parts = [self.consume(expected_type='IDENT').value]
+        while self.check('.'):
+            self.consume()
+            parts.append(self.consume(expected_type='IDENT').value)
+        return ".".join(parts)
+
     def _parse_decorator_arguments(self):
         """Parse ``(args..., **kw, key=value)`` for a decorator.
 
@@ -688,7 +709,7 @@ class Parser:
             elif token.value == '@':
                 # Parse decorators
                 while self.match('@'):
-                    dec_name = self.consume(expected_type='IDENT').value
+                    dec_name = self._parse_decorator_name()
                     dec_args, dec_kwargs = self._parse_decorator_arguments()
                     decorators.append(Decorator(dec_name, dec_args, dec_kwargs))
             elif token.value in ['public', 'private', 'protected', 'static', 'volatile']:
@@ -728,6 +749,11 @@ class Parser:
             raise self.error(
                 "'fn' is not part of Aura; use 'def' instead", token)
         elif token.value in ('def', 'async'):
+            # `async def` declares an async function; `async with` opens an
+            # async context manager. Anything else after `async` is an error.
+            if token.value == 'async' and self.peek(1).value == 'with':
+                self.consume()
+                return self.parse_with_stmt(is_async=True)
             return self.parse_function_decl(decorators, visibility, is_static, is_volatile)
         elif token.value == 'class':
             return self.parse_class_decl(decorators, visibility)
@@ -1203,29 +1229,32 @@ class Parser:
             is_static = False
             is_volatile = False
 
-            # Parse modifiers. A class member must declare its visibility
-            # explicitly; the rule checker reports a member with none.
+            # Parse modifiers and decorators in any order. `public`,
+            # `private`, `protected`, `static`, `volatile` and `@decorator`
+            # all describe the member that follows, so both
+            # `@staticmethod public def f` and `public @staticmethod def f`
+            # (and the same on one line or across lines) are accepted.
+            member_decorators = []
+            is_classmethod = False
+            is_property = False
             while True:
                 if self.match('public'): visibility = 'public'
                 elif self.match('private'): visibility = 'private'
                 elif self.match('protected'): visibility = 'protected'
                 elif self.match('static'): is_static = True
                 elif self.match('volatile'): is_volatile = True
-                else: break
+                elif self.match('@'):
+                    dec_name = self._parse_decorator_name()
+                    dec_args, dec_kwargs = self._parse_decorator_arguments()
+                    member_decorators.append(Decorator(dec_name, dec_args, dec_kwargs))
+                    if dec_name == 'staticmethod': is_static = True
+                    elif dec_name == 'classmethod': is_classmethod = True
+                    elif dec_name == 'property': is_property = True
+                else:
+                    break
 
-            # Check for methods
-            member_decorators = []
-            is_classmethod = False
-            is_property = False
-            while self.match('@'):
-                dec_name = self.consume(expected_type='IDENT').value
-                dec_args, dec_kwargs = self._parse_decorator_arguments()
-                member_decorators.append(Decorator(dec_name, dec_args, dec_kwargs))
-                if dec_name == 'staticmethod': is_static = True
-                elif dec_name == 'classmethod': is_classmethod = True
-                elif dec_name == 'property': is_property = True
-
-            if self.check('def') or self.check('fn'):
+            if self.check('def') or self.check('fn') or (
+                    self.check('async') and self.peek(1).value == 'def'):
                 # Aura method names map to Python dunder names (new -> __init__,
                 # str -> __str__, len -> __len__, ...). Names already written as
                 # dunders are preserved verbatim. The table is shared with the
@@ -1234,9 +1263,12 @@ class Parser:
                     tok = self.peek()
                     raise self.error(
                         "'fn' is not part of Aura; use 'def' instead", tok)
-                method_name = self.peek(1).value
+                # `async def` is two tokens, so the method name sits one token
+                # further on (`async` at +0, `def` at +1, name at +2).
+                name_offset = 2 if self.check('async') else 1
+                method_name = self.peek(name_offset).value
                 if method_name == 'init':
-                    tok = self.peek(1)
+                    tok = self.peek(name_offset)
                     raise self.error(
                         "'init' is not the Aura constructor; use 'new' "
                         "instead", tok)
@@ -1249,7 +1281,7 @@ class Parser:
                                 is_static=is_static, is_classmethod=is_classmethod,
                                 is_property=is_property, visibility=visibility,
                                 is_volatile=is_volatile, decorators=member_decorators,
-                                owner=name)
+                                owner=name, is_async=func.is_async)
                 method.with_location(self._member_location(member_start))
                 members.append(method)
             elif self.check('class'):
@@ -1682,39 +1714,46 @@ class Parser:
         members = []
         while not self.check('}') and not self.check('EOF'):
             member_start = self.peek()
-            # Member modifiers. Visibility must be explicit; the rule checker
-            # reports a member with none.
+            # Member modifiers and decorators, in any order (see the class
+            # member loop): `@staticmethod public def f` and
+            # `public @staticmethod def f` are equivalent.
             member_visibility = None
             is_static = False
+            member_decorators = []
+            is_classmethod = False
+            is_property = False
             while True:
                 if self.match('public'): member_visibility = 'public'
                 elif self.match('private'): member_visibility = 'private'
                 elif self.match('protected'): member_visibility = 'protected'
                 elif self.match('static'): is_static = True
-                else: break
+                elif self.match('@'):
+                    dec_name = self._parse_decorator_name()
+                    dec_args, dec_kwargs = self._parse_decorator_arguments()
+                    member_decorators.append(Decorator(dec_name, dec_args, dec_kwargs))
+                    if dec_name == 'staticmethod': is_static = True
+                    elif dec_name == 'classmethod': is_classmethod = True
+                    elif dec_name == 'property': is_property = True
+                else:
+                    break
 
-            # Member decorators: `@property`, `@staticmethod`, `@classmethod`.
-            member_decorators = []
-            is_classmethod = False
-            is_property = False
-            while self.match('@'):
-                dec_name = self.consume(expected_type='IDENT').value
-                dec_args, dec_kwargs = self._parse_decorator_arguments()
-                member_decorators.append(Decorator(dec_name, dec_args, dec_kwargs))
-                if dec_name == 'staticmethod': is_static = True
-                elif dec_name == 'classmethod': is_classmethod = True
-                elif dec_name == 'property': is_property = True
-
-            if self.check('def') or self.check('fn'):
+            if self.check('def') or self.check('fn') or (
+                    self.check('async') and self.peek(1).value == 'def'):
                 # Reuse the full function parser so parameters, defaults,
                 # types, generics and default bodies are all preserved.
+                is_async = False
+                if self.check('async'):
+                    self.consume()
+                    is_async = True
                 self.consume()  # eat def/fn
                 func = self.parse_function_decl_after_keyword()
+                func.is_async = is_async
                 method = Method(
                     func.name, func.params, func.return_type, func.body,
                     is_static=is_static, is_classmethod=is_classmethod,
                     is_property=is_property, visibility=member_visibility,
                     decorators=member_decorators, owner=name,
+                    is_async=func.is_async,
                 )
                 method.with_location(self._member_location(member_start))
                 members.append(method)
@@ -2005,7 +2044,7 @@ class Parser:
 
         return TryStmt(try_body, catch_clauses, finally_body)
 
-    def parse_with_stmt(self):
+    def parse_with_stmt(self, is_async=False):
         self.consume(expected_value='with')
         items = []
         while True:
@@ -2019,7 +2058,7 @@ class Parser:
                 break
 
         body = self.parse_block()
-        return WithStmt(items, body)
+        return WithStmt(items, body, is_async=is_async)
 
     def parse_match_stmt(self):
         self.consume(expected_value='match')
@@ -2175,7 +2214,7 @@ class Parser:
             # `not (a in b)`) but tighter than `and`/`or`, matching Python.
             rhs = self.parse_expression(6)
             lhs = UnaryOp('not', operand=rhs)
-        elif ((token.type == 'OP' and token.value in ('-', '+', '~', '*', '**', '...'))
+        elif ((token.type == 'OP' and token.value in ('-', '+', '~'))
                 or (token.type == 'IDENT' and token.value == 'await')):
             op = token.value
             self.consume()
@@ -2183,6 +2222,17 @@ class Parser:
             # `-(2 ** 2)`) but tighter than `*`/`/` (so `-2 * 3` is `(-2) * 3`).
             rhs = self.parse_expression(11)
             lhs = UnaryOp(op, operand=rhs)
+        elif token.type == 'OP' and token.value in ('*', '**', '...'):
+            # `*`/`**`/`...` are spread markers, not prefix operators. Every
+            # context that permits them consumes the marker before calling
+            # `parse_expression` (call arguments, list/set/tuple/dict literals,
+            # lambda parameter lists). Reaching here means the spread sits in a
+            # plain value position, where it would emit invalid Python such as
+            # `(* a)`; reject it with a positioned diagnostic instead.
+            raise self.error(
+                f"'{token.value}' spread is not allowed in an expression; "
+                f"it is only valid in call arguments and list/set/tuple/dict "
+                f"literals", token)
         else:
             lhs = self.parse_primary()
 
@@ -2354,7 +2404,25 @@ class Parser:
                     return LambdaExpr([], body)
                 return self.parse_postfix(TupleLiteral([]))
 
-            if self.match('*') or self.match('...'):
+            # Lambda parameter list: `(...) => ...`. Detected by lookahead so
+            # the parameter grammar (defaults, `*args`, `**kwargs`, bare `*`)
+            # is parsed directly instead of going through tuple-expression
+            # parsing, which cannot represent those forms.
+            if self._is_lambda_params_ahead():
+                params = self._parse_lambda_params()
+                self.consume(expected_value=')')
+                self.consume(expected_value='=>')
+                body = self.parse_lambda_body()
+                return LambdaExpr(params, body)
+
+            if self.match('**'):
+                expr = SpreadExpr(self.parse_expression(), is_dict=True)
+            elif self.match('*'):
+                if self.check(',') or self.check(')'):
+                    raise self.error(
+                        "a bare '*' is only allowed in a lambda parameter list")
+                expr = SpreadExpr(self.parse_expression(), is_dict=False)
+            elif self.match('...'):
                 expr = SpreadExpr(self.parse_expression(), is_dict=False)
             else:
                 expr = self.parse_expression(0)
@@ -2387,42 +2455,33 @@ class Parser:
                 elements = [expr]
                 while True:
                     if self.check(')'): break
-                    if self.match('*') or self.match('...'):
+                    if self.match('**'):
+                        elements.append(SpreadExpr(self.parse_expression(), is_dict=True))
+                    elif self.match('*'):
+                        if self.check(',') or self.check(')'):
+                            raise self.error(
+                                "a bare '*' is only allowed in a lambda "
+                                "parameter list")
+                        elements.append(SpreadExpr(self.parse_expression(), is_dict=False))
+                    elif self.match('...'):
                         elements.append(SpreadExpr(self.parse_expression(), is_dict=False))
                     else:
                         elements.append(self.parse_expression())
                     if not self.match(','): break
                 self.consume(expected_value=')')
 
-                # Check for arrow function: (x, y) => ...
-                if self.match('=>'):
-                    params = []
-                    for el in elements:
-                        if isinstance(el, Identifier):
-                            params.append(Parameter(el.name))
-                        else:
-                            raise self.error("Invalid parameter in lambda")
-
-                    body = self.parse_lambda_body()
-                    return LambdaExpr(params, body)
-
+                if self.check('=>'):
+                    raise self.error("Invalid parameter in lambda")
                 return self.parse_postfix(TupleLiteral(elements))
 
             self.consume(expected_value=')')
-            # Check for arrow function: (Params) => Expr
-            if self.match('=>'):
-                # expr is the params part. It could be Identifier or TupleLiteral
-                params = []
-                if isinstance(expr, Identifier):
-                    params.append(Parameter(expr.name))
-                elif isinstance(expr, TupleLiteral):
-                    for el in expr.elements:
-                        if isinstance(el, Identifier):
-                            params.append(Parameter(el.name))
-
-                body = self.parse_lambda_body()
-                return LambdaExpr(params, body)
-
+            if isinstance(expr, SpreadExpr):
+                # A parenthesised spread without a trailing comma is not a
+                # tuple (`(*a,)` is); a bare `(*a)` has no valid Python form.
+                raise self.error(
+                    "'*'/'**' spread inside parentheses needs a trailing "
+                    "comma to form a tuple, or belongs in a call argument list",
+                    token)
             return self.parse_postfix(expr)
 
         raise self.error(f"Unexpected token {token}", token)
@@ -2525,6 +2584,81 @@ class Parser:
             i += 1
         return inner[:expr_end], conversion, fmt_spec
 
+    def _is_lambda_params_ahead(self):
+        """Return True when the current `(` ... `)` is a lambda parameter list.
+
+        Scans past balanced brackets/parens without consuming tokens; the
+        parameter list is a lambda's when the matching `)` is followed by `=>`.
+        A `=>` nested deeper (e.g. a default that is itself a lambda) is not
+        the current lambda's marker.
+        """
+        depth = 1
+        i = self.pos
+        n = self._ntokens
+        while i < n:
+            tok = self.tokens[i]
+            if tok.value in ('(', '[', '{'):
+                depth += 1
+            elif tok.value in (')', ']', '}'):
+                depth -= 1
+                if depth == 0:
+                    return (i + 1 < n and self.tokens[i + 1].value == '=>')
+            i += 1
+        return False
+
+    def _parse_lambda_params(self):
+        """Parse a lambda parameter list using the `def` param grammar.
+
+        The opening `(` has already been consumed; the caller consumes the
+        closing `)`. Mirrors `_parse_function`'s parameter loop so lambdas and
+        functions accept the same forms (see GRAMMAR.md 6.4).
+        """
+        params = []
+        seen_star = False
+        seen_kw = False
+        while True:
+            is_variadic = False
+            is_kwonly = False
+            if self.check('**'):
+                if seen_kw:
+                    raise self.error(
+                        "a lambda may declare only one '**' parameter")
+                self.consume()
+                is_variadic = True
+                is_kwonly = True
+                seen_kw = True
+            elif self.check('*'):
+                self.consume()
+                if self.check(',') or self.check(')'):
+                    if seen_star:
+                        raise self.error(
+                            "a lambda may declare only one '*' parameter")
+                    seen_star = True
+                    params.append(Parameter('*'))
+                    if not self.match(','):
+                        break
+                    continue
+                if seen_star:
+                    raise self.error(
+                        "a lambda may declare only one '*' parameter")
+                seen_star = True
+                is_variadic = True
+
+            name_tok = self.consume(expected_type='IDENT')
+            p_name = name_tok.value
+            p_type = None
+            if self.match(':'):
+                p_type = self.parse_type()
+            default = None
+            if self.match('='):
+                default = self.parse_expression()
+            params.append(Parameter(
+                p_name, p_type, default,
+                is_variadic=is_variadic, is_kwonly=is_kwonly))
+            if not self.match(','):
+                break
+        return params
+
     def parse_lambda_body(self):
         """Parse the body of a lambda: either `{ stmts }` block or an expression."""
         if self.check('{'):
@@ -2573,6 +2707,11 @@ class Parser:
                 kwargs = {}
                 if not self.check(')'):
                     while True:
+                        # A trailing comma before `)` is allowed, so each
+                        # branch below stops when the next token closes the
+                        # argument list.
+                        if self.check(')'):
+                            break
                         # Spread arguments: `f(*items)`, `f(**mapping)`, `f(...value)`.
                         # `...value` is *adaptive*: a dict spreads as keyword
                         # arguments, anything else as positional arguments.

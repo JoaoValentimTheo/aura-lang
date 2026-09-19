@@ -13,10 +13,9 @@ launch ``aura lsp``. Capabilities can grow without changing the transport.
 
 import json
 import sys
-import traceback
 from collections import OrderedDict
 
-from aura.parser.to_ast import Parser, Tokenizer
+from aura.parser.to_ast import MAX_SOURCE_BYTES, Parser, Tokenizer
 from aura.transpiler.semantics import MutabilityChecker
 from aura.transpiler.types import TypeChecker
 
@@ -122,12 +121,19 @@ class AuraLanguageServer:
         cached = self._parse_cache.get(uri)
         if cached is not None and cached[0] == text:
             return cached
-        try:
-            program = Parser(Tokenizer(text).tokenize()).parse()
-            error = None
-        except Exception as exc:
+        if len(text.encode('utf-8')) > MAX_SOURCE_BYTES:
             program = None
-            error = exc
+            error = SyntaxError(
+                f"Document too large "
+                f"({len(text.encode('utf-8'))} bytes; limit {MAX_SOURCE_BYTES})"
+            )
+        else:
+            try:
+                program = Parser(Tokenizer(text).tokenize()).parse()
+                error = None
+            except Exception as exc:
+                program = None
+                error = exc
         entry = (text, program, error)
         self._parse_cache[uri] = entry
         return entry
@@ -196,7 +202,7 @@ class AuraLanguageServer:
                 if isinstance(message, dict) and 'id' in message:
                     self._write_message({
                         'jsonrpc': '2.0', 'id': message['id'],
-                        'error': {'code': -32603, 'message': traceback.format_exc()},
+                        'error': {'code': -32603, 'message': 'Internal server error'},
                     })
 
     def _handle(self, message):

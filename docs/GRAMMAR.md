@@ -224,32 +224,41 @@ header_field   = { "public" | "private" | "protected" | "mut" | "let" [ "mut" ] 
 
 dotted_name    = identifier , { "." , identifier } ;
 
-class_member   = member_modifiers , member_decorators , ( method | nested_class | field | const_field ) ;
+class_member   = member_prefixes , ( method | nested_class | field | const_field ) ;
 
-member_modifiers = visibility , { "static" | "volatile" } ;
+member_prefixes = { visibility | "static" | "volatile" | decorator } ;
 visibility     = "public" | "private" | "protected" ;   // mandatory on every member
-member_decorators = { "@" , ( "property" | "staticmethod" | "classmethod" | identifier ) } ;
+decorator      = "@" , dotted_name , [ "(" , [ arg_list ] , ")" ] ;
 
-method         = "def" , identifier , [ type_params ] , "(" , [ param_list ] , ")" , [ "->" , type ] , block ;
+method         = [ "async" ] , "def" , identifier , [ type_params ] , "(" , [ param_list ] , ")" , [ "->" , type ] , block ;
 nested_class   = class_decl ;
 field          = ( "let" , [ "mut" ] | "mut" ) , identifier , [ ":" , type ] , [ "=" , expression ] , [ ";" ] ;
 const_field    = "const" , identifier , [ ":" , type ] , "=" , expression , [ ";" ] ;
 ```
 
+Member modifiers and decorators may appear in any order and on separate lines:
+`@staticmethod public def f` and `public @staticmethod def f` are equivalent.
+A decorator on a field is rejected while parsing (`E320`).
+
 Inheritance uses `extends` only; there is no parenthesised base list and no
 `implements`. Since the header is introduced by `(`, a bare name there is never
-a base class.
+a base class. A dotted base (`class Model extends django.db.models.Model`) or a
+name bound by an `import` marks a base Python owns: Aura then leaves the
+constructor and attribute protocol to the library's own metaclass, so
+`enum.Enum`, `pydantic.BaseModel` and ORM models work unchanged. Declaring
+header fields alongside such a base opts back in to the generated constructor.
 
 Every base must resolve to a declared class/trait or a builtin exception root.
 A base that does not exist is `E314`; a base listed twice or an `extends` cycle
 is `E315`. Traits and classes with unimplemented abstract methods cannot be
 instantiated (`E316`). `super.m()` on an abstract (body-less) method is `E321`.
-A decorator on a field is rejected while parsing (`E320`).
 
 Header fields become instance fields, constructor parameters and accessors.
 The default visibility is `private`, and fields are immutable unless declared
 `mut`. A `let` field in the body is likewise immutable; `let mut`/`mut` opts
-into a setter.
+into a setter. A field whose default is a descriptor (a value whose class
+defines `__get__`/`__set__`) stays on the class, so Python's descriptor
+protocol runs on instance access.
 
 ### 3.4 Traits
 
@@ -376,9 +385,13 @@ label          = identifier , ":" ;
 
 ```
 block          = "{" , { statement } , "}" ;
-with_stmt      = "with" , with_item , { "," , with_item } , block ;
+with_stmt      = [ "async" ] , "with" , with_item , { "," , with_item } , block ;
 with_item      = expression , [ "as" , identifier ] ;
 ```
+
+`with` uses `__enter__`/`__exit__`; `async with` uses the coroutine protocol
+`__aenter__`/`__aexit__` and is only valid inside an `async def` body, just as
+`await` is.
 
 ### 5.4 Match
 

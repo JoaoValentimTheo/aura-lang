@@ -30,7 +30,13 @@ def _mutability_diagnostics(ast):
         if checker.check_program(ast):
             return []
     except RecursionError:
-        return []
+        from aura.transpiler.errors import AuraError, ErrorCode, ErrorSeverity, SourceLocation
+        return [AuraError(
+            code=ErrorCode.FATAL,
+            severity=ErrorSeverity.ERROR,
+            message="Source too deeply nested to validate mutability",
+            location=SourceLocation('<unknown>', 1, 1),
+        )]
     return list(getattr(checker, 'diagnostics', []))
 
 
@@ -45,7 +51,13 @@ def _rule_diagnostics(ast, require_main=False):
     try:
         checker.check_program(ast, require_main=require_main)
     except RecursionError:
-        return []
+        from aura.transpiler.errors import AuraError, ErrorCode, ErrorSeverity, SourceLocation
+        return [AuraError(
+            code=ErrorCode.FATAL,
+            severity=ErrorSeverity.ERROR,
+            message="Source too deeply nested to validate rules",
+            location=SourceLocation('<unknown>', 1, 1),
+        )]
     return list(checker.collector.errors)
 
 
@@ -82,15 +94,52 @@ def _recursion_error(path):
     )
 
 
+def _require_source_file(path):
+    """Return an error message when ``path`` is not a readable Aura source file.
+
+    A missing path, a directory, or any non-file target yields a single clear
+    sentence instead of a raw OS error. Returns ``None`` when the path is fine,
+    so callers can write ``if error := _require_source_file(path): ...``.
+    """
+    if path is None:
+        return "Error: no source file given"
+    target = Path(path)
+    if target.is_dir():
+        return (
+            f"Error: '{path}' is a directory, not an Aura source file\n"
+            f"  hint: pass a '.aura' file, or use 'aura test <dir>' to run a "
+            f"directory of tests"
+        )
+    if not target.exists():
+        return f"Error: File not found: {path}"
+    return None
+
+
 def _install_aura_imports(script_path: str):
     """Enable `import sibling_module` for Aura files next to the script."""
     try:
         from aura.transpiler.importer import install_aura_import_hook
         script_dir = Path(script_path).resolve().parent
         install_aura_import_hook([script_dir, Path.cwd()])
-    except Exception:
-        # The hook is best-effort; Python imports still work without it.
-        pass
+    except Exception as exc:
+        # The hook is best-effort; log so import failures are diagnosable.
+        import logging
+        logging.debug("Aura import hook not installed: %s", exc)
+
+    # Add the project venv's site-packages to sys.path so PyPI packages
+    # installed via `aura add` / `aura install` are importable at runtime.
+    try:
+        from aura.tools.deps import find_manifest, venv_site_packages
+        manifest = find_manifest(Path(script_path).resolve().parent)
+        root = manifest.parent if manifest else None
+        sp = venv_site_packages(root)
+        if sp is not None:
+            sp_str = str(sp)
+            if sp_str not in sys.path:
+                sys.path.insert(0, sp_str)
+    except Exception as exc:
+        import logging
+        logging.debug("Could not add venv site-packages to sys.path: %s", exc)
 
 
 def _recursion_budget_for(path: str):
@@ -107,6 +156,9 @@ def cmd_transpile(path: str, output: str | None = None, verbose: bool = False) -
     """Transpile Aura file to Python."""
     from aura.parser.to_ast import parse_file
     from aura.transpiler.transformer import Transformer
+    if error := _require_source_file(path):
+        print(error, file=sys.stderr)
+        return 2
     try:
         ast = parse_file(path)
     except FileNotFoundError:
@@ -141,8 +193,6 @@ def cmd_transpile(path: str, output: str | None = None, verbose: bool = False) -
             print(_recursion_error(path), file=sys.stderr)
             return 2
         except Exception as e:
-            import traceback
-            traceback.print_exc()
             print(f"Error transpiling {path}: {e}", file=sys.stderr)
             return 2
 
@@ -151,6 +201,9 @@ def cmd_check(path: str, verbose: bool = False) -> int:
     """Type check Aura file without transpiling."""
     from aura.parser.to_ast import parse_file
     from aura.transpiler.types import TypeChecker
+    if error := _require_source_file(path):
+        print(error, file=sys.stderr)
+        return 2
     try:
         ast = parse_file(path)
     except FileNotFoundError:
@@ -188,6 +241,13 @@ def cmd_check(path: str, verbose: bool = False) -> int:
 def cmd_format(path: str, output: str | None = None, width: int = 100,
                in_place: bool = False) -> int:
     """Format Aura source code."""
+    if in_place and output:
+        print("Error: --in-place and --output cannot be used together",
+              file=sys.stderr)
+        return 2
+    if error := _require_source_file(path):
+        print(error, file=sys.stderr)
+        return 2
     try:
         source = Path(path).read_text()
     except FileNotFoundError:
@@ -219,6 +279,9 @@ def cmd_lint(path: str, allow_warnings: bool = False) -> int:
     Exits non-zero when any style issue is found, unless ``allow_warnings`` is
     set, in which case issues are printed but the exit status is 0.
     """
+    if error := _require_source_file(path):
+        print(error, file=sys.stderr)
+        return 2
     try:
         source = Path(path).read_text()
     except FileNotFoundError:
@@ -421,6 +484,9 @@ def cmd_run(path: str, verbose: bool = False, program_args=None,
     """
     from aura.parser.to_ast import parse_file
     from aura.transpiler.transformer import Transformer
+    if error := _require_source_file(path):
+        print(error, file=sys.stderr)
+        return 2
     try:
         ast = parse_file(path)
     except FileNotFoundError:
@@ -496,9 +562,7 @@ def cmd_run(path: str, verbose: bool = False, program_args=None,
         if 'too many nested parentheses' in str(e):
             print(_recursion_error(path), file=sys.stderr)
             return 1
-        print(f"Runtime error: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
+        print(f"Runtime error: {type(e).__name__}: {e}", file=sys.stderr)
         return 1
 
 
@@ -743,6 +807,12 @@ Examples:
   aura repl                             Start interactive REPL
         """
     )
+    try:
+        from aura.tools.release import get_version
+        p.add_argument('--version', action='version',
+                       version=f'%(prog)s {get_version()}')
+    except Exception:
+        pass
 
     sub = p.add_subparsers(dest='cmd')
 

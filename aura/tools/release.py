@@ -44,7 +44,7 @@ def get_version(pyproject=PYPROJECT):
         from importlib.metadata import version as _dist_version
         return _dist_version('aura-language')
     except Exception:
-        pass
+        pass  # PackageNotFoundError expected when not installed
 
     try:
         import aura

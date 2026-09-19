@@ -37,7 +37,7 @@ _ALLOWED_SCHEMES = ('http', 'https')
 _CGNAT = _ipaddress.ip_network('100.64.0.0/10')
 
 # Upper bound on a response body (default 32 MiB) so a server cannot exhaust
-# memory. Set AURA_HTTP_MAX_BYTES to override (0 disables the limit).
+# memory. Set AURA_HTTP_MAX_BYTES to override (must be a positive integer).
 _DEFAULT_MAX_BYTES = 32 * 1024 * 1024
 
 
@@ -46,7 +46,8 @@ def _max_bytes():
     if raw is None:
         return _DEFAULT_MAX_BYTES
     try:
-        return int(raw)
+        value = int(raw)
+        return value if value > 0 else _DEFAULT_MAX_BYTES
     except ValueError:
         return _DEFAULT_MAX_BYTES
 
@@ -147,9 +148,9 @@ class _SafeRedirectHandler(_urlrequest.HTTPRedirectHandler):
 
 
 def _read_limited(stream, max_bytes):
-    """Read at most ``max_bytes`` from ``stream`` (0/None means unlimited)."""
+    """Read at most ``max_bytes`` from ``stream``."""
     if not max_bytes or max_bytes <= 0:
-        return stream.read()
+        return stream.read(1024 * 1024)  # fallback 1 MiB safety cap
     return stream.read(max_bytes)
 
 

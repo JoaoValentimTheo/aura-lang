@@ -1,3 +1,2 @@
-"""Compatibility shim: re-exports aura.transpiler.transformers.__init__."""
-from aura.transpiler.transformers.__init__ import *  # noqa: F401,F403
-from aura.transpiler.transformers.__init__ import *  # noqa
+"""Compatibility shim: re-exports aura.transpiler.transformers."""
+from aura.transpiler.transformers import *  # noqa: F401,F403

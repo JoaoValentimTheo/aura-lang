@@ -58,6 +58,19 @@ def build_source_map(ast):
 
 
 def run(path, trace=False, show_code=False):
+    # Ensure PyPI packages installed via `aura add` are importable at runtime.
+    try:
+        from aura.tools.deps import find_manifest, venv_site_packages
+        manifest = find_manifest(Path(path).resolve().parent)
+        root = manifest.parent if manifest else None
+        sp = venv_site_packages(root)
+        if sp is not None:
+            sp_str = str(sp)
+            if sp_str not in sys.path:
+                sys.path.insert(0, sp_str)
+    except Exception:
+        pass
+
     ast = parse_file(path)
 
     # Entry files declare `main`; the runtime invokes it. Mirror `aura run` so

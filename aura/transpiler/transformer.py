@@ -51,6 +51,7 @@ class Transformer:
         expr.used_decorators = []
         expr.has_dict = False
         expr.uses_coalesce = False
+        expr._macro_depth = 0
         # Reset cross-program state so a reused Transformer is deterministic
         # (important for the REPL, which reuses one instance across chunks).
         expr.member_visibilities = {}
@@ -78,6 +79,10 @@ class Transformer:
                     stmt.module_bindings.add(name)
             elif isinstance(statement, ConstDecl):
                 stmt.module_bindings.add(statement.name)
+        # Names the program declares itself (functions, classes, enums, types,
+        # imports). A built-in compile-time macro must never shadow a name the
+        # program defines: `def swap(...)` wins over the builtin `swap` macro.
+        expr.user_declared_names = self._program_declared_names(program)
         lines = []
         for statement in program.statements:
             code = self.transform(statement)
@@ -125,5 +130,36 @@ class Transformer:
 
     def _transform_module(self, node):
         return self.stmt_transformer.transform(node)
+
+    @staticmethod
+    def _program_declared_names(program):
+        """Names a program declares itself, so macros do not shadow them.
+
+        A user-defined function, class, enum, type alias, or imported binding
+        must take precedence over a built-in compile-time macro of the same
+        name. Only top-level declarations are collected: a macro used inside a
+        function that also declares a local of the same name is a different
+        scope, and the transformer's shadowing check handles that case.
+        """
+        names = set()
+        import_kinds = (ImportStmt, FromImport)
+        for statement in program.statements:
+            for attr in ('name', 'alias'):
+                value = getattr(statement, attr, None)
+                if isinstance(value, str):
+                    names.add(value)
+            if isinstance(statement, import_kinds):
+                for module in getattr(statement, 'modules', None) or []:
+                    mod, alias = (module if isinstance(module, tuple)
+                                  else (module, None))
+                    names.add((alias or mod).split('.')[0])
+                for item in getattr(statement, 'items', None) or []:
+                    name, alias = (item if isinstance(item, tuple)
+                                   else (item, None))
+                    names.add(alias or name)
+                module = getattr(statement, 'module', None)
+                if isinstance(module, str):
+                    names.add(module.split('.')[0])
+        return names
 
 

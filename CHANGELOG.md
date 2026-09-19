@@ -6,8 +6,60 @@ All notable changes to Aura are documented here. The format follows
 
 ## [Unreleased]
 
-Phase 0 of the roadmap to alpha 0.2.0 — full Unicode and regular-expression
-support.
+## [0.2.0a1] - 2026-09-18
+
+**Syntax freeze** — Alpha 0.2.0 codename: **"Equinox"**.
+
+This release marks the official syntax freeze for Aura. The grammar is now
+stable and will not change before the 1.0 release. All subsequent work focuses
+on hardening, documentation, and performance.
+
+### Added
+
+- **Venv site-packages auto-discovery**: `aura run` and `aura debug` now
+  automatically add the project's `.venv` site-packages to `sys.path`, so
+  PyPI packages installed via `aura add` / `aura install` are importable at
+  runtime.
+- **Security audit document** (`SECURITY_AUDIT.md`): comprehensive threat
+  model, findings, and mitigations for the transpiler, CLI, LSP, and stdlib.
+- **Fuzzing test suite** (`tests/test_fuzz_security.py`): Hypothesis-based
+  fuzzing for the parser and transpiler, covering random input, deeply nested
+  constructs, edge cases, and Unicode identifiers.
+- **Machine code compilation research** (`docs/PHASE8_MACHINE_CODE_RESEARCH.md`):
+  evaluation of Nuitka, Cython, Codon, mypyc, Numba, and PyPy with a
+  NO-GO recommendation for alpha 0.2.0.
+
+### Fixed
+
+- **LSP traceback leak**: the LSP server no longer sends full Python
+  tracebacks to the editor on internal errors; a sanitized message is
+  returned instead.
+- **CLI traceback leaks**: `aura transpile` and `aura run` no longer dump
+  full Python tracebacks to stderr; only the user-facing error message is
+  shown.
+- **HTTP response body DoS**: `AURA_HTTP_MAX_BYTES=0` no longer disables the
+  32 MiB response body cap; only positive values are accepted, with a 1 MiB
+  fallback safety cap.
+- **LSP bypasses MAX_SOURCE_BYTES**: the LSP server now enforces the 16 MiB
+  source size limit on incoming documents.
+- **Structured recursion errors**: `_mutability_diagnostics` and
+  `_rule_diagnostics` now return proper `AuraError` objects on
+  `RecursionError` instead of raw tuples.
+
+### Changed
+
+- **Error code catalogue** (`docs/ERRORS.md`): E319 documentation corrected
+  (emitted by mutability checker, not rule checker); E320 documented as
+  parser-level SyntaxError; W101/W102 added to removed codes table.
+- **`cli.py` recursion errors**: use `ErrorCode.FATAL` constant instead of
+  hard-coded `"[E999]"` strings.
+- **Version bumped to `0.2.0a1`**.
+
+### Tests
+
+- 11,348 tests passing (up from 7,196 in the previous session).
+- 550 integration tests, 1,000 OOP tests, 100 examples — all clean.
+- Zero regressions across all phases.
 
 ### Added
 
@@ -596,8 +648,6 @@ REPL to parity with `aura check`, and organised the examples and documentation.
 - The OOP and language corpora (`tests/oop_tests`, `tests/success_tests_aura`,
   `examples/`) and the embedded Aura sources in the test suite were migrated
   from the parenthesised/inherits forms to `extends`.
-
-## [0.1.0a12] - 2026-09-17
 
 ## [0.1.0a12] - 2026-09-17
 

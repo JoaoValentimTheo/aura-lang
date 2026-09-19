@@ -78,8 +78,8 @@ to Python rather than reported. See "Removed codes" below.
 | `E316` | `INSTANTIATE_ABSTRACT` | instantiating a trait or a class with unimplemented abstract methods | rule checker |
 | `E317` | `SELF_IN_STATIC` | `self`/`cls` used in a static method | rule checker |
 | `E318` | `UNKNOWN_LABEL` | `break`/`continue` names a label that is not an enclosing loop | rule checker |
-| `E319` | `USED_BEFORE_DECLARED` | a local is used before its declaration | rule checker |
-| `E320` | `DECORATOR_ON_FIELD` | a method decorator applied to a field | rule checker |
+| `E319` | `USED_BEFORE_DECLARED` | a local is used before its declaration | mutability checker |
+| `E320` | `DECORATOR_ON_FIELD` | a method decorator applied to a field | parser (SyntaxError) |
 | `E321` | `ABSTRACT_SUPER_CALL` | `super.method()` targets an abstract method with no implementation | rule checker |
 
 ## Errors — I/O and configuration (`E4xx`)
@@ -135,3 +135,5 @@ catalogue honest.
 |------|--------|
 | `E201`–`E204` | runtime faults are surfaced as native Python exceptions; no Aura diagnostic is emitted |
 | `E304` | `MISSING_RETURN` is not enforced; the type checker reports `E101` instead |
+| `W101` | `UNUSED_VARIABLE` was documented but never emitted; removed rather than shipped as half-working |
+| `W102` | `UNUSED_IMPORT` was documented but never emitted; removed rather than shipped as half-working |

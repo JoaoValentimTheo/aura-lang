@@ -41,7 +41,9 @@ def test_mutability_diagnostics_survives_recursion_error(monkeypatch):
             raise RecursionError()
 
     monkeypatch.setattr(semantics, 'MutabilityChecker', Boom)
-    assert cli._mutability_diagnostics(object()) == []
+    result = cli._mutability_diagnostics(object())
+    assert len(result) == 1
+    assert result[0].code.value == "E999"
 
 
 def test_rule_diagnostics_survives_recursion_error(monkeypatch):
@@ -53,7 +55,9 @@ def test_rule_diagnostics_survives_recursion_error(monkeypatch):
         collector = None
 
     monkeypatch.setattr(rules, 'RuleChecker', Boom)
-    assert cli._rule_diagnostics(object()) == []
+    result = cli._rule_diagnostics(object())
+    assert len(result) == 1
+    assert result[0].code.value == "E999"
 
 
 def test_report_diagnostic_uses_fallback_path_when_no_location(capsys):

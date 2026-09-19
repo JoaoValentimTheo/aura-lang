@@ -613,16 +613,6 @@ class TypeChecker:
         return len(self.errors) == 0
 
     @staticmethod
-    def _collect_declared_types(program) -> set:
-        """Return every class/trait name declared in the program (recursively)."""
-        return TypeChecker._collect_declarations(program)[0]
-
-    @staticmethod
-    def _collect_enum_decls(program) -> dict:
-        """Map enum name -> EnumDecl for exhaustiveness checks."""
-        return TypeChecker._collect_declarations(program)[1]
-
-    @staticmethod
     def _collect_declarations(program):
         """Collect class/trait names and enum declarations in one pass.
 

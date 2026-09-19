@@ -82,6 +82,11 @@ class StatementTransformer:
         self.module_bindings = set()
         # Stack (one per function) of module names assigned inside the body.
         self._global_assignments = []
+        # Top-level module names brought in by `import`/`from ... import`.
+        # Used to tell a library-managed base class (`pydantic.BaseModel`,
+        # `attrs`, `enum.Enum`) apart from an Aura class, so the Aura
+        # constructor machinery does not fight the library's metaclass.
+        self.imported_modules = set()
 
     def transform(self, node):
         if node is None:
@@ -408,6 +413,20 @@ class StatementTransformer:
         old_in_class = self.in_class_scope
         self.in_class_scope = True
 
+        # A base class managed by a Python library (a dotted base such as
+        # `enum.Enum`, `pydantic.BaseModel` or `django.db.models.Model`) owns
+        # its own construction protocol — often through a metaclass that
+        # consumes class-body attributes before `__init__` ever runs. The
+        # Aura-generated constructor and accessors must not be injected on top
+        # of such a base; the fields stay as ordinary class attributes.
+        external_base = self._has_external_base(
+            node.base_class, has_header_fields=bool(node.header_fields))
+        emit_accessors = True
+        if external_base:
+            # The fields are plain class attributes; drop any generated
+            # get_/set_ accessors that would shadow the base's own API.
+            emit_accessors = False
+
         # Header fields (`class User(private name: str, age: int = 0)`) are
         # turned into ordinary VarDecl members so they flow through exactly the
         # same constructor/accessor machinery as body-declared fields. They are
@@ -447,21 +466,45 @@ class StatementTransformer:
         methods = [m for m in node.body if isinstance(m, Method)]
         has_manual_init = any(m.name == '__init__' for m in methods)
         init_code = ""
-        if instance_fields and not has_manual_init:
+        if instance_fields and not has_manual_init and not external_base:
             # A module-level sentinel lets an explicit `None` override a field
             # default, instead of being indistinguishable from "argument not
             # supplied" (which the old `x if x is not None else default` could
             # not do).
-            params = ", ".join([f"{py_safe_name(f.name)}=_aura_unset" for f in instance_fields])
+            #
+            # The constructor's parameters live in a namespace that already
+            # contains `self`, so a field whose Aura name is `self` cannot use
+            # its raw spelling as a parameter. Only `self` is a hard collision:
+            # the catch-all below is renamed when a field takes its spelling,
+            # which keeps `C(kwargs=...)` binding the field rather than being
+            # swallowed by the catch-all.
+            param_names = self._constructor_param_names(instance_fields)
+            catch_all = 'kwargs'
+            while catch_all in param_names.values():
+                catch_all += '_'
+            params = ", ".join(
+                f"{param_names[f.name]}=_aura_unset" for f in instance_fields)
             if params: params += ", "
-            params += "**kwargs"
+            params += f"**{catch_all}"
 
             assign_lines = []
             for f in instance_fields:
                 name = mangle_member(node.name, f.name, f.visibility)
-                pname = py_safe_name(f.name)
+                pname = param_names[f.name]
 
                 if f.value:
+                    if self._is_descriptor_value(f.value):
+                        # A field initialised to a descriptor (`__get__`/
+                        # `__set__`) must live on the class so Python's
+                        # descriptor protocol runs; a fresh descriptor per
+                        # instance would shadow it. The class-level default is
+                        # emitted below and the constructor only overrides it
+                        # when the caller supplies a value.
+                        assign_lines.append(
+                            f"{self._indent()}    if {pname} is not _aura_unset:\n"
+                            f"{self._indent()}        self.{name} = {pname}"
+                        )
+                        continue
                     default_py = self.expr_transformer.transform(f.value)
                     assign_lines.append(
                         f"{self._indent()}    self.{name} = {default_py} if {pname} is _aura_unset else {pname}"
@@ -480,7 +523,7 @@ class StatementTransformer:
             if len(instance_fields) == 1: match_args += ","
             super_line = ""
             if node.base_class:
-                super_line = f"{self._indent()}    super().__init__(**kwargs)\n"
+                super_line = f"{self._indent()}    super().__init__(**{catch_all})\n"
             init_code = (
                 f"{self._indent()}__match_args__ = ({match_args})\n"
                 f"{self._indent()}def __init__(self, {params}):\n{super_line}{assigns}\n"
@@ -498,6 +541,8 @@ class StatementTransformer:
         defined_methods = {m.name for m in methods}
         accessor_parts = []
         for f in instance_fields:
+            if not emit_accessors:
+                break
             mangled = mangle_member(node.name, f.name, f.visibility)
             getter = f"get_{f.name}"
             setter = f"set_{f.name}"
@@ -516,7 +561,13 @@ class StatementTransformer:
         accessors_code = "".join(accessor_parts)
 
         # Only emit class-level defaults for fields that don't duplicate __init__ params.
-        emit_field_defaults = has_manual_init or not instance_fields
+        # Descriptor-valued fields (`x = NonData()`) are the exception: they
+        # must be class attributes for the descriptor protocol to run, even
+        # when the generated constructor owns the other fields.
+        emit_field_defaults = has_manual_init or not instance_fields or external_base
+        descriptor_fields = {
+            f.name for f in instance_fields if self._is_descriptor_value(f.value)
+        }
 
         body_parts = []
         class_indent = self._indent()
@@ -534,8 +585,10 @@ class StatementTransformer:
             if isinstance(member, VarDecl):
                 # Static fields always live on the class. Instance fields are
                 # emitted at class level only when an auto-generated __init__
-                # is not handling them.
-                if not member.is_static and not emit_field_defaults:
+                # is not handling them, or when the field is a descriptor that
+                # must stay on the class for its protocol to run.
+                if (not member.is_static and not emit_field_defaults
+                        and member.name not in descriptor_fields):
                     continue
                 body_parts.append(self._indent() + self.transform(member))
             elif isinstance(member, ConstDecl):
@@ -572,6 +625,38 @@ class StatementTransformer:
         self.expr_transformer.member_visibilities = old_vis
 
         return f"{decorators_code}class {node.name}{base}:\n{final_body}"
+
+    def _is_descriptor_value(self, value):
+        """Return True when a field's default is a descriptor instance.
+
+        A descriptor is a field default that is itself a call or member path
+        whose defining class declares ``__get__``, ``__set__`` or
+        ``__delete__``. Aura class members are tracked by name in
+        ``class_members``; a native Python factory (``@property``-like helper)
+        is reported as a descriptor too, because keeping its result on the
+        class is exactly what makes the protocol work.
+        """
+        if value is None:
+            return False
+        # A call to a locally-declared class, e.g. `x = NonData()`.
+        target = None
+        if isinstance(value, CallExpr):
+            target = value.func
+        elif isinstance(value, Identifier):
+            target = value
+        if target is None:
+            return False
+        if isinstance(target, Identifier):
+            owner = target.name
+        elif isinstance(target, MemberExpr):
+            owner = target.member
+        else:
+            return False
+        members = self.class_members.get(owner)
+        if not members:
+            return False
+        return any(name in members for name in (
+            '__get__', '__set__', '__delete__'))
 
     def transform_Method(self, node):
         decorators_code = ""
@@ -622,9 +707,10 @@ class StatementTransformer:
                 params.append(py_safe_name(param.name))
 
         params_str = ", ".join(params)
+        async_kw = "async " if getattr(node, 'is_async', False) else ""
 
         if node.body is None:
-            return f"{decorators_code}def {name}({params_str}): pass"
+            return f"{decorators_code}{async_kw}def {name}({params_str}): pass"
         elif isinstance(node.body, list):
             # A method body is a function scope: a `guard ... else { return }`
             # returns from the method (not a module-level SystemExit).
@@ -642,10 +728,11 @@ class StatementTransformer:
                 body_code = self._indent() + "    pass"
             elif global_decl:
                 body_code = global_decl + body_code
-            return f"{decorators_code}def {name}({params_str}):\n{body_code}"
+            return f"{decorators_code}{async_kw}def {name}({params_str}):\n{body_code}"
         else:
             expr_code = self.expr_transformer.transform(node.body)
-            return f"{decorators_code}def {name}({params_str}): return {expr_code}"
+            return (f"{decorators_code}{async_kw}def {name}({params_str}): "
+                    f"return {expr_code}")
 
     def transform_TypeDecl(self, node):
         # Aura types are erased at compile time; emit a best-effort Python
@@ -731,7 +818,8 @@ class StatementTransformer:
                 else:
                     signature = self._trait_method_signature(member)
                     body_lines.append(class_indent + "@_aura_abc.abstractmethod")
-                    body_lines.append(class_indent + f"def {signature}:")
+                    async_kw = "async " if getattr(member, 'is_async', False) else ""
+                    body_lines.append(class_indent + f"{async_kw}def {signature}:")
                     body_lines.append(class_indent + "    raise NotImplementedError")
             elif isinstance(member, VarDecl):
                 default = 'None'
@@ -780,6 +868,51 @@ class StatementTransformer:
         if not base_class:
             return []
         return [part.strip() for part in str(base_class).split(',') if part.strip()]
+
+    def _constructor_param_names(self, instance_fields):
+        """Return a collision-free Python parameter name per instance field.
+
+        The generated `__init__` always binds `self` (and `cls` is reserved by
+        convention), so a field whose Aura name is one of those cannot use its
+        raw spelling as a parameter: `def __init__(self, self=...)` is invalid
+        Python. Names are made unique within the constructor by appending
+        underscores, and the choice is a pure function of the field list, so
+        the parameter and its uses stay consistent. The catch-all `**kwargs`
+        parameter is renamed by the caller when a field claims that spelling.
+        """
+        reserved = {'self', 'cls', '_aura_unset'}
+        used = set()
+        names = {}
+        for field in instance_fields:
+            base = py_safe_name(field.name)
+            candidate = base
+            while candidate in reserved or candidate in used:
+                candidate += '_'
+            used.add(candidate)
+            names[field.name] = candidate
+        return names
+
+    def _has_external_base(self, base_class, has_header_fields=False):
+        """Return True when a base is a Python library class, not an Aura class.
+
+        A dotted base (`enum.Enum`, `django.db.models.Model`) or a name bound by
+        a local `import`/`from ... import` is owned by Python; Aura must not
+        generate a constructor or accessors that fight the library's metaclass.
+        A bare name that resolves to an Aura class is left to the normal path.
+
+        Exception: when the class declares its own header fields
+        (`class App extends flask.Flask(debug_mode: bool = false)`), the author
+        is explicitly asking Aura to build a constructor for those fields, so
+        the Aura machinery still runs.
+        """
+        if has_header_fields:
+            return False
+        for name in self._base_names(base_class):
+            if '.' in name:
+                return True
+            if name in self.imported_modules:
+                return True
+        return False
 
     def _header_field_decls(self, node):
         """Turn `ClassDecl.header_fields` into ordinary instance-field VarDecls.
@@ -864,6 +997,14 @@ class StatementTransformer:
         if isinstance(node.expr, BlockExpr):
             return "\n".join([self.transform(s) for s in node.expr.statements])
 
+        # A compile-time macro expanded in statement position may produce a
+        # sequence of statements (`swap(a, b)` expands to bindings plus two
+        # assignments). Expand it here so those statements are emitted directly
+        # instead of being wrapped in a helper function that returns a value.
+        macro_statements = self._macro_statement(node.expr)
+        if macro_statements is not None:
+            return "\n".join(self.transform(s) for s in macro_statements)
+
         # Check if it's an assignment (BinaryOp with '=')
         # Aura parsers assignments as BinaryOp expressions.
         # In Python, assignment is a statement.
@@ -906,6 +1047,31 @@ class StatementTransformer:
                 raise Exception("Infinite recursion unwrapping ExprStmt")
 
         return self.expr_transformer.transform(expr)
+
+    def _macro_statement(self, expr):
+        """Return a macro expansion's statement list, or None.
+
+        A macro whose expansion is a ``BlockExpr`` used as a bare statement is
+        emitted as its constituent statements, so an expansion can affect the
+        surrounding scope (bindings, assignments) rather than only compute a
+        value inside a hoisted function.
+        """
+        expr_transformer = self.expr_transformer
+        registry = getattr(expr_transformer, 'macro_registry', None)
+        if registry is None or not len(registry):
+            return None
+        if not isinstance(expr, CallExpr) or not isinstance(expr.func, Identifier):
+            return None
+        if expr.func.name not in registry:
+            return None
+        if expr.func.name in getattr(expr_transformer, 'user_declared_names', set()):
+            return None
+        if expr_transformer._is_shadowed(expr.func.name):
+            return None
+        replacement = expr_transformer._maybe_expand_macro(expr, render=False)
+        if isinstance(replacement, BlockExpr):
+            return replacement.statements
+        return None
 
     def _record_assign_targets(self, target):
         """Record module-level names assigned by ``target`` (Identifier/tuple)."""
@@ -1149,12 +1315,16 @@ class StatementTransformer:
 
         items_str = ", ".join(items)
         body = self._block(node.body)
-        return f"with {items_str}:\n{body}"
+        async_kw = "async " if getattr(node, 'is_async', False) else ""
+        return f"{async_kw}with {items_str}:\n{body}"
 
     def transform_ImportStmt(self, node):
         # import a, b as c -> import a, b as c
         # import a.b {x, y} -> from a.b import x, y
         # import a.b as c -> import a.b as c
+        self._record_import_names(
+            [mod for mod, _alias in getattr(node, 'modules', None) or []],
+            [module for module, _alias in getattr(node, 'modules', None) or []])
         if getattr(node, 'modules', None):
             parts = []
             for mod, mod_alias in node.modules:
@@ -1176,19 +1346,57 @@ class StatementTransformer:
                 return "\n".join(lines)
             return f"from {node.module} import {', '.join(parts)}"
         if node.alias:
+            self._record_import_names([node.alias], [node.module])
             return f"import {node.module} as {node.alias}"
+        self._record_import_names([node.module], [node.module])
         return f"import {node.module}"
 
     def transform_FromImport(self, node):
         items = []
+        bindings = []
         for name, alias in node.items:
             if name == '*':
                 items.append('*')
             elif alias:
                 items.append(f"{name} as {alias}")
+                bindings.append(alias)
             else:
                 items.append(name)
+                bindings.append(name)
+        # `from enum import Enum` binds a library class name; `from App import X`
+        # binds an Aura sibling, which must not be treated as external.
+        if not self._is_local_module(node.module):
+            self.imported_modules.update(bindings)
         return f"from {node.module} import {', '.join(items)}"
+
+    def _record_import_names(self, bound_names, module_names):
+        """Mark bound import names that resolve to a non-Aura module.
+
+        Used by class inheritance to tell a library base (`enum.Enum`) from an
+        Aura sibling import, so the Aura constructor machinery only steps aside
+        for library-managed bases.
+        """
+        for bound, module in zip(bound_names, module_names, strict=False):
+            if not self._is_local_module(module):
+                self.imported_modules.add(bound)
+                self.imported_modules.add(bound.split('.')[0])
+
+    def _is_local_module(self, module_name):
+        """Return True when ``module_name`` names an Aura module in this project.
+
+        Aura's own modules are compiled alongside the program, so they are not
+        "external"; a Python library (``enum``, ``django.db``) is.
+        """
+        if not module_name:
+            return False
+        root = module_name.split('.')[0]
+        if root in getattr(self, 'aura_module_names', set()):
+            return True
+        source = getattr(self, 'source_path', None)
+        if source is None:
+            return False
+        base = Path(source).parent / root
+        return base.with_suffix('.aura').is_file() or base.is_dir()
 
     def transform_MatchStmt(self, node):
         expr = self.expr_transformer.transform(node.expr)
