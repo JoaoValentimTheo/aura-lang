@@ -9,7 +9,7 @@ nav_exclude: true
 # 02 — Primeiro Programa
 
 > **Meta do capítulo:** escrever, rodar e entender o menor programa Aura. Exemplo:
-> [`../../examples/hello.aura`](../../examples/hello.aura).
+> [`../../examples/hello.aura`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/examples/hello.aura).
 
 ## O programa
 

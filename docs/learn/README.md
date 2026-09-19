@@ -91,7 +91,7 @@ cover modules, Python interop, decorators/macros and the toolchain.
 
 ## Runnable examples
 
-The repository ships runnable programs under [`../../examples/`](../../examples/).
+The repository ships runnable programs under [`../../examples/`](https://github.com/JoaoValentimTheo/aura-lang/tree/master/examples).
 Each chapter points to the example closest to its topic; the full set is:
 
 | Example | Chapter | What it shows |

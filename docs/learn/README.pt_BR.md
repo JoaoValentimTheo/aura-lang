@@ -89,7 +89,7 @@ cobrem módulos, interop com Python, decorators/macros e a toolchain.
 
 ## Exemplos executáveis
 
-O repositório traz programas executáveis em [`../../examples/`](../../examples/).
+O repositório traz programas executáveis em [`../../examples/`](https://github.com/JoaoValentimTheo/aura-lang/tree/master/examples).
 Cada capítulo aponta o exemplo mais próximo de seu tema; o conjunto completo é:
 
 | Exemplo | Capítulo | O que mostra |

@@ -33,10 +33,10 @@ One spelling per construct, no synonyms.
 
 ## Project
 
-- [README](README.md) — project overview and quick start
-- [CHANGELOG](CHANGELOG.md) — notable changes by version
-- [CONTRIBUTING](CONTRIBUTING.md) — contribution workflow
-- [Examples](examples/) — runnable programs
+- [README](https://github.com/JoaoValentimTheo/aura-lang/blob/master/README.md) — project overview and quick start
+- [CHANGELOG](https://github.com/JoaoValentimTheo/aura-lang/blob/master/CHANGELOG.md) — notable changes by version
+- [CONTRIBUTING](https://github.com/JoaoValentimTheo/aura-lang/blob/master/CONTRIBUTING.md) — contribution workflow
+- [Examples](https://github.com/JoaoValentimTheo/aura-lang/tree/master/examples) — runnable programs
 
 ---
 

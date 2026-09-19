@@ -12,7 +12,12 @@ package — is one import away.
 [![Release](https://github.com/JoaoValentimTheo/aura-lang/actions/workflows/release.yml/badge.svg)](https://github.com/JoaoValentimTheo/aura-lang/releases)
 [![PyPI](https://img.shields.io/pypi/v/aura-language.svg)](https://pypi.org/project/aura-language/)
 [![Python](https://img.shields.io/pypi/pyversions/aura-language.svg)](https://pypi.org/project/aura-language/)
+[![Docs](https://img.shields.io/badge/docs-aura--lang-blue)](https://joaovalentimtheo.github.io/aura-lang/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/JoaoValentimTheo/aura-lang/blob/master/LICENSE)
+
+**[Documentation](https://joaovalentimtheo.github.io/aura-lang/)** ·
+**[Learn Aura](https://joaovalentimtheo.github.io/aura-lang/learn/)** ·
+**[Language reference](https://joaovalentimtheo.github.io/aura-lang/language-reference/)**
 
 </div>
 
@@ -22,7 +27,7 @@ package — is one import away.
 
 Aura is **alpha** (`0.2.0a4`). The compiler, type checker, rule checker, REPL,
 language server, formatter, linter, project tooling, and standard library are
-implemented and covered by a test suite of **11,000+ tests**.
+implemented and covered by a behavioural test suite.
 
 > **Syntax freeze.** As of `0.2.0a1`, Aura's syntax is officially frozen.
 > No syntax changes will be made before the stable 1.0 release. The
@@ -424,6 +429,7 @@ Commands: `:help`, `:vars`, `:type <expr>`, `:ast <expr>`, `:load <file>`,
 
 | Document | Covers |
 |----------|--------|
+| [Documentation site](https://joaovalentimtheo.github.io/aura-lang/) | The browsable docs (tutorial + reference) |
 | [docs/README.md](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/README.md) | Documentation index and reading order |
 | [docs/language-reference/](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/language-reference/README.md) | Complete language reference (lexical, grammar, types, expressions, statements, classes, modules, semantics, interop) |
 | [docs/learn/](https://github.com/JoaoValentimTheo/aura-lang/blob/master/docs/learn/README.md) | Numbered tutorial path |

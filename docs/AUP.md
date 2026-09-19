@@ -8,7 +8,7 @@ nav_order: 5
 
 **AUP** (Aura Uniform Patterns, or simply *Aura Patterns*) is a catalog of
 idiomatic solutions to recurring problems, written in canonical Aura. Each
-pattern is a runnable program under [`examples/aup/`](../examples/aup/) and is
+pattern is a runnable program under [`examples/aup/`](https://github.com/JoaoValentimTheo/aura-lang/tree/master/examples/aup) and is
 exercised by `tests/test_aup.py`.
 
 Patterns are **conventions**, not a library: they use only the language and the

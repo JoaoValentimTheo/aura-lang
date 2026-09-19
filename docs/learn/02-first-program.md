@@ -10,7 +10,7 @@ nav_order: 12
 # 02 — First Program
 
 > **Chapter goal:** write, run and understand the smallest Aura program. Example:
-> [`../../examples/hello.aura`](../../examples/hello.aura).
+> [`../../examples/hello.aura`](https://github.com/JoaoValentimTheo/aura-lang/blob/master/examples/hello.aura).
 
 ## The program
 
