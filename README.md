@@ -433,6 +433,7 @@ Commands: `:help`, `:vars`, `:type <expr>`, `:ast <expr>`, `:load <file>`,
 | `stdlib.os` | OS-level utilities |
 | `stdlib.python` | Python bridge (`python.is_instance`, ...) |
 | `stdlib.time` | Time functions |
+| `stdlib.time` | Time functions |
 | `stdlib.testing` | Test framework support |
 | `stdlib.macros` | Compile-time macro surface |
 
