@@ -14,8 +14,8 @@ Aura is alpha software. Security fixes land on the latest release.
 
 | Version | Supported |
 |---------|-----------|
-| 0.1.0a5 | yes       |
-| < 0.1.0a5 | no      |
+| 0.2.0a8 | yes       |
+| < 0.2.0a8 | no      |
 
 ## Trust model — read this first
 
