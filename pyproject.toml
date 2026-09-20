@@ -13,6 +13,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "Aura Team" }]
 keywords = ["transpiler", "language", "python", "aura", "gradually-typed", "source-to-source"]
 classifiers = [
+    "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.10",
