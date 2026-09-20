@@ -231,7 +231,7 @@ GRAMMAR_ACCEPTED = {
 
     # String operations
     "fstring_format": 'let x = f"{3.14:.2f}"',
-    "fstring_nested": 'let x = f"result: {f\"{42}\"}"',
+    "fstring_nested": "let x = f'result: {f\"{42}\"}'",
 
     # Comprehension with multiple if
     "multi_if_comp": 'let x = [n for n in range(100) if n > 0 if n < 10]',
