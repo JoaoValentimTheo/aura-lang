@@ -26,7 +26,6 @@ injecting ``input_func``/``output_func``.
 from __future__ import annotations
 
 import contextlib
-import os
 import pathlib
 
 from aura.parser.to_ast import Parser, Tokenizer, parse_file

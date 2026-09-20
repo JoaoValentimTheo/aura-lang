@@ -33,22 +33,28 @@ from __future__ import annotations
 import itertools
 
 from aura.transpiler.ast import (
+    AssertStmt,
     BinaryOp,
     BlockExpr,
     BoolLiteral,
     CallExpr,
+    CatchClause,
     Expr,
     ExprStmt,
     FloatLiteral,
     Identifier,
+    IfStmt,
     IntLiteral,
     ListLiteral,
     MemberExpr,
     NoneLiteral,
     Stmt,
     StrLiteral,
+    ThrowStmt,
+    TryStmt,
     TupleLiteral,
     UnaryOp,
+    WhileStmt,
 )
 
 
@@ -415,7 +421,6 @@ def _assert_eq(args, kwargs):
     left, right = args
     left_name = gensym("ae_l")
     right_name = gensym("ae_r")
-    from aura.transpiler.ast import AssertStmt
     condition = BinaryOp(Identifier(left_name), "==", Identifier(right_name))
     message = _assert_eq_message(left_name, right_name)
     return BlockExpr([
@@ -430,7 +435,6 @@ def _assert_ne(args, kwargs):
     left, right = args
     left_name = gensym("an_l")
     right_name = gensym("an_r")
-    from aura.transpiler.ast import AssertStmt
     condition = BinaryOp(Identifier(left_name), "!=", Identifier(right_name))
     message = _assert_ne_message(left_name, right_name)
     return BlockExpr([
@@ -568,13 +572,12 @@ def _once(args, kwargs):
     """
     flag = gensym("once_flag")
     body = args[0] if len(args) == 1 else BlockExpr(args)
-    from aura.transpiler.ast import IfStmt, ExprStmt, AssignStmt
     return BlockExpr([
         Quote.var(flag, Quote.boolean_literal(False)),
         IfStmt(
             BinaryOp(Identifier(flag), "==", Quote.boolean_literal(False)),
             BlockExpr([
-                AssignStmt(Identifier(flag), Quote.boolean_literal(True)),
+                ExprStmt(BinaryOp(Identifier(flag), "=", Quote.boolean_literal(True))),
                 body,
             ]),
         ),
@@ -594,22 +597,19 @@ def _retry(args, kwargs):
     body = args[1] if len(args) > 1 else BlockExpr([])
     attempt = gensym("retry_attempt")
     last_err = gensym("retry_err")
-    from aura.transpiler.ast import WhileStmt, AugAssignStmt, TryStmt, ExceptClause, RaiseStmt
     return BlockExpr([
         Quote.var(attempt, Quote.int_literal(0)),
         Quote.var(last_err, Quote.none_literal()),
         WhileStmt(
             BinaryOp(Identifier(attempt), "<", Quote.int_literal(count_val)),
             BlockExpr([
+                ExprStmt(BinaryOp(Identifier(attempt), "+=", Quote.int_literal(1))),
                 TryStmt(
-                    BlockExpr([
-                        AugAssignStmt(Identifier(attempt), "+=", Quote.int_literal(1)),
-                        body,
-                    ]),
-                    [ExceptClause(
+                    body,
+                    [CatchClause(
                         Identifier("e"),
                         BlockExpr([
-                            AssignStmt(Identifier(last_err), Identifier("e")),
+                            ExprStmt(BinaryOp(Identifier(last_err), "=", Identifier("e"))),
                         ]),
                     )],
                 ),
@@ -617,7 +617,7 @@ def _retry(args, kwargs):
         ),
         IfStmt(
             BinaryOp(Identifier(last_err), "!=", Quote.none_literal()),
-            BlockExpr([RaiseStmt(Identifier(last_err))]),
+            BlockExpr([ThrowStmt(Identifier(last_err))]),
         ),
     ])
 
