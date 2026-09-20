@@ -69,11 +69,11 @@ aura repl
 
 ## `aura init`
 
-Cria um projeto inicial:
+Cria um projeto completo com venv:
 
 ```bash
-aura init demo           # writes aura.toml and src/main.aura
-aura init demo --venv    # also creates .venv and installs dependencies
+aura init demo           # writes aura.toml, src/main.aura, and creates .venv
+aura init demo --no-venv # skip .venv creation
 ```
 
 ## `aura transpile`
@@ -172,7 +172,7 @@ aura lsp
 | `aura remove <pkg>` | remove uma dependência declarada |
 | `aura install` | instala dependências de `aura.toml` |
 | `aura deps` | lista dependências declaradas (`--lock` escreve `aura.lock`) |
-| `aura venv init` | cria `.venv` e instala dependências |
+| `aura venv init` | recria `.venv` e instala dependências |
 | `aura doctor` | checa o ambiente do projeto |
 | `aura version` | mostra ou incrementa a versão |
 

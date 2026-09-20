@@ -8,7 +8,7 @@ nav_exclude: true
 
 # 01 — Instalação
 
-> **Aura 0.2.0a5.** Este capítulo cobre instalar a toolchain, criar um projeto e
+> **Aura 0.2.0a6.** Este capítulo cobre instalar a toolchain, criar um projeto e
 > rodá-lo. Os comandos não dependem da versão.
 
 ## O que você precisa
@@ -47,7 +47,7 @@ aura --help
 | `aura run <file.aura>` | transpila e executa um programa |
 | `aura check <file.aura>` | checa tipos e regras sem executar |
 | `aura repl` | loop interativo de leitura-avaliação-impressão |
-| `aura init [name]` | cria um projeto inicial |
+| `aura init [name]` | cria um projeto completo com venv |
 | `aura transpile <file.aura>` | imprime (ou escreve) o Python gerado |
 | `aura format <file.aura>` | formata o código-fonte |
 | `aura lint <file.aura>` | reporta warnings de estilo |
@@ -91,9 +91,10 @@ def main() {
 }
 ```
 
-`aura init --venv` também cria `.venv` e instala as dependências declaradas. Para
-adicionar uma dependência Python depois, use `aura add <package>`; ele registra o
-requisito e o instala no ambiente do projeto.
+`aura init --no-venv` pula a criação do `.venv`. Por padrão, `aura init` cria um
+`.venv` e instala as dependências declaradas. Para adicionar uma dependência
+Python depois, use `aura add <package>`; ele registra o requisito e o instala no
+ambiente do projeto.
 
 ## Passo 4 — Rodá-lo
 

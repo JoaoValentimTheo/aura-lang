@@ -70,11 +70,11 @@ Useful for trying expressions and checking what a construct evaluates to.
 
 ## `aura init`
 
-Create a starter project:
+Create a complete project with venv:
 
 ```bash
-aura init demo           # writes aura.toml and src/main.aura
-aura init demo --venv    # also creates .venv and installs dependencies
+aura init demo           # writes aura.toml, src/main.aura, and creates .venv
+aura init demo --no-venv # skip .venv creation
 ```
 
 ## `aura transpile`
@@ -172,7 +172,7 @@ aura lsp
 | `aura remove <pkg>` | remove a declared dependency |
 | `aura install` | install dependencies from `aura.toml` |
 | `aura deps` | list declared dependencies (`--lock` writes `aura.lock`) |
-| `aura venv init` | create `.venv` and install dependencies |
+| `aura venv init` | recreate `.venv` and install dependencies |
 | `aura doctor` | check the project environment |
 | `aura version` | show or bump the version |
 

@@ -139,3 +139,7 @@
 | `stringify(x)` | Literal → string at compile time |
 | `swap(a, b)` | Exchange two values |
 | `debug_value(x)` | Print `x = <value>`, yield value |
+| `once(body)` | Execute body only on first call |
+| `retry(n, body)` | Retry body up to N times on failure |
+| `todo()` | Raise "not implemented" error |
+| `unreachable()` | Documented unreachable code |

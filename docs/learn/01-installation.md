@@ -9,7 +9,7 @@ nav_order: 11
 
 # 01 — Installation
 
-> **Aura 0.2.0a5.** This chapter covers installing the toolchain, creating a
+> **Aura 0.2.0a6.** This chapter covers installing the toolchain, creating a
 > project and running it. The commands do not depend on the version.
 
 ## What you need
@@ -48,7 +48,7 @@ aura --help
 | `aura run <file.aura>` | transpile and execute a program |
 | `aura check <file.aura>` | check types and rules without running |
 | `aura repl` | interactive read-eval-print loop |
-| `aura init [name]` | create a starter project |
+| `aura init [name]` | create a complete project with venv |
 | `aura transpile <file.aura>` | print (or write) the generated Python |
 | `aura format <file.aura>` | format source |
 | `aura lint <file.aura>` | report style warnings |
@@ -92,9 +92,10 @@ def main() {
 }
 ```
 
-`aura init --venv` also creates `.venv` and installs declared dependencies. To
-add a Python dependency later, use `aura add <package>`; it records the
-requirement and installs it into the project environment.
+`aura init --no-venv` skips the `.venv` creation. By default `aura init` creates
+a `.venv` and installs declared dependencies. To add a Python dependency later,
+use `aura add <package>`; it records the requirement and installs it into the
+project environment.
 
 ## Step 4 — Run it
 

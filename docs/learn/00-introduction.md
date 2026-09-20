@@ -9,7 +9,7 @@ nav_order: 10
 
 # 00 — Introduction
 
-> **Aura 0.2.0a5.** Aura transpiles to Python and runs on CPython. This chapter
+> **Aura 0.2.0a6.** Aura transpiles to Python and runs on CPython. This chapter
 > explains the mental model; chapters 01–16 teach the language.
 
 ## What Aura is

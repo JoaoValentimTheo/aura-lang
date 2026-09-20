@@ -8,7 +8,7 @@ nav_exclude: true
 
 # Tipos — Catálogo e Sintaxe
 
-**Status:** Stable (`0.2.0a5`, exceto onde rotulado) · **Evidência:**
+**Status:** Stable (`0.2.0a6`, exceto onde rotulado) · **Evidência:**
 `aura/parser/to_ast.py` (`parse_type` §1752, `parse_type_decl` §1653,
 `_parse_type_params` §1129), `aura/transpiler/types.py`
 (`TypeInference.BUILTIN_NAMES`, `_parse_type_annotation` §1456),

@@ -4,6 +4,70 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.0a6] - 2026-09-20
+
+**Security hardening, macro expansion, interop fixes, CLI/REPL overhaul.**
+
+### Added
+
+- **Compile-time macros `once` and `retry`**: `once(body)` executes the body
+  only on the first call (guarded by a hygienic boolean flag); `retry(count,
+  body)` wraps the body in a try/except and retries up to `count` times.
+- **Shared `pattern_utils.py`**: consolidated duplicated `_pattern_names` and
+  `_target_names` logic from expressions, rules, and semantics into a single
+  utility module.
+- **REPL history persistence**: session history is saved to `~/.aura_history`
+  on exit and loaded on startup; tab completion for commands and keywords.
+- **Complete project template**: `aura init` now creates `src/`, `tests/`,
+  `.gitignore`, `README.md`, and auto-initializes `.venv` with dependencies.
+
+### Changed
+
+- **`aura init` creates full project by default**: venv is created
+  automatically (use `--no-venv` to skip). `aura venv` emits a deprecation
+  warning.
+- **`python.import_module()` returns `ModuleProxy`** for consistency with
+  `python.load()`. `reload()` preserves the proxy wrapper.
+- **`os.env()` without allowlist** emits a `DeprecationWarning` to prevent
+  accidental secret leakage.
+- **`compile_source()` validates mode** parameter, rejecting invalid values.
+
+### Fixed
+
+- **Dead code cleanup**: removed unused aliases (`Number`, `String`, `Let`),
+  `_DICT_PATTERN_RE`, duplicate `_subject_type` method.
+- **Security**: `python.py` eval/exec/compile have prominent docstring
+  warnings; LSP sanitizes exception messages to strip internal paths.
+- **Python interop**: `to_aura()` handles `frozenset` and primitive types;
+  `site_packages()` handles missing `AttributeError` gracefully.
+- **CLI**: removed unreachable `run` branch in `main()`.
+- **REPL**: Ctrl+C discards buffer (not entire input); Ctrl+D discards buffer
+  instead of auto-executing incomplete code.
+
+### Tests
+
+- 4313 tests passing.
+
+## [0.2.0a5] - 2026-09-20
+
+**Critical parser/transpiler fixes, training corpus, docs hardening.**
+
+### Fixed
+
+- **Parser**: `is_kwonly=True` for bare `*` separator in function declarations
+  and lambdas; `FloatLiteral` handled in pattern matching; `seen_star` tracking
+  prevents multiple bare `*` in function declarations.
+- **Transpiler**: `MemberPattern` renders dotted names correctly (`Color.RED`);
+  `??=` uses temp variable for non-trivial LHS to avoid triple-evaluation;
+  `ForStmt` creates `RangeExpr` copy instead of mutating original AST node.
+- **ERRORS.md**: E004 emitter description corrected; E320 documented as
+  reserved (dead code, parser uses SyntaxError directly).
+
+### Added
+
+- **Training corpus** (19 files): `training/language/` (10 files),
+  `training/reference/` (4 files), `training/anti-patterns/` (5 files).
+
 ## [0.2.0a4] - 2026-09-19
 
 **Espelhagem/Kof na sintaxe** — a full syntax pass plus a documentation

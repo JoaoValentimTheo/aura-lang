@@ -23,7 +23,7 @@ package — is one import away.
 
 ## Status
 
-Aura is **alpha** (`0.2.0a4`). The compiler, type checker, rule checker, REPL,
+Aura is **alpha** (`0.2.0a6`). The compiler, type checker, rule checker, REPL,
 language server, formatter, linter, project tooling, and standard library are
 implemented and covered by a behavioural test suite.
 
@@ -80,7 +80,7 @@ pip install "aura-language[pqc]"
 ## Quick start
 
 ```bash
-aura init myapp          # scaffolds aura.toml and src/main.aura
+aura init myapp               # creates aura.toml, src/, tests/, .venv
 cd myapp
 aura run src/main.aura
 ```
@@ -300,13 +300,25 @@ def main() {
   let mut a = 1
   let mut b = 2
   swap(a, b)                // a binding plus two assignments
+
+  // Execute code only once (guarded by a hygienic flag)
+  once({
+    print("expensive init")
+    setup_database()
+  })
+
+  // Retry a block up to N times on failure
+  retry(3, {
+    fetch_data()
+  })
 }
 ```
 
 Built-ins: `assert_eq`, `assert_ne`, `static_assert`, `identity`, `discard`,
-`stringify`, `swap`, `debug_value`, `todo`, `unreachable`. Macro expansion is
-hygienic — introduced bindings can never capture a call-site name — and a
-program's own declaration always shadows a built-in macro of the same name.
+`stringify`, `swap`, `debug_value`, `once`, `retry`, `todo`, `unreachable`.
+Macro expansion is hygienic — introduced bindings can never capture a
+call-site name — and a program's own declaration always shadows a built-in
+macro of the same name.
 
 ## Aura Patterns (AUP)
 
@@ -336,9 +348,9 @@ example under [`examples/aup/`](https://github.com/JoaoValentimTheo/aura-lang/tr
 | `aura format <file>` | Reformat source (`-i` in place, `-o <file>` to a file) |
 | `aura lint <file>` | Style warnings (`--allow-warnings` to exit 0) |
 | `aura test [dir]` | Run `.aura` test files (`-v` verbose) |
-| `aura repl` | Interactive REPL |
-| `aura init [name]` | Scaffold a project (`--venv` to also create an environment) |
-| `aura venv [action]` | Manage `.venv`: `init`, `info`, `shell`, `remove` |
+| `aura repl` | Interactive REPL (history persisted, tab completion) |
+| `aura init [name]` | Scaffold a complete project with venv (`--no-venv` to skip) |
+| `aura venv [action]` | Manage `.venv`: `init`, `info`, `shell`, `remove` (deprecated: use `aura init`) |
 | `aura add <pkg>` | Add a dependency (`-D` dev, `--no-install`, `-V <spec>`) |
 | `aura remove <pkg>` | Remove a declared dependency |
 | `aura install` | Install everything declared in `aura.toml` |
@@ -352,11 +364,11 @@ Run `aura --help` or `aura <command> --help` for details.
 
 ## Projects and dependencies
 
-Aura projects are self-contained: `aura init` writes an `aura.toml`, `aura venv`
-creates the environment, and `aura add` records and installs dependencies.
+Aura projects are self-contained: `aura init` creates a complete project
+with manifest, source, tests, .gitignore, and a virtual environment.
 
 ```bash
-aura init myapp --venv          # aura.toml + src/main.aura + .venv
+aura init myapp               # full project + .venv with dependencies
 cd myapp
 aura add "requests>=2.28"       # runtime dependency
 aura add -D pytest              # development dependency
@@ -385,7 +397,8 @@ current interpreter otherwise. `aura venv shell` prints the activation command.
 
 `aura repl` shares the real parser and every checker (types, structural rules,
 and mutability), so each line is validated the way `aura check` validates it.
-State persists across lines:
+State persists across lines, history is saved to `~/.aura_history`, and
+tab completion works for commands and keywords.
 
 ```text
 $ aura repl
