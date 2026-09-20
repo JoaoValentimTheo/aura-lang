@@ -224,7 +224,7 @@ class AuraLanguageServer:
                     'renameProvider': {'prepareProvider': True},
                     'documentFormattingProvider': True,
                 },
-                'serverInfo': {'name': 'aura-lsp', 'version': '0.1.0'},
+                'serverInfo': {'name': 'aura-lsp', 'version': '0.2.0'},
             })
         elif method == 'initialized':
             pass

@@ -11,12 +11,17 @@ requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Aura Team" }]
-keywords = ["transpiler", "language", "python", "aura"]
+keywords = ["transpiler", "language", "python", "aura", "gradually-typed", "source-to-source"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Compilers",
     "Topic :: Software Development :: Interpreters",
+    "Operating System :: OS Independent",
 ]
 dependencies = [
     "tomli>=2.0; python_version < '3.11'",
