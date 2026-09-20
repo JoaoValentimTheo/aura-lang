@@ -40,4 +40,4 @@ One spelling per construct, no synonyms.
 
 ---
 
-Aura is alpha (`0.2.0a7`), and the syntax is frozen at the Equinox release.
+Aura is alpha (`0.2.0a8`), and the syntax is frozen at the Equinox release.

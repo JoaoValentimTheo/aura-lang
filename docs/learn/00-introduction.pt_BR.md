@@ -8,7 +8,7 @@ nav_exclude: true
 
 # 00 — Introdução
 
-> **Aura 0.2.0a7.** Aura transpila para Python e roda no CPython. Este capítulo
+> **Aura 0.2.0a8.** Aura transpila para Python e roda no CPython. Este capítulo
 > explica o modelo mental; os capítulos 01–16 ensinam a linguagem.
 
 ## O que é Aura

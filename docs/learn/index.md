@@ -25,7 +25,7 @@ the **syntax and the checking**, not in a new runtime.
 
 ## What Aura is today
 
-**Version:** `0.2.0a7`. The language reference in
+**Version:** `0.2.0a8`. The language reference in
 [`../language-reference/`](../language-reference/index.md) is the exact source
 of truth; this tutorial builds intuition and links there for detail.
 
