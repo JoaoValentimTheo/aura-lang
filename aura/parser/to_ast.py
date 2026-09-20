@@ -1246,7 +1246,7 @@ class Parser:
                                 is_static=is_static, is_volatile=is_volatile,
                                 is_abstract=True)
 
-        # Handle expression body: fn foo() = expr
+        # Handle expression body: def foo() = expr
         if self.match('='):
              expr = self.parse_expression()
              # Wrap in return stmt

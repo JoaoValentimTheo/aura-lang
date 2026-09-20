@@ -261,8 +261,6 @@ class StatementTransformer:
         else:
             return f"{name} = None"
 
-    _DICT_PATTERN_RE = None
-
     def _emit_dict_destructure(self, pattern, value_node):
         """Compile `{a, b} = source` into one binding per source field."""
         if value_node is None:

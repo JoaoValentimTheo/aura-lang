@@ -62,28 +62,33 @@ __all__ = [
 
 
 def import_module(name, package=None):
-    """Import and return a module by name.
+    """Import and return a module by name, wrapped in :class:`ModuleProxy`.
 
     ``name`` may be a dotted path (``"os.path"``). ``package`` follows
     :func:`importlib.import_module` semantics for relative imports.
+
+    Returns a :class:`ModuleProxy` so attribute access works naturally from
+    Aura code (``python.import_module("math").sqrt(2)``).
     """
     if not isinstance(name, str) or not name:
         raise TypeError("import_module() expects a non-empty module name")
-    return importlib.import_module(name, package)
+    return ModuleProxy(importlib.import_module(name, package))
 
 
 def load(name, package=None):
     """Alias for :func:`import_module`, named for readability in pipelines."""
-    return ModuleProxy(import_module(name, package))
+    return import_module(name, package)
 
 
 def reload(module):
     """Reload an already-imported module in place."""
+    was_proxy = isinstance(module, ModuleProxy)
     if isinstance(module, ModuleProxy):
         module = module._module
     if not isinstance(module, types.ModuleType):
         raise TypeError("reload() expects a module")
-    return importlib.reload(module)
+    result = importlib.reload(module)
+    return ModuleProxy(result) if was_proxy else result
 
 
 def is_available(name):
@@ -99,7 +104,13 @@ def is_available(name):
 
 
 def eval(expression, globals=None, locals=None):
-    """Evaluate a Python expression string and return its value."""
+    """Evaluate a Python expression string and return its value.
+
+    .. warning::
+        This executes arbitrary Python code. There is no sandbox. Use only
+        when you fully trust the expression source. Aura's type safety and
+        mutability rules are *not* enforced inside evaluated code.
+    """
     if not isinstance(expression, str):
         raise TypeError("eval() expects a string")
     scope = globals if globals is not None else _default_globals()
@@ -108,7 +119,13 @@ def eval(expression, globals=None, locals=None):
 
 def exec_code(code, globals=None, locals=None):
     """Execute Python statements. Returns the namespace used, so callers can
-    inspect newly defined names."""
+    inspect newly defined names.
+
+    .. warning::
+        This executes arbitrary Python code. There is no sandbox. Use only
+        when you fully trust the code source. Aura's type safety and
+        mutability rules are *not* enforced inside executed code.
+    """
     if not isinstance(code, str):
         raise TypeError("exec() expects a string")
     scope = globals if globals is not None else _default_globals()
@@ -117,7 +134,13 @@ def exec_code(code, globals=None, locals=None):
 
 
 def compile_source(source, filename='<aura-python>', mode='exec'):
-    """Compile Python source and return a code object."""
+    """Compile Python source and return a code object.
+
+    ``mode`` must be ``'exec'`` (statements), ``'eval'`` (single expression),
+    or ``'single'`` (interactive statement). Defaults to ``'exec'``.
+    """
+    if mode not in ('exec', 'eval', 'single'):
+        raise ValueError(f"compile_source() mode must be 'exec', 'eval', or 'single', got {mode!r}")
     return builtins.compile(source, filename, mode)
 
 
@@ -181,8 +204,9 @@ def is_instance(obj, cls):
 def to_aura(obj):
     """Convert a Python value into an Aura-friendly representation.
 
-    Modules become :class:`ModuleProxy`; everything else is returned as-is
-    because Aura already operates on native Python objects.
+    Modules become :class:`ModuleProxy`; dicts, lists, tuples, and sets
+    are recursively converted; everything else is returned as-is because
+    Aura already operates on native Python objects.
     """
     if isinstance(obj, types.ModuleType):
         return ModuleProxy(obj)
@@ -194,6 +218,10 @@ def to_aura(obj):
         return tuple(to_aura(v) for v in obj)
     if isinstance(obj, set):
         return {to_aura(v) for v in obj}
+    if isinstance(obj, frozenset):
+        return frozenset(to_aura(v) for v in obj)
+    if isinstance(obj, (int, float, str, bool, type(None))):
+        return obj
     return obj
 
 
@@ -218,10 +246,17 @@ def add_path(path):
 
 
 def site_packages():
-    """Return the interpreter's site-packages directories."""
+    """Return the interpreter's site-packages directories.
+
+    Returns an empty list if the site module is unavailable (e.g., in some
+    embedded interpreters).
+    """
     import site
 
-    return list(site.getsitepackages())
+    try:
+        return list(site.getsitepackages())
+    except AttributeError:
+        return []
 
 
 def modules():

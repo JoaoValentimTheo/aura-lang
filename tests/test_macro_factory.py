@@ -159,7 +159,8 @@ def test_default_registry_has_builtins():
     names = default_registry().names()
     assert names == (
         "assert_eq", "assert_ne", "debug_value", "discard", "identity",
-        "static_assert", "stringify", "swap", "todo", "unreachable")
+        "once", "retry", "static_assert", "stringify", "swap", "todo",
+        "unreachable")
 
 
 def test_default_registry_is_fresh_each_call():

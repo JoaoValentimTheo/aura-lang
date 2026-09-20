@@ -578,9 +578,6 @@ class FromImport(Stmt):
         # True when written with the `py.` prefix (`from py.re import x`).
         self.is_python = is_python
 
-# Backward compatibility (old names)
-Number = IntLiteral
-String = StrLiteral
 
 # ============================================================================
 # Python protocol (dunder) mapping
@@ -681,4 +678,3 @@ def aura_method_name(name):
     the spelling the author wrote. Identity for names that were never mapped.
     """
     return _PYTHON_TO_AURA_METHOD.get(name, name)
-Let = VarDecl

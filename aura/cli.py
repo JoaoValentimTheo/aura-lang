@@ -706,7 +706,19 @@ def cmd_deps(lock: bool = False) -> int:
 
 def cmd_venv(action: str = "init", force: bool = False,
              python: str | None = None, no_install: bool = False) -> int:
-    """Manage the project's virtual environment (`.venv` by default)."""
+    """Manage the project's virtual environment (`.venv` by default).
+
+    .. deprecated::
+        Use ``aura init`` which now creates and activates the venv automatically.
+        This command is kept for manual venv management.
+    """
+    import warnings
+    warnings.warn(
+        "aura venv is deprecated. Use 'aura init' which creates the venv "
+        "automatically. 'aura venv' is kept for manual venv management only.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     from aura.tools import deps
     if action == "init":
         return deps.create_venv(force=force, python=python,
@@ -727,8 +739,8 @@ def cmd_doctor() -> int:
     return doctor()
 
 
-def cmd_init(name: str = "app", venv: bool = False) -> int:
-    """Create a starter aura.toml and src/main.aura."""
+def cmd_init(name: str = "app", venv: bool = True) -> int:
+    """Create a complete Aura project with manifest, source, tests, and venv."""
     from aura.tools.deps import init_project
     return init_project(name, venv=venv)
 
@@ -865,10 +877,10 @@ Examples:
     test.add_argument('-p', '--pattern', default='*.aura', help='File glob pattern (default: *.aura)')
 
     # init command
-    init = sub.add_parser('init', help='Create a starter aura.toml and project')
+    init = sub.add_parser('init', help='Create a complete Aura project with venv')
     init.add_argument('name', nargs='?', default='app', help='Project name')
-    init.add_argument('--venv', action='store_true',
-                      help='Also create .venv and install dependencies')
+    init.add_argument('--no-venv', action='store_true',
+                      help='Skip venv creation (default: create venv)')
 
     # add command
     add = sub.add_parser('add', help='Add a Python dependency and install it')
@@ -991,7 +1003,7 @@ def main(argv=None):
     elif args.cmd == 'repl':
         return cmd_repl()
     elif args.cmd == 'init':
-        return cmd_init(args.name, venv=args.venv)
+        return cmd_init(args.name, venv=not args.no_venv)
     elif args.cmd == 'add':
         return cmd_add(args.package, args.version, args.no_install, dev=args.dev)
     elif args.cmd == 'remove':

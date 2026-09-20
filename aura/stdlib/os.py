@@ -31,10 +31,22 @@ def env(allowlist=None):
     With no argument this copies the entire environment, which can expose
     secrets (tokens, keys, credentials). Pass ``allowlist`` (an iterable of
     names) to return only the variables you need.
+
+    .. warning::
+        Calling ``env()`` without an ``allowlist`` returns *all* environment
+        variables including secrets. Always prefer ``env(["HOME", "PATH"])``
+        or a similar explicit list.
     """
+    import warnings as _warnings
+
     if allowlist is not None:
         allowed = set(allowlist)
         return {k: v for k, v in _os.environ.items() if k in allowed}
+    _warnings.warn(
+        "os.env() without an allowlist returns all environment variables "
+        "including secrets. Pass an explicit list of names instead.",
+        stacklevel=2,
+    )
     return dict(_os.environ)
 
 

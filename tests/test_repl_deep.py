@@ -396,7 +396,7 @@ def test_run_loop_keyboard_interrupt_clears_buffer():
     outputs = []
     repl = AuraREPL(input_func=fake_input, output_func=outputs.append)
     repl.run()
-    assert any("KeyboardInterrupt" in line for line in outputs)
+    assert any("discarded" in line for line in outputs)
     assert repl.locals.get("ok") == 1
 
 

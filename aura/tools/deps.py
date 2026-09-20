@@ -757,8 +757,18 @@ def _installed_version(name, root=None):
     return _installed_versions([name], root).get(str(name).lower())
 
 
-def init_project(name='app', manifest_path=None, venv=False):
-    """Create a starter ``aura.toml`` and ``src/main.aura``."""
+def init_project(name='app', manifest_path=None, venv=True):
+    """Create a complete Aura project with manifest, source, tests, and venv.
+
+    By default creates:
+    - ``aura.toml`` manifest
+    - ``src/main.aura`` starter program
+    - ``tests/test_main.aura`` starter test
+    - ``.gitignore`` for Aura/Python artifacts
+    - ``.venv`` virtual environment with dependencies installed
+
+    Pass ``venv=False`` to skip venv creation.
+    """
     root = Path(manifest_path).parent if manifest_path else Path.cwd()
     manifest = root / MANIFEST_NAME
     created_manifest = False
@@ -770,6 +780,7 @@ def init_project(name='app', manifest_path=None, venv=False):
         print(_check(f"Created {style.bold(str(manifest))}"))
         created_manifest = True
 
+    # Source directory
     src_dir = root / 'src'
     src_dir.mkdir(exist_ok=True)
     main_file = src_dir / 'main.aura'
@@ -782,11 +793,83 @@ def init_project(name='app', manifest_path=None, venv=False):
         )
         print(_check(f"Created {style.bold(str(main_file))}"))
 
+    # Test directory
+    test_dir = root / 'tests'
+    test_dir.mkdir(exist_ok=True)
+    test_file = test_dir / 'test_main.aura'
+    if not test_file.exists():
+        test_file.write_text(
+            'import pytest\n'
+            '\n'
+            '\n'
+            'def test_hello() {\n'
+            '  assert true\n'
+            '}\n',
+            encoding='utf-8',
+        )
+        print(_check(f"Created {style.bold(str(test_file))}"))
+
+    # .gitignore
+    gitignore = root / '.gitignore'
+    if not gitignore.exists():
+        gitignore.write_text(
+            '# Aura\n'
+            '*.aura.py\n'
+            '\n'
+            '# Python\n'
+            '__pycache__/\n'
+            '*.py[cod]\n'
+            '*$py.class\n'
+            '*.so\n'
+            '\n'
+            '# Virtual environment\n'
+            '.venv/\n'
+            'venv/\n'
+            'ENV/\n'
+            '\n'
+            '# IDE\n'
+            '.idea/\n'
+            '.vscode/\n'
+            '*.swp\n'
+            '*.swo\n'
+            '*~\n'
+            '\n'
+            '# OS\n'
+            '.DS_Store\n'
+            'Thumbs.db\n'
+            '\n'
+            '# Build\n'
+            'dist/\n'
+            'build/\n'
+            '*.egg-info/\n'
+            '*.egg\n',
+            encoding='utf-8',
+        )
+        print(_check(f"Created {style.bold(str(gitignore))}"))
+
+    # README.md
+    readme = root / 'README.md'
+    if not readme.exists():
+        readme.write_text(
+            f'# {name}\n'
+            '\n'
+            'An Aura project.\n'
+            '\n'
+            '## Quick start\n'
+            '\n'
+            '```bash\n'
+            'aura run src/main.aura\n'
+            '```\n',
+            encoding='utf-8',
+        )
+        print(_check(f"Created {style.bold(str(readme))}"))
+
     if created_manifest:
         print()
         print("Next steps:")
-        print("  " + style.cyan("aura venv init") + "        create .venv and install deps")
         print("  " + style.cyan("aura run src/main.aura") + "  run the program")
+        print("  " + style.cyan("aura test") + "              run tests")
+        print("  " + style.cyan("aura repl") + "             start REPL")
 
     if venv:
         print()

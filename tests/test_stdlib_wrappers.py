@@ -501,9 +501,13 @@ class TestPythonBridge:
     def test_reload(self):
         from aura.stdlib import python as p
         mod = p.import_module('math')
-        assert p.reload(mod) is mod
+        reloaded = p.reload(mod)
+        assert isinstance(reloaded, p.ModuleProxy)
+        assert reloaded._module is mod._module  # same underlying module
         proxy = p.load('math')
-        assert p.reload(proxy) is mod
+        reloaded2 = p.reload(proxy)
+        assert isinstance(reloaded2, p.ModuleProxy)
+        assert reloaded2._module is mod._module
         with pytest.raises(TypeError):
             p.reload('not a module')
 
@@ -561,9 +565,13 @@ class TestPythonBridge:
 
     def test_to_aura_and_to_python(self):
         from aura.stdlib import python as p
+        import types as _types
         proxy = p.to_aura(p.import_module('math'))
         assert isinstance(proxy, p.ModuleProxy)
-        assert p.to_python(proxy) is p.import_module('math')
+        # to_python returns the raw module; import_module now returns a proxy
+        raw = p.to_python(proxy)
+        assert isinstance(raw, _types.ModuleType)
+        assert raw is p.to_python(p.import_module('math'))
         assert p.to_python(5) == 5
         converted = p.to_aura({'a': [1, (2, 3)], 's': {4}})
         assert converted['a'][0] == 1

@@ -24,7 +24,7 @@ def project(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv('AURA_VENV', raising=False)
     monkeypatch.setattr(deps.style, 'enabled', False)
-    assert deps.init_project('myapp') == 0
+    assert deps.init_project('myapp', venv=False) == 0
     return tmp_path
 
 

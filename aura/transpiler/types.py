@@ -1123,7 +1123,7 @@ class TypeChecker:
         if catch_all:
             return
 
-        subject_type = self._subject_type(node.expr)
+        subject_type = self._expr_type(node.expr)
         subject_name = type(subject_type).__name__
 
         if subject_name == 'BoolType':
@@ -1180,17 +1180,6 @@ class TypeChecker:
         ``TypeInference`` is context-free, so a bare variable infers as ``Any``
         even when its declared type is a class. The checker's ``context`` holds
         the real type, which inheritance-aware method resolution needs.
-        """
-        if isinstance(expr, Identifier) and expr.name in self.context:
-            return self.context[expr.name]
-        return self.inference.infer(expr)
-
-    def _subject_type(self, expr):
-        """Resolve the type of a match subject, preferring the checker context.
-
-        ``TypeInference`` is context-free, so a bare variable would infer as
-        ``Any``. The checker's ``context`` holds the declared/param types, which
-        is what exhaustiveness analysis needs.
         """
         if isinstance(expr, Identifier) and expr.name in self.context:
             return self.context[expr.name]

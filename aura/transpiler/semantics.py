@@ -436,27 +436,8 @@ class MutabilityChecker:
             self._scope.declare(name, mutable)
 
     def _pattern_names(self, pattern):
-        if pattern is None:
-            return []
-        if isinstance(pattern, IdentifierPattern):
-            return [pattern.name]
-        if isinstance(pattern, Identifier):
-            return [pattern.name]
-        if isinstance(pattern, (TupleLiteral, ListLiteral)):
-            names = []
-            for el in pattern.elements:
-                names.extend(self._pattern_names(el))
-            return names
-        if isinstance(pattern, ListPattern):
-            names = []
-            for sub in pattern.patterns:
-                names.extend(self._pattern_names(sub))
-            if getattr(pattern, 'rest_pattern', None) is not None:
-                names.extend(self._pattern_names(pattern.rest_pattern))
-            return names
-        if isinstance(pattern, SpreadExpr):
-            return self._pattern_names(pattern.expr)
-        return []
+        from aura.transpiler.pattern_utils import pattern_names
+        return pattern_names(pattern)
 
     @staticmethod
     def _param_name(param):
@@ -468,15 +449,8 @@ class MutabilityChecker:
         Plain identifiers return ``[name]``. Tuple targets such as
         ``"(a, b)"`` and destructuring patterns return each component name.
         """
-        if not name:
-            return []
-        if isinstance(name, str) and name.startswith('(') and name.endswith(')'):
-            inner = name[1:-1]
-            return list(self._split_names(inner))
-        if isinstance(name, str) and name.startswith('[') and name.endswith(']'):
-            inner = name[1:-1]
-            return list(self._split_names(inner))
-        return [name]
+        from aura.transpiler.pattern_utils import target_names
+        return target_names(name)
 
     @staticmethod
     def _split_names(inner):

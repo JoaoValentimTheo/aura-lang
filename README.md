@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/JoaoValentimTheo/aura-lang/master/docs/assets/aura_logo.png" alt="Aura" width="220">
-
 # Aura
 
 **Aura** is a gradually-typed programming language that transpiles to Python.

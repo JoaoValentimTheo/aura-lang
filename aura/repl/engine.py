@@ -15,7 +15,9 @@ executing. It supports:
   is a fragment, so ``main`` is not required (it is required by ``aura run``);
 * built-in commands (``:help``, ``:vars``, ``:type``, ``:ast``, ``:py``,
   ``:load``, ``:run``, ``:reset``, ``:history``);
-* direct Python execution through ``:py`` and the ``python`` bridge.
+* direct Python execution through ``:py`` and the ``python`` bridge;
+* history persistence across sessions (``~/.aura_history``);
+* tab completion for commands and keywords.
 
 The engine is importable and testable without touching ``stdin``/``stdout`` by
 injecting ``input_func``/``output_func``.
@@ -24,6 +26,8 @@ injecting ``input_func``/``output_func``.
 from __future__ import annotations
 
 import contextlib
+import os
+import pathlib
 
 from aura.parser.to_ast import Parser, Tokenizer, parse_file
 from aura.transpiler.ast import Program
@@ -31,6 +35,9 @@ from aura.transpiler.rules import RuleChecker
 from aura.transpiler.semantics import MutabilityChecker
 from aura.transpiler.transformer import Transformer
 from aura.transpiler.types import TypeChecker
+
+_HISTORY_FILE = pathlib.Path.home() / '.aura_history'
+_MAX_HISTORY = 1000
 
 
 class ReplResult:
@@ -67,6 +74,8 @@ class AuraREPL:
         # `main()` call is awaited across chunk boundaries.
         self._async_names = set()
         self._install_python_alias()
+        self._load_history()
+        self._setup_completion()
 
     @property
     def locals(self):
@@ -89,33 +98,90 @@ class AuraREPL:
         except Exception:
             pass
 
+    def _load_history(self):
+        """Load command history from ~/.aura_history."""
+        if _HISTORY_FILE.exists():
+            try:
+                lines = _HISTORY_FILE.read_text(encoding='utf-8').splitlines()
+                self._history = lines[-_MAX_HISTORY:]
+            except Exception:
+                self._history = []
+
+    def _save_history(self):
+        """Save command history to ~/.aura_history."""
+        try:
+            _HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+            _HISTORY_FILE.write_text(
+                '\n'.join(self._history[-_MAX_HISTORY:]) + '\n',
+                encoding='utf-8',
+            )
+        except Exception:
+            pass
+
+    def _setup_completion(self):
+        """Set up tab completion for commands and keywords."""
+        try:
+            import readline
+            self._commands = [
+                ':help', ':quit', ':exit', ':vars', ':type', ':ast',
+                ':py', ':load', ':run', ':reset', ':history',
+            ]
+            self._keywords = [
+                'def', 'class', 'let', 'mut', 'if', 'else', 'for', 'while',
+                'return', 'throw', 'catch', 'finally', 'import', 'from',
+                'as', 'async', 'await', 'match', 'case', 'and', 'or', 'not',
+                'is', 'in', 'pub', 'priv', 'prot', 'static', 'abstract',
+            ]
+            readline.set_completer(self._complete)
+            readline.parse_and_bind('tab: complete')
+        except ImportError:
+            pass
+
+    def _complete(self, text, state):
+        """Tab completion handler."""
+        if not text:
+            return None
+        # Complete commands (starting with :)
+        if text.startswith(':'):
+            options = [cmd for cmd in self._commands if cmd.startswith(text)]
+        else:
+            # Complete keywords and defined names
+            options = [kw for kw in self._keywords if kw.startswith(text)]
+            options += [name for name in self.namespace
+                       if name.startswith(text) and name not in options]
+        if state < len(options):
+            return options[state]
+        return None
+
     def write(self, text=""):
         self._output(text)
 
     # -- public entry point -------------------------------------------------
 
     def run(self):
-        self.write("Aura REPL v0.4 (type ':help' for help, ':q' to quit)")
+        self.write("Aura REPL v0.5 (type ':help' for help, ':q' to quit)")
         while True:
             prompt = self.cont_prompt if self.buffer else self.prompt
             try:
                 line = self._input(prompt)
             except EOFError:
                 if self.buffer:
-                    # Flush whatever is buffered before exiting.
-                    self.process_buffer()
+                    # Discard buffer on Ctrl+D instead of auto-executing
+                    self.write("\n(buffer discarded)")
                     self.buffer = ""
                     continue
                 self.write("")
                 break
             except KeyboardInterrupt:
-                self.write("\nKeyboardInterrupt (buffer cleared)")
+                # Clear current line/buffer on Ctrl+C
+                self.write("\n(buffer discarded)")
                 self.buffer = ""
                 continue
 
             result = self.feed(line)
             if result is not None and not result.continued and result.message:
                 self.write(result.message)
+        self._save_history()
         return 0
 
     def feed(self, line):
@@ -294,7 +360,13 @@ class AuraREPL:
             return ReplResult(ok=False, exception=exc)
 
     def handle_python(self, code):
-        """Execute raw Python inside the REPL namespace."""
+        """Execute raw Python inside the REPL namespace.
+
+        .. warning::
+            This bypasses Aura's type safety, mutability, and visibility
+            rules. Use ``:py`` only when you need to inspect Python objects
+            directly or run host-side diagnostics.
+        """
         if not code.strip():
             self.write("usage: :py <python code>")
             return ReplResult(ok=False)

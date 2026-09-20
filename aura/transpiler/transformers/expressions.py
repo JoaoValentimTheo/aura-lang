@@ -1144,32 +1144,5 @@ def _decl_names(name):
 
 
 def _pattern_names(pattern):
-    from aura.transpiler.ast import (
-        Identifier,
-        IdentifierPattern,
-        ListLiteral,
-        ListPattern,
-        SpreadExpr,
-        TupleLiteral,
-    )
-    if pattern is None:
-        return []
-    if isinstance(pattern, IdentifierPattern):
-        return [pattern.name]
-    if isinstance(pattern, Identifier):
-        return [pattern.name]
-    if isinstance(pattern, (TupleLiteral, ListLiteral)):
-        names = []
-        for el in pattern.elements:
-            names.extend(_pattern_names(el))
-        return names
-    if isinstance(pattern, ListPattern):
-        names = []
-        for sub in pattern.patterns:
-            names.extend(_pattern_names(sub))
-        if pattern.rest_pattern is not None:
-            names.extend(_pattern_names(pattern.rest_pattern))
-        return names
-    if isinstance(pattern, SpreadExpr):
-        return _pattern_names(pattern.expr)
-    return []
+    from aura.transpiler.pattern_utils import pattern_names
+    return pattern_names(pattern)

@@ -320,6 +320,11 @@ class AuraLanguageServer:
     def _diagnostic_from_error(self, exc):
         line = getattr(exc, 'line', 1) or 1
         column = getattr(exc, 'column', 1) or 1
+        msg = str(exc)
+        # Sanitize: strip internal paths and file system details
+        import re
+        msg = re.sub(r'File ".*?"', 'File "<source>"', msg)
+        msg = re.sub(r'/[^\s:]+\.py', '<module>', msg)
         return {
             'range': {
                 'start': {'line': max(0, line - 1), 'character': max(0, column - 1)},
@@ -327,7 +332,7 @@ class AuraLanguageServer:
             },
             'severity': 1,
             'source': 'aura',
-            'message': str(exc),
+            'message': msg,
         }
 
     def _hover(self, params):

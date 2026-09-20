@@ -559,6 +559,69 @@ def _stringify(args, kwargs):
     return Quote.call("str", args[0])
 
 
+def _once(args, kwargs):
+    """``once(body)`` → execute ``body`` only on first call; subsequent calls
+    are no-ops.
+
+    The body is wrapped in a flag-guarded block. A hygienic boolean flag
+    tracks whether the body has already executed.
+    """
+    flag = gensym("once_flag")
+    body = args[0] if len(args) == 1 else BlockExpr(args)
+    from aura.transpiler.ast import IfStmt, ExprStmt, AssignStmt
+    return BlockExpr([
+        Quote.var(flag, Quote.boolean_literal(False)),
+        IfStmt(
+            BinaryOp(Identifier(flag), "==", Quote.boolean_literal(False)),
+            BlockExpr([
+                AssignStmt(Identifier(flag), Quote.boolean_literal(True)),
+                body,
+            ]),
+        ),
+    ])
+
+
+def _retry(args, kwargs):
+    """``retry(count, body)`` → execute ``body`` up to ``count`` times.
+
+    ``count`` must be a compile-time literal integer. The body is wrapped
+    in a try/except that catches ``Exception``; on failure it retries until
+    the count is exhausted.
+    """
+    count_val = literal_value(args[0])
+    if count_val is _NOT_A_LITERAL or not isinstance(count_val, int) or count_val < 1:
+        raise MacroError("retry() requires a positive integer literal for count")
+    body = args[1] if len(args) > 1 else BlockExpr([])
+    attempt = gensym("retry_attempt")
+    last_err = gensym("retry_err")
+    from aura.transpiler.ast import WhileStmt, AugAssignStmt, TryStmt, ExceptClause, RaiseStmt
+    return BlockExpr([
+        Quote.var(attempt, Quote.int_literal(0)),
+        Quote.var(last_err, Quote.none_literal()),
+        WhileStmt(
+            BinaryOp(Identifier(attempt), "<", Quote.int_literal(count_val)),
+            BlockExpr([
+                TryStmt(
+                    BlockExpr([
+                        AugAssignStmt(Identifier(attempt), "+=", Quote.int_literal(1)),
+                        body,
+                    ]),
+                    [ExceptClause(
+                        Identifier("e"),
+                        BlockExpr([
+                            AssignStmt(Identifier(last_err), Identifier("e")),
+                        ]),
+                    )],
+                ),
+            ])
+        ),
+        IfStmt(
+            BinaryOp(Identifier(last_err), "!=", Quote.none_literal()),
+            BlockExpr([RaiseStmt(Identifier(last_err))]),
+        ),
+    ])
+
+
 def default_registry() -> MacroRegistry:
     """Return a registry preloaded with Aura's built-in compile-time macros."""
     registry = MacroRegistry()
@@ -572,4 +635,6 @@ def default_registry() -> MacroRegistry:
     registry.register("swap", _swap, min_args=2, max_args=2)
     registry.register("debug_value", _debug_value, min_args=1, max_args=1)
     registry.register("stringify", _stringify, min_args=1, max_args=1)
+    registry.register("once", _once, min_args=1, max_args=1)
+    registry.register("retry", _retry, min_args=2, max_args=2)
     return registry
