@@ -24,7 +24,7 @@ na **sintaxe e na checagem**, não em um novo runtime.
 
 ## O que Aura é hoje
 
-**Versão:** `0.2.0a4`. A referência da linguagem em
+**Versão:** `0.2.0a5`. A referência da linguagem em
 [`../language-reference/`](../language-reference/index.md) é a fonte de verdade
 exata; este tutorial constrói intuição e aponta para lá para detalhes.
 

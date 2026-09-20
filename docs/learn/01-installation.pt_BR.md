@@ -8,7 +8,7 @@ nav_exclude: true
 
 # 01 — Instalação
 
-> **Aura 0.2.0a4.** Este capítulo cobre instalar a toolchain, criar um projeto e
+> **Aura 0.2.0a5.** Este capítulo cobre instalar a toolchain, criar um projeto e
 > rodá-lo. Os comandos não dependem da versão.
 
 ## O que você precisa

@@ -334,7 +334,8 @@ class StatementTransformer:
 
         params = []
         for param in node.params:
-            if param.name == '*' and not param.is_variadic and not param.is_kwonly:
+            if param.name == '*' and not param.is_variadic:
+                # Bare `*` separator — marks subsequent params as keyword-only.
                 params.append('*')
             elif param.is_kwonly:
                 params.append(f"**{py_safe_name(param.name)}")
@@ -708,7 +709,8 @@ class StatementTransformer:
         for param in node.params:
             if param.name in ("self", "cls"):
                 continue
-            if param.name == '*' and not param.is_variadic and not param.is_kwonly:
+            if param.name == '*' and not param.is_variadic:
+                # Bare `*` separator — marks subsequent params as keyword-only.
                 params.append('*')
             elif param.is_kwonly:
                 params.append(f"**{py_safe_name(param.name)}")
@@ -968,7 +970,8 @@ class StatementTransformer:
         for param in method.params or []:
             if param.name in ("self", "cls"):
                 continue
-            if param.name == '*' and not param.is_variadic and not param.is_kwonly:
+            if param.name == '*' and not param.is_variadic:
+                # Bare `*` separator — marks subsequent params as keyword-only.
                 params.append('*')
             elif param.is_kwonly:
                 params.append(f"**{py_safe_name(param.name)}")
@@ -1044,12 +1047,16 @@ class StatementTransformer:
             return f"{left} {op} {right}"
         elif isinstance(node.expr, BinaryOp) and node.expr.op == '??=':
             # Null-coalescing assignment: `x ??= v` -> `x = x if x is not None else v`
+            # For complex LHS, evaluate once via a temp variable to avoid triple-evaluation.
             left = self.expr_transformer.transform(node.expr.left)
             if left.startswith('(') and left.endswith(')'):
                 left = left[1:-1]
             self._record_assign_targets(node.expr.left)
             right = self.expr_transformer.transform(node.expr.right)
-            return f"{left} = {left} if {left} is not None else {right}"
+            if left.isidentifier():
+                return f"{left} = {left} if {left} is not None else {right}"
+            _tmp = f"_aura_nc_{id(node) & 0xFFFF:04x}"
+            return f"{_tmp} = {left}; {left} = {_tmp} if {_tmp} is not None else {right}"
 
         expr = node.expr
 
@@ -1210,8 +1217,10 @@ class StatementTransformer:
             return f"range({', '.join(args)})"
 
         if isinstance(iterable, RangeExpr):
-            iterable.step = step_node
-            return self.expr_transformer.transform(iterable)
+            # Create a copy to avoid mutating the original AST node.
+            from aura.transpiler.ast import RangeExpr as _RE
+            _copy = _RE(iterable.start, iterable.end, step_node)
+            return self.expr_transformer.transform(_copy)
 
         step = self.expr_transformer.transform(step_node)
         base = self.expr_transformer.transform(iterable)

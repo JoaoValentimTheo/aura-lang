@@ -9,7 +9,7 @@ has_children: true
 
 # Aura Language Reference
 
-**Version:** 0.2.0a4 · **Extracted from:** `aura/parser/to_ast.py` and
+**Version:** 0.2.0a5 · **Extracted from:** `aura/parser/to_ast.py` and
 `aura/transpiler/` · **Model:** mirrors the Kof language reference.
 
 This directory is the **Aura language reference**. It describes *what a valid

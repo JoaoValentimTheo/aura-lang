@@ -210,7 +210,9 @@ class ExpressionTransformer:
                 expr = self.transform(item.expr)
                 items.append(f"**{expr}")
             else:
-                # Fallback?
+                # Intentionally drop invalid dict items (e.g. bare literals).
+                # The parser may produce these in recovery mode; silently
+                # dropping them keeps the output valid Python.
                 pass
 
         return "AuraDict({" + ", ".join(items) + "})"
@@ -648,7 +650,8 @@ class ExpressionTransformer:
     # ========== Lambda ==========
     def _render_param(self, param):
         """Render one lambda parameter, honouring `*args`/`**kwargs`/bare `*`."""
-        if param.name == '*' and not param.is_variadic and not param.is_kwonly:
+        if param.name == '*' and not param.is_variadic:
+            # Bare `*` separator — marks subsequent params as keyword-only.
             return '*'
         if param.is_kwonly:
             return f"**{py_safe_name(param.name)}"
@@ -988,7 +991,9 @@ class ExpressionTransformer:
 
     def transform_MemberPattern(self, node):
         """Render a dotted member pattern (`Color.RED`) as a value pattern."""
-        return self.transform(node.expr)
+        obj = self.transform(node.expr.obj)
+        member = node.expr.member
+        return f"{obj}.{member}"
 
 
 # ============================================================================

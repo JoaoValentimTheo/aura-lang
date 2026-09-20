@@ -44,11 +44,12 @@ example, a whole-program rule). Every checker attaches a real
 
 | Code | Name | Message | Emitted by |
 |------|------|---------|------------|
-| `E004` | `INVALID_SYNTAX` | Construct is not allowed here | parser, rule checker |
+| `E004` | `INVALID_SYNTAX` | Construct is not allowed here | rule checker |
 
-The parser reports lexical and syntax errors by raising a `SyntaxError` that
-carries `line`/`column`/`filename`. These are surfaced directly by the CLI and
-the LSP rather than as a separate code.
+The parser reports lexical and syntax errors by raising a structured `SyntaxError`
+that carries `line`/`column`/`filename`. These are surfaced directly by the CLI
+and the LSP rather than as a separate code. `E004` is emitted by the **rule
+checker** for constructs the parser accepts but the language rules reject.
 
 ## Errors — types (`E1xx`)
 
@@ -92,8 +93,13 @@ to Python rather than reported. See "Removed codes" below.
 | `E317` | `SELF_IN_STATIC` | `self`/`cls` used in a static method | rule checker |
 | `E318` | `UNKNOWN_LABEL` | `break`/`continue` names a label that is not an enclosing loop | rule checker |
 | `E319` | `USED_BEFORE_DECLARED` | a local is used before its declaration | mutability checker |
-| `E320` | `DECORATOR_ON_FIELD` | a method decorator applied to a field | parser (SyntaxError) |
+| `E320` | `DECORATOR_ON_FIELD` | a method decorator applied to a field | **reserved** (parser raises `SyntaxError` directly) |
 | `E321` | `ABSTRACT_SUPER_CALL` | `super.method()` targets an abstract method with no implementation | rule checker |
+
+**Note on E320:** `DECORATOR_ON_FIELD` is defined in the enum for forward
+compatibility but is **not yet wired up**. The parser raises `SyntaxError`
+directly when a decorator appears on a field. When the rule checker is extended
+to emit structured diagnostics, E320 will be used.
 
 ## Errors — I/O and configuration (`E4xx`)
 

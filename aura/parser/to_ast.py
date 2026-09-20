@@ -1175,6 +1175,7 @@ class Parser:
 
         self.consume(expected_value='(')
         params = []
+        seen_star = False
         if not self.check(')'):
             while True:
                 # Handle *, *args and **kwargs
@@ -1188,10 +1189,18 @@ class Parser:
                     self.consume()
                     # Bare `*` marks the following parameters keyword-only.
                     if self.check(',') or self.check(')'):
-                        params.append(Parameter('*', None, None, is_variadic=False, is_kwonly=False))
+                        if seen_star:
+                            raise self.error(
+                                "a function may declare only one '*' parameter")
+                        seen_star = True
+                        params.append(Parameter('*', None, None, is_variadic=False, is_kwonly=True))
                         if not self.match(','):
                             break
                         continue
+                    if seen_star:
+                        raise self.error(
+                            "a function may declare only one '*' parameter")
+                    seen_star = True
                     is_variadic = True
 
                 p_name = self._check_param_name(self.consume(expected_type='IDENT'))
@@ -2416,7 +2425,7 @@ class Parser:
     def _pattern_from_expr(self, pattern_expr):
         if isinstance(pattern_expr, Identifier) and pattern_expr.name == '_':
             return WildcardPattern()
-        if isinstance(pattern_expr, (IntLiteral, StrLiteral, BoolLiteral, NoneLiteral)):
+        if isinstance(pattern_expr, (IntLiteral, FloatLiteral, StrLiteral, BoolLiteral, NoneLiteral)):
             return LiteralPattern(pattern_expr)
         if isinstance(pattern_expr, Identifier):
             return IdentifierPattern(pattern_expr.name)
@@ -2990,7 +2999,7 @@ class Parser:
                         raise self.error(
                             "a lambda may declare only one '*' parameter")
                     seen_star = True
-                    params.append(Parameter('*'))
+                    params.append(Parameter('*', None, None, is_variadic=False, is_kwonly=True))
                     if not self.match(','):
                         break
                     continue

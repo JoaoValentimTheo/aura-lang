@@ -9,7 +9,7 @@ nav_order: 11
 
 # 01 — Installation
 
-> **Aura 0.2.0a4.** This chapter covers installing the toolchain, creating a
+> **Aura 0.2.0a5.** This chapter covers installing the toolchain, creating a
 > project and running it. The commands do not depend on the version.
 
 ## What you need

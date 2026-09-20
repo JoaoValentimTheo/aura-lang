@@ -32,7 +32,6 @@ env/
 *.swp
 *.swo
 *~
-.DS_Store
 
 # Testing
 .pytest_cache/
@@ -59,7 +58,6 @@ Thumbs.db
 # Project specific
 output/
 *.log
-.DS_Store
 
 # Unrelated Azure AI tooling that may appear in the workspace
 .agentignore
