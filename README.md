@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/JoaoValentimTheo/aura-lang/master/aura_logo.png" alt="Aura" width="220">
+<img src="https://raw.githubusercontent.com/JoaoValentimTheo/aura-lang/master/docs/assets/aura_logo.png" alt="Aura" width="220">
 
 # Aura
 
