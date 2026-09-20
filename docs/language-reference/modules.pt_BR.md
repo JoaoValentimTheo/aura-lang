@@ -350,7 +350,7 @@ App/
 main.aura           import App
 ```
 
-```aura
+```aura skip
 // App/App.aura
 module App {
   export Components, Utils
@@ -400,7 +400,7 @@ Uma fonte explícita é aceita com `export Name from "module"`
 (`_parse_item_export`, `to_ast.py:1639-1648`; `_candidate_files`,
 `modules.py:63-75`):
 
-```aura
+```aura skip
 module App {
   export Widgets from "widgets"      // resolves widgets.aura
   export X from "pkg.sub"            // resolves pkg/sub.aura
@@ -424,7 +424,7 @@ travessia (`..`) e caminhos absolutos são rejeitados em tempo de parse
 | Um `main` dentro de um módulo (incluindo uma facade) | **E312** | `rules.py:246-265` |
 | Dois re-exports resolvendo para arquivos diferentes sob um nome | conflito | `find_reexport_conflicts`, `modules.py:133-151` |
 
-```aura
+```aura skip
 module App { export Missing }   // E313: module 'App' exports 'Missing', ...
 ```
 

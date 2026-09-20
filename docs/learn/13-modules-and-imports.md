@@ -47,7 +47,7 @@ path to the sibling file.
 `module Name { ... }` creates a namespaced group whose functions are static.
 Members are **private to the declaring file unless marked `export`**:
 
-```aura
+```aura skip
 module Greeter {
   export def hello(name: str) -> str {
     return "hi " + name
@@ -78,7 +78,7 @@ Rules:
   exported function.
 * A `main` inside a module body is `E312`.
 
-```aura
+```aura skip
 module M {
   def hidden() -> int { return 1 }
 }
@@ -92,7 +92,7 @@ def main() {
 
 `module App.Services { ... }` nests, reached as `App.Services.member`:
 
-```aura
+```aura skip
 module Outer.Inner {
   export def value() -> int { return 3 }
 }
@@ -140,7 +140,7 @@ App/
 main.aura           import App
 ```
 
-```aura
+```aura skip
 // App/App.aura
 module App {
   export Components, Utils

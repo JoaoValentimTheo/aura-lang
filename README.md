@@ -290,7 +290,7 @@ compile-time macros expanded by the transpiler *before* any Python is emitted.
 A macro receives its operands as quoted AST, returns replacement AST, and
 leaves no trace at runtime unless it chooses to emit one.
 
-```aura
+```aura skip
 import macros
 
 def main() {

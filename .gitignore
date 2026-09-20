@@ -76,3 +76,6 @@ session_backup.txt
 session_backup*.txt
 session-ses_*.md
 .reorg/
+aura.toml
+src/
+tests/test_main.aura

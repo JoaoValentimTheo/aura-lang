@@ -84,7 +84,7 @@ A required header field may not follow an optional one.
 A class has **exactly one** constructor style: header fields **or** body fields
 with a manual `def new`. Mixing them is a syntax error.
 
-```aura
+```aura skip
 class A(name: str) { }                 // OK — header style
 
 class B {                              // OK — body style

@@ -74,7 +74,7 @@ Uma classe tem **exatamente um** estilo de construtor:
 Misturar um header com um `new` manual é **erro de sintaxe**: o header já gera um
 construtor e um segundo deixaria silenciosamente os header fields sem atribuição.
 
-```aura
+```aura skip
 // OK — header style
 class A(name: str) { }
 

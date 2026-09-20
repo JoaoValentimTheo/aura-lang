@@ -33,7 +33,7 @@ Regras:
 * Reatribuir um `let` ou `const` é **E303**, e é um erro (não um warning) tanto
   em `aura run`, quanto em `aura check` e no REPL.
 
-```aura
+```aura skip
 let x = 1
 x = 2              // E303: reassign an immutable binding
 

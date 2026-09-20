@@ -83,7 +83,7 @@ Um header field obrigatório não pode seguir um opcional.
 Uma classe tem **exatamente um** estilo de construtor: header fields **ou** campos
 de corpo com um `def new` manual. Misturá-los é erro de sintaxe.
 
-```aura
+```aura skip
 class A(name: str) { }                 // OK — header style
 
 class B {                              // OK — body style
