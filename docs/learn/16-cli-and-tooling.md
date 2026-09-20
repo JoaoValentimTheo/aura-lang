@@ -196,3 +196,8 @@ aura test tests/
 * `init`, `transpile`, `format`, `lint`.
 * `test` (self-driving files), `debug`, `lsp`.
 * Dependency and environment commands; a typical edit loop.
+
+---
+
+Continue to the [Language Reference →](../language-reference/index.md) for exact
+rules, or revisit the [index →](index.md) for an overview.

@@ -19,7 +19,7 @@ standard library. Every example passes `aura check` and runs.
 | 01 | Option (result-or-null) | `examples/aup/option.aura` | `none`, `guard`, `??`, `try`-as-expression |
 | 02 | Builder | `examples/aup/builder.aura` | `let mut`, methods returning `self` |
 | 03 | Strategy | `examples/aup/strategy.aura` | traits → ABCs, polymorphism |
-| 04 | Pipeline | `examples/aup/pipeline.aura` | `\|>`, `map`/`filter`/`reduce`/`take` |
+| 04 | Pipeline | `examples/aup/pipeline.aura` | `&#124;>`, `map`/`filter`/`reduce`/`take` |
 | 05 | Typed error handling | `examples/aup/error_handling.aura` | `throw`, `catch Type as e`, `finally`, `try` expression |
 | 06 | Memoization / caching | `examples/aup/memoize.aura` | `@memoize`, `@cache(maxsize)` |
 | 07 | Observer | `examples/aup/observer.aura` | lambdas/closures, dict of callback lists |

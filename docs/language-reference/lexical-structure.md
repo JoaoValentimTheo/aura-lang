@@ -230,13 +230,13 @@ A complete operator token table (`to_ast.py:420-441`, verified by *probe*):
 | `?` `@` `~` | punctuation | `??=` | coalescing assignment |
 | `+` `-` `*` `/` `%` | arithmetic | `**=` | power assignment |
 | `==` `!=` `<` `>` `<=` `>=` | comparison | `<<=` `>>=` | shift assignment |
-| `+=` `-=` `*=` `/=` `%=` | compound assign | `&= \|= ^=` | compound assign |
+| `+=` `-=` `*=` `/=` `%=` | compound assign | `&= &#124;= ^=` | compound assign |
 | `<<` `>>` | shift | `..` | range (inclusive) |
 | `->` | return / case arrow | `=>` | lambda arrow |
 | `??` | null coalescing | `?:` | Elvis |
 | `?.` | safe navigation | `?[` | safe index |
-| `\|>` | pipe | `**` | power |
-| `& \| ^` | bitwise | | |
+| `&#124;>` | pipe | `**` | power |
+| `& &#124; ^` | bitwise | | |
 
 `@` introduces decorators (`grammar.md` §2, §3.3).
 
@@ -265,7 +265,7 @@ produce a positioned error when reached in an expression position:
 |---|---|---|
 | `!x` | `'!' is not part of Aura; use 'not' instead` | `to_ast.py:2435-2437` |
 | `a && b` | `'&&' is not part of Aura; use 'and' instead` | `to_ast.py:2497-2502` |
-| `a \|\| b` | `'\|\|' is not part of Aura; use 'or' instead` | `to_ast.py:2497-2502` |
+| `a &#124;&#124; b` | `'&#124;&#124;' is not part of Aura; use 'or' instead` | `to_ast.py:2497-2502` |
 | `1...10` | `unexpected '...' in expression; use '..' or '..<' for ranges` | `to_ast.py:2491-2494` |
 | `*x` / `**x` / `...x` in a value position | `'…' spread is not allowed in an expression` | `to_ast.py:2456-2466` |
 | `x is "a"` | `'is' compares identity; use '==' (or '!=') …` | `to_ast.py:2567-2577` |

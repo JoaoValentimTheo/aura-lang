@@ -28,12 +28,12 @@ Número maior liga mais fortemente. Ela corresponde a [grammar.md](grammar.md) �
 
 | Prec | Operadores | Assoc | Compila para |
 |------|-----------|-------|-------------|
-| 1 | `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `&=`, `\|=`, `^=`, `<<=`, `>>=`, `??=`, `\|>` | direita (pipe esquerda) | atribuição / `f(x)` |
+| 1 | `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `&=`, `&#124;=`, `^=`, `<<=`, `>>=`, `??=`, `&#124;>` | direita (pipe esquerda) | atribuição / `f(x)` |
 | 2 | `? :` | direita | `(t if c else f)` |
 | 3 | `or` | esquerda | `(a or b)` |
 | 4 | `and` | esquerda | `(a and b)` |
 | 5 | `==`, `!=`, `<`, `>`, `<=`, `>=`, `in`, `not in`, `is`, `is not` | esquerda | `(a op b)` |
-| 6 | `\|` | esquerda | `(a \| b)` |
+| 6 | `&#124;` | esquerda | `(a &#124; b)` |
 | 7 | `^` | esquerda | `(a ^ b)` |
 | 8 | `&` | esquerda | `(a & b)` |
 | 9 | `<<`, `>>` | esquerda | `(a << b)` |
@@ -300,9 +300,9 @@ argumento (`transform_PipeExpr:578-591`).
 
 | Fonte | Compila para |
 |--------|-------------|
-| `a \|> f` | `f(a)` |
-| `a \|> f(b)` | `f(a, b)` |
-| `a \|> f \|> g` | `g(f(a))` |
+| `a &#124;> f` | `f(a)` |
+| `a &#124;> f(b)` | `f(a, b)` |
+| `a &#124;> f &#124;> g` | `g(f(a))` |
 
 - Pipe é o **operador de expressão mais frouxo** (nível 1) e encadeia **da
   esquerda para a direita** (`to_ast.py:2558-2563`).

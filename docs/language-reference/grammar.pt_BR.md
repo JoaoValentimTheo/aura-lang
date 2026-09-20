@@ -453,12 +453,12 @@ filtra por tipo, e `catch as e { }` vincula toda exceção. A antiga forma ambí
 
 | Nível | Operadores | Associatividade |
 |-------|-----------|---------------|
-| 1 | `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `&=`, `\|=`, `^=`, `<<=`, `>>=`, `??=`, `\|>` | direita (pipe esquerda) |
+| 1 | `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `&=`, `&#124;=`, `^=`, `<<=`, `>>=`, `??=`, `&#124;>` | direita (pipe esquerda) |
 | 2 | `? :` (ternário) | direita |
 | 3 | `or` | esquerda |
 | 4 | `and` | esquerda |
 | 5 | `==`, `!=`, `<`, `>`, `<=`, `>=`, `in`, `not in`, `is`, `is not` | esquerda |
-| 6 | `\|` (bit a bit) | esquerda |
+| 6 | `&#124;` (bit a bit) | esquerda |
 | 7 | `^` | esquerda |
 | 8 | `&` | esquerda |
 | 9 | `<<`, `>>` | esquerda |
@@ -601,7 +601,7 @@ para sua substituição canônica:
 | `init` | `new` | one constructor name |
 | `!x` | `not x` | one negation operator |
 | `&&` | `and` | |
-| `\|\|` | `or` | |
+| `&#124;&#124;` | `or` | |
 | `null` | `none` | one null literal |
 | `volatily` | `volatile` | typo alias |
 | `fn foo<T>()` / `class Foo<T>` | `foo[T]` / `Foo[T]` | brackets only |

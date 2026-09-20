@@ -48,7 +48,7 @@ no fallthrough. `:` and `=>` case syntax are rejected with a pointed message.
 | Literal | `case 0`, `case "quit"` | nothing |
 | Binding | `case n` | `n` |
 | Guard | `case n if n > 0` | `n`, only if the guard holds |
-| Or-pattern | `case 1 \| 2` | — |
+| Or-pattern | `case 1 &#124; 2` | — |
 | Enum member | `case Color.RED` | — |
 | List/tuple destructuring | `case [a, b]`, `case [first, *rest]` | `a`, `b`, ... |
 

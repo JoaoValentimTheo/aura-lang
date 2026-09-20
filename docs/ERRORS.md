@@ -58,8 +58,15 @@ the LSP rather than as a separate code.
 | `E105` | `WRONG_ARGUMENT_COUNT` | function called with the wrong arity | type checker |
 | `E106` | `WRONG_ARGUMENT_TYPE` | argument of the wrong type | type checker |
 | `E108` | `INCOMPATIBLE_OPERANDS` | operator used on incompatible operands | type checker |
-| `E109` | `NON_EXHAUSTIVE_MATCH` | `'match' over <subject> is not exhaustive` | type checker (warning) |
+| `E109` | `NON_EXHAUSTIVE_MATCH` | `'match' over <subject> is not exhaustive` | type checker (**warning**; see note) |
 | `E110` | `UNKNOWN_TYPE_CONSTRAINT` | `type parameter '<name>' has unknown constraint '<constraint>'` | type checker |
+
+**Note on E109:** `NON_EXHAUSTIVE_MATCH` carries an `E` prefix but is emitted
+as a **warning** (`_add_warning`), not an error. This is intentional: a
+non-exhaustive match is a correctness risk, but blocking compilation would break
+existing code that relies on wildcard fallthrough. The `W` prefix is reserved for
+style and unused-code warnings; E109 occupies the `E1xx` range because it is a
+type-system diagnostic.
 
 Undefined-name and non-callable diagnostics are not emitted: Aura is gradually
 typed and resolves names at runtime, so a name the checker cannot prove is left

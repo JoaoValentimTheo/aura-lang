@@ -226,7 +226,7 @@ A `{` after a **capitalized** identifier is a struct init
 ## 7. Function types
 
 A lambda's type is a **function type** written `(T, …) -> R`
-(`grammar.md` §4, `LANGUAGE.md` §4).
+(`grammar.md` §4, `types.md` §4).
 
 ```aura
 let handler: (int, int) -> int = add

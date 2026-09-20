@@ -200,7 +200,7 @@ def map[T, R](f: (T) -> R, items: [T]) -> [R] { return [f(i) for i in items] }
 - **UNSPECIFIED:** type parameters are erased at transpile time — the emitted
   Python function is untyped (`transform_FunctionDecl`,
   `statements.py:319-391`), so `id(7)` needs no explicit `[int]`.
-- Constraints are checked for resolution elsewhere (see `TYPES.md`), not here.
+- Constraints are checked for resolution elsewhere (see `type-system.md`), not here.
 
 *Evidence:* *probe* — `def id[T](x: T) -> T { return x }` transpiles to
 `def id(x): return x`.
@@ -251,7 +251,7 @@ def main() {
 - `@staticmethod` is emitted for `is_static` (`statements.py:322-323`).
 
 There is **no overloading** at the language level: a repeated name in the same
-class body is **E301** (see `LANGUAGE.md` §8 "Unique members"). Top-level
+class body is **E301** (see `classes.md` §8 "Unique members"). Top-level
 functions with the same name would silently overwrite in Python.
 
 ---
@@ -263,7 +263,7 @@ decorator      = "@" , dotted_name , [ "(" , [ arg_list ] , ")" ] ;
 ```
 
 A decorator on a `def` is allowed; a decorator on a **field** is rejected
-(`E320`, `LANGUAGE.md` §17). Built-in runtime macros include `@debug`, `@timeit`,
+(`E320`, `classes.md` §17). Built-in runtime macros include `@debug`, `@timeit`,
 `@memoize`, `@cache(maxsize=…)`, `@must_return` and `@deprecated(…)`;
 `@property`, `@staticmethod` and `@classmethod` are class-member decorators.
 
@@ -309,4 +309,4 @@ def main(args: [string]) {
 
 `main` may return an `int` to set the exit code, and may be `async`.
 
-*Evidence:* `rules.py:_check_main`, `LANGUAGE.md` §1.
+*Evidence:* `rules.py:_check_main`, `statements.md` §1.

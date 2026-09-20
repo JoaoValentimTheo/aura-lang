@@ -37,7 +37,7 @@ bare-export    = identifier , { "," , identifier } , [ "from" , string ] , [ ";"
 `module Name { ... }` cria uma classe com namespace cujas funções são estáticas
 (`transform_Module`, `statements.py:1465-1501`). Membros podem ser `def`, `class`,
 `trait`, `enum`, `type`, dados `let`/`const`, ou um `module` aninhado
-(`LANGUAGE.md` §9).
+(`modules.md` §9).
 
 ```aura
 module MyLib {
@@ -232,13 +232,13 @@ print(PI)                         // 3.141592653589793
 Regras:
 
 - A **forma com chaves não pode ser combinada com `as`** no mesmo statement
-  (`LANGUAGE.md` §16). Um alias no módulo mais nomes selecionados
+  (`modules.md` §16). Um alias no módulo mais nomes selecionados
   (`import a.b as c { x }`) é tratado emitindo tanto um import aliasado quanto um
   `from ... import` (`transform_ImportStmt`, `statements.py:1358-1364`).
 - **Não há separador `::`**; um caminho de módulo é pontuado
   (`to_ast.py:1828-1830`).
 - Um wildcard é escrito apenas como `from module import *`; não há `*` na forma
-  com chaves (`LANGUAGE.md` §16).
+  com chaves (`modules.md` §16).
 - Imports são **declarações de nível superior**; o parser os lê antes/no fluxo de
   statements do programa. Imports relativos e relativos ao pai não fazem parte da
   gramática.
@@ -249,7 +249,7 @@ Regras:
 
 Um arquivo Aura simples é importável com a mesma sintaxe. `import util` liga o
 arquivo `util.aura`; `import pkg.util` liga `pkg/util.aura`; um arquivo importado
-como módulo **não precisa de `main`** (`LANGUAGE.md` §16.2, §1). O runtime instala
+como módulo **não precisa de `main`** (`modules.md` §16.2, §1). O runtime instala
 um import hook que mapeia o caminho Aura pontuado para o arquivo `.aura` irmão
 (`install_aura_import_hook`, chamado de `_install_aura_imports`,
 `cli.py:118-127`).
@@ -339,7 +339,7 @@ local scope (function → block chain)
 Um módulo pode atuar como a **facade** de uma pasta-fonte: um `export Name` nu
 (sem `def`/`class`) re-exporta um símbolo definido em um arquivo irmão. Coloque a
 facade em uma pasta com o nome dela, para que `App/App.aura` seja o ponto de
-entrada do pacote `App` (`LANGUAGE.md` §9; `_parse_item_export`,
+entrada do pacote `App` (`modules.md` §9; `_parse_item_export`,
 `to_ast.py:1633-1651`).
 
 ```text

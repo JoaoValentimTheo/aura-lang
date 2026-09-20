@@ -5,6 +5,8 @@ parent: Aura Language Reference
 nav_order: 5
 ---
 
+[English](grammar.md) · [Português](grammar.pt_BR.md)
+
 # Aura Grammar Specification
 
 This document is the **single source of truth** for Aura's concrete syntax. The
@@ -446,12 +448,12 @@ by type, and `catch as e { }` binds every exception. The old ambiguous
 
 | Level | Operators | Associativity |
 |-------|-----------|---------------|
-| 1 | `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `&=`, `\|=`, `^=`, `<<=`, `>>=`, `??=`, `\|>` | right (pipe left) |
+| 1 | `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `&=`, `&#124;=`, `^=`, `<<=`, `>>=`, `??=`, `&#124;>` | right (pipe left) |
 | 2 | `? :` (ternary) | right |
 | 3 | `or` | left |
 | 4 | `and` | left |
 | 5 | `==`, `!=`, `<`, `>`, `<=`, `>=`, `in`, `not in`, `is`, `is not` | left |
-| 6 | `\|` (bitwise) | left |
+| 6 | `&#124;` (bitwise) | left |
 | 7 | `^` | left |
 | 8 | `&` | left |
 | 9 | `<<`, `>>` | left |
@@ -594,7 +596,7 @@ its canonical replacement:
 | `init` | `new` | one constructor name |
 | `!x` | `not x` | one negation operator |
 | `&&` | `and` | |
-| `\|\|` | `or` | |
+| `&#124;&#124;` | `or` | |
 | `null` | `none` | one null literal |
 | `volatily` | `volatile` | typo alias |
 | `fn foo<T>()` / `class Foo<T>` | `foo[T]` / `Foo[T]` | brackets only |

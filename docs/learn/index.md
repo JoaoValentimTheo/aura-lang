@@ -81,7 +81,7 @@ cover modules, Python interop, decorators/macros and the toolchain.
 | 07 | [Classes and Objects](07-classes-and-objects.md) | Constructors, fields, methods, properties |
 | 08 | [Traits and Abstract Classes](08-traits-and-abstract-classes.md) | Contracts and polymorphism |
 | 09 | [Collections](09-collections.md) | Lists, dicts, sets, tuples, comprehensions |
-| 10 | [Lambdas and Functional](10-lambdas-and-functional.md) | `=>`, closures, `map`/`filter`/`reduce`, `\|>` |
+| 10 | [Lambdas and Functional](10-lambdas-and-functional.md) | `=>`, closures, `map`/`filter`/`reduce`, `&#124;>` |
 | 11 | [Pattern Matching](11-pattern-matching.md) | `match`, guards, destructuring, enums |
 | 12 | [Error Handling](12-error-handling.md) | `try`/`catch`, `throw`, `guard`, `assert` |
 | 13 | [Modules and Imports](13-modules-and-imports.md) | `module`, `export`, imports |
@@ -99,7 +99,7 @@ Each chapter points to the example closest to its topic; the full set is:
 | `hello.aura` | 02 | the smallest program |
 | `fibonacci.aura` | 05, 06 | loops and mutable bindings |
 | `prime_checker.aura` | 05, 09 | functions and comprehensions |
-| `functional.aura` | 10 | lambdas, `\|>`, closures |
+| `functional.aura` | 10 | lambdas, `&#124;>`, closures |
 | `pattern_matching.aura` | 11 | `match` with guards and destructuring |
 | `error_handling.aura` | 12 | `try`/`catch`/`finally`, `guard`, `throw` |
 | `classes.aura` | 07, 08 | classes, `extends`, `@property`, visibility |
@@ -125,5 +125,10 @@ aura run examples/tour.aura
   not repeat it in depth.
 * **Limitation** — behaviour the reference describes but the current build
   rejects or does not enforce; called out where it matters.
+* **Gotcha** — a common mistake or surprising behaviour worth knowing about.
+* **UNSPECIFIED** — the language does not yet define this point; behaviour may
+  change.
+* **TARGET-SPECIFIC** — behaviour comes from the CPython host, documented as a
+  rule.
 
 Start here: [Introduction →](00-introduction.md)

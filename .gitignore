@@ -41,6 +41,10 @@ hypothesis/
 .hypothesis/
 htmlcov/
 
+# Linting/type-checking caches
+.mypy_cache/
+.ruff_cache/
+
 # Temporary files
 *.tmp
 *.bak

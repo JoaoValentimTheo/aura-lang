@@ -411,12 +411,12 @@ Precedence (lowest to highest — `grammar.md` §6.1, matching the parser table
 
 | Level | Operators |
 |---|---|
-| 1 | `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `&=`, `\|=`, `^=`, `<<=`, `>>=`, `??=`, `\|>` |
+| 1 | `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `&=`, `&#124;=`, `^=`, `<<=`, `>>=`, `??=`, `&#124;>` |
 | 2 | `? :` (ternary) |
 | 3 | `or` |
 | 4 | `and` |
 | 5 | `==` `!=` `<` `>` `<=` `>=` `in` `not in` `is` `is not` |
-| 6 | `\|` |
+| 6 | `&#124;` |
 | 7 | `^` |
 | 8 | `&` |
 | 9 | `<<` `>>` |
@@ -608,7 +608,7 @@ enum E { A B }              // ❌ members are comma-separated: 'enum E { A, B }
 | `null` | `none` | `to_ast.py:2637-2639` |
 | `True` / `False` / `None` | `true` / `false` / `none` | `to_ast.py:533-537` |
 | `!x` | `not x` | `to_ast.py:2435-2437` |
-| `&&` / `\|\|` | `and` / `or` | `to_ast.py:2497-2502` |
+| `&&` / `&#124;&#124;` | `and` / `or` | `to_ast.py:2497-2502` |
 | `case x:` / `case x =>` | `case x ->` | `to_ast.py:2310-2317` |
 | `class C(A)` | `class C extends A` | `to_ast.py:1270` |
 | `implements` | `extends` | `to_ast.py:1887-1891` |

@@ -438,7 +438,7 @@ with_item      = expression , [ "as" , identifier ] ;
 
 Uses `__enter__`/`__exit__`; `async with` uses `__aenter__`/`__aexit__`. The
 documented rule is that `async with` is only valid inside an `async def`
-(`grammar.md` §5.3, `LANGUAGE.md` §16b) — **UNSPECIFIED:** unlike `await`, this
+(`grammar.md` §5.3, `modules.md` §16b) — **UNSPECIFIED:** unlike `await`, this
 placement is **not** enforced by the rule checker (*probe*: `async with` in a
 sync `def` produces no diagnostic; it fails only if the target Python is
 invalid).

@@ -41,7 +41,7 @@ python3 tests/test_regressions.py
 | 5 | `**kwargs` parameter broken | `SyntaxError: Expected IDENT but got '**'` | Distinguish `*` from `**`; emit `**name` |
 | 6 | Multiple assignment unsupported | `let a, b = 0, 1` failed | Tuple target + `parse_trailing_tuple` |
 | 7 | Multiple return unsupported | `return a, b` failed | `parse_trailing_tuple` in `parse_return_stmt` |
-| 8 | Bitwise operators missing | `5 & 3` failed | Added `&`, `\|`, `^`, `<<`, `>>` precedence and tokenizer entries |
+| 8 | Bitwise operators missing | `5 & 3` failed | Added `&`, `&#124;`, `^`, `<<`, `>>` precedence and tokenizer entries |
 | 9 | `implements` trait syntax unsupported | `Expected '{' but got 'implements'` | Parse `implements` into base classes |
 | 10 | Structural type annotations unsupported | `let u: {name: str}` failed | `parse_type` handles `{...}` |
 | 11 | `...rest` destructuring generated `... rest` | Invalid Python | Normalize `...`/`*` spreads |
@@ -380,7 +380,7 @@ Closing the remaining interoperability and developer-experience gaps.
 | # | Change | Detail |
 |---|--------|--------|
 | 87 | Dependency manager | `aura init/add/install/deps` backed by `aura.toml` |
-| 88 | Version tooling | `aura version [major\|minor\|patch\|x.y.z]` keeps `pyproject.toml` and `aura/__init__.py` in sync |
+| 88 | Version tooling | `aura version [major&#124;minor&#124;patch&#124;x.y.z]` keeps `pyproject.toml` and `aura/__init__.py` in sync |
 | 89 | Trace debugger | `aura debug [--trace] [--show-code]` with generated→Aura line mapping |
 | 90 | Language server | `aura lsp`: diagnostics, hover, completion, document symbols over stdio |
 | 91 | CI | GitHub Actions: tests on Python 3.10–3.13, CLI smoke test, distribution build |

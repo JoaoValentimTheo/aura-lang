@@ -48,7 +48,7 @@ apontada.
 | Literal | `case 0`, `case "quit"` | nada |
 | Binding | `case n` | `n` |
 | Guard | `case n if n > 0` | `n`, apenas se o guard valer |
-| Or-pattern | `case 1 \| 2` | — |
+| Or-pattern | `case 1 &#124; 2` | — |
 | Membro de enum | `case Color.RED` | — |
 | Desestruturação de lista/tupla | `case [a, b]`, `case [first, *rest]` | `a`, `b`, ... |
 

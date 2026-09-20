@@ -45,7 +45,7 @@ real multi-file projects". Ratings below 100 % name the concrete gap.
 | Control flow | 100 % | `if`/`unless`/`guard`/`match`/`while`/`until`/`loop`; labeled break/continue | — |
 | Pattern matching | 95 % | Literals, tuples/lists, guards, constructor patterns, enum members, wildcard; exhaustiveness warned (`E109`) | No nested-or-pattern coverage analysis |
 | Error handling | 95 % | `try`/`catch`/`finally`, typed catches, `throw`; custom hierarchies via `extends Error` or `(Error)` | No `finally` return-value rules |
-| Operators | 95 % | Full precedence table, bitwise, `?:`, `??`, `??=`, `?.`, `?[`, `\|>`, ranges, spreads, slicing | — |
+| Operators | 95 % | Full precedence table, bitwise, `?:`, `??`, `??=`, `?.`, `?[`, `&#124;>`, ranges, spreads, slicing | — |
 | String literals | 98 % | Escapes (`\n`, `\t`, `\uXXXX`), raw/byte prefixes, f-strings, triples | — |
 | Mutability rules | 98 % | `E303` with a real source location, enforced at every CLI entry point | Not surfaced by `aura lint` (which is style-only by design) |
 | Diagnostics | 98 % | Every diagnostic is a coded `E##`/`W##` with `file:line:column`; `docs/ERRORS.md` is the source of truth, kept in sync by a test | — |

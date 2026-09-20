@@ -127,8 +127,8 @@ Compatibility is `declared.is_compatible(actual)` (note the **direction**:
 | `bool → int` | ❌ | `BoolType().is_compatible(IntType())` is `False` (*probe*) |
 | `int → int?` (make optional) | ✅ | `UnionType.is_compatible` is `any(...)` (*probe*) |
 | **`int? → int`** (unwrap optional) | ✅ **unsoundly** | `UnionType({int,None}).is_compatible(int)` is `True` (*probe*) |
-| `int \| str → int` | ✅ | union accepts each member |
-| `int → int \| str` | ❌ (as *declared*) | `IntType().is_compatible(union)` is `False` (*probe*) |
+| `int &#124; str → int` | ✅ | union accepts each member |
+| `int → int &#124; str` | ❌ (as *declared*) | `IntType().is_compatible(union)` is `False` (*probe*) |
 | `[int] → [int]` | ✅ | `ListType.is_compatible` recurses element |
 | `[int] → [str]` | ❌ | `ListType.is_compatible` recurses element |
 | `{str:int} → {str:str}` | ❌ | `DictType.is_compatible` recurses both slots |
@@ -275,7 +275,7 @@ annotation does **not** reach Python as a type check.
 | `{K: V}` | `dict` |
 | `[T]` uniform braces | `list` |
 | `(A) -> B` or other `->` | `object` |
-| a union `T \| U` | the **literal** `T \| U` text |
+| a union `T &#124; U` | the **literal** `T &#124; U` text |
 | a bare name | that name |
 
 Consequences, verified by *probe*:

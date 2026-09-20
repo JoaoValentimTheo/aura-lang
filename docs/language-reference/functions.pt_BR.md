@@ -253,7 +253,7 @@ def main() {
 - `@staticmethod` é emitido para `is_static` (`statements.py:322-323`).
 
 Não há **sobrecarga** em nível de linguagem: um nome repetido no mesmo corpo de
-classe é **E301** (veja `LANGUAGE.md` §8 "Unique members"). Funções de nível
+classe é **E301** (veja `classes.md` §8 "Unique members"). Funções de nível
 superior com o mesmo nome sobrescreveriam silenciosamente em Python.
 
 ---
@@ -265,7 +265,7 @@ decorator      = "@" , dotted_name , [ "(" , [ arg_list ] , ")" ] ;
 ```
 
 Um decorator em um `def` é permitido; um decorator em um **campo** é rejeitado
-(`E320`, `LANGUAGE.md` §17). Macros de runtime embutidas incluem `@debug`,
+(`E320`, `classes.md` §17). Macros de runtime embutidas incluem `@debug`,
 `@timeit`, `@memoize`, `@cache(maxsize=…)`, `@must_return` e `@deprecated(…)`;
 `@property`, `@staticmethod` e `@classmethod` são decorators de membro de classe.
 
@@ -312,4 +312,4 @@ def main(args: [string]) {
 
 `main` pode retornar um `int` para definir o código de saída, e pode ser `async`.
 
-*Evidência:* `rules.py:_check_main`, `LANGUAGE.md` §1.
+*Evidência:* `rules.py:_check_main`, `statements.md` §1.

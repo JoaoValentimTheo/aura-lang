@@ -37,7 +37,7 @@ bare-export    = identifier , { "," , identifier } , [ "from" , string ] , [ ";"
 `module Name { ... }` creates a namespaced class whose functions are static
 (`transform_Module`, `statements.py:1465-1501`). Members may be `def`, `class`,
 `trait`, `enum`, `type`, `let`/`const` data, or a nested `module`
-(`LANGUAGE.md` §9).
+(`modules.md` §9).
 
 ```aura
 module MyLib {
@@ -230,13 +230,13 @@ print(PI)                         // 3.141592653589793
 Rules:
 
 - The **brace form cannot be combined with `as`** on the same statement
-  (`LANGUAGE.md` §16). An alias on the module plus selected names
+  (`modules.md` §16). An alias on the module plus selected names
   (`import a.b as c { x }`) is handled by emitting both an aliased import and a
   `from ... import` (`transform_ImportStmt`, `statements.py:1358-1364`).
 - There is **no `::` separator**; a module path is dotted
   (`to_ast.py:1828-1830`).
 - A wildcard is written only as `from module import *`; there is no `*` in the
-  brace form (`LANGUAGE.md` §16).
+  brace form (`modules.md` §16).
 - Imports are **top-level declarations**; the parser reads them before/in the
   program statement stream. Relative and parent-relative imports are not part
   of the grammar.
@@ -248,7 +248,7 @@ shows).
 
 A plain Aura file is importable with the same syntax. `import util` binds the
 file `util.aura`; `import pkg.util` binds `pkg/util.aura`; a file imported as a
-module **needs no `main`** (`LANGUAGE.md` §16.2, §1). The runtime installs an
+module **needs no `main`** (`modules.md` §16.2, §1). The runtime installs an
 import hook that maps the dotted Aura path to the sibling `.aura` file
 (`install_aura_import_hook`, called from `_install_aura_imports`,
 `cli.py:118-127`).
@@ -337,7 +337,7 @@ local scope (function → block chain)
 A module can act as the **facade** for a source folder: a bare `export Name`
 (no `def`/`class`) re-exports a symbol defined in a sibling file. Put the
 facade in a folder named after itself, so `App/App.aura` is the entry point of
-the `App` package (`LANGUAGE.md` §9; `_parse_item_export`,
+the `App` package (`modules.md` §9; `_parse_item_export`,
 `to_ast.py:1633-1651`).
 
 ```text

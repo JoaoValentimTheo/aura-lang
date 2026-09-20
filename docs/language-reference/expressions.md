@@ -2,7 +2,7 @@
 layout: default
 title: "Expressions"
 parent: Aura Language Reference
-nav_order: 3
+nav_order: 6
 ---
 
 [English](expressions.md) · [Português](expressions.pt_BR.md)
@@ -29,12 +29,12 @@ Higher number binds tighter. It matches [grammar.md](grammar.md) §6.1.
 
 | Prec | Operators | Assoc | Compiles to |
 |------|-----------|-------|-------------|
-| 1 | `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `&=`, `\|=`, `^=`, `<<=`, `>>=`, `??=`, `\|>` | right (pipe left) | assignment / `f(x)` |
+| 1 | `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `&=`, `&#124;=`, `^=`, `<<=`, `>>=`, `??=`, `&#124;>` | right (pipe left) | assignment / `f(x)` |
 | 2 | `? :` | right | `(t if c else f)` |
 | 3 | `or` | left | `(a or b)` |
 | 4 | `and` | left | `(a and b)` |
 | 5 | `==`, `!=`, `<`, `>`, `<=`, `>=`, `in`, `not in`, `is`, `is not` | left | `(a op b)` |
-| 6 | `\|` | left | `(a \| b)` |
+| 6 | `&#124;` | left | `(a &#124; b)` |
 | 7 | `^` | left | `(a ^ b)` |
 | 8 | `&` | left | `(a & b)` |
 | 9 | `<<`, `>>` | left | `(a << b)` |
@@ -295,9 +295,9 @@ argument (`transform_PipeExpr:578-591`).
 
 | Source | Compiles to |
 |--------|-------------|
-| `a \|> f` | `f(a)` |
-| `a \|> f(b)` | `f(a, b)` |
-| `a \|> f \|> g` | `g(f(a))` |
+| `a &#124;> f` | `f(a)` |
+| `a &#124;> f(b)` | `f(a, b)` |
+| `a &#124;> f &#124;> g` | `g(f(a))` |
 
 - Pipe is the **loosest expression operator** (level 1) and chains **left to
   right** (`to_ast.py:2558-2563`).
