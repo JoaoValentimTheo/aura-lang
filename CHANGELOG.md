@@ -4,6 +4,27 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **Documentation consistency**: updated version references from 0.2.0a6 to
+  0.2.0a7 across README, docs/index.md, language reference, and tutorial.
+- **Numbers aligned**: CLI commands (17), stdlib modules (17), stdlib functions
+  (360+), and test count (4,400+) are now consistent across all documentation.
+- **PyPI status clarified**: removed contradictory "pending" vs "published"
+  statements in COMPLETENESS.md; the package is published as `aura-language`.
+- **Async I/O status corrected**: COMPLETENESS.md now reflects that native
+  async file/HTTP helpers are implemented in stdlib.io and stdlib.http.
+- **DESIGN.md updated**: project tree lists all 17 stdlib modules, compile-time
+  macros documented, CLI commands table complete (17 commands).
+- **CONTRIBUTING.md expanded**: added test categories, project structure,
+  root shim documentation, syntax freeze note, AUP/diagnostic contribution
+  guides.
+- **LSP/REPL version strings**: updated from hardcoded 0.1.0/0.5 to track
+  the package version.
+- **docs/index.md**: clearer navigation with explicit reading order.
+
 ## [0.2.0a6] - 2026-09-20
 
 **Security hardening, macro expansion, interop fixes, CLI/REPL overhaul.**
@@ -46,7 +67,7 @@ All notable changes to Aura are documented here. The format follows
 
 ### Tests
 
-- 4313 tests passing.
+- 4,313 tests passing.
 
 ## [0.2.0a5] - 2026-09-20
 

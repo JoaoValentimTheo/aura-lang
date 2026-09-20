@@ -22,10 +22,10 @@ real multi-file projects". Ratings below 100 % name the concrete gap.
 | Dimension | Completeness | Notes |
 |-----------|--------------|-------|
 | **Core language** | **~95 %** | Syntax, types, control flow, functions, OOP, pattern matching, generics checked; escape sequences and slicing fixed |
-| **Tooling** | **~92 %** | CLI (14 commands), type checker, semantic checker, formatter, debugger, LSP, pip-installable, dependency manifest |
-| **Stdlib** | **~92 %** | 210+ functions across 10 modules incl. `regex`, `os`, `http`, `testing`, and native `*_async` file/HTTP helpers — no ORM or streaming sockets |
+| **Tooling** | **~92 %** | CLI (17 commands), type checker, semantic checker, formatter, debugger, LSP, pip-installable, dependency manifest |
+| **Stdlib** | **~92 %** | 360+ functions across 17 modules incl. `regex`, `os`, `http`, `testing`, `crypto`, `threading`, `asyncio`, and native `*_async` file/HTTP helpers — no ORM or streaming sockets |
 | **Interop (Python)** | **~98 %** | stdlib and PyPI imports, escapes, slicing, generics/builtin types; no typed stubs for arbitrary packages |
-| **Ecosystem / DX** | **~88 %** | Installable wheel/sdist, CI, release tooling, dependency manager, LSP; PyPI publication pending |
+| **Ecosystem / DX** | **~88 %** | Installable wheel/sdist, CI, release tooling, dependency manager, LSP; published on PyPI as `aura-language` |
 | **Production readiness for a general developer** | **~93 %** | Usable for scripts, services and libraries; remaining gaps listed below |
 
 ---
@@ -69,9 +69,9 @@ real multi-file projects". Ratings below 100 % name the concrete gap.
 | `debug` | 65 % | `aura debug`, `--trace`, post-mortem line mapping | Top-level line granularity; no interactive breakpoints |
 | `lsp` | 90 % | Diagnostics, hover, completion, document symbols, go-to-definition, references, rename, formatting (stdio) | No cross-file workspace refactors |
 | Error messages | 85 % | Parser + semantic errors with file context | No source spans / carets in all cases |
-| Packaging | 95 % | `pip install` wheel/sdist provides the `aura` command | Not yet published to PyPI |
+| Packaging | 95 % | `pip install` wheel/sdist provides the `aura` command; published on PyPI | — |
 | Dependency manager | 85 % | `aura init/add/install/deps` with `aura.toml` | No lockfile/version resolver |
-| Release tooling | 85 % | `aura version` + tag-driven GitHub Actions release | PyPI trusted publishing needs repo config |
+| Release tooling | 85 % | `aura version` + tag-driven GitHub Actions release | PyPI trusted publishing via opt-in workflow variable |
 
 ## 3. Standard library
 
@@ -83,12 +83,12 @@ real multi-file projects". Ratings below 100 % name the concrete gap.
 | itertools | 90 % | 18 iterator utilities |
 | json | 85 % | Strict parse/serialize; no streaming |
 | time | 80 % | Clocks, sleep, strftime, ISO; no timezone/duration types |
-| io | 85 % | File/dir operations, UTF-8; no async I/O, glob, temp files |
+| io | 90 % | File/dir operations, UTF-8, native async helpers; no glob, temp files |
 | regex | 90 % | match/search/find/split/replace/groups/flags |
 | os | 85 % | Env, paths, cwd, listdir/walk, dir ops, process info (no shell exec) |
 | http | 80 % | GET/POST/PUT/DELETE, JSON helpers, URL encoding; stdlib-based |
 | Networking (raw sockets) | 40 % | Via Python `socket`/`requests`; no Aura wrapper |
-| Async I/O | 30 % | Python `asyncio` interoperates; no Aura-native API |
+| Async I/O | 70 % | Native `*_async` file/HTTP helpers in stdlib; no low-level streaming sockets |
 
 ## 4. Python interoperability
 
@@ -114,7 +114,7 @@ real multi-file projects". Ratings below 100 % name the concrete gap.
 | Quick start | 98 % | `pip install .` provides the `aura` command; `python3 main.py` still works |
 | Documentation | 92 % | EN + PT language/type docs; grammar, diagnostics reference, AUP, audit, completeness, changelog, README |
 | Examples | 92 % | 11 feature examples + 10 runnable Aura Patterns (AUP) with an enforced standard |
-| Tests | 98 % | 2,700+ passing; property-based (Hypothesis), differential, extreme rule/OOP suites; ~91 % coverage; 6,609-file corpus |
+| Tests | 98 % | 4,400+ passing; property-based (Hypothesis), differential, extreme rule/OOP suites; ~91 % coverage |
 | CI | 92 % | GitHub Actions: tests on 3.10–3.13, CLI smoke test, build, coverage floor |
 | Releases / versioning | 95 % | Tag-driven release workflow, `aura version`, PyPI trusted publishing (live on PyPI) |
 | Package layout for users | 95 % | Installable console entry point; clean `aura` namespace; published as `aura-language` on PyPI |
@@ -123,13 +123,13 @@ real multi-file projects". Ratings below 100 % name the concrete gap.
 
 ## What a general developer can do today
 
-* Install with `pip install .` and use the `aura` command (or `pip install aura-language` once published).
+* Install with `pip install aura-language` (or `pip install .` from a checkout) and use the `aura` command.
 * Scaffold a project with `aura init`, add dependencies with `aura add`.
 * Write scripts, CLIs, and multi-file programs with classes, traits, generics,
   closures, pattern matching, and error handling.
 * Import Python's standard library and any installed PyPI package.
 * Split code across local Aura modules and packages.
-* Use the stdlib `regex`, `os` and `http` modules, including native `*_async`
+* Use the stdlib `regex`, `os`, `http`, `crypto`, `threading`, and `asyncio` modules, including native `*_async`
   file and HTTP helpers for `async def` code.
 * Get editor diagnostics, completion, hover, go-to-definition, rename and
   formatting via `aura lsp`, and trace programs with `aura debug`.

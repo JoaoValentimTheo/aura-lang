@@ -158,7 +158,7 @@ class AuraREPL:
     # -- public entry point -------------------------------------------------
 
     def run(self):
-        self.write("Aura REPL v0.5 (type ':help' for help, ':q' to quit)")
+        self.write("Aura REPL v0.2 (type ':help' for help, ':q' to quit)")
         while True:
             prompt = self.cont_prompt if self.buffer else self.prompt
             try:

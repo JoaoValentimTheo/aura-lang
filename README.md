@@ -23,7 +23,7 @@ package — is one import away.
 
 ## Status
 
-Aura is **alpha** (`0.2.0a6`). The compiler, type checker, rule checker, REPL,
+Aura is **alpha** (`0.2.0a7`). The compiler, type checker, rule checker, REPL,
 language server, formatter, linter, project tooling, and standard library are
 implemented and covered by a behavioural test suite.
 
@@ -41,7 +41,7 @@ What exists today:
 | CLI (17 subcommands) | Implemented |
 | Project tooling (init, venv, add, remove, install, deps, doctor) | Implemented |
 | Language server (diagnostics, completion, hover, go-to-definition) | Implemented |
-| Standard library (18 modules) | Implemented |
+| Standard library (17 modules) | Implemented |
 | Compile-time macros | Implemented |
 | Security hardening (SSRF guards, input limits, no traceback leaks) | Implemented |
 | Compilation to native machine code | Not planned for 1.0 |
@@ -459,7 +459,7 @@ git clone https://github.com/JoaoValentimTheo/aura-lang.git
 cd aura-lang
 pip install -e ".[dev]"
 
-pytest                    # full test suite (3,000+ tests)
+pytest                    # full test suite (4,400+ tests)
 ruff check aura/          # lint
 mypy aura/                # type-check the compiler
 ```

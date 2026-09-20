@@ -72,7 +72,9 @@ The AST (`aura/transpiler/ast.py`) defines the node types covering:
 
 ### Macro System
 
-Built-in macros are implemented as Python decorators injected as a runtime prelude:
+Aura has two macro systems:
+
+**Runtime macros** (decorators) are implemented as Python decorators injected as a runtime prelude:
 
 | Macro | Purpose |
 |-------|---------|
@@ -87,6 +89,27 @@ Built-in macros are implemented as Python decorators injected as a runtime prelu
 parser/transformer (they are language-level decorators, not prelude macros).
 
 The prelude is injected automatically only when a macro is used.
+
+**Compile-time macros** are expanded by the transpiler before Python is emitted:
+
+| Macro | Purpose |
+|-------|---------|
+| `assert_eq(a, b)` | Evaluate both once, assert equality |
+| `assert_ne(a, b)` | Evaluate both once, assert inequality |
+| `static_assert(cond)` | Checked at compile time |
+| `identity(x)` | Return the argument unchanged |
+| `discard(expr)` | Evaluate and discard the result |
+| `stringify(expr)` | Fold literal to string during compilation |
+| `swap(a, b)` | Swap two bindings |
+| `debug_value(expr)` | Return the value with debug representation |
+| `once(body)` | Execute body only on first call (hygienic flag) |
+| `retry(count, body)` | Retry block up to N times on failure |
+| `todo()` | Mark unimplemented code |
+| `unreachable()` | Mark code that should never execute |
+
+Macro expansion is hygienic — introduced bindings can never capture a
+call-site name — and a program's own declaration always shadows a built-in
+macro of the same name.
 
 ### Type System
 
@@ -107,7 +130,7 @@ Features:
 
 The installable package is `aura/`; top-level `parser/`, `transpiler/`,
 `stdlib/`, `repl/` and `tools/` are thin compatibility shims for source
-checkouts and existing tests.
+checkouts and existing tests. `main.py` is a backward-compatible CLI shim.
 
 ```
 aura-lang/
@@ -120,28 +143,42 @@ aura-lang/
 │   │   ├── ast.py          # AST node definitions + protocol (dunder) map
 │   │   ├── transformer.py  # Main AST to Python transformer
 │   │   ├── semantics.py    # Mutability checker
-│   │   ├── importer.py     # Local .aura import hook
+│   │   ├── rules.py        # Structural rule checker
 │   │   ├── types.py        # Type system (15 type classes)
 │   │   ├── macros.py       # Runtime prelude (6 macros)
+│   │   ├── macro_factory.py # Compile-time macro expansion
 │   │   ├── errors.py       # Error collection and formatting
+│   │   ├── importer.py     # Local .aura import hook
+│   │   ├── modules.py      # Module namespace handling
+│   │   ├── pattern_utils.py # Shared pattern utilities
 │   │   └── transformers/   # Modular transformers
 │   │       ├── expressions.py
 │   │       └── statements.py
-│   ├── stdlib/             # Standard library (210+ functions)
+│   ├── stdlib/             # Standard library (17 modules, 360+ functions)
+│   │   ├── asyncio.py      # Async event-loop helpers
 │   │   ├── collections.py  # List, dict, set utilities
+│   │   ├── crypto.py       # Hashing, HMAC, HKDF, post-quantum
+│   │   ├── crypto_backend.py # Backend implementations
+│   │   ├── http.py         # HTTP client (sync + async)
+│   │   ├── io.py           # File I/O (sync + async)
 │   │   ├── itertools.py    # Iterator utilities
+│   │   ├── json.py         # JSON encode/decode
+│   │   ├── macros.py       # Compile-time macro surface
 │   │   ├── math.py         # Mathematical functions
-│   │   ├── string.py       # String manipulation
-│   │   ├── json.py, time.py, io.py
+│   │   ├── os.py           # OS-level utilities
+│   │   ├── python.py       # Python bridge
 │   │   ├── regex.py        # Regular expressions
-│   │   ├── os.py           # Environment, paths, process info
-│   │   └── http.py         # HTTP client (stdlib urllib, optional requests)
+│   │   ├── string.py       # String manipulation
+│   │   ├── testing.py      # Test framework support
+│   │   ├── threading.py    # Thread pool, map_concurrent
+│   │   └── time.py         # Time functions
 │   ├── repl/               # Interactive engine
 │   ├── lsp/                # Language server (JSON-RPC over stdio)
 │   └── tools/              # Formatter, deps, release, debugger, generators
 ├── examples/               # Working example programs
+├── training/               # Structured learning material (for humans and LLMs)
 ├── tests/                  # Test suite (static, runtime, regression, fuzz)
-├── docs/                   # Documentation
+├── docs/                   # Documentation (Jekyll + Just the Docs)
 ├── main.py                 # Backward-compatible CLI shim
 └── pyproject.toml          # Packaging metadata + console script
 ```
@@ -152,22 +189,23 @@ Installed as `aura <command>`; the same commands work via `python3 main.py`.
 
 | Command | Description |
 |---------|-------------|
-| `aura transpile <file>` | Convert Aura to Python (stdout) |
-| `aura transpile <file> -o <out>` | Convert Aura to Python (file) |
-| `aura check <file>` | Type + mutability checks |
-| `aura format <file>` | Format source code |
-| `aura lint <file>` | Check style warnings |
-| `aura run <file>` | Transpile and execute |
-| `aura run <file> -v` | Run with Python code output |
-| `aura test <dir>` | Run `.aura` files |
-| `aura repl` | Start interactive REPL |
-| `aura init [name]` | Create `aura.toml` and `src/main.aura` |
-| `aura add <pkg>` | Add and install a dependency |
-| `aura install` | Install dependencies from `aura.toml` |
-| `aura deps` | List declared dependencies |
-| `aura version [bump]` | Show or bump the version |
-| `aura debug <file> [-t]` | Run under the trace debugger |
-| `aura lsp` | Start the language server (stdio) |
+| `aura run <file>` | Transpile and execute an Aura file (`-v` prints the generated Python) |
+| `aura check <file>` | Type-check and rule-check without running |
+| `aura transpile <file>` | Print the generated Python (`-o <file>` writes it) |
+| `aura format <file>` | Reformat source (`-i` in place, `-o <file>` to a file) |
+| `aura lint <file>` | Style warnings (`--allow-warnings` to exit 0) |
+| `aura test [dir]` | Run `.aura` test files (`-v` verbose) |
+| `aura repl` | Interactive REPL (history persisted, tab completion) |
+| `aura init [name]` | Scaffold a complete project with venv (`--no-venv` to skip) |
+| `aura venv [action]` | Manage `.venv`: `init`, `info`, `shell`, `remove` (deprecated: use `aura init`) |
+| `aura add <pkg>` | Add a dependency (`-D` dev, `--no-install`, `-V <spec>`) |
+| `aura remove <pkg>` | Remove a declared dependency |
+| `aura install` | Install everything declared in `aura.toml` |
+| `aura deps` | List dependencies (`--lock` writes `aura.lock`) |
+| `aura doctor` | Check Python, venv, and installed dependencies |
+| `aura debug <file>` | Run under the trace debugger |
+| `aura lsp` | Language server over stdio |
+| `aura version` | Print or bump the version |
 
 ## Dependencies
 

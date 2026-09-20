@@ -9,7 +9,7 @@ nav_order: 13
 
 # Types — Catalog and Syntax
 
-**Status:** Stable (`0.2.0a6`, except where labeled) · **Evidence:**
+**Status:** Stable (`0.2.0a7`, except where labeled) · **Evidence:**
 `aura/parser/to_ast.py` (`parse_type` §1752, `parse_type_decl` §1653,
 `_parse_type_params` §1129), `aura/transpiler/types.py`
 (`TypeInference.BUILTIN_NAMES`, `_parse_type_annotation` §1456),

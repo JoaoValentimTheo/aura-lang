@@ -29,7 +29,7 @@ One spelling per construct, no synonyms.
 |----------|----------------|
 | [DESIGN.md](DESIGN.md) | Transpiler architecture |
 | [COMPLETENESS.md](COMPLETENESS.md) | Language coverage and remaining gaps |
-| [AUDIT.md](AUDIT.md) | Historical audit |
+| [AUDIT.md](AUDIT.md) | Historical audit (not a syntax reference) |
 
 ## Project
 
@@ -40,4 +40,4 @@ One spelling per construct, no synonyms.
 
 ---
 
-Aura is alpha (`0.2.0a6`), and the syntax is frozen at the Equinox release.
+Aura is alpha (`0.2.0a7`), and the syntax is frozen at the Equinox release.

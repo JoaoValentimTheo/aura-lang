@@ -8,7 +8,7 @@ nav_exclude: true
 
 # Aura Language Reference
 
-**Versão:** 0.2.0a6 · **Extraída de:** `aura/parser/to_ast.py` e
+**Versão:** 0.2.0a7 · **Extraída de:** `aura/parser/to_ast.py` e
 `aura/transpiler/` · **Modelo:** espelha a referência da linguagem Kof.
 
 Este diretório é a **referência da linguagem Aura**. Ela descreve *o que é um
