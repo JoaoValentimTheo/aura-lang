@@ -33,6 +33,10 @@ NETWORK_EXAMPLES = {"crypto.aura"}
 # Examples that require third-party packages not installed in CI.
 EXTERNAL_DEPS_EXAMPLES = {"django_views.aura", "flask_app.aura", "flet_app.aura"}
 
+# Examples under real/ that need arguments or environment setup; they are
+# covered end-to-end by tests/test_real_examples.py instead.
+REAL_EXAMPLES = {"wordcount.aura", "todo_api.aura", "async_fetch.aura", "sales_pipeline.aura"}
+
 # Examples whose output is inherently non-deterministic (timeit, threads).
 NONDETERMINISTIC = {"macros.aura", "worker_pool.aura"}
 
@@ -42,10 +46,18 @@ def test_examples_directory_is_not_empty():
 
 
 def test_examples_readme_lists_every_file():
-    """Every `.aura` example must be mentioned in examples/README.md."""
-    readme = (EXAMPLES_DIR / "README.md").read_text(encoding="utf-8")
-    missing = [p.name for p in EXAMPLES if p.name not in readme]
-    assert not missing, f"examples/README.md does not mention: {missing}"
+    """Every `.aura` example must be mentioned in a README next to it."""
+    root_readme = (EXAMPLES_DIR / "README.md").read_text(encoding="utf-8")
+    real_readme = (EXAMPLES_DIR / "real" / "README.md")
+    real_text = real_readme.read_text(encoding="utf-8") if real_readme.exists() else ""
+    missing = []
+    for p in EXAMPLES:
+        if p.parent.name == "real":
+            if p.name not in real_text:
+                missing.append(p.name)
+        elif p.name not in root_readme:
+            missing.append(p.name)
+    assert not missing, f"example READMEs do not mention: {missing}"
 
 
 @pytest.mark.parametrize("path", EXAMPLES, ids=lambda p: str(p.relative_to(ROOT)))
@@ -76,6 +88,8 @@ def test_example_runs(path):
         pytest.skip("requires network access")
     if path.name in EXTERNAL_DEPS_EXAMPLES:
         pytest.skip("requires third-party package not installed in CI")
+    if path.name in REAL_EXAMPLES:
+        pytest.skip("covered by tests/test_real_examples.py")
     result = subprocess.run(
         [sys.executable, "-m", "aura.cli", "run", str(path)],
         capture_output=True, text=True, timeout=60, cwd=str(path.parent),
@@ -88,6 +102,8 @@ def test_example_runs(path):
 def test_example_produces_output(path):
     if path.name in NETWORK_EXAMPLES or path.name in NONDETERMINISTIC or path.name in EXTERNAL_DEPS_EXAMPLES:
         pytest.skip("output is not deterministic or needs the network")
+    if path.name in REAL_EXAMPLES:
+        pytest.skip("covered by tests/test_real_examples.py")
     result = subprocess.run(
         [sys.executable, "-m", "aura.cli", "run", str(path)],
         capture_output=True, text=True, timeout=60, cwd=str(path.parent),

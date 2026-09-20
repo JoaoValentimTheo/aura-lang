@@ -1,0 +1,90 @@
+// real/wordcount.aura — a command-line word counter.
+//
+// Reads a text file and reports line, word, and character counts, plus the
+// most frequent words. Demonstrates:
+//   * sys.argv parsing with defaults and flags
+//   * file I/O through stdlib.io
+//   * dict aggregation with `.get(k, default)`
+//   * sorting and slicing
+//
+// Run:
+//   aura run examples/real/wordcount.aura examples/real/sample.txt
+//   aura run examples/real/wordcount.aura examples/real/sample.txt --top 3
+//
+// Note: imported stdlib functions are called function-style here because
+// module-member calls hit https://github.com/JoaoValentimTheo/aura-lang/issues/10
+
+import sys
+import stdlib.io as io
+from stdlib.collections import list_sort
+from stdlib.string import lines as split_lines
+from stdlib.string import lower, split, trim, starts_with
+
+let DEFAULT_TOP = 5
+
+def parse_args(argv: [string]) -> {path: str, top: int} {
+  let mut path = ""
+  let mut top = DEFAULT_TOP
+  let mut i = 1
+  while i < argv.length() {
+    let arg = argv[i]
+    if arg == "--top" {
+      i += 1
+      if i < argv.length() {
+        top = int(argv[i])
+      }
+    } else if not starts_with(arg, "--") {
+      path = arg
+    }
+    i += 1
+  }
+  return {path: path, top: top}
+}
+
+def count_words(words: [string]) -> dict {
+  let mut counts = {}
+  for word in words {
+    let key = trim(word)
+    if key == "" { continue }
+    counts[key] = (counts.get(key, 0) ?: 0) + 1
+  }
+  return counts
+}
+
+def top_words(counts: dict, n: int) -> [(string, int)] {
+  let pairs = [(k, v) for k, v in counts.items()]
+  let sorted_pairs = list_sort(pairs, key=(pair) => pair[1], reverse=true)
+  return sorted_pairs[:n]
+}
+
+def main() {
+  let argv = sys.argv
+  let args = parse_args(argv)
+
+  if args.path == "" {
+    print("usage: wordcount <file> [--top N]")
+    return
+  }
+  if not io.exists(args.path) {
+    print(f"error: no such file: {args.path}")
+    return
+  }
+
+  let text = io.read(args.path)
+  let lines = split_lines(text)
+  let words = split(lower(text), " ")
+  let counts = count_words(words)
+
+  print(f"file:       {args.path}")
+  print(f"lines:      {lines.length()}")
+  print(f"words:      {words.length()}")
+  print(f"characters: {text.length()}")
+  print("")
+  print(f"top {args.top} words:")
+
+  for pair in top_words(counts, args.top) {
+    print(f"  {pair[0]}  {pair[1]}")
+  }
+}
+
+main()

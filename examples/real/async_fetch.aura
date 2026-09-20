@@ -1,0 +1,79 @@
+// real/async_fetch.aura — an async HTTP client against a local server.
+//
+// Starts a tiny HTTP server on a background thread, then fetches from it
+// concurrently with Aura's async HTTP client. Self-contained: no external
+// network access, so it is safe for CI.
+//
+// Demonstrates:
+//   * `async def` and `await` with `stdlib.http`
+//   * a Python base class driven from Aura (`extends http.server.BaseHTTPRequestHandler`)
+//   * JSON request/response round-trips
+//
+// Run:
+//   AURA_HTTP_ALLOW_PRIVATE=1 aura run examples/real/async_fetch.aura
+//
+// The environment variable is required because Aura's HTTP client blocks
+// loopback addresses by default (SSRF guard). It is only set here so the
+// example can talk to its own local server.
+
+import py.threading as threading
+import py.http.server as http_server
+import py.json as json
+import stdlib.asyncio as asyncio
+import stdlib.http as http
+
+let PORT = 8791
+let BASE = f"http://127.0.0.1:{PORT}"
+
+class Handler extends http_server.BaseHTTPRequestHandler {
+  public def do_GET() {
+    let path = self.path
+    if path == "/health" {
+      self._send(200, {"status": "ok"})
+    } else if path == "/items" {
+      let items = [{"id": n, "name": f"item-{n}"} for n in range(1, 6)]
+      self._send(200, items)
+    } else {
+      self._send(404, {"error": "not found"})
+    }
+  }
+
+  public def log_message(self, fmt, *args) {
+    // Silence the default stderr logging.
+  }
+
+  public def _send(self, status: int, body) {
+    self.send_response(status)
+    self.send_header("Content-Type", "application/json")
+    self.end_headers()
+    self.wfile.write(json.dumps(body).encode("utf-8"))
+  }
+}
+
+def start_server() {
+  let server = http_server.HTTPServer(("127.0.0.1", PORT), Handler)
+  let thread = threading.Thread(target=(() => server.serve_forever()))
+  thread.daemon = true
+  thread.start()
+  return server
+}
+
+async def main() {
+  let server = start_server()
+  await asyncio.sleep(0.05)   // let the server bind
+
+  let health = await http.aget(f"{BASE}/health")
+  print(f"GET /health  -> {health.status}")
+
+  let items = await http.aget_json(f"{BASE}/items")
+  print(f"GET /items   -> {len(items)} items")
+  for item in items {
+    print(f"  {item['id']}: {item['name']}")
+  }
+
+  let missing = await http.aget(f"{BASE}/missing")
+  print(f"GET /missing -> {missing.status}")
+
+  server.shutdown()
+  print("server stopped")
+}

@@ -76,8 +76,15 @@ Aura follows a single, explicit syntax (see [docs/language-reference/grammar.md]
   `let private x`. Every class/trait member needs one.
 - `unless`, `until`, `loop` and `guard` are first-class statements.
 
+## Real-world programs
+
+`real/` contains complete application-shaped programs (a CLI, a Flask JSON
+service, an async HTTP client, and a data pipeline). They are smoke-tested in
+CI and documented in [`real/README.md`](real/README.md).
+
 ## Verifying the examples
 
 The whole `examples/` tree is checked by the test suite
 (`tests/test_examples.py`), which parses, type-checks, transpiles, and runs each
-file so a stale example cannot slip through.
+file so a stale example cannot slip through. The programs in `real/` are
+additionally covered by `tests/test_real_examples.py`.

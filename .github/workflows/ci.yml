@@ -26,7 +26,7 @@ jobs:
       - name: Install package and test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -e ".[dev,examples]"
 
       - name: Run test suite
         run: python -m pytest tests/ -q
@@ -61,7 +61,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install
-        run: pip install .
+        run: pip install ".[examples]"
       - name: Run the installed `aura` command
         run: |
           aura --help
@@ -70,6 +70,16 @@ jobs:
           aura check examples/classes.aura
           aura test examples/hello.aura
           aura test examples/fibonacci.aura
+      - name: Smoke-test the real-world examples
+        run: |
+          aura check examples/real/wordcount.aura
+          aura check examples/real/todo_api.aura
+          aura check examples/real/async_fetch.aura
+          aura check examples/real/sales_pipeline.aura
+          aura run examples/real/wordcount.aura examples/real/sample.txt --top 3
+          aura run examples/real/todo_api.aura
+          AURA_HTTP_ALLOW_PRIVATE=1 aura run examples/real/async_fetch.aura
+          aura run examples/real/sales_pipeline.aura
 
   build:
     name: Build distributions
