@@ -1,0 +1,71 @@
+// real/todo_api.aura — a small Flask JSON service.
+//
+// A REST-ish in-memory TODO API exposed through Flask, exercised end to end
+// with Flask's test client (no server blocks). Demonstrates:
+//   * dotted `@app.route(...)` decorators
+//   * reading JSON request bodies and path parameters
+//   * returning structured JSON responses with status codes
+//   * a small stateful store (dict + list)
+//
+// Run:
+//   aura run examples/real/todo_api.aura
+//
+// To serve it for real, replace the `main` body with:
+//   app.run(host="127.0.0.1", port=5000)
+
+import py.flask as flask
+import py.json as json
+
+let app = flask.Flask(__name__)
+
+let mut todos = {}
+let mut next_id = 1
+
+@app.route("/todos", methods=["GET"])
+def list_todos() {
+  let items = [todos[k] for k in sorted(todos.keys())]
+  return flask.jsonify(items)
+}
+
+@app.route("/todos", methods=["POST"])
+def create_todo() {
+  let payload = flask.request.get_json(silent=true) ?: {}
+  let title = payload.get("title", "")
+  if title == "" {
+    return flask.jsonify({"error": "title is required"}), 400
+  }
+  let todo_id = f"t{next_id}"
+  next_id += 1
+  todos[todo_id] = {"id": todo_id, "title": title, "done": false}
+  return flask.jsonify(todos[todo_id]), 201
+}
+
+@app.route("/todos/<todo_id>", methods=["PATCH"])
+def complete_todo(todo_id) {
+  if not todos.get(todo_id) {
+    return flask.jsonify({"error": "not found"}), 404
+  }
+  todos[todo_id] = {"id": todo_id, "title": todos[todo_id]["title"], "done": true}
+  return flask.jsonify(todos[todo_id])
+}
+
+def main() {
+  let client = app.test_client()
+
+  let created = client.post("/todos", json={"title": "write examples"})
+  print(f"POST /todos -> {created.status_code}")
+  print(created.get_json())
+
+  let bad = client.post("/todos", json={})
+  print(f"POST /todos (no title) -> {bad.status_code}")
+
+  let done = client.patch("/todos/t1")
+  print(f"PATCH /todos/t1 -> {done.status_code}")
+  print(done.get_json())
+
+  let listed = client.get("/todos")
+  print(f"GET /todos -> {listed.status_code}")
+  print(listed.get_json())
+}
+
+main()
