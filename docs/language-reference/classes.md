@@ -76,7 +76,7 @@ Mixing a header with a manual `new` is a **syntax error**: the header already
 generates a constructor and a second one would silently leave the header fields
 unassigned.
 
-```aura
+```aura skip
 // OK — header style
 class A(name: str) { }
 

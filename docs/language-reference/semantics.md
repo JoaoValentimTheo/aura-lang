@@ -117,7 +117,7 @@ let s = false and side()    // side() never runs
 `_visit_var_decl`/`_visit_const_decl` §275-285;
 `test_semantics_deep.py`, `test_language_rules.py`.
 
-```aura
+```aura skip
 let x = 1
 x = 2              // E303: reassign an immutable binding
 
@@ -136,7 +136,7 @@ Reading a name that the **same function declares later in its own body** is
 enclosing scope, module scope or an import are unaffected
 (`_locals_declared_in`, §319-335).
 
-```aura
+```aura skip
 def f() {
   print(x)      // E319: 'x' is used before it is declared
   let x = 1
@@ -288,7 +288,7 @@ generation (`_mutability_diagnostics`, `cli.py:18-40`;
 | `main` missing / invalid / inside a module | **E310 / E311 / E312** | `rules.py:162-265` |
 | Unresolved module re-export | **E313** | `rules.py:439-467` |
 
-```aura
+```aura skip
 let count = 0
 count = 1              // E303: reassign an immutable binding
 
@@ -342,7 +342,7 @@ An assignment target must be a variable, a member access, an index, or a
 destructuring target (tuple/list, possibly with a rest pattern)
 (`_is_assignable`, `rules.py:1332-1339`). Anything else is **E004**.
 
-```aura
+```aura skip
 def main() {
   1 = 2            // E004: invalid assignment target
 }

@@ -46,7 +46,7 @@ pontuado para o arquivo irmão.
 `module Name { ... }` cria um grupo com namespace cujas funções são estáticas.
 Membros são **privados ao arquivo declarante a menos que marcados `export`**:
 
-```aura
+```aura skip
 module Greeter {
   export def hello(name: str) -> str {
     return "hi " + name
@@ -77,7 +77,7 @@ Regras:
   função exportada.
 * Um `main` dentro de um corpo de módulo é `E312`.
 
-```aura
+```aura skip
 module M {
   def hidden() -> int { return 1 }
 }
@@ -91,7 +91,7 @@ def main() {
 
 `module App.Services { ... }` se aninha, alcançado como `App.Services.member`:
 
-```aura
+```aura skip
 module Outer.Inner {
   export def value() -> int { return 3 }
 }
@@ -139,7 +139,7 @@ App/
 main.aura           import App
 ```
 
-```aura
+```aura skip
 // App/App.aura
 module App {
   export Components, Utils

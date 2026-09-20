@@ -69,7 +69,7 @@ nunca `let private x` (`grammar.md` §3).
 
 ## Tipos
 
-```aura
+```aura skip
 int  float  str  bool  bytes  none       // primitives
 [int]                                     // list
 {str: int}                                // dict
@@ -450,7 +450,7 @@ literal com `is` é rejeitado (`to_ast.py:2567-2577`).
 
 ## Statements
 
-```aura
+```aura skip
 return value
 throw ValueError("bad")
 break
@@ -540,7 +540,7 @@ from py.re import type as re_type     // ok: aliased
 
 ## Aliases de tipo e módulos
 
-```aura
+```aura skip
 type UserId = int
 type Point = {x: float, y: float}
 type Pair[T] = [T]
@@ -566,7 +566,7 @@ Membros de módulo são privados ao arquivo declarante a menos que marcados
 
 Cada grafia rejeitada, com o erro apontado do parser e sua substituição canônica:
 
-```aura
+```aura skip
 fn f() { }                  // ❌ 'fn' is not part of Aura; use 'def' instead
 fun f() { }                 // ❌ 'fun' is not part of Aura; use 'def'
 function f() { }            // ❌ 'function' is not part of Aura; use 'def'

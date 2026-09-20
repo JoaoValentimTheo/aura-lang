@@ -70,7 +70,7 @@ appear **before** the declaration keyword: `private let x = 1`, never
 
 ## Types
 
-```aura
+```aura skip
 int  float  str  bool  bytes  none       // primitives
 [int]                                     // list
 {str: int}                                // dict
@@ -449,7 +449,7 @@ literal with `is` is rejected (`to_ast.py:2567-2577`).
 
 ## Statements
 
-```aura
+```aura skip
 return value
 throw ValueError("bad")
 break
@@ -539,7 +539,7 @@ from py.re import type as re_type     // ok: aliased
 
 ## Type aliases and modules
 
-```aura
+```aura skip
 type UserId = int
 type Point = {x: float, y: float}
 type Pair[T] = [T]
@@ -566,7 +566,7 @@ Module members are private to the declaring file unless marked `export`;
 Each rejected spelling, with the pointed parser error and its canonical
 replacement:
 
-```aura
+```aura skip
 fn f() { }                  // ❌ 'fn' is not part of Aura; use 'def' instead
 fun f() { }                 // ❌ 'fun' is not part of Aura; use 'def'
 function f() { }            // ❌ 'function' is not part of Aura; use 'def'

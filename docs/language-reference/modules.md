@@ -348,7 +348,7 @@ App/
 main.aura           import App
 ```
 
-```aura
+```aura skip
 // App/App.aura
 module App {
   export Components, Utils
@@ -398,7 +398,7 @@ An explicit source is accepted with `export Name from "module"`
 (`_parse_item_export`, `to_ast.py:1639-1648`; `_candidate_files`,
 `modules.py:63-75`):
 
-```aura
+```aura skip
 module App {
   export Widgets from "widgets"      // resolves widgets.aura
   export X from "pkg.sub"            // resolves pkg/sub.aura
@@ -422,7 +422,7 @@ The path must be a **plain dotted name**: separators (`/`, `\`), traversal
 | A `main` inside a module (including a facade) | **E312** | `rules.py:246-265` |
 | Two re-exports resolving to different files under one name | conflict | `find_reexport_conflicts`, `modules.py:133-151` |
 
-```aura
+```aura skip
 module App { export Missing }   // E313: module 'App' exports 'Missing', ...
 ```
 
