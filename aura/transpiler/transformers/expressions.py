@@ -435,7 +435,22 @@ class ExpressionTransformer:
                     return f"{obj}[{args[0]}:{args[1]}]"
             if member == 'char_at' and len(args) == 1:
                 return f"{obj}[{args[0]}]"
-            if member in self.METHOD_ALIASES:
+            # METHOD_ALIASES only apply to method calls on instances (strings,
+            # lists), not on imported modules.  Calling ``strings.trim()``
+            # must keep ``trim``, not rewrite to ``strip`` (issue #10).
+            # Resolve the root identifier of the receiver (handles both bare
+            # names and dotted paths like ``stdlib.string.trim()``).
+            _root = node.func.obj
+            while isinstance(_root, MemberExpr):
+                _root = _root.obj
+            _stmt = getattr(self, "stmt_transformer", None)
+            _imported = _stmt.imported_modules if _stmt is not None else {}
+            _obj_is_module = (
+                isinstance(_root, Identifier)
+                and _root.name in _imported
+                and not self._is_shadowed(_root.name)
+            )
+            if member in self.METHOD_ALIASES and not _obj_is_module:
                 py_member = self.METHOD_ALIASES[member]
                 all_args = args + kwargs
                 return f"{obj}.{py_member}({', '.join(all_args)})"

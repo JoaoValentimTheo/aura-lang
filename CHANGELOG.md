@@ -4,6 +4,16 @@ All notable changes to Aura are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **METHOD_ALIASES no longer rewrite stdlib module calls** (issue #10).
+  Calling `strings.trim()`, `strings.starts_with()`, etc. on an imported
+  stdlib module now keeps the original name instead of rewriting it to
+  Python's `strip`/`startswith`.  The aliases still apply to instance
+  method calls (e.g. `"hi".trim()`).
+
 ## [0.2.0a8] - 2026-09-20
 
 ### Changed

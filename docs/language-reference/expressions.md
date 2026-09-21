@@ -190,6 +190,8 @@ argument       = expression
   `is_alphanumeric`→`isalnum`, `is_digit`→`isdigit`, `is_numeric`→`isnumeric`,
   `is_space`→`isspace`, `is_lower`→`islower`, `is_upper`→`isupper`
   (*probe*: `"hello".to_upper()` → `"HELLO"`).
+  These aliases apply only to method calls on **instances** (strings, lists);
+  calls on imported **modules** (e.g. `strings.trim()`) keep the original name.
 - An **unknown member name** is emitted verbatim (Python passthrough), e.g.
   `xs.append(4)` → `xs.append(4)`, `xs.pop()`, `xs.sort()`
   (`transform_CallExpr:441-444`).
