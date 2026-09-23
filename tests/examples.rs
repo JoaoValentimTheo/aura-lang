@@ -45,8 +45,12 @@ fn all_examples_compile_and_run() {
         let file = path.display().to_string();
         match aura::run_source(&src, &file) {
             Ok(actual) => {
+                // Normalize line endings: on Windows, stdout uses CRLF while
+                // the checked-in `.out` files use LF.
+                let actual = actual.replace("\r\n", "\n");
                 let expected_path = path.with_extension("out");
                 if let Ok(expected) = fs::read_to_string(&expected_path) {
+                    let expected = expected.replace("\r\n", "\n");
                     if actual != expected {
                         failures.push(format!(
                             "{file}: output mismatch\n--- expected ---\n{expected}\n--- actual ---\n{actual}"
