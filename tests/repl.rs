@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![cfg(feature = "repl")]
 //! REPL tests, driven through the testable `run_with` core with piped input.
 //!
 //! The REPL must behave like the file front end (same parser, same checker,
