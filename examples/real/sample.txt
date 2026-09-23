@@ -1,7 +1,0 @@
-Aura is a gradually typed programming language that transpiles to Python.
-The language has one spelling per construct, so there are no synonyms to learn.
-Aura programs can import any Python package, and the standard library covers
-strings, collections, JSON, HTTP, and cryptography.
-
-Aura is alpha software. The syntax is frozen until version 1.0.
-Feedback is welcome through GitHub issues.
