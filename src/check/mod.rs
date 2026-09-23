@@ -788,9 +788,39 @@ impl Checker {
         Ok(())
     }
 
+    /// The method table a receiver type uses, or a decision that it has none.
+    ///
+    /// Returns `Ok(None)` when the receiver type is `Unknown` and nothing can
+    /// be decided (§2.3). Returns `Err` when the receiver type is known to
+    /// have no methods at all (a user struct or enum). Otherwise returns the
+    /// method table class; `range` uses the `Other` table.
+    fn method_class_for(
+        &self,
+        name: &str,
+        ty: &Ty,
+        span: Span,
+    ) -> Result<Option<crate::stdlib::signatures::TypeClass>> {
+        use crate::stdlib::signatures::TypeClass;
+        match ty {
+            Ty::Unknown => Ok(None),
+            Ty::Enum(_) => Err(Diag::new(
+                codes::UNDEFINED,
+                format!("enum has no method `{name}`"),
+                span,
+            )),
+            Ty::Named(n) if n == "range" => Ok(Some(TypeClass::Other)),
+            Ty::Named(_) => Err(Diag::new(
+                codes::UNDEFINED,
+                format!("struct has no method `{name}`"),
+                span,
+            )),
+            other => Ok(other.type_class()),
+        }
+    }
+
     /// Validate a method call when the receiver type is statically known.
     fn check_method_call(&self, recv: &Expr, name: &str, args: &[Expr], span: Span) -> Result<()> {
-        let Some(class) = self.infer(recv).type_class() else {
+        let Some(class) = self.method_class_for(name, &self.infer(recv), span)? else {
             return Ok(()); // unknown receiver: cannot decide
         };
         let Some(sig) = crate::stdlib::signatures::method(class, name) else {
@@ -1403,17 +1433,40 @@ impl Checker {
             }
             Expr::Field(r, name, span) => {
                 self.expr(r)?;
-                // `receiver.name` without parentheses is a zero-argument method
-                // call on any non-struct, non-enum receiver (§24). When the
-                // receiver type is known, the method must exist on it, by the
-                // same rule that governs `receiver.name(...)`.
-                if let Some(class) = self.infer(r).type_class() {
-                    if crate::stdlib::signatures::method(class, name).is_none() {
-                        return Err(Diag::new(
-                            codes::UNDEFINED,
-                            format!("{} has no method `{name}`", class.name()),
-                            *span,
-                        ));
+                // `receiver.name` without parentheses is a field read on a
+                // struct, and a zero-argument method call on any other known
+                // receiver kind (§24). A known struct field needs no method
+                // check; an enum has neither fields nor methods; `range` has
+                // only `len`; primitive/list/map receivers are method calls.
+                match self.infer(r) {
+                    Ty::Unknown => {}
+                    Ty::Named(n) if n == "range" => {
+                        if crate::stdlib::signatures::method(
+                            crate::stdlib::signatures::TypeClass::Other,
+                            name,
+                        )
+                        .is_none()
+                        {
+                            return Err(Diag::new(
+                                codes::UNDEFINED,
+                                format!("range has no method `{name}`"),
+                                *span,
+                            ));
+                        }
+                    }
+                    // Structs: a field read. Enums: neither fields nor methods;
+                    // the runtime reports. Both are left to runtime here.
+                    Ty::Named(_) | Ty::Enum(_) => {}
+                    ty => {
+                        if let Some(class) = ty.type_class() {
+                            if crate::stdlib::signatures::method(class, name).is_none() {
+                                return Err(Diag::new(
+                                    codes::UNDEFINED,
+                                    format!("{} has no method `{name}`", class.name()),
+                                    *span,
+                                ));
+                            }
+                        }
                     }
                 }
             }

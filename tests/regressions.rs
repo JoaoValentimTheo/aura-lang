@@ -300,3 +300,41 @@ fn no_paren_method_exists_is_checked() {
         "1\n"
     );
 }
+
+/// Structs and enums have no methods, so a method call on a known struct or
+/// enum receiver is rejected by the checker, not only at runtime. `range`
+/// exposes only `len`. (Red team: `check_method_call` skipped receivers whose
+/// `type_class` was `None`, so these were accepted and failed at runtime.)
+#[test]
+fn method_on_struct_enum_and_range_is_checked() {
+    // Struct: any method is invalid, explicit or no-paren.
+    assert_eq!(
+        check("struct S { len: int }\nfn main() { let s = S { len: 5 }\n s.len() }"),
+        Err(codes::UNDEFINED)
+    );
+    assert_eq!(
+        check("struct S { a: int }\nfn main() { S { a: 1 }.get(\"a\") }"),
+        Err(codes::UNDEFINED)
+    );
+    // Enum: any method is invalid.
+    assert_eq!(
+        check("enum E { A }\nfn main() { A().foo() }"),
+        Err(codes::UNDEFINED)
+    );
+    // Range: only `len` exists.
+    assert_eq!(
+        check("fn main() { range(0, 3).nope() }"),
+        Err(codes::UNDEFINED)
+    );
+    assert_eq!(
+        check("fn main() { range(0, 3).nope }"),
+        Err(codes::UNDEFINED)
+    );
+    // Valid uses are unaffected.
+    assert_eq!(out("fn main() { print(range(0, 3).len()) }"), "3\n");
+    assert_eq!(out("fn main() { print(range(0, 3).len) }"), "3\n");
+    assert_eq!(
+        out("struct S { a: int }\nfn main() { print(S { a: 1 }.a) }"),
+        "1\n"
+    );
+}

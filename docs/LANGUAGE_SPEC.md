@@ -1148,6 +1148,13 @@ visible through every alias of the value.
 semantics**. Binding or passing such a value aliases the same storage; a
 mutation through one alias is observable through all aliases.
 
+**Normative rule.** Mutability is a property of the *binding*, not of the
+value. `let` makes the binding immutable (it cannot be reassigned), but a
+list, map, or struct reached through an immutable binding can still be
+mutated in place through an index, field, or entry assignment (`a[0] = x`,
+`s.x = x`, `m[k] = v`) or a mutating method (`push`). `let mut` is required
+only to reassign the *binding* itself.
+
 *Evidence:* `Value::List`/`Map`/`Instance` use `Rc<RefCell<…>>`
 (`src/run/value.rs`); `index_set`, `field_set`, `push` (`src/run/mod.rs`,
 `src/stdlib/mod.rs`).
@@ -1448,19 +1455,24 @@ structs and enums have no methods.
 
 **Normative rule.** A method call on a receiver whose type the checker knows
 MUST name a method that exists on that type (`E2003` otherwise), and its
-argument count and argument types are checked (`E3001`).
+argument count and argument types are checked (`E3001`). This includes a
+receiver whose type is a user struct or enum: since those types have no
+methods, **any** method call on a known struct or enum receiver is `E2003` at
+check time. A `range` receiver exposes only `len`; any other method is `E2003`
+at check time. A receiver of type `Unknown` remains permissive (§2.3).
 
 **Normative rule.** `receiver.name` **without parentheses** on a non-struct
-receiver is a **zero-argument method call**. On a struct receiver it is a
-field read. This is intentional sugar: `"abc".upper` calls `upper()`.
+receiver is a **zero-argument method call** and is validated against the same
+method table as the parenthesized form (`E2003` when the method does not exist
+on a known receiver type). On a struct receiver it is a field read.
 
 > **SPECIFICATION STATUS — no-paren method calls.** This behavior is
 > implemented (`Expr::Field` dispatches to a zero-argument method for
-> non-struct receivers) and is frozen as part of the language. It was
-> previously undocumented; it is documented here normatively.
+> non-struct receivers) and is frozen as part of the language.
 
-**Normative rule.** If the named method does not exist, the call is `E2003` at
-runtime (and at check time when the receiver type is known).
+**Normative rule.** If the named method does not exist, the call is `E2003`.
+It is rejected at check time when the receiver type is known, and at runtime
+otherwise.
 
 ### 24.1 Method inventory
 
