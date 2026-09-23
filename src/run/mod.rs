@@ -20,6 +20,10 @@ use value::{Instance, Value, Variant};
 /// large enough that a host overflow is unreachable before this limit.
 pub const MAX_CALL_FRAMES: usize = 512;
 
+/// Maximum expression nesting depth the evaluator will descend. Bounds host
+/// stack usage for deeply nested expressions.
+pub const MAX_AST_DEPTH: usize = 256;
+
 /// A user-defined function.
 #[derive(Debug)]
 pub struct Closure {
@@ -134,9 +138,13 @@ impl Ctl {
                 format!("uncaught value: {}", v.display()),
                 span,
             )),
-            Ctl::Return(_) => Err(it.error(codes::TYPE_MISMATCH, "`return` in expression", span)),
-            Ctl::Break => Err(it.error(codes::TYPE_MISMATCH, "`break` outside loop", span)),
-            Ctl::Continue => Err(it.error(codes::TYPE_MISMATCH, "`continue` outside loop", span)),
+            Ctl::Return(_) => Err(it.error(
+                codes::RETURN_POSITION,
+                "`return` cannot be used as a value here",
+                span,
+            )),
+            Ctl::Break => Err(it.error(codes::LOOP_CONTROL, "`break` outside a loop", span)),
+            Ctl::Continue => Err(it.error(codes::LOOP_CONTROL, "`continue` outside a loop", span)),
         }
     }
 }
@@ -150,6 +158,9 @@ pub struct Interp {
     structs: HashMap<String, Vec<String>>,
     variants: HashMap<String, (String, usize)>,
     depth: usize,
+    /// Current expression nesting depth, guarding against host stack
+    /// exhaustion from deeply nested (but syntactically flat) programs.
+    ast_depth: usize,
     /// A thrown value in flight across a call boundary; consumed by `try`.
     pending_throw: Option<Value>,
     /// Output sink for `print`.
@@ -169,6 +180,7 @@ impl Interp {
             structs: HashMap::new(),
             variants: HashMap::new(),
             depth: 0,
+            ast_depth: 0,
             pending_throw: None,
             stdout: Box::new(std::io::stdout()),
         };
@@ -302,7 +314,12 @@ impl Interp {
             self.depth -= 1;
             return Err(self.error(codes::RECURSION, "call depth limit exceeded", span));
         }
+        // Expression nesting is scoped to a single call body: a callee starts
+        // with a fresh nesting budget, so recursion is bounded by the call
+        // limit (E4011) rather than by the expression-nesting limit.
+        let saved_ast_depth = std::mem::take(&mut self.ast_depth);
         let r = self.exec_block(&closure.body, &env, false);
+        self.ast_depth = saved_ast_depth;
         self.depth -= 1;
         match r? {
             Ctl::Return(v) | Ctl::Val(v) => Ok(v),
@@ -314,8 +331,10 @@ impl Interp {
                     span,
                 ))
             }
-            Ctl::Break => Err(self.error(codes::TYPE_MISMATCH, "`break` outside loop", span)),
-            Ctl::Continue => Err(self.error(codes::TYPE_MISMATCH, "`continue` outside loop", span)),
+            Ctl::Break => Err(self.error(codes::LOOP_CONTROL, "`break` outside a loop", span)),
+            Ctl::Continue => {
+                Err(self.error(codes::LOOP_CONTROL, "`continue` outside a loop", span))
+            }
         }
     }
 
@@ -361,17 +380,22 @@ impl Interp {
                 Ok(Ctl::Val(Value::None))
             }
             Stmt::Expr(e, _) => self.eval(e, env),
-            Stmt::Return(v, span) => {
-                let v = match v {
-                    Some(v) => self.eval(v, env)?.value(self, *span)?,
-                    None => Value::None,
-                };
-                Ok(Ctl::Return(v))
+            Stmt::Return(v, _span) => {
+                match v {
+                    Some(v) => match self.eval(v, env)? {
+                        Ctl::Val(value) => Ok(Ctl::Return(value)),
+                        // A `return`/`break`/`throw` produced while computing
+                        // the returned expression propagates directly; for
+                        // example `return match x { 0 -> { return 5 } ... }`.
+                        other => Ok(other),
+                    },
+                    None => Ok(Ctl::Return(Value::None)),
+                }
             }
-            Stmt::Throw(v, span) => {
-                let v = self.eval(v, env)?.value(self, *span)?;
-                Ok(Ctl::Throw(v))
-            }
+            Stmt::Throw(v, _span) => match self.eval(v, env)? {
+                Ctl::Val(value) => Ok(Ctl::Throw(value)),
+                other => Ok(other),
+            },
             Stmt::Break(_) => Ok(Ctl::Break),
             Stmt::Continue(_) => Ok(Ctl::Continue),
             Stmt::While(cond, body, _) => loop {
@@ -394,14 +418,31 @@ impl Interp {
             },
             Stmt::For(pat, iter, body, span) => {
                 let subject = self.eval(iter, env)?.value(self, *span)?;
+                // Ranges iterate lazily, so a `break` on the first element of a
+                // huge range never materializes the whole range.
+                let run = |this: &mut Self, item: Value| -> Result<Option<Ctl>> {
+                    let scope = env.child();
+                    this.bind_pattern(pat, &item, &scope)?;
+                    match this.exec_block(body, &scope, false)? {
+                        Ctl::Break => Ok(Some(Ctl::Val(Value::None))),
+                        Ctl::Continue | Ctl::Val(_) => Ok(None),
+                        other => Ok(Some(other)),
+                    }
+                };
+                if let Value::Range(r) = &subject {
+                    let mut i = r.start;
+                    while i < r.end {
+                        if let Some(sig) = run(self, Value::Int(i))? {
+                            return Ok(sig);
+                        }
+                        i += 1;
+                    }
+                    return Ok(Ctl::Val(Value::None));
+                }
                 let items = self.iterate(&subject, *span)?;
                 for item in items {
-                    let scope = env.child();
-                    self.bind_pattern(pat, &item, &scope)?;
-                    match self.exec_block(body, &scope, false)? {
-                        Ctl::Break => return Ok(Ctl::Val(Value::None)),
-                        Ctl::Continue | Ctl::Val(_) => {}
-                        other => return Ok(other),
+                    if let Some(sig) = run(self, item)? {
+                        return Ok(sig);
                     }
                 }
                 Ok(Ctl::Val(Value::None))
@@ -747,6 +788,21 @@ impl Interp {
 
     /// Evaluate an expression, propagating control flow.
     pub(crate) fn eval(&mut self, e: &Expr, env: &Env) -> Result<Ctl> {
+        self.ast_depth += 1;
+        if self.ast_depth > MAX_AST_DEPTH {
+            self.ast_depth -= 1;
+            return Err(self.error(
+                codes::NESTING,
+                "expression nests too deeply to evaluate",
+                span_of(e),
+            ));
+        }
+        let result = self.eval_inner(e, env);
+        self.ast_depth -= 1;
+        result
+    }
+
+    fn eval_inner(&mut self, e: &Expr, env: &Env) -> Result<Ctl> {
         macro_rules! val {
             ($e:expr) => {
                 match $e? {
@@ -888,12 +944,21 @@ impl Interp {
                 }
                 Ok(Ctl::Val(Value::list(out)))
             }
-            Expr::Lambda(params, body, _) => Ok(Ctl::Val(Value::Closure(Rc::new(Closure {
-                name: "<lambda>".to_string(),
-                params: params.clone(),
-                body: vec![Stmt::Return(Some((**body).clone()), Span::default())],
-                env: env.clone(),
-            })))),
+            Expr::Lambda(params, body, _) => {
+                let body_stmts = match body.as_ref() {
+                    // A block-bodied lambda uses its block as the function
+                    // body, so an explicit `return` inside it works and the
+                    // last expression is the implicit return value.
+                    Expr::Block(stmts, _) => stmts.clone(),
+                    expr => vec![Stmt::Return(Some(expr.clone()), Span::default())],
+                };
+                Ok(Ctl::Val(Value::Closure(Rc::new(Closure {
+                    name: "<lambda>".to_string(),
+                    params: params.clone(),
+                    body: body_stmts,
+                    env: env.clone(),
+                }))))
+            }
             Expr::Pipe(l, r, span) => {
                 let arg = val!(self.eval(l, env));
                 let f = val!(self.eval(r, env));
@@ -924,7 +989,7 @@ impl Interp {
                         return self.exec_block(&arm.body, &scope, true);
                     }
                 }
-                Err(self.error(codes::UNDEFINED, "no match arm matched", *span))
+                Err(self.error(codes::NO_MATCH, "no match arm matched the value", *span))
             }
             Expr::Block(body, _) => self.exec_block(body, env, true),
         }
@@ -992,6 +1057,12 @@ impl Interp {
     pub fn eval_globals(&mut self, e: &Expr) -> Result<Ctl> {
         let globals = self.globals.clone();
         self.eval(e, &globals)
+    }
+
+    /// Execute a single statement in the global scope (used by the REPL).
+    pub fn exec_stmt_globals(&mut self, s: &Stmt) -> Result<Ctl> {
+        let globals = self.globals.clone();
+        self.exec_stmt(s, &globals)
     }
 
     /// Register or execute a single top-level item (used by the REPL).
@@ -1086,19 +1157,23 @@ impl Interp {
             Eq => Ok(Value::Bool(l.equals(&r))),
             Ne => Ok(Value::Bool(!l.equals(&r))),
             Lt | Le | Gt | Ge => {
-                let ord = l.cmp_val(&r).ok_or_else(|| {
-                    self.error(
+                // An unordered result (e.g. a NaN operand) yields `false`,
+                // matching IEEE semantics; only genuinely incomparable *types*
+                // are an error.
+                match l.cmp_val(&r) {
+                    Some(ord) => Ok(Value::Bool(match op {
+                        Lt => ord.is_lt(),
+                        Le => ord.is_le(),
+                        Gt => ord.is_gt(),
+                        _ => ord.is_ge(),
+                    })),
+                    None if l.comparable_with(&r) => Ok(Value::Bool(false)),
+                    None => Err(self.error(
                         codes::TYPE_MISMATCH,
                         format!("cannot compare {} with {}", l.type_name(), r.type_name()),
                         span,
-                    )
-                })?;
-                Ok(Value::Bool(match op {
-                    Lt => ord.is_lt(),
-                    Le => ord.is_le(),
-                    Gt => ord.is_gt(),
-                    _ => ord.is_ge(),
-                }))
+                    )),
+                }
             }
             Add => match (&l, &r) {
                 (Value::Int(a), Value::Int(b)) => {

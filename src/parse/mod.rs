@@ -31,6 +31,22 @@ pub fn parse_expr(src: &str) -> Result<Expr> {
     Ok(e)
 }
 
+/// Parse exactly one statement. Unlike module items, a bare `let mut` is a
+/// valid statement here, which is what the REPL needs.
+pub fn parse_stmt(src: &str) -> Result<Stmt> {
+    let toks = lex(src)?;
+    let mut p = Parser {
+        toks,
+        pos: 0,
+        depth: 0,
+    };
+    p.skip_newlines();
+    let s = p.stmt()?;
+    p.skip_newlines();
+    p.expect_eof()?;
+    Ok(s)
+}
+
 const MAX_DEPTH: usize = 128;
 
 struct Parser {
@@ -611,9 +627,11 @@ impl Parser {
             }
             match op {
                 None => {
-                    // pipe
+                    // Pipeline: `x |> f` calls `f(x)`; `x |> f(a)` calls
+                    // `f(x, a)`. The left operand becomes the first argument.
                     let rhs = self.expr_bp(rbp)?;
-                    lhs = Expr::Pipe(Box::new(lhs), Box::new(rhs), span);
+                    let piped = desugar_pipe(lhs, rhs, span);
+                    lhs = piped;
                 }
                 Some(op) => {
                     let rhs = self.expr_bp(rbp)?;
@@ -629,6 +647,12 @@ impl Parser {
         match self.at().clone() {
             Tok::Minus => {
                 self.bump();
+                // `-9223372036854775808` is `i64::MIN`; the magnitude alone is
+                // out of range and is only valid directly under this minus.
+                if matches!(self.at(), Tok::IntMinMagnitude) {
+                    self.bump();
+                    return Ok(Expr::Lit(Lit::Int(i64::MIN), span));
+                }
                 let e = self.unary()?;
                 Ok(Expr::Unary(UnOp::Neg, Box::new(e), span))
             }
@@ -709,6 +733,13 @@ impl Parser {
             Tok::Int(v) => {
                 self.bump();
                 Expr::Lit(Lit::Int(v), span)
+            }
+            Tok::IntMinMagnitude => {
+                return Err(Diag::new(
+                    codes::INVALID_NUMBER,
+                    "integer out of range; `9223372036854775808` is only valid as part of `-9223372036854775808`",
+                    span,
+                ))
             }
             Tok::Float(v) => {
                 self.bump();
@@ -1072,6 +1103,27 @@ impl Parser {
             parts.push(FPart::Lit(lit));
         }
         Ok(parts)
+    }
+}
+
+/// Desugar `lhs |> rhs` into a call with `lhs` as the first argument:
+///
+/// * `lhs |> f`        -> `f(lhs)`
+/// * `lhs |> f(a, b)`  -> `f(lhs, a, b)`
+/// * `lhs |> r.m(a)`   -> `r.m(lhs, a)`
+///
+/// Any other right-hand side is a callable value, so it becomes `rhs(lhs)`.
+fn desugar_pipe(lhs: Expr, rhs: Expr, span: Span) -> Expr {
+    match rhs {
+        Expr::Call(callee, mut args, cspan) => {
+            args.insert(0, lhs);
+            Expr::Call(callee, args, cspan)
+        }
+        Expr::Method(recv, name, mut args, mspan) => {
+            args.insert(0, lhs);
+            Expr::Method(recv, name, args, mspan)
+        }
+        other => Expr::Pipe(Box::new(lhs), Box::new(other), span),
     }
 }
 

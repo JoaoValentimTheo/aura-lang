@@ -98,6 +98,8 @@ pub mod codes {
     pub const EXPECTED: u16 = 1006;
     /// `else if` is not part of the language.
     pub const ELSE_IF: u16 = 1014;
+    /// An expression, block, or statement nests too deeply.
+    pub const NESTING: u16 = 1015;
     /// A reserved word was used as a name.
     pub const RESERVED_NAME: u16 = 1009;
     /// Assignment to an immutable binding.
@@ -120,6 +122,8 @@ pub mod codes {
     pub const DUPLICATE_VARIANT: u16 = 2013;
     /// A pattern binds the same name more than once.
     pub const DUPLICATE_BINDING: u16 = 2014;
+    /// `break` or `continue` used outside a loop.
+    pub const LOOP_CONTROL: u16 = 2015;
     /// Type mismatch.
     pub const TYPE_MISMATCH: u16 = 3001;
     /// Return type mismatch.
@@ -150,6 +154,10 @@ pub mod codes {
     pub const INDEX: u16 = 4019;
     /// A user assertion failed.
     pub const ASSERT: u16 = 4028;
+    /// No `match` arm matched the value.
+    pub const NO_MATCH: u16 = 4029;
+    /// `return` appeared in a position where it cannot produce a value.
+    pub const RETURN_POSITION: u16 = 4030;
     /// An internal invariant of the runtime was violated. This indicates a
     /// bug in Aura itself, never a user mistake.
     pub const INTERNAL: u16 = 4999;

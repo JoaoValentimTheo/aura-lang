@@ -210,13 +210,19 @@ impl Lexer<'_> {
             })?;
             Ok(Tok::Float(v))
         } else {
-            let v: i64 = text.parse().map_err(|_| {
-                Diag::new(
-                    codes::INVALID_NUMBER,
-                    "integer out of range",
-                    Span::new(start, self.pos),
-                )
-            })?;
+            let v: i64 = match text.parse() {
+                Ok(v) => v,
+                Err(_) if text == "9223372036854775808" => {
+                    return Ok(Tok::IntMinMagnitude);
+                }
+                Err(_) => {
+                    return Err(Diag::new(
+                        codes::INVALID_NUMBER,
+                        "integer out of range",
+                        Span::new(start, self.pos),
+                    ))
+                }
+            };
             Ok(Tok::Int(v))
         }
     }

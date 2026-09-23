@@ -169,6 +169,21 @@ impl Value {
         }
     }
 
+    /// Whether values of these two types can be ordered at all, even if a
+    /// particular pair (such as two NaNs) is unordered.
+    #[must_use]
+    pub fn comparable_with(&self, other: &Value) -> bool {
+        matches!(
+            (self, other),
+            (Value::Int(_), Value::Int(_))
+                | (Value::Float(_), Value::Float(_))
+                | (Value::Int(_), Value::Float(_))
+                | (Value::Float(_), Value::Int(_))
+                | (Value::Str(_), Value::Str(_))
+                | (Value::Bool(_), Value::Bool(_))
+        )
+    }
+
     /// Ordering for `<`, `<=`, `>`, `>=`; `None` if unordered.
     #[must_use]
     pub fn cmp_val(&self, other: &Value) -> Option<std::cmp::Ordering> {

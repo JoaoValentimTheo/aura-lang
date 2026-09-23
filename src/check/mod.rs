@@ -12,6 +12,10 @@ use crate::error::{codes, Diag, Result, Span};
 
 pub mod types;
 
+/// Maximum AST nesting the checker will descend before reporting a limit.
+/// Prevents a flat but deeply nested program from exhausting the host stack.
+const MAX_AST_DEPTH: usize = 256;
+
 /// A lexical scope of bindings.
 #[derive(Debug, Default)]
 struct Scope {
@@ -32,6 +36,8 @@ pub struct Checker {
     types: HashMap<String, Span>,
     /// The kind of each user type: `struct`, `enum`, or `alias`.
     type_kinds: HashMap<String, String>,
+    /// Field types of each struct, by struct name.
+    struct_fields: HashMap<String, HashMap<String, Ty>>,
     /// Enum variant tags declared anywhere, with defining enum name.
     variants: HashMap<String, String>,
     /// The declared return type of the function currently being checked.
@@ -43,6 +49,15 @@ pub struct Checker {
     underscore_params: Vec<(String, Span)>,
     /// Names referenced while checking the current function body.
     used_names: HashMap<String, Span>,
+    /// Current AST descent depth, guarding against host stack exhaustion.
+    depth: usize,
+    /// Number of enclosing loops, so `break`/`continue` can be validated.
+    loop_depth: usize,
+    /// Top-level constant names mapped to their source order.
+    const_order: HashMap<String, usize>,
+    /// While checking a constant initializer, the order index of that
+    /// constant; constants at or after it are not yet initialized.
+    active_const: Option<usize>,
 }
 
 impl Checker {
@@ -54,23 +69,31 @@ impl Checker {
             functions: HashMap::new(),
             types: HashMap::new(),
             type_kinds: HashMap::new(),
+            struct_fields: HashMap::new(),
             variants: HashMap::new(),
             return_type: None,
             value_types: vec![HashMap::new()],
             underscore_params: Vec::new(),
             used_names: HashMap::new(),
+            depth: 0,
+            const_order: HashMap::new(),
+            active_const: None,
+            loop_depth: 0,
         }
     }
 
     /// Build a checker that already knows a set of global names (used by the
-    /// REPL to carry declarations across submissions).
+    /// REPL to carry declarations across submissions). Each entry is
+    /// `(name, mutable, is_function)`.
     #[must_use]
-    pub fn with_globals(names: &[String]) -> Checker {
+    pub fn with_globals(globals: &[(String, bool, bool)]) -> Checker {
         let mut c = Checker::new();
-        for name in names {
+        for (name, mutable, is_fn) in globals {
             c.scopes[0].declares.insert(name.clone(), Span::default());
-            c.scopes[0].vars.insert(name.clone(), false);
-            c.functions.insert(name.clone(), Span::default());
+            c.scopes[0].vars.insert(name.clone(), *mutable);
+            if *is_fn {
+                c.functions.insert(name.clone(), Span::default());
+            }
         }
         c
     }
@@ -116,6 +139,8 @@ impl Checker {
                     }
                     self.scopes[0].declares.entry(name.clone()).or_insert(*span);
                     self.scopes[0].vars.insert(name.clone(), false);
+                    let ord = self.const_order.len();
+                    self.const_order.insert(name.clone(), ord);
                 }
                 Item::Struct { name, span, .. } => {
                     if self.types.insert(name.clone(), *span).is_some() {
@@ -142,18 +167,19 @@ impl Checker {
                     self.type_kinds.insert(name.clone(), "enum".to_string());
                     for (tag, _) in variants {
                         if let Some(prev) = self.variants.get(tag) {
-                            if prev != name {
-                                return Err(Diag::new(
-                                    codes::DUPLICATE_VARIANT,
+                            return Err(Diag::new(
+                                codes::DUPLICATE_VARIANT,
+                                if prev == name {
+                                    format!("variant `{tag}` is declared more than once")
+                                } else {
                                     format!(
                                         "variant `{tag}` is already declared by enum `{prev}`; variant names must be unique across the program"
-                                    ),
-                                    *span,
-                                ));
-                            }
-                        } else {
-                            self.variants.insert(tag.clone(), name.clone());
+                                    )
+                                },
+                                *span,
+                            ));
                         }
+                        self.variants.insert(tag.clone(), name.clone());
                     }
                 }
                 Item::Alias { name, span, .. } => {
@@ -172,10 +198,13 @@ impl Checker {
         // Validate every written type annotation now that all names are known.
         for item in &m.items {
             match item {
-                Item::Struct { fields, .. } => {
-                    for (_, fty) in fields {
-                        Ty::from_expr(fty, &self.type_kinds, Span::default())?;
+                Item::Struct { name, fields, .. } => {
+                    let mut map = HashMap::new();
+                    for (fname, fty) in fields {
+                        let ty = Ty::from_expr(fty, &self.type_kinds, Span::default())?;
+                        map.insert(fname.clone(), ty);
                     }
+                    self.struct_fields.insert(name.clone(), map);
                 }
                 Item::Enum { variants, .. } => {
                     for (_, payload) in variants {
@@ -201,6 +230,27 @@ impl Checker {
             }
         }
         Ok(())
+    }
+
+    /// Check a single statement against the current global scope (used by
+    /// the REPL, where `let mut` is valid at the top level).
+    ///
+    /// # Errors
+    /// Returns the first diagnostic found.
+    pub fn check_stmt(&mut self, s: &Stmt) -> Result<()> {
+        self.stmt(s)
+    }
+
+    /// Record a REPL global so later submissions can see it. Functions are
+    /// also made callable.
+    pub fn add_global(&mut self, name: &str, is_fn: bool) {
+        self.scopes[0]
+            .declares
+            .insert(name.to_string(), Span::default());
+        self.scopes[0].vars.insert(name.to_string(), false);
+        if is_fn {
+            self.functions.insert(name.to_string(), Span::default());
+        }
     }
 
     /// Check a module, returning the first diagnostic.
@@ -274,9 +324,26 @@ impl Checker {
         Ok(())
     }
 
+    /// The annotated type of `name`, if any, innermost scope first.
+    fn lookup_type(&self, name: &str) -> Option<Ty> {
+        for scope in self.value_types.iter().rev() {
+            if let Some(t) = scope.get(name) {
+                return Some(t.clone());
+            }
+        }
+        None
+    }
+
     fn lookup(&self, name: &str) -> Option<bool> {
         if crate::stdlib::builtin_names().contains(&name) {
             return Some(false);
+        }
+        // While checking a constant initializer, only constants declared
+        // before it are initialized (source-order semantics).
+        if let (Some(active), Some(ord)) = (self.active_const, self.const_order.get(name)) {
+            if *ord >= active {
+                return None;
+            }
         }
         for scope in self.scopes.iter().rev() {
             if let Some(m) = scope.vars.get(name) {
@@ -356,8 +423,12 @@ impl Checker {
                 self.used_names = saved_used;
                 self.pop();
             }
-            Item::Const { value, .. } => {
-                self.expr(value)?;
+            Item::Const { name, value, .. } => {
+                let saved = self.active_const;
+                self.active_const = self.const_order.get(name).copied();
+                let r = self.expr(value);
+                self.active_const = saved;
+                r?;
             }
             Item::Expr(e, _) => self.expr(e)?,
             Item::Struct { .. } | Item::Enum { .. } | Item::Alias { .. } | Item::Use { .. } => {}
@@ -489,6 +560,21 @@ impl Checker {
     }
 
     fn stmt(&mut self, s: &Stmt) -> Result<()> {
+        self.depth += 1;
+        if self.depth > MAX_AST_DEPTH {
+            self.depth -= 1;
+            return Err(Diag::new(
+                codes::NESTING,
+                "statement nests too deeply",
+                Span::default(),
+            ));
+        }
+        let r = self.stmt_inner(s);
+        self.depth -= 1;
+        r
+    }
+
+    fn stmt_inner(&mut self, s: &Stmt) -> Result<()> {
         match s {
             Stmt::Let {
                 mutable,
@@ -515,41 +601,106 @@ impl Checker {
                     self.value_types
                         .last_mut()
                         .map(|m| m.insert(name.clone(), expected));
+                } else {
+                    // Without an annotation, still remember a concrete user
+                    // type so field assignment can be checked.
+                    let inferred = self.infer(value);
+                    if matches!(inferred, Ty::Named(_)) {
+                        self.value_types
+                            .last_mut()
+                            .map(|m| m.insert(name.clone(), inferred));
+                    }
                 }
                 self.declare(name, *mutable, *span)?;
             }
             Stmt::Assign {
                 target,
                 value,
-                op: _,
+                op,
                 span,
             } => {
                 self.expr(value)?;
                 match target {
-                    Expr::Name(name, nspan) => match self.lookup(name) {
-                        Some(true) => {}
-                        Some(false) => {
-                            return Err(Diag::new(
-                                codes::ASSIGN_IMMUTABLE,
-                                format!(
-                                "cannot assign to `{name}`: it is immutable (declare it `let mut`)"
-                            ),
-                                *nspan,
-                            ))
+                    Expr::Name(name, nspan) => {
+                        match self.lookup(name) {
+                            Some(true) => {}
+                            Some(false) => {
+                                return Err(Diag::new(
+                                    codes::ASSIGN_IMMUTABLE,
+                                    format!(
+                                    "cannot assign to `{name}`: it is immutable (declare it `let mut`)"
+                                ),
+                                    *nspan,
+                                ))
+                            }
+                            None => {
+                                return Err(Diag::new(
+                                    codes::UNDEFINED,
+                                    format!("undefined variable `{name}`"),
+                                    *nspan,
+                                ))
+                            }
                         }
-                        None => {
-                            return Err(Diag::new(
-                                codes::UNDEFINED,
-                                format!("undefined variable `{name}`"),
-                                *nspan,
-                            ))
+                        // If the binding has a known annotated type, an
+                        // assignment must respect it.
+                        if let Some(expected) = self.lookup_type(name) {
+                            let actual = if op.is_some() {
+                                Ty::Unknown
+                            } else {
+                                self.infer(value)
+                            };
+                            if !matches!(actual, Ty::Unknown) && !expected.compatible_with(&actual)
+                            {
+                                return Err(Diag::new(
+                                    codes::TYPE_MISMATCH,
+                                    format!(
+                                        "`{name}` is `{}` but the assigned value is `{}`",
+                                        expected.name(),
+                                        actual.name()
+                                    ),
+                                    *span,
+                                ));
+                            }
                         }
-                    },
+                    }
                     Expr::Index(base, idx, _) => {
                         self.expr(base)?;
                         self.expr(idx)?;
                     }
-                    Expr::Field(base, _, _) => self.expr(base)?,
+                    Expr::Field(base, fname, fspan) => {
+                        self.expr(base)?;
+                        // If the base is a known struct, the assigned value
+                        // must match the declared field type.
+                        if op.is_none() {
+                            if let Ty::Named(sname) = self.infer(base) {
+                                match self.struct_fields.get(&sname).and_then(|m| m.get(fname)) {
+                                    Some(fty) => {
+                                        let actual = self.infer(value);
+                                        if !matches!(actual, Ty::Unknown)
+                                            && !fty.compatible_with(&actual)
+                                        {
+                                            return Err(Diag::new(
+                                                codes::TYPE_MISMATCH,
+                                                format!(
+                                                    "field `{fname}` is `{}` but the assigned value is `{}`",
+                                                    fty.name(),
+                                                    actual.name()
+                                                ),
+                                                *fspan,
+                                            ));
+                                        }
+                                    }
+                                    None => {
+                                        return Err(Diag::new(
+                                            codes::UNDEFINED,
+                                            format!("`{sname}` has no field `{fname}`"),
+                                            *fspan,
+                                        ))
+                                    }
+                                }
+                            }
+                        }
+                    }
                     _ => {
                         return Err(Diag::new(
                             codes::INVALID_ASSIGN,
@@ -580,22 +731,52 @@ impl Checker {
                 }
             }
             Stmt::Throw(v, _) => self.expr(v)?,
-            Stmt::Break(_) | Stmt::Continue(_) => {}
+            Stmt::Break(span) | Stmt::Continue(span) => {
+                if self.loop_depth == 0 {
+                    return Err(Diag::new(
+                        codes::LOOP_CONTROL,
+                        "`break`/`continue` can only appear inside a loop",
+                        *span,
+                    ));
+                }
+            }
             Stmt::While(c, body, _) => {
                 self.expr(c)?;
-                self.block(body)?;
+                self.loop_depth += 1;
+                let r = self.block(body);
+                self.loop_depth -= 1;
+                r?;
             }
-            Stmt::Loop(body, _) => self.block(body)?,
-            Stmt::For(pat, iter, body, _) => {
+            Stmt::Loop(body, _) => {
+                self.loop_depth += 1;
+                let r = self.block(body);
+                self.loop_depth -= 1;
+                r?;
+            }
+            Stmt::For(pat, iter, body, span) => {
                 self.expr(iter)?;
+                // A statically-known scalar can never be iterated.
+                if matches!(self.infer(iter), Ty::Int | Ty::Float | Ty::Bool) {
+                    return Err(Diag::new(
+                        codes::NOT_ITERABLE,
+                        format!("`{}` is not iterable", self.infer(iter).name()),
+                        *span,
+                    ));
+                }
                 self.push();
                 for b in pat.bindings() {
                     self.declare(&b, false, Span::default())?;
                 }
-                for s in body {
-                    self.stmt(s)?;
-                }
+                self.loop_depth += 1;
+                let loop_result: Result<()> = (|| {
+                    for s in body {
+                        self.stmt(s)?;
+                    }
+                    Ok(())
+                })();
+                self.loop_depth -= 1;
                 self.pop();
+                loop_result?;
             }
             Stmt::Try {
                 body,
@@ -620,6 +801,21 @@ impl Checker {
     }
 
     fn expr(&mut self, e: &Expr) -> Result<()> {
+        self.depth += 1;
+        if self.depth > MAX_AST_DEPTH {
+            self.depth -= 1;
+            return Err(Diag::new(
+                codes::NESTING,
+                "expression nests too deeply",
+                Span::default(),
+            ));
+        }
+        let r = self.expr_inner(e);
+        self.depth -= 1;
+        r
+    }
+
+    fn expr_inner(&mut self, e: &Expr) -> Result<()> {
         match e {
             Expr::Lit(_, _) => {}
             Expr::Name(name, span) => {
@@ -704,11 +900,14 @@ impl Checker {
             }
             Expr::Lambda(ps, body, _) => {
                 self.push();
+                let saved_loop = std::mem::take(&mut self.loop_depth);
                 for p in ps {
                     self.declare(p, false, Span::default())?;
                 }
-                self.expr(body)?;
+                let r = self.expr(body);
+                self.loop_depth = saved_loop;
                 self.pop();
+                r?;
             }
             Expr::Pipe(l, r, _) => {
                 self.expr(l)?;

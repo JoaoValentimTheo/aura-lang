@@ -8,6 +8,9 @@ pub enum Tok {
     // literals
     /// Integer literal.
     Int(i64),
+    /// The magnitude `i64::MAX + 1`, which is only valid directly under a
+    /// unary minus (it becomes `i64::MIN`).
+    IntMinMagnitude,
     /// Float literal.
     Float(f64),
     /// Plain string literal (already unescaped).
@@ -151,7 +154,7 @@ impl Tok {
     #[must_use]
     pub fn describe(&self) -> String {
         match self {
-            Tok::Int(_) => "integer".into(),
+            Tok::Int(_) | Tok::IntMinMagnitude => "integer".into(),
             Tok::Float(_) => "float".into(),
             Tok::Str(_) => "string".into(),
             Tok::FStr(_) => "f-string".into(),
@@ -164,9 +167,12 @@ impl Tok {
 impl std::fmt::Display for Tok {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            Tok::Int(_) | Tok::Float(_) | Tok::Str(_) | Tok::FStr(_) | Tok::Ident(_) => {
-                return f.write_str("<literal-or-name>")
-            }
+            Tok::Int(_)
+            | Tok::IntMinMagnitude
+            | Tok::Float(_)
+            | Tok::Str(_)
+            | Tok::FStr(_)
+            | Tok::Ident(_) => return f.write_str("<literal-or-name>"),
             Tok::True => "true",
             Tok::False => "false",
             Tok::None => "none",
