@@ -1,81 +1,22 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+# Rust
+/target/
+**/*.rs.bk
 
-# Virtual environments
-venv/
-ENV/
-env/
-.venv
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Testing
-.pytest_cache/
-.coverage
-hypothesis/
-.hypothesis/
-htmlcov/
-
-# Linting/type-checking caches
-.mypy_cache/
-.ruff_cache/
-
-# Temporary files
-*.tmp
-*.bak
-.*.swp
-/temp/
-/tmp/
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Project specific
+# Aura build output
 output/
 *.log
 
-# Unrelated Azure AI tooling that may appear in the workspace
-.agentignore
-azure.yaml
-agent.yaml
-agent.manifest.yaml
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
 
-# Aura IDE (separate effort, not part of the published language package)
-aura_ide/
-aura-ide/
-tests/test_ide.py
-.azure
+# Local experiment area
+/tmp/
+temp/
 
-# Working session transcripts kept locally, not project documentation
-session_backup.txt
-session_backup*.txt
-session-ses_*.md
-.reorg/
-aura.toml
-src/
-tests/test_main.aura
+# Generated docs
+/docs/_site/

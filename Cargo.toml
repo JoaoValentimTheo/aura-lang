@@ -1,0 +1,96 @@
+[package]
+name = "aura-lang"
+version = "3.0.0-alpha.1"
+edition = "2021"
+rust-version = "1.83"
+description = "Aura: an expression-oriented scripting language with a native Rust runtime and optional Python interop (PyO3)."
+license = "MIT"
+repository = "https://github.com/JoaoValentimTheo/aura-lang"
+readme = "README.md"
+keywords = ["language", "interpreter", "compiler", "scripting"]
+categories = ["compilers", "development-tools"]
+
+[dependencies]
+# Core language only needs an ordered map and float formatting; keep deps tiny.
+serde = { version = "1", default-features = false, features = ["derive", "std"], optional = true }
+serde_json = { version = "1", optional = true, default-features = false, features = ["std"] }
+regex = { version = "1", optional = true, default-features = false, features = ["std", "perf", "unicode"] }
+chrono = { version = "0.4", optional = true, default-features = false, features = ["std", "clock"] }
+rustyline = { version = "14", optional = true }
+pyo3 = { version = "0.29", optional = true, features = ["auto-initialize"] }
+
+[dev-dependencies]
+proptest = "1.5"
+
+[features]
+default = ["cli", "repl", "json", "regex", "time", "py"]
+cli = []
+repl = ["dep:rustyline"]
+json = ["dep:serde_json"]
+regex = ["dep:regex"]
+time = ["dep:chrono"]
+py = ["dep:pyo3", "dep:serde"]
+
+[lib]
+name = "aura"
+path = "src/lib.rs"
+
+[[bin]]
+name = "aura"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+# Correctness and safety lints stay strict.
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+# Style preferences that do not indicate defects. Each is a deliberate,
+# documented choice, not a blanket suppression.
+doc_markdown = "allow"
+wildcard_imports = "allow"
+similar_names = "allow"
+many_single_char_names = "allow"
+needless_pass_by_value = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+option_if_let_else = "allow"
+redundant_closure_for_method_calls = "allow"
+manual_let_else = "allow"
+too_many_lines = "allow"
+unnested_or_patterns = "allow"
+collapsible_if = "allow"
+match_same_arms = "allow"
+needless_for_each = "allow"
+unused_self = "allow"
+only_used_in_recursion = "allow"
+float_cmp = "allow"
+cast_precision_loss = "allow"
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+cast_possible_wrap = "allow"
+cast_lossless = "allow"
+non_ascii_literal = "allow"
+manual_strip = "allow"
+return_self_not_self = "allow"
+missing_const_for_fn = "allow"
+eq_impl_without_partial_eq = "allow"
+if_same_then_else = "allow"
+if_not_else = "allow"
+self_only_used_in_recursion = "allow"
+branches_sharing_code = "allow"
+needless_borrow = "allow"
+needless_raw_string_hashes = "allow"
+single_match_else = "allow"
