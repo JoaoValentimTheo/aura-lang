@@ -80,10 +80,35 @@ fn arg<'a>(args: &'a [Value], i: usize, name: &str, span: Span) -> Result<&'a Va
     })
 }
 
+/// Reject calls with the wrong number of arguments.
+fn arity(args: &[Value], min: usize, max: usize, name: &str, span: Span) -> Result<()> {
+    if args.len() < min {
+        return Err(err(
+            codes::TYPE_MISMATCH,
+            format!(
+                "`{name}` expects at least {min} argument(s), got {}",
+                args.len()
+            ),
+            span,
+        ));
+    }
+    if args.len() > max {
+        return Err(err(
+            codes::TYPE_MISMATCH,
+            format!(
+                "`{name}` expects at most {max} argument(s), got {}",
+                args.len()
+            ),
+            span,
+        ));
+    }
+    Ok(())
+}
+
 fn as_int(v: &Value, what: &str, span: Span) -> Result<i64> {
     match v {
         Value::Int(i) => Ok(*i),
-        Value::Float(f) if f.fract() == 0.0 => Ok(*f as i64),
+        // No implicit float -> int coercion: `range` needs real ints.
         other => Err(err(
             codes::TYPE_MISMATCH,
             format!("`{what}` expects an int, found {}", other.type_name()),
@@ -113,6 +138,7 @@ pub fn install(it: &mut Interp) {
         Ok(Value::None)
     });
     it.native("len", |_it, args, span| {
+        arity(&args, 1, 1, "len", span)?;
         let v = arg(&args, 0, "len", span)?;
         match v {
             Value::Str(s) => Ok(Value::Int(s.chars().count() as i64)),
@@ -127,13 +153,26 @@ pub fn install(it: &mut Interp) {
         }
     });
     it.native("to_string", |_it, args, span| {
+        arity(&args, 1, 1, "to_string", span)?;
         Ok(Value::str(arg(&args, 0, "to_string", span)?.display()))
     });
     it.native("to_int", |_it, args, span| {
+        arity(&args, 1, 1, "to_int", span)?;
         let v = arg(&args, 0, "to_int", span)?;
         match v {
             Value::Int(i) => Ok(Value::Int(*i)),
-            Value::Float(f) => Ok(Value::Int(*f as i64)),
+            Value::Float(f) => {
+                // Reject NaN, infinities, and out-of-range values instead of
+                // silently saturating, which would lose information.
+                if !f.is_finite() || *f < i64::MIN as f64 || *f >= 9_223_372_036_854_775_808.0 {
+                    return Err(err(
+                        codes::OVERFLOW,
+                        format!("`to_int` cannot represent {f} as an int"),
+                        span,
+                    ));
+                }
+                Ok(Value::Int(*f as i64))
+            }
             Value::Bool(b) => Ok(Value::Int(i64::from(*b))),
             Value::Str(s) => s.trim().parse::<i64>().map(Value::Int).map_err(|_| {
                 err(
@@ -150,6 +189,7 @@ pub fn install(it: &mut Interp) {
         }
     });
     it.native("to_float", |_it, args, span| {
+        arity(&args, 1, 1, "to_float", span)?;
         let v = arg(&args, 0, "to_float", span)?;
         match v {
             Value::Int(i) => Ok(Value::Float(*i as f64)),
@@ -186,19 +226,23 @@ pub fn install(it: &mut Interp) {
         };
         Ok(Value::Range(Rc::new(RangeVal { start, end })))
     });
-    it.native("abs", |_it, args, span| match arg(&args, 0, "abs", span)? {
-        Value::Int(i) => i
-            .checked_abs()
-            .map(Value::Int)
-            .ok_or_else(|| err(codes::OVERFLOW, "integer overflow", span)),
-        Value::Float(f) => Ok(Value::Float(f.abs())),
-        other => Err(err(
-            codes::TYPE_MISMATCH,
-            format!("`abs` does not accept {}", other.type_name()),
-            span,
-        )),
+    it.native("abs", |_it, args, span| {
+        arity(&args, 1, 1, "abs", span)?;
+        match arg(&args, 0, "abs", span)? {
+            Value::Int(i) => i
+                .checked_abs()
+                .map(Value::Int)
+                .ok_or_else(|| err(codes::OVERFLOW, "integer overflow", span)),
+            Value::Float(f) => Ok(Value::Float(f.abs())),
+            other => Err(err(
+                codes::TYPE_MISMATCH,
+                format!("`abs` does not accept {}", other.type_name()),
+                span,
+            )),
+        }
     });
     it.native("min", |_it, args, span| {
+        arity(&args, 2, 2, "min", span)?;
         let a = arg(&args, 0, "min", span)?;
         let b = arg(&args, 1, "min", span)?;
         match a.cmp_val(b) {
@@ -207,6 +251,7 @@ pub fn install(it: &mut Interp) {
         }
     });
     it.native("max", |_it, args, span| {
+        arity(&args, 2, 2, "max", span)?;
         let a = arg(&args, 0, "max", span)?;
         let b = arg(&args, 1, "max", span)?;
         match a.cmp_val(b) {
@@ -215,6 +260,7 @@ pub fn install(it: &mut Interp) {
         }
     });
     it.native("push", |_it, args, span| {
+        arity(&args, 2, 2, "push", span)?;
         let list = arg(&args, 0, "push", span)?;
         let item = arg(&args, 1, "push", span)?.clone();
         match list {
@@ -230,6 +276,7 @@ pub fn install(it: &mut Interp) {
         }
     });
     it.native("keys", |_it, args, span| {
+        arity(&args, 1, 1, "keys", span)?;
         match arg(&args, 0, "keys", span)? {
             Value::Map(m) => Ok(Value::list(m.borrow().keys().map(Value::str).collect())),
             other => Err(err(
@@ -240,6 +287,7 @@ pub fn install(it: &mut Interp) {
         }
     });
     it.native("values", |_it, args, span| {
+        arity(&args, 1, 1, "values", span)?;
         match arg(&args, 0, "values", span)? {
             Value::Map(m) => Ok(Value::list(m.borrow().values().cloned().collect())),
             other => Err(err(
@@ -250,6 +298,7 @@ pub fn install(it: &mut Interp) {
         }
     });
     it.native("sort", |_it, args, span| {
+        arity(&args, 1, 1, "sort", span)?;
         let list = arg(&args, 0, "sort", span)?;
         match list {
             Value::List(l) => {
@@ -265,6 +314,7 @@ pub fn install(it: &mut Interp) {
         }
     });
     it.native("reverse", |_it, args, span| {
+        arity(&args, 1, 1, "reverse", span)?;
         match arg(&args, 0, "reverse", span)? {
             Value::List(l) => {
                 let mut out = l.borrow().clone();
@@ -283,6 +333,7 @@ pub fn install(it: &mut Interp) {
         }
     });
     it.native("map", |it, args, span| {
+        arity(&args, 2, 2, "map", span)?;
         let list = arg(&args, 0, "map", span)?.clone();
         let f = arg(&args, 1, "map", span)?.clone();
         let snapshot = as_list(&list, "map", span)?;
@@ -293,6 +344,7 @@ pub fn install(it: &mut Interp) {
         Ok(Value::list(out))
     });
     it.native("filter", |it, args, span| {
+        arity(&args, 2, 2, "filter", span)?;
         let list = arg(&args, 0, "filter", span)?.clone();
         let f = arg(&args, 1, "filter", span)?.clone();
         let snapshot = as_list(&list, "filter", span)?;
@@ -306,6 +358,7 @@ pub fn install(it: &mut Interp) {
         Ok(Value::list(out))
     });
     it.native("reduce", |it, args, span| {
+        arity(&args, 3, 3, "reduce", span)?;
         let list = arg(&args, 0, "reduce", span)?.clone();
         let f = arg(&args, 1, "reduce", span)?.clone();
         let mut acc = arg(&args, 2, "reduce", span)?.clone();
@@ -316,6 +369,7 @@ pub fn install(it: &mut Interp) {
         Ok(acc)
     });
     it.native("sum", |_it, args, span| {
+        arity(&args, 1, 1, "sum", span)?;
         let list = as_list(&arg(&args, 0, "sum", span)?.clone(), "sum", span)?;
         let mut int_sum: i64 = 0;
         let mut float_sum: f64 = 0.0;
@@ -348,6 +402,7 @@ pub fn install(it: &mut Interp) {
         })
     });
     it.native("assert", |_it, args, span| {
+        arity(&args, 1, 2, "assert", span)?;
         let cond = arg(&args, 0, "assert", span)?;
         if cond.truthy() {
             Ok(Value::None)
@@ -359,6 +414,7 @@ pub fn install(it: &mut Interp) {
         }
     });
     it.native("enumerate", |_it, args, span| {
+        arity(&args, 1, 1, "enumerate", span)?;
         let list = as_list(
             &arg(&args, 0, "enumerate", span)?.clone(),
             "enumerate",
@@ -372,6 +428,7 @@ pub fn install(it: &mut Interp) {
         Ok(Value::list(pairs))
     });
     it.native("zip", |_it, args, span| {
+        arity(&args, 2, 2, "zip", span)?;
         let a = as_list(&arg(&args, 0, "zip", span)?.clone(), "zip", span)?;
         let b = as_list(&arg(&args, 1, "zip", span)?.clone(), "zip", span)?;
         let pairs = a
