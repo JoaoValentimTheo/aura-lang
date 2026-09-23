@@ -7,10 +7,12 @@
 use std::collections::HashMap;
 
 use crate::ast::*;
-use crate::check::types::Ty;
 use crate::error::{codes, Diag, Result, Span};
+use crate::types::Ty;
 
-pub mod types;
+/// Re-export of the shared type representation, for callers that expect
+/// `check::types::Ty`.
+pub use crate::types;
 
 /// Maximum AST nesting the checker will descend before reporting a limit.
 /// Prevents a flat but deeply nested program from exhausting the host stack.
@@ -30,8 +32,9 @@ pub struct Checker {
     scopes: Vec<Scope>,
     /// Whether a `main` function was seen.
     pub has_main: bool,
-    /// Names of every top-level function (hoisted), for call resolution.
-    functions: HashMap<String, Span>,
+    /// Names of every top-level function (hoisted), for call resolution,
+    /// mapped to its declared return type (`None` means "not annotated").
+    functions: HashMap<String, Option<Ty>>,
     /// Names of every top-level type (struct, enum, alias).
     types: HashMap<String, Span>,
     /// The kind of each user type: `struct`, `enum`, or `alias`.
@@ -92,7 +95,7 @@ impl Checker {
             c.scopes[0].declares.insert(name.clone(), Span::default());
             c.scopes[0].vars.insert(name.clone(), *mutable);
             if *is_fn {
-                c.functions.insert(name.clone(), Span::default());
+                c.functions.insert(name.clone(), None);
             }
         }
         c
@@ -110,6 +113,21 @@ impl Checker {
         Ok(())
     }
 
+    /// Check a module in an explicit [`crate::CompileMode`].
+    ///
+    /// This is the one place the "does a module need a `main`?" decision is
+    /// made; every entry point funnels through it.
+    ///
+    /// # Errors
+    /// Returns the first checker diagnostic, plus `E4027` in program mode.
+    pub fn check_mode(&mut self, m: &Module, mode: crate::CompileMode) -> Result<()> {
+        self.check(m)?;
+        match mode {
+            crate::CompileMode::Module => Ok(()),
+            crate::CompileMode::Program => self.require_main(),
+        }
+    }
+
     /// Pre-pass: collect every top-level name before checking bodies, so that
     /// forward references between functions and constants resolve. This makes
     /// the checker agree with the runtime's declaration-then-initialize order.
@@ -117,7 +135,9 @@ impl Checker {
         let mut declared: HashMap<String, Span> = HashMap::new();
         for item in &m.items {
             match item {
-                Item::Fn { name, span, .. } => {
+                Item::Fn {
+                    name, span, ret, ..
+                } => {
                     if declared.insert(name.clone(), *span).is_some() {
                         return Err(Diag::new(
                             codes::REDECLARED,
@@ -125,7 +145,8 @@ impl Checker {
                             *span,
                         ));
                     }
-                    self.functions.entry(name.clone()).or_insert(*span);
+                    let ret_ty = ret.as_ref().map(Ty::from_expr_lenient);
+                    self.functions.entry(name.clone()).or_insert(ret_ty);
                     self.scopes[0].declares.entry(name.clone()).or_insert(*span);
                     self.scopes[0].vars.insert(name.clone(), false);
                 }
@@ -249,7 +270,7 @@ impl Checker {
             .insert(name.to_string(), Span::default());
         self.scopes[0].vars.insert(name.to_string(), false);
         if is_fn {
-            self.functions.insert(name.to_string(), Span::default());
+            self.functions.insert(name.to_string(), None);
         }
     }
 
@@ -260,6 +281,16 @@ impl Checker {
     pub fn module(m: &Module) -> Result<()> {
         let mut c = Checker::new();
         c.check(m)
+    }
+
+    /// Check a module in an explicit mode (this is the canonical entry point).
+    ///
+    /// # Errors
+    /// Returns the first checker diagnostic; `E4027` in program mode without a
+    /// `main`.
+    pub fn module_in_mode(m: &Module, mode: crate::CompileMode) -> Result<()> {
+        let mut c = Checker::new();
+        c.check_mode(m, mode)
     }
 
     /// Check a module and require an entry point.
@@ -423,12 +454,32 @@ impl Checker {
                 self.used_names = saved_used;
                 self.pop();
             }
-            Item::Const { name, value, .. } => {
+            Item::Const {
+                name,
+                ann,
+                value,
+                span,
+            } => {
                 let saved = self.active_const;
                 self.active_const = self.const_order.get(name).copied();
                 let r = self.expr(value);
                 self.active_const = saved;
                 r?;
+                if let Some(ann) = ann {
+                    let expected = self.annotation(ann, *span)?;
+                    let actual = self.infer(value);
+                    if !expected.compatible_with(&actual) {
+                        return Err(Diag::new(
+                            codes::TYPE_MISMATCH,
+                            format!(
+                                "`{name}` is annotated as `{}` but its value is `{}`",
+                                expected.name(),
+                                actual.name()
+                            ),
+                            *span,
+                        ));
+                    }
+                }
             }
             Item::Expr(e, _) => self.expr(e)?,
             Item::Struct { .. } | Item::Enum { .. } | Item::Alias { .. } | Item::Use { .. } => {}
@@ -536,14 +587,96 @@ impl Checker {
                 }
                 Ty::Unknown
             }
+            Expr::Call(f, _, _) => match f.as_ref() {
+                Expr::Name(name, _) => {
+                    if let Some(ret) = self.functions.get(name).and_then(Clone::clone) {
+                        ret
+                    } else if let Some(sig) = crate::stdlib::signatures::builtin(name) {
+                        sig.returns.ty()
+                    } else {
+                        Ty::Unknown
+                    }
+                }
+                _ => Ty::Unknown,
+            },
+            Expr::Method(recv, name, _, _) => {
+                if let Some(class) = self.infer(recv).type_class() {
+                    if let Some(sig) = crate::stdlib::signatures::method(class, name) {
+                        return sig.returns.ty();
+                    }
+                }
+                Ty::Unknown
+            }
             Expr::Pipe(_, _, _)
-            | Expr::Call(_, _, _)
-            | Expr::Method(_, _, _, _)
             | Expr::Field(_, _, _)
             | Expr::Index(_, _, _)
             | Expr::Tuple(_, _)
             | Expr::Lambda(_, _, _) => Ty::Unknown,
         }
+    }
+
+    /// Validate a builtin call against its shared signature.
+    fn check_builtin_call(
+        &self,
+        sig: &crate::stdlib::signatures::Signature,
+        args: &[Expr],
+        span: Span,
+    ) -> Result<()> {
+        if let Some(message) = sig.check_arity(args.len()) {
+            return Err(Diag::new(codes::TYPE_MISMATCH, message, span));
+        }
+        for (i, param) in sig.params.iter().enumerate() {
+            let Some(arg) = args.get(i) else { break };
+            let actual = self.infer(arg);
+            if param.accepts.accepts_ty(&actual) == Some(false) {
+                return Err(Diag::new(
+                    codes::TYPE_MISMATCH,
+                    format!(
+                        "`{}` argument {} expects {}, found `{}`",
+                        sig.name,
+                        i + 1,
+                        param.accepts.describe(),
+                        actual.name()
+                    ),
+                    span,
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Validate a method call when the receiver type is statically known.
+    fn check_method_call(&self, recv: &Expr, name: &str, args: &[Expr], span: Span) -> Result<()> {
+        let Some(class) = self.infer(recv).type_class() else {
+            return Ok(()); // unknown receiver: cannot decide
+        };
+        let Some(sig) = crate::stdlib::signatures::method(class, name) else {
+            return Err(Diag::new(
+                codes::UNDEFINED,
+                format!("{} has no method `{name}`", class.name()),
+                span,
+            ));
+        };
+        if let Some(message) = sig.check_arity(args.len()) {
+            return Err(Diag::new(codes::TYPE_MISMATCH, message, span));
+        }
+        for (i, param) in sig.params.iter().enumerate() {
+            let Some(arg) = args.get(i) else { break };
+            let actual = self.infer(arg);
+            if param.accepts.accepts_ty(&actual) == Some(false) {
+                return Err(Diag::new(
+                    codes::TYPE_MISMATCH,
+                    format!(
+                        "`{name}` argument {} expects {}, found `{}`",
+                        i + 1,
+                        param.accepts.describe(),
+                        actual.name()
+                    ),
+                    span,
+                ));
+            }
+        }
+        Ok(())
     }
 
     fn annotation(&self, t: &TypeExpr, span: Span) -> Result<Ty> {
@@ -602,10 +735,12 @@ impl Checker {
                         .last_mut()
                         .map(|m| m.insert(name.clone(), expected));
                 } else {
-                    // Without an annotation, still remember a concrete user
-                    // type so field assignment can be checked.
+                    // Without an annotation, still remember any inferred type
+                    // (a user struct for field checking, or a builtin type so
+                    // method calls on it can be validated). `Unknown` is not
+                    // recorded.
                     let inferred = self.infer(value);
-                    if matches!(inferred, Ty::Named(_)) {
+                    if !matches!(inferred, Ty::Unknown) {
                         self.value_types
                             .last_mut()
                             .map(|m| m.insert(name.clone(), inferred));
@@ -836,24 +971,38 @@ impl Checker {
                 }
             }
             Expr::Unary(_, o, _) => self.expr(o)?,
-            Expr::Binary(_, l, r, _) => {
+            Expr::Binary(op, l, r, span) => {
                 self.expr(l)?;
                 self.expr(r)?;
+                if matches!(op, BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge) {
+                    let lt = self.infer(l);
+                    let rt = self.infer(r);
+                    if lt.orderable_with(&rt) == Some(false) {
+                        return Err(Diag::new(
+                            codes::TYPE_MISMATCH,
+                            format!("cannot compare `{}` with `{}`", lt.name(), rt.name()),
+                            *span,
+                        ));
+                    }
+                }
             }
-            Expr::Call(f, args, _) => {
+            Expr::Call(f, args, span) => {
                 match f.as_ref() {
-                    Expr::Name(name, span) => {
+                    Expr::Name(name, nspan) => {
                         // A direct call must resolve to a function, a builtin,
                         // or a callable local. Functions are hoisted, so
                         // forward references resolve.
-                        let known = self.functions.contains_key(name)
-                            || crate::stdlib::builtin_names().contains(&name.as_str())
-                            || self.lookup(name).is_some();
-                        if !known {
+                        if self.functions.contains_key(name) {
+                            // ok: user function
+                        } else if let Some(sig) = crate::stdlib::signatures::builtin(name) {
+                            self.check_builtin_call(sig, args, *span)?;
+                        } else if self.lookup(name).is_some() {
+                            // ok: a callable binding (closure)
+                        } else {
                             return Err(Diag::new(
                                 codes::UNDEFINED,
                                 format!("undefined function `{name}`"),
-                                *span,
+                                *nspan,
                             ));
                         }
                     }
@@ -863,8 +1012,16 @@ impl Checker {
                     self.expr(a)?;
                 }
             }
-            Expr::Method(r, _, args, _) => {
+            Expr::Method(r, name, args, span) => {
                 self.expr(r)?;
+                if !crate::stdlib::signatures::method_exists_anywhere(name) {
+                    return Err(Diag::new(
+                        codes::UNDEFINED,
+                        format!("no method `{name}` on any type"),
+                        *span,
+                    ));
+                }
+                self.check_method_call(r, name, args, *span)?;
                 for a in args {
                     self.expr(a)?;
                 }

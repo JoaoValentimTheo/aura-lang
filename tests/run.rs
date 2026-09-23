@@ -182,6 +182,66 @@ fn main() {
 }
 
 #[test]
+fn finally_control_flow_overrides_the_pending_outcome() {
+    // F-07: a control-flow signal raised in `finally` replaces the pending
+    // result. `return` in `finally` wins over the `return` in `try`.
+    let src = r#"
+fn f() -> int {
+    try {
+        return 1
+    } catch e -> {
+        return 0
+    } finally {
+        return 2
+    }
+}
+fn main() { print(f()) }
+"#;
+    assert_eq!(out(src), "2\n");
+
+    // A `throw` in `finally` replaces a caught throw.
+    let src = r#"
+fn main() {
+    try {
+        try {
+            throw "a"
+        } catch e -> {
+            print("caught a")
+        } finally {
+            throw "b"
+        }
+    } catch e -> {
+        print(f"outer {e}")
+    }
+}
+"#;
+    assert_eq!(out(src), "caught a\nouter b\n");
+}
+
+#[test]
+fn pub_and_use_are_inert_but_parse() {
+    // F-08/F-13: `pub` on any item and `use` anywhere are accepted and have
+    // no effect.
+    let src = r#"
+use stdlib
+use a.b.c
+pub fn helper() -> int { return 41 }
+pub struct S { x: int }
+pub enum E { A(int) }
+pub type Id = int
+fn main() {
+    print(helper() + 1)
+    print(S { x: 1 }.x)
+    print(match A(1) {
+        A(n) -> n
+        _ -> 0
+    })
+}
+"#;
+    assert_eq!(out(src), "42\n1\n1\n");
+}
+
+#[test]
 fn string_methods_and_interpolation() {
     let src = r#"
 fn main() {

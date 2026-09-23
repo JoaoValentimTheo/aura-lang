@@ -86,8 +86,8 @@ fn cmd_check(path: Option<&str>) -> ExitCode {
         Ok(v) => v,
         Err(c) => return c,
     };
-    match aura::parse::parse(&src).and_then(|m| aura::check::Checker::module(&m)) {
-        Ok(()) => ExitCode::SUCCESS,
+    match aura::compile(&src, "module") {
+        Ok(_) => ExitCode::SUCCESS,
         Err(d) => {
             eprintln!("{}", render_with_source(&file, &src, &d));
             ExitCode::FAILURE

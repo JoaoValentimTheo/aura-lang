@@ -1,4 +1,4 @@
-//! A conservative, gradual annotation checker.
+//! Shared type representation and annotation parsing.
 //!
 //! Aura's contract promises that type annotations are checked before
 //! execution. This module provides a *sound* checker: it only reports a
@@ -68,6 +68,43 @@ impl Ty {
         }
     }
 
+    /// The coarse built-in type class of this type, or `None` when it is
+    /// `Unknown` or a user type with no method table.
+    #[must_use]
+    pub fn type_class(&self) -> Option<crate::stdlib::signatures::TypeClass> {
+        use crate::stdlib::signatures::TypeClass;
+        Some(match self {
+            Ty::Int => TypeClass::Int,
+            Ty::Float => TypeClass::Float,
+            Ty::Bool => TypeClass::Bool,
+            Ty::String => TypeClass::Str,
+            Ty::List(_) => TypeClass::List,
+            Ty::Map(_) => TypeClass::Map,
+            Ty::Named(_) | Ty::Enum(_) | Ty::Unknown => return None,
+        })
+    }
+
+    /// Whether two types can be ordered with `<`, `<=`, `>`, `>=`.
+    ///
+    /// This mirrors `Value::comparable_with`: only numeric-numeric, string,
+    /// and bool pairs are orderable. Returns `Some(false)` only when it can
+    /// prove the comparison is a type error; `None` when a side is `Unknown`.
+    #[must_use]
+    pub fn orderable_with(&self, other: &Ty) -> Option<bool> {
+        if matches!(self, Ty::Unknown) || matches!(other, Ty::Unknown) {
+            return None;
+        }
+        Some(matches!(
+            (self, other),
+            (Ty::Int, Ty::Int)
+                | (Ty::Float, Ty::Float)
+                | (Ty::Int, Ty::Float)
+                | (Ty::Float, Ty::Int)
+                | (Ty::String, Ty::String)
+                | (Ty::Bool, Ty::Bool)
+        ))
+    }
+
     /// Convert a written type expression to a checker type, validating that
     /// named types exist.
     ///
@@ -116,5 +153,26 @@ impl Ty {
                 }
             },
         })
+    }
+
+    /// Convert a written type expression to a checker type *without*
+    /// validating named types.
+    ///
+    /// Used during hoisting, before user types are fully collected. Unknown
+    /// names become `Ty::Named`, which the checker treats as opaque. This is
+    /// intentionally unsound for diagnostics but sound for the "compatible
+    /// with everything" fallback the checker relies on for user types.
+    #[must_use]
+    pub fn from_expr_lenient(t: &TypeExpr) -> Ty {
+        match t {
+            TypeExpr::Int => Ty::Int,
+            TypeExpr::Float => Ty::Float,
+            TypeExpr::Bool => Ty::Bool,
+            TypeExpr::String => Ty::String,
+            TypeExpr::List(inner) => Ty::List(Box::new(Ty::from_expr_lenient(inner))),
+            TypeExpr::Map(_, v) => Ty::Map(Box::new(Ty::from_expr_lenient(v))),
+            TypeExpr::Optional(_) => Ty::Unknown,
+            TypeExpr::Named(n) => Ty::Named(n.clone()),
+        }
     }
 }

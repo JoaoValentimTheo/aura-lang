@@ -165,6 +165,12 @@ impl Value {
                         .all(|(x, y)| x.equals(y))
             }
             (Value::Range(a), Value::Range(b)) => a.start == b.start && a.end == b.end,
+            // Functions compare by identity: a closure is equal only to
+            // itself, and two natives are equal when they name the same
+            // builtin. This makes `g == g` true while distinct functions
+            // (even with identical bodies) are not equal.
+            (Value::Closure(a), Value::Closure(b)) => Rc::ptr_eq(a, b),
+            (Value::Native(a), Value::Native(b)) => a == b,
             _ => false,
         }
     }

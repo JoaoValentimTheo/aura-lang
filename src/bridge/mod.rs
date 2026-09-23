@@ -50,7 +50,7 @@ mod py {
     use crate::run::value::Value;
     use crate::run::Interp;
     use pyo3::prelude::*;
-    use pyo3::types::{PyAnyMethods, PyDict, PyList, PyModule, PyTuple};
+    use pyo3::types::{PyAnyMethods, PyDict, PyInt, PyList, PyModule, PyTuple};
     use std::cell::RefCell;
     use std::collections::BTreeMap;
     use std::rc::Rc;
@@ -78,8 +78,19 @@ mod py {
         if let Ok(b) = obj.extract::<bool>() {
             return Ok(Value::Bool(b));
         }
-        if let Ok(i) = obj.extract::<i64>() {
-            return Ok(Value::Int(i));
+        // Check `int` *before* `float` and reject values outside `i64` rather
+        // than silently demoting them to a `float`, which would lose
+        // precision. Python's `int` is arbitrary precision.
+        if obj.is_instance_of::<PyInt>() {
+            if let Ok(i) = obj.extract::<i64>() {
+                return Ok(Value::Int(i));
+            }
+            let text = obj.str().map_err(map_pyerr)?.to_string();
+            return Err(Diag::new(
+                codes::OVERFLOW,
+                format!("Python integer `{text}` does not fit in Aura's 64-bit `int`"),
+                Span::default(),
+            ));
         }
         if let Ok(f) = obj.extract::<f64>() {
             return Ok(Value::Float(f));
@@ -97,7 +108,19 @@ mod py {
         if let Ok(dict) = obj.cast::<PyDict>() {
             let mut map = BTreeMap::new();
             for (k, v) in dict.iter() {
-                let key = k.str().map_err(map_pyerr)?.to_string();
+                // Aura maps are string-keyed. Refuse to stringify arbitrary
+                // keys, which would collapse distinct keys (e.g. `1` and
+                // `"1"`) into one.
+                let Ok(key) = k.extract::<String>() else {
+                    let shown = k.str().map_err(map_pyerr)?.to_string();
+                    return Err(Diag::new(
+                        codes::PY_UNSUPPORTED,
+                        format!(
+                            "Python dict key `{shown}` is not a string; Aura maps are string-keyed"
+                        ),
+                        Span::default(),
+                    ));
+                };
                 map.insert(key, to_value(&v)?);
             }
             return Ok(Value::Map(Rc::new(RefCell::new(map))));

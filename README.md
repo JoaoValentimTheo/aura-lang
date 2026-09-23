@@ -175,6 +175,16 @@ is `E5002`, and the binary links no CPython — programs still run.
 | `aura repl` | Interactive session with persistent state |
 | `aura version` | Print the version |
 
+## Architecture
+
+Every entry point (library, CLI, REPL) runs the same `parse → check → execute`
+pipeline. `aura::compile` is the single front end: it takes a compile mode
+(`module` requires nothing; `program` requires `fn main`), so "what is a valid
+program" is defined in exactly one place. The checker and the runtime share one
+signature registry (`src/stdlib/signatures.rs`) for builtin arity, argument
+types, method existence, and return types, so the two layers cannot disagree
+about the standard library.
+
 ## Standard library
 
 Core (always available): `print`, `len`, `to_string`, `to_int`, `to_float`,

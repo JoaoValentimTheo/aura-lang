@@ -51,7 +51,7 @@ Every rejection carries a stable code. Codes are grouped by phase:
 |-------|---------|-----------------|
 | E4007 | Division by zero | `1 / 0`, `1 % 0`, `1.0 / 0.0` |
 | E4011 | Call depth limit | more than 512 active calls |
-| E4013 | Integer overflow | `i64::MAX + 1`, `i64::MIN % -1` |
+| E4013 | Integer overflow | `i64::MAX + 1`, `i64::MIN % -1`; a Python integer beyond `i64` via `py_eval` |
 | E4018 | Value is not iterable | `for x in 1 {}` |
 | E4019 | Index out of range | `[1][5]`, a huge negative index |
 | E4026 | Uncaught thrown value | `throw "x"` with no `catch` |
@@ -66,7 +66,7 @@ Every rejection carries a stable code. Codes are grouped by phase:
 | Code  | Meaning | Example trigger |
 |-------|---------|-----------------|
 | E5001 | Python error | `py_eval("1 / 0")` |
-| E5002 | Python bridge unavailable | `py_eval(...)` without the `py` feature |
+| E5002 | Python bridge unavailable or value cannot cross | `py_eval(...)` without the `py` feature; a non-string Python dict key |
 
 ## Stability
 

@@ -133,3 +133,63 @@ proptest! {
         let _ = run_source(&src, "<nest>");
     }
 }
+
+/// A grammar-directed generator of well-formed, side-effect-free expressions.
+///
+/// Unlike `aura_like`, every generated expression parses. Type errors are
+/// allowed by design: the differential test is exactly about whether the
+/// checker and the evaluator agree on which programs are *type* errors.
+fn typed_expr() -> impl Strategy<Value = String> {
+    let leaf = prop_oneof![
+        (0i64..5).prop_map(|n| n.to_string()),
+        (0i64..5).prop_map(|n| format!("{n}.0")),
+        Just("\"s\"".to_string()),
+        Just("true".to_string()),
+        Just("none".to_string()),
+    ];
+    leaf.prop_recursive(3, 64, 8, |inner| {
+        prop_oneof![
+            (inner.clone(), inner.clone()).prop_map(|(a, b)| format!("({a} + {b})")),
+            (inner.clone(), inner.clone()).prop_map(|(a, b)| format!("({a} - {b})")),
+            (inner.clone(), inner.clone()).prop_map(|(a, b)| format!("({a} < {b})")),
+            (inner.clone(), inner.clone()).prop_map(|(a, b)| format!("({a} == {b})")),
+            (inner.clone(), inner).prop_map(|(a, b)| format!("(if true {{ {a} }} else {{ {b} }})")),
+        ]
+    })
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2000))]
+
+    /// F-15: the checker and the evaluator must not contradict each other.
+    ///
+    /// For every generated (well-formed) expression:
+    /// * if the checker accepts it, running it must never fail with a
+    ///   front-end code (`E1xxx`) or the internal code (`E4999`);
+    /// * if the checker rejects it, that rejection must be a type mismatch.
+    #[test]
+    fn checker_and_evaluator_agree(expr in typed_expr()) {
+        let src = format!("fn main() {{ let x = {expr}\n print(x) }}");
+        let module = match aura::parse::parse(&src) {
+            Ok(m) => m,
+            // Should not happen for generated expressions; if it does, the
+            // generator is wrong, not the language.
+            Err(_) => return Ok(()),
+        };
+        let checked = aura::check::Checker::module(&module);
+        match checked {
+            Ok(()) => {
+                if let Err(d) = run_source(&src, "<differential>") {
+                    prop_assert!(
+                        !matches!(d.code, 1001..=1999 | 4999),
+                        "checker accepted but runtime failed with E{}: {src}",
+                        d.code
+                    );
+                }
+            }
+            Err(d) => {
+                prop_assert_eq!(d.code, aura::error::codes::TYPE_MISMATCH);
+            }
+        }
+    }
+}

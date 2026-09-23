@@ -59,6 +59,12 @@ try_stmt        = "try" block "catch" IDENT "->" block [ "finally" block ] ;
 
 (* ------------------------------------------------------------ expressions *)
 expr            = pipe ;
+(* `|>` is left associative and lower precedence than every binary operator.
+   The right operand is a full `pipe` operand, and `x |> f(a, b)` desugars to
+   `f(x, a, b)`: a call's first argument becomes the left operand. `x |> f`
+   desugars to `f(x)` when `f` is a callable value. The desugaring is applied
+   at parse time; `Expr::Pipe` survives only for an operand that is not a call
+   or method. *)
 pipe            = logic_or { "|>" logic_or } ;
 logic_or        = logic_and { "or" logic_and } ;
 logic_and       = equality { "and" equality } ;

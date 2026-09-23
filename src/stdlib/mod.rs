@@ -3,6 +3,7 @@
 //! Everything here is implemented directly in Rust. Python is not needed.
 
 pub mod ext;
+pub mod signatures;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -13,57 +14,11 @@ use crate::run::Interp;
 
 /// The authoritative list of builtin function names available in this build.
 ///
-/// This is the single source of truth shared by the runtime installer and the
-/// static checker, so the two can never drift. Feature-gated functions are
-/// listed only when their feature is enabled.
+/// Derived from [`signatures::builtins`], the single source of truth shared
+/// by the runtime installer and the static checker.
 #[must_use]
 pub fn builtin_names() -> Vec<&'static str> {
-    let mut names: Vec<&'static str> = vec![
-        "print",
-        "len",
-        "to_string",
-        "to_int",
-        "to_float",
-        "range",
-        "abs",
-        "min",
-        "max",
-        "push",
-        "keys",
-        "values",
-        "sort",
-        "reverse",
-        "map",
-        "filter",
-        "reduce",
-        "sum",
-        "assert",
-        "enumerate",
-        "zip",
-    ];
-    names.push("py_eval");
-    names.push("py_import");
-    names.push("py_call");
-    names.push("py_version");
-    #[cfg(feature = "json")]
-    {
-        names.push("json_encode");
-        names.push("json_decode");
-    }
-    #[cfg(feature = "regex")]
-    {
-        names.push("regex_match");
-        names.push("regex_find");
-        names.push("regex_find_all");
-        names.push("regex_replace");
-    }
-    #[cfg(feature = "time")]
-    {
-        names.push("time_now");
-        names.push("time_unix");
-        names.push("sleep_ms");
-    }
-    names
+    signatures::builtins().iter().map(|s| s.name).collect()
 }
 
 fn err(code: u16, msg: impl Into<String>, span: Span) -> Diag {
@@ -80,8 +35,17 @@ fn arg<'a>(args: &'a [Value], i: usize, name: &str, span: Span) -> Result<&'a Va
     })
 }
 
-/// Reject calls with the wrong number of arguments.
+/// Reject calls with the wrong number of arguments, using the shared
+/// signature registry so the checker and runtime agree exactly.
 fn arity(args: &[Value], min: usize, max: usize, name: &str, span: Span) -> Result<()> {
+    // Prefer the registry when the callable is present; fall back to the
+    // explicit bounds for callables not yet described there.
+    if let Some(sig) = signatures::builtin(name) {
+        if let Some(message) = sig.check_arity(args.len()) {
+            return Err(err(codes::TYPE_MISMATCH, message, span));
+        }
+        return Ok(());
+    }
     if args.len() < min {
         return Err(err(
             codes::TYPE_MISMATCH,

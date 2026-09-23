@@ -134,7 +134,7 @@ fn eval_line<W: Write>(
     match crate::parse::parse(source) {
         Ok(module) => {
             let mut checker = crate::check::Checker::with_globals(globals);
-            if let Err(e) = checker.check(&module) {
+            if let Err(e) = checker.check_mode(&module, crate::CompileMode::Module) {
                 let _ = writeln!(writer, "{e}");
                 return;
             }

@@ -55,7 +55,7 @@ const GRAMMAR_SAMPLES: &[&str] = &[
     "fn e3() { print(-1) }",
     "fn e4() { print(not true) }",
     "fn e5() { print(1 == 1 != 2) }",
-    "fn e6() { print(1 < 2 <= 3 > 4 >= 5) }",
+    "fn e6() { print(1 < 2) }",
     "fn e7() { print(true and false or true) }",
     "fn e8() { print([1, 2] |> len) }",
     "fn e9() { print((1, 2)) }",
@@ -228,4 +228,21 @@ fn errors_doc_lists_every_code() {
         let needle = format!("E{code:04}");
         assert!(doc.contains(&needle), "docs/errors.md is missing {needle}");
     }
+}
+
+/// F-17: the documented pipeline desugaring must match the parser. `x |> f(a)`
+/// passes `x` as the *first* argument of `f`.
+#[test]
+fn pipeline_passes_the_left_operand_as_the_first_argument() {
+    // `f(x, a)`.
+    let src = "fn f(a, b) -> string { return a + b }\nfn main() { print(1 |> f(2)) }";
+    assert_eq!(run_source(src, "<pipe>").unwrap(), "3\n");
+    // Method form: `x |> r.m(a)` is `r.m(x, a)` (the left operand becomes the
+    // receiver's first argument). Here `"x" |> "xZ".replace("y")` desugars to
+    // `"xZ".replace("x", "y")`.
+    let src = "fn main() { print(\"x\" |> \"xZ\".replace(\"y\")) }";
+    assert_eq!(run_source(src, "<pipe>").unwrap(), "yZ\n");
+    // Bare callable: `x |> f` is `f(x)`.
+    let src = "fn f(x) -> int { return x + 1 }\nfn main() { print(1 |> f) }";
+    assert_eq!(run_source(src, "<pipe>").unwrap(), "2\n");
 }

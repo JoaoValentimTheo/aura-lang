@@ -138,6 +138,25 @@ The checker runs before execution and rejects, at minimum:
 | E3002 | unknown type or constructor |
 | E3005 | return type mismatch |
 
+Beyond annotations, the checker also enforces, when it can prove the types
+involved:
+
+* **Calls.** A builtin call is validated against a shared signature table:
+  the argument count and the type of each argument are checked (`E3001`), and
+  an undefined builtin is `E2003`. The same table drives the runtime, so the
+  checker and the evaluator cannot drift.
+* **Methods.** A method call on a known receiver type must name a method that
+  exists on that type (`E2003`); its argument count and argument types are
+  checked (`E3001`).
+* **Ordering.** `<`, `<=`, `>`, `>=` are only valid on number/number,
+  string/string, and bool/bool operand pairs. A provably incomparable pair
+  (for example `[1] < [2]`) is `E3001` before execution.
+* **Return types.** A call to a function with a declared return type infers
+  that type, so a mismatch against an annotated binding is caught statically.
+* **Function equality.** Function values compare by identity: a function is
+  equal only to itself. Distinct functions are never `==`, and `NaN == NaN`
+  is `false`.
+
 The full, authoritative list lives in `docs/errors.md`, and
 `tests/grammar.rs` asserts that every code there is reachable.
 
@@ -150,7 +169,7 @@ The full, authoritative list lives in `docs/errors.md`, and
 * Ordering comparisons on NaN yield `false`; comparing values of
   incomparable types is `E3001`.
 * `==` compares structurally (lists, maps, structs, enums). `NaN == NaN` is
-  `false`.
+  `false`. Functions compare by identity (see §6).
 * `print(x)` writes `x.to_string()` plus a newline.
 * `try/catch` catches **only** an explicit `throw` value (including one
   thrown inside a called function). Runtime diagnostics such as division by
@@ -158,6 +177,12 @@ The full, authoritative list lives in `docs/errors.md`, and
   An uncaught `throw` is `E4026`.
 * `finally` runs on every exit path (normal, `return`, `break`, `continue`,
   `throw`, and a fatal runtime error) exactly once.
+* If `finally` itself raises a control-flow signal (`return`, `break`,
+  `continue`, or `throw`), that signal **replaces** the pending outcome. For
+  example, `try { return 1 } catch e -> { } finally { return 2 }` evaluates to
+  `2`, and `try { throw "a" } catch e -> { } finally { throw "b" }` throws
+  `"b"`. A `finally` block that runs to completion leaves the pending outcome
+  untouched.
 * Expressions nest at most 256 levels; deeper nesting is `E1015`, never a
   crash.
 * `to_int` accepts an `int`, a `bool`, a numeric string, or a finite float in
@@ -201,6 +226,11 @@ then calls `main`. A missing `main` is `E4027`; a `main` with parameters is
 version. They exist so that future module and visibility semantics can be
 introduced without a syntax break. Using them is not an error; they simply do
 nothing. Nothing in the language depends on them.
+
+`pub` is accepted uniformly on `fn`, `struct`, `enum`, and `type` items and is
+inert on all of them; it carries no visibility meaning and is never consulted
+by the checker or the runtime. `use` is likewise accepted anywhere an item may
+appear and is inert; `use stdlib` and `use a.b.c` are equivalent to a no-op.
 
 `type Name = T` declares a transparent alias. It is validated (the target
 type must exist) but does not create a distinct nominal type.

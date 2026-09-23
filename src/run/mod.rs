@@ -1206,12 +1206,13 @@ impl Interp {
     }
 
     fn numeric(&mut self, op: BinOp, l: Value, r: Value, span: Span) -> Result<Value> {
-        use BinOp::{Div, Mul, Pow, Rem, Sub};
+        use BinOp::{Add, Div, Mul, Pow, Rem, Sub};
         match (&l, &r) {
             (Value::Int(a), Value::Int(b)) => {
                 // `i64::MIN / -1` and `i64::MIN % -1` overflow; Rust's `/`
                 // and `%` panic on those, so the checked forms are mandatory.
                 let result = match op {
+                    Add => a.checked_add(*b),
                     Sub => a.checked_sub(*b),
                     Mul => a.checked_mul(*b),
                     Div => {
@@ -1243,6 +1244,7 @@ impl Interp {
                 let a = self.as_f64(&l, span)?;
                 let b = self.as_f64(&r, span)?;
                 Ok(Value::Float(match op {
+                    Add => a + b,
                     Sub => a - b,
                     Mul => a * b,
                     Div => {
