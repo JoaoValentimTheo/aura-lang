@@ -91,49 +91,100 @@ fn grammar_samples_parse_and_run() {
 ///
 /// Codes that can only be produced by the run path (`E4027`) or by a
 /// feature-disabled build (`E5002`) are covered by dedicated tests below.
-const ERROR_SAMPLES: &[(u16, &str)] = &[
-    (codes::INVALID_CHAR, "fn main() { a && b }"),
-    (codes::INVALID_NUMBER, "fn main() { print(1abc) }"),
-    (codes::INVALID_ESCAPE, "fn main() { print(\"\\q\") }"),
-    (codes::UNTERMINATED_STRING, "fn main() { print(\"abc) }"),
-    (codes::EXPECTED, "fn () { }"),
-    (
-        codes::ELSE_IF,
-        "fn main() { if true { } else if false { } }",
-    ),
-    (codes::RESERVED_NAME, "fn main() { let if = 1 }"),
-    (codes::ASSIGN_IMMUTABLE, "fn main() { let x = 1\n x = 2 }"),
-    (codes::UNDEFINED, "fn main() { print(nope) }"),
-    (codes::LET_NO_INIT, "fn main() { let x }"),
-    (codes::REDECLARED, "fn main() { let x = 1\n let x = 2 }"),
-    (codes::UNUSED_PARAM, "fn f(_x) { return _x }"),
-    (codes::INVALID_ASSIGN, "fn main() { 1 = 2 }"),
-    (codes::INVALID_MAIN, "fn main(x) { }"),
-    (codes::DUPLICATE_TYPE, "struct S { }\nstruct S { }"),
-    (codes::DUPLICATE_VARIANT, "enum A { X }\nenum B { X }"),
-    (
-        codes::DUPLICATE_BINDING,
-        "fn main() { match [1, 2] { [a, a] -> print(a)\n _ -> print(0) } }",
-    ),
-    (codes::TYPE_MISMATCH, "fn main() { print(\"a\" + 1) }"),
-    (codes::UNKNOWN_TYPE, "fn f() -> Widget { return 1 }"),
-    (codes::RETURN_MISMATCH, "fn f() -> int { return \"no\" }"),
-    (codes::NOT_ITERABLE, "fn main() { for x in 1 { } }"),
-    (
-        codes::OVERFLOW,
-        "fn main() { print(9223372036854775807 + 1) }",
-    ),
-    (codes::DIV_ZERO, "fn main() { print(1 / 0) }"),
-    (codes::INDEX, "fn main() { print([1, 2][5]) }"),
-    (codes::RECURSION, "fn f(n) { f(n + 1) }\nfn main() { f(0) }"),
-    (codes::FOREIGN, "fn main() { throw 1 }"),
-    (codes::ASSERT, "fn main() { assert(false, \"nope\") }"),
-];
+fn error_samples() -> Vec<(u16, String)> {
+    let mut v: Vec<(u16, String)> = vec![
+        (codes::INVALID_CHAR, "fn main() { a && b }".to_string()),
+        (
+            codes::INVALID_NUMBER,
+            "fn main() { print(1abc) }".to_string(),
+        ),
+        (
+            codes::INVALID_ESCAPE,
+            "fn main() { print(\"\\q\") }".to_string(),
+        ),
+        (
+            codes::UNTERMINATED_STRING,
+            "fn main() { print(\"abc) }".to_string(),
+        ),
+        (codes::EXPECTED, "fn () { }".to_string()),
+        (
+            codes::ELSE_IF,
+            "fn main() { if true { } else if false { } }".to_string(),
+        ),
+        (codes::RESERVED_NAME, "fn main() { let if = 1 }".to_string()),
+        (
+            codes::ASSIGN_IMMUTABLE,
+            "fn main() { let x = 1\n x = 2 }".to_string(),
+        ),
+        (codes::UNDEFINED, "fn main() { print(nope) }".to_string()),
+        (codes::LET_NO_INIT, "fn main() { let x }".to_string()),
+        (
+            codes::REDECLARED,
+            "fn main() { let x = 1\n let x = 2 }".to_string(),
+        ),
+        (codes::UNUSED_PARAM, "fn f(_x) { return _x }".to_string()),
+        (codes::INVALID_ASSIGN, "fn main() { 1 = 2 }".to_string()),
+        (codes::INVALID_MAIN, "fn main(x) { }".to_string()),
+        (
+            codes::DUPLICATE_TYPE,
+            "struct S { }\nstruct S { }".to_string(),
+        ),
+        (
+            codes::DUPLICATE_VARIANT,
+            "enum A { X }\nenum B { X }".to_string(),
+        ),
+        (
+            codes::DUPLICATE_BINDING,
+            "fn main() { match [1, 2] { [a, a] -> print(a)\n _ -> print(0) } }".to_string(),
+        ),
+        (
+            codes::TYPE_MISMATCH,
+            "fn main() { print(\"a\" + 1) }".to_string(),
+        ),
+        (
+            codes::UNKNOWN_TYPE,
+            "fn f() -> Widget { return 1 }".to_string(),
+        ),
+        (
+            codes::RETURN_MISMATCH,
+            "fn f() -> int { return \"no\" }".to_string(),
+        ),
+        (
+            codes::NOT_ITERABLE,
+            "fn main() { for x in 1 { } }".to_string(),
+        ),
+        (
+            codes::OVERFLOW,
+            "fn main() { print(9223372036854775807 + 1) }".to_string(),
+        ),
+        (codes::DIV_ZERO, "fn main() { print(1 / 0) }".to_string()),
+        (codes::INDEX, "fn main() { print([1, 2][5]) }".to_string()),
+        (
+            codes::RECURSION,
+            "fn f(n) { f(n + 1) }\nfn main() { f(0) }".to_string(),
+        ),
+        (codes::FOREIGN, "fn main() { throw 1 }".to_string()),
+        (
+            codes::ASSERT,
+            "fn main() { assert(false, \"nope\") }".to_string(),
+        ),
+        (codes::LOOP_CONTROL, "fn main() { break }".to_string()),
+        (
+            codes::NO_MATCH,
+            "fn main() { print(match 5 { 1 -> \"a\" }) }".to_string(),
+        ),
+    ];
+    v.push((
+        codes::NESTING,
+        format!("fn main() {{ print(1{}) }}", "+1".repeat(5000)),
+    ));
+    v
+}
 
 #[test]
 fn every_documented_error_code_is_reachable() {
     let mut failures = Vec::new();
-    for (code, src) in ERROR_SAMPLES {
+    for (code, src) in &error_samples() {
         match run_source(src, "<errors>") {
             Ok(_) => failures.push(format!("expected E{code:04} from: {src}")),
             Err(d) if d.code == *code => {}
@@ -173,7 +224,7 @@ fn feature_unavailable_is_reachable_without_py() {
 #[test]
 fn errors_doc_lists_every_code() {
     let doc = include_str!("../docs/errors.md");
-    for (code, _) in ERROR_SAMPLES {
+    for (code, _) in &error_samples() {
         let needle = format!("E{code:04}");
         assert!(doc.contains(&needle), "docs/errors.md is missing {needle}");
     }

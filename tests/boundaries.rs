@@ -85,3 +85,35 @@ fn assert_uses_its_own_code() {
         Err(codes::ASSERT)
     );
 }
+
+#[test]
+fn deeply_nested_expression_is_rejected_not_a_crash() {
+    // A flat but deeply nested expression must never overflow the host stack
+    // in the parser, the checker, or the evaluator.
+    let src = format!("fn main() {{ print(1{}) }}", "+1".repeat(100_000));
+    assert_eq!(run(&src), Err(codes::NESTING));
+}
+
+#[test]
+fn deeply_nested_checker_is_rejected_not_a_crash() {
+    // The checker must bound its own descent as well.
+    let src = format!("fn main() {{ print(1{}) }}", "+1".repeat(10_000));
+    let module = aura::parse::parse(&src).expect("parses");
+    let err = aura::check::Checker::module(&module).expect_err("must be bounded");
+    assert_eq!(err.code, codes::NESTING);
+}
+
+#[test]
+fn deep_call_recursion_uses_the_call_limit_not_the_nesting_limit() {
+    // Expression nesting resets per call, so deep recursion is governed by
+    // E4011, never by E1015.
+    let src = "fn f(n) { return f(n + 1) }\nfn main() { f(0) }";
+    assert_eq!(run(src), Err(codes::RECURSION));
+}
+
+#[test]
+fn moderately_long_expression_is_accepted() {
+    // Ordinary chains must still work.
+    let src = format!("fn main() {{ print({}) }}", "1+".repeat(100) + "1");
+    assert_eq!(run(&src), Ok("101\n".to_string()));
+}

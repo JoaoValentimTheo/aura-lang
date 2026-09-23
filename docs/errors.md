@@ -19,6 +19,7 @@ Every rejection carries a stable code. Codes are grouped by phase:
 | E1006 | Expected token | `let = 1`, `fn ()`, `a \| b` |
 | E1009 | Reserved word as name | `let if = 1` |
 | E1014 | `else if` used | `if a {} else if b {}` |
+| E1015 | Expression/statement nests too deeply | a 5000-term expression |
 
 ## Name and rule checking (`E2xxx`, static)
 
@@ -34,6 +35,7 @@ Every rejection carries a stable code. Codes are grouped by phase:
 | E2012 | Duplicate user type | two `struct S` |
 | E2013 | Duplicate enum variant tag | `enum A { X }` + `enum B { X }` |
 | E2014 | Duplicate pattern binding | `match xs { [a, a] -> ... }` |
+| E2015 | `break`/`continue` outside a loop | `fn main() { break }` |
 
 ## Type-level (`E3xxx`, static)
 
@@ -55,6 +57,8 @@ Every rejection carries a stable code. Codes are grouped by phase:
 | E4026 | Uncaught thrown value | `throw "x"` with no `catch` |
 | E4027 | Missing `main` | `aura run` on a file without `fn main` |
 | E4028 | Assertion failed | `assert(1 == 2)` |
+| E4029 | No `match` arm matched | `match 5 { 1 -> "a" }` |
+| E4030 | `return` cannot be used as a value | `let x = return 1` |
 | E4999 | Internal error | a bug in Aura itself, never a user mistake |
 
 ## Optional features (`E5xxx`)

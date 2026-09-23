@@ -83,9 +83,15 @@ Precedence, lowest to highest:
 11 literals, names, groups, lists, maps, lambdas
 ```
 
-* Lambdas: `(x) -> x * x` or `x -> x * x`.
-* `if` is an expression and **requires** `else` when it yields a value:
+* Lambdas: `(x) -> x * x` or `x -> x * x`. A block-bodied lambda
+  `(x) -> { ... }` uses the block as its body, so `return` works and the last
+  expression is the value.
+* `if` is an expression. With an `else` branch it yields that branch's
+  value; without `else` it yields `none` when the condition is false:
   `let m = if a > b { a } else { b }`.
+* Pipeline passes the left operand as the **first argument**:
+  `x |> f` is `f(x)`, `x |> f(a)` is `f(x, a)`, and `x |> r.m(a)` is
+  `r.m(x, a)`. A bare callable `x |> c` is `c(x)`.
 * `match` is an expression; every arm must yield when used as a value.
 * There is no ternary `? :`, no `&&`, no `||`, no `!` as `not`.
 * `to_string`, `to_int`, `to_float` are conversions; there is no cast syntax.
@@ -137,14 +143,31 @@ The full, authoritative list lives in `docs/errors.md`, and
 
 ## 7. Runtime model
 
-* `int` is 64-bit and checked: overflow is `E4013`, not wraparound.
-* Division by zero is `E4007`.
-* `==` compares structurally (lists, maps, structs, enums).
+* `int` is 64-bit and checked: overflow is `E4013`, not wraparound. The
+  literals `-9223372036854775808` (`i64::MIN`) and `i64::MAX` are valid; the
+  bare magnitude `9223372036854775808` is not.
+* Division by zero is `E4007` (`/`, `%`, and float division).
+* Ordering comparisons on NaN yield `false`; comparing values of
+  incomparable types is `E3001`.
+* `==` compares structurally (lists, maps, structs, enums). `NaN == NaN` is
+  `false`.
 * `print(x)` writes `x.to_string()` plus a newline.
 * `try/catch` catches **only** an explicit `throw` value (including one
   thrown inside a called function). Runtime diagnostics such as division by
   zero, overflow, or an out-of-range index are fatal and are *not* catchable.
   An uncaught `throw` is `E4026`.
+* `finally` runs on every exit path (normal, `return`, `break`, `continue`,
+  `throw`, and a fatal runtime error) exactly once.
+* Expressions nest at most 256 levels; deeper nesting is `E1015`, never a
+  crash.
+* `to_int` accepts an `int`, a `bool`, a numeric string, or a finite float in
+  range; anything else is `E4013`. It never silently saturates.
+* Standard-library functions reject a wrong number of arguments (`E3001`)
+  and require exact argument types; there is no implicit argument coercion.
+* `sort` and `min`/`max` on values that cannot be ordered place the
+  incomparable values in source order rather than failing.
+* Float formatting is canonical: an integral float prints with one decimal
+  (`1.0`), and very large magnitudes print in full digits.
 * Recursion is capped at **512 simultaneously active call frames**,
   including the entry call to `main`; exceeding this is `E4011`. This is a
   language rule, not a host limitation.
