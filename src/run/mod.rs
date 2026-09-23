@@ -14,8 +14,11 @@ use crate::ast::*;
 use crate::error::{codes, Diag, Result, Span};
 use value::{Instance, Value, Variant};
 
-/// Maximum number of nested calls.
-pub const MAX_DEPTH: usize = 256;
+/// Maximum number of simultaneously active user call frames, including the
+/// entry call to `main`. Exceeding it is `E4011`. This is the single
+/// authoritative recursion policy for the language; the host stack is sized
+/// large enough that a host overflow is unreachable before this limit.
+pub const MAX_CALL_FRAMES: usize = 512;
 
 /// A user-defined function.
 #[derive(Debug)]
@@ -195,20 +198,19 @@ impl Interp {
     }
 
     /// Execute a module and call `main` if present.
+    ///
+    /// Initialization order is deliberate and matches the checker:
+    /// declarations (functions, structs, enums) are registered first, then
+    /// top-level constants and expressions are evaluated in source order.
+    /// This makes forward references between functions valid.
     pub fn run(&mut self, module: &Module) -> Result<()> {
+        // Pass 1: declarations.
+        for item in &module.items {
+            self.declare_item(item);
+        }
+        // Pass 2: initialization in source order.
         for item in &module.items {
             match item {
-                Item::Fn {
-                    name, params, body, ..
-                } => {
-                    let closure = Rc::new(Closure {
-                        name: name.clone(),
-                        params: params.iter().map(|p| p.name.clone()).collect(),
-                        body: body.clone(),
-                        env: self.globals.clone(),
-                    });
-                    self.functions.insert(name.clone(), closure);
-                }
                 Item::Const { name, value, .. } => {
                     let globals = self.globals.clone();
                     let v = self.eval(value, &globals)?.value(self, Span::default())?;
@@ -218,19 +220,7 @@ impl Interp {
                     let globals = self.globals.clone();
                     self.eval(e, &globals)?.value(self, Span::default())?;
                 }
-                Item::Struct { name, fields, .. } => {
-                    self.structs.insert(
-                        name.clone(),
-                        fields.iter().map(|(f, _)| f.clone()).collect(),
-                    );
-                }
-                Item::Enum { name, variants, .. } => {
-                    for (tag, payload) in variants {
-                        self.variants
-                            .insert(tag.clone(), (name.clone(), payload.len()));
-                    }
-                }
-                Item::Alias { .. } | Item::Use { .. } => {}
+                _ => {}
             }
         }
         if let Some(main) = self.functions.get("main").cloned() {
@@ -252,15 +242,42 @@ impl Interp {
         Ok(())
     }
 
+    /// Register one declaration into the interpreter's symbol tables.
+    fn declare_item(&mut self, item: &Item) {
+        match item {
+            Item::Fn {
+                name, params, body, ..
+            } => {
+                let closure = Rc::new(Closure {
+                    name: name.clone(),
+                    params: params.iter().map(|p| p.name.clone()).collect(),
+                    body: body.clone(),
+                    env: self.globals.clone(),
+                });
+                self.functions.insert(name.clone(), closure);
+            }
+            Item::Struct { name, fields, .. } => {
+                self.structs.insert(
+                    name.clone(),
+                    fields.iter().map(|(f, _)| f.clone()).collect(),
+                );
+            }
+            Item::Enum { name, variants, .. } => {
+                for (tag, payload) in variants {
+                    self.variants
+                        .insert(tag.clone(), (name.clone(), payload.len()));
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn error(&self, code: u16, msg: impl Into<String>, span: Span) -> Diag {
         Diag::new(code, msg, span)
     }
 
     /// Call a user closure, returning its value.
     pub fn call(&mut self, closure: &Rc<Closure>, args: Vec<Value>, span: Span) -> Result<Value> {
-        if self.depth >= MAX_DEPTH {
-            return Err(self.error(codes::RECURSION, "recursion limit exceeded", span));
-        }
         if args.len() != closure.params.len() {
             return Err(self.error(
                 codes::TYPE_MISMATCH,
@@ -277,7 +294,14 @@ impl Interp {
         for (p, v) in closure.params.iter().zip(args) {
             env.define(p.clone(), v, false);
         }
+        // The limit counts every active call frame, including the entry call
+        // to `main`. Exceeding it is a language-level diagnostic (E4011), not
+        // a host stack overflow.
         self.depth += 1;
+        if self.depth > MAX_CALL_FRAMES {
+            self.depth -= 1;
+            return Err(self.error(codes::RECURSION, "call depth limit exceeded", span));
+        }
         let r = self.exec_block(&closure.body, &env, false);
         self.depth -= 1;
         match r? {
@@ -389,6 +413,10 @@ impl Interp {
                 finally,
                 span,
             } => {
+                // Only an explicit `throw` is catchable. Runtime diagnostics
+                // (division by zero, overflow, out-of-range access, ...) are
+                // fatal and propagate, so internal error codes never leak into
+                // program values as strings.
                 let outcome = self.exec_block(body, env, true);
                 let mut result = match outcome {
                     Ok(Ctl::Throw(v)) => {
@@ -396,19 +424,20 @@ impl Interp {
                         scope.define(catch.clone(), v, false);
                         self.exec_block(catch_body, &scope, false)
                     }
-                    Ok(flow) => Ok(flow),
-                    Err(diag) => {
+                    // A `throw` inside a called function crosses the call
+                    // boundary as the internal THROWN signal; the pending
+                    // value is the original thrown value.
+                    Err(diag) if diag.code == codes::THROWN => {
+                        let thrown = self
+                            .pending_throw
+                            .take()
+                            .unwrap_or_else(|| Value::str(diag.message.clone()));
                         let scope = env.child();
-                        let caught = if diag.code == codes::THROWN {
-                            self.pending_throw
-                                .take()
-                                .unwrap_or_else(|| Value::str(diag.to_string()))
-                        } else {
-                            Value::str(diag.to_string())
-                        };
-                        scope.define(catch.clone(), caught, false);
+                        scope.define(catch.clone(), thrown, false);
                         self.exec_block(catch_body, &scope, false)
                     }
+                    Ok(flow) => Ok(flow),
+                    Err(diag) => Err(diag),
                 };
                 if let Some(f) = finally {
                     let fin = self.exec_block(f, env, true)?;
@@ -483,14 +512,22 @@ impl Interp {
             Value::Str(s) => Ok(s.chars().map(|c| Value::str(c.to_string())).collect()),
             Value::Map(m) => Ok(m.borrow().keys().map(Value::str).collect()),
             Value::Range(r) => {
-                let mut out = Vec::new();
+                // Materializing a range is bounded so a pathological range
+                // cannot exhaust memory; the cap is part of the runtime model.
+                const MAX_RANGE_MATERIALIZE: i64 = 10_000_000;
+                let n = r.len();
+                if n > MAX_RANGE_MATERIALIZE {
+                    return Err(self.error(
+                        codes::OVERFLOW,
+                        format!("range of {n} elements exceeds the {MAX_RANGE_MATERIALIZE} element limit"),
+                        span,
+                    ));
+                }
+                let mut out = Vec::with_capacity(usize::try_from(n).unwrap_or(0));
                 let mut i = r.start;
                 while i < r.end {
                     out.push(Value::Int(i));
                     i += 1;
-                    if out.len() > 10_000_000 {
-                        return Err(self.error(codes::OVERFLOW, "range too large", span));
-                    }
                 }
                 Ok(out)
             }
@@ -507,22 +544,14 @@ impl Interp {
             (Value::List(l), Value::Int(i)) => {
                 let l = l.borrow();
                 let n = normalize(*i, l.len()).ok_or_else(|| {
-                    self.error(
-                        codes::NOT_ITERABLE,
-                        format!("list index {i} out of range"),
-                        span,
-                    )
+                    self.error(codes::INDEX, format!("list index {i} out of range"), span)
                 })?;
                 Ok(l[n].clone())
             }
             (Value::Str(s), Value::Int(i)) => {
                 let chars: Vec<char> = s.chars().collect();
                 let n = normalize(*i, chars.len()).ok_or_else(|| {
-                    self.error(
-                        codes::NOT_ITERABLE,
-                        format!("string index {i} out of range"),
-                        span,
-                    )
+                    self.error(codes::INDEX, format!("string index {i} out of range"), span)
                 })?;
                 Ok(Value::str(chars[n].to_string()))
             }
@@ -555,11 +584,7 @@ impl Interp {
             (Value::List(l), Value::Int(i)) => {
                 let mut l = l.borrow_mut();
                 let n = normalize(*i, l.len()).ok_or_else(|| {
-                    self.error(
-                        codes::NOT_ITERABLE,
-                        format!("list index {i} out of range"),
-                        span,
-                    )
+                    self.error(codes::INDEX, format!("list index {i} out of range"), span)
                 })?;
                 l[n] = value;
                 Ok(())
@@ -662,27 +687,6 @@ impl Interp {
                     Span::default(),
                 )),
             },
-            Pattern::Cons(h, t) => match value {
-                Value::List(l) => {
-                    let l = l.borrow();
-                    if l.is_empty() {
-                        return Err(self.error(
-                            codes::TYPE_MISMATCH,
-                            "empty list pattern",
-                            Span::default(),
-                        ));
-                    }
-                    self.bind_pattern(h, &l[0], env)?;
-                    let rest = Value::list(l[1..].to_vec());
-                    self.bind_pattern(t, &rest, env)?;
-                    Ok(())
-                }
-                _ => Err(self.error(
-                    codes::TYPE_MISMATCH,
-                    "pattern expects a list",
-                    Span::default(),
-                )),
-            },
             Pattern::Variant(tag, ps) => match value {
                 Value::Variant(v) => {
                     if &v.tag != tag || v.payload.len() != ps.len() {
@@ -722,15 +726,6 @@ impl Interp {
                             .iter()
                             .zip(l.iter())
                             .all(|(p, v)| self.match_pattern(p, v))
-                }
-                _ => false,
-            },
-            Pattern::Cons(h, t) => match value {
-                Value::List(l) => {
-                    let l = l.borrow();
-                    !l.is_empty()
-                        && self.match_pattern(h, &l[0])
-                        && self.match_pattern(t, &Value::list(l[1..].to_vec()))
                 }
                 _ => false,
             },
@@ -872,7 +867,13 @@ impl Interp {
                     let kv = val!(self.eval(k, env));
                     let key = match kv {
                         Value::Str(s) => s.to_string(),
-                        other => other.display(),
+                        other => {
+                            return Err(self.error(
+                                codes::TYPE_MISMATCH,
+                                format!("map keys must be strings, found {}", other.type_name()),
+                                span_of(k),
+                            ))
+                        }
                     };
                     let vv = val!(self.eval(v, env));
                     map.insert(key, vv);
@@ -996,37 +997,17 @@ impl Interp {
     /// Register or execute a single top-level item (used by the REPL).
     pub fn run_item(&mut self, item: &Item) -> Result<()> {
         match item {
-            Item::Fn {
-                name, params, body, ..
-            } => {
-                let closure = Rc::new(Closure {
-                    name: name.clone(),
-                    params: params.iter().map(|p| p.name.clone()).collect(),
-                    body: body.clone(),
-                    env: self.globals.clone(),
-                });
-                self.functions.insert(name.clone(), closure);
-            }
             Item::Const { name, value, .. } => {
                 let globals = self.globals.clone();
                 let v = self.eval(value, &globals)?.value(self, Span::default())?;
                 self.globals.define(name.clone(), v, false);
+                Ok(())
             }
-            Item::Struct { name, fields, .. } => {
-                self.structs.insert(
-                    name.clone(),
-                    fields.iter().map(|(f, _)| f.clone()).collect(),
-                );
+            other => {
+                self.declare_item(other);
+                Ok(())
             }
-            Item::Enum { name, variants, .. } => {
-                for (tag, payload) in variants {
-                    self.variants
-                        .insert(tag.clone(), (name.clone(), payload.len()));
-                }
-            }
-            _ => {}
         }
-        Ok(())
     }
 
     fn construct(&mut self, name: &str, args: &[Arg], env: &Env, span: Span) -> Result<Ctl> {
@@ -1138,7 +1119,14 @@ impl Interp {
                 _ => self.numeric(op, l, r, span),
             },
             Sub | Mul | Div | Rem | Pow => self.numeric(op, l, r, span),
-            BinOp::And | BinOp::Or => unreachable!("short-circuited"),
+            // `and`/`or` are handled by short-circuit in `eval` and never
+            // reach here; returning an internal error rather than panicking
+            // keeps the "no panics" invariant even if that ever changes.
+            BinOp::And | BinOp::Or => Err(self.error(
+                codes::INTERNAL,
+                "internal error: logical operator reached the arithmetic path",
+                span,
+            )),
         }
     }
 
@@ -1146,6 +1134,8 @@ impl Interp {
         use BinOp::{Div, Mul, Pow, Rem, Sub};
         match (&l, &r) {
             (Value::Int(a), Value::Int(b)) => {
+                // `i64::MIN / -1` and `i64::MIN % -1` overflow; Rust's `/`
+                // and `%` panic on those, so the checked forms are mandatory.
                 let result = match op {
                     Sub => a.checked_sub(*b),
                     Mul => a.checked_mul(*b),
@@ -1153,13 +1143,13 @@ impl Interp {
                         if *b == 0 {
                             return Err(self.error(codes::DIV_ZERO, "division by zero", span));
                         }
-                        Some(a / b)
+                        a.checked_div(*b)
                     }
                     Rem => {
                         if *b == 0 {
                             return Err(self.error(codes::DIV_ZERO, "division by zero", span));
                         }
-                        Some(a % b)
+                        a.checked_rem(*b)
                     }
                     Pow => {
                         if *b < 0 {
@@ -1188,7 +1178,13 @@ impl Interp {
                     }
                     Rem => a % b,
                     Pow => a.powf(b),
-                    _ => unreachable!("numeric called with non-arithmetic op"),
+                    _ => {
+                        return Err(self.error(
+                            codes::INTERNAL,
+                            "internal error: non-arithmetic operator reached the numeric path",
+                            span,
+                        ))
+                    }
                 }))
             }
         }
@@ -1212,12 +1208,17 @@ impl Interp {
 }
 
 fn normalize(i: i64, len: usize) -> Option<usize> {
-    let len = len as i64;
-    let idx = if i < 0 { len + i } else { i };
+    // `len + i` can overflow when `i` is near `i64::MIN`; compute with i128.
+    let len = i128::try_from(len).ok()?;
+    let idx = if i < 0 {
+        len.checked_add(i128::from(i))?
+    } else {
+        i128::from(i)
+    };
     if idx < 0 || idx >= len {
         None
     } else {
-        Some(idx as usize)
+        usize::try_from(idx).ok()
     }
 }
 

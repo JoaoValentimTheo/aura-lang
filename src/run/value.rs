@@ -62,6 +62,25 @@ pub struct RangeVal {
     pub end: i64,
 }
 
+impl RangeVal {
+    /// The number of elements, using saturating arithmetic so extreme bounds
+    /// never overflow. Ranges are always step 1 in v3.
+    #[must_use]
+    pub fn len(&self) -> i64 {
+        if self.end <= self.start {
+            0
+        } else {
+            self.end.saturating_sub(self.start)
+        }
+    }
+
+    /// Whether the range contains no elements.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.end <= self.start
+    }
+}
+
 impl Value {
     /// The `string` value from a `String`.
     #[must_use]

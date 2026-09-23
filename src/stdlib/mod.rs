@@ -11,6 +11,61 @@ use crate::error::{codes, Diag, Result, Span};
 use crate::run::value::{RangeVal, Value};
 use crate::run::Interp;
 
+/// The authoritative list of builtin function names available in this build.
+///
+/// This is the single source of truth shared by the runtime installer and the
+/// static checker, so the two can never drift. Feature-gated functions are
+/// listed only when their feature is enabled.
+#[must_use]
+pub fn builtin_names() -> Vec<&'static str> {
+    let mut names: Vec<&'static str> = vec![
+        "print",
+        "len",
+        "to_string",
+        "to_int",
+        "to_float",
+        "range",
+        "abs",
+        "min",
+        "max",
+        "push",
+        "keys",
+        "values",
+        "sort",
+        "reverse",
+        "map",
+        "filter",
+        "reduce",
+        "sum",
+        "assert",
+        "enumerate",
+        "zip",
+    ];
+    names.push("py_eval");
+    names.push("py_import");
+    names.push("py_call");
+    names.push("py_version");
+    #[cfg(feature = "json")]
+    {
+        names.push("json_encode");
+        names.push("json_decode");
+    }
+    #[cfg(feature = "regex")]
+    {
+        names.push("regex_match");
+        names.push("regex_find");
+        names.push("regex_find_all");
+        names.push("regex_replace");
+    }
+    #[cfg(feature = "time")]
+    {
+        names.push("time_now");
+        names.push("time_unix");
+        names.push("sleep_ms");
+    }
+    names
+}
+
 fn err(code: u16, msg: impl Into<String>, span: Span) -> Diag {
     Diag::new(code, msg, span)
 }
@@ -63,7 +118,7 @@ pub fn install(it: &mut Interp) {
             Value::Str(s) => Ok(Value::Int(s.chars().count() as i64)),
             Value::List(l) => Ok(Value::Int(l.borrow().len() as i64)),
             Value::Map(m) => Ok(Value::Int(m.borrow().len() as i64)),
-            Value::Range(r) => Ok(Value::Int((r.end - r.start).max(0))),
+            Value::Range(r) => Ok(Value::Int(r.len())),
             other => Err(err(
                 codes::TYPE_MISMATCH,
                 format!("`len` does not accept {}", other.type_name()),
@@ -300,7 +355,7 @@ pub fn install(it: &mut Interp) {
             let msg = args
                 .get(1)
                 .map_or_else(|| "assertion failed".to_string(), Value::display);
-            Err(err(codes::FOREIGN, msg, span))
+            Err(err(codes::ASSERT, msg, span))
         }
     });
     it.native("enumerate", |_it, args, span| {
@@ -326,6 +381,18 @@ pub fn install(it: &mut Interp) {
             .collect();
         Ok(Value::list(pairs))
     });
+}
+
+/// Extract a string map key or produce a diagnostic.
+fn map_key(args: &[Value], what: &str, span: Span) -> Result<String> {
+    match arg(args, 0, what, span)? {
+        Value::Str(s) => Ok(s.to_string()),
+        other => Err(err(
+            codes::TYPE_MISMATCH,
+            format!("`{what}` expects a string key, found {}", other.type_name()),
+            span,
+        )),
+    }
 }
 
 /// Extract a list snapshot or produce a diagnostic.
@@ -358,7 +425,7 @@ pub fn method(
         Value::List(l) => list_method(it, l, name, args, span),
         Value::Map(m) => map_method(it, m, name, args, span),
         Value::Range(r) => match name {
-            "len" => Ok(Value::Int((r.end - r.start).max(0))),
+            "len" => Ok(Value::Int(r.len())),
             _ => Err(no_method("range", name, span)),
         },
         other => Err(no_method(other.type_name(), name, span)),
@@ -543,26 +610,17 @@ fn map_method(
     match name {
         "len" => Ok(Value::Int(m.borrow().len() as i64)),
         "get" => {
-            let k = match arg(&args, 0, "get", span)? {
-                Value::Str(s) => s.to_string(),
-                other => other.display(),
-            };
+            let k = map_key(&args, "get", span)?;
             Ok(m.borrow().get(&k).cloned().unwrap_or(Value::None))
         }
         "has" => {
-            let k = match arg(&args, 0, "has", span)? {
-                Value::Str(s) => s.to_string(),
-                other => other.display(),
-            };
+            let k = map_key(&args, "has", span)?;
             Ok(Value::Bool(m.borrow().contains_key(&k)))
         }
         "keys" => Ok(Value::list(m.borrow().keys().map(Value::str).collect())),
         "values" => Ok(Value::list(m.borrow().values().cloned().collect())),
         "remove" => {
-            let k = match arg(&args, 0, "remove", span)? {
-                Value::Str(s) => s.to_string(),
-                other => other.display(),
-            };
+            let k = map_key(&args, "remove", span)?;
             Ok(m.borrow_mut().remove(&k).unwrap_or(Value::None))
         }
         _ => Err(no_method("map", name, span)),

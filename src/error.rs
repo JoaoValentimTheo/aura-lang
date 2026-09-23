@@ -112,6 +112,14 @@ pub mod codes {
     pub const UNUSED_PARAM: u16 = 2009;
     /// Invalid assignment target.
     pub const INVALID_ASSIGN: u16 = 2010;
+    /// `main` was declared with parameters or otherwise invalid.
+    pub const INVALID_MAIN: u16 = 2011;
+    /// A user type (struct, enum, alias) was declared twice.
+    pub const DUPLICATE_TYPE: u16 = 2012;
+    /// Two enums declare the same variant tag.
+    pub const DUPLICATE_VARIANT: u16 = 2013;
+    /// A pattern binds the same name more than once.
+    pub const DUPLICATE_BINDING: u16 = 2014;
     /// Type mismatch.
     pub const TYPE_MISMATCH: u16 = 3001;
     /// Return type mismatch.
@@ -130,10 +138,19 @@ pub mod codes {
     pub const RECURSION: u16 = 4011;
     /// Python bridge disabled or unsupported.
     pub const PY_UNSUPPORTED: u16 = 5002;
+    /// An optional standard-library feature is not compiled into this build.
+    pub const FEATURE_UNAVAILABLE: u16 = 5003;
     /// Python error.
     pub const PY_ERROR: u16 = 5001;
     /// Missing `main`.
     pub const NO_MAIN: u16 = 4027;
     /// Unknown type name.
     pub const UNKNOWN_TYPE: u16 = 3002;
+    /// Index out of range.
+    pub const INDEX: u16 = 4019;
+    /// A user assertion failed.
+    pub const ASSERT: u16 = 4028;
+    /// An internal invariant of the runtime was violated. This indicates a
+    /// bug in Aura itself, never a user mistake.
+    pub const INTERNAL: u16 = 4999;
 }
