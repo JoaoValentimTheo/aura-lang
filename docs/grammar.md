@@ -120,6 +120,8 @@ FSTRING         = 'f"' { fchar | "{{" | "}}" | "{" expr "}" } '"' ;
 
 * `else if` does not exist: `if...else if` is `E1014`. Use a nested block or
   `match`.
+* `else`, `catch`, and `finally` must appear on the same line as the closing
+  `}` of the block they follow; a newline before them is `E1006`.
 * `&&`, `||`, and `!` do not exist as operators (`E1001`).
 * A number may not be immediately followed by a name: `1abc` is `E1002`.
 * `let` requires an initializer (`E2005`).

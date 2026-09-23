@@ -94,7 +94,9 @@ T | none     optional
 
 Types are optional annotations and are checked before execution. There is no
 implicit coercion: `1 + "1"` is a compile error, and `let x: int = "a"` is
-rejected before the program runs.
+rejected before the program runs. The checker is conservative: it rejects only
+mismatches it can prove and leaves the rest to the runtime (see
+[docs/LANGUAGE_SPEC.md](docs/LANGUAGE_SPEC.md) §2.3, §11).
 
 ### Data and pattern matching
 

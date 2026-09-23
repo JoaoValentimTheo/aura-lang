@@ -1,9 +1,13 @@
 # Aura v3 — Language Contract
 
-This document is **normative**. Every rule here is enforced by an automated
-test (`tests/contract.rs`). If the implementation and this file disagree, the
-implementation is wrong. If a rule changes, the RFC process in
-`CONTRIBUTING.md` applies.
+This document is the **high-level compatibility contract**. The **normative
+semantic specification** is [`LANGUAGE_SPEC.md`](LANGUAGE_SPEC.md): it defines
+what Aura programs mean. This contract restates the guarantees a user can rely
+on and names the tests that enforce them. If the two disagree, `LANGUAGE_SPEC.md`
+is authoritative for semantics and this file is out of date.
+
+Every rule here is enforced by an automated test (`tests/contract.rs`). If a
+rule changes, the RFC process in `CONTRIBUTING.md` applies.
 
 ## 0. Design principles
 
@@ -125,6 +129,8 @@ throw expr
 ```
 
 * `else if` is **not** allowed; use nested braces or `match`.
+* `else`, `catch`, and `finally` must be written on the same line as the
+  closing `}` of the block they follow; a newline before them is `E1006`.
 * `for` iterates lists, strings (characters), maps (keys), and `range(...)`.
 
 ## 6. Rules enforced at check time

@@ -58,7 +58,7 @@ Every rejection carries a stable code. Codes are grouped by phase:
 | E4027 | Missing `main` | `aura run` on a file without `fn main` |
 | E4028 | Assertion failed | `assert(1 == 2)` |
 | E4029 | No `match` arm matched | `match 5 { 1 -> "a" }` |
-| E4030 | `return` cannot be used as a value | `let x = return 1` |
+| E4030 | `return` cannot be used as a value | `let x = if true { return 1 } else { 2 }` |
 | E4999 | Internal error | a bug in Aura itself, never a user mistake |
 
 ## Optional features (`E5xxx`)
