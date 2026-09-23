@@ -191,3 +191,18 @@ fn named_arguments_across_submissions() {
     assert!(out.contains("E3001"), "{out}");
     assert!(out.contains("Ana?"), "{out}");
 }
+
+/// FEATURE_002 stack hardening: an over-limit submission is rejected by the
+/// parser on the large parse stack with `E1015` — a diagnostic, never a native
+/// overflow — and a modest nested submission evaluates normally.
+#[test]
+fn repl_nesting_boundary_is_a_diagnostic_not_a_crash() {
+    let under = format!("print({}1{})\n:quit\n", "[".repeat(60), "]".repeat(60));
+    let out = body(&under);
+    assert!(!out.contains("overflow"), "{out}");
+    assert!(out.contains("none"), "{out}");
+
+    let over = format!("print({}1{})\n:quit\n", "[".repeat(256), "]".repeat(256));
+    let out = body(&over);
+    assert!(out.contains("E1015"), "{out}");
+}

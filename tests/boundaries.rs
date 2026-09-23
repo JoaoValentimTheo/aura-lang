@@ -167,3 +167,34 @@ fn regression_parenthesis_nesting_is_bounded_not_a_crash() {
     );
     assert_eq!(run(&extreme), Err(codes::NESTING));
 }
+
+/// FEATURE_002 stack hardening: the checker runs with enough native stack that
+/// a valid program at the semantic nesting limit is accepted, and one past it
+/// is rejected with `E1015` — a language diagnostic, never a native overflow.
+/// This guards the invariant that a larger native stack does not change the
+/// language limit.
+#[test]
+fn checker_survives_the_semantic_nesting_limit() {
+    // Just below the limit: accepted (the CLI default stack must not overflow).
+    let under = format!(
+        "fn main() {{ print({}1{}) }}",
+        "[".repeat(250),
+        "]".repeat(250)
+    );
+    assert!(run(&under).is_ok(), "250 nested lists must be accepted");
+    // At/over the limit: a deterministic diagnostic, not a crash.
+    let over = format!(
+        "fn main() {{ print({}1{}) }}",
+        "[".repeat(256),
+        "]".repeat(256)
+    );
+    assert_eq!(run(&over), Err(codes::NESTING));
+    // A deeply nested call chain (Feature 002 argument path) is likewise
+    // bounded by the same diagnostic.
+    let calls = format!(
+        "fn id(x) {{ return x }}\nfn main() {{ print({}1{}) }}",
+        "id(".repeat(300),
+        ")".repeat(300)
+    );
+    assert_eq!(run(&calls), Err(codes::NESTING));
+}

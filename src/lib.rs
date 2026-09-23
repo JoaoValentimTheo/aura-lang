@@ -60,6 +60,26 @@ where
     }
 }
 
+/// Run `f` on the large interpreter stack, returning its result.
+///
+/// Front-end stages that recurse over the AST (the checker in particular) must
+/// run with enough native stack for a program at the language nesting limit, so
+/// the semantic limit (`E1015`/`E4011`) is the only bound a user can hit. The
+/// CLI entry points use this internally; the REPL runs its whole session here
+/// so no entry point overflows where another succeeds.
+///
+/// # Errors
+/// Returns whatever `f` returns. A failure to start the thread is `FOREIGN`;
+/// a panic in the worker becomes an `INTERNAL` diagnostic rather than
+/// propagating a panic across the boundary.
+pub fn on_large_stack<T, F>(f: F) -> error::Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> error::Result<T> + Send + 'static,
+{
+    on_interp_thread(f)
+}
+
 /// A writer that appends to a shared buffer, so output can be read back
 /// after the interpreter is dropped.
 #[derive(Clone)]

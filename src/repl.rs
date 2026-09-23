@@ -14,12 +14,20 @@ use crate::run::{Ctl, Interp};
 
 /// Run an interactive session on stdin/stdout.
 ///
+/// The session runs on the large interpreter stack, so a deeply nested but
+/// valid submission is bounded by the language nesting limit (`E1015`) rather
+/// than by the platform's default main-thread stack.
+///
 /// # Errors
 /// Returns a diagnostic only for unrecoverable I/O failures.
 pub fn run() -> Result<(), Diag> {
-    let stdin = std::io::stdin();
-    let stdout = std::io::stdout();
-    run_with(stdin.lock(), stdout.lock())
+    // Run the session on the large stack, with buffered owned handles so no
+    // borrowed lock crosses the thread boundary.
+    crate::on_large_stack(|| {
+        let reader = std::io::BufReader::new(std::io::stdin());
+        let writer = std::io::BufWriter::new(std::io::stdout());
+        run_with(reader, writer)
+    })
 }
 
 /// Run a session reading from `reader` and writing to `writer`.

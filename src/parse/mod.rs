@@ -97,6 +97,10 @@ fn parse_expr_inner(src: &str) -> Result<Expr> {
     let e = p.expr()?;
     p.skip_newlines();
     p.expect_eof()?;
+    // Enforce the language nesting limit for this entry point too, so a
+    // statement/expression parsed for the REPL cannot exceed the same bound
+    // as a module.
+    check_expr_depth(&e, 1)?;
     Ok(e)
 }
 
@@ -112,6 +116,8 @@ fn parse_stmt_inner(src: &str) -> Result<Stmt> {
     let s = p.stmt()?;
     p.skip_newlines();
     p.expect_eof()?;
+    // Enforce the language nesting limit for this entry point too.
+    check_stmt_depth(std::slice::from_ref(&s), 1)?;
     Ok(s)
 }
 
