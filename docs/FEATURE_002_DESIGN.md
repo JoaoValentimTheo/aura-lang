@@ -1,6 +1,7 @@
 # FEATURE_002 — Named Function Arguments — Design
 
-**Status:** Design (pre-implementation)
+**Status:** Design finalized (pre-implementation). All blocking questions Q1–Q5
+are resolved; see *Resolved Design Decisions*. No code has been changed.
 **Semantic authority:** `docs/LANGUAGE_SPEC.md` (frozen)
 **Baseline:** `954dcdc` (Feature 001 implemented and reviewed)
 **This document is not an implementation and does not change the language.**
@@ -187,18 +188,15 @@ appears in the argument list. Named arguments do not consume a position.
 Two models were considered:
 
 * **(A) Positional-then-named only** — all positional arguments must precede
-  all named arguments (`{ positionals } { named }`). This is the rule used by
-  several languages and is the least ambiguous.
+  all named arguments (`{ positionals } { named }`).
 * **(B) Free interleaving** — `f(a: 1, 2, b: 3)` allowed.
 
-**Recommendation: (A).** It matches the ear, is trivial to state and to check,
-and avoids the question of whether a positional argument may follow a named
-one (which invites "skip a parameter and fill a later one positionally"
-confusion). Interleaving is rejected as a syntax/check rule:
+**Decision: (A) — positional arguments MUST precede named arguments** (Q4).
+Interleaving is rejected as a parse rule:
 
 ```
 f(1, y: 2)      # valid
-f(x: 1, 2)      # invalid: positional argument after a named one
+f(x: 1, 2)      # invalid: positional argument after a named one (E1006)
 ```
 
 ## Duplicate Arguments
@@ -320,19 +318,18 @@ name. Extending the registry with names is a larger change that would force
 naming decisions for every builtin (`len(value)`? `len(collection)`?) and
 would be irreversible metadata.
 
-**Recommendation: built-ins are OUT OF SCOPE for Feature 002.** A named
-argument passed to a builtin is rejected statically as "`<builtin>` does not
-accept named arguments" (or, if the name happens to be unknown, the unknown
-name rule). Positional builtin calls are unchanged. This keeps one calling
-convention per callable kind, avoids inventing names for a frozen registry,
-and leaves the door open to add names later without breaking anything.
+**Decision: built-ins are OUT OF SCOPE for Feature 002** (Q3). A named
+argument passed to a builtin is rejected statically with `E3001`. Positional
+builtin calls are unchanged. This keeps one calling convention per callable
+kind, avoids inventing names for a frozen registry, and leaves the door open
+to add names later without breaking anything.
 
 ## Methods
 
 Methods have no parameter names in `MethodSig` either, and user-defined
-methods do not exist. **Methods are OUT OF SCOPE for Feature 002.** A named
-argument in a method call is rejected statically, or handled only if the
-method's parameters are positional. (See *Open Questions*.)
+methods do not exist. **Methods are OUT OF SCOPE for Feature 002** (Q3). A
+named argument in a method call is rejected statically with `E3001`.
+Positional method calls are unchanged. See *Built-in / Method Boundary*.
 
 ## Pipeline
 
@@ -377,17 +374,20 @@ Two designs were considered:
   named calls never reach the runtime for directly resolved functions.
 * **(B) Runtime-resolved.** The runtime also understands names.
 
-**Recommendation: (A) where possible, with a defined fallback.** For a
-directly resolved user function, the checker maps named arguments to positions
-and rejects errors; the AST `Arg` list is reordered into positional order
-before/at execution, so the runtime call machinery is unchanged. For dynamic
-calls (closures, values, unknown callees), the receiver has no declared
-parameter list, so **named arguments are a static error** at the point where
-the callee is provably not a named-capable function — or, where the callee is
-`Unknown`, the runtime cannot resolve names and must reject them. This is an
-important open question (below).
+**Decision: (A).** For a directly resolved user function, the checker maps
+named arguments to positions and rejects errors; the runtime call machinery
+receives positional values and is unchanged. For all other callables —
+built-ins, methods, closures, values, `Unknown` — named arguments are a static
+`E3001` (Q1, Q3), so no runtime parameter-name resolution is ever required.
+This is a direct consequence of the resolved decisions; it is no longer an
+open question.
 
-## Error Model
+## Error Model (draft)
+
+> Superseded by the resolved **Error Model** section below, which freezes
+> `E3001` for every call-mismatch case and `E1006` for positional-after-named.
+> The draft alternative between `E3001` and `E2003` was resolved in favour of
+> `E3001`.
 
 All new cases reuse `E3001` (`TYPE_MISMATCH`) because they are all "the
 arguments do not match the declared parameters":
@@ -401,9 +401,7 @@ arguments do not match the declared parameters":
 | positional after named | `E1006` (parser) | parse |
 | named argument on a dynamic/unknown callee | `E3001` | check, if provable |
 
-No new error code is proposed. An alternative for "unknown name" is `E2003`
-(undefined name), mirroring the struct-field diagnostic; this is a wording
-choice recorded as an open question, not a semantic one.
+No new error code is proposed.
 
 ## Compatibility
 
@@ -461,7 +459,7 @@ They must carry named-capable arguments. Two options:
   positional vector, keeping both in the AST. This duplicates representation
   and is discouraged.
 
-**Recommendation: (A).** Reuse `Arg` uniformly; there is already precedent
+**Decision: (A).** Reuse `Arg` uniformly; there is already precedent
 (`Expr::Construct`). `desugar_pipe` must insert the piped receiver as a
 positional `Arg { name: None, .. }` at the front, which is exactly correct.
 
@@ -481,12 +479,12 @@ positional `Arg { name: None, .. }` at the front, which is exactly correct.
 
 ## Runtime Impact
 
-**LOW.** If the checker reorders named arguments into positional order (design
-A under *Runtime Behavior*), the runtime's `Vec<Value>` binding is unchanged.
-The only runtime question is what happens for **dynamic** calls that carry
-named arguments; see open questions. The parser change means
-`Expr::Call` now holds `Vec<Arg>`, so `eval_call` reads `arg.value` for each
-argument; behavior is identical for positional calls.
+**LOW.** Because the checker resolves named arguments to positions (design A
+under *Runtime Behavior*) and rejects named arguments on every non-direct
+callable (Q1, Q3), the runtime never resolves parameter names; its
+`Vec<Value>` binding is unchanged. The parser change means `Expr::Call` now
+holds `Vec<Arg>`, so `eval_call` reads `arg.value` for each argument; behavior
+is identical for positional calls.
 
 ## Stdlib Impact
 
@@ -582,7 +580,10 @@ These tests are **specified, not implemented**. Each is source → expected.
 ### Positional regression
 | every existing positional call test | unchanged |
 
-## Property / Differential Testing
+## Property / Differential Testing (draft)
+
+> Superseded by the final **Property / Differential Testing** section below,
+> which additionally freezes the evaluation-order property.
 
 Design properties to implement later:
 
@@ -690,42 +691,328 @@ point |> move(dy: 2)      # move(point, dy: 2)
   arguments; the model must define whether a variadic parameter can be named
   (likely not). Documented as future work.
 
+## Resolved Design Decisions
+
+All four blocking design questions are resolved. They are frozen; the
+implementation must follow them exactly.
+
+| ID | Question | Decision |
+|---|---|---|
+| Q1 | Named arguments on dynamic / unknown callees | **Rejected** with `E3001`; named arguments require a statically known parameter set |
+| Q2 | Diagnostic for an unknown parameter name | **`E3001`** (the call-mismatch family), reusing the existing code |
+| Q3 | Built-ins and methods | **Out of scope** for Feature 002; remain positional |
+| Q4 | Argument ordering | **Positional arguments MUST precede named arguments**; the reverse is a parser error |
+| Q5 | Free interleaving vs positional-then-named | **Positional-then-named** (this is the same decision as Q4; the prior draft listed it separately) |
+
+### Q1 — Dynamic / unknown callees
+
+**Decision.** Named arguments require a statically known parameter set. If the
+callee cannot be statically resolved to a supported named-argument signature,
+named-argument syntax is rejected with `E3001`.
+
+This applies to function values, closures, callable variables, `Unknown`
+callees, and every other unresolved or non-direct callable:
+
+```aura
+let f = (x) -> x
+f(x: 1)              # E3001: named arguments require a resolved function
+```
+
+Rationale: the checker cannot validate parameter-name existence or
+satisfaction without the callable's parameter list. Feature 002 must not
+invent a dynamic parameter-name system or expand into function-type
+inference.
+
+### Q2 — Unknown parameter name diagnostic
+
+**Decision.** An unknown parameter name is `E3001`.
+
+Rationale: it is a function-call argument mismatch, not a lexical symbol
+resolution failure. It stays in the "bad call" diagnostic family used by
+Feature 001 for arity and type mismatches.
+
+```aura
+fn f(x: int) { return x }
+f(y: 1)              # E3001: `f` has no parameter named `y`
+```
+
+No new error code is introduced.
+
+### Q3 — Built-ins and methods
+
+**Decision.** **Out of scope.** Named arguments are supported only for
+directly, statically resolved top-level user-defined functions.
+
+Built-ins and methods remain positional. Their named arguments are rejected
+under the current Feature 002 scope. The standard-library signature registry
+(`src/stdlib/signatures.rs`) is not changed, and no canonical parameter names
+are invented. This is a deliberate feature boundary and a future extension
+point (see *Future Extensions* and *Standard Library Future Extension*).
+
+### Q4 — Positional-then-named ordering
+
+**Decision.** Positional arguments MUST precede named arguments.
+
+Valid:
+
+```aura
+f(1, y: 2, z: 3)
+```
+
+Invalid (parser error, per existing grammar conventions):
+
+```aura
+f(x: 1, 2)           # E1006: positional argument after a named argument
+```
+
+Arbitrary positional/named interleaving is not supported.
+
+### Q5 — Interleaving
+
+Q5 (free interleaving vs positional-then-named) is the same decision as Q4
+and is resolved identically: **positional-then-named**. The prior draft listed
+it separately; it is not a distinct open question.
+
+---
+
+## Parameter Satisfaction Semantics
+
+A call is a **parameter-satisfaction** process, not a raw argument count.
+
+For:
+
+```aura
+fn f(a: int, b: string, c: bool) { ... }
+```
+
+a call proceeds conceptually as:
+
+```
+1. Parse arguments in source order.
+2. Evaluate argument expressions in source order (see Evaluation Order).
+3. Map positional arguments to the next unfilled parameter.
+4. Map named arguments to the exact declared parameter by name.
+5. Reject duplicate parameter assignment.
+6. Reject unknown parameter names.
+7. Reject missing required parameters.
+8. Apply the existing Feature 001 type checks to the final parameter mapping.
+9. Execute using the resulting parameter bindings.
+```
+
+Define, for a resolved function signature `P = [p_0 … p_{n-1}]`:
+
+* `provided(p)` — `p` is filled by a positional or named argument.
+* `missing(p)` — `p` is never provided.
+* `duplicate(p)` — `p` is provided more than once.
+* `unknown(name)` — a named argument whose name matches no parameter.
+
+**Invariant.** Every parameter in `P` is provided exactly once, and every
+named argument's name is in `P`. The argument count equals the parameter count
+only when every argument is positional; a named call may have equal counts
+with a permuted mapping.
+
+This generalizes Feature 001's raw count equality. A call whose arguments are
+**entirely positional** keeps the existing count equality exactly.
+
+---
+
+## Evaluation Order vs Parameter Binding
+
+> Named-argument binding changes **parameter association**, not evaluation
+> order.
+
+Argument expressions are always evaluated **left-to-right in source order**,
+before or while being associated with parameters. For:
+
+```aura
+fn f(a, b) { ... }
+f(b: side_effect_1(), a: side_effect_2())
+```
+
+the observable evaluation order MUST be:
+
+```text
+side_effect_1()
+side_effect_2()
+```
+
+even though the resulting bindings are:
+
+```text
+a ← result of side_effect_2()
+b ← result of side_effect_1()
+```
+
+This distinction is mandatory:
+
+```text
+evaluation order  ≠  parameter binding order
+```
+
+The implementation MUST NOT reorder evaluation to match declaration order. It
+maps arguments to parameters after evaluating them in source order; the
+runtime binds the evaluated values to positions produced by that mapping.
+
+---
+
+## Dynamic Callable Boundary
+
+Static named-argument validation applies only when the callee resolves to a
+specific supported user-defined top-level function (the Feature 001
+resolution rule). If the callee is shadowed, dynamic, `Unknown`, a function
+value, a closure, a parameter, or any non-`Name` expression, the user
+function's parameter list is not applied.
+
+For named arguments specifically, an unresolvable call is a hard `E3001`,
+because parameter names cannot be validated dynamically under this feature's
+static contract. Feature 002 does not expand into higher-order static
+inference.
+
+```aura
+fn f(x: int) { return x }
+fn g() { let f = (a) -> a
+         return f(x: 1) }     # E3001: `f` here is a local callable, not the
+                              # resolved function; named arguments are rejected
+```
+
+---
+
+## Built-in / Method Boundary
+
+Frozen boundary:
+
+```text
+Feature 002 supports named arguments for:
+    directly, statically resolved top-level user-defined functions only.
+
+Built-ins and methods:
+    positional only. Named syntax is rejected (E3001).
+```
+
+Rationale: the registry's `Signature`/`MethodSig` carry parameter **types**
+(`Param { accepts }`) but no names, and inventing canonical names (`value`?
+`collection`?) is irreversible public API metadata. This is deferred, not
+forgotten (see *Standard Library Future Extension*).
+
+---
+
+## Compatibility Classification
+
+**Source-compatible additive extension.** Every previously valid program keeps
+its exact meaning and result.
+
+* `f(x: 1)` is currently a **parse error** (`E1006`); Feature 002 only turns
+  a previously invalid program into a valid one. No existing valid syntax is
+  reinterpreted and no parser precedence changes.
+* Positional calls (`f(1, 2)`) are byte-for-byte unchanged.
+* No previously accepted program becomes statically rejected by Feature 002
+  itself. (A too-few-argument positional call was already a runtime `E3001`,
+  and Feature 001 already made some of those static; that is Feature 001, not
+  Feature 002.)
+
+The one deliberate tightening is for **previously invalid** syntax: named
+arguments that cannot be resolved (dynamic callee, unknown name, duplicate,
+missing) fail at check time. That is a new syntax whose errors are static;
+it removes no valid program.
+
+---
+
+## Pipeline Semantics
+
+Existing semantics are preserved and reused; no pipeline-specific binding
+algorithm is introduced.
+
+```text
+x |> f(a)      is      f(x, a)
+```
+
+The piped value is the **first positional argument**. A parenthesized suffix
+may include named arguments, which fill their parameters by name:
+
+```aura
+fn move(dx: int, dy: int) -> int { return dx * 10 + dy }
+point |> move(dy: 2)         # → move(point, dy: 2)
+```
+
+Consequences, derived from ordinary call rules:
+
+* `point |> move(dy: 2)` binds `dx = point`, `dy = 2`.
+* `point |> move(dx: 2)` is a **duplicate** assignment of `dx` → `E3001`.
+* A name equal to the first parameter is always a duplicate.
+* Positional-then-named still holds: the receiver is positional and precedes
+  any named suffix.
+
+No separate pipeline argument-binding algorithm exists.
+
+---
+
+## REPL Signature Persistence
+
+The session must preserve parameter **names** as well as types.
+
+Feature 001 carries `GlobalDecl::Function { name, ret, params: Vec<Option<TypeExpr>> }`.
+Feature 002 requires the parameter name alongside the annotation, conceptually:
+
+```text
+Function signature:
+    name
+    parameter name
+    parameter annotation/type
+    return type
+```
+
+i.e. `params: Vec<(String, Option<TypeExpr>)>`, or the repository's equivalent
+unified representation. No parallel metadata table is introduced.
+
+Required conceptual session:
+
+```text
+submission 1:
+fn greet(name: string, punctuation: string) { ... }
+
+submission 2:
+greet(punctuation: "!", name: "João")
+```
+
+must resolve against the persistent signature. An invalid named call must not
+corrupt the REPL state.
+
+---
+
+## Error Model
+
+All Feature 002 call-mismatch errors use the existing `E3001`
+(`TYPE_MISMATCH`). No new code is introduced.
+
+| Situation | Code | Phase (directly resolved) |
+|---|---|---|
+| unknown parameter name | `E3001` | check |
+| duplicate parameter assignment | `E3001` | check |
+| missing required parameter | `E3001` | check |
+| static argument type mismatch | `E3001` | check (Feature 001) |
+| named argument to a built-in | `E3001` | check |
+| named argument to a method | `E3001` | check |
+| named argument on a dynamic/unresolved callee | `E3001` | check |
+| positional argument after a named one | `E1006` | parse |
+
+Diagnostics preserve the existing conventions: stable code, call-site span,
+deterministic first error, and the same behavior across CLI, library, and REPL.
+
+---
+
 ## Open Questions
 
-### OQ1 — Should a named argument be allowed on a dynamic/unknown callee? **REQUIRES HUMAN DESIGN DECISION**
+No blocking open questions remain. Q1–Q5 are resolved above. The only
+remaining items are genuinely future-design questions, recorded under
+*Future Extensions* and *Standard Library Future Extension*:
 
-* **Why it matters.** A dynamic callee has no declared parameter list, so a
-  name cannot be resolved statically or at runtime.
-* **Possible answers.** (a) Always a static error when the callee is provably
-  dynamic or `Unknown`. (b) Parse it and reject at runtime. (c) Disallow
-  syntactically in a dynamic-call context (impossible to tell syntactically).
-* **Recommendation.** (a): reject named arguments at check time whenever the
-  callee is not a directly resolved user function. This keeps one convention
-  and avoids a runtime name table. Human confirmation is desirable because it
-  decides whether `let f = ...; f(x: 1)` is a hard error.
+* Whether and how to give built-ins and methods canonical parameter names
+  (future feature, requires registry changes).
+* Whether a future variadic parameter may be named (future design).
+* Whether a future optimizer may treat argument order as non-semantic
+  (informational; Aura has no memoization today).
 
-### OQ2 — `E3001` vs `E2003` for an unknown parameter name. **Human preference (wording)**
-
-* The struct-field precedent uses `E2003` for an unknown field. Reusing
-  `E3001` keeps all "bad call" errors in one family; using `E2003` matches the
-  field analogy. This is a diagnostic-taste decision, not a semantic one.
-
-### OQ3 — Named arguments for built-ins and methods: out of scope now? **Human confirmation**
-
-* The recommendation is out of scope to avoid inventing names for a frozen
-  registry. If the project wants `len(value: xs)`, the registry must gain
-  names first. Confirm out-of-scope.
-
-### OQ4 — Should `f(x: 1, y: 2)` and `f(y: 2, x: 1)` be considered the "same
-call" for any caching/memoization semantics? **Not applicable now**
-
-* Aura has no memoization; noted only so a future optimizer does not assume
-  argument order is semantic. No decision needed.
-
-### OQ5 — Free interleaving vs positional-then-named. **Human confirmation**
-
-* The recommendation is positional-then-named (model A). Confirm, since it is
-  the feature's most visible ergonomic rule.
+None of these blocks Feature 002.
 
 ---
 
@@ -798,55 +1085,265 @@ the AST impact is rated MEDIUM rather than LOW.
 
 ---
 
-## Proposed Specification Amendment (for the implementation phase)
+## Proposed LANGUAGE_SPEC Amendment
 
-**Current (§15.7).**
+This is the exact normative text that will be inserted into
+`docs/LANGUAGE_SPEC.md` at implementation time. It is **not** applied in this
+phase.
 
-> Function calls are positional; there are no named arguments at a call site,
-> no default parameter values, and no variadic parameters in this version.
+### Syntax (§4.5)
 
-**Proposed (§15.7).**
+**Proposed.** `call_args = arg { "," arg } ; arg = [ IDENT ":" ] expr ;`
+where an argument with a name is a **named argument** and one without is a
+**positional argument**. All positional arguments in a call MUST precede all
+named arguments; a positional argument after a named one is a syntax error.
+
+### Calls (§15.7)
+
+**Proposed.**
 
 > A call to a directly resolved top-level function MAY supply arguments by
 > parameter name, using `name: value`. Positional arguments fill the next
 > unfilled parameter in declaration order; a named argument fills the
-> parameter with that name. All positional arguments MUST precede all named
-> arguments. Every declared parameter MUST be supplied exactly once; a
-> duplicate, missing, or unknown parameter is `E3001`. Named arguments are not
-> accepted by builtins, methods, or dynamically resolved callables. There are
-> still no default or variadic parameters in this version.
+> parameter with that name. A call MUST supply every declared parameter
+> exactly once: a parameter supplied twice is `E3001`, a named argument
+> naming no parameter is `E3001`, and a declared parameter left unfilled is
+> `E3001`. Named arguments are accepted only when the callee is statically
+> resolved to a top-level `fn`; a named argument to a built-in, a method, or
+> any dynamically resolved callable is `E3001`. There are still no default or
+> variadic parameters in this version.
 
-**Current (§4.5).**
+### Static checking (§6.5)
 
-> `call_args = expr { "," expr }` … "function calls are positional".
+**Proposed.** Generalize the argument-count rule: for a directly resolved
+call, the checker MUST validate **parameter satisfaction** — every parameter
+provided exactly once, no unknown names, no duplicates — and then apply the
+existing annotated-type checks to the resulting argument→parameter mapping.
+A call whose arguments are all positional retains the existing count-equality
+behavior. `Unknown` argument types remain permissive (§6.4).
 
-**Proposed (§4.5).**
+### Evaluation order (§13)
 
-> `call_args = arg { "," arg } ; arg = [ IDENT ":" ] expr ;`
+**Proposed.** Named-argument binding changes parameter association, not
+evaluation order. Argument expressions are evaluated left-to-right in source
+order; mapping to parameters happens independently of that order.
 
-**Current (§23).**
+### Pipeline (§23)
 
-> `x |> f(a)` is `f(x, a)`.
+**Proposed.** `x |> f(a)` is `f(x, a)`. The piped value is the first positional
+argument; a parenthesized suffix MAY include named arguments, which fill their
+parameters by name. A name equal to the first parameter is a duplicate.
 
-**Proposed (§23).**
+### REPL (§29)
 
-> `x |> f(a)` is `f(x, a)`. The piped value is the first positional argument;
-> a parenthesized suffix MAY include named arguments, which fill their
-> parameters by name. A name equal to the first parameter is a duplicate.
+**Proposed.** The session carries each function's parameter names and
+annotations across submissions, so a named call in a later submission resolves
+against the persistent signature.
 
-Plus the §6.5 arity generalization, the §29 REPL note, and a §33 frozen
-decision. No new error code.
+### Frozen decision (§33)
+
+**Proposed addition.** Named-argument matching: positional arguments fill the
+next unfilled parameter; named arguments match parameter names exactly and
+case-sensitively; positional arguments precede named arguments; duplicate,
+missing, and unknown parameters are `E3001`; named arguments are limited to
+directly resolved top-level functions; argument evaluation remains source
+order.
+
+No new diagnostic code.
+
+---
+
+## Standard Library Future Extension
+
+Future (not Feature 002): extend callable signatures with canonical parameter
+names so built-ins and methods can accept named arguments.
+
+```text
+Future:
+    registry Param { accepts } → Param { name: Option<&'static str>, accepts }
+    then named arguments extend to built-ins and methods.
+```
+
+Parameter names must be treated as **deliberate public API metadata**, not
+inferred from implementation variable names, because:
+
+* a name becomes part of the frozen call contract once exposed;
+* renaming an implementation variable must not change the language;
+* names must be chosen once and remain stable across releases (the same
+  stability guarantee as diagnostic codes).
+
+Feature 002 does not touch `src/stdlib/signatures.rs`.
+
+---
+
+## Implementation Plan
+
+The smallest implementation path reuses existing infrastructure.
+
+```
+existing AST Arg             (already carries Option<String>; already parsed by cons_arg)
+        +
+FnSig parameter metadata     (extend params from Vec<Option<Ty>> to carry the name)
+        +
+existing resolver            (resolves_to_user_function, unchanged)
+        +
+existing compatible_with     (unchanged)
+        +
+existing diagnostics         (E3001, unchanged)
+```
+
+Steps, in order:
+
+1. **Grammar / parser (`src/parse/mod.rs`, `docs/grammar.md`).** Make call
+   argument parsing use the `cons_arg` rule for `Expr::Call` and
+   `Expr::Method`; enforce positional-then-named (a positional argument after
+   a named one is `E1006`).
+2. **AST (`src/ast/mod.rs`).** Change `Expr::Call` and `Expr::Method` to carry
+   `Vec<Arg>` instead of `Vec<Expr>`. Update every consumer: `parse`
+   (construct + `span_of` + depth checks), `check`, `run` (`eval_call`, method
+   dispatch), and `desugar_pipe` (insert the piped receiver as
+   `Arg { name: None, .. }`).
+3. **Checker (`src/check/mod.rs`).** Extend `FnSig` so each parameter carries
+   `(name, Option<Ty>)`. Replace the raw count check in `check_user_call` with
+   a mapping step that produces an argument-index-per-parameter mapping and
+   reports unknown / duplicate / missing as `E3001`; then run the existing
+   per-parameter type check over the mapped arguments. Reject named arguments
+   for built-ins, methods, and unresolved callees (`E3001`).
+4. **Runtime (`src/run/mod.rs`).** Read `arg.value` for each argument and
+   evaluate in source order. Where the checker has produced a positional
+   mapping, invoke the existing `Vec<Value>` binding unchanged; runtime
+   validation remains.
+5. **REPL (`src/repl.rs`, `GlobalDecl`).** Carry parameter names alongside
+   types in `GlobalDecl::Function`.
+6. **Docs.** Apply the proposed `LANGUAGE_SPEC` amendment, update
+   `docs/grammar.md`, `docs/contract.md`, README, and the implementation
+   report.
+
+Avoid: a new type system, a new callable abstraction, a new runtime calling
+protocol, a parallel signature registry, or any change to enum-payload or
+struct-construction semantics.
+
+Likely files: `src/parse/mod.rs`, `src/ast/mod.rs`, `src/check/mod.rs`,
+`src/run/mod.rs`, `src/repl.rs`, `docs/*`, `tests/*`. None are modified in
+this phase.
+
+---
+
+## Property / Differential Testing
+
+Design properties for the future implementation.
+
+* **Permutation equivalence (binding).** For `fn f(a, b, c)`, the positional
+  call `f(v1, v2, v3)` and the named permutation
+  `f(c: v3, a: v1, b: v2)` produce the same parameter bindings and result.
+* **Evaluation-order invariance.** The observable order of side effects in
+  named arguments equals their source order, independent of parameter
+  declaration order.
+* **Rejection determinism.** Duplicate assignment, unknown parameter, and
+  missing parameter each produce a deterministic `E3001` at check time for a
+  directly resolved call.
+* **Additivity.** A call with no named arguments yields the same static and
+  runtime verdict as before Feature 002.
+* **Checker/runtime agreement.** If the checker accepts a named call, the
+  runtime does not fail with a type error at that call.
+* **Pipeline equivalence.** `x |> f(b: v)` equals `f(x, b: v)` equals the
+  positional call with the same binding.
+
+---
+
+## Test Matrix (future implementation)
+
+This matrix is specified, not implemented. Each row is source → expected.
+
+### Basic
+| Source | Expected |
+|---|---|
+| `fn f(x) { return x }` + `f(x: 1)` | runs, `1` |
+| `fn f(x, y) { return x + y }` + `f(x: 1, y: 2)` | runs, `3` |
+
+### Reordering
+| `fn f(x, y) { return x + y }` + `f(y: 2, x: 1)` | runs, `3` |
+| `fn f(a, b, c) { return [a,b,c] }` + `f(c: 3, a: 1, b: 2)` | `[1, 2, 3]` |
+
+### Mixed
+| `fn f(x, y) { return x + y }` + `f(1, y: 2)` | runs, `3` |
+
+### Invalid ordering
+| `fn f(x, y) { }` + `f(x: 1, 2)` | parse error `E1006` |
+
+### Unknown name
+| `fn f(x) { }` + `f(z: 1)` | `E3001` at check |
+
+### Duplicate
+| `fn f(a, b) { }` + `f(1, a: 2)` | `E3001` at check |
+| `fn f(a) { }` + `f(a: 1, a: 2)` | `E3001` at check |
+
+### Missing
+| `fn f(a, b, c) { }` + `f(a: 1)` | `E3001` (missing `b`, `c`) at check |
+
+### Type checking
+| `fn f(x: int) { }` + `f(x: "w")` | `E3001` at check |
+| `fn f(a: int, b: int) { }` + `f(b: 1, a: "x")` | `E3001` at check |
+
+### Unknown argument type
+| `fn f(x: int) { }` + `f(x: none)` | accepted (permissive) |
+
+### Shadowing
+| global `fn f(x: int)`, local callable `f`, `f(x: 1)` | `E3001` — global signature not applied; named call unresolved |
+
+### Hoisting
+| named call to a function declared later | checked |
+
+### Mutual recursion
+| named calls in mutually recursive functions | checked both directions |
+
+### Dynamic call
+| `let f = (a) -> a` + `f(x: 1)` | `E3001` |
+
+### Built-in
+| `len(value: [1])` | `E3001` (out of scope) |
+
+### Method
+| `xs.map(fn: (x) -> x)` | `E3001` (out of scope) |
+
+### Pipeline
+| `fn move(dx: int, dy: int)` + `p \|> move(dy: 2)` | runs as `move(p, dy: 2)` |
+| `p \|> move(dx: 2)` | `E3001` (duplicate `dx`) |
+
+### Evaluation order
+| `fn f(a, b)` + `f(b: side1(), a: side2())` | prints `side1` then `side2` |
+
+### REPL
+| `fn greet(name, punctuation)` then `greet(punctuation: "!", name: "João")` | runs |
+| a failed named call between valid ones | session preserved |
+
+### Alias parameter types
+| `type Id = int` + `fn f(x: Id)` + `f(x: 1)` | runs |
+| `f(x: "s")` | `E3001` at check |
 
 ---
 
 ## Final Review Checklist (this phase)
 
 ```
+Q1 resolved (dynamic callee named args → E3001)                 YES
+Q2 resolved (unknown parameter name → E3001)                    YES
+Q3 resolved (built-ins and methods out of scope)                YES
+Q4 resolved (positional arguments precede named arguments)      YES
+evaluation-order rule frozen                                    YES
+parameter-satisfaction model defined                            YES
+pipeline behavior defined                                       YES
+REPL signature persistence defined                              YES
+compatibility classified                                        YES
+LANGUAGE_SPEC amendment drafted                                 YES
+implementation plan defined                                     YES
+test matrix defined                                             YES
+
 source code changed = NO
 tests changed       = NO
 grammar changed     = NO
 AST changed         = NO
 runtime changed     = NO
 LANGUAGE_SPEC changed = NO
-only docs/FEATURE_002_DESIGN.md new
+only docs/FEATURE_002_DESIGN.md changed
 ```
