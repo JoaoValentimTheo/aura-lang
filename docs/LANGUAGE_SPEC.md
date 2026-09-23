@@ -543,9 +543,8 @@ with the value's inferred type) in exactly these positions:
   re-checked).
 
 **Normative rule.** A function's parameter annotations are recorded and used
-when typing the body, but call arguments are **not** checked against parameter
-annotations in this version (§15.7). This is a documented limitation, not a
-language guarantee.
+when typing the body, and they are also enforced at call sites that the
+checker can resolve to a specific top-level function declaration (§6.5).
 
 ### 6.3 Compatibility
 
@@ -570,6 +569,67 @@ check passes. This preserves the conservative soundness rule of §2.3.
 
 *Non-normative example.* `let x = none; let y: int = x` passes the checker;
 `x` is `Unknown`. A later runtime use of `y` may still fail.
+
+### 6.5 Argument checking at directly resolved calls
+
+**Normative rule.** When a call's callee is statically resolved to a specific
+top-level `fn` declaration — that is, the callee is a name that resolves to a
+declared function and the name is not shadowed by a local binding — the
+checker MUST validate, before execution:
+
+* the **argument count**, which MUST equal the number of declared parameters;
+* for each parameter that has a type annotation, the corresponding argument's
+  inferred type, which MUST be compatible with the annotation under §6.3.
+
+A provable mismatch in either case is `E3001`, diagnosed during checking.
+
+**Normative rule.** A parameter **without** a type annotation imposes no
+static type constraint; only the argument count applies to it.
+
+**Normative rule.** An argument whose inferred type is `Unknown` imposes no
+static type constraint; the annotation check for that argument is skipped,
+preserving §6.4 and §2.3.
+
+**Normative rule.** If the callee cannot be statically resolved to a specific
+top-level function declaration — for example a function value, a closure, a
+variable holding a callable, or any expression whose type is `Unknown` — the
+static argument check does **not** apply. Such calls retain their existing
+dynamic behavior, and the runtime remains authoritative for them.
+
+**Normative rule.** The static check applies only after successful lexical
+resolution to the actual declaration. A local binding that **shadows** a
+declared function's name means the name is a callable value, not a directly
+resolved function, so the declared function's signature MUST NOT be applied to
+it.
+
+**Normative rule.** Because declarations are hoisted (§26), the check applies
+to calls that textually precede the declaration, including mutually recursive
+calls.
+
+**Normative rule.** Runtime argument validation MUST remain in place even
+though the check now rejects some mismatches earlier.
+
+See §6.5.1 for the compatibility classification of this rule.
+
+#### 6.5.1 Compatibility note
+
+**Compatibility note.** Static argument checking at directly resolved calls is
+a **semantic tightening with source-compatibility impact**, not a
+language-version redesign.
+
+* Every **previously valid** Aura program — one whose arguments were already
+  compatible with the callee's declared parameters, or whose callee was not
+  directly resolved — remains valid and behaves identically.
+* A **previously checker-accepted but dynamically invalid** program — one that
+  passed an argument the annotation did not allow, or called a resolved
+  function with the wrong count — may now be rejected during checking with the
+  same `E3001` code it would previously have produced (or that it evaded) at
+  runtime. Its acceptance changes; its meaning does not.
+* Runtime argument validation is retained, so any call the checker does not
+  resolve is still checked dynamically.
+
+*Evidence:* `Checker::check` and the call handling in `src/check/mod.rs`;
+`tests/regressions.rs` (FEATURE_001 tests added at implementation time).
 
 ---
 
@@ -1087,9 +1147,12 @@ exceeding 512 active calls is `E4011`.
 arguments at a call site, no default parameter values, and no variadic
 parameters in this version.
 
-**Normative rule.** Calling a function with the wrong number of arguments is a
-runtime error (`E3001`) for user functions; it is not checked statically in
-this version (§6.2). Calling a non-function value is a runtime `E3001`.
+**Normative rule.** Calling a function with the wrong number of arguments, or
+with an argument whose inferred type is incompatible with an annotated
+parameter, is `E3001`. For a call the checker resolves to a specific top-level
+`fn` declaration, this is diagnosed during checking (§6.5); for any other
+callable (a function value, closure, or unknown callee) it remains a runtime
+error. Calling a non-function value is a runtime `E3001`.
 
 ### 15.8 Nested functions
 
@@ -1590,6 +1653,11 @@ enums, aliases, constants) are visible throughout the module, including to
 declarations that textually precede them ("forward reference"). This is
 achieved by a hoisting pre-pass.
 
+**Normative rule.** Hoisting also makes each function's parameter count and
+parameter annotations available before any body is checked, so calls to
+top-level functions are checked against the callee's signature regardless of
+declaration order, including mutually recursive calls (§6.5).
+
 **Normative rule.** Redeclaring a name in the same scope is `E2007`; declaring
 two user types with the same name is `E2012`; declaring two variants with the
 same tag anywhere is `E2013`.
@@ -1949,8 +2017,10 @@ implementers do not assume guarantees the language does not make.
 
 ### 34.2 Static-checking limitations
 
-* **User-function call arguments are not checked statically** against parameter
-  annotations or arity; a mismatch is a runtime `E3001` (§6.2, §15.7).
+* **Calls through a function value, closure, variable, or any callee that is
+  not a directly resolved top-level function are not checked statically**
+  against arity or parameter annotations; a mismatch is a runtime `E3001`
+  (§6.5). Directly resolved top-level calls **are** checked.
 * **Field reads infer `Unknown`**; the checker does not propagate a field's
   declared type out of `s.field` (§17.5).
 * **`if`/`match`/block expressions and lambdas infer `Unknown`** (§2.3), so
