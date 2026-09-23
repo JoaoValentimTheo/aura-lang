@@ -157,13 +157,13 @@ fn check_expr_depth(root: &Expr, start: usize) -> Result<()> {
             Expr::Call(f, args, _) => {
                 stack.push((f, d));
                 for a in args {
-                    stack.push((a, d));
+                    stack.push((&a.value, d));
                 }
             }
             Expr::Method(r, _, args, _) => {
                 stack.push((r, d));
                 for a in args {
-                    stack.push((a, d));
+                    stack.push((&a.value, d));
                 }
             }
             Expr::Field(r, _, _) => stack.push((r, d)),
@@ -922,19 +922,7 @@ impl Parser {
                     let span = self.span();
                     self.count_node(span)?;
                     self.bump();
-                    let mut args = Vec::new();
-                    self.skip_newlines();
-                    if !self.eat(&Tok::RParen) {
-                        loop {
-                            self.skip_newlines();
-                            args.push(self.arg_expr()?);
-                            self.skip_newlines();
-                            if !self.eat(&Tok::Comma) {
-                                self.expect(&Tok::RParen)?;
-                                break;
-                            }
-                        }
-                    }
+                    let args = self.call_args()?;
                     e = Expr::Call(Box::new(e), args, span);
                 }
                 Tok::LBracket => {
@@ -952,19 +940,7 @@ impl Parser {
                     let name = self.ident("field or method name")?;
                     if matches!(self.at(), Tok::LParen) {
                         self.bump();
-                        let mut args = Vec::new();
-                        self.skip_newlines();
-                        if !self.eat(&Tok::RParen) {
-                            loop {
-                                self.skip_newlines();
-                                args.push(self.arg_expr()?);
-                                self.skip_newlines();
-                                if !self.eat(&Tok::Comma) {
-                                    self.expect(&Tok::RParen)?;
-                                    break;
-                                }
-                            }
-                        }
+                        let args = self.call_args()?;
                         e = Expr::Method(Box::new(e), name, args, span);
                     } else {
                         e = Expr::Field(Box::new(e), name, span);
@@ -974,6 +950,41 @@ impl Parser {
             }
         }
         Ok(e)
+    }
+
+    /// Parse a parenthesized call argument list, up to and including `)`.
+    ///
+    /// Arguments may be positional (`expr`) or named (`name: expr`). Named
+    /// arguments are supported only for directly resolved user functions, but
+    /// the parser accepts the form and the checker validates it. Positional
+    /// arguments MUST precede named arguments; a positional argument after a
+    /// named one is `E1006` (`LANGUAGE_SPEC.md` §4.5).
+    fn call_args(&mut self) -> Result<Vec<Arg>> {
+        let mut out = Vec::new();
+        self.skip_newlines();
+        if self.eat(&Tok::RParen) {
+            return Ok(out);
+        }
+        let mut seen_named = false;
+        loop {
+            self.skip_newlines();
+            let arg = self.cons_arg()?;
+            if arg.name.is_some() {
+                seen_named = true;
+            } else if seen_named {
+                return Err(Diag::new(
+                    codes::EXPECTED,
+                    "positional arguments must come before named arguments",
+                    span_of(&arg.value),
+                ));
+            }
+            out.push(arg);
+            self.skip_newlines();
+            if !self.eat(&Tok::Comma) {
+                self.expect(&Tok::RParen)?;
+                return Ok(out);
+            }
+        }
     }
 
     /// Consume one unit of the flat-expression node budget, reporting the
@@ -988,10 +999,6 @@ impl Parser {
             ));
         }
         Ok(())
-    }
-
-    fn arg_expr(&mut self) -> Result<Expr> {
-        self.expr()
     }
 
     fn atom(&mut self) -> Result<Expr> {
@@ -1384,11 +1391,25 @@ impl Parser {
 fn desugar_pipe(lhs: Expr, rhs: Expr, span: Span) -> Expr {
     match rhs {
         Expr::Call(callee, mut args, cspan) => {
-            args.insert(0, lhs);
+            // The piped value becomes the first *positional* argument; any
+            // named arguments follow (§23).
+            args.insert(
+                0,
+                Arg {
+                    name: None,
+                    value: lhs,
+                },
+            );
             Expr::Call(callee, args, cspan)
         }
         Expr::Method(recv, name, mut args, mspan) => {
-            args.insert(0, lhs);
+            args.insert(
+                0,
+                Arg {
+                    name: None,
+                    value: lhs,
+                },
+            );
             Expr::Method(recv, name, args, mspan)
         }
         other => Expr::Pipe(Box::new(lhs), Box::new(other), span),

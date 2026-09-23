@@ -237,3 +237,24 @@ proptest! {
         }
     }
 }
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(1000))]
+
+    /// FEATURE_002: a named permutation of the arguments binds the same
+    /// parameter values as the positional call, and the reordered call is
+    /// accepted exactly when the positional one is.
+    #[test]
+    fn named_permutation_matches_positional(
+        a in 0i64..10,
+        b in 0i64..10,
+        c in 0i64..10,
+    ) {
+        let params = "fn f(a: int, b: int, c: int) -> int { return a * 100 + b * 10 + c }";
+        let positional = format!("{params}\nfn main() {{ print(f({a}, {b}, {c})) }}");
+        let named = format!("{params}\nfn main() {{ print(f(c: {c}, a: {a}, b: {b})) }}");
+        let expected = aura::run_source(&positional, "<p>").expect("positional runs");
+        let got = aura::run_source(&named, "<p>").expect("named runs");
+        prop_assert_eq!(expected, got);
+    }
+}

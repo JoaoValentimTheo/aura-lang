@@ -47,9 +47,9 @@ pub enum GlobalDecl {
         name: String,
         /// Declared return type, if any.
         ret: Option<TypeExpr>,
-        /// Parameter type annotations in declaration order; `None` when the
-        /// parameter is unannotated.
-        params: Vec<Option<TypeExpr>>,
+        /// Parameters in declaration order: `(name, annotation)`; the
+        /// annotation is `None` when the parameter is unannotated.
+        params: Vec<(String, Option<TypeExpr>)>,
     },
     /// `struct Name { fields... }`
     Struct {
@@ -78,13 +78,14 @@ pub enum GlobalDecl {
 ///
 /// The return type drives expression inference; `params` drives the static
 /// argument check at directly resolved calls (FEATURE_001, `LANGUAGE_SPEC.md`
-/// §6.5). A parameter is `None` when it has no annotation.
+/// §6.5) and the named-argument mapping (FEATURE_002, §15.7). A parameter's
+/// type is `None` when it has no annotation.
 #[derive(Debug, Clone)]
 struct FnSig {
     /// The declared return type, if annotated.
     ret: Option<Ty>,
-    /// One entry per parameter, in declaration order; `Some` when annotated.
-    params: Vec<Option<Ty>>,
+    /// One entry per parameter, in declaration order: `(name, annotation)`.
+    params: Vec<(String, Option<Ty>)>,
 }
 
 /// The checker. Reports the first error, matching the CLI contract.
@@ -201,9 +202,11 @@ impl Checker {
                     let ret_ty = ret.as_ref().map(Ty::from_expr_lenient);
                     let param_tys = params
                         .iter()
-                        .map(|p| {
-                            p.as_ref()
-                                .map(|t| Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t)))
+                        .map(|(pname, pty)| {
+                            let ty = pty
+                                .as_ref()
+                                .map(|t| Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t)));
+                            (pname.clone(), ty)
                         })
                         .collect();
                     c.functions.insert(
@@ -303,7 +306,11 @@ impl Checker {
         for item in &m.items {
             match item {
                 Item::Fn {
-                    name, span, ret, ..
+                    name,
+                    span,
+                    ret,
+                    params,
+                    ..
                 } => {
                     if declared.insert(name.clone(), *span).is_some() {
                         return Err(Diag::new(
@@ -313,11 +320,13 @@ impl Checker {
                         ));
                     }
                     let ret_ty = ret.as_ref().map(Ty::from_expr_lenient);
-                    // Parameter types are filled in by the annotation pass
-                    // below, once every type name is known.
+                    // Parameter names are recorded now; parameter types are
+                    // filled in by the annotation pass below, once every type
+                    // name is known.
+                    let param_sigs = params.iter().map(|p| (p.name.clone(), None)).collect();
                     self.functions.entry(name.clone()).or_insert(FnSig {
                         ret: ret_ty,
-                        params: Vec::new(),
+                        params: param_sigs,
                     });
                     self.scopes[0].declares.entry(name.clone()).or_insert(*span);
                     self.scopes[0].vars.insert(name.clone(), false);
@@ -420,10 +429,11 @@ impl Checker {
                 } => {
                     let mut param_tys = Vec::with_capacity(params.len());
                     for p in params {
-                        match &p.ty {
-                            Some(pty) => param_tys.push(Some(self.annotation(pty, p.span)?)),
-                            None => param_tys.push(None),
-                        }
+                        let ty = match &p.ty {
+                            Some(pty) => Some(self.annotation(pty, p.span)?),
+                            None => None,
+                        };
+                        param_tys.push((p.name.clone(), ty));
                     }
                     let ret_ty = match ret {
                         Some(rt) => Some(self.annotation(rt, Span::default())?),
@@ -596,38 +606,111 @@ impl Checker {
 
     /// Statically validate a call to a directly resolved top-level function.
     ///
-    /// Checks the argument count and, for each annotated parameter, the
-    /// corresponding argument's inferred type (`LANGUAGE_SPEC.md` §6.5). Only
-    /// provable mismatches are rejected: an `Unknown` argument is accepted,
-    /// and an unannotated parameter imposes no type constraint.
-    fn check_user_call(&self, name: &str, sig: &FnSig, args: &[Expr], span: Span) -> Result<()> {
-        if args.len() != sig.params.len() {
-            return Err(Diag::new(
-                codes::TYPE_MISMATCH,
-                format!(
-                    "`{name}` expects {} argument(s), got {}",
-                    sig.params.len(),
-                    args.len()
-                ),
-                span,
-            ));
+    /// Performs parameter satisfaction (`LANGUAGE_SPEC.md` §15.7): positional
+    /// arguments fill the next unfilled parameter, named arguments fill the
+    /// parameter with that exact name, and every parameter must be satisfied
+    /// exactly once. Then the existing annotated-type check runs against the
+    /// resulting mapping. Only provable mismatches are rejected: an `Unknown`
+    /// argument is accepted, and an unannotated parameter imposes no type
+    /// constraint.
+    ///
+    /// Evaluation order is not a concern here: the checker inspects types, not
+    /// runtime values. The runtime binds values after evaluating them in
+    /// source order (see `run::Interp::eval_call`).
+    fn check_user_call(&self, name: &str, sig: &FnSig, args: &[Arg], span: Span) -> Result<()> {
+        // Map each declared parameter index to the argument index that fills
+        // it, or `None` if it is missing.
+        let mut filled: Vec<Option<usize>> = vec![None; sig.params.len()];
+        let mut next_positional = 0usize;
+        for (arg_index, arg) in args.iter().enumerate() {
+            match &arg.name {
+                None => {
+                    // Positional: next unfilled parameter in declaration order.
+                    if next_positional >= sig.params.len() {
+                        return Err(Diag::new(
+                            codes::TYPE_MISMATCH,
+                            format!(
+                                "`{name}` expects {} argument(s), got {}",
+                                sig.params.len(),
+                                args.len()
+                            ),
+                            span,
+                        ));
+                    }
+                    filled[next_positional] = Some(arg_index);
+                    next_positional += 1;
+                }
+                Some(param_name) => {
+                    let Some(param_index) = sig.params.iter().position(|(p, _)| p == param_name)
+                    else {
+                        return Err(Diag::new(
+                            codes::TYPE_MISMATCH,
+                            format!("`{name}` has no parameter named `{param_name}`"),
+                            span,
+                        ));
+                    };
+                    if filled[param_index].is_some() {
+                        return Err(Diag::new(
+                            codes::TYPE_MISMATCH,
+                            format!(
+                                "parameter `{param_name}` is given more than once for `{name}`"
+                            ),
+                            span,
+                        ));
+                    }
+                    filled[param_index] = Some(arg_index);
+                }
+            }
         }
-        for (i, expected) in sig.params.iter().enumerate() {
+
+        // Every parameter must be satisfied.
+        for (param_index, (param_name, _)) in sig.params.iter().enumerate() {
+            if filled[param_index].is_none() {
+                return Err(Diag::new(
+                    codes::TYPE_MISMATCH,
+                    format!("missing argument for parameter `{param_name}` of `{name}`"),
+                    span,
+                ));
+            }
+        }
+
+        // Type-check each parameter against the argument mapped to it.
+        for (param_index, (_, expected)) in sig.params.iter().enumerate() {
             let Some(expected) = expected else { continue };
-            let Some(arg) = args.get(i) else { break };
-            let actual = self.infer(arg);
+            let Some(arg_index) = filled[param_index] else {
+                continue;
+            };
+            let actual = self.infer(&args[arg_index].value);
             if !expected.compatible_with(&actual) {
                 return Err(Diag::new(
                     codes::TYPE_MISMATCH,
                     format!(
-                        "`{name}` argument {} expects `{}`, found `{}`",
-                        i + 1,
+                        "`{name}` parameter `{}` expects `{}`, found `{}`",
+                        sig.params[param_index].0,
                         expected.name(),
                         actual.name()
                     ),
                     span,
                 ));
             }
+        }
+        Ok(())
+    }
+
+    /// Reject named arguments on a callable category that does not support
+    /// them (built-ins, methods, and dynamic/unknown callees).
+    ///
+    /// Named arguments require a statically known parameter set
+    /// (`LANGUAGE_SPEC.md` §15.7); only directly resolved user functions have
+    /// one.
+    fn reject_named_args(&self, what: &str, args: &[Arg], span: Span) -> Result<()> {
+        if let Some(arg) = args.iter().find(|a| a.name.is_some()) {
+            let name = arg.name.as_deref().unwrap_or_default();
+            return Err(Diag::new(
+                codes::TYPE_MISMATCH,
+                format!("`{what}` does not accept named arguments (`{name}: ...`)"),
+                span,
+            ));
         }
         Ok(())
     }
@@ -867,7 +950,7 @@ impl Checker {
     fn check_builtin_call(
         &self,
         sig: &crate::stdlib::signatures::Signature,
-        args: &[Expr],
+        args: &[Arg],
         span: Span,
     ) -> Result<()> {
         if let Some(message) = sig.check_arity(args.len()) {
@@ -875,7 +958,7 @@ impl Checker {
         }
         for (i, param) in sig.params.iter().enumerate() {
             let Some(arg) = args.get(i) else { break };
-            let actual = self.infer(arg);
+            let actual = self.infer(&arg.value);
             if param.accepts.accepts_ty(&actual) == Some(false) {
                 return Err(Diag::new(
                     codes::TYPE_MISMATCH,
@@ -924,7 +1007,7 @@ impl Checker {
     }
 
     /// Validate a method call when the receiver type is statically known.
-    fn check_method_call(&self, recv: &Expr, name: &str, args: &[Expr], span: Span) -> Result<()> {
+    fn check_method_call(&self, recv: &Expr, name: &str, args: &[Arg], span: Span) -> Result<()> {
         let Some(class) = self.method_class_for(name, &self.infer(recv), span)? else {
             return Ok(()); // unknown receiver: cannot decide
         };
@@ -940,7 +1023,7 @@ impl Checker {
         }
         for (i, param) in sig.params.iter().enumerate() {
             let Some(arg) = args.get(i) else { break };
-            let actual = self.infer(arg);
+            let actual = self.infer(&arg.value);
             if param.accepts.accepts_ty(&actual) == Some(false) {
                 return Err(Diag::new(
                     codes::TYPE_MISMATCH,
@@ -1504,14 +1587,18 @@ impl Checker {
                         // forward references resolve.
                         if self.resolves_to_user_function(name) {
                             // A directly resolved top-level function: check the
-                            // call against its declared signature (§6.5).
+                            // call against its declared signature (§6.5, §15.7).
                             if let Some(sig) = self.functions.get(name) {
                                 self.check_user_call(name, sig, args, *span)?;
                             }
                         } else if let Some(sig) = crate::stdlib::signatures::builtin(name) {
+                            // Builtins are positional; named arguments require
+                            // a resolved user-function parameter list.
+                            self.reject_named_args(name, args, *span)?;
                             self.check_builtin_call(sig, args, *span)?;
                         } else if self.lookup(name).is_some() {
-                            // ok: a callable binding (closure)
+                            // A callable binding (closure value): dynamic.
+                            self.reject_named_args(name, args, *span)?;
                         } else {
                             return Err(Diag::new(
                                 codes::UNDEFINED,
@@ -1520,10 +1607,15 @@ impl Checker {
                             ));
                         }
                     }
-                    other => self.expr(other)?,
+                    other => {
+                        // A non-name callee is dynamic; named arguments cannot
+                        // be resolved against a parameter list.
+                        self.expr(other)?;
+                        self.reject_named_args("callable", args, *span)?;
+                    }
                 }
                 for a in args {
-                    self.expr(a)?;
+                    self.expr(&a.value)?;
                 }
             }
             Expr::Method(r, name, args, span) => {
@@ -1535,9 +1627,11 @@ impl Checker {
                         *span,
                     ));
                 }
+                // Methods are positional; named arguments are out of scope.
+                self.reject_named_args(name, args, *span)?;
                 self.check_method_call(r, name, args, *span)?;
                 for a in args {
-                    self.expr(a)?;
+                    self.expr(&a.value)?;
                 }
             }
             Expr::Field(r, name, span) => {

@@ -78,11 +78,12 @@ postfix         = atom { call_or_member } ;
 call_or_member  = "(" [ call_args ] ")"
                 | "[" expr "]"
                 | "." IDENT [ "(" [ call_args ] ")" ] ;
-call_args       = expr { "," expr } ;           (* function calls are positional *)
+call_args       = arg { "," arg } ;             (* positional, then named *)
+arg             = [ IDENT ":" ] expr ;
 
 atom            = INT | FLOAT | STRING | FSTRING
                 | "true" | "false" | "none"
-                | IDENT "(" [ call_args ] ")"          (* call (positional) *)
+                | IDENT "(" [ call_args ] ")"          (* call *)
                 | IDENT "(" [ ctor_args ] ")"          (* variant *)
                 | IDENT "{" [ field_init { "," field_init } ] "}"  (* struct *)
                 | "(" expr ")"
@@ -131,3 +132,7 @@ FSTRING         = 'f"' { fchar | "{{" | "}}" | "{" expr "}" } '"' ;
 * `type Name = T` is a transparent alias: it is validated but does not create
   a distinct nominal type.
 * `(a, b)` creates a list of two elements; Aura has no distinct tuple value.
+* Call arguments may be named (`f(x: 1)`). All positional arguments must come
+  before all named arguments; a positional argument after a named one is
+  `E1006`. Named arguments are supported only for directly resolved top-level
+  functions (`E3001` otherwise); see `docs/contract.md` §6.

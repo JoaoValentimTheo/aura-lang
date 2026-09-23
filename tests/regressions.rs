@@ -574,3 +574,197 @@ fn method_on_struct_enum_and_range_is_checked() {
         "1\n"
     );
 }
+
+// ---------------------------------------------------------------------------
+// FEATURE_002: named function arguments (`LANGUAGE_SPEC.md` §15.7).
+// ---------------------------------------------------------------------------
+
+/// Basic named and reordered calls bind by parameter name.
+#[test]
+fn named_arguments_bind_by_parameter_name() {
+    assert_eq!(
+        out("fn f(x: int) -> int { return x }\nfn main() { print(f(x: 1)) }"),
+        "1\n"
+    );
+    // Reordering by name.
+    assert_eq!(
+        out(
+            "fn f(a: int, b: int) -> int { return a * 10 + b }\nfn main() { print(f(b: 2, a: 1)) }"
+        ),
+        "12\n"
+    );
+    // Three parameters, fully reversed.
+    assert_eq!(
+        out("fn f(a, b, c) -> int { return a * 100 + b * 10 + c }\nfn main() { print(f(c: 3, b: 2, a: 1)) }"),
+        "123\n"
+    );
+}
+
+/// A positional argument followed by a named one binds each to the right
+/// parameter.
+#[test]
+fn named_arguments_mixed_with_positional() {
+    assert_eq!(
+        out("fn f(a: int, b: int) -> int { return a * 10 + b }\nfn main() { print(f(1, b: 2)) }"),
+        "12\n"
+    );
+    assert_eq!(
+        out("fn f(a, b, c) -> int { return a * 100 + b * 10 + c }\nfn main() { print(f(1, c: 3, b: 2)) }"),
+        "123\n"
+    );
+}
+
+/// A positional argument after a named one is a parse error.
+#[test]
+fn named_arguments_positional_after_named_is_syntax_error() {
+    assert_eq!(
+        fail("fn f(a: int, b: int) -> int { return a }\nfn main() { f(a: 1, 2) }"),
+        codes::EXPECTED
+    );
+}
+
+/// An unknown parameter name is rejected statically.
+#[test]
+fn named_arguments_unknown_parameter_is_rejected() {
+    assert_eq!(
+        check("fn f(a: int) -> int { return a }\nfn main() { f(z: 1) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+/// A parameter given twice — positionally and by name, or twice by name — is
+/// rejected statically.
+#[test]
+fn named_arguments_duplicate_is_rejected() {
+    assert_eq!(
+        check("fn f(a: int, b: int) -> int { return a }\nfn main() { f(1, a: 2) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        check("fn f(a: int) -> int { return a }\nfn main() { f(a: 1, a: 2) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+/// A declared parameter left unsatisfied is rejected statically.
+#[test]
+fn named_arguments_missing_parameter_is_rejected() {
+    assert_eq!(
+        check("fn f(a: int, b: int, c: int) -> int { return a }\nfn main() { f(a: 1, c: 3) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        check("fn f(a: int, b: int) -> int { return a }\nfn main() { f(a: 1) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+/// Named arguments are type-checked after mapping, and `Unknown` remains
+/// permissive.
+#[test]
+fn named_arguments_type_checking() {
+    assert_eq!(
+        check("fn f(a: int, b: int) -> int { return a + b }\nfn main() { f(b: 1, a: \"x\") }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // Unknown is permissive.
+    assert_eq!(
+        check("fn f(x: int) -> int { return x }\nfn main() { f(x: none) }"),
+        Ok(())
+    );
+}
+
+/// Named arguments are limited to directly resolved top-level functions.
+/// Shadowed locals, dynamic callables, builtins, and methods reject them.
+#[test]
+fn named_arguments_only_for_direct_user_functions() {
+    // Builtin.
+    assert_eq!(
+        check("fn main() { len(value: [1]) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // Method.
+    assert_eq!(
+        check("fn main() { \"a,b\".split(sep: \",\") }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // Closure value.
+    assert_eq!(
+        check("fn main() { let f = (a) -> a\n f(x: 1) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // Shadowing: the global signature must not be applied to the local.
+    assert_eq!(
+        check("fn f(x: int) -> int { return x }\nfn g() { let f = (a) -> a\n return f(x: 1) }\nfn main() { g() }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+/// Hoisting and mutual recursion work with named arguments.
+#[test]
+fn named_arguments_hoisting_and_mutual_recursion() {
+    assert_eq!(
+        out("fn main() { print(later(x: 5)) }\nfn later(x: int) -> int { return x }"),
+        "5\n"
+    );
+    assert_eq!(
+        out("fn even(n: int) -> bool { if n == 0 { return true }\n return odd(n: n - 1) }\nfn odd(n: int) -> bool { if n == 0 { return false }\n return even(n: n - 1) }\nfn main() { print(even(n: 4)) }"),
+        "true\n"
+    );
+}
+
+/// The pipeline receiver is the first positional argument; a named argument
+/// naming that parameter is a duplicate.
+#[test]
+fn named_arguments_pipeline() {
+    assert_eq!(
+        out("fn move(dx: int, dy: int) -> int { return dx * 10 + dy }\nfn main() { print(5 |> move(dy: 2)) }"),
+        "52\n"
+    );
+    assert_eq!(
+        check("fn move(dx: int, dy: int) -> int { return dx }\nfn main() { 5 |> move(dx: 2) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+/// Evaluation order stays source order and is independent of parameter
+/// binding; each argument is evaluated exactly once.
+#[test]
+fn named_arguments_evaluate_in_source_order_once() {
+    let src = r#"
+fn record(tag, v) {
+    print(tag)
+    return v
+}
+fn combine(second: int, first: int) -> int {
+    return first * 10 + second
+}
+fn main() {
+    print(combine(second: record("s1", 1), first: record("s2", 2)))
+}
+"#;
+    // s1 then s2 (source order), bound second<-1, first<-2 -> 2*10+1 = 21.
+    assert_eq!(out(src), "s1\ns2\n21\n");
+}
+
+/// Transparent aliases work as parameter types in named calls.
+#[test]
+fn named_arguments_alias_parameter_types() {
+    assert_eq!(
+        out("type Id = int\nfn f(x: Id) -> int { return x }\nfn main() { print(f(x: 5)) }"),
+        "5\n"
+    );
+    assert_eq!(
+        check("type Id = int\nfn f(x: Id) -> int { return x }\nfn main() { f(x: \"s\") }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+/// Positional calls are unchanged.
+#[test]
+fn named_arguments_positional_calls_unchanged() {
+    assert_eq!(
+        out("fn f(a: int, b: int) -> int { return a * 10 + b }\nfn main() { print(f(1, 2)) }"),
+        "12\n"
+    );
+}

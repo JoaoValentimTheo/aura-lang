@@ -175,3 +175,19 @@ fn repl_static_check_failure_preserves_declaration() {
     assert!(out.contains('1'), "{out}");
     assert!(out.contains('2'), "{out}");
 }
+
+/// FEATURE_002: parameter names persist across submissions; named calls
+/// resolve against the session signature, and a failed call leaves it intact.
+#[test]
+fn named_arguments_across_submissions() {
+    let out = body(
+        "fn greet(name: string, punctuation: string) -> string { return name + punctuation }\ngreet(punctuation: \"!\", name: \"Joao\")\n:quit\n",
+    );
+    assert!(out.contains("Joao!"), "{out}");
+    // A rejected named call does not corrupt the declaration.
+    let out = body(
+        "fn greet(name: string, punctuation: string) -> string { return name + punctuation }\ngreet(name: 1, punctuation: \"!\")\ngreet(punctuation: \"?\", name: \"Ana\")\n:quit\n",
+    );
+    assert!(out.contains("E3001"), "{out}");
+    assert!(out.contains("Ana?"), "{out}");
+}

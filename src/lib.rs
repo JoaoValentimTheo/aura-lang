@@ -161,12 +161,24 @@ pub fn compile(src: &str, mode: &str) -> error::Result<ast::Module> {
 
 /// [`compile`] with an explicit [`CompileMode`].
 ///
+/// Parsing and checking both run on a large stack, so a valid program up to
+/// the language nesting limit never exhausts the caller's stack (`E1015` is
+/// the only bound).
+///
 /// # Errors
 /// Returns the first lexer, parser, or checker diagnostic.
 pub fn compile_with_mode(src: &str, mode: CompileMode) -> error::Result<ast::Module> {
     let module = parse::parse(src)?;
-    compile_module(&module, mode)?;
-    Ok(module)
+    check_on_big_stack(module, mode)
+}
+
+/// Run the checker on the large interpreter stack, returning the module so the
+/// caller can still execute or inspect it.
+fn check_on_big_stack(module: ast::Module, mode: CompileMode) -> error::Result<ast::Module> {
+    on_interp_thread(move || {
+        check::Checker::module_in_mode(&module, mode)?;
+        Ok(module)
+    })
 }
 
 /// Check an already-parsed module in the given mode.

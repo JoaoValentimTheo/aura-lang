@@ -169,6 +169,17 @@ involved:
 * **Methods.** A method call on a known receiver type must name a method that
   exists on that type (`E2003`); its argument count and argument types are
   checked (`E3001`).
+* **User-function calls.** A call the checker resolves to a specific top-level
+  `fn` declaration is checked against its declared parameters (`E3001`): the
+  argument count, and each argument's inferred type against the parameter's
+  annotation (an `Unknown` argument is not rejected).
+* **Named arguments.** A directly resolved top-level function call may supply
+  arguments as `name: value`. Positional arguments must precede named ones
+  (`E1006` otherwise). A parameter supplied twice, a named argument naming no
+  parameter, and a declared parameter left unfilled are each `E3001`. Named
+  arguments are rejected on built-ins, methods, and dynamic callables
+  (`E3001`). Argument expressions are evaluated in source order, once,
+  independent of parameter binding.
 * **Ordering.** `<`, `<=`, `>`, `>=` are only valid on number/number,
   string/string, and bool/bool operand pairs. A provably incomparable pair
   (for example `[1] < [2]`) is `E3001` before execution.

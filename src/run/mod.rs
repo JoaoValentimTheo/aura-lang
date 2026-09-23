@@ -894,7 +894,7 @@ impl Interp {
                 let subject = val!(self.eval(recv, env));
                 let mut vals = Vec::with_capacity(args.len());
                 for a in args {
-                    vals.push(val!(self.eval(a, env)));
+                    vals.push(val!(self.eval(&a.value, env)));
                 }
                 Ok(Ctl::Val(self.method(&subject, name, vals, *span)?))
             }
@@ -995,10 +995,13 @@ impl Interp {
         }
     }
 
-    fn eval_call(&mut self, callee: &Expr, args: &[Expr], env: &Env, span: Span) -> Result<Ctl> {
+    fn eval_call(&mut self, callee: &Expr, args: &[Arg], env: &Env, span: Span) -> Result<Ctl> {
+        // Evaluate every argument expression in **source order**, once, before
+        // any parameter binding. Parameter binding (below) must never reorder
+        // evaluation (`LANGUAGE_SPEC.md` §13).
         let mut vals = Vec::with_capacity(args.len());
         for a in args {
-            match self.eval(a, env)? {
+            match self.eval(&a.value, env)? {
                 Ctl::Val(v) => vals.push(v),
                 other => return Ok(other),
             }
@@ -1006,9 +1009,16 @@ impl Interp {
         match callee {
             Expr::Name(name, nspan) => {
                 if let Some(c) = self.functions.get(name).cloned() {
-                    return Ok(Ctl::Val(self.call(&c, vals, *nspan)?));
+                    // Bind by parameter name: positional arguments fill the
+                    // next unfilled parameter; named arguments fill their
+                    // parameter. `vals` stays in source order; only the
+                    // association changes (§15.7).
+                    let call_vals = bind_arguments(args, &vals, &c.params, span)?;
+                    return Ok(Ctl::Val(self.call(&c, call_vals, *nspan)?));
                 }
                 if let Some(n) = self.natives.get(name).cloned() {
+                    // Builtins are positional; named arguments were rejected
+                    // by the checker.
                     return Ok(Ctl::Val(n(self, vals, *nspan)?));
                 }
                 if let Some(f) = env.get(name) {
@@ -1322,6 +1332,65 @@ impl Interp {
     fn method(&mut self, recv: &Value, name: &str, args: Vec<Value>, span: Span) -> Result<Value> {
         crate::stdlib::method(self, recv, name, args, span)
     }
+}
+
+/// Bind evaluated argument values to a user function's parameters.
+///
+/// `args` and `vals` are both in **source order**; `params` is the callee's
+/// parameter names in declaration order. Positional arguments fill the next
+/// unfilled parameter; named arguments fill the parameter with that exact
+/// name. The result is the values in parameter order, ready for the existing
+/// positional call machinery.
+///
+/// The checker already validated the call for directly resolved functions
+/// (§15.7), so the mapping is total here; any residual problem (for example a
+/// named argument reaching a call the checker could not resolve) is reported
+/// as a runtime `E3001`, preserving runtime validation as the final layer.
+fn bind_arguments(
+    args: &[Arg],
+    vals: &[Value],
+    params: &[String],
+    span: Span,
+) -> Result<Vec<Value>> {
+    let mut bound: Vec<Option<Value>> = vec![None; params.len()];
+    let mut next_positional = 0usize;
+    for (i, arg) in args.iter().enumerate() {
+        let value = vals.get(i).cloned().unwrap_or(Value::None);
+        match &arg.name {
+            None => {
+                if next_positional >= params.len() {
+                    return Err(Diag::new(
+                        codes::TYPE_MISMATCH,
+                        format!("expected {} argument(s), got {}", params.len(), args.len()),
+                        span,
+                    ));
+                }
+                bound[next_positional] = Some(value);
+                next_positional += 1;
+            }
+            Some(param_name) => {
+                let Some(index) = params.iter().position(|p| p == param_name) else {
+                    return Err(Diag::new(
+                        codes::TYPE_MISMATCH,
+                        format!("no parameter named `{param_name}`"),
+                        span,
+                    ));
+                };
+                if bound[index].is_some() {
+                    return Err(Diag::new(
+                        codes::TYPE_MISMATCH,
+                        format!("parameter `{param_name}` is given more than once"),
+                        span,
+                    ));
+                }
+                bound[index] = Some(value);
+            }
+        }
+    }
+    bound
+        .into_iter()
+        .map(|v| v.ok_or_else(|| Diag::new(codes::TYPE_MISMATCH, "missing argument", span)))
+        .collect()
 }
 
 fn normalize(i: i64, len: usize) -> Option<usize> {

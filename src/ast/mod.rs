@@ -174,10 +174,12 @@ pub enum Expr {
     Unary(UnOp, Box<Expr>, Span),
     /// `a op b`.
     Binary(BinOp, Box<Expr>, Box<Expr>, Span),
-    /// `callee(args)`.
-    Call(Box<Expr>, Vec<Expr>, Span),
+    /// `callee(args)`. Arguments may be positional (`Arg { name: None, .. }`)
+    /// or named (`Arg { name: Some(..), .. }`); named arguments are supported
+    /// only for directly resolved user functions.
+    Call(Box<Expr>, Vec<Arg>, Span),
     /// `recv.method(args)`.
-    Method(Box<Expr>, String, Vec<Expr>, Span),
+    Method(Box<Expr>, String, Vec<Arg>, Span),
     /// `recv.field`.
     Field(Box<Expr>, String, Span),
     /// `base[index]`.

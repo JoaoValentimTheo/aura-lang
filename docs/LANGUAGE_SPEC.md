@@ -403,7 +403,8 @@ postfix         = atom { call_or_member } ;
 call_or_member  = "(" [ call_args ] ")"
                 | "[" expr "]"
                 | "." IDENT [ "(" [ call_args ] ")" ] ;
-call_args       = expr { "," expr } ;
+call_args       = arg { "," arg } ;           (* positional, then named *)
+arg             = [ IDENT ":" ] expr ;
 atom            = INT | FLOAT | STRING | FSTRING
                 | "true" | "false" | "none"
                 | IDENT "(" [ ctor_args ] ")"        (* call or variant *)
@@ -435,6 +436,10 @@ first character is lowercase and a *variant construction* when it is uppercase.
 **Normative rule.** `(a, b)` with a comma is a *list of the given elements*
 (§21); `(expr)` without a comma is a grouping expression and produces no
 distinct value.
+
+**Normative rule.** In a call argument list, every positional argument MUST
+precede every named argument; a positional argument after a named one is a
+syntax error. A named argument is written `name: value` (§15.7).
 
 **Normative rule.** `else if` is not part of the grammar; it is diagnosed as
 `E1014` before parsing proceeds.
@@ -962,6 +967,13 @@ all constructs. In particular:
 **Normative rule.** Evaluating an expression never evaluates an operand that
 the semantics do not require (short-circuiting).
 
+**Normative rule.** Parameter binding is independent of evaluation order. In a
+call with named arguments, the argument expressions are still evaluated
+left-to-right in source order, exactly once; mapping them to parameters
+afterwards MUST NOT reorder or repeat evaluation. For
+`f(b: e1(), a: e2())`, `e1()` is evaluated before `e2()`, and the resulting
+values are then bound to `b` and `a` respectively (§15.7).
+
 **Normative rule.** A compound assignment `target op= e` evaluates `e` once,
 then evaluates the target's subexpressions to read its current value, then
 evaluates them again to write the result. The target subexpressions are
@@ -1141,18 +1153,46 @@ syntax.
 mutually recursive. Recursion is bounded by the call-frame limit (§31.3):
 exceeding 512 active calls is `E4011`.
 
-### 15.7 Arity and arguments
+### 15.7 Arguments
 
-**Normative rule.** Function calls are positional; there are no named
-arguments at a call site, no default parameter values, and no variadic
-parameters in this version.
+**Normative rule.** A call to a **directly resolved top-level function** MAY
+supply arguments by position or by parameter name, using `name: value`. A
+positional argument fills the next unfilled parameter in declaration order; a
+named argument fills the parameter with that exact, case-sensitive name. All
+positional arguments MUST precede all named arguments.
+
+**Normative rule.** A call MUST supply every declared parameter exactly once.
+For a directly resolved call this is checked before execution: a parameter
+supplied more than once, a named argument naming no parameter, and a declared
+parameter left unfilled are each `E3001`.
+
+**Normative rule.** After arguments are mapped to parameters, the annotated
+type of each parameter is checked against the mapped argument's inferred type
+(§6.5). An argument whose inferred type is `Unknown` imposes no constraint
+(§6.4).
+
+**Normative rule.** Named arguments require a statically known parameter set.
+A named argument is accepted only for a directly resolved top-level function.
+A named argument supplied to a built-in, to a method, or to any dynamically
+resolved callable (a function value, a closure, a variable holding a callable,
+or an `Unknown` callee) is `E3001`, diagnosed during checking when the
+category is known.
+
+**Normative rule.** Evaluation order is source order and is independent of
+parameter binding: argument expressions are evaluated left-to-right exactly
+once, before or while being associated with parameters. Mapping arguments to
+parameters MUST NOT reorder or repeat evaluation (§13).
 
 **Normative rule.** Calling a function with the wrong number of arguments, or
 with an argument whose inferred type is incompatible with an annotated
 parameter, is `E3001`. For a call the checker resolves to a specific top-level
 `fn` declaration, this is diagnosed during checking (§6.5); for any other
-callable (a function value, closure, or unknown callee) it remains a runtime
-error. Calling a non-function value is a runtime `E3001`.
+callable it remains a runtime error. Calling a non-function value is a runtime
+`E3001`.
+
+**Normative rule.** There are no default parameter values and no variadic
+parameters in this version. A parameter that is not supplied is an error, not
+an omitted default.
 
 ### 15.8 Nested functions
 
@@ -1494,6 +1534,12 @@ the sequence.
 * `x |> r.m(a)` is `r.m(x, a)`;
 * `x |> c` where `c` is a non-call callable value is `c(x)`.
 
+**Normative rule.** The piped value becomes the **first positional argument**,
+so a parenthesized suffix MAY include named arguments after it:
+`x |> f(y: 1)` is `f(x, y: 1)`. A named argument naming the first parameter is
+a duplicate assignment (§15.7). No pipeline-specific argument binding exists;
+the desugared call uses ordinary call semantics.
+
 **Normative rule.** The desugaring is applied at parse time. Beyond a call,
 method call, or bare callable value, `x |> y` is a runtime type error
 (`E3001`) if `y` is not callable.
@@ -1763,7 +1809,9 @@ top-level `let`/`let mut`), a set of items, or a bare expression.
 
 **Normative rule.** A submission is checked against all declarations from prior
 submissions. A later submission MAY reference an earlier binding, function,
-struct, enum, or alias.
+struct, enum, or alias. A function's parameter **names** and annotations are
+part of its persisted session signature, so a named call in a later submission
+resolves against them (§15.7).
 
 **Normative rule.** A failed submission reports its diagnostic and leaves the
 session unchanged: it neither adds new declarations nor removes existing ones.
@@ -1992,6 +2040,11 @@ and are hereby frozen. Future changes require the RFC process.
     method call.**
 16. **Maps are string-keyed and ordered by key.**
 17. **Lists, maps, and structs have reference semantics.**
+18. **Named arguments** are supported for directly resolved top-level
+    functions only. Positional arguments precede named arguments; a parameter
+    is supplied exactly once; a duplicate, missing, or unknown parameter is
+    `E3001`; built-ins, methods, and dynamic callables reject named arguments.
+    Evaluation stays in source order and is independent of parameter binding.
 
 ---
 
@@ -2009,7 +2062,9 @@ implementers do not assume guarantees the language does not make.
 * **No `try` without `catch`** (§14.5).
 * **`match` arms cannot be bare control-flow keywords**; a block is required
   (§19.4).
-* **No named or default or variadic function arguments** (§15.7).
+* **No default or variadic function arguments** (§15.7).
+* **Named arguments are limited to directly resolved top-level functions**
+  (§15.7); built-ins, methods, and dynamic callables are positional.
 * **No nested named function declarations**; use lambdas (§15.8).
 * **`else if` is not part of the language** (§4.5).
 * **No `for ... else`, no step on ranges** (§22.1).

@@ -78,8 +78,10 @@ fn main() {
 * `none` is the only absence — not `null`, `nil`, or `undefined`.
 * `else if` does not exist; use `match` or a nested block.
 * `let` is immutable; `let mut` opts into reassignment.
-* Function calls are positional. Named arguments are for `struct`
-  construction only; enum variant payloads are positional.
+* Function calls accept positional arguments, or named arguments for
+  top-level functions (`f(x: 1)`); positional arguments come first. Named
+  arguments are for `struct` construction too; enum variant payloads are
+  positional.
 * `use` and `pub` are reserved and inert in this version (see
   [docs/contract.md](docs/contract.md) §10).
 

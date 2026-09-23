@@ -207,7 +207,10 @@ fn declarations_of(item: &Item) -> Vec<GlobalDecl> {
         } => vec![GlobalDecl::Function {
             name: name.clone(),
             ret: ret.clone(),
-            params: params.iter().map(|p| p.ty.clone()).collect(),
+            params: params
+                .iter()
+                .map(|p| (p.name.clone(), p.ty.clone()))
+                .collect(),
         }],
         Item::Struct { name, fields, .. } => vec![GlobalDecl::Struct {
             name: name.clone(),
