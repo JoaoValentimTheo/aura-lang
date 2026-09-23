@@ -8,14 +8,40 @@
 //! Without the feature, the module is inert and the functions are absent,
 //! so the binary links no CPython.
 
+#[cfg(not(feature = "py"))]
+use crate::error::{codes, Diag, Span};
 use crate::run::Interp;
 
-/// Install Python bridge functions if the feature is enabled.
+#[cfg(not(feature = "py"))]
+fn unavailable(name: &'static str, span: Span) -> Diag {
+    Diag::new(
+        codes::PY_UNSUPPORTED,
+        format!("`{name}` requires a build with the `py` feature (CPython interop)"),
+        span,
+    )
+}
+
+/// Install Python bridge functions.
+///
+/// With the `py` feature, the real PyO3 bridge is installed. Without it, the
+/// same names are installed as stubs that reject the call with `E5002`, so the
+/// static checker and the runtime agree that the functions exist while making
+/// the missing capability an explicit, documented diagnostic.
 pub fn install(it: &mut Interp) {
     #[cfg(feature = "py")]
     py::install(it);
     #[cfg(not(feature = "py"))]
-    let _ = it;
+    {
+        for name in ["py_eval", "py_import", "py_call", "py_version"] {
+            let owned: &'static str = Box::leak(name.to_string().into_boxed_str());
+            it.native(
+                name,
+                move |_it: &mut Interp, _args: Vec<crate::run::value::Value>, span: Span| {
+                    Err(unavailable(owned, span))
+                },
+            );
+        }
+    }
 }
 
 #[cfg(feature = "py")]
