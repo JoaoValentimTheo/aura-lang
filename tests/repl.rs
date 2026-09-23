@@ -113,3 +113,41 @@ fn feature_gated_builtin_reports_unavailable() {
     let out = body("py_eval(\"1\")\n:quit\n");
     assert!(out.contains("E5002"), "{out}");
 }
+
+/// B5: a type declared in one submission stays visible to the checker in later
+/// submissions, for structs, enums, and type aliases.
+#[test]
+fn regression_repl_struct_persistence() {
+    let out = body("struct P { x: int }\nP { x: 1 }\n:quit\n");
+    assert!(out.contains("P { x: 1 }"), "{out}");
+    // And a function defined later can use it.
+    let out = body("struct P { x: int }\nfn f(p) { return p.x }\nf(P { x: 7 })\n:quit\n");
+    assert!(out.contains('7'), "{out}");
+}
+
+#[test]
+fn regression_repl_enum_persistence() {
+    let out = body("enum E { A(int) }\nA(3)\n:quit\n");
+    assert!(out.contains("A(3)"), "{out}");
+    let out = body("enum E { A(int), B }\nA(1)\nB\n:quit\n");
+    assert!(out.contains("A(1)"), "{out}");
+    assert!(out.contains('B'), "{out}");
+}
+
+#[test]
+fn regression_repl_alias_persistence() {
+    // The alias is transparent: `Id` denotes `int`, now and later.
+    let out = body("type Id = int\nlet x: Id = 5\nx\n:quit\n");
+    assert!(out.contains('5'), "{out}");
+    let out = body("type Id = int\nstruct P { id: Id }\nP { id: 7 }\n:quit\n");
+    assert!(out.contains("P { id: 7 }"), "{out}");
+}
+
+/// A session that references an undeclared name still fails, and the session
+/// keeps working afterwards.
+#[test]
+fn session_rejects_unknown_names_without_corruption() {
+    let out = body("let a = 1\nlet b = 2\nnope\nb\n:quit\n");
+    assert!(out.contains("E2003"), "{out}");
+    assert!(out.contains('2'), "{out}");
+}

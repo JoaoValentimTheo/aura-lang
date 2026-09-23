@@ -140,8 +140,13 @@ fn fstring_parses_parts() {
 
 #[test]
 fn deep_nesting_is_bounded() {
-    let src = format!("{}1{}", "(".repeat(1000), ")".repeat(1000));
-    assert!(parse_expr(&src).is_err());
+    // Grouping parentheses do not add AST depth, so a very long paren chain is
+    // accepted; the parser still bounds raw recursion so an extreme chain is
+    // rejected rather than overflowing the host stack.
+    let ok = format!("{}1{}", "(".repeat(500), ")".repeat(500));
+    assert!(parse_expr(&ok).is_ok());
+    let extreme = format!("{}1{}", "(".repeat(5000), ")".repeat(5000));
+    assert!(parse_expr(&extreme).is_err());
 }
 
 #[test]

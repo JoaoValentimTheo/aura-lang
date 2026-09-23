@@ -44,6 +44,12 @@ The composite types are:
 
 Types are optional annotations. When present they are checked before
 execution. There are no implicit conversions between `int` and `string`.
+A `type Name = T` alias is transparent: `Name` denotes `T` in every position.
+An annotation is enforced where the checker can prove a mismatch: annotated
+bindings, function return types, function parameters used in a body, struct
+field values at construction, and enum payload values at construction. A value
+the checker cannot type is not rejected (it may still fail at runtime under the
+runtime rules in §7).
 
 ## 3. Declarations
 
@@ -64,6 +70,14 @@ use stdlib.math              # reserved; currently inert (see §10)
 * A function is declared with `fn` and returns `none` unless annotated.
 * Redefining a name in the same scope is `E2007`.
 * Parameter names starting with `_` must be unused (`E2009`).
+* A struct is built with named fields (`S { a: 1 }`) or positionally in
+  declaration order (`S(1)`). Named construction must supply every declared
+  field exactly once; an unknown field is `E2003`, and a missing, duplicate,
+  extra, or wrong-typed field is `E3001`. A field value the checker cannot type
+  is accepted.
+* An enum variant is built positionally (`Ok(x)`); named payload arguments are
+  rejected (`E3001`). The payload count and, where statically known, each
+  payload value's type must match the declaration (`E3001`).
 
 ## 4. Expressions
 
@@ -165,7 +179,8 @@ The full, authoritative list lives in `docs/errors.md`, and
 * `int` is 64-bit and checked: overflow is `E4013`, not wraparound. The
   literals `-9223372036854775808` (`i64::MIN`) and `i64::MAX` are valid; the
   bare magnitude `9223372036854775808` is not.
-* Division by zero is `E4007` (`/`, `%`, and float division).
+* Division by zero is `E4007`: this covers `int` and `float` for both `/` and
+  `%`, and treats `0.0` and `-0.0` alike.
 * Ordering comparisons on NaN yield `false`; comparing values of
   incomparable types is `E3001`.
 * `==` compares structurally (lists, maps, structs, enums). `NaN == NaN` is
@@ -183,8 +198,12 @@ The full, authoritative list lives in `docs/errors.md`, and
   `2`, and `try { throw "a" } catch e -> { } finally { throw "b" }` throws
   `"b"`. A `finally` block that runs to completion leaves the pending outcome
   untouched.
-* Expressions nest at most 256 levels; deeper nesting is `E1015`, never a
-  crash.
+* Expressions nest at most **256 AST levels**; deeper nesting is `E1015`,
+  never a crash. The limit counts AST nodes (calls, operators, collections,
+  and so on), not grouping parentheses: `((((x))))` adds no depth. An
+  extreme chain of grouping parentheses is still bounded by the parser's own
+  recursion guard, which also reports `E1015`, so the diagnostic is the same
+  whether the limit is semantic or a host-safety backstop.
 * `to_int` accepts an `int`, a `bool`, a numeric string, or a finite float in
   range; anything else is `E4013`. It never silently saturates.
 * Standard-library functions reject a wrong number of arguments (`E3001`)

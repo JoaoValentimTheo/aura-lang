@@ -1095,7 +1095,32 @@ impl Interp {
         }
         if let Some(fields) = self.structs.get(name).cloned() {
             let mut values = Vec::new();
+            if !named.is_empty() && !positional.is_empty() {
+                return Err(self.error(
+                    codes::TYPE_MISMATCH,
+                    format!("`{name}` mixes named and positional fields; use one form"),
+                    span,
+                ));
+            }
             if !named.is_empty() {
+                // Reject names that are not declared fields and duplicates,
+                // rather than silently ignoring them.
+                for (n, _) in &named {
+                    if !fields.iter().any(|f| f == n) {
+                        return Err(self.error(
+                            codes::UNDEFINED,
+                            format!("`{name}` has no field `{n}`"),
+                            span,
+                        ));
+                    }
+                    if named.iter().filter(|(m, _)| m == n).count() > 1 {
+                        return Err(self.error(
+                            codes::TYPE_MISMATCH,
+                            format!("field `{n}` is given more than once for `{name}`"),
+                            span,
+                        ));
+                    }
+                }
                 for f in &fields {
                     let found = named.iter().find(|(n, _)| n == f).map(|(_, v)| v.clone());
                     match found {
@@ -1131,6 +1156,13 @@ impl Interp {
             }))));
         }
         if let Some((ty, arity)) = self.variants.get(name).cloned() {
+            if let Some((n, _)) = named.first() {
+                return Err(self.error(
+                    codes::TYPE_MISMATCH,
+                    format!("variant `{name}` is positional; `{n}: ...` is not allowed here"),
+                    span,
+                ));
+            }
             if positional.len() != arity {
                 return Err(self.error(
                     codes::TYPE_MISMATCH,
@@ -1253,7 +1285,15 @@ impl Interp {
                         }
                         a / b
                     }
-                    Rem => a % b,
+                    Rem => {
+                        // Contract §7: division by zero is E4007 for `%` as
+                        // well, on both int and float. `b == 0.0` is true for
+                        // `-0.0` too, so all zero spellings behave alike.
+                        if b == 0.0 {
+                            return Err(self.error(codes::DIV_ZERO, "division by zero", span));
+                        }
+                        a % b
+                    }
                     Pow => a.powf(b),
                     _ => {
                         return Err(self.error(

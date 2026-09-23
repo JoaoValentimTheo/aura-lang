@@ -137,3 +137,113 @@ fn f10_python_boundary_rejects_lossy_values() {
         codes::PY_UNSUPPORTED
     );
 }
+
+// ---------------------------------------------------------------------------
+// B1–B6: findings from `docs/SEMANTIC_FREEZE_AUDIT.md`.
+// ---------------------------------------------------------------------------
+
+/// B1: `%` by zero is `E4007` on both int and float, including `-0.0`; valid
+/// non-zero remainder is unchanged. Previously float `%` yielded `nan`.
+#[test]
+fn b1_float_remainder_by_zero_is_an_error() {
+    // Every zero spelling is rejected for both operand types.
+    assert_eq!(fail("fn main() { print(1 % 0) }"), codes::DIV_ZERO);
+    assert_eq!(fail("fn main() { print(1.0 % 0.0) }"), codes::DIV_ZERO);
+    assert_eq!(fail("fn main() { print(-1.0 % 0.0) }"), codes::DIV_ZERO);
+    assert_eq!(fail("fn main() { print(1.0 % -0.0) }"), codes::DIV_ZERO);
+    assert_eq!(fail("fn main() { print(-1.0 % -0.0) }"), codes::DIV_ZERO);
+    assert_eq!(fail("fn main() { print(0.0 % 0.0) }"), codes::DIV_ZERO);
+    // Division behaves the same way.
+    assert_eq!(fail("fn main() { print(1 / 0) }"), codes::DIV_ZERO);
+    assert_eq!(fail("fn main() { print(1.0 / 0.0) }"), codes::DIV_ZERO);
+    // The non-zero remainder path is untouched, including sign semantics.
+    assert_eq!(out("fn main() { print(7 % 3) }"), "1\n");
+    assert_eq!(out("fn main() { print(7.5 % 2.0) }"), "1.5\n");
+    assert_eq!(out("fn main() { print(-7.5 % 2.0) }"), "-1.5\n");
+    assert_eq!(out("fn main() { print(7.5 % -2.0) }"), "1.5\n");
+}
+
+/// B3: struct field annotations are checked at construction.
+#[test]
+fn b3_struct_field_type_validation() {
+    let bad_string = "struct S { a: int }\nfn main() { print(S { a: \"x\" }) }";
+    assert_eq!(check(bad_string), Err(codes::TYPE_MISMATCH));
+    assert_eq!(fail(bad_string), codes::TYPE_MISMATCH);
+    let bad_list = "struct S { a: int }\nfn main() { print(S { a: [1] }) }";
+    assert_eq!(check(bad_list), Err(codes::TYPE_MISMATCH));
+    let bad_float = "struct S { a: int }\nfn main() { print(S { a: 1.5 }) }";
+    assert_eq!(check(bad_float), Err(codes::TYPE_MISMATCH));
+    // Correct types are accepted.
+    assert_eq!(
+        check("struct S { a: int }\nfn main() { S { a: 1 } }"),
+        Ok(())
+    );
+    assert_eq!(
+        out("struct S { a: float }\nfn main() { print(S { a: 1.5 }) }"),
+        "S { a: 1.5 }\n"
+    );
+    assert_eq!(
+        out("struct S { a: bool }\nfn main() { print(S { a: true }) }"),
+        "S { a: true }\n"
+    );
+    // A value the checker cannot type is not rejected (conservative).
+    assert_eq!(
+        check("struct S { a: int }\nfn main() { let x = none\n S { a: x } }"),
+        Ok(())
+    );
+}
+
+/// B4: struct construction rejects unknown, missing, duplicate, and extra
+/// fields instead of silently dropping them.
+#[test]
+fn b4_struct_unknown_and_missing_fields() {
+    // Extra / unknown field: undefined field, before execution.
+    let extra = "struct S { a: int }\nfn main() { print(S { a: 1, b: 2 }) }";
+    assert_eq!(check(extra), Err(codes::UNDEFINED));
+    assert_eq!(fail(extra), codes::UNDEFINED);
+    // Missing required field.
+    let missing = "struct S { a: int, b: int }\nfn main() { print(S { a: 1 }) }";
+    assert_eq!(check(missing), Err(codes::TYPE_MISMATCH));
+    assert_eq!(fail(missing), codes::TYPE_MISMATCH);
+    // Duplicate field.
+    let dup = "struct S { a: int }\nfn main() { print(S { a: 1, a: 2 }) }";
+    assert_eq!(check(dup), Err(codes::TYPE_MISMATCH));
+    // Positional arity.
+    assert_eq!(
+        check("struct S { a: int }\nfn main() { S(1, 2) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        check("struct S { a: int, b: int }\nfn main() { S(1) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // A no-field struct literal is exact.
+    assert_eq!(out("struct S { }\nfn main() { print(S { }) }"), "S {  }\n");
+}
+
+/// B6: enum variants are positional; named payload arguments are rejected
+/// explicitly rather than surfacing as a confusing arity error.
+#[test]
+fn b6_enum_named_argument_contract() {
+    let named = "enum E { A(int) }\nfn main() { print(match A(x: 1) { A(n) -> n }) }";
+    assert_eq!(check(named), Err(codes::TYPE_MISMATCH));
+    assert_eq!(fail(named), codes::TYPE_MISMATCH);
+    // Positional construction works; arity and payload types are checked.
+    assert_eq!(
+        out("enum E { A(int) }\nfn main() { print(match A(1) { A(n) -> n }) }"),
+        "1\n"
+    );
+    assert_eq!(
+        check("enum E { A(int) }\nfn main() { A(1, 2) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        check("enum E { A(int) }\nfn main() { A(\"x\") }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // A payload the checker cannot type is accepted.
+    assert_eq!(
+        check("enum E { A(int) }\nfn main() { let z = none\n A(z) }"),
+        Ok(())
+    );
+}

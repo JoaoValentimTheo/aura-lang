@@ -27,6 +27,50 @@ struct Scope {
     declares: HashMap<String, Span>,
 }
 
+/// A declaration carried from an earlier session into a new checker.
+///
+/// The REPL builds one of these per declaration a submission introduces; the
+/// list is the session's semantic state, so the checker sees every binding,
+/// function, and type the interpreter session already holds.
+#[derive(Debug, Clone)]
+pub enum GlobalDecl {
+    /// `let [mut] name = ...`
+    Binding {
+        /// Name.
+        name: String,
+        /// Whether it is mutable.
+        mutable: bool,
+    },
+    /// `fn name(...) -> ret`
+    Function {
+        /// Name.
+        name: String,
+        /// Declared return type, if any.
+        ret: Option<TypeExpr>,
+    },
+    /// `struct Name { fields... }`
+    Struct {
+        /// Name.
+        name: String,
+        /// Field type annotations in declaration order.
+        fields: Vec<(String, TypeExpr)>,
+    },
+    /// `enum Name { variants... }`
+    Enum {
+        /// Name.
+        name: String,
+        /// Variant tags with payload type annotations.
+        variants: Vec<(String, Vec<TypeExpr>)>,
+    },
+    /// `type Name = T`
+    Alias {
+        /// Name.
+        name: String,
+        /// The aliased type expression.
+        target: TypeExpr,
+    },
+}
+
 /// The checker. Reports the first error, matching the CLI contract.
 pub struct Checker {
     scopes: Vec<Scope>,
@@ -41,8 +85,12 @@ pub struct Checker {
     type_kinds: HashMap<String, String>,
     /// Field types of each struct, by struct name.
     struct_fields: HashMap<String, HashMap<String, Ty>>,
+    /// Struct field names in declaration order, for positional construction.
+    struct_field_order: HashMap<String, Vec<String>>,
     /// Enum variant tags declared anywhere, with defining enum name.
     variants: HashMap<String, String>,
+    /// Payload types of each enum variant, by tag.
+    variant_payloads: HashMap<String, Vec<Ty>>,
     /// The declared return type of the function currently being checked.
     return_type: Option<Ty>,
     /// The declared type of annotated bindings in scope, innermost last.
@@ -61,6 +109,9 @@ pub struct Checker {
     /// While checking a constant initializer, the order index of that
     /// constant; constants at or after it are not yet initialized.
     active_const: Option<usize>,
+    /// Targets of `type Name = T` aliases, so a transparent alias resolves to
+    /// the type it names.
+    alias_targets: HashMap<String, TypeExpr>,
 }
 
 impl Checker {
@@ -73,7 +124,9 @@ impl Checker {
             types: HashMap::new(),
             type_kinds: HashMap::new(),
             struct_fields: HashMap::new(),
+            struct_field_order: HashMap::new(),
             variants: HashMap::new(),
+            variant_payloads: HashMap::new(),
             return_type: None,
             value_types: vec![HashMap::new()],
             underscore_params: Vec::new(),
@@ -82,6 +135,7 @@ impl Checker {
             const_order: HashMap::new(),
             active_const: None,
             loop_depth: 0,
+            alias_targets: HashMap::new(),
         }
     }
 
@@ -90,12 +144,92 @@ impl Checker {
     /// `(name, mutable, is_function)`.
     #[must_use]
     pub fn with_globals(globals: &[(String, bool, bool)]) -> Checker {
+        let decls: Vec<GlobalDecl> = globals
+            .iter()
+            .map(|(name, mutable, is_fn)| {
+                if *is_fn {
+                    GlobalDecl::Function {
+                        name: name.clone(),
+                        ret: None,
+                    }
+                } else {
+                    GlobalDecl::Binding {
+                        name: name.clone(),
+                        mutable: *mutable,
+                    }
+                }
+            })
+            .collect();
+        Checker::with_declarations(&decls)
+    }
+
+    /// Build a checker that knows the declarations carried across REPL
+    /// submissions. This is the coherent session model: one declaration list
+    /// feeds both bindings and the type tables, so the checker sees exactly
+    /// what the interpreter session retains.
+    #[must_use]
+    pub fn with_declarations(decls: &[GlobalDecl]) -> Checker {
         let mut c = Checker::new();
-        for (name, mutable, is_fn) in globals {
-            c.scopes[0].declares.insert(name.clone(), Span::default());
-            c.scopes[0].vars.insert(name.clone(), *mutable);
-            if *is_fn {
-                c.functions.insert(name.clone(), None);
+        // Register type names first, so field/payload annotations that refer
+        // to types declared in any order resolve.
+        for d in decls {
+            match d {
+                GlobalDecl::Binding { name, mutable } => {
+                    c.scopes[0].declares.insert(name.clone(), Span::default());
+                    c.scopes[0].vars.insert(name.clone(), *mutable);
+                }
+                GlobalDecl::Function { name, ret } => {
+                    c.scopes[0].declares.insert(name.clone(), Span::default());
+                    c.scopes[0].vars.insert(name.clone(), false);
+                    let ret_ty = ret.as_ref().map(Ty::from_expr_lenient);
+                    c.functions.insert(name.clone(), ret_ty);
+                }
+                GlobalDecl::Struct { name, .. } => {
+                    c.scopes[0].declares.insert(name.clone(), Span::default());
+                    c.scopes[0].vars.insert(name.clone(), false);
+                    c.types.insert(name.clone(), Span::default());
+                    c.type_kinds.insert(name.clone(), "struct".to_string());
+                }
+                GlobalDecl::Enum { name, .. } => {
+                    c.scopes[0].declares.insert(name.clone(), Span::default());
+                    c.scopes[0].vars.insert(name.clone(), false);
+                    c.types.insert(name.clone(), Span::default());
+                    c.type_kinds.insert(name.clone(), "enum".to_string());
+                }
+                GlobalDecl::Alias { name, target } => {
+                    c.scopes[0].declares.insert(name.clone(), Span::default());
+                    c.scopes[0].vars.insert(name.clone(), false);
+                    c.types.insert(name.clone(), Span::default());
+                    c.type_kinds.insert(name.clone(), "alias".to_string());
+                    c.alias_targets.insert(name.clone(), target.clone());
+                }
+            }
+        }
+        // Then record fields, payloads, and variant tags, resolving aliases
+        // now that every alias target is known.
+        for d in decls {
+            match d {
+                GlobalDecl::Struct { name, fields } => {
+                    let mut map = HashMap::new();
+                    let mut order = Vec::new();
+                    for (f, t) in fields {
+                        map.insert(f.clone(), Ty::from_expr_lenient(&c.resolve_type_expr(t)));
+                        order.push(f.clone());
+                    }
+                    c.struct_fields.insert(name.clone(), map);
+                    c.struct_field_order.insert(name.clone(), order);
+                }
+                GlobalDecl::Enum { variants, .. } => {
+                    for (tag, payload) in variants {
+                        let mut tys = Vec::with_capacity(payload.len());
+                        for t in payload {
+                            tys.push(Ty::from_expr_lenient(&c.resolve_type_expr(t)));
+                        }
+                        c.variants.insert(tag.clone(), String::new());
+                        c.variant_payloads.insert(tag.clone(), tys);
+                    }
+                }
+                _ => {}
             }
         }
         c
@@ -203,7 +337,7 @@ impl Checker {
                         self.variants.insert(tag.clone(), name.clone());
                     }
                 }
-                Item::Alias { name, span, .. } => {
+                Item::Alias { name, target, span } => {
                     if self.types.insert(name.clone(), *span).is_some() {
                         return Err(Diag::new(
                             codes::DUPLICATE_TYPE,
@@ -212,6 +346,7 @@ impl Checker {
                         ));
                     }
                     self.type_kinds.insert(name.clone(), "alias".to_string());
+                    self.alias_targets.insert(name.clone(), target.clone());
                 }
                 Item::Use { .. } | Item::Expr(..) => {}
             }
@@ -221,30 +356,35 @@ impl Checker {
             match item {
                 Item::Struct { name, fields, .. } => {
                     let mut map = HashMap::new();
+                    let mut order = Vec::new();
                     for (fname, fty) in fields {
-                        let ty = Ty::from_expr(fty, &self.type_kinds, Span::default())?;
+                        let ty = self.annotation(fty, Span::default())?;
                         map.insert(fname.clone(), ty);
+                        order.push(fname.clone());
                     }
                     self.struct_fields.insert(name.clone(), map);
+                    self.struct_field_order.insert(name.clone(), order);
                 }
                 Item::Enum { variants, .. } => {
-                    for (_, payload) in variants {
+                    for (tag, payload) in variants {
+                        let mut tys = Vec::with_capacity(payload.len());
                         for pty in payload {
-                            Ty::from_expr(pty, &self.type_kinds, Span::default())?;
+                            tys.push(self.annotation(pty, Span::default())?);
                         }
+                        self.variant_payloads.insert(tag.clone(), tys);
                     }
                 }
                 Item::Alias { target, .. } => {
-                    Ty::from_expr(target, &self.type_kinds, Span::default())?;
+                    self.annotation(target, Span::default())?;
                 }
                 Item::Fn { params, ret, .. } => {
                     for p in params {
                         if let Some(pty) = &p.ty {
-                            Ty::from_expr(pty, &self.type_kinds, p.span)?;
+                            self.annotation(pty, p.span)?;
                         }
                     }
                     if let Some(rt) = ret {
-                        Ty::from_expr(rt, &self.type_kinds, Span::default())?;
+                        self.annotation(rt, Span::default())?;
                     }
                 }
                 _ => {}
@@ -680,7 +820,184 @@ impl Checker {
     }
 
     fn annotation(&self, t: &TypeExpr, span: Span) -> Result<Ty> {
-        Ty::from_expr(t, &self.type_kinds, span)
+        Ty::from_expr(&self.resolve_type_expr(t), &self.type_kinds, span)
+    }
+
+    /// Substitute `type` aliases by their targets, recursively, so a
+    /// transparent alias denotes the type it names. Unknown names are left
+    /// untouched and validated later by [`Ty::from_expr`].
+    fn resolve_type_expr(&self, t: &TypeExpr) -> TypeExpr {
+        match t {
+            TypeExpr::Named(n) => match self.alias_targets.get(n) {
+                Some(target) => self.resolve_type_expr(target),
+                None => t.clone(),
+            },
+            TypeExpr::List(inner) => TypeExpr::List(Box::new(self.resolve_type_expr(inner))),
+            TypeExpr::Map(k, v) => TypeExpr::Map(
+                Box::new(self.resolve_type_expr(k)),
+                Box::new(self.resolve_type_expr(v)),
+            ),
+            TypeExpr::Optional(inner) => {
+                TypeExpr::Optional(Box::new(self.resolve_type_expr(inner)))
+            }
+            _ => t.clone(),
+        }
+    }
+
+    /// Validate a struct literal against the declared fields.
+    ///
+    /// Named construction (`S { a: 1 }`) requires every supplied name to be a
+    /// declared field, every declared field to be supplied exactly once, and
+    /// every value to be compatible with its field type. Positional
+    /// construction (`S(1)`) requires exactly one value per field in
+    /// declaration order. Only mismatches the checker can prove are reported;
+    /// an `Unknown` value is accepted.
+    fn check_struct_construction(
+        &self,
+        name: &str,
+        fields: &HashMap<String, Ty>,
+        args: &[Arg],
+        span: Span,
+    ) -> Result<()> {
+        let named = args.iter().any(|a| a.name.is_some());
+        if args.iter().any(|a| a.name.is_none()) && named {
+            // A mixture would make "which field does this value belong to?"
+            // ambiguous; the grammar allows it but the semantics do not.
+            return Err(Diag::new(
+                codes::TYPE_MISMATCH,
+                format!("`{name}` mixes named and positional fields; use one form"),
+                span,
+            ));
+        }
+        if named {
+            let mut seen: Vec<&str> = Vec::new();
+            for a in args {
+                let fname = a.name.as_deref().unwrap_or_default();
+                if !fields.contains_key(fname) {
+                    return Err(Diag::new(
+                        codes::UNDEFINED,
+                        format!("`{name}` has no field `{fname}`"),
+                        span,
+                    ));
+                }
+                if seen.contains(&fname) {
+                    return Err(Diag::new(
+                        codes::TYPE_MISMATCH,
+                        format!("field `{fname}` is given more than once for `{name}`"),
+                        span,
+                    ));
+                }
+                seen.push(fname);
+                if let Some(fty) = fields.get(fname) {
+                    self.check_field_value(name, fname, fty, &a.value, span)?;
+                }
+            }
+            let order = self
+                .struct_field_order
+                .get(name)
+                .cloned()
+                .unwrap_or_default();
+            for f in order {
+                if !seen.contains(&f.as_str()) {
+                    return Err(Diag::new(
+                        codes::TYPE_MISMATCH,
+                        format!("missing field `{f}` for `{name}`"),
+                        span,
+                    ));
+                }
+            }
+        } else {
+            let order = self
+                .struct_field_order
+                .get(name)
+                .cloned()
+                .unwrap_or_default();
+            if args.len() != order.len() {
+                return Err(Diag::new(
+                    codes::TYPE_MISMATCH,
+                    format!(
+                        "`{name}` expects {} field(s), got {}",
+                        order.len(),
+                        args.len()
+                    ),
+                    span,
+                ));
+            }
+            for (f, a) in order.iter().zip(args) {
+                if let Some(fty) = fields.get(f) {
+                    self.check_field_value(name, f, fty, &a.value, span)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// A field value must be compatible with the declared field type when both
+    /// are statically known.
+    fn check_field_value(
+        &self,
+        name: &str,
+        field: &str,
+        expected: &Ty,
+        value: &Expr,
+        span: Span,
+    ) -> Result<()> {
+        let actual = self.infer(value);
+        if !expected.compatible_with(&actual) {
+            return Err(Diag::new(
+                codes::TYPE_MISMATCH,
+                format!(
+                    "field `{field}` of `{name}` is `{}` but the value is `{}`",
+                    expected.name(),
+                    actual.name()
+                ),
+                span,
+            ));
+        }
+        Ok(())
+    }
+
+    /// Validate an enum-variant construction.
+    ///
+    /// Variants are positional: named arguments are rejected, the payload
+    /// count must match exactly, and each value must be compatible with its
+    /// declared type.
+    fn check_variant_construction(&self, name: &str, args: &[Arg], span: Span) -> Result<()> {
+        if let Some(a) = args.iter().find(|a| a.name.is_some()) {
+            let fname = a.name.as_deref().unwrap_or_default();
+            return Err(Diag::new(
+                codes::TYPE_MISMATCH,
+                format!("variant `{name}` is positional; `{fname}: ...` is not allowed here"),
+                span,
+            ));
+        }
+        let payload = self.variant_payloads.get(name).cloned().unwrap_or_default();
+        if args.len() != payload.len() {
+            return Err(Diag::new(
+                codes::TYPE_MISMATCH,
+                format!(
+                    "variant `{name}` expects {} value(s), got {}",
+                    payload.len(),
+                    args.len()
+                ),
+                span,
+            ));
+        }
+        for (expected, a) in payload.iter().zip(args) {
+            let actual = self.infer(&a.value);
+            if !expected.compatible_with(&actual) {
+                return Err(Diag::new(
+                    codes::TYPE_MISMATCH,
+                    format!(
+                        "variant `{name}` field is `{}` but the value is `{}`",
+                        expected.name(),
+                        actual.name()
+                    ),
+                    span,
+                ));
+            }
+        }
+        Ok(())
     }
 
     fn block(&mut self, body: &[Stmt]) -> Result<()> {
@@ -1043,16 +1360,21 @@ impl Checker {
                 }
             }
             Expr::Construct(name, args, span) => {
-                // The name must be a declared struct or an enum variant.
-                if !self.types.contains_key(name) && !self.variants.contains_key(name) {
+                // Every argument expression is checked regardless of which
+                // construction rule applies.
+                for a in args {
+                    self.expr(&a.value)?;
+                }
+                if let Some(fields) = self.struct_fields.get(name) {
+                    self.check_struct_construction(name, fields, args, *span)?;
+                } else if self.variants.contains_key(name) {
+                    self.check_variant_construction(name, args, *span)?;
+                } else {
                     return Err(Diag::new(
                         codes::UNKNOWN_TYPE,
                         format!("`{name}` is not a declared struct or enum variant"),
                         *span,
                     ));
-                }
-                for a in args {
-                    self.expr(&a.value)?;
                 }
             }
             Expr::Lambda(ps, body, _) => {

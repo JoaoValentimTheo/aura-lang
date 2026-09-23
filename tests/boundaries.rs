@@ -117,3 +117,53 @@ fn moderately_long_expression_is_accepted() {
     let src = format!("fn main() {{ print({}) }}", "1+".repeat(100) + "1");
     assert_eq!(run(&src), Ok("101\n".to_string()));
 }
+
+/// B2: the semantic nesting limit is measured on the AST and reported as
+/// `E1015` at a deterministic boundary. A program at the limit runs; a
+/// program beyond it is rejected, never a host crash.
+#[test]
+fn regression_nesting_limit_boundary() {
+    // A flat chain is left-nested AST depth. 128 terms is well within the
+    // limit; 256 is past it.
+    let ok = format!("fn main() {{ print({}) }}", vec!["1"; 128].join("+"));
+    assert!(run(&ok).is_ok(), "128-term chain must be accepted");
+    let over = format!("fn main() {{ print({}) }}", vec!["1"; 256].join("+"));
+    assert_eq!(run(&over), Err(codes::NESTING));
+
+    // Nested collections count AST depth too: just under the limit succeeds,
+    // well past it is rejected with E1015 (not E1006, not a crash).
+    let under = format!(
+        "fn main() {{ print({}1{}) }}",
+        "[".repeat(200),
+        "]".repeat(200)
+    );
+    assert!(run(&under).is_ok(), "200 nested lists must be accepted");
+    let over = format!(
+        "fn main() {{ print({}1{}) }}",
+        "[".repeat(300),
+        "]".repeat(300)
+    );
+    assert_eq!(run(&over), Err(codes::NESTING));
+}
+
+/// B2: grouping parentheses add no AST depth, so a long parenthesized chain is
+/// accepted; only an extreme one hits the parser's host-safety backstop, and
+/// it too reports `E1015` rather than overflowing the stack.
+#[test]
+fn regression_parenthesis_nesting_is_bounded_not_a_crash() {
+    let ok = format!(
+        "fn main() {{ print({}1{}) }}",
+        "(".repeat(1000),
+        ")".repeat(1000)
+    );
+    assert!(
+        run(&ok).is_ok(),
+        "1000 grouped parentheses must be accepted"
+    );
+    let extreme = format!(
+        "fn main() {{ print({}1{}) }}",
+        "(".repeat(4000),
+        ")".repeat(4000)
+    );
+    assert_eq!(run(&extreme), Err(codes::NESTING));
+}

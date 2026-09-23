@@ -8,6 +8,7 @@
 use std::io::{BufRead, Write};
 
 use crate::ast::{Item, Stmt};
+use crate::check::GlobalDecl;
 use crate::error::Diag;
 use crate::run::{Ctl, Interp};
 
@@ -30,7 +31,7 @@ pub fn run() -> Result<(), Diag> {
 /// Returns a diagnostic only for unrecoverable I/O failures.
 pub fn run_with<R: BufRead, W: Write>(mut reader: R, mut writer: W) -> Result<(), Diag> {
     let mut interp = Interp::new();
-    let mut globals: Vec<(String, bool, bool)> = Vec::new();
+    let mut decls: Vec<GlobalDecl> = Vec::new();
     let _ = writeln!(writer, "Aura {} REPL — :help for commands", crate::VERSION);
     let mut pending = String::new();
     loop {
@@ -66,7 +67,7 @@ pub fn run_with<R: BufRead, W: Write>(mut reader: R, mut writer: W) -> Result<()
             continue;
         }
         let source = std::mem::take(&mut pending);
-        eval_line(&mut interp, &mut globals, &source, &mut writer);
+        eval_line(&mut interp, &mut decls, &source, &mut writer);
     }
 }
 
@@ -99,7 +100,7 @@ fn unbalanced(src: &str) -> bool {
 
 fn eval_line<W: Write>(
     interp: &mut Interp,
-    globals: &mut Vec<(String, bool, bool)>,
+    decls: &mut Vec<GlobalDecl>,
     source: &str,
     writer: &mut W,
 ) {
@@ -107,16 +108,10 @@ fn eval_line<W: Write>(
     // level of the REPL. Fall back to module items (fn/struct/enum/use) and
     // then to a bare expression.
     if let Ok(stmt) = crate::parse::parse_stmt(source) {
-        let mut checker = crate::check::Checker::with_globals(globals);
+        let mut checker = crate::check::Checker::with_declarations(decls);
         if let Err(e) = checker.check_stmt(&stmt) {
             let _ = writeln!(writer, "{e}");
             return;
-        }
-        if let Stmt::Let { name, mutable, .. } = &stmt {
-            let is_new = !globals.iter().any(|(n, _, _)| n == name);
-            if is_new {
-                globals.push((name.clone(), *mutable, false));
-            }
         }
         match interp.exec_stmt_globals(&stmt) {
             // A bare expression echoes its value; declarations stay silent.
@@ -128,26 +123,27 @@ fn eval_line<W: Write>(
                 let _ = writeln!(writer, "{e}");
             }
         }
+        // A `let` introduces a binding; persist it only after it executed.
+        if let Stmt::Let { name, mutable, .. } = &stmt {
+            if !decls.iter().any(|d| decl_name(d) == name) {
+                decls.push(GlobalDecl::Binding {
+                    name: name.clone(),
+                    mutable: *mutable,
+                });
+            }
+        }
         return;
     }
 
     match crate::parse::parse(source) {
         Ok(module) => {
-            let mut checker = crate::check::Checker::with_globals(globals);
+            let mut checker = crate::check::Checker::with_declarations(decls);
             if let Err(e) = checker.check_mode(&module, crate::CompileMode::Module) {
                 let _ = writeln!(writer, "{e}");
                 return;
             }
+            // Execute first; only persist declarations the session accepted.
             for item in &module.items {
-                if let Item::Fn { name, .. } = item {
-                    if !globals.iter().any(|(n, _, _)| n == name) {
-                        globals.push((name.clone(), false, true));
-                    }
-                } else if let Item::Const { name, .. } = item {
-                    if !globals.iter().any(|(n, _, _)| n == name) {
-                        globals.push((name.clone(), false, false));
-                    }
-                }
                 let result = match item {
                     Item::Expr(expr, _) => match interp.eval_globals(expr) {
                         Ok(Ctl::Val(v)) => {
@@ -162,6 +158,13 @@ fn eval_line<W: Write>(
                 if let Err(e) = result {
                     let _ = writeln!(writer, "{e}");
                     return;
+                }
+            }
+            for item in &module.items {
+                for d in declarations_of(item) {
+                    if !decls.iter().any(|e| decl_name(e) == decl_name(&d)) {
+                        decls.push(d);
+                    }
                 }
             }
         }
@@ -182,5 +185,43 @@ fn eval_line<W: Write>(
                 }
             }
         }
+    }
+}
+
+/// The name a declaration introduces.
+fn decl_name(d: &GlobalDecl) -> &str {
+    match d {
+        GlobalDecl::Binding { name, .. }
+        | GlobalDecl::Function { name, .. }
+        | GlobalDecl::Struct { name, .. }
+        | GlobalDecl::Enum { name, .. }
+        | GlobalDecl::Alias { name, .. } => name,
+    }
+}
+
+/// The session declarations a top-level item introduces.
+fn declarations_of(item: &Item) -> Vec<GlobalDecl> {
+    match item {
+        Item::Fn { name, ret, .. } => vec![GlobalDecl::Function {
+            name: name.clone(),
+            ret: ret.clone(),
+        }],
+        Item::Struct { name, fields, .. } => vec![GlobalDecl::Struct {
+            name: name.clone(),
+            fields: fields.clone(),
+        }],
+        Item::Enum { name, variants, .. } => vec![GlobalDecl::Enum {
+            name: name.clone(),
+            variants: variants.clone(),
+        }],
+        Item::Alias { name, target, .. } => vec![GlobalDecl::Alias {
+            name: name.clone(),
+            target: target.clone(),
+        }],
+        Item::Const { name, .. } => vec![GlobalDecl::Binding {
+            name: name.clone(),
+            mutable: false,
+        }],
+        Item::Use { .. } | Item::Expr(..) => Vec::new(),
     }
 }

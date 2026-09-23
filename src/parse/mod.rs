@@ -5,8 +5,71 @@ use crate::error::{codes, Diag, Result, Span};
 use crate::lex::lex;
 use crate::lex::token::{Tok, Token};
 
+/// Stack size for the parsing thread.
+///
+/// Parsing is recursive descent: a program within the semantic nesting limit
+/// costs a bounded number of Rust frames, but a caller's default thread stack
+/// (8 MiB on Linux) is too small for the full semantic limit plus grouping
+/// recursion. Parsing therefore runs on a dedicated large stack, exactly as
+/// execution already does, so the language's own nesting limit — not the host
+/// stack — is the only bound a user can hit. The parser's frame guard below
+/// remains as a backstop.
+const PARSE_STACK: usize = 64 * 1024 * 1024;
+
 /// Parse a full file.
+///
+/// # Errors
+/// Returns the first lexer, parser, or nesting-limit diagnostic.
 pub fn parse(src: &str) -> Result<Module> {
+    on_parse_thread(src.to_string(), parse_inner)
+}
+
+/// Parse one expression (used by the REPL and tests).
+///
+/// # Errors
+/// Returns the first lexer, parser, or nesting-limit diagnostic.
+pub fn parse_expr(src: &str) -> Result<Expr> {
+    on_parse_thread(src.to_string(), parse_expr_inner)
+}
+
+/// Parse exactly one statement. Unlike module items, a bare `let mut` is a
+/// valid statement here, which is what the REPL needs.
+///
+/// # Errors
+/// Returns the first lexer, parser, or nesting-limit diagnostic.
+pub fn parse_stmt(src: &str) -> Result<Stmt> {
+    on_parse_thread(src.to_string(), parse_stmt_inner)
+}
+
+/// Run a parsing function on a large stack, so deep (but bounded) input does
+/// not overflow a small caller stack.
+fn on_parse_thread<T, F>(src: String, f: F) -> Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce(&str) -> Result<T> + Send + 'static,
+{
+    let handle = std::thread::Builder::new()
+        .name("aura-parse".to_string())
+        .stack_size(PARSE_STACK)
+        .spawn(move || f(&src))
+        .map_err(|e| {
+            Diag::new(
+                codes::FOREIGN,
+                format!("cannot start parser: {e}"),
+                Span::default(),
+            )
+        })?;
+    match handle.join() {
+        Ok(r) => r,
+        Err(_) => Err(Diag::new(
+            codes::INTERNAL,
+            "the parser thread aborted; this is a bug in Aura, not in your program",
+            Span::default(),
+        )),
+    }
+}
+
+fn parse_inner(src: &str) -> Result<Module> {
     let toks = lex(src)?;
     let mut p = Parser {
         toks,
@@ -20,6 +83,36 @@ pub fn parse(src: &str) -> Result<Module> {
     // iterative, so it cannot itself overflow.
     enforce_depth(&module)?;
     Ok(module)
+}
+
+fn parse_expr_inner(src: &str) -> Result<Expr> {
+    let toks = lex(src)?;
+    let mut p = Parser {
+        toks,
+        pos: 0,
+        depth: 0,
+        expr_nodes: 0,
+    };
+    p.skip_newlines();
+    let e = p.expr()?;
+    p.skip_newlines();
+    p.expect_eof()?;
+    Ok(e)
+}
+
+fn parse_stmt_inner(src: &str) -> Result<Stmt> {
+    let toks = lex(src)?;
+    let mut p = Parser {
+        toks,
+        pos: 0,
+        depth: 0,
+        expr_nodes: 0,
+    };
+    p.skip_newlines();
+    let s = p.stmt()?;
+    p.skip_newlines();
+    p.expect_eof()?;
+    Ok(s)
 }
 
 /// Language limit on AST nesting. This is the single bound that keeps every
@@ -176,40 +269,19 @@ fn check_stmt_depth(stmts: &[Stmt], start: usize) -> Result<()> {
     Ok(())
 }
 
-/// Parse one expression (used by the REPL and tests).
-pub fn parse_expr(src: &str) -> Result<Expr> {
-    let toks = lex(src)?;
-    let mut p = Parser {
-        toks,
-        pos: 0,
-        depth: 0,
-        expr_nodes: 0,
-    };
-    p.skip_newlines();
-    let e = p.expr()?;
-    p.skip_newlines();
-    p.expect_eof()?;
-    Ok(e)
-}
-
-/// Parse exactly one statement. Unlike module items, a bare `let mut` is a
-/// valid statement here, which is what the REPL needs.
-pub fn parse_stmt(src: &str) -> Result<Stmt> {
-    let toks = lex(src)?;
-    let mut p = Parser {
-        toks,
-        pos: 0,
-        depth: 0,
-        expr_nodes: 0,
-    };
-    p.skip_newlines();
-    let s = p.stmt()?;
-    p.skip_newlines();
-    p.expect_eof()?;
-    Ok(s)
-}
-
-const MAX_DEPTH: usize = 128;
+/// Raw recursion budget for the recursive-descent parser.
+///
+/// This is a **host-safety** backstop, not the language's semantic nesting
+/// limit. The semantic limit is [`MAX_AST_DEPTH`] (256), measured on the
+/// *AST* and enforced iteratively by [`enforce_depth`]. Grouping tokens such
+/// as parentheses recurse in the parser without adding AST depth, so the
+/// parser needs its own frame budget; it is set well above what the semantic
+/// limit can consume (an AST level costs a small constant number of frames)
+/// and, because parsing runs on [`PARSE_STACK`], it is never the first limit
+/// a well-formed program meets. Over-limit input is reported as `E1015`, the
+/// same code as the semantic limit, so users see one consistent "nesting"
+/// diagnostic.
+const MAX_PARSE_DEPTH: usize = MAX_AST_DEPTH * 8;
 
 struct Parser {
     toks: Vec<Token>,
@@ -284,8 +356,12 @@ impl Parser {
 
     fn enter(&mut self) -> Result<()> {
         self.depth += 1;
-        if self.depth > MAX_DEPTH {
-            return Err(Diag::new(codes::EXPECTED, "nesting too deep", self.span()));
+        if self.depth > MAX_PARSE_DEPTH {
+            return Err(Diag::new(
+                codes::NESTING,
+                "expression nests too deeply",
+                self.span(),
+            ));
         }
         Ok(())
     }
@@ -793,14 +869,7 @@ impl Parser {
             if op.is_none() && matches!(self.at(), Tok::Eof | Tok::Newline) {
                 break;
             }
-            self.expr_nodes += 1;
-            if self.expr_nodes > MAX_AST_DEPTH {
-                return Err(Diag::new(
-                    codes::NESTING,
-                    "expression nests too deeply",
-                    span,
-                ));
-            }
+            self.count_node(span)?;
             match op {
                 None => {
                     // Pipeline: `x |> f` calls `f(x)`; `x |> f(a)` calls
@@ -844,17 +913,14 @@ impl Parser {
     fn postfix(&mut self) -> Result<Expr> {
         let mut e = self.atom()?;
         loop {
-            let span = self.span();
-            self.expr_nodes += 1;
-            if self.expr_nodes > MAX_AST_DEPTH {
-                return Err(Diag::new(
-                    codes::NESTING,
-                    "expression nests too deeply",
-                    span,
-                ));
-            }
+            // Only count a node when this iteration actually wraps `e`; a
+            // plain operand must not consume the postfix budget. Counting
+            // unconditionally made the effective flat-expression limit half
+            // the documented one.
             match self.at().clone() {
                 Tok::LParen => {
+                    let span = self.span();
+                    self.count_node(span)?;
                     self.bump();
                     let mut args = Vec::new();
                     self.skip_newlines();
@@ -872,12 +938,16 @@ impl Parser {
                     e = Expr::Call(Box::new(e), args, span);
                 }
                 Tok::LBracket => {
+                    let span = self.span();
+                    self.count_node(span)?;
                     self.bump();
                     let idx = self.expr()?;
                     self.expect(&Tok::RBracket)?;
                     e = Expr::Index(Box::new(e), Box::new(idx), span);
                 }
                 Tok::Dot => {
+                    let span = self.span();
+                    self.count_node(span)?;
                     self.bump();
                     let name = self.ident("field or method name")?;
                     if matches!(self.at(), Tok::LParen) {
@@ -904,6 +974,20 @@ impl Parser {
             }
         }
         Ok(e)
+    }
+
+    /// Consume one unit of the flat-expression node budget, reporting the
+    /// semantic nesting diagnostic if it is exceeded.
+    fn count_node(&mut self, span: Span) -> Result<()> {
+        self.expr_nodes += 1;
+        if self.expr_nodes > MAX_AST_DEPTH {
+            return Err(Diag::new(
+                codes::NESTING,
+                "expression nests too deeply",
+                span,
+            ));
+        }
+        Ok(())
     }
 
     fn arg_expr(&mut self) -> Result<Expr> {
@@ -1271,7 +1355,7 @@ impl Parser {
                     if inner.trim().is_empty() {
                         return Err(Diag::new(codes::EXPECTED, "empty `{}` in f-string", span));
                     }
-                    let e = parse_expr(&inner)?;
+                    let e = parse_expr_inner(&inner)?;
                     parts.push(FPart::Expr(e));
                 }
                 '}' => {
