@@ -27,7 +27,8 @@ variant         = IDENT [ "(" [ type { "," type } ] ")" ] ;
 
 type_alias      = "type" IDENT "=" type terminator ;
 
-const_decl      = "let" [ "mut" ] IDENT [ ":" type ] "=" expr terminator ;
+const_decl      = "let" IDENT [ ":" type ] "=" expr terminator ;
+(* top-level `let` is a module constant; `let mut` is rejected *)
 
 (* ----------------------------------------------------------------- types *)
 type            = base_type [ "|" "none" ] ;
@@ -68,18 +69,18 @@ multiplicative  = power { ( "*" | "/" | "%" ) power } ;
 power           = unary [ "^" power ] ;              (* right associative *)
 unary           = ( "-" | "not" ) unary | postfix ;
 postfix         = atom { call_or_member } ;
-call_or_member  = "(" [ args ] ")"
+call_or_member  = "(" [ call_args ] ")"
                 | "[" expr "]"
-                | "." IDENT [ "(" [ args ] ")" ] ;
-args            = arg { "," arg } ;
-arg             = [ IDENT ":" ] expr ;
+                | "." IDENT [ "(" [ call_args ] ")" ] ;
+call_args       = expr { "," expr } ;           (* function calls are positional *)
 
 atom            = INT | FLOAT | STRING | FSTRING
                 | "true" | "false" | "none"
-                | IDENT [ "(" [ args ] ")" ]          (* call or variant *)
+                | IDENT "(" [ call_args ] ")"          (* call (positional) *)
+                | IDENT "(" [ ctor_args ] ")"          (* variant *)
                 | IDENT "{" [ field_init { "," field_init } ] "}"  (* struct *)
                 | "(" expr ")"
-                | "(" expr "," [ expr { "," expr } ] ")"          (* tuple *)
+                | "(" expr "," [ expr { "," expr } ] ")"          (* list sugar *)
                 | lambda
                 | list | map | block_expr
                 | if_expr | match_expr ;
@@ -89,9 +90,11 @@ list            = "[" [ expr { "," expr } [ "," ] ] "]" ;
 map             = "{" entry { "," entry } [ "," ] "}" ;
 entry           = expr ":" expr ;
 block_expr      = block ;
+ctor_args       = ctor_arg { "," ctor_arg } ;
+ctor_arg        = [ IDENT ":" ] expr ;
 field_init      = IDENT ":" expr ;
 
-if_expr         = "if" expr block "else" expr ;       (* `else` mandatory *)
+if_expr         = "if" expr block [ "else" expr ] ;   (* `else` optional *)
 match_expr      = "match" expr "{" { match_arm } "}" ;
 match_arm       = pattern [ "if" expr ] "->" ( block | expr terminator ) ;
 
@@ -115,3 +118,8 @@ FSTRING         = 'f"' { fchar | "{{" | "}}" | "{" expr "}" } '"' ;
 * A number may not be immediately followed by a name: `1abc` is `E1002`.
 * `let` requires an initializer (`E2005`).
 * Patterns bind lowercase names; a capitalized name is a variant.
+* `use` and `pub` are **reserved and inert** in this version: they parse but
+  have no effect (see `docs/contract.md` §10).
+* `type Name = T` is a transparent alias: it is validated but does not create
+  a distinct nominal type.
+* `(a, b)` creates a list of two elements; Aura has no distinct tuple value.

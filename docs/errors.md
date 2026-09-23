@@ -3,41 +3,70 @@
 Every rejection carries a stable code. Codes are grouped by phase:
 
 * `E1xxx` — lexical and syntactic.
-* `E2xxx` — name and rule checking.
-* `E3xxx` — type-level (annotations).
+* `E2xxx` — name and rule checking (static).
+* `E3xxx` — type-level (static annotations).
 * `E4xxx` — runtime.
-* `E5xxx` — Python bridge.
+* `E5xxx` — optional features / Python bridge.
+
+## Lexical and syntactic (`E1xxx`)
 
 | Code  | Meaning | Example trigger |
 |-------|---------|-----------------|
-| E1001 | Invalid character | `a && b`, `!x`, `a \| b` |
-| E1002 | Malformed number | `1abc`, `0xZZ` |
+| E1001 | Invalid character | `a && b`, `!x`, `&` |
+| E1002 | Malformed number | `1abc`, `0xZZ`, out-of-range literal |
 | E1003 | Invalid escape | `"\q"` |
 | E1004 | Unterminated string | `"abc` |
-| E1006 | Expected token | `let = 1`, `fn ()` |
-| E1014 | `else if` used | `if a {} else if b {}` |
+| E1006 | Expected token | `let = 1`, `fn ()`, `a \| b` |
 | E1009 | Reserved word as name | `let if = 1` |
+| E1014 | `else if` used | `if a {} else if b {}` |
+
+## Name and rule checking (`E2xxx`, static)
+
+| Code  | Meaning | Example trigger |
+|-------|---------|-----------------|
 | E2001 | Assign to immutable | `let x = 1; x = 2` |
-| E2003 | Undefined name | `print(nope)` |
+| E2003 | Undefined name or function | `print(nope)`, `nope()` |
 | E2005 | `let` without initializer | `let x` |
-| E2007 | Redeclaration | `let x = 1; let x = 2` |
-| E2009 | `_param` was used | using an `_`-prefixed parameter |
+| E2007 | Redeclaration | `let x = 1; let x = 2`; two `main`s |
+| E2009 | `_param` was used | `fn f(_x) { return _x }` |
 | E2010 | Invalid assignment target | `1 = 2` |
-| E3001 | Type mismatch | `"a" + 1` |
-| E3002 | Unknown type | `let p = Nope {}` |
+| E2011 | Invalid `main` | `fn main(x) { }` |
+| E2012 | Duplicate user type | two `struct S` |
+| E2013 | Duplicate enum variant tag | `enum A { X }` + `enum B { X }` |
+| E2014 | Duplicate pattern binding | `match xs { [a, a] -> ... }` |
+
+## Type-level (`E3xxx`, static)
+
+| Code  | Meaning | Example trigger |
+|-------|---------|-----------------|
+| E3001 | Type mismatch | `let x: int = "a"`; `{int: string}` |
+| E3002 | Unknown type / constructor | `-> Widget`, `Ghost { }` |
 | E3005 | Return type mismatch | `-> int` returning a string |
-| E4013 | Integer overflow | `i64::MAX + 1` |
-| E4007 | Division by zero | `1 / 0`, `1 % 0` |
-| E4011 | Recursion limit | unbounded recursion |
-| E4018 | Not iterable | `for x in 1 {}` |
+
+## Runtime (`E4xxx`)
+
+| Code  | Meaning | Example trigger |
+|-------|---------|-----------------|
+| E4007 | Division by zero | `1 / 0`, `1 % 0`, `1.0 / 0.0` |
+| E4011 | Call depth limit | more than 512 active calls |
+| E4013 | Integer overflow | `i64::MAX + 1`, `i64::MIN % -1` |
+| E4018 | Value is not iterable | `for x in 1 {}` |
+| E4019 | Index out of range | `[1][5]`, a huge negative index |
 | E4026 | Uncaught thrown value | `throw "x"` with no `catch` |
-| E4027 | Missing `main` | running a file without `fn main` |
+| E4027 | Missing `main` | `aura run` on a file without `fn main` |
+| E4028 | Assertion failed | `assert(1 == 2)` |
+| E4999 | Internal error | a bug in Aura itself, never a user mistake |
+
+## Optional features (`E5xxx`)
+
+| Code  | Meaning | Example trigger |
+|-------|---------|-----------------|
 | E5001 | Python error | `py_eval("1 / 0")` |
-| E5002 | Python bridge unavailable | `py_eval` without the `py` feature |
+| E5002 | Python bridge unavailable | `py_eval(...)` without the `py` feature |
 
 ## Stability
 
 Codes are part of the public contract. A code is never reused for a
-different meaning; new diagnostics get new numbers. `tests/errors.rs`
-asserts that every documented code can be produced and that the table and
-`src/error.rs` agree.
+different meaning; new diagnostics get new numbers. `tests/grammar.rs`
+asserts that every code in this table can be produced by at least one
+program and that `src/error.rs` agrees.

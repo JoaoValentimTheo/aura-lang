@@ -78,18 +78,23 @@ fn main() {
 * `none` is the only absence — not `null`, `nil`, or `undefined`.
 * `else if` does not exist; use `match` or a nested block.
 * `let` is immutable; `let mut` opts into reassignment.
+* Function calls are positional; named arguments are for `struct` and enum
+  construction only.
+* `use` and `pub` are reserved and inert in this version (see
+  [docs/contract.md](docs/contract.md) §10).
 
 ### Values and types
 
 ```aura
 int          float        bool         string
 [T]          list of T
-{K: V}       map
+{string: V}  map (keys are strings)
 T | none     optional
 ```
 
 Types are optional annotations and are checked before execution. There is no
-implicit coercion: `1 + "1"` is a compile error.
+implicit coercion: `1 + "1"` is a compile error, and `let x: int = "a"` is
+rejected before the program runs.
 
 ### Data and pattern matching
 
@@ -140,6 +145,10 @@ fn main() {
 }
 ```
 
+`try/catch` catches only explicit `throw` values. Runtime errors such as
+division by zero, integer overflow, or an out-of-range index are fatal and
+are not catchable.
+
 ## Python interop
 
 Python lives behind an explicit boundary. With the default `py` feature:
@@ -153,8 +162,8 @@ fn main() {
 ```
 
 Values cross structurally: ints, floats, strings, bools, `none`, lists, and
-dicts map both ways. Without the feature the binary links no CPython and the
-`py_*` functions are absent — programs still run.
+dicts map both ways. Without the feature the same names exist but every call
+is `E5002`, and the binary links no CPython — programs still run.
 
 ## CLI
 

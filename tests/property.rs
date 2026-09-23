@@ -89,4 +89,47 @@ proptest! {
         let err = run_source(&src, "<p>").unwrap_err();
         prop_assert_eq!(err.code, aura::error::codes::DIV_ZERO);
     }
+
+    #[test]
+    fn checker_is_deterministic(src in aura_like()) {
+        // Checking the same source twice yields the same verdict.
+        let module = aura::parse::parse(&src);
+        if let Ok(module) = module {
+            let a = aura::check::Checker::module(&module).map_err(|d| d.code);
+            let b = aura::check::Checker::module(&module).map_err(|d| d.code);
+            prop_assert_eq!(a, b);
+        }
+    }
+
+    #[test]
+    fn subtraction_never_wraps(a in any::<i64>(), b in any::<i64>()) {
+        let src = format!("fn main() {{ print({a} - {b}) }}");
+        match run_source(&src, "<p>") {
+            Ok(out) => {
+                let expected = (i128::from(a) - i128::from(b)).to_string();
+                prop_assert_eq!(out.trim(), expected);
+            }
+            Err(d) => prop_assert_eq!(d.code, aura::error::codes::OVERFLOW),
+        }
+    }
+
+    #[test]
+    fn multiplication_never_wraps(a in any::<i64>(), b in any::<i64>()) {
+        let src = format!("fn main() {{ print({a} * {b}) }}");
+        match run_source(&src, "<p>") {
+            Ok(out) => {
+                let expected = (i128::from(a) * i128::from(b)).to_string();
+                prop_assert_eq!(out.trim(), expected);
+            }
+            Err(d) => prop_assert_eq!(d.code, aura::error::codes::OVERFLOW),
+        }
+    }
+
+    #[test]
+    fn nesting_never_panics(depth in 0usize..400) {
+        // Deeply nested but well-formed input must be handled without panic:
+        // either parsed or rejected, never a crash.
+        let src = format!("fn main() {{ print({}1{}) }}", "(".repeat(depth), ")".repeat(depth));
+        let _ = run_source(&src, "<nest>");
+    }
 }

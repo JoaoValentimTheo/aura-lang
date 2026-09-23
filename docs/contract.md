@@ -55,10 +55,12 @@ fn add(a: int, b: int) -> int { return a + b }
 struct Point { x: float, y: float }
 enum Result { Ok(string), Err(string) }
 type UserId = int
-use stdlib.math            # bring a module into scope
+use stdlib.math              # reserved; currently inert (see §10)
 ```
 
 * Every binding requires an initializer. `let x` alone is `E2005`.
+* At the top level, `let` declares an immutable module constant; `let mut`
+  is rejected there.
 * A function is declared with `fn` and returns `none` unless annotated.
 * Redefining a name in the same scope is `E2007`.
 * Parameter names starting with `_` must be unused (`E2009`).
@@ -107,6 +109,8 @@ throw expr
 
 ## 6. Rules enforced at check time
 
+The checker runs before execution and rejects, at minimum:
+
 | Code  | Rule |
 |-------|------|
 | E1001 | invalid character |
@@ -115,33 +119,65 @@ throw expr
 | E1006 | expected token |
 | E1014 | `else if` used |
 | E2001 | assignment to immutable binding |
-| E2003 | undefined name |
+| E2003 | undefined name or function |
 | E2005 | `let` without initializer |
 | E2007 | redeclaration in the same scope |
 | E2009 | `_param` was used |
 | E2010 | invalid assignment target |
-| E3001 | type mismatch |
+| E2011 | `main` with parameters |
+| E2012 | duplicate user type |
+| E2013 | duplicate enum variant tag across the program |
+| E2014 | a pattern binds the same name twice |
+| E3001 | type mismatch (annotations are checked) |
+| E3002 | unknown type or constructor |
 | E3005 | return type mismatch |
-| E4018 | value is not iterable |
 
-The full list lives in `docs/errors.md`.
+The full, authoritative list lives in `docs/errors.md`, and
+`tests/grammar.rs` asserts that every code there is reachable.
 
 ## 7. Runtime model
 
 * `int` is 64-bit and checked: overflow is `E4013`, not wraparound.
 * Division by zero is `E4007`.
-* `==` compares structurally (lists, maps, records, enums).
+* `==` compares structurally (lists, maps, structs, enums).
 * `print(x)` writes `x.to_string()` plus a newline.
-* A `throw` value is caught by `try/catch`; uncaught, it is `E4026`.
-* Recursion is capped at 512 frames (`E4011`).
+* `try/catch` catches **only** an explicit `throw` value (including one
+  thrown inside a called function). Runtime diagnostics such as division by
+  zero, overflow, or an out-of-range index are fatal and are *not* catchable.
+  An uncaught `throw` is `E4026`.
+* Recursion is capped at **512 simultaneously active call frames**,
+  including the entry call to `main`; exceeding this is `E4011`. This is a
+  language rule, not a host limitation.
 
 ## 8. Python interop (feature `py`)
 
-With the `py` feature, `use py.<module>` exposes Python modules; attribute
-access and calls cross the boundary with structural conversion. Without the
-feature, `use py.*` is `E5002` and the binary links no CPython at all.
+The Python boundary is a set of explicit functions:
+
+* `py_eval(code)` evaluates a Python expression and converts the result.
+* `py_import(name)` imports a Python module and lists its public names.
+* `py_call(module, attr, args...)` calls an attribute of a module.
+* `py_version()` returns the Python version string.
+
+Values cross structurally: `int`, `float`, `bool`, `string`, `none`, lists,
+and maps (`dict`) convert in both directions. Opaque objects become their
+`repr` string.
+
+Without the `py` feature the same names exist but every call is `E5002`, and
+the binary links no CPython.
 
 ## 9. Entry point
 
-A runnable file declares `fn main()`. `aura run` calls `main` after loading
-all top-level declarations. Missing `main` is `E4027`.
+A runnable file declares `fn main()` with no parameters. `aura run` loads all
+declarations, evaluates top-level constants and expressions in source order,
+then calls `main`. A missing `main` is `E4027`; a `main` with parameters is
+`E2011`.
+
+## 10. Reserved syntax
+
+`use` and `pub` are **parsed and reserved but have no effect** in this
+version. They exist so that future module and visibility semantics can be
+introduced without a syntax break. Using them is not an error; they simply do
+nothing. Nothing in the language depends on them.
+
+`type Name = T` declares a transparent alias. It is validated (the target
+type must exist) but does not create a distinct nominal type.
