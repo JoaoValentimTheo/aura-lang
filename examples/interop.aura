@@ -1,0 +1,8 @@
+# Python interop. Requires building with the `py` feature.
+# Run: cargo run --features py -- run examples/interop.aura
+
+fn main() {
+    print(py_eval("1 + 2"))
+    print(py_eval("'aura'.upper()"))
+    print(py_eval("[1, 2, 3]"))
+}

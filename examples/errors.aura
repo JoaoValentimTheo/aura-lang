@@ -1,0 +1,19 @@
+# Error handling with try / catch / finally and throw.
+
+fn safe_div(a, b) -> int {
+    if b == 0 {
+        throw "division by zero"
+    }
+    return a / b
+}
+
+fn main() {
+    try {
+        print(safe_div(10, 2))
+        print(safe_div(1, 0))
+    } catch e -> {
+        print(f"caught: {e}")
+    } finally {
+        print("done")
+    }
+}

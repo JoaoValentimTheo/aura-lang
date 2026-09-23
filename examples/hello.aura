@@ -1,0 +1,4 @@
+# The smallest Aura program.
+fn main() {
+    print("Hello, Aura!")
+}

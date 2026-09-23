@@ -1,0 +1,234 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+//! End-to-end execution tests.
+
+use aura::error::Diag;
+use aura::run_source;
+
+fn out(src: &str) -> String {
+    run_source(src, "<test>").expect("program runs")
+}
+
+fn fails(src: &str) -> Diag {
+    run_source(src, "<test>").expect_err("program is rejected")
+}
+
+#[test]
+fn hello_world() {
+    assert_eq!(
+        out("fn main() { print(\"Hello, Aura!\") }"),
+        "Hello, Aura!\n"
+    );
+}
+
+#[test]
+fn arithmetic_and_precedence() {
+    assert_eq!(out("fn main() { print(1 + 2 * 3) }"), "7\n");
+    assert_eq!(out("fn main() { print(2 ^ 3 ^ 2) }"), "512\n");
+    assert_eq!(out("fn main() { print(7 / 2) }"), "3\n");
+    assert_eq!(out("fn main() { print(7 % 3) }"), "1\n");
+}
+
+#[test]
+fn integer_overflow_errors() {
+    let d = fails("fn main() { let mut x = 9223372036854775807\n print(x + 1) }");
+    assert_eq!(d.code, aura::error::codes::OVERFLOW);
+}
+
+#[test]
+fn division_by_zero_errors() {
+    let d = fails("fn main() { print(1 / 0) }");
+    assert_eq!(d.code, aura::error::codes::DIV_ZERO);
+}
+
+#[test]
+fn immutability_is_enforced() {
+    let d = fails("fn main() { let x = 1\n x = 2 }");
+    assert_eq!(d.code, aura::error::codes::ASSIGN_IMMUTABLE);
+    assert_eq!(out("fn main() { let mut x = 1\n x = 2\n print(x) }"), "2\n");
+}
+
+#[test]
+fn undefined_name_is_rejected_before_running() {
+    let d = fails("fn main() { print(nope) }");
+    assert_eq!(d.code, aura::error::codes::UNDEFINED);
+}
+
+#[test]
+fn functions_closures_and_pipes() {
+    let src = r#"
+fn inc(x) -> int { return x + 1 }
+fn main() {
+    let add = (a, b) -> a + b
+    print(add(2, 3))
+    print([1, 2, 3] |> len)
+    print([1, 2, 3].map((x) -> x * 2))
+    print([1, 2, 3, 4].filter((x) -> x % 2 == 0))
+    print([1, 2, 3, 4].reduce((acc, x) -> acc + x, 0))
+    print(inc(41))
+}
+"#;
+    assert_eq!(out(src), "5\n3\n[2, 4, 6]\n[2, 4]\n10\n42\n");
+}
+
+#[test]
+fn closures_capture_environment() {
+    let src = r#"
+fn make_adder(n) { return (x) -> x + n }
+fn main() {
+    let add10 = make_adder(10)
+    print(add10(5))
+}
+"#;
+    assert_eq!(out(src), "15\n");
+}
+
+#[test]
+fn recursion_fibonacci() {
+    let src = r#"
+fn fib(n) -> int {
+    if n < 2 { return n }
+    return fib(n - 1) + fib(n - 2)
+}
+fn main() { print(fib(10)) }
+"#;
+    assert_eq!(out(src), "55\n");
+}
+
+#[test]
+fn for_loops_and_ranges() {
+    let src = r#"
+fn main() {
+    let mut total = 0
+    for i in range(1, 5) { total = total + i }
+    print(total)
+    for c in "abc" { print(c) }
+    for k in {"a": 1, "b": 2} { print(k) }
+}
+"#;
+    assert_eq!(out(src), "10\na\nb\nc\na\nb\n");
+}
+
+#[test]
+fn while_and_break() {
+    let src = r#"
+fn main() {
+    let mut i = 0
+    while true {
+        i = i + 1
+        if i == 3 { break }
+    }
+    print(i)
+}
+"#;
+    assert_eq!(out(src), "3\n");
+}
+
+#[test]
+fn pattern_matching() {
+    let src = r#"
+fn classify(n) -> string {
+    return match n {
+        0 -> "zero"
+        1 -> "one"
+        x if x > 100 -> "big"
+        _ -> "other"
+    }
+}
+fn main() {
+    print(classify(0))
+    print(classify(1))
+    print(classify(200))
+    print(classify(5))
+}
+"#;
+    assert_eq!(out(src), "zero\none\nbig\nother\n");
+}
+
+#[test]
+fn structs_and_enums() {
+    let src = r#"
+struct Point { x: int, y: int }
+enum Shape { Circle(int), Square(int) }
+fn area(s) -> int {
+    return match s {
+        Circle(r) -> 3 * r * r
+        Square(a) -> a * a
+    }
+}
+fn main() {
+    let p = Point { x: 3, y: 4 }
+    print(p.x + p.y)
+    print(area(Circle(2)))
+    print(area(Square(3)))
+}
+"#;
+    assert_eq!(out(src), "7\n12\n9\n");
+}
+
+#[test]
+fn try_catch_finally() {
+    let src = r#"
+fn main() {
+    try {
+        throw "boom"
+    } catch e -> {
+        print(f"caught {e}")
+    } finally {
+        print("cleanup")
+    }
+}
+"#;
+    assert_eq!(out(src), "caught boom\ncleanup\n");
+}
+
+#[test]
+fn string_methods_and_interpolation() {
+    let src = r#"
+fn main() {
+    let name = "Aura"
+    print(f"hi {name}")
+    print("  x  ".trim())
+    print("a,b,c".split(","))
+    print("abc".upper())
+}
+"#;
+    assert_eq!(out(src), "hi Aura\nx\n[\"a\", \"b\", \"c\"]\nABC\n");
+}
+
+#[test]
+fn named_arguments_for_structs() {
+    let src = r#"
+struct User { name: string, age: int }
+fn main() {
+    let u = User { name: "ana", age: 30 }
+    print(u.name)
+    print(u.age)
+}
+"#;
+    assert_eq!(out(src), "ana\n30\n");
+}
+
+#[test]
+fn lists_maps_indexing() {
+    let src = r#"
+fn main() {
+    let xs = [10, 20, 30]
+    xs.push(40)
+    print(xs[0])
+    print(xs[-1])
+    print(xs.len())
+    let m = {"k": 1}
+    m["j"] = 2
+    print(m.get("j"))
+    print(m.has("k"))
+}
+"#;
+    assert_eq!(out(src), "10\n40\n4\n2\ntrue\n");
+}
+
+#[test]
+fn fstring_and_unicode() {
+    assert_eq!(out("fn main() { print(f\"{1 + 1}\") }"), "2\n");
+    assert_eq!(out("fn main() { print(\"ação\") }"), "ação\n");
+    assert_eq!(out("fn main() { print(len(\"ação\")) }"), "4\n");
+}
