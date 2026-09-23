@@ -202,9 +202,12 @@ fn decl_name(d: &GlobalDecl) -> &str {
 /// The session declarations a top-level item introduces.
 fn declarations_of(item: &Item) -> Vec<GlobalDecl> {
     match item {
-        Item::Fn { name, ret, .. } => vec![GlobalDecl::Function {
+        Item::Fn {
+            name, ret, params, ..
+        } => vec![GlobalDecl::Function {
             name: name.clone(),
             ret: ret.clone(),
+            params: params.iter().map(|p| p.ty.clone()).collect(),
         }],
         Item::Struct { name, fields, .. } => vec![GlobalDecl::Struct {
             name: name.clone(),

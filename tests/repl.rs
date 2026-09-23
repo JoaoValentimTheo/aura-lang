@@ -151,3 +151,27 @@ fn session_rejects_unknown_names_without_corruption() {
     assert!(out.contains("E2003"), "{out}");
     assert!(out.contains('2'), "{out}");
 }
+
+/// FEATURE_001: a function declared in one submission is statically checked in
+/// later submissions, and a rejected call does not corrupt the session.
+#[test]
+fn static_user_fn_call_is_checked_across_submissions() {
+    let out = body("fn add(a: int, b: int) { return a + b }\nadd(1)\n:quit\n");
+    assert!(out.contains("E3001"), "{out}");
+    let out = body("fn add(a: int, b: int) { return a + b }\nadd(\"x\", 2)\n:quit\n");
+    assert!(out.contains("E3001"), "{out}");
+    // A valid call in the same session still works.
+    let out = body("fn add(a: int, b: int) { return a + b }\nadd(1, 2)\n:quit\n");
+    assert!(out.contains('3'), "{out}");
+}
+
+/// A failed static check leaves the declaration usable; the session is not
+/// corrupted.
+#[test]
+fn repl_static_check_failure_preserves_declaration() {
+    let out = body("fn f(x: int) { return x }\nf(1)\nf(\"wrong\")\nf(2)\n:quit\n");
+    assert!(out.contains("E3001"), "{out}");
+    // Both valid calls produced their value despite the failed one between.
+    assert!(out.contains('1'), "{out}");
+    assert!(out.contains('2'), "{out}");
+}

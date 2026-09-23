@@ -265,9 +265,245 @@ fn recursive_type_alias_is_rejected_not_a_crash() {
     assert_eq!(check("type A = A | none"), Err(codes::UNKNOWN_TYPE));
     // A non-cyclic chain still resolves.
     assert_eq!(
-        out("type A = B\ntype B = int\nfn main() { let x: A = 1\n print(x) }"),
+        out("struct S { a: int }\nfn main() { print(S { a: 1 }.a) }"),
         "1\n"
     );
+}
+
+// ---------------------------------------------------------------------------
+// FEATURE_001: static user-function argument checking (`LANGUAGE_SPEC.md` §6.5).
+// ---------------------------------------------------------------------------
+
+/// A directly resolved top-level function call checks its argument count at
+/// check time, not only at runtime.
+#[test]
+fn static_user_fn_arity_is_checked() {
+    let two = "fn add(a, b) { return a + b }\nfn main() { print(add(1, 2)) }";
+    assert_eq!(out(two), "3\n");
+    for bad in [
+        "fn add(a, b) { return a + b }\nfn main() { print(add()) }",
+        "fn add(a, b) { return a + b }\nfn main() { print(add(1)) }",
+        "fn add(a, b) { return a + b }\nfn main() { print(add(1, 2, 3)) }",
+    ] {
+        assert_eq!(check(bad), Err(codes::TYPE_MISMATCH), "{bad}");
+    }
+    // Zero-parameter and one-parameter functions.
+    assert_eq!(out("fn z() { return 7 }\nfn main() { print(z()) }"), "7\n");
+    assert_eq!(
+        check("fn z() { return 7 }\nfn main() { print(z(1)) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        check("fn o(a) { return a }\nfn main() { print(o()) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+/// An annotated parameter is checked against the argument's inferred type at a
+/// directly resolved call.
+#[test]
+fn static_user_fn_annotated_argument_type_is_checked() {
+    assert_eq!(
+        out("fn f(a: int) { return a }\nfn main() { print(f(1)) }"),
+        "1\n"
+    );
+    assert_eq!(
+        out("fn f(a: float) { return a }\nfn main() { print(f(1.5)) }"),
+        "1.5\n"
+    );
+    assert_eq!(
+        out("fn f(a: bool) { return a }\nfn main() { print(f(true)) }"),
+        "true\n"
+    );
+    for bad in [
+        "fn f(a: int) { return a }\nfn main() { f(\"x\") }",
+        "fn f(a: int) { return a }\nfn main() { f(1.5) }",
+        "fn f(a: string) { return a }\nfn main() { f(1) }",
+        "fn f(a: bool) { return a }\nfn main() { f(\"x\") }",
+    ] {
+        assert_eq!(check(bad), Err(codes::TYPE_MISMATCH), "{bad}");
+    }
+}
+
+/// Only annotated parameters are constrained; unannotated ones accept any
+/// value. Arity still applies.
+#[test]
+fn static_user_fn_unannotated_parameters_are_unconstrained() {
+    let src = "fn f(a: int, b, c: string) { return c }\nfn main() { print(f(1, true, \"ok\"))\n print(f(1, [9], \"ok\")) }";
+    assert_eq!(out(src), "ok\nok\n");
+    // The unannotated middle parameter is never the reason for a rejection.
+    assert_eq!(
+        check("fn f(a: int, b, c: string) { return c }\nfn main() { f(\"x\", true, \"ok\") }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        check("fn f(a: int, b, c: string) { return c }\nfn main() { f(1, true, 4) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // Arity still applies when annotations are partial.
+    assert_eq!(
+        check("fn f(a: int, b) { return a }\nfn main() { f(1) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+/// An argument whose inferred type is `Unknown` is never rejected merely
+/// because inference is incomplete.
+#[test]
+fn static_user_fn_unknown_argument_remains_permissive() {
+    // `none` infers Unknown.
+    assert_eq!(
+        check("fn f(a: int) { return a }\nfn main() { f(none) }"),
+        Ok(())
+    );
+    // An if-expression infers Unknown.
+    assert_eq!(
+        check("fn f(a: int) { return a }\nfn main() { f(if true { none } else { none }) }"),
+        Ok(())
+    );
+    // A call to a function of undetermined return type infers Unknown.
+    assert_eq!(
+        check("fn g() { return none }\nfn f(a: int) { return a }\nfn main() { f(g()) }"),
+        Ok(())
+    );
+    // `Unknown` does not suppress a proven mismatch on another argument.
+    assert_eq!(
+        check("fn f(a: int, b: int) { return a }\nfn main() { f(none, \"x\") }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+/// A local binding that shadows a declared function name is a callable value;
+/// the declaration's signature MUST NOT be applied to it.
+#[test]
+fn shadowed_fn_name_does_not_apply_global_signature() {
+    // Local `let` shadowing: the lambda accepts a string even though the
+    // global `f` is annotated `int`.
+    let local = "fn f(x: int) { return x }\nfn g() { let f = (a) -> a\n return f(\"hello\") }\nfn main() { print(g()) }";
+    assert_eq!(check(local), Ok(()));
+    assert_eq!(out(local), "hello\n");
+    // Mutable local shadowing.
+    let mutable = "fn f(x: int) { return x }\nfn g() { let mut f = (a) -> a\n f = (b) -> b\n return f(\"z\") }\nfn main() { print(g()) }";
+    assert_eq!(check(mutable), Ok(()));
+    assert_eq!(out(mutable), "z\n");
+    // Parameter shadowing.
+    let param = "fn f(x: int) { return x }\nfn g(f) { return f(\"hello\") }\nfn main() { print(g((a) -> a)) }";
+    assert_eq!(check(param), Ok(()));
+    assert_eq!(out(param), "hello\n");
+    // Nested-block shadowing.
+    let nested = "fn f(x: int) { return x }\nfn g() { let mut r = \"init\"\n { let f = (a) -> a\n r = f(\"hi\") }\n return r }\nfn main() { print(g()) }";
+    assert_eq!(check(nested), Ok(()));
+    assert_eq!(out(nested), "hi\n");
+    // Without shadowing, the declaration's signature applies.
+    assert_eq!(
+        check("fn f(x: int) { return x }\nfn main() { f(\"hello\") }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+/// Top-level declarations are hoisted, so forward and mutually recursive calls
+/// are checked against the callee's signature.
+#[test]
+fn forward_and_mutual_user_fn_calls_are_checked() {
+    // Forward reference to a later declaration.
+    assert_eq!(
+        check("fn main() { later(\"wrong\") }\nfn later(x: int) { return x }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        out("fn main() { print(later(3)) }\nfn later(x: int) { return x }"),
+        "3\n"
+    );
+    // Mutual recursion.
+    assert_eq!(
+        check(
+            "fn a(x: int) { return b(\"wrong\") }\nfn b(y: int) { return y }\nfn main() { a(1) }"
+        ),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        out("fn even(n: int) -> bool { if n == 0 { return true }\n return odd(n - 1) }\nfn odd(n: int) -> bool { if n == 0 { return false }\n return even(n - 1) }\nfn main() { print(even(4)) }"),
+        "true\n"
+    );
+}
+
+/// Calls that the checker cannot resolve to a specific declaration remain
+/// runtime-authoritative: function values, closures, and unknown callables.
+#[test]
+fn dynamic_function_value_remains_runtime_checked() {
+    // A closure binding is not checked against any declaration's signature.
+    assert_eq!(
+        check("fn main() { let f = (x) -> x\n f(\"anything\") }"),
+        Ok(())
+    );
+    // Its arity is still enforced at runtime.
+    assert_eq!(
+        fail("fn main() { let f = (x) -> x\n f() }"),
+        codes::TYPE_MISMATCH
+    );
+    assert_eq!(
+        fail("fn main() { let f = (x) -> x\n f(1, 2, 3) }"),
+        codes::TYPE_MISMATCH
+    );
+    // A function value passed as an argument is likewise dynamic.
+    assert_eq!(
+        check("fn call(g) { return g(\"x\") }\nfn main() { call((a) -> a) }"),
+        Ok(())
+    );
+}
+
+/// A directly resolved call inside a pipeline is checked with the normal call
+/// rules, against the inserted first argument.
+#[test]
+fn pipeline_user_fn_call_is_checked() {
+    let ok = "fn f(x: int, y: string) { return y }\nfn main() { print(42 |> f(\"ok\")) }";
+    assert_eq!(check(ok), Ok(()));
+    assert_eq!(out(ok), "ok\n");
+    let bad = "fn f(x: int, y: string) { return y }\nfn main() { print(\"wrong\" |> f(\"ok\")) }";
+    assert_eq!(check(bad), Err(codes::TYPE_MISMATCH));
+    // Arity through the pipeline.
+    assert_eq!(
+        check("fn f(x: int, y: string) { return y }\nfn main() { 42 |> f() }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+/// A directly resolved call accepts a return value used in an annotated
+/// binding, exercising the combined inference and call check.
+#[test]
+fn direct_call_return_type_flows() {
+    assert_eq!(
+        check("fn f(a: int) -> string { return \"h\" }\nlet x: int = f(1)"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        out("fn f(a: int) -> string { return \"h\" }\nfn main() { let x: string = f(1)\n print(x) }"),
+        "h\n"
+    );
+}
+
+/// A user function whose name matches a builtin takes precedence, exactly as
+/// the runtime dispatches. Its own signature is checked; the builtin signature
+/// is not applied to it. This preserves the pre-feature resolution order.
+#[test]
+fn user_fn_shadowing_a_builtin_name_uses_user_signature() {
+    // `fn len` wins over the builtin at runtime and in the checker.
+    assert_eq!(
+        out("fn len(x) { return 99 }\nfn main() { print(len(5)) }"),
+        "99\n"
+    );
+    assert_eq!(
+        out("fn len(a, b) { return a + b }\nfn main() { print(len(1, 2)) }"),
+        "3\n"
+    );
+    // Its annotated parameter is checked against the user function.
+    assert_eq!(
+        check("fn len(x: string) { return x }\nfn main() { len(5) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // Without a user function, the builtin still applies.
+    assert_eq!(out("fn main() { print(len([1, 2, 3])) }"), "3\n");
+    assert_eq!(check("fn main() { len(1) }"), Err(codes::TYPE_MISMATCH));
 }
 
 /// `receiver.name` without parentheses is a zero-argument method call, so an

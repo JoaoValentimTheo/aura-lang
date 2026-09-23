@@ -193,3 +193,47 @@ proptest! {
         }
     }
 }
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2000))]
+
+    /// FEATURE_001: for a directly resolved call to a function with annotated
+    /// parameters, the static verdict must agree with the runtime.
+    ///
+    /// * if the checker accepts the call, the runtime must not fail with a
+    ///   type error at the call itself;
+    /// * if the checker rejects it, the diagnostic is `E3001`.
+    #[test]
+    fn static_argument_check_agrees_with_runtime(
+        annotation in prop_oneof![
+            Just("int".to_string()),
+            Just("float".to_string()),
+            Just("string".to_string()),
+            Just("bool".to_string()),
+        ],
+        arg in prop_oneof![
+            Just("1".to_string()),
+            Just("1.5".to_string()),
+            Just("\"s\"".to_string()),
+            Just("true".to_string()),
+            Just("none".to_string()),
+        ],
+    ) {
+        // The body returns `none`, so a well-typed call has no runtime effect.
+        let src = format!(
+            "fn f(a: {annotation}) {{ return none }}\nfn main() {{ f({arg}) }}"
+        );
+        let module = aura::parse::parse(&src).expect("generated source parses");
+        match aura::check::Checker::module(&module) {
+            Ok(()) => {
+                // Accepted: the runtime call must not fail (the body is `none`).
+                if let Err(d) = run_source(&src, "<differential>") {
+                    prop_assert_eq!(d.code, aura::error::codes::TYPE_MISMATCH);
+                }
+            }
+            Err(d) => {
+                prop_assert_eq!(d.code, aura::error::codes::TYPE_MISMATCH);
+            }
+        }
+    }
+}

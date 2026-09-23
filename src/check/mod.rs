@@ -47,6 +47,9 @@ pub enum GlobalDecl {
         name: String,
         /// Declared return type, if any.
         ret: Option<TypeExpr>,
+        /// Parameter type annotations in declaration order; `None` when the
+        /// parameter is unannotated.
+        params: Vec<Option<TypeExpr>>,
     },
     /// `struct Name { fields... }`
     Struct {
@@ -71,14 +74,27 @@ pub enum GlobalDecl {
     },
 }
 
+/// A top-level function's signature as known to the checker.
+///
+/// The return type drives expression inference; `params` drives the static
+/// argument check at directly resolved calls (FEATURE_001, `LANGUAGE_SPEC.md`
+/// §6.5). A parameter is `None` when it has no annotation.
+#[derive(Debug, Clone)]
+struct FnSig {
+    /// The declared return type, if annotated.
+    ret: Option<Ty>,
+    /// One entry per parameter, in declaration order; `Some` when annotated.
+    params: Vec<Option<Ty>>,
+}
+
 /// The checker. Reports the first error, matching the CLI contract.
 pub struct Checker {
     scopes: Vec<Scope>,
     /// Whether a `main` function was seen.
     pub has_main: bool,
-    /// Names of every top-level function (hoisted), for call resolution,
-    /// mapped to its declared return type (`None` means "not annotated").
-    functions: HashMap<String, Option<Ty>>,
+    /// Every top-level function (hoisted), by name, for call resolution and
+    /// static argument checking.
+    functions: HashMap<String, FnSig>,
     /// Names of every top-level type (struct, enum, alias).
     types: HashMap<String, Span>,
     /// The kind of each user type: `struct`, `enum`, or `alias`.
@@ -151,6 +167,7 @@ impl Checker {
                     GlobalDecl::Function {
                         name: name.clone(),
                         ret: None,
+                        params: Vec::new(),
                     }
                 } else {
                     GlobalDecl::Binding {
@@ -178,11 +195,24 @@ impl Checker {
                     c.scopes[0].declares.insert(name.clone(), Span::default());
                     c.scopes[0].vars.insert(name.clone(), *mutable);
                 }
-                GlobalDecl::Function { name, ret } => {
+                GlobalDecl::Function { name, ret, params } => {
                     c.scopes[0].declares.insert(name.clone(), Span::default());
                     c.scopes[0].vars.insert(name.clone(), false);
                     let ret_ty = ret.as_ref().map(Ty::from_expr_lenient);
-                    c.functions.insert(name.clone(), ret_ty);
+                    let param_tys = params
+                        .iter()
+                        .map(|p| {
+                            p.as_ref()
+                                .map(|t| Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t)))
+                        })
+                        .collect();
+                    c.functions.insert(
+                        name.clone(),
+                        FnSig {
+                            ret: ret_ty,
+                            params: param_tys,
+                        },
+                    );
                 }
                 GlobalDecl::Struct { name, .. } => {
                     c.scopes[0].declares.insert(name.clone(), Span::default());
@@ -283,7 +313,12 @@ impl Checker {
                         ));
                     }
                     let ret_ty = ret.as_ref().map(Ty::from_expr_lenient);
-                    self.functions.entry(name.clone()).or_insert(ret_ty);
+                    // Parameter types are filled in by the annotation pass
+                    // below, once every type name is known.
+                    self.functions.entry(name.clone()).or_insert(FnSig {
+                        ret: ret_ty,
+                        params: Vec::new(),
+                    });
                     self.scopes[0].declares.entry(name.clone()).or_insert(*span);
                     self.scopes[0].vars.insert(name.clone(), false);
                 }
@@ -380,14 +415,23 @@ impl Checker {
                 Item::Alias { target, .. } => {
                     self.annotation(target, Span::default())?;
                 }
-                Item::Fn { params, ret, .. } => {
+                Item::Fn {
+                    name, params, ret, ..
+                } => {
+                    let mut param_tys = Vec::with_capacity(params.len());
                     for p in params {
-                        if let Some(pty) = &p.ty {
-                            self.annotation(pty, p.span)?;
+                        match &p.ty {
+                            Some(pty) => param_tys.push(Some(self.annotation(pty, p.span)?)),
+                            None => param_tys.push(None),
                         }
                     }
-                    if let Some(rt) = ret {
-                        self.annotation(rt, Span::default())?;
+                    let ret_ty = match ret {
+                        Some(rt) => Some(self.annotation(rt, Span::default())?),
+                        None => None,
+                    };
+                    if let Some(sig) = self.functions.get_mut(name) {
+                        sig.ret = ret_ty;
+                        sig.params = param_tys;
                     }
                 }
                 _ => {}
@@ -413,7 +457,13 @@ impl Checker {
             .insert(name.to_string(), Span::default());
         self.scopes[0].vars.insert(name.to_string(), false);
         if is_fn {
-            self.functions.insert(name.to_string(), None);
+            self.functions.insert(
+                name.to_string(),
+                FnSig {
+                    ret: None,
+                    params: Vec::new(),
+                },
+            );
         }
     }
 
@@ -525,6 +575,61 @@ impl Checker {
             }
         }
         None
+    }
+
+    /// Whether `name` resolves to a specific top-level `fn` declaration.
+    ///
+    /// Resolution follows lexical scope: the global scope (`scopes[0]`) holds
+    /// the hoisted declarations, so `name` denotes a declaration only when no
+    /// inner scope shadows it. A user declaration takes precedence over a
+    /// builtin of the same name, matching the runtime's call dispatch. This is
+    /// the gate for FEATURE_001's static argument check (`LANGUAGE_SPEC.md`
+    /// §6.5): the check applies to exactly the calls this predicate accepts.
+    fn resolves_to_user_function(&self, name: &str) -> bool {
+        self.functions.contains_key(name)
+            && !self
+                .scopes
+                .iter()
+                .skip(1)
+                .any(|s| s.declares.contains_key(name))
+    }
+
+    /// Statically validate a call to a directly resolved top-level function.
+    ///
+    /// Checks the argument count and, for each annotated parameter, the
+    /// corresponding argument's inferred type (`LANGUAGE_SPEC.md` §6.5). Only
+    /// provable mismatches are rejected: an `Unknown` argument is accepted,
+    /// and an unannotated parameter imposes no type constraint.
+    fn check_user_call(&self, name: &str, sig: &FnSig, args: &[Expr], span: Span) -> Result<()> {
+        if args.len() != sig.params.len() {
+            return Err(Diag::new(
+                codes::TYPE_MISMATCH,
+                format!(
+                    "`{name}` expects {} argument(s), got {}",
+                    sig.params.len(),
+                    args.len()
+                ),
+                span,
+            ));
+        }
+        for (i, expected) in sig.params.iter().enumerate() {
+            let Some(expected) = expected else { continue };
+            let Some(arg) = args.get(i) else { break };
+            let actual = self.infer(arg);
+            if !expected.compatible_with(&actual) {
+                return Err(Diag::new(
+                    codes::TYPE_MISMATCH,
+                    format!(
+                        "`{name}` argument {} expects `{}`, found `{}`",
+                        i + 1,
+                        expected.name(),
+                        actual.name()
+                    ),
+                    span,
+                ));
+            }
+        }
+        Ok(())
     }
 
     fn item(&mut self, item: &Item) -> Result<()> {
@@ -732,8 +837,8 @@ impl Checker {
             }
             Expr::Call(f, _, _) => match f.as_ref() {
                 Expr::Name(name, _) => {
-                    if let Some(ret) = self.functions.get(name).and_then(Clone::clone) {
-                        ret
+                    if let Some(sig) = self.functions.get(name) {
+                        sig.ret.clone().unwrap_or(Ty::Unknown)
                     } else if let Some(sig) = crate::stdlib::signatures::builtin(name) {
                         sig.returns.ty()
                     } else {
@@ -1397,8 +1502,12 @@ impl Checker {
                         // A direct call must resolve to a function, a builtin,
                         // or a callable local. Functions are hoisted, so
                         // forward references resolve.
-                        if self.functions.contains_key(name) {
-                            // ok: user function
+                        if self.resolves_to_user_function(name) {
+                            // A directly resolved top-level function: check the
+                            // call against its declared signature (§6.5).
+                            if let Some(sig) = self.functions.get(name) {
+                                self.check_user_call(name, sig, args, *span)?;
+                            }
                         } else if let Some(sig) = crate::stdlib::signatures::builtin(name) {
                             self.check_builtin_call(sig, args, *span)?;
                         } else if self.lookup(name).is_some() {
