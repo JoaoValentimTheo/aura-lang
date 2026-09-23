@@ -7,7 +7,7 @@
 
 use std::io::{BufRead, Write};
 
-use crate::ast::Item;
+use crate::ast::{Item, Stmt};
 use crate::error::Diag;
 use crate::run::{Ctl, Interp};
 
@@ -16,11 +16,22 @@ use crate::run::{Ctl, Interp};
 /// # Errors
 /// Returns a diagnostic only for unrecoverable I/O failures.
 pub fn run() -> Result<(), Diag> {
-    let mut interp = Interp::new();
-    let mut globals: Vec<String> = Vec::new();
     let stdin = std::io::stdin();
-    let mut input = stdin.lock();
-    println!("Aura {} REPL — :help for commands", crate::VERSION);
+    let stdout = std::io::stdout();
+    run_with(stdin.lock(), stdout.lock())
+}
+
+/// Run a session reading from `reader` and writing to `writer`.
+///
+/// This is the testable core of the REPL: it performs no direct I/O, so
+/// callers can drive it with in-memory buffers.
+///
+/// # Errors
+/// Returns a diagnostic only for unrecoverable I/O failures.
+pub fn run_with<R: BufRead, W: Write>(mut reader: R, mut writer: W) -> Result<(), Diag> {
+    let mut interp = Interp::new();
+    let mut globals: Vec<(String, bool, bool)> = Vec::new();
+    let _ = writeln!(writer, "Aura {} REPL — :help for commands", crate::VERSION);
     let mut pending = String::new();
     loop {
         let prompt = if pending.is_empty() {
@@ -28,11 +39,11 @@ pub fn run() -> Result<(), Diag> {
         } else {
             "  ... "
         };
-        print!("{prompt}");
-        let _ = std::io::stdout().flush();
+        let _ = write!(writer, "{prompt}");
+        let _ = writer.flush();
         let mut line = String::new();
-        if input.read_line(&mut line).unwrap_or(0) == 0 {
-            println!();
+        if reader.read_line(&mut line).unwrap_or(0) == 0 {
+            let _ = writeln!(writer);
             return Ok(());
         }
         let trimmed = line.trim();
@@ -41,9 +52,9 @@ pub fn run() -> Result<(), Diag> {
                 "" => continue,
                 ":quit" | ":q" | ":exit" => return Ok(()),
                 ":help" => {
-                    println!(":help     show this help");
-                    println!(":quit     exit");
-                    println!("Otherwise type an expression or a declaration.");
+                    let _ = writeln!(writer, ":help     show this help");
+                    let _ = writeln!(writer, ":quit     exit");
+                    let _ = writeln!(writer, "Otherwise type an expression or a declaration.");
                     continue;
                 }
                 _ => {}
@@ -55,7 +66,7 @@ pub fn run() -> Result<(), Diag> {
             continue;
         }
         let source = std::mem::take(&mut pending);
-        eval_line(&mut interp, &mut globals, &source);
+        eval_line(&mut interp, &mut globals, &source, &mut writer);
     }
 }
 
@@ -86,24 +97,61 @@ fn unbalanced(src: &str) -> bool {
     depth > 0
 }
 
-fn eval_line(interp: &mut Interp, globals: &mut Vec<String>, source: &str) {
+fn eval_line<W: Write>(
+    interp: &mut Interp,
+    globals: &mut Vec<(String, bool, bool)>,
+    source: &str,
+    writer: &mut W,
+) {
+    // Try a single statement first, so `let mut x = ...` works at the top
+    // level of the REPL. Fall back to module items (fn/struct/enum/use) and
+    // then to a bare expression.
+    if let Ok(stmt) = crate::parse::parse_stmt(source) {
+        let mut checker = crate::check::Checker::with_globals(globals);
+        if let Err(e) = checker.check_stmt(&stmt) {
+            let _ = writeln!(writer, "{e}");
+            return;
+        }
+        if let Stmt::Let { name, mutable, .. } = &stmt {
+            let is_new = !globals.iter().any(|(n, _, _)| n == name);
+            if is_new {
+                globals.push((name.clone(), *mutable, false));
+            }
+        }
+        match interp.exec_stmt_globals(&stmt) {
+            // A bare expression echoes its value; declarations stay silent.
+            Ok(Ctl::Val(v)) if matches!(stmt, Stmt::Expr(..)) => {
+                let _ = writeln!(writer, "{}", v.display());
+            }
+            Ok(_) => {}
+            Err(e) => {
+                let _ = writeln!(writer, "{e}");
+            }
+        }
+        return;
+    }
+
     match crate::parse::parse(source) {
         Ok(module) => {
             let mut checker = crate::check::Checker::with_globals(globals);
             if let Err(e) = checker.check(&module) {
-                println!("{e}");
+                let _ = writeln!(writer, "{e}");
                 return;
             }
             for item in &module.items {
-                if let Item::Fn { name, .. } | Item::Const { name, .. } = item {
-                    if !globals.contains(name) {
-                        globals.push(name.clone());
+                if let Item::Fn { name, .. } = item {
+                    if !globals.iter().any(|(n, _, _)| n == name) {
+                        globals.push((name.clone(), false, true));
+                    }
+                } else if let Item::Const { name, .. } = item {
+                    if !globals.iter().any(|(n, _, _)| n == name) {
+                        globals.push((name.clone(), false, false));
                     }
                 }
                 let result = match item {
                     Item::Expr(expr, _) => match interp.eval_globals(expr) {
                         Ok(Ctl::Val(v)) => {
-                            println!("{}", v.display());
+                            let _ = writeln!(writer, "{}", v.display());
                             Ok(())
                         }
                         Ok(_) => Ok(()),
@@ -112,12 +160,27 @@ fn eval_line(interp: &mut Interp, globals: &mut Vec<String>, source: &str) {
                     other => interp.run_item(other),
                 };
                 if let Err(e) = result {
-                    println!("{e}");
+                    let _ = writeln!(writer, "{e}");
                     return;
                 }
             }
-            // A bare declaration prints nothing; a successful change is silent.
         }
-        Err(e) => println!("{e}"),
+        Err(e) => {
+            // Last resort: a bare expression.
+            match crate::parse::parse_expr(source) {
+                Ok(expr) => match interp.eval_globals(&expr) {
+                    Ok(Ctl::Val(v)) => {
+                        let _ = writeln!(writer, "{}", v.display());
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        let _ = writeln!(writer, "{e}");
+                    }
+                },
+                Err(_) => {
+                    let _ = writeln!(writer, "{e}");
+                }
+            }
+        }
     }
 }
