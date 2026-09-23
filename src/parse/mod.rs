@@ -12,8 +12,168 @@ pub fn parse(src: &str) -> Result<Module> {
         toks,
         pos: 0,
         depth: 0,
+        expr_nodes: 0,
     };
-    p.module()
+    let module = p.module()?;
+    // Reject trees deeper than the language limit here, before any later
+    // phase clones or walks them on an arbitrary stack. The check is
+    // iterative, so it cannot itself overflow.
+    enforce_depth(&module)?;
+    Ok(module)
+}
+
+/// Language limit on AST nesting. This is the single bound that keeps every
+/// later phase (clone, check, evaluate, drop) safe on a small stack.
+pub const MAX_AST_DEPTH: usize = 256;
+
+/// Iteratively verify that no expression/statement nests beyond
+/// [`MAX_AST_DEPTH`]. Uses an explicit heap stack and never recurses.
+fn enforce_depth(module: &Module) -> Result<()> {
+    // Worklist of (node depth). Items are walked with a small recursive
+    // helper bounded by the module structure; expressions and statements use
+    // the explicit stack below.
+    for item in &module.items {
+        match item {
+            Item::Fn { body, .. } => check_stmt_depth(body, 1)?,
+            Item::Const { value, .. } => check_expr_depth(value, 1)?,
+            Item::Expr(e, _) => check_expr_depth(e, 1)?,
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn check_expr_depth(root: &Expr, start: usize) -> Result<()> {
+    let mut stack: Vec<(&Expr, usize)> = vec![(root, start)];
+    while let Some((e, depth)) = stack.pop() {
+        if depth > MAX_AST_DEPTH {
+            return Err(Diag::new(
+                codes::NESTING,
+                "expression nests too deeply",
+                Span::default(),
+            ));
+        }
+        let d = depth + 1;
+        match e {
+            Expr::Lit(..) | Expr::Name(..) | Expr::FStr(..) => {}
+            Expr::Unary(_, o, _) => stack.push((o, d)),
+            Expr::Binary(_, l, r, _) => {
+                stack.push((l, d));
+                stack.push((r, d));
+            }
+            Expr::Call(f, args, _) => {
+                stack.push((f, d));
+                for a in args {
+                    stack.push((a, d));
+                }
+            }
+            Expr::Method(r, _, args, _) => {
+                stack.push((r, d));
+                for a in args {
+                    stack.push((a, d));
+                }
+            }
+            Expr::Field(r, _, _) => stack.push((r, d)),
+            Expr::Index(b, i, _) => {
+                stack.push((b, d));
+                stack.push((i, d));
+            }
+            Expr::List(items, _) | Expr::Tuple(items, _) => {
+                for i in items {
+                    stack.push((i, d));
+                }
+            }
+            Expr::Map(entries, _) => {
+                for (k, v) in entries {
+                    stack.push((k, d));
+                    stack.push((v, d));
+                }
+            }
+            Expr::Construct(_, args, _) => {
+                for a in args {
+                    stack.push((&a.value, d));
+                }
+            }
+            Expr::Lambda(_, body, _) => stack.push((body, d)),
+            Expr::Pipe(l, r, _) => {
+                stack.push((l, d));
+                stack.push((r, d));
+            }
+            Expr::If(c, then, els, _) => {
+                stack.push((c, d));
+                check_stmt_depth(then, d)?;
+                if let Some(e) = els {
+                    stack.push((e, d));
+                }
+            }
+            Expr::Match(subject, arms, _) => {
+                stack.push((subject, d));
+                for arm in arms {
+                    if let Some(g) = &arm.guard {
+                        stack.push((g, d));
+                    }
+                    check_stmt_depth(&arm.body, d)?;
+                }
+            }
+            Expr::Block(stmts, _) => check_stmt_depth(stmts, d)?,
+        }
+        // F-string interpolations are expressions too.
+        if let Expr::FStr(parts, _) = e {
+            for p in parts {
+                if let FPart::Expr(inner) = p {
+                    stack.push((inner, d));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn check_stmt_depth(stmts: &[Stmt], start: usize) -> Result<()> {
+    let mut stack: Vec<&Stmt> = stmts.iter().collect();
+    let mut guard = 0usize;
+    while let Some(s) = stack.pop() {
+        guard += 1;
+        if guard > 10_000_000 {
+            return Err(Diag::new(
+                codes::NESTING,
+                "program nests too deeply",
+                Span::default(),
+            ));
+        }
+        match s {
+            Stmt::Let { value, .. } => check_expr_depth(value, start)?,
+            Stmt::Assign { target, value, .. } => {
+                check_expr_depth(target, start)?;
+                check_expr_depth(value, start)?;
+            }
+            Stmt::Expr(e, _) => check_expr_depth(e, start)?,
+            Stmt::Return(Some(e), _) | Stmt::Throw(e, _) => check_expr_depth(e, start)?,
+            Stmt::Return(None, _) | Stmt::Break(_) | Stmt::Continue(_) => {}
+            Stmt::While(c, body, _) => {
+                check_expr_depth(c, start)?;
+                stack.extend(body.iter());
+            }
+            Stmt::Loop(body, _) => stack.extend(body.iter()),
+            Stmt::For(_, iter, body, _) => {
+                check_expr_depth(iter, start)?;
+                stack.extend(body.iter());
+            }
+            Stmt::Try {
+                body,
+                catch_body,
+                finally,
+                ..
+            } => {
+                stack.extend(body.iter());
+                stack.extend(catch_body.iter());
+                if let Some(f) = finally {
+                    stack.extend(f.iter());
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Parse one expression (used by the REPL and tests).
@@ -23,6 +183,7 @@ pub fn parse_expr(src: &str) -> Result<Expr> {
         toks,
         pos: 0,
         depth: 0,
+        expr_nodes: 0,
     };
     p.skip_newlines();
     let e = p.expr()?;
@@ -39,6 +200,7 @@ pub fn parse_stmt(src: &str) -> Result<Stmt> {
         toks,
         pos: 0,
         depth: 0,
+        expr_nodes: 0,
     };
     p.skip_newlines();
     let s = p.stmt()?;
@@ -53,6 +215,9 @@ struct Parser {
     toks: Vec<Token>,
     pos: usize,
     depth: usize,
+    /// Number of infix/postfix wraps applied to the expression currently
+    /// being built. Bounds the depth of a flat chain without recursing.
+    expr_nodes: usize,
 }
 
 impl Parser {
@@ -606,7 +771,10 @@ impl Parser {
 
     fn expr(&mut self) -> Result<Expr> {
         self.enter()?;
+        let saved = self.expr_nodes;
+        self.expr_nodes = 0;
         let r = self.expr_bp(0);
+        self.expr_nodes = saved;
         self.leave();
         r
     }
@@ -624,6 +792,14 @@ impl Parser {
             self.bump();
             if op.is_none() && matches!(self.at(), Tok::Eof | Tok::Newline) {
                 break;
+            }
+            self.expr_nodes += 1;
+            if self.expr_nodes > MAX_AST_DEPTH {
+                return Err(Diag::new(
+                    codes::NESTING,
+                    "expression nests too deeply",
+                    span,
+                ));
             }
             match op {
                 None => {
@@ -669,6 +845,14 @@ impl Parser {
         let mut e = self.atom()?;
         loop {
             let span = self.span();
+            self.expr_nodes += 1;
+            if self.expr_nodes > MAX_AST_DEPTH {
+                return Err(Diag::new(
+                    codes::NESTING,
+                    "expression nests too deeply",
+                    span,
+                ));
+            }
             match self.at().clone() {
                 Tok::LParen => {
                     self.bump();

@@ -96,10 +96,10 @@ fn deeply_nested_expression_is_rejected_not_a_crash() {
 
 #[test]
 fn deeply_nested_checker_is_rejected_not_a_crash() {
-    // The checker must bound its own descent as well.
+    // The parser rejects a tree deeper than the language limit, so the
+    // checker is never asked to walk one on an arbitrary stack.
     let src = format!("fn main() {{ print(1{}) }}", "+1".repeat(10_000));
-    let module = aura::parse::parse(&src).expect("parses");
-    let err = aura::check::Checker::module(&module).expect_err("must be bounded");
+    let err = aura::parse::parse(&src).expect_err("must be bounded");
     assert_eq!(err.code, codes::NESTING);
 }
 

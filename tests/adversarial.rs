@@ -36,9 +36,10 @@ fn huge_flat_expression_is_bounded_in_every_phase() {
 
 #[test]
 fn checker_bounds_depth_on_the_calling_thread() {
+    // Deep expressions are rejected at parse time, before any phase can walk
+    // a deep tree on a small stack.
     let src = format!("fn main() {{ print(1{}) }}", "+1".repeat(20_000));
-    let module = aura::parse::parse(&src).expect("parses");
-    let err = Checker::module(&module).expect_err("bounded");
+    let err = aura::parse::parse(&src).expect_err("rejected before checking");
     assert_eq!(err.code, codes::NESTING);
 }
 
