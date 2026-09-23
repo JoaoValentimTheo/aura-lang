@@ -283,7 +283,13 @@ impl Parser {
     fn const_item(&mut self) -> Result<Item> {
         let span = self.span();
         self.bump();
-        let _ = self.eat(&Tok::Mut);
+        if self.eat(&Tok::Mut) {
+            return Err(Diag::new(
+                codes::EXPECTED,
+                "top-level bindings are module constants and are always immutable; `mut` is not allowed here",
+                span,
+            ));
+        }
         let name = self.ident("binding name")?;
         let ann = if self.eat(&Tok::Colon) {
             Some(self.ty()?)
@@ -647,7 +653,7 @@ impl Parser {
                     if !self.eat(&Tok::RParen) {
                         loop {
                             self.skip_newlines();
-                            args.push(self.arg()?);
+                            args.push(self.arg_expr()?);
                             self.skip_newlines();
                             if !self.eat(&Tok::Comma) {
                                 self.expect(&Tok::RParen)?;
@@ -690,29 +696,6 @@ impl Parser {
             }
         }
         Ok(e)
-    }
-
-    fn arg(&mut self) -> Result<Expr> {
-        // named argument `name: value`
-        if let Tok::Ident(name) = self.at().clone() {
-            let save = self.pos;
-            self.bump();
-            if self.eat(&Tok::Colon) {
-                let name2 = name.clone();
-                self.bump(); // consumed ident
-                self.pos = save;
-                self.bump();
-                self.expect(&Tok::Colon)?;
-                let value = self.expr()?;
-                return Ok(Expr::Call(
-                    Box::new(Expr::Name(format!("__kw_{name2}"), self.span())),
-                    vec![value],
-                    self.span(),
-                ));
-            }
-            self.pos = save;
-        }
-        self.arg_expr()
     }
 
     fn arg_expr(&mut self) -> Result<Expr> {

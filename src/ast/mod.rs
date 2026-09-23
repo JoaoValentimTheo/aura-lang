@@ -135,8 +135,6 @@ pub enum Pattern {
     Bind(String),
     /// `[p, p, ...]`.
     List(Vec<Pattern>),
-    /// `[head, ...tail]`.
-    Cons(Box<Pattern>, Box<Pattern>),
     /// `Variant(p, ...)`.
     Variant(String, Vec<Pattern>),
 }
@@ -157,10 +155,6 @@ impl Pattern {
                 for p in ps {
                     p.collect(out);
                 }
-            }
-            Pattern::Cons(h, t) => {
-                h.collect(out);
-                t.collect(out);
             }
             _ => {}
         }
