@@ -213,7 +213,10 @@ impl Checker {
                     let mut map = HashMap::new();
                     let mut order = Vec::new();
                     for (f, t) in fields {
-                        map.insert(f.clone(), Ty::from_expr_lenient(&c.resolve_type_expr(t)));
+                        map.insert(
+                            f.clone(),
+                            Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t)),
+                        );
                         order.push(f.clone());
                     }
                     c.struct_fields.insert(name.clone(), map);
@@ -223,7 +226,7 @@ impl Checker {
                     for (tag, payload) in variants {
                         let mut tys = Vec::with_capacity(payload.len());
                         for t in payload {
-                            tys.push(Ty::from_expr_lenient(&c.resolve_type_expr(t)));
+                            tys.push(Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t)));
                         }
                         c.variants.insert(tag.clone(), String::new());
                         c.variant_payloads.insert(tag.clone(), tys);
@@ -820,28 +823,83 @@ impl Checker {
     }
 
     fn annotation(&self, t: &TypeExpr, span: Span) -> Result<Ty> {
-        Ty::from_expr(&self.resolve_type_expr(t), &self.type_kinds, span)
+        let mut visiting = Vec::new();
+        let resolved = self.resolve_type_expr(t, span, &mut visiting)?;
+        Ty::from_expr(&resolved, &self.type_kinds, span)
     }
 
     /// Substitute `type` aliases by their targets, recursively, so a
     /// transparent alias denotes the type it names. Unknown names are left
     /// untouched and validated later by [`Ty::from_expr`].
-    fn resolve_type_expr(&self, t: &TypeExpr) -> TypeExpr {
-        match t {
+    ///
+    /// A cyclic alias (`type A = A`, or a longer cycle) has no concrete target
+    /// and is rejected with `E3002` rather than recursing without bound.
+    fn resolve_type_expr(
+        &self,
+        t: &TypeExpr,
+        span: Span,
+        visiting: &mut Vec<String>,
+    ) -> Result<TypeExpr> {
+        Ok(match t {
             TypeExpr::Named(n) => match self.alias_targets.get(n) {
-                Some(target) => self.resolve_type_expr(target),
+                Some(target) => {
+                    if visiting.iter().any(|v| v == n) {
+                        return Err(Diag::new(
+                            codes::UNKNOWN_TYPE,
+                            format!("recursive type alias `{n}` has no concrete target"),
+                            span,
+                        ));
+                    }
+                    visiting.push(n.clone());
+                    let resolved = self.resolve_type_expr(target, span, visiting)?;
+                    visiting.pop();
+                    resolved
+                }
                 None => t.clone(),
             },
-            TypeExpr::List(inner) => TypeExpr::List(Box::new(self.resolve_type_expr(inner))),
+            TypeExpr::List(inner) => {
+                TypeExpr::List(Box::new(self.resolve_type_expr(inner, span, visiting)?))
+            }
             TypeExpr::Map(k, v) => TypeExpr::Map(
-                Box::new(self.resolve_type_expr(k)),
-                Box::new(self.resolve_type_expr(v)),
+                Box::new(self.resolve_type_expr(k, span, visiting)?),
+                Box::new(self.resolve_type_expr(v, span, visiting)?),
             ),
             TypeExpr::Optional(inner) => {
-                TypeExpr::Optional(Box::new(self.resolve_type_expr(inner)))
+                TypeExpr::Optional(Box::new(self.resolve_type_expr(inner, span, visiting)?))
             }
             _ => t.clone(),
+        })
+    }
+
+    /// Alias resolution that never fails, used when rebuilding a session from
+    /// declarations that were already validated. A cycle is left unresolved
+    /// rather than recursing without bound; it cannot reach this path through
+    /// checking because [`resolve_type_expr`] rejects it first.
+    fn resolve_type_expr_lenient(&self, t: &TypeExpr) -> TypeExpr {
+        fn go(checker: &Checker, t: &TypeExpr, visiting: &mut Vec<String>) -> TypeExpr {
+            match t {
+                TypeExpr::Named(n) => match checker.alias_targets.get(n) {
+                    Some(target) if !visiting.iter().any(|v| v == n) => {
+                        visiting.push(n.clone());
+                        let resolved = go(checker, target, visiting);
+                        visiting.pop();
+                        resolved
+                    }
+                    Some(_) => t.clone(),
+                    None => t.clone(),
+                },
+                TypeExpr::List(inner) => TypeExpr::List(Box::new(go(checker, inner, visiting))),
+                TypeExpr::Map(k, v) => TypeExpr::Map(
+                    Box::new(go(checker, k, visiting)),
+                    Box::new(go(checker, v, visiting)),
+                ),
+                TypeExpr::Optional(inner) => {
+                    TypeExpr::Optional(Box::new(go(checker, inner, visiting)))
+                }
+                _ => t.clone(),
+            }
         }
+        go(self, t, &mut Vec::new())
     }
 
     /// Validate a struct literal against the declared fields.
@@ -1343,7 +1401,22 @@ impl Checker {
                     self.expr(a)?;
                 }
             }
-            Expr::Field(r, _, _) => self.expr(r)?,
+            Expr::Field(r, name, span) => {
+                self.expr(r)?;
+                // `receiver.name` without parentheses is a zero-argument method
+                // call on any non-struct, non-enum receiver (§24). When the
+                // receiver type is known, the method must exist on it, by the
+                // same rule that governs `receiver.name(...)`.
+                if let Some(class) = self.infer(r).type_class() {
+                    if crate::stdlib::signatures::method(class, name).is_none() {
+                        return Err(Diag::new(
+                            codes::UNDEFINED,
+                            format!("{} has no method `{name}`", class.name()),
+                            *span,
+                        ));
+                    }
+                }
+            }
             Expr::Index(b, i, _) => {
                 self.expr(b)?;
                 self.expr(i)?;

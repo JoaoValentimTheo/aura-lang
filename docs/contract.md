@@ -154,6 +154,7 @@ The checker runs before execution and rejects, at minimum:
 | E2012 | duplicate user type |
 | E2013 | duplicate enum variant tag across the program |
 | E2014 | a pattern binds the same name twice |
+| E2015 | `break`/`continue` outside a loop |
 | E3001 | type mismatch (annotations are checked) |
 | E3002 | unknown type or constructor |
 | E3005 | return type mismatch |

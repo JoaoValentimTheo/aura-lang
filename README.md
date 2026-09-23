@@ -78,8 +78,8 @@ fn main() {
 * `none` is the only absence — not `null`, `nil`, or `undefined`.
 * `else if` does not exist; use `match` or a nested block.
 * `let` is immutable; `let mut` opts into reassignment.
-* Function calls are positional; named arguments are for `struct` and enum
-  construction only.
+* Function calls are positional. Named arguments are for `struct`
+  construction only; enum variant payloads are positional.
 * `use` and `pub` are reserved and inert in this version (see
   [docs/contract.md](docs/contract.md) §10).
 
@@ -96,7 +96,7 @@ Types are optional annotations and are checked before execution. There is no
 implicit coercion: `1 + "1"` is a compile error, and `let x: int = "a"` is
 rejected before the program runs. The checker is conservative: it rejects only
 mismatches it can prove and leaves the rest to the runtime (see
-[docs/LANGUAGE_SPEC.md](docs/LANGUAGE_SPEC.md) §2.3, §11).
+[docs/LANGUAGE_SPEC.md](docs/LANGUAGE_SPEC.md) §2.3, §6).
 
 ### Data and pattern matching
 
@@ -120,13 +120,14 @@ fn area(s) -> int {
 
 ```aura
 let xs = [1, 2, 3, 4, 5, 6]
-let result = xs
-    |> filter((x) -> x % 2 == 0)
-    |> map((x) -> x * x)
+let result = xs |> filter((x) -> x % 2 == 0) |> map((x) -> x * x)
 
 print(result)                  # [4, 16, 36]
 print(xs.reduce((a, b) -> a + b, 0))
 ```
+
+A pipeline continues on the same line: a newline ends the statement, so the
+`|>` operator cannot start a continuation line.
 
 ### Errors
 

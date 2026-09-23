@@ -1,569 +1,682 @@
 # Language Specification — Conformance Report
 
-This report explains how [`docs/LANGUAGE_SPEC.md`](LANGUAGE_SPEC.md) was
-derived and verified. It is **not** the specification; it is the audit trail
-behind it.
+This report records the **Conformance Audit** of the Aura implementation
+against [`docs/LANGUAGE_SPEC.md`](LANGUAGE_SPEC.md). It is not the
+specification; it is the audit trail and the classification of every
+meaningful discrepancy found.
+
+The audit question was: *Does the actual Aura implementation conform to the
+language specified in `LANGUAGE_SPEC.md`?*
 
 ---
 
 ## Executive Summary
 
-The Aura language was inspected end to end — lexer, parser, AST, checker,
-runtime, standard library, Python bridge, CLI, REPL, grammar, contract, tests,
-and examples — and a single normative specification was produced at
-`docs/LANGUAGE_SPEC.md`.
+The implementation conforms to the specification across the great majority of
+its normative surface. Each major subsystem was reconstructed from the
+implementation and compared against the specification's normative rules, and
+every documented error code was traced to a producing path.
 
-The specification was derived from evidence in this order: explicit recent
-design decisions (the Semantic Closure commit), executable tests, parser /
-checker / runtime implementation, `docs/contract.md`, README/examples, and
-finally accidental behavior (which was **not** promoted to normativity without
-supporting evidence).
+Three **implementation defects** were found and fixed, each restoring a rule
+the specification already stated:
 
-Every major language construct now has a complete semantic path. Two
-implementation artifacts required a documented status rather than a silent
-freeze: the absence of a tuple type (§21) and no-parentheses method calls
-(§24), both of which are now normatively documented because the repository
-provides strong, consistent evidence for them. Two genuine
-documentation/implementation discrepancies were found and are recorded (§30.4
-and Known Limitations 34.3); one (`E4030`'s example) was corrected in
-`docs/errors.md`.
+1. A **host stack overflow** from a recursive type alias (`type A = A`). The
+   specification claimed recursive aliases were not expressible; in fact the
+   checker recursed without bound and crashed. Recursive aliases are now
+   rejected with `E3002` before execution.
+2. **No-parentheses method calls bypassed the method registry.** `"x".nope`
+   and the dead runtime aliases `"x".up` / `"X".down` were accepted by the
+   checker and failed (or succeeded) only at runtime, violating §24. The
+   checker now validates the no-paren form against the shared registry.
+3. **`E4030` was not covered by the reachability test**, although §30.2 lists
+   it as a normative code reachable from valid syntax.
 
-No language behavior was changed to make the specification easier to write.
-The only non-specification edits are documentation alignment: one README
-sentence, the contract header, and the `E4030` example. No source-code change
-was needed; the implementation already conformed to the frozen semantics.
+Documentation drift was found and corrected in one place: the README's
+headline pipeline example did not compile (a `|>`-led continuation line is not
+valid), and the README claimed named arguments for enum construction, which
+§18.2 rejects.
 
-The full verification suite passes.
+The specification itself contained **dangling/incorrect internal
+cross-references** (sixteen of them) and one stale statement describing a
+documentation drift that had already been fixed; these were corrected as
+specification errors.
+
+No language feature was added. No resource limit was removed or weakened. No
+behavior was changed except the three conformance fixes above. The full
+verification suite passes.
 
 ---
 
 ## Repository Baseline
 
 ```
-HEAD     = aba88668856173337b68cd4fb8e046f0467bf561
+HEAD     = cbd2dc91d8e03b3dbd3132e75f43ba120d649f6a
 branch   = rewrite/v3-rust
-status   = clean at the start of the phase
-previous = d940fbed54d8afee020e6e7949fe6b2266847422
+status   = clean at the start of the audit
+previous = aba88668856173337b68cd4fb8e046f0467bf561
 ```
 
-The Semantic Closure commit (`aba8866`) is present. Baseline was verified with
-`git rev-parse HEAD`, `git branch --show-current`, `git status --short`,
-`git log -5 --oneline`.
+Verified with `git rev-parse HEAD`, `git branch --show-current`,
+`git status --short`, `git log -10 --oneline`.
 
 ---
 
-## Specification Authority Model
+## Conformance Method
 
-Three layers are distinguished throughout the specification:
+For every normative statement in `LANGUAGE_SPEC.md` the audit established:
 
 ```
-IMPLEMENTED BEHAVIOR   what the code does
-INTENDED CONTRACT      what contract/tests/decisions indicate
-FROZEN SPECIFICATION   docs/LANGUAGE_SPEC.md (normative)
+Specification rule
+      ↓
+Implementation location
+      ↓
+Reproduction (built binary, or existing test)
+      ↓
+Status: CONFORMING | IMPLEMENTATION BUG | SPECIFICATION ERROR |
+        DOCUMENTATION DRIFT | TEST GAP | IMPLEMENTATION LIMITATION |
+        DESIGN DECISION REQUIRED
 ```
 
-`docs/LANGUAGE_SPEC.md` is the **normative semantic authority**. `docs/contract.md`
-is the **compatibility contract** and defers to the specification on semantics
-(updated header). `docs/errors.md` remains the diagnostic-code reference.
-
-Each specification section labels its content as a normative rule, an
-implementation note, or a non-normative example.
+The audit did not rely on the previous conformance report or on test status as
+proof. Each claim was independently reproduced against the built binary at the
+baseline commit, and only then classified. Implementation behavior without
+supporting evidence was not promoted to normativity.
 
 ---
 
-## Sources of Semantic Evidence
+## Specification Evidence Hierarchy
 
-| Source | Role | Problems found |
-|---|---|---|
-| `src/lex/mod.rs`, `src/lex/token.rs` | lexical authority | none |
-| `src/parse/mod.rs` | grammar + parsing authority | none |
-| `src/ast/mod.rs` | AST authority | `Expr::Tuple` carries no semantics beyond list sugar |
-| `src/check/mod.rs` | static-check authority | none |
-| `src/types.rs` | `Ty` and compatibility | none |
-| `src/run/mod.rs`, `src/run/value.rs` | runtime authority | none |
-| `src/stdlib/signatures.rs` | builtin/method registry | runtime `up`/`down` aliases absent from registry |
-| `src/stdlib/mod.rs`, `src/stdlib/ext.rs` | builtin implementations | `json_*` bypass shared arity helper |
-| `src/bridge/mod.rs` | Python boundary | none |
-| `src/error.rs` | diagnostic codes | `E5003` unused; `E4099` internal |
-| `src/lib.rs`, `src/main.rs`, `src/repl.rs` | entry points | none |
-| `docs/contract.md` | compatibility contract | now defers to spec |
-| `docs/grammar.md` | EBNF | consistent with parser |
-| `docs/errors.md` | codes | `E4030` example was wrong → fixed |
-| `tests/*` (152 `#[test]` across 13 files) | executable semantics | gaps noted below |
-| `examples/*.aura` | executable docs | none |
-| `README.md` | overview | one imprecise sentence → clarified |
+Evidence was ranked:
+
+1. explicit design decisions already frozen in the repository;
+2. executable tests that intentionally assert semantics;
+3. parser / checker / runtime implementation;
+4. `docs/LANGUAGE_SPEC.md`;
+5. `docs/contract.md`, README, examples;
+6. accidental behavior with no supporting evidence.
+
+Two strong sources never conflicted in a way that required stopping the audit.
+Where the specification made a claim the implementation contradicted
+(recursive aliases; no-paren method validation), the specification expressed
+the *intended* semantics and the implementation was the defect.
 
 ---
 
-## Language Features Covered
+## Specification Coverage
 
-The specification covers every construct the parser can produce:
-
-* lexical: identifiers, keywords, comments, newlines, semicolons, integer
-  (decimal/hex/binary/octal), float, string, f-string, escape sequences;
-* types: `int`, `float`, `bool`, `string`, `[T]`, `{string: V}`, `T | none`,
-  named types;
-* items: `fn`, `struct`, `enum`, `type`, `use`, top-level `let`,
-  top-level expression, `pub`;
-* statements: `let`/`let mut`, assignment, compound assignment, `return`,
-  `throw`, `break`, `continue`, `while`, `loop`, `for`, `try`/`catch`/`finally`,
-  expression statements, blocks;
-* expressions: literals, names, f-strings, unary, binary, call, method, field,
-  index, list, map, constructor, tuple/list sugar, lambda, pipeline, `if`,
-  `match`, block;
-* patterns: literal, binding, list, variant, wildcard, guards.
+Every normative section was audited: §2 pipeline and `Unknown`; §3 lexical;
+§4 grammar; §5 value/type universe; §6 annotations; §7 aliases; §8
+compatibility; §9 operators; §10 numeric; §11 equality; §12 ordering; §13
+evaluation order; §14 control flow and `finally`; §15 functions and closures;
+§16 mutability and scope; §17 structs; §18 enums; §19 match; §20 collections;
+§21 tuples; §22 loops and ranges; §23 pipeline; §24 methods; §25 built-ins;
+§26 declarations and hoisting; §27 `pub`/`use`; §28 entry points; §29 REPL;
+§30 error model; §31 resource safety; §32 Python boundary; §33 frozen
+decisions; §34 known limitations.
 
 ---
 
-## Grammar Coverage
+## Grammar Conformance
 
-The grammar in §4 was checked against `Parser` for every production that
-creates an AST node:
+The grammar in §4 was checked production-by-production against
+`src/parse/mod.rs` and the executable EBNF in `docs/grammar.md`.
 
-| Production | Parser function | AST | Verified |
+| Construct | Spec | grammar.md | Parser | Status |
+|---|---|---|---|---|
+| `fn` declaration | §4.2 | yes | `fn_item` | CONFORMING |
+| `struct` / `enum` / `type` / `use` / `let` | §4.1–4.2 | yes | `struct_item`, `enum_item`, `alias_item`, `use_item`, `const_item` | CONFORMING |
+| statement grammar | §4.4 | yes | `stmt_inner` | CONFORMING |
+| precedence and associativity | §4.5 | yes | `infix`, `expr_bp`, `unary`, `postfix` | CONFORMING |
+| `(a, b)` list sugar | §4.5 | yes | `atom` → `Expr::Tuple` | CONFORMING |
+| `else if` → `E1014` | §4.5 | yes | `atom` (`if`) | CONFORMING |
+| patterns | §4.6 | yes | `pattern` | CONFORMING |
+| newline before `else`/`catch`/`finally` → `E1006` | §3.7 | yes | `block`/`stmt_inner` | CONFORMING |
+| `use a as b` → parse error | §26 | note | `ident` sees `as` | CONFORMING |
+
+**No grammar drift found.** `docs/grammar.md` and the parser agree on every
+production, including the pipeline note.
+
+`Tok::As` is lexed but consumed by no production (recorded in §34.3).
+
+---
+
+## AST Conformance
+
+Every AST variant was checked for a parser source, a checker path, and a
+runtime path.
+
+| AST node | Parser | Checker | Runtime | Spec | Status |
+|---|---|---|---|---|---|
+| `Lit` | yes | `infer` | value | §3.6, §5 | CONFORMING |
+| `Name` | yes | resolution | env/fn/native | §26 | CONFORMING |
+| `FStr` | yes | inner exprs | display | §3.6.4 | CONFORMING |
+| `Unary` | yes | `infer` | neg / truthiness | §9.2 | CONFORMING |
+| `Binary` | yes | orderability | total dispatch | §9 | CONFORMING |
+| `Call` | yes | builtin sig + name | call | §15, §25 | CONFORMING |
+| `Method` | yes | receiver registry | dispatch | §24 | CONFORMING |
+| `Field` | yes | receiver registry (fixed) | field / 0-arg method | §24 | FIXED |
+| `Index` | yes | operands | get/set | §9.5 | CONFORMING |
+| `List` / `Map` | yes | elements/entries | values | §20 | CONFORMING |
+| `Construct` | yes | full validation | struct/variant | §17, §18 | CONFORMING |
+| `Tuple` | yes | elements | lowers to list | §21 | CONFORMING |
+| `Lambda` | yes | scope reset | closure | §15.4 | CONFORMING |
+| `Pipe` | yes (non-call RHS) | operands | `call_value` | §23 | CONFORMING |
+| `If` / `Match` / `Block` | yes | cond/branches/patterns | branch value | §14, §19 | CONFORMING |
+
+No dead AST variant: every variant is constructed by the parser (verified by
+static enumeration) and has a checker and runtime path.
+
+---
+
+## Type-System Conformance
+
+The runtime value universe (`Value`) and the checker type universe (`Ty`) match
+§5.1 and §5.2 exactly: `int`, `float`, `bool`, `string`, `none`, list, map,
+struct, enum, function, range (runtime); `Int`, `Float`, `Bool`, `String`,
+`List`, `Map`, `Named`, `Enum`, `Unknown` (checker).
+
+Property claims in §5.3 (equality, ordering, indexing, iteration, callability,
+mutability) were each reproduced and hold. There is no static `none` type;
+`none` infers `Unknown` (§2.3, §5.2) — confirmed.
+
+---
+
+## Type Compatibility
+
+The compatibility matrix in §8 was reconstructed from `Ty::compatible_with`
+and reproduced at the checker: primitive types match only themselves;
+`int`/`float` are not annotation-compatible; `List`/`Map` recurse; `Named` and
+`Enum` are nominal; `Unknown` is compatible with everything. All cells
+conform.
+
+---
+
+## Alias Conformance
+
+Aliases are transparent and resolve in every type position (binding,
+parameter, return, struct field, enum payload, and nested inside `[T]`,
+`{string: V}`, `T | none`), chain transitively, and are visible across REPL
+submissions. All conforming **except** recursive aliases, which crashed the
+host — see Findings.
+
+| Case | Status |
+|---|---|
+| `type Id = int` in a binding | CONFORMING |
+| alias in parameter / return | CONFORMING |
+| alias in struct field / enum payload | CONFORMING |
+| chained aliases (`A = B`, `B = int`) | CONFORMING |
+| alias nested in `[T]` / map / `T | none` | CONFORMING |
+| alias unknown target → `E3002` | CONFORMING |
+| **recursive alias** | **IMPLEMENTATION BUG → FIXED** |
+
+---
+
+## Operator Conformance
+
+The full operator matrix in §9 was reproduced over all operand kinds. All
+arithmetic (`+ - * / % ^`), unary (`-`, `not`), logical (`and`, `or`),
+comparison, equality, and assignment operators conform. `+` is defined for
+`int`, `float`, `string`, `list`; other arithmetic is numeric-only; comparisons
+are numeric/string/bool only.
+
+An exhaustive sweep of 384 `(value, op, value)` arithmetic combinations and a
+comparison/equality sweep produced **zero `E4999`** — §30.3 holds.
+
+---
+
+## Numeric Conformance
+
+§10 conforms in full: `i64` checked arithmetic with `E4013` on overflow;
+`i64::MIN`/`i64::MAX` literal handling; truncating integer division;
+sign-of-dividend remainder; integer power with negative exponent `E4013`;
+`E4007` for `/` and `%` by zero on both `int` and `float`, treating `0.0` and
+`-0.0` alike; `NaN`/`inf` reachable only through arithmetic; NaN comparisons
+false; `-0.0` distinct; `to_int`/`to_float` conversion and error rules.
+
+---
+
+## Equality Conformance
+
+§11 conforms: structural equality for lists/maps/structs/enums, numeric
+cross-type equality (`1 == 1.0`), `none` only equal to `none`, ranges by
+`start`/`end`, **functions by identity**, `NaN == NaN` false, `0.0 == -0.0`
+true, cross-kind `false` without error.
+
+---
+
+## Ordering Conformance
+
+§12 conforms: orderable pairs are numeric pairs, `string`/`string`, and
+`bool`/`bool`; everything else is `E3001` (statically when provable, otherwise
+at runtime); NaN is unordered (`false`, not an error); no lexicographic
+ordering for compound values; `sort`/`min`/`max` fall back to source order
+without error. `Ty::orderable_with` matches `Value::comparable_with`.
+
+---
+
+## Evaluation-Order Conformance
+
+§13 conforms for every listed construct, verified with side-effecting probes:
+binary operands, call arguments, list/map elements, constructor arguments,
+index base/index, pipeline operands, `if` selection, `match` arms, and
+short-circuit `and`/`or`.
+
+One behavior was **underdocumented** and is now stated normatively: a compound
+assignment evaluates the target's subexpressions **twice** (once to read, once
+to write). This is a **SPECIFICATION GAP** that was closed; no code changed.
+
+---
+
+## Control-Flow Conformance
+
+§14 conforms: truthiness; `if`/`else` values; `while`/`loop`/`for`; `break`
+and `continue` scoped to loops and reset by lambdas (`E2015`); `return`
+semantics and `E4030` for a control-flow signal escaping to value position;
+`throw` and `catch` (only explicit `throw` is catchable; runtime diagnostics
+are fatal); uncaught throw `E4026`; and the `finally` precedence rule (a
+control-flow signal in `finally` replaces the pending outcome). Nested
+`try`/`finally` and `finally` with `break`/`continue`/`return`/`throw` all
+match the normative wording.
+
+---
+
+## Function Conformance
+
+§15 conforms: declaration, positional calls, no defaults or variadics,
+first-class values, function display `<fn>`, identity equality, recursion and
+mutual recursion bounded by 512 frames (`E4011`), top-level-only named
+functions, and lambda bodies with `return`. The documented limitation that
+user-function call arity and argument types are **not** checked statically is
+accurate: `f()` and `f("x")` against `fn f(a: int)` are accepted by the
+checker and fail at runtime with `E3001`.
+
+---
+
+## Closure Conformance
+
+§15.5 conforms: capture by reference; mutation of a captured `let mut` visible
+outside; closures returned from their defining function still observe their
+environment; closures stored in lists share that environment; nested closures
+capture transitively; lambda parameters are immutable (`E2001`). The
+specification's explicit statement that no ownership/lifetime model is
+provided is accurate.
+
+---
+
+## Scope and Mutability
+
+§16 conforms: `let`/`let mut`; `E2001` on immutable reassignment (static and
+runtime); `E2005` without initializer; lexical block scoping; loop/catch/match
+bindings scoped to their construct; nested shadowing permitted and same-scope
+redeclaration `E2007`; parameters immutable and `_`-prefixed parameters
+`E2009`; in-place mutation of struct fields, list elements, and map entries;
+and reference semantics for lists, maps, and structs (verified through
+aliases).
+
+---
+
+## Struct Conformance
+
+§17 conforms in full. Named construction requires every declared field exactly
+once; an unknown field is `E2003`; a missing, duplicate, or wrong-typed field
+is `E3001`; positional construction requires an exact count in declaration
+order; a value whose type is `Unknown` is accepted; no supplied field is
+silently dropped. Field access, field assignment, equality (nominal +
+structural), display, and the documented absence of field-type propagation on
+reads were all reproduced.
+
+---
+
+## Enum Conformance
+
+§18 conforms: globally unique tags (`E2013`); zero-payload variants
+constructed with `A()` (bare `A` is `E2003`); positional payloads; named
+payload arguments rejected (`E3001`) by both checker and runtime; payload
+arity and type checked; equality by tag and payload; display by tag or
+`Tag(payload)`. No path exists where the grammar accepts, the checker accepts,
+and the runtime rejects strangely.
+
+---
+
+## Match Conformance
+
+§19 conforms: arm order; guards; literal/binding/list/variant patterns;
+duplicate binding `E2014`; unknown variant `E3002`; no exhaustiveness with
+`E4029` on no match; subject evaluated once; control flow (`return`/`break`/
+`throw`/`continue`) propagating from arms; and the documented requirement that
+a bare control-flow keyword as an arm body needs a block.
+
+---
+
+## Collection Conformance
+
+§20 conforms. Lists: construction, integer and negative indexing, `E4019` out
+of range, snapshot iteration, mutation, element-wise equality, no ordering,
+display. Maps: string keys (non-string literal key `E3001`), `m[k]` lookup with
+`E2003` when absent, `get` → `none`, insert-on-assign, key-wise equality, no
+ordering, **ascending key iteration and display**, removal. The empty-map
+limitation (`{}` is a block, `none`) is reproduced and correctly documented.
+
+---
+
+## Tuple Conformance
+
+§21 conforms: `(a, b)` constructs a list; nested comma-lists nest lists;
+indexing, `len`, equality with a list, mutation, and display are list
+semantics. There is no distinct tuple runtime type.
+
+---
+
+## Loop and Range Conformance
+
+§22 conforms: `range(n)` = `range(0, n)`; start-inclusive/end-exclusive; step
+`+1`; integer bounds only (`E3001` otherwise); empty and descending ranges
+empty; negative bounds allowed; saturating `len`; lazy `for` iteration with
+immediate `break`; materialization cap 10,000,000 (`E4013`); non-iterable
+`E4018`; and snapshot iteration.
+
+---
+
+## Pipeline Conformance
+
+§23 conforms: `x |> f` → `f(x)`; `x |> f(a)` → `f(x, a)`; `x |> r.m(a)` →
+`r.m(x, a)`; non-call callable `x |> c` → `c(x)`; parse-time desugaring;
+left-associativity and lowest precedence; left-to-right evaluation; and
+`E3001` when the right operand is not callable.
+
+---
+
+## Method Conformance
+
+§24 conforms **after a fix**: explicit method calls on a known receiver are
+validated against the shared registry; no-parentheses member access on a
+non-struct receiver is a zero-argument method call and is now validated
+against the same registry; struct receivers are field reads. The dead runtime
+aliases `up`/`down` are now unreachable through the pipeline, so §34.3's claim
+is accurate.
+
+---
+
+## Built-in / Standard Library Conformance
+
+The §24.1 method inventory and §25 built-in inventory were generated from
+`src/stdlib/signatures.rs` and match the registry exactly: 34 built-ins and 30
+method entries. Names, arity bounds, argument classes, and declared return
+types agree with the checker and the runtime. The registry/implementation
+drift items (`json_*` bypassing the shared `arity()` helper; the
+`stdlib::arity` fallback) do **not** cause semantic divergence through the
+public pipeline because the checker validates first; they remain internal
+cleanup debt.
+
+---
+
+## Declaration and Hoisting Conformance
+
+§26 conforms: forward references to functions, structs, enums, and aliases;
+source-order evaluation of constants and top-level expressions; a constant
+cannot read a later constant (`E2003`) while functions may; `E2007`/`E2012`/
+`E2013` for duplicate declarations; and `as` reserved but unconsumed.
+
+---
+
+## REPL Conformance
+
+§29 conforms: persistent bindings, functions, structs, enums, aliases, and
+mutation across submissions; checking against all prior declarations; a failed
+submission leaving the session unchanged (verified for a redeclaration and for
+runtime errors); bare-expression display and silent declarations; `:quit`/
+`:help`/EOF; module mode per submission; and `E2007` on redefinition. The REPL
+shares the parser, checker, and interpreter with the file front end.
+
+---
+
+## Error-Model Conformance
+
+§30 conforms. All thirty-two codes in §30.2 are produced by a reachable path;
+the code set in `src/error.rs` matches the specification except `E5003`, which
+§30.2/§34.3 correctly exclude as unused. `E4099` is used only as an internal
+throw-crossing signal and never surfaces. Diagnostics carry a code, a span, and
+a message; they are deterministic; runtime diagnostics are terminal and not
+catchable; and `E4999` is unreachable (zero occurrences across the arithmetic
+and comparison sweeps).
+
+Three error-model issues were found:
+* `E4030` was not covered by the reachability test → **TEST GAP, fixed**.
+* The specification's §30.4 and §34.4 described the `E4030` `errors.md`
+  example as still inaccurate, although it had been corrected in the previous
+  phase → **STALE SPECIFICATION STATEMENT, fixed**.
+* Recursive aliases crashed before producing a diagnostic → **IMPLEMENTATION
+  BUG, fixed** (now `E3002`).
+
+---
+
+## Resource-Safety Conformance
+
+§31 conforms. The semantic AST-node limit and the parser recursion backstop
+are distinct mechanisms with a single `E1015` diagnostic; the call-frame limit
+is `E4011`; range materialization is capped at 10,000,000. Boundary probes
+(deep flat chains, nested lists, nested maps, nested calls, nested `if`,
+parentheses) all terminate with `E1015` or `E4013`, never a host crash. The
+one host-crash path found was the recursive alias (a checker defect), now
+fixed.
+
+---
+
+## Python Boundary Conformance
+
+§32 conforms (verified with the `py` feature): `None`/`bool`/`int`/`float`/
+`str`/`list`/`dict` convert; `bool` is checked before `int`; an out-of-range
+Python integer is `E4013`; `2**63 - 1` round-trips; a non-string dict key is
+`E5002`; `nan`/`inf` cross as floats; structs and ranges cannot cross
+(`E5002`); opaque objects become repr strings. No silent data loss was found.
+
+---
+
+## CLI / Library / REPL Conformance
+
+§28 conforms. `aura run` (program mode), `aura check` / `aura eval` (module
+mode), the library entry points, and the REPL share one parser, checker, and
+interpreter. The only differences are the `main` requirement, output
+presentation, and REPL persistence. `main` with parameters is `E2011`; a
+missing `main` in program mode is `E4027`; `main`'s value is discarded;
+top-level expressions and constants run in source order before `main`.
+
+---
+
+## Documentation Drift
+
+| Location | Claim | Reality | Classification |
 |---|---|---|---|
-| `fn_decl` | `fn_item` | `Item::Fn` | yes |
-| `struct_decl` | `struct_item` | `Item::Struct` | yes |
-| `enum_decl` | `enum_item` | `Item::Enum` | yes |
-| `type_alias` | `alias_item` | `Item::Alias` | yes |
-| `use_decl` | `use_item` | `Item::Use` | yes |
-| `const_decl` | `const_item` | `Item::Const` | yes |
-| `expr_stmt` | `item` default | `Item::Expr` | yes |
-| `let_stmt` | `stmt_inner` | `Stmt::Let` | yes |
-| `assign_or_expr` | `stmt_inner` | `Stmt::Assign`/`Expr` | yes |
-| `return/throw/break/continue` | `stmt_inner` | `Stmt::*` | yes |
-| `while/loop/for` | `stmt_inner` | `Stmt::*` | yes |
-| `try_stmt` | `stmt_inner` | `Stmt::Try` | yes |
-| `expr` / operators | `expr_bp`, `unary`, `postfix`, `atom` | `Expr::*` | yes |
-| patterns | `pattern` | `Pattern::*` | yes |
-| f-string | `fstring` | `Expr::FStr` | yes |
+| README "Functional core" | multiline `\|>` pipeline | a `\|>`-led continuation line is `E1006` | DOCUMENTATION DRIFT → fixed |
+| README "One spelling" | named arguments for `struct` **and enum** | enum payloads are positional; named rejected | DOCUMENTATION DRIFT → fixed |
+| README checker note | linked `§11` | should be `§2.3`, `§6` | DOCUMENTATION DRIFT → fixed |
+| README `E4030`/`errors.md` | (spec claimed drift) | already fixed in prior phase | SPECIFICATION ERROR → fixed |
+| contract.md §6 | table omitted `E2015` | checker emits `E2015` | DOCUMENTATION DRIFT → fixed |
 
-**Grammar drift found: none.** `docs/grammar.md` and the parser agree on all
-productions, including the corrected pipeline note.
-
-One reserved token is not reachable through any production: `Tok::As`
-(recorded as implementation debt; `use a as b` fails to parse).
+No further contradictions were found in `docs/contract.md`, `docs/errors.md`,
+or `docs/grammar.md`.
 
 ---
 
-## AST Coverage
+## Example Conformance
 
-| AST construct | Parser source | Checker | Runtime | Spec section | Tests |
-|---|---|---|---|---|---|
-| `Lit` | literals | `infer` | value | §3.6, §5 | lexer/run |
-| `Name` | identifiers | resolution | env/fn/native | §26 | run/checker |
-| `FStr` | f-string | inner exprs | display concat | §3.6.4 | run |
-| `Unary` | `-x`/`not x` | infer | neg/truthiness | §9.2 | run |
-| `Binary` | operators | orderability | total dispatch | §9 | run/regressions |
-| `Call` | `f(...)` | builtin sig / resolve | call | §15, §25 | run/regressions |
-| `Method` | `r.m(...)` | method sig | dispatch | §24 | run/regressions |
-| `Field` | `r.f` | receiver | field / 0-arg method | §24 | run |
-| `Index` | `b[i]` | operands | get/set | §9.5 | run/boundaries |
-| `List` | `[...]` | elements | `Value::List` | §20.1 | run |
-| `Map` | `{k:v}` | entries | string keys enforced | §20.2 | run |
-| `Construct` | `C(...)`/`C{...}` | full validation | struct/variant | §17, §18 | regressions |
-| `Tuple` | `(a,b)` | elements | lowers to list | §21 | run |
-| `Lambda` | lambdas | scope reset | closure | §15.4 | run/adversarial |
-| `Pipe` | `x \|> y` (non-call) | operands | `call_value` | §23 | grammar |
-| `If` | `if/else` | cond+branches | branch value | §14.2 | run |
-| `Match` | `match` | patterns | first match | §19 | run |
-| `Block` | `{...}` | scope | last value | §14 | run |
-
-**No dead AST variants.** Every variant is constructed by the parser and has a
-checker and runtime path. `Expr::Pipe` is produced only for a pipeline whose
-right operand is not a call/method (for example `5 |> 3`), and the runtime
-handles it.
+All four `examples/*.aura` files parse, check, and run (`tests/examples.rs`).
+They are consistent with the specification. The one invalid example found was
+in the README (fixed above), not in `examples/`.
 
 ---
 
-## Type-System Coverage
+## Differential Testing
 
-The type universe was taken from `Ty` (`src/types.rs`) and `Value`
-(`src/run/value.rs`). Properties (representation, equality, ordering, indexing,
-iteration, callability, mutability) are tabulated in §5.3 and §13. The
-compatibility matrix in §8 is grounded in `Ty::compatible_with` and the
-regression tests.
+Targeted differential checks were run around operators, types, struct and enum
+construction, aliases, collections, control flow, and methods:
 
-Key facts frozen: `int`/`float` are not annotation-compatible; `Unknown` is
-compatible with everything; struct types are nominal; maps are string-keyed;
-`none` infers `Unknown`.
-
----
-
-## Operator Matrix Verification
-
-Every operator was exercised against every relevant operand kind on the built
-binary; the §9 matrix records the observed result or diagnostic. Coverage
-includes:
-
-* `+ - * / % ^` across `int`, `float`, mixed, `string`, `list`, and
-  incompatible pairs;
-* `/` and `%` by zero for `int` and `float`, including `-0.0`;
-* `^` with negative and huge exponents;
-* `== !=` across all value kinds, including cross-type and `NaN`;
-* `< <= > >=` across ordered kinds and the rejection of non-ordered kinds;
-* unary `-` and `not`;
-* short-circuit `and`/`or`.
-
-No operator/type combination fell into `E4999`.
+* **checker accepts → runtime `E1xxx`/`E4999`**: none.
+* **checker rejects → runtime would succeed**: none.
+* **checker accepts → runtime dynamic error** (`E3001`, `E4007`): expected and
+  documented under the `Ty::Unknown` boundary (§2.3), not a contradiction.
+* The property/differential suite (`tests/property.rs`, 2048 cases) passes.
 
 ---
 
-## Evaluation-Order Verification
+## Findings
 
-Evaluation order was confirmed by side-effecting probes: argument order,
-binary operand order, list/map element order, assignment order, `if`/`match`
-selection, and short-circuit. All are strictly left-to-right deterministic,
-as specified in §13. Determinism across runs is covered by
-`tests/property.rs`.
+### F1 — IMPLEMENTATION BUG (P1, host crash): recursive type alias
 
----
+* **Location:** `src/check/mod.rs`, `resolve_type_expr`.
+* **Reproduction:** `type A = A` (or `type A = B; type B = A`, or a cycle
+  through `[A]`, `{string: A}`, `A | none`).
+* **Evidence:** `thread 'main' has overflowed its stack` on both `check` and
+  `run`.
+* **Impact:** any valid-looking program could crash the host, violating §31.5
+  and §7.
+* **Resolution:** cycle detection with a visited set; rejected with `E3002`
+  ("recursive type alias `X` has no concrete target"). Regression test
+  `recursive_type_alias_is_rejected_not_a_crash`.
 
-## Control-Flow Verification
+### F2 — IMPLEMENTATION BUG: no-paren method not validated
 
-`return`, `break`, `continue`, `throw` propagation through blocks, loops,
-`if`, `match`, lambdas, and function calls was exercised. `finally` precedence
-was re-confirmed for `return`, `throw`, `break`, and `continue`, including the
-rule that a control-flow signal in `finally` replaces the pending outcome.
-`catch`-only-`throw` (runtime diagnostics are not catchable) was confirmed.
+* **Location:** `src/check/mod.rs`, `Expr::Field` handling.
+* **Reproduction:** `"x".nope` (checker accepts, runtime `E2003`); `"x".up`
+  and `"X".down` (accepted and executed via dead runtime aliases).
+* **Evidence:** §24 states unknown methods on known receivers are `E2003` at
+  check time, and that `receiver.name` without parens is a method call.
+* **Impact:** checker/runtime divergence; dead aliases reachable; violates
+  "one spelling per construct".
+* **Resolution:** the checker now validates no-paren member access against the
+  shared method registry when the receiver type is known. Regression test
+  `no_paren_method_exists_is_checked`.
 
----
+### F3 — TEST GAP: `E4030` not in the reachability test
 
-## Function and Closure Verification
+* **Location:** `tests/grammar.rs`, `error_samples`.
+* **Evidence:** §30.2 lists `E4030` as normative; the reachability test that
+  proves documented codes are producible omitted it.
+* **Resolution:** added `E4030` with the reachable form
+  `let x = if true { return 1 } else { 2 }`.
 
-Declaration, first-class values, arity, recursion, and mutual recursion were
-confirmed. Closure capture by reference and mutation visibility were confirmed
-by probe (`f()` and the outer binding both observe the mutation). The
-specification records this as normative to the extent observed and does not
-invent a lifetime model.
+### F4 — SPECIFICATION ERROR: dangling internal cross-references
 
-Static gaps (call-argument checking, field-type propagation) are documented as
-limitations rather than guarantees.
+* **Location:** `docs/LANGUAGE_SPEC.md`.
+* **Evidence:** sixteen `§n` references pointed at non-existent or wrong
+  sections (e.g. `§22.8`, `§24.6`, `§34.7`, `§36`, `§38`, `§40`, `§44`,
+  `§32`, `§10.2`, `§11`, `§13`, `§29`, `§34`, `§31`, `§21`).
+* **Resolution:** all references corrected; a reference-integrity check now
+  shows no dangling section references.
 
----
+### F5 — SPECIFICATION GAP: compound-assignment target evaluated twice
 
-## Struct Verification
+* **Location:** §13 evaluation order.
+* **Evidence:** `l[e("idx", i)] += e("rhs", 5)` prints `rhs` then `idx` twice.
+* **Resolution:** §13 now states normatively that the target subexpressions are
+  evaluated twice. No code changed.
 
-Construction was verified for named and positional forms, correct types,
-wrong types, unknown fields, missing fields, duplicate fields, extra
-(positional) fields, nested structs, structs in lists, and structs returned
-from functions. Checker and runtime agree on every case. Field assignment and
-mutation through aliases were confirmed. Equality and display were confirmed.
+### F6 — DOCUMENTATION DRIFT: README pipeline example
 
----
+* **Location:** `README.md` "Functional core".
+* **Evidence:** the multiline `|>` example is `E1006`; the named-enum-argument
+  sentence contradicts §18.2; a section reference pointed at §11.
+* **Resolution:** example rewritten on one line; enum claim corrected; the
+  reference fixed to §2.3/§6.
 
-## Enum Verification
+### F7 — DOCUMENTATION DRIFT: contract table omitted `E2015`
 
-Declaration, zero- and multi-payload variants, positional construction, named
-rejection, payload arity and type checking, payload extraction by `match`,
-equality, and display were confirmed. The zero-payload construction detail
-(`A()` required in expression position; bare `A` is a name error) is frozen in
-§18.2. Global tag uniqueness (`E2013`) was confirmed.
+* **Resolution:** added `E2015` to the contract's check-time table.
 
----
+### F8 — ARCHITECTURE DEBT (recorded, not fixed)
 
-## Match Verification
-
-Arm ordering, guards, bindings, list and variant patterns, duplicate-binding
-rejection, unknown-variant rejection, non-exhaustiveness (`E4029`), and
-control-flow propagation from arms were verified. The block requirement for
-bare control-flow arm bodies is documented.
-
----
-
-## Loop and Range Verification
-
-`while`, `loop`, `for` over lists/strings/maps/ranges, `break`, `continue`,
-`return` from loops, laziness of `range` iteration, empty and descending
-ranges, negative bounds, and the materialization cap were verified. Maps
-iterate in ascending key order.
-
----
-
-## Pipeline Verification
-
-`x |> f`, `x |> f(a)`, `x |> r.m(a)`, and `x |> c` were verified with
-observable results. Left-associativity and precedence relative to binary
-operators were verified. The desugaring is at parse time, and the surviving
-`Expr::Pipe` path (non-call target) was verified to produce `E3001` when the
-target is not callable.
+`up`/`down` runtime aliases; `json_*` bypassing `arity()`; the
+`stdlib::arity` fallback; unused `Tok::As`; unused `E5003`; `E4099` internal
+signal; `Expr::Tuple` lowering; `Expr::Field` conflating field and method. None
+causes semantic divergence through the public pipeline.
 
 ---
 
-## Built-in / Method Verification
+## Fixes Applied
 
-The builtin and method inventories in §24 and §25 were generated from
-`src/stdlib/signatures.rs` (the shared registry), not from stale prose.
-Arity/type checking agreement between checker and runtime was verified. The
-registry/implementation drift items (unreachable `up`/`down` aliases;
-`json_*` bypassing the shared arity helper) are recorded as architecture debt,
-not language surface.
+| Finding | Change | File |
+|---|---|---|
+| F1 | alias-cycle detection → `E3002` | `src/check/mod.rs` |
+| F2 | validate no-paren member access against the registry | `src/check/mod.rs` |
+| F3 | add `E4030` reachability sample | `tests/grammar.rs` |
+| F4 | correct sixteen dangling section references; remove stale §34.4 | `docs/LANGUAGE_SPEC.md` |
+| F5 | document compound-assignment double evaluation | `docs/LANGUAGE_SPEC.md` |
+| F6 | fix invalid pipeline example, enum claim, section link | `README.md` |
+| F7 | add `E2015` to the check-time table | `docs/contract.md` |
 
----
-
-## REPL Verification
-
-A multi-submission session confirmed persistence of bindings, functions,
-structs, enums, and aliases, and confirmed that a failed submission does not
-corrupt the session. Output behavior (bare-expression echo; declarations
-silent) and `:quit`/`:help` were confirmed. This is now normative (§29).
+No feature was added; no limit was removed.
 
 ---
 
-## Error Model Verification
+## Tests Added
 
-Every documented code was cross-referenced with `src/error.rs`; the
-reachability test (`tests/grammar.rs::every_documented_error_code_is_reachable`)
-passes for all listed codes. Two discrepancies were found:
+* `tests/regressions.rs::recursive_type_alias_is_rejected_not_a_crash`
+* `tests/regressions.rs::no_paren_method_exists_is_checked`
+* `tests/grammar.rs`: `E4030` added to the reachability sample list.
 
-* `E4030`'s documented trigger (`let x = return 1`) is a parse error; the code
-  is reachable via `let x = if true { return 1 } else { 2 }`. Fixed in
-  `docs/errors.md`.
-* `E5003` is defined but never produced; recorded as implementation debt and
-  excluded from the normative surface.
-
-`E4099` is internal (a throw crossing a call boundary) and never user-visible;
-recorded as such.
-
----
-
-## Resource-Safety Verification
-
-The semantic AST-node limit (256), the parser recursion backstop, the call
-frame limit (512), and the range materialization cap (10,000,000) were
-confirmed by boundary probes at limit−1 / limit / limit+1 across flat chains,
-nested lists, parentheses, maps, calls, blocks, `if`, lambdas, and `match`. No
-input produced a host crash; all over-limit inputs produced `E1015`/`E1013`-
-family diagnostics. Twenty malformed adversarial inputs produced no panic; a
-deep-input sweep terminated deterministically.
-
-The conceptual distinction between the semantic AST-node limit and the parser
-recursion backstop is explicitly resolved in §31.
-
----
-
-## Python Boundary Verification
-
-Conversion in both directions was reviewed. Out-of-range Python integers are
-rejected (`E4013`); non-string dict keys are rejected (`E5002`); opaque
-objects become repr strings. `nan`/`inf` cross as floats. The `no-py` build
-exposes the same names with `E5002`. Covered by `tests/python.rs` and
-`tests/regressions.rs`.
-
----
-
-## CLI / Library / REPL Consistency
-
-`aura run` (program mode), `aura check`/`aura eval` (module mode), the library
-functions, and the REPL share one parser, checker, and interpreter. The only
-intended differences are the `main` requirement, output presentation, and REPL
-persistence; these are documented in §28.5 and §29.
-
----
-
-## Documentation Cross-Check
-
-| Topic | LANGUAGE_SPEC | contract.md | implementation | tests | Status |
-|---|---|---|---|---|---|
-| primitives & compounds | §5 | §2 | `Ty`/`Value` | yes | RESOLVED |
-| annotations enforced where provable | §6, §11 | §2 | `check` | yes | RESOLVED |
-| transparent aliases | §7 | §10 | `resolve_type_expr` | yes | RESOLVED |
-| operator semantics | §9 | §4/§7 | `binary`/`numeric` | yes | RESOLVED |
-| `%` by zero | §10.6 | §7 | `numeric` | regressions | RESOLVED |
-| nesting limit | §31 | §7 | parser/check/run | boundaries | RESOLVED |
-| equality incl. functions | §11 | §7 | `equals` | contract/regressions | RESOLVED |
-| ordering | §12 | §7 | `cmp_val` | regressions | RESOLVED |
-| `finally` precedence | §14.6 | §7 | `Stmt::Try` | run | RESOLVED |
-| struct construction | §17 | §3 | checker/runtime | regressions | RESOLVED |
-| enum positional payloads | §18 | §3 | checker/runtime | regressions | RESOLVED |
-| pipeline insertion | §23 | §4 | `desugar_pipe` | grammar | RESOLVED |
-| no-paren method call | §24 | (was silent) | `Expr::Field` | run | RESOLVED (now specified) |
-| tuple is list | §21 | grammar note | `eval_inner` | run | RESOLVED (now specified) |
-| empty-map limitation | §20.3 | (silent) | parser | boundaries | RESOLVED (now specified) |
-| REPL persistence | §29 | (silent) | `repl.rs` | repl | RESOLVED (now specified) |
-| `pub`/`use` inert | §27 | §10 | parser | run | RESOLVED |
-| `E4030` example | §30.4 | — | runtime | grammar | DOCUMENTATION DRIFT → fixed in errors.md |
-| `E5003` unused | §34.3 | — | `error.rs` | — | IMPLEMENTATION DEBT (recorded) |
-| `else`/`catch`/`finally` same line | §3.7 | (was silent) | parser | run | RESOLVED (now specified) |
-
----
-
-## Specification Contradictions Found
-
-During drafting, potential self-contradictions were actively searched:
-
-* "optional annotations" vs "annotations statically enforced" — resolved by
-  §6.2 (enforcement positions) and §6.4 (`Unknown`).
-* "nesting depth" vs "AST-node budget" — resolved by §31 (two mechanisms,
-  one diagnostic).
-* "enum arguments may be named" vs "positional" — resolved by §18.2
-  (positional; named rejected).
-* "maps orderable" vs "not orderable" — resolved by §12 (not orderable).
-* "functions by value" vs "by identity" — resolved by §11 (identity).
-* "REPL persistent" vs "isolated" — resolved by §29 (persistent).
-* "all errors at check time" vs runtime-only `Unknown` — resolved by §2.3 and
-  §6.4.
-
-No unresolved contradictions remain in the specification.
-
----
-
-## Implementation Contradictions Found
-
-None that required a code change. The implementation already matched the
-intended semantics on every audited surface after the Semantic Closure commit.
-The only discrepancies were documentation-level:
-
-1. `docs/errors.md` `E4030` example was wrong → corrected.
-2. `README.md` overstated static checking → clarified with a pointer to the
-   specification.
-3. `docs/contract.md` claimed sole normativity → now defers to
-   `LANGUAGE_SPEC.md`.
-
-One further **specification gap** was found while drafting and is now
-normative: `else`, `catch`, and `finally` must appear on the same line as the
-closing `}` of the block they follow (a newline before them is `E1006`). This
-was implemented behavior that no document stated; it is now frozen in §3.7 and
-noted in `docs/grammar.md`.
-
----
-
-## Resolved Decisions
-
-Frozen into §33: function identity equality; positional enum payloads;
-transparent aliases; REPL persistence; `finally` precedence; pipeline receiver
-insertion; struct validation and unknown-field rejection; float remainder by
-zero; nesting/resource limits; list-sugar tuples; `{}` as a block; inert
-`pub`/`use`; `try` requiring `catch`; global enum tags; no-paren method calls;
-string-keyed ordered maps; reference semantics for lists/maps/structs.
-
----
-
-## Deferred Decisions
-
-No language decision is left unresolved in a way that blocks the
-specification. Two areas are explicitly **not** generalized:
-
-* **Closure lifetime/ownership.** Aura exposes no ownership concept; capture is
-  by reference and environments are kept alive by reference counting. The
-  specification freezes only what is observable and does not invent a lifetime
-  model.
-* **Empty-map spelling.** The limitation is recorded; choosing a new spelling
-  would be a language-design change, which this phase does not make.
-
----
-
-## Known Limitations
-
-Recorded in §34: no empty-map literal; no tuple type; no `try` without
-`catch`; `match` control-flow needs a block; no named/default/variadic
-parameters; no nested named functions; no `else if`; no range step or
-`for…else`; no lexicographic ordering for compound values; user-function call
-arguments not statically checked; field reads infer `Unknown`; `if`/`match`/
-lambda infer `Unknown`; `E5003` unused; `E4099` internal; `Tok::As` unused;
-unreachable `up`/`down` runtime aliases; stale `E4030` example (now fixed).
+The 151-test baseline is retained and expanded.
 
 ---
 
 ## Remaining Architecture Debt
 
-* Runtime method aliases `up`/`down` absent from the signature registry.
-* `Tok::As` lexed but no production consumes it.
-* `json_encode`/`json_decode` bypass the shared `arity()` helper.
-* `stdlib::arity` retains a min/max fallback beside the registry.
-* `Expr::Tuple` lowers to a list (semantically documented; AST node retained).
-* `Expr::Field` conflates field access and zero-arg method call.
-* `E5003` is a dead constant.
-* `E4099` is a user-invisible signal multiplexed through the public code
-  namespace.
-
-None of these change language semantics; they are recorded for future work.
+Unchanged from the specification phase and recorded here: the `up`/`down`
+aliases (now truly unreachable), `json_*`/`arity()` bypass, `stdlib::arity`
+fallback, `Tok::As`, `E5003`, `E4099`, `Expr::Tuple`, and the `Expr::Field`
+conflation. None violates the specification.
 
 ---
 
-## Test Coverage
+## Remaining Specification Gaps
 
-152 `#[test]` functions across 13 files; 16 `test result: ok` lines on a full
-run (some files have multiple integration binaries / feature-gated suites).
-Semantic-Closure regressions are all present and passing:
+None known after this audit, beyond the documented limitations in §34. The
+`Ty::Unknown` boundary, the static function-argument limitation, the
+empty-map limitation, and the no-tuple and no-step-on-range limitations are all
+explicitly documented.
 
-```
-b1_float_remainder_by_zero_is_an_error
-regression_nesting_limit_boundary
-regression_parenthesis_nesting_is_bounded_not_a_crash
-b3_struct_field_type_validation
-b4_struct_unknown_and_missing_fields
-regression_repl_struct_persistence
-regression_repl_enum_persistence
-regression_repl_alias_persistence
-b6_enum_named_argument_contract
-f01_arithmetic_matrix  (the earlier 151-test baseline is subsumed)
-```
+---
 
-The 151-test baseline from the previous phase is fully retained and expanded
-by the Semantic Closure tests.
+## Remaining Design Decisions
+
+None blocking. The specification does not define closure lifetime/ownership
+(deliberately) or a spelling for the empty map (recorded as a limitation).
+Neither is required for conformance.
 
 ---
 
 ## Verification Commands
 
-Executed against this working tree:
-
 ```
-cargo fmt --all -- --check                                            clean
-cargo test --all-features                                             all pass
-cargo test --no-default-features --features cli,repl,json,regex,time  all pass
+cargo fmt --all -- --check                                             clean
+cargo test --all-features                                              all pass
+cargo test --no-default-features --features cli,repl,json,regex,time   all pass
 cargo clippy --all-targets --all-features -- -D warnings               clean
-cargo clippy --no-default-features --features cli,repl,json,regex,time -- -D warnings   clean
+cargo clippy --no-default-features --features cli,repl,json,regex,time -- -D warnings  clean
 cargo clippy --no-default-features --features cli -- -D warnings       clean
 PROPTEST_CASES=2048 cargo test --test property --all-features          pass
 cargo test --test contract --test examples --all-features              pass
 cargo build --release --no-default-features --features cli,repl,json,regex,time   ok
 cargo +nightly miri test --lib --no-default-features --features cli    pass
 git diff --check                                                       clean
+MSRV (1.83)                                                            NOT verified (toolchain unavailable)
+no-Python build / tests                                                pass
 ```
 
-MSRV (1.83) was **not** verified in this environment: the toolchain is not
-installed. No new API was introduced by this phase (documentation only), so
-the existing MSRV posture is unchanged and CI's MSRV job remains the
-authority.
-
-Additional semantic probes (temporary, removed afterward) confirmed: tuple
-lowering, empty map vs block, no-paren method calls, short-circuit,
-closure capture, evaluation order, map ordering, NaN behavior, integer
-division/remainder signs, range edges, negative indexing, reference semantics,
-zero-payload enum construction, alias chaining, and struct field diagnostics.
+Additional probes (temporary, removed): operator/type matrix (384 combos),
+comparison/equality sweep, differential checker/runtime sweep, recursive-alias
+and no-paren-method cases, REPL session probes, Python-boundary cases,
+resource-limit boundaries, evaluation-order side-effect probes.
 
 ---
 
-## Semantic Readiness Assessment
+## Final Semantic Status
 
-| Area | Status |
-|---|---|
-| Grammar | FROZEN |
-| AST | FROZEN |
-| Types | FROZEN |
-| Operators | FROZEN |
-| Evaluation order | FROZEN |
-| Control flow / `finally` | FROZEN |
-| Functions | FROZEN |
-| Closures | FROZEN WITH DOCUMENTED LIMITATION (no lifetime model) |
-| Structs | FROZEN |
-| Enums | FROZEN |
-| Match | FROZEN |
-| Loops / ranges | FROZEN |
-| Pipeline | FROZEN |
-| Built-ins / methods | FROZEN |
-| REPL | FROZEN |
-| Errors | FROZEN (one doc example corrected; `E5003` excluded) |
-| Resource safety | FROZEN |
-| Python boundary | FROZEN |
-| CLI / library / REPL | FROZEN |
-| Empty-map spelling | FROZEN WITH DOCUMENTED LIMITATION |
-| User-function static call checking | FROZEN WITH DOCUMENTED LIMITATION |
+**FROZEN WITH DOCUMENTED LIMITATIONS.**
 
-**Overall:** the language behavior is sufficiently specified and stable to
-serve as the contract for future feature development. The specification is
-coherent, evidence-backed, and contains no unresolved contradictions. The
-remaining items are documented limitations and architecture debt, not
-semantic uncertainty.
+Across all audited subsystems the implementation now conforms to
+`LANGUAGE_SPEC.md`, with two genuine implementation defects fixed, one test gap
+closed, and specification/documentation drift corrected. The remaining items
+are documented limitations (static function-argument checking, empty-map
+limitation, no tuple/step/lexicographic-ordering) and architecture debt that
+does not affect semantics. The repository is ready for the final semantic
+red-team before feature development.

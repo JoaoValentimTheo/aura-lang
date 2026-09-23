@@ -44,12 +44,12 @@ The language model:
   immutable-assignment, duplicate declarations, provable type mismatches, and
   so on). The checker is conservative and sound: it never rejects a program
   merely because it cannot determine a type. Types it cannot determine are
-  `Unknown` (§10.2).
+  `Unknown` (§2.3).
 * **Runtime role.** The interpreter is the authority on value semantics:
   arithmetic, equality, ordering, indexing, iteration, control flow, and all
   dynamic errors.
 * **Annotations.** Type annotations are optional. When present they are
-  enforced where the checker can prove a mismatch (§11).
+  enforced where the checker can prove a mismatch (§6).
 * **Primitive types.** `int` (64-bit signed), `float` (IEEE-754 binary64),
   `bool`, `string` (UTF-8, indexed by Unicode scalar value), and `none`.
 * **Compound values.** Lists, maps (string-keyed), struct instances, enum
@@ -89,7 +89,7 @@ source (UTF-8 text)
 
 **Normative rule.** A user-visible program is accepted only if it passes
 lexing, parsing, and checking. The three front-end phases MUST each produce
-stable `E####` diagnostics on failure (see §34).
+stable `E####` diagnostics on failure (see §30).
 
 *Implementation note.* The entry points are `lex::lex` (`src/lex/mod.rs`),
 `parse::parse` (`src/parse/mod.rs`), `check::Checker` (`src/check/mod.rs`),
@@ -114,7 +114,7 @@ type rule is simply not applied; any resulting failure is a runtime error.
 
 **Normative rule.** The checker MAY reject a construct when the inferred type
 is definitely incompatible with a required type. "Definitely incompatible"
-means both types are known and not compatible under §13.
+means both types are known and not compatible under §8.
 
 This boundary is exact: the checker statically knows a type only for
 literal values, annotated names, names bound to expressions of statically
@@ -196,7 +196,7 @@ comment.
 64-bit integer (`i64`). A literal whose value exceeds `i64::MAX` is a lexical
 error (`E1002`), with one exception: the decimal magnitude
 `9223372036854775808` is tokenized specially and is valid **only** as the
-operand of a unary minus, where it denotes `i64::MIN` (§15.2).
+operand of a unary minus, where it denotes `i64::MIN` (§10.2).
 
 **Normative rule.** A number MUST NOT be immediately followed by an
 identifier character; `1abc` is an error (`E1002`), never two tokens.
@@ -215,7 +215,7 @@ overflows the format (for example `1e309`) denotes positive infinity; it is
 not rejected.
 
 **Normative rule.** There is no literal spelling for `NaN` and none for
-infinity (`inf` is produced only by arithmetic; see §15.5).
+infinity (`inf` is produced only by arithmetic; see §10.7).
 
 *Evidence:* `Lexer::number` (`src/lex/mod.rs`); `format_float`
 (`src/run/value.rs`).
@@ -311,7 +311,7 @@ use_decl      = "use" IDENT { "." IDENT } terminator ;
 ```
 
 **Normative rule.** `pub` is accepted on any item and is semantically inert
-(§40). `use` is parsed and inert (§40).
+(§27). `use` is parsed and inert (§27).
 
 ### 4.2 Declarations
 
@@ -365,7 +365,7 @@ try_stmt      = "try" block "catch" IDENT "->" block [ "finally" block ] ;
 ```
 
 **Normative rule.** `catch` is mandatory after `try`. There is no `try`
-without `catch` (§21).
+without `catch` (§14.5).
 
 **Normative rule.** `if` and `match` are expressions, not statements; they are
 reached through `assign_or_expr` (`expr`).
@@ -426,14 +426,14 @@ match_arm       = pattern [ "if" expr ] "->" ( block | expr terminator ) ;
 ```
 
 **Normative rule.** `x |> f(a)` desugars, at parse time, to `f(x, a)`;
-`x |> r.m(a)` desugars to `r.m(x, a)`; `x |> f` desugars to `f(x)`. See §31.
+`x |> r.m(a)` desugars to `r.m(x, a)`; `x |> f` desugars to `f(x)`. See §23.
 
 **Normative rule.** `IDENT "(" ... ")"` is a *call* when the identifier's
 first character is lowercase and a *variant construction* when it is uppercase.
 `IDENT "{" ... "}"` is a struct literal only when the identifier is uppercase.
 
 **Normative rule.** `(a, b)` with a comma is a *list of the given elements*
-(§29); `(expr)` without a comma is a grouping expression and produces no
+(§21); `(expr)` without a comma is a grouping expression and produces no
 distinct value.
 
 **Normative rule.** `else if` is not part of the grammar; it is diagnosed as
@@ -508,7 +508,7 @@ type, and `Unknown` the "not determined" type.
 | Mutable | value | value | value | value | **shared** | **shared** | **shared fields** | value | value | value |
 
 "Shared" means the value is a reference held through `Rc<RefCell<…>>`; passing
-or binding it aliases the same storage (§24.6).
+or binding it aliases the same storage (§16.6).
 
 ---
 
@@ -544,7 +544,7 @@ with the value's inferred type) in exactly these positions:
 
 **Normative rule.** A function's parameter annotations are recorded and used
 when typing the body, but call arguments are **not** checked against parameter
-annotations in this version (§22.8). This is a documented limitation, not a
+annotations in this version (§15.7). This is a documented limitation, not a
 language guarantee.
 
 ### 6.3 Compatibility
@@ -591,12 +591,13 @@ otherwise).
 checker resolves them transitively.
 
 **Normative rule.** Aliases are visible throughout a module and, in the REPL,
-across later submissions (§38).
+across later submissions (§29).
 
-**Normative rule.** Alias resolution recurses through compound positions but
-the language does not require or define recursive alias definitions; a
-recursive alias is not expressible because a `type` target cannot directly
-refer to the alias being defined in a way the checker accepts.
+**Normative rule.** Alias resolution recurses through compound positions
+(`[T]`, `{string: V}`, `T | none`). A **recursive alias** — a `type` whose
+target refers, directly or through other aliases, to itself — has no concrete
+target and MUST be rejected with `E3002`; it MUST NOT recurse without bound or
+crash the host.
 
 *Implementation note.* The checker stores alias targets and substitutes them
 with `resolve_type_expr`; the interpreter has no alias table.
@@ -712,7 +713,7 @@ kinds.
 ### 9.6 Field access and method calls
 
 **Normative rule.** `receiver.field` on a struct instance reads the field. On
-any other value, `receiver.name` is a **zero-argument method call** (§32).
+any other value, `receiver.name` is a **zero-argument method call** (§24).
 
 ---
 
@@ -901,6 +902,12 @@ all constructs. In particular:
 **Normative rule.** Evaluating an expression never evaluates an operand that
 the semantics do not require (short-circuiting).
 
+**Normative rule.** A compound assignment `target op= e` evaluates `e` once,
+then evaluates the target's subexpressions to read its current value, then
+evaluates them again to write the result. The target subexpressions are
+therefore evaluated twice. (This mirrors the implementation; do not rely on a
+side-effecting target subexpression being evaluated only once.)
+
 *Evidence:* `eval_inner` and `exec_stmt` (`src/run/mod.rs`); verified in
 `tests/property.rs` determinism checks.
 
@@ -1071,7 +1078,7 @@ syntax.
 ### 15.6 Recursion
 
 **Normative rule.** Named top-level functions are hoisted and may be
-mutually recursive. Recursion is bounded by the call-frame limit (§34.7):
+mutually recursive. Recursion is bounded by the call-frame limit (§31.3):
 exceeding 512 active calls is `E4011`.
 
 ### 15.7 Arity and arguments
@@ -1379,9 +1386,9 @@ bounds are permitted.
 **Normative rule.** `len(range(a, b))` is `max(0, b - a)` computed with
 saturating arithmetic.
 
-**Normative rule.** Ranges support `+`-defined ordering? — no: ranges are not
-orderable. Ranges compare by equality (start, end). Iterating a range yields
-its integers in increasing order.
+**Normative rule.** Ranges are not orderable. Ranges compare by equality
+(`start` and `end`). Iterating a range yields its integers in increasing
+order.
 
 ### 22.2 Iteration laziness
 
@@ -1540,7 +1547,7 @@ argument classes are normative. Return types marked `dynamic` are
 | `enumerate` | 1 | list | `[[int, T]]` | index/value pairs |
 | `zip` | 2 | list, list | `[[T, U]]` | pairs, shortest length |
 
-**Python bridge** (see §36):
+**Python bridge** (see §32):
 
 | Name | Arity | Arguments | Notes |
 |---|---|---|---|
@@ -1653,7 +1660,7 @@ compile mode and output capture. A caller MAY also use `compile` +
 and one interpreter. A given source string MUST produce the same checking
 verdict, the same result, and the same diagnostic code across these surfaces,
 except for the intended differences of §28.1 (the `main` requirement), output
-presentation, and REPL session persistence (§38).
+presentation, and REPL session persistence (§29).
 
 *Evidence:* `src/lib.rs`, `src/main.rs`, `src/repl.rs`.
 
@@ -1755,7 +1762,7 @@ semantics (`E2007`).
 | E5002 | Python bridge unavailable / value cannot cross |
 
 *E5003 is defined in the implementation but is not currently produced; it is
-not part of the normative surface (see §44).*
+not part of the normative surface (see §34.3).*
 
 ### 30.3 Error properties
 
@@ -1772,13 +1779,14 @@ values (§14.5). Only an explicit `throw` is a value.
 syntactically valid, well-formed program. The two occurrences in the operator
 dispatch are unreachable for any input.
 
-### 30.4 Known implementation gaps in this section
+### 30.4 Error-code reachability
 
-**DOCUMENTATION DRIFT (recorded, not a language rule).** The example trigger
-listed for `E4030` in `docs/errors.md` (`let x = return 1`) in fact produces a
-parse error (`E1006`). `E4030` *is* reachable, for example via
-`let x = if true { return 1 } else { 2 }`. The code is normative; the old
-example was inaccurate.
+**Normative rule.** Every code listed in §30.2 is reachable from a
+syntactically valid program and is covered by
+`tests/grammar.rs::every_documented_error_code_is_reachable`. `E4030` is
+produced when a `return` (or `break`/`continue`/`throw`) raised while computing
+an expression escapes to a position where a value is required, for example
+`let x = if true { return 1 } else { 2 }`.
 
 *Evidence:* `codes` (`src/error.rs`); `docs/errors.md`;
 `tests/grammar.rs::every_documented_error_code_is_reachable`.
@@ -1941,12 +1949,11 @@ implementers do not assume guarantees the language does not make.
 * **`E5003`** is defined but unused and is not part of the normative surface.
 * **`E4099`** is an internal signal, not a user-facing code.
 * **`Tok::As`** is lexed but no construct consumes it.
-* Runtime method aliases `up`/`down` exist in the interpreter but not in the
-  signature registry and are unreachable through the normal pipeline.
-
-### 34.4 Documentation limitations
-
-* The `E4030` example in `docs/errors.md` is inaccurate (§30.4).
+* Runtime method aliases `up`/`down` exist in the interpreter's dispatch table
+  but not in the signature registry. Because the checker validates both
+  `receiver.name(...)` and no-parentheses `receiver.name` against the
+  registry, they are unreachable through the normal pipeline and are not part
+  of the language.
 
 ---
 

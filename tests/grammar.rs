@@ -173,6 +173,12 @@ fn error_samples() -> Vec<(u16, String)> {
             codes::NO_MATCH,
             "fn main() { print(match 5 { 1 -> \"a\" }) }".to_string(),
         ),
+        // A `return`, `break`, `continue`, or `throw` produced while computing
+        // an expression escapes to value position.
+        (
+            codes::RETURN_POSITION,
+            "fn main() { let x = if true { return 1 } else { 2 } }".to_string(),
+        ),
     ];
     v.push((
         codes::NESTING,

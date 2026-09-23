@@ -247,3 +247,56 @@ fn b6_enum_named_argument_contract() {
         Ok(())
     );
 }
+
+/// A recursive type alias has no concrete target and must be rejected before
+/// execution with `E3002`, never by recursing without bound. (Conformance
+/// audit: the checker previously overflowed the host stack.)
+#[test]
+fn recursive_type_alias_is_rejected_not_a_crash() {
+    assert_eq!(check("type A = A"), Err(codes::UNKNOWN_TYPE));
+    assert_eq!(check("type A = B\ntype B = A"), Err(codes::UNKNOWN_TYPE));
+    assert_eq!(
+        check("type A = B\ntype B = C\ntype C = A"),
+        Err(codes::UNKNOWN_TYPE)
+    );
+    // Cycles through compound positions are cycles too.
+    assert_eq!(check("type A = [A]"), Err(codes::UNKNOWN_TYPE));
+    assert_eq!(check("type A = {string: A}"), Err(codes::UNKNOWN_TYPE));
+    assert_eq!(check("type A = A | none"), Err(codes::UNKNOWN_TYPE));
+    // A non-cyclic chain still resolves.
+    assert_eq!(
+        out("type A = B\ntype B = int\nfn main() { let x: A = 1\n print(x) }"),
+        "1\n"
+    );
+}
+
+/// `receiver.name` without parentheses is a zero-argument method call, so an
+/// unknown method on a known receiver must be rejected by the checker — not
+/// only at runtime. (Conformance audit: the no-paren path bypassed the method
+/// registry, making the dead `up`/`down` aliases reachable.)
+#[test]
+fn no_paren_method_exists_is_checked() {
+    // Known receiver, unknown method: rejected before execution.
+    assert_eq!(
+        check("fn main() { let s = \"x\"\n s.nope }"),
+        Err(codes::UNDEFINED)
+    );
+    assert_eq!(fail("fn main() { print(\"x\".nope) }"), codes::UNDEFINED);
+    // The runtime-only aliases are not part of the language.
+    assert_eq!(
+        check("fn main() { let s = \"x\"\n s.up }"),
+        Err(codes::UNDEFINED)
+    );
+    assert_eq!(
+        check("fn main() { let s = \"X\"\n s.down }"),
+        Err(codes::UNDEFINED)
+    );
+    // A valid no-paren zero-argument method still works.
+    assert_eq!(out("fn main() { print(\"x\".upper) }"), "X\n");
+    assert_eq!(out("fn main() { print([3, 1].sort) }"), "[1, 3]\n");
+    // A struct receiver is a field read, not a method call.
+    assert_eq!(
+        out("struct S { a: int }\nfn main() { print(S { a: 1 }.a) }"),
+        "1\n"
+    );
+}
