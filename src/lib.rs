@@ -52,8 +52,8 @@ where
     match handle.join() {
         Ok(r) => r,
         Err(_) => Err(error::Diag::new(
-            error::codes::RECURSION,
-            "execution aborted: stack exhausted without reaching the recursion limit",
+            error::codes::INTERNAL,
+            "the interpreter thread aborted; this is a bug in Aura, not in your program",
             error::Span::default(),
         )),
     }
@@ -101,15 +101,36 @@ pub fn run_source(src: &str, _file: &str) -> error::Result<String> {
     Ok(text)
 }
 
-/// Compile and run `src`, writing output to the process stdout.
+/// Compile and run `src` without requiring an entry point, writing output to
+/// stdout. Used by `aura eval`, where a bare expression or declaration set is
+/// valid.
 ///
 /// # Errors
-/// Returns the first diagnostic produced by the pipeline.
-pub fn run_source_stdout(src: &str, _file: &str) -> error::Result<()> {
+/// Returns the first front-end or runtime diagnostic.
+pub fn run_toplevel_stdout(src: &str, _file: &str) -> error::Result<()> {
     let src = src.to_string();
     on_interp_thread(move || {
         let module = parse::parse(&src)?;
         check::Checker::module(&module)?;
+        let mut interp = run::Interp::new();
+        interp.run(&module)
+    })
+}
+
+/// Compile and run `src`, writing output to the process stdout.
+///
+/// This is the execution path used by `aura run`: it requires the program to
+/// declare `fn main()` and executes the entry point after loading
+/// declarations.
+///
+/// # Errors
+/// Returns `E4027` when there is no `main`, plus any front-end or runtime
+/// diagnostic.
+pub fn run_program(src: &str, _file: &str) -> error::Result<()> {
+    let src = src.to_string();
+    on_interp_thread(move || {
+        let module = parse::parse(&src)?;
+        check::Checker::module_with_main(&module)?;
         let mut interp = run::Interp::new();
         interp.run(&module)
     })

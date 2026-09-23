@@ -72,7 +72,7 @@ fn cmd_run(path: Option<&str>) -> ExitCode {
         Ok(v) => v,
         Err(c) => return c,
     };
-    match aura::run_source_stdout(&src, &file) {
+    match aura::run_program(&src, &file) {
         Ok(()) => ExitCode::SUCCESS,
         Err(d) => {
             eprintln!("{}", render_with_source(&file, &src, &d));
@@ -100,7 +100,7 @@ fn cmd_eval(code: Option<&str>) -> ExitCode {
         eprintln!("usage: aura eval <code>");
         return ExitCode::from(2);
     };
-    match aura::run_source_stdout(code, "<eval>") {
+    match aura::run_toplevel_stdout(code, "<eval>") {
         Ok(()) => ExitCode::SUCCESS,
         Err(d) => {
             eprintln!("{}", render_with_source("<eval>", code, &d));
