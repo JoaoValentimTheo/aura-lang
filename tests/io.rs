@@ -42,8 +42,7 @@ fn temp_dir(tag: &str) -> PathBuf {
     let mut d = std::env::temp_dir();
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|t| t.as_nanos())
-        .unwrap_or(0);
+        .map_or(0, |t| t.as_nanos());
     d.push(format!("aura_io_{tag}_{nanos}"));
     std::fs::create_dir_all(&d).expect("create temp dir");
     d

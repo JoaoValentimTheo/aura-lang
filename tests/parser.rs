@@ -327,14 +327,9 @@ fn multiple_else_if_parses_as_deep_nesting() {
     let e = parse_expr("if a { 1 } else if b { 2 } else if c { 3 } else { 4 }").expect("parse");
     let mut depth = 0;
     let mut cur = &e;
-    loop {
-        match cur {
-            Expr::If(_, _, Some(els), _) => {
-                depth += 1;
-                cur = els;
-            }
-            _ => break,
-        }
+    while let Expr::If(_, _, Some(els), _) = cur {
+        depth += 1;
+        cur = els;
     }
     // Three conditions => three nested `Expr::If` nodes along the `els` spine.
     assert_eq!(depth, 3);

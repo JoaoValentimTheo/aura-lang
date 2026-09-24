@@ -121,8 +121,8 @@ pub fn run_source(src: &str, _file: &str) -> error::Result<String> {
 ///
 /// # Errors
 /// Returns the first front-end or runtime diagnostic.
-pub fn run_toplevel_stdout(src: &str, _file: &str) -> error::Result<()> {
-    run_toplevel_with(src, _file, Vec::new(), None)
+pub fn run_toplevel_stdout(src: &str, file: &str) -> error::Result<()> {
+    run_toplevel_with(src, file, Vec::new(), None)
 }
 
 /// [`run_toplevel_stdout`] with an explicit execution context (args and stdin).
@@ -148,8 +148,8 @@ pub fn run_toplevel_with(
 /// # Errors
 /// Returns `E4027` when there is no `main`, plus any front-end or runtime
 /// diagnostic.
-pub fn run_program(src: &str, _file: &str) -> error::Result<()> {
-    run_program_with(src, _file, Vec::new(), None)
+pub fn run_program(src: &str, file: &str) -> error::Result<()> {
+    run_program_with(src, file, Vec::new(), None)
 }
 
 /// [`run_program`] with an explicit execution context (args and stdin): the
