@@ -2,7 +2,8 @@
 //!
 //! Aura checks are conservative but complete: every name used must be
 //! declared, every assignment must target a `let mut` binding, and every
-//! forbidden construct (e.g. `else if`) is rejected by the parser.
+//! forbidden construct (e.g. `break` outside a loop) is rejected by the
+//! parser or reported here.
 
 use std::collections::HashMap;
 

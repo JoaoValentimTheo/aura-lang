@@ -122,8 +122,9 @@ FSTRING         = 'f"' { fchar | "{{" | "}}" | "{" expr "}" } '"' ;
 
 ## Notes
 
-* `else if` does not exist: `if...else if` is `E1014`. Use a nested block or
-  `match`.
+* `else if` is supported: `if A { X } else if B { Y } else { Z }` is the
+  nested form `if A { X } else { if B { Y } else { Z } }`. `else` accepts an
+  expression, so the existing `if_expr` production already covers it.
 * `else`, `catch`, and `finally` must appear on the same line as the closing
   `}` of the block they follow; a newline before them is `E1006`.
 * `&&`, `||`, and `!` do not exist as operators (`E1001`).

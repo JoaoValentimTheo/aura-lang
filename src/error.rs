@@ -96,8 +96,6 @@ pub mod codes {
     pub const UNTERMINATED_STRING: u16 = 1004;
     /// Expected a different token.
     pub const EXPECTED: u16 = 1006;
-    /// `else if` is not part of the language.
-    pub const ELSE_IF: u16 = 1014;
     /// An expression, block, or statement nests too deeply.
     pub const NESTING: u16 = 1015;
     /// A reserved word was used as a name.

@@ -18,7 +18,6 @@ Every rejection carries a stable code. Codes are grouped by phase:
 | E1004 | Unterminated string | `"abc` |
 | E1006 | Expected token | `let = 1`, `fn ()`, `a \| b` |
 | E1009 | Reserved word as name | `let if = 1` |
-| E1014 | `else if` used | `if a {} else if b {}` |
 | E1015 | Expression/statement nests too deeply | a 5000-term expression |
 
 ## Name and rule checking (`E2xxx`, static)

@@ -140,7 +140,9 @@ try { } catch e -> { } finally { }
 throw expr
 ```
 
-* `else if` is **not** allowed; use nested braces or `match`.
+* `else if` is allowed: `if A { X } else if B { Y } else { Z }` is the nested
+  form `if A { X } else { if B { Y } else { Z } }`. Each condition is evaluated
+  at most once, in source order.
 * `else`, `catch`, and `finally` must be written on the same line as the
   closing `}` of the block they follow; a newline before them is `E1006`.
 * `for` iterates lists, strings (characters), maps (keys), and `range(...)`.
@@ -155,7 +157,6 @@ The checker runs before execution and rejects, at minimum:
 | E1002 | malformed number (including `1abc`) |
 | E1004 | unterminated string |
 | E1006 | expected token |
-| E1014 | `else if` used |
 | E2001 | assignment to immutable binding |
 | E2003 | undefined name or function |
 | E2005 | `let` without initializer |

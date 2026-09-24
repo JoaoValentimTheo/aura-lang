@@ -469,3 +469,73 @@ fn variant_tag_equal_to_type_name_matches() {
         "7\n"
     );
 }
+
+// ---------------------------------------------------------------------------
+// FEATURE_006: `else if` runtime behavior (`LANGUAGE_SPEC.md` §4.5).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn else_if_single_and_multiple_clauses() {
+    let src = "fn grade(n) { if n > 90 { return \"A\" } else if n > 80 { return \"B\" } else if n > 70 { return \"C\" } else { return \"F\" } }\n\
+               fn main() { print(grade(95))\n print(grade(85))\n print(grade(75))\n print(grade(10)) }";
+    assert_eq!(out(src), "A\nB\nC\nF\n");
+}
+
+/// A chain with no truthy condition and no final `else` yields `none`.
+#[test]
+fn else_if_without_final_else_yields_none() {
+    assert_eq!(
+        out("fn main() { let x = if false { 1 } else if false { 2 }\n print(x) }"),
+        "none\n"
+    );
+}
+
+/// Conditions are evaluated in source order, at most once, and later
+/// conditions only when all earlier ones were falsy.
+#[test]
+fn else_if_condition_evaluation_order() {
+    let src = "fn c(n) { print(f\"c{n}\")\n return n == 2 }\n\
+               fn main() { if c(1) { print(\"A\") } else if c(2) { print(\"B\") } else if c(3) { print(\"C\") } else { print(\"D\") } }";
+    // c1 falsy, c2 truthy: c3 is never evaluated.
+    assert_eq!(out(src), "c1\nc2\nB\n");
+}
+
+/// Each clause body is its own scope; an inner `let` shadows an outer binding
+/// and does not leak.
+#[test]
+fn else_if_branch_scope_and_shadowing() {
+    let src =
+        "fn main() { let x = 1\n if false { } else if true { let x = 2\n print(x) }\n print(x) }";
+    assert_eq!(out(src), "2\n1\n");
+}
+
+/// `return` through an `else if` returns from the enclosing function.
+#[test]
+fn else_if_return_propagates() {
+    let src = "fn f(n) { if n == 1 { return 10 } else if n == 2 { return 20 } else { return 30 } }\nfn main() { print(f(2)) }";
+    assert_eq!(out(src), "20\n");
+}
+
+/// `throw` through an `else if` is catchable by an enclosing `try`.
+#[test]
+fn else_if_throw_propagates() {
+    let src =
+        "fn main() { try { if false { } else if true { throw \"x\" } } catch e -> { print(e) } }";
+    assert_eq!(out(src), "x\n");
+}
+
+/// `break`/`continue` through an `else if` affect the enclosing loop.
+#[test]
+fn else_if_break_and_continue() {
+    let src = "fn main() { let mut out = 0\n for i in range(0, 10) { if i == 2 { continue } else if i == 5 { break } else { out = out + i } }\n print(out) }";
+    // i = 0,1,3,4 summed; i=2 continued; i=5 breaks.
+    assert_eq!(out(src), "8\n");
+}
+
+/// `finally` runs on the exit path through an `else if` chain.
+#[test]
+fn else_if_try_finally_interaction() {
+    let src = "fn f() -> int { for i in range(0, 3) { try { if i == 1 { break } else if i == 0 { continue } } catch e -> { } finally { print(f\"f{i}\") } }\n return 7 }\nfn main() { print(f()) }";
+    // i=0: continue -> finally prints f0; i=1: break -> finally prints f1; returns 7.
+    assert_eq!(out(src), "f0\nf1\n7\n");
+}

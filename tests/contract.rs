@@ -78,14 +78,6 @@ fn r3_no_synonyms() {
     assert_eq!(output_of("fn main() { print(false or true) }"), "true\n");
 }
 
-#[test]
-fn r3_else_if_is_rejected() {
-    assert_eq!(
-        code_of("fn main() { if true { } else if false { } }"),
-        codes::ELSE_IF
-    );
-}
-
 // ---------------------------------------------------------------- R#4
 
 #[test]
@@ -161,7 +153,6 @@ fn r10_defined_errors_documented() {
         codes::INVALID_ESCAPE,
         codes::UNTERMINATED_STRING,
         codes::EXPECTED,
-        codes::ELSE_IF,
         codes::RESERVED_NAME,
         codes::ASSIGN_IMMUTABLE,
         codes::UNDEFINED,

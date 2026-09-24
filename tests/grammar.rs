@@ -107,10 +107,6 @@ fn error_samples() -> Vec<(u16, String)> {
             "fn main() { print(\"abc) }".to_string(),
         ),
         (codes::EXPECTED, "fn () { }".to_string()),
-        (
-            codes::ELSE_IF,
-            "fn main() { if true { } else if false { } }".to_string(),
-        ),
         (codes::RESERVED_NAME, "fn main() { let if = 1 }".to_string()),
         (
             codes::ASSIGN_IMMUTABLE,

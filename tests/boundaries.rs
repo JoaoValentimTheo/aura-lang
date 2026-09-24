@@ -270,3 +270,23 @@ fn bounded_deep_pattern_executes_without_overflow() {
     );
     assert_eq!(run(&src), Ok("m\n".to_string()));
 }
+
+/// FEATURE_006: a deep `else if` chain nests existing `Expr::If` nodes and is
+/// bounded by the existing AST nesting limit (`E1015`), never a host
+/// overflow. The exact off-by-one is measured against real behavior: a modest
+/// chain runs, and a clearly-over chain is rejected with `E1015`.
+#[test]
+fn deep_else_if_chain_is_bounded() {
+    let chain = |n: usize| {
+        let mut parts = vec!["if false { print(0) }".to_string()];
+        for i in 1..n {
+            parts.push(format!("else if false {{ print({i}) }}"));
+        }
+        parts.push("else { print(99) }".to_string());
+        format!("fn main() {{ {} }}", parts.join(" "))
+    };
+    // A modest chain is accepted and evaluates to the final `else`.
+    assert_eq!(run(&chain(100)), Ok("99\n".to_string()));
+    // A clearly-over chain is rejected with the existing nesting diagnostic.
+    assert_eq!(run(&chain(2000)), Err(codes::NESTING));
+}

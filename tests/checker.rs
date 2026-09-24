@@ -306,3 +306,31 @@ fn real_variant_tags_remain_accepted() {
         Ok(())
     );
 }
+
+// ---------------------------------------------------------------------------
+// FEATURE_006: `else if` static checking (`LANGUAGE_SPEC.md` §4.5).
+// ---------------------------------------------------------------------------
+
+/// Conditions in `else if` clauses are checked by the ordinary `Expr::If`
+/// path: an unknown name in a later clause is `E2003`.
+#[test]
+fn else_if_conditions_are_checked() {
+    assert_eq!(
+        check("fn main() { if true { } else if missing { } }"),
+        Err(codes::UNDEFINED)
+    );
+}
+
+/// `break`/`continue` legality is governed by the existing loop context, even
+/// when they appear inside an `else if` branch.
+#[test]
+fn else_if_break_continue_loop_context_is_unchanged() {
+    assert_eq!(
+        check("fn main() { if true { } else if true { break } }"),
+        Err(codes::LOOP_CONTROL)
+    );
+    assert_eq!(
+        check("fn main() { for x in [1] { if false { } else if true { break } } }"),
+        Ok(())
+    );
+}

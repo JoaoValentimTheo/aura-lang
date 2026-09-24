@@ -102,7 +102,7 @@ large-stack thread; this is an implementation detail with no semantic effect.
 | Phase | Accepts | Rejects (code family) |
 |---|---|---|
 | Lex | tokenizable UTF-8 | invalid character, malformed number, bad escape, unterminated string, number-followed-by-name (`E1xxx`) |
-| Parse | grammar-conforming token stream within the nesting limit | expected-token, `else if`, reserved-name, nesting (`E1xxx`) |
+| Parse | grammar-conforming token stream within the nesting limit | expected-token, reserved-name, nesting (`E1xxx`) |
 | Check | names/declarations/rules/types that can be verified | undefined, redeclaration, immutability, duplicate type/variant/binding, provable type mismatch (`E2xxx`/`E3xxx`) |
 | Execute | any checked program | overflow, division by zero, index out of range, no match, uncaught throw, recursion, not iterable, internal (`E4xxx`), Python (`E5xxx`) |
 
@@ -463,8 +463,18 @@ distinct value.
 precede every named argument; a positional argument after a named one is a
 syntax error. A named argument is written `name: value` (§15.7).
 
-**Normative rule.** `else if` is not part of the grammar; it is diagnosed as
-`E1014` before parsing proceeds.
+**Normative rule.** An `if` expression MAY be followed by one or more
+`else if` clauses and an optional final `else`. `else if` is not a separate
+grammar production: `else` accepts an expression (`[ "else" expr ]`) and `if`
+is an expression, so `if A { X } else if B { Y } else { Z }` is exactly the
+nested form `if A { X } else { if B { Y } else { Z } }`. Each condition is
+evaluated at most once, in source order, and only when every earlier condition
+was falsy. A chain with no truthy condition and no final `else` yields `none`.
+`else if` introduces no new token, keyword, AST node, or runtime semantics.
+
+**Normative rule.** `else` MUST appear on the same line as the closing `}` of
+the block it follows (§3.7), so `else` and `if` are on the same line. A newline
+before `else`, or between `else` and `if`, is `E1006`.
 
 ### 4.6 Patterns
 
@@ -1963,7 +1973,6 @@ semantics (`E2007`).
 | E1004 | unterminated string |
 | E1006 | expected token |
 | E1009 | reserved word used as a name |
-| E1014 | `else if` is not part of the language |
 | E1015 | nesting limit exceeded |
 | E2001 | assignment to an immutable binding |
 | E2003 | undefined name/function/field/key |
@@ -2173,7 +2182,6 @@ implementers do not assume guarantees the language does not make.
 * **Named arguments are limited to directly resolved top-level functions**
   (§15.7); built-ins, methods, and dynamic callables are positional.
 * **No nested named function declarations**; use lambdas (§15.8).
-* **`else if` is not part of the language** (§4.5).
 * **No `for ... else`, no step on ranges** (§22.1).
 * **No lexicographic ordering for lists/maps/structs/enums/ranges** (§12).
 

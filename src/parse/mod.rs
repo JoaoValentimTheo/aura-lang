@@ -1300,13 +1300,9 @@ impl Parser {
                 let cond = self.expr()?;
                 let then = self.block()?;
                 let els = if self.eat(&Tok::Else) {
-                    if matches!(self.at(), Tok::If) {
-                        return Err(Diag::new(
-                            codes::ELSE_IF,
-                            "`else if` is not part of Aura; use `else { if ... }` or `match`",
-                            self.span(),
-                        ));
-                    }
+                    // `else` accepts an expression, and `if` is an expression,
+                    // so `else if B { … }` parses as the nested `Expr::If`
+                    // `else { if B { … } }` with no special handling.
                     Some(Box::new(self.expr()?))
                 } else {
                     None

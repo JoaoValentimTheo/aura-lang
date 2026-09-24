@@ -379,3 +379,27 @@ proptest! {
         );
     }
 }
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(128))]
+
+    /// FEATURE_006: an explicit `else if` chain is behaviorally equivalent to
+    /// its nested `if` form. The oracle is the existing nested representation.
+    #[test]
+    fn else_if_equivalent_to_nested_if(
+        x in 0i64..3,
+        b in 0i64..3,
+        c in 0i64..3,
+    ) {
+        let explicit = format!(
+            "fn main() {{ let x = {x}\n let r = if x == {b} {{ 10 }} else if x == {c} {{ 20 }} else {{ 30 }}\n print(r) }}"
+        );
+        let nested = format!(
+            "fn main() {{ let x = {x}\n let r = if x == {b} {{ 10 }} else {{ if x == {c} {{ 20 }} else {{ 30 }} }}\n print(r) }}"
+        );
+        prop_assert_eq!(
+            aura::run_source(&explicit, "<p>").expect("explicit runs"),
+            aura::run_source(&nested, "<p>").expect("nested runs")
+        );
+    }
+}

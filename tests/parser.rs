@@ -64,12 +64,6 @@ fn if_else_expression() {
 }
 
 #[test]
-fn else_if_is_rejected() {
-    let err = parse("fn f() { if a { 1 } else if b { 2 } else { 3 } }").unwrap_err();
-    assert_eq!(err.code, aura::error::codes::ELSE_IF);
-}
-
-#[test]
 fn match_arms() {
     let e = parse_expr("match x {\n  1 -> \"one\"\n  n -> \"other\"\n}").expect("parse");
     match e {
@@ -308,4 +302,97 @@ fn malformed_empty_map_is_e1006() {
         parse_expr("{: 1}").expect_err("rejected").code,
         codes::EXPECTED
     );
+}
+
+// ---------------------------------------------------------------------------
+// FEATURE_006: `else if` (`LANGUAGE_SPEC.md` §4.5).
+// ---------------------------------------------------------------------------
+
+/// `else if` parses to nested existing `Expr::If` nodes — no new AST node.
+#[test]
+fn else_if_parses_to_nested_if() {
+    let e = parse_expr("if a { 1 } else if b { 2 } else { 3 }").expect("parse");
+    // Outer is `if a { 1 } else <inner>`; the `else` operand is itself an `if`.
+    match e {
+        Expr::If(_, _, Some(els), _) => {
+            assert!(matches!(*els, Expr::If(_, _, Some(_), _)));
+        }
+        other => panic!("expected nested if, got {other:?}"),
+    }
+}
+
+/// Multiple `else if` clauses nest one `Expr::If` per clause.
+#[test]
+fn multiple_else_if_parses_as_deep_nesting() {
+    let e = parse_expr("if a { 1 } else if b { 2 } else if c { 3 } else { 4 }").expect("parse");
+    let mut depth = 0;
+    let mut cur = &e;
+    loop {
+        match cur {
+            Expr::If(_, _, Some(els), _) => {
+                depth += 1;
+                cur = els;
+            }
+            _ => break,
+        }
+    }
+    // Three conditions => three nested `Expr::If` nodes along the `els` spine.
+    assert_eq!(depth, 3);
+}
+
+/// A final `else` and no final `else` both parse; the latter leaves the
+/// innermost `els` as `None`.
+#[test]
+fn else_if_final_else_is_optional() {
+    let with_else = parse_expr("if a { 1 } else if b { 2 } else { 3 }").expect("parse");
+    let inner = match with_else {
+        Expr::If(_, _, Some(els), _) => *els,
+        other => panic!("expected if, got {other:?}"),
+    };
+    assert!(matches!(inner, Expr::If(_, _, Some(_), _)));
+
+    let no_else = parse_expr("if a { 1 } else if b { 2 }").expect("parse");
+    let inner = match no_else {
+        Expr::If(_, _, Some(els), _) => *els,
+        other => panic!("expected if, got {other:?}"),
+    };
+    assert!(matches!(inner, Expr::If(_, _, None, _)));
+}
+
+/// Newline rules are unchanged: a newline before `else`, or between `else`
+/// and `if`, is `E1006`.
+#[test]
+fn else_if_newline_rules_are_unchanged() {
+    assert_eq!(
+        parse("fn f() { if a { 1 }\nelse { 2 } }")
+            .expect_err("rejected")
+            .code,
+        codes::EXPECTED
+    );
+    assert_eq!(
+        parse("fn f() { if a { 1 } else\nif b { 2 } }")
+            .expect_err("rejected")
+            .code,
+        codes::EXPECTED
+    );
+}
+
+/// A malformed `else if` (missing condition) is a parse error.
+#[test]
+fn malformed_else_if_is_rejected() {
+    assert_eq!(
+        parse("fn f() { if a { 1 } else if { 2 } }")
+            .expect_err("rejected")
+            .code,
+        codes::EXPECTED
+    );
+}
+
+/// Ordinary `if`/`else` and `else <non-if expression>` remain unchanged.
+#[test]
+fn ordinary_if_else_is_unchanged() {
+    let e = parse_expr("if a > b { a } else { b }").expect("parse");
+    assert!(matches!(e, Expr::If(_, _, Some(_), _)));
+    // `else` still accepts an arbitrary expression.
+    assert!(parse_expr("if a { 1 } else 2 + 3").is_ok());
 }
