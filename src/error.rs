@@ -150,6 +150,8 @@ pub mod codes {
     pub const UNKNOWN_TYPE: u16 = 3002;
     /// Index out of range.
     pub const INDEX: u16 = 4019;
+    /// An I/O operation failed (file read/write or standard input).
+    pub const IO: u16 = 4020;
     /// A user assertion failed.
     pub const ASSERT: u16 = 4028;
     /// No `match` arm matched the value.

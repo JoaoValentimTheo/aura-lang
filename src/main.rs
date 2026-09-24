@@ -34,7 +34,7 @@ fn cmd_repl() -> ExitCode {
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
-        Some("run") => cmd_run(args.get(1).map(String::as_str)),
+        Some("run") => cmd_run(&args),
         Some("check") => cmd_check(args.get(1).map(String::as_str)),
         Some("eval") => cmd_eval(args.get(1).map(String::as_str)),
         Some("repl") => cmd_repl(),
@@ -67,12 +67,22 @@ fn read_source(path: Option<&str>) -> Result<(String, String), ExitCode> {
     }
 }
 
-fn cmd_run(path: Option<&str>) -> ExitCode {
+fn cmd_run(args: &[String]) -> ExitCode {
+    let path = args.get(1).map(String::as_str);
     let (src, file) = match read_source(path) {
         Ok(v) => v,
         Err(c) => return c,
     };
-    match aura::run_program(&src, &file) {
+    // Program arguments are everything after the script path. When the script
+    // was read from stdin (`-`), the process stdin has been consumed as
+    // source, so no input source is wired.
+    let program_args: Vec<String> = args.iter().skip(2).cloned().collect();
+    let input = if path == Some("-") {
+        None
+    } else {
+        Some(Box::new(std::io::BufReader::new(std::io::stdin())) as Box<dyn std::io::BufRead + Send>)
+    };
+    match aura::run_program_with(&src, &file, program_args, input) {
         Ok(()) => ExitCode::SUCCESS,
         Err(d) => {
             eprintln!("{}", render_with_source(&file, &src, &d));
@@ -100,7 +110,12 @@ fn cmd_eval(code: Option<&str>) -> ExitCode {
         eprintln!("usage: aura eval <code>");
         return ExitCode::from(2);
     };
-    match aura::run_toplevel_stdout(code, "<eval>") {
+    // `eval` exposes process stdin to `read_line()` but has no program
+    // arguments (args() is []).
+    let input = Some(
+        Box::new(std::io::BufReader::new(std::io::stdin())) as Box<dyn std::io::BufRead + Send>
+    );
+    match aura::run_toplevel_with(code, "<eval>", Vec::new(), input) {
         Ok(()) => ExitCode::SUCCESS,
         Err(d) => {
             eprintln!("{}", render_with_source("<eval>", code, &d));

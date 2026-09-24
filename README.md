@@ -37,7 +37,9 @@ Windows with and without CPython.
   feature (on by default) links CPython, and `--no-default-features
   --features cli,repl,json,regex,time` produces a pure-Rust binary.
 
-## Build and run
+## Install
+
+From a checkout (requires Rust 1.83+):
 
 ```bash
 cargo build --release
@@ -45,7 +47,15 @@ cargo build --release
 ./target/release/aura repl
 ```
 
-Without Python at all:
+Or install the binary onto your `PATH`:
+
+```bash
+cargo install --path . --no-default-features --features cli,repl,json,regex,time
+aura run examples/tour.aura
+```
+
+Prebuilt binaries for Linux, macOS, and Windows are attached to GitHub
+releases. Without Python at all:
 
 ```bash
 cargo build --release --no-default-features --features cli,repl,json,regex,time
@@ -76,7 +86,8 @@ fn main() {
 * `fn` declares functions — not `def`, `function`, or `func`.
 * `and` / `or` / `not` are the logic operators — not `&&`, `||`, `!`.
 * `none` is the only absence — not `null`, `nil`, or `undefined`.
-* `else if` does not exist; use `match` or a nested block.
+* `else if` is supported and is the nested form `else { if ... }`; `match` is
+  available for multi-way branching.
 * `let` is immutable; `let mut` opts into reassignment.
 * Function calls accept positional arguments, or named arguments for
   top-level functions (`f(x: 1)`); positional arguments come first. Named
@@ -180,6 +191,41 @@ is `E5002`, and the binary links no CPython — programs still run.
 | `aura repl` | Interactive session with persistent state |
 | `aura version` | Print the version |
 
+`aura run script.aura foo bar` passes `foo` and `bar` to the program, readable
+via `args()`. `aura run -` reads the program from standard input. When the
+program is read from a file, standard input is available to `read_line()`; when
+it is read from stdin (`-`), `read_line()` has no remaining input and returns
+`none`. `aura eval` exposes standard input to `read_line()` but `args()` is
+empty. The REPL and the library expose neither.
+
+### Scripting I/O
+
+```aura
+fn main() {
+    # Program arguments (exclude the command, subcommand, and script path).
+    for a in args() { print(a) }
+
+    # Read a file; a missing path is `none`, not an error.
+    let text = read_file("input.txt")
+    if text == none {
+        print("no input.txt")
+    } else {
+        write_file("copy.txt", text)
+    }
+
+    # Filter standard input line by line.
+    let mut line = read_line()
+    while line != none {
+        print(line.upper())
+        line = read_line()
+    }
+}
+```
+
+A genuine file or standard-input failure is `E4020`, which is fatal and is not
+catchable (like other runtime diagnostics); a missing `read_file` path is
+`none`. Filesystem access is local and unsandboxed.
+
 ## Architecture
 
 Every entry point (library, CLI, REPL) runs the same `parse → check → execute`
@@ -194,7 +240,9 @@ about the standard library.
 
 Core (always available): `print`, `len`, `to_string`, `to_int`, `to_float`,
 `range`, `abs`, `min`, `max`, `push`, `pop`, `keys`, `values`, `sort`,
-`reverse`, `map`, `filter`, `reduce`, `sum`, `assert`, `enumerate`, `zip`.
+`reverse`, `map`, `filter`, `reduce`, `sum`, `assert`, `enumerate`, `zip`,
+and the scripting I/O functions `read_line`, `read_file`, `write_file`,
+`args`.
 
 Methods: strings (`upper`, `lower`, `trim`, `split`, `replace`, `contains`,
 `starts_with`, `ends_with`, `chars`), lists (`len`, `push`, `pop`, `first`,

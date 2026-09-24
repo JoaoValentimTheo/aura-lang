@@ -53,6 +53,7 @@ Every rejection carries a stable code. Codes are grouped by phase:
 | E4013 | Integer overflow | `i64::MAX + 1`, `i64::MIN % -1`; a Python integer beyond `i64` via `py_eval` |
 | E4018 | Value is not iterable | `for x in 1 {}` |
 | E4019 | Index out of range | `[1][5]`, a huge negative index |
+| E4020 | I/O operation failed | `read_file`/`write_file` failure, standard-input read failure |
 | E4026 | Uncaught thrown value | `throw "x"` with no `catch` |
 | E4027 | Missing `main` | `aura run` on a file without `fn main` |
 | E4028 | Assertion failed | `assert(1 == 2)` |

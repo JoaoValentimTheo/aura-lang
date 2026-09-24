@@ -18,5 +18,8 @@ Thumbs.db
 /tmp/
 temp/
 
+# Local AI/session artifacts
+session-*.md
+
 # Generated docs
 /docs/_site/

@@ -122,8 +122,21 @@ pub fn run_source(src: &str, _file: &str) -> error::Result<String> {
 /// # Errors
 /// Returns the first front-end or runtime diagnostic.
 pub fn run_toplevel_stdout(src: &str, _file: &str) -> error::Result<()> {
+    run_toplevel_with(src, _file, Vec::new(), None)
+}
+
+/// [`run_toplevel_stdout`] with an explicit execution context (args and stdin).
+///
+/// # Errors
+/// Returns the first front-end or runtime diagnostic.
+pub fn run_toplevel_with(
+    src: &str,
+    _file: &str,
+    args: Vec<String>,
+    input: Option<Input>,
+) -> error::Result<()> {
     let src = src.to_string();
-    execute(compile(&src, "module")?, None)
+    execute_with(compile(&src, "module")?, None, args, input)
 }
 
 /// Compile and run `src`, writing output to the process stdout.
@@ -136,8 +149,23 @@ pub fn run_toplevel_stdout(src: &str, _file: &str) -> error::Result<()> {
 /// Returns `E4027` when there is no `main`, plus any front-end or runtime
 /// diagnostic.
 pub fn run_program(src: &str, _file: &str) -> error::Result<()> {
+    run_program_with(src, _file, Vec::new(), None)
+}
+
+/// [`run_program`] with an explicit execution context (args and stdin): the
+/// entry point used by `aura run`.
+///
+/// # Errors
+/// Returns `E4027` when there is no `main`, plus any front-end or runtime
+/// diagnostic.
+pub fn run_program_with(
+    src: &str,
+    _file: &str,
+    args: Vec<String>,
+    input: Option<Input>,
+) -> error::Result<()> {
     let src = src.to_string();
-    execute(compile(&src, "program")?, None)
+    execute_with(compile(&src, "program")?, None, args, input)
 }
 
 /// The two ways a module can be compiled.
@@ -218,14 +246,34 @@ pub fn compile_module(module: &ast::Module, mode: CompileMode) -> error::Result<
 /// # Errors
 /// Returns the first runtime diagnostic.
 pub fn execute(module: ast::Module, stdout: Option<Output>) -> error::Result<()> {
+    execute_with(module, stdout, Vec::new(), None)
+}
+
+/// Execute a compiled module with an explicit execution context: program
+/// arguments for `args()` and an optional standard-input source for
+/// `read_line()`. `execute` delegates here with empty defaults, so existing
+/// callers keep their behavior (no input, no arguments).
+///
+/// # Errors
+/// Returns the first runtime diagnostic.
+pub fn execute_with(
+    module: ast::Module,
+    stdout: Option<Output>,
+    args: Vec<String>,
+    input: Option<Input>,
+) -> error::Result<()> {
     on_interp_thread(move || {
         let mut interp = run::Interp::new();
         if let Some(w) = stdout {
             interp.stdout = w;
         }
+        interp.set_context(args, input);
         interp.run(&module)
     })
 }
 
 /// A boxed writer the interpreter can move onto its thread.
 pub type Output = Box<dyn std::io::Write + Send>;
+
+/// A boxed standard-input source the interpreter can move onto its thread.
+pub type Input = Box<dyn std::io::BufRead + Send>;

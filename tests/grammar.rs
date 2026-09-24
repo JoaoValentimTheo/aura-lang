@@ -155,6 +155,12 @@ fn error_samples() -> Vec<(u16, String)> {
         ),
         (codes::DIV_ZERO, "fn main() { print(1 / 0) }".to_string()),
         (codes::INDEX, "fn main() { print([1, 2][5]) }".to_string()),
+        // An empty path is never a valid file target, so this is a portable
+        // genuine I/O failure rather than a missing-file `none`.
+        (
+            codes::IO,
+            "fn main() { write_file(\"\", \"x\") }".to_string(),
+        ),
         (
             codes::RECURSION,
             "fn f(n) { f(n + 1) }\nfn main() { f(0) }".to_string(),

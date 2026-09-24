@@ -1782,6 +1782,46 @@ argument classes are normative. Return types marked `dynamic` are
 | `assert` | 1–2 | any, string? | `none` | `E4028` if falsy |
 | `enumerate` | 1 | list | `[[int, T]]` | index/value pairs |
 | `zip` | 2 | list, list | `[[T, U]]` | pairs, shortest length |
+| `read_line` | 0 | — | `string \| none` | one line of standard input; `none` at end of input |
+| `read_file` | 1 | string | `string \| none` | whole UTF-8 file; `none` if the path does not exist |
+| `write_file` | 2 | string, string | `none` | writes/truncates the file (creates it if absent) |
+| `args` | 0 | — | `[string]` | program arguments, excluding command/subcommand/script path |
+
+**Normative rule.** `read_line()` reads one logical line from the interpreter's
+standard-input source, excluding the line terminator: a trailing `\n` is
+removed, and a `\r` immediately preceding it is removed too. A blank line
+returns `""`; end of input returns `none`; a read failure or invalid UTF-8 is
+`E4020`.
+
+**Normative rule.** `read_file(path)` returns the file's entire UTF-8 text, or
+`none` when the path does not exist. An empty file returns `""`. A directory,
+invalid UTF-8, a permission failure, or any other I/O failure is `E4020`.
+Newlines are preserved exactly.
+
+**Normative rule.** `write_file(path, content)` creates the file if absent and
+otherwise truncates and overwrites it, writing `content` as UTF-8 bytes. It
+returns `none`. A missing parent directory, a directory target, a permission
+failure, or any other I/O failure is `E4020`. There is no append or binary
+mode.
+
+**Normative rule.** `args()` returns the program arguments as a `[string]`,
+excluding the interpreter command, the subcommand, and the script path, in
+source order. It returns `[]` in `aura eval`, in the REPL, and through the
+library; only `aura run` supplies program arguments. It returns `[]` when no
+arguments are present.
+
+**Normative rule.** I/O diagnostics (`E4020`) are ordinary runtime
+diagnostics: they are fatal and are **not** catchable (§14.5); a `finally`
+block still runs on that exit path (§14.6). A missing `read_file` path is a
+value (`none`), not an error.
+
+**Normative rule (execution context).** The standard-input source and program
+arguments are part of the interpreter's execution context. `aura run`
+configures the process standard input; `aura run -` consumes standard input as
+the program source, so `read_line()` then returns `none`; `aura eval`
+configures the process standard input but no program arguments. The REPL and
+the library configure neither, so `read_line()` returns `none` and `args()`
+returns `[]`. Filesystem access is available in every execution mode.
 
 **Python bridge** (see §32):
 
@@ -1993,6 +2033,7 @@ semantics (`E2007`).
 | E4013 | integer overflow / unrepresentable conversion |
 | E4018 | value is not iterable |
 | E4019 | index out of range |
+| E4020 | I/O operation failed |
 | E4026 | uncaught thrown value |
 | E4027 | missing `main` |
 | E4028 | assertion failed |

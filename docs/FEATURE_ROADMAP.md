@@ -55,19 +55,23 @@ Aura today is a tree-walking interpreted language with a conservative checker.
 | Unknown | Exact conservative boundary: the checker rejects only what it can prove |
 | Operators | `+ - * / % ^ == != < <= > >= and or`, unary `-`/`not`, pipeline `\|>`, assignment `= += -= *= /=` |
 | Evaluation order | Strict left-to-right; `and`/`or` short-circuit; documented |
-| Control flow | `if`/`else`, `while`, `loop`, `for`, `break`/`continue`, `return`, `throw`, `try`/`catch`/`finally` |
-| Functions | Top-level `fn` with hoisting and mutual recursion; positional calls |
+| Control flow | `if`/`else if`/`else`, `while`, `loop`, `for`, `break`/`continue`, `return`, `throw`, `try`/`catch`/`finally` |
+| Functions | Top-level `fn` with hoisting and mutual recursion; positional and named calls; static argument checking |
 | Closures | Lambdas capture by reference; no ownership/lifetime model |
 | Mutability | Binding-level (`let`/`let mut`); value- and field-level mutation through shared references |
 | Structs | Nominal; named and positional construction; validated fields |
 | Enums | Global tags; positional payloads; named payload args rejected |
 | Match | Expression; literal/binding/list/variant patterns; guards; no exhaustiveness |
-| Collections | Lists (index/mutate/iterate) and string-keyed ordered maps |
+| Collections | Lists (index/mutate/iterate) and string-keyed ordered maps; empty map `{:}` |
+| Destructuring | `let [a, b] = e` and `let Ok(x) = e`, reusing the pattern system |
+| Field types | A field read on a known struct infers the declared type (Feature 003) |
+| Scripting I/O | `read_line`, `read_file`, `write_file`, `args` (0.0.1) |
+| Comments | Line comments (`#`); no block comments |
 | Tuples | `(a, b)` is list sugar; no distinct tuple type |
 | Loops/ranges | `range(a, b)` step 1, end-exclusive, lazy in `for` |
 | Pipeline | `x \|> f(a)` is `f(x, a)` |
 | Methods | Built-in receiver kinds only (string/list/map/range); structs/enums have none |
-| Built-ins | 34 builtins + 30 method entries in one shared registry |
+| Built-ins | Core builtins (incl. `read_line`, `read_file`, `write_file`, `args`) + method entries in one shared registry |
 | Aliases | Transparent; chained; recursive aliases rejected (`E3002`) |
 | REPL | Persistent session; bindings/functions/structs/enums/aliases; line-oriented submissions |
 | CLI/API | `run`, `check`, `eval`, `repl` over one `compile`+`execute` pipeline |
@@ -85,19 +89,24 @@ Aura today is a tree-walking interpreted language with a conservative checker.
 
 ### Current limitations (documented in `LANGUAGE_SPEC.md` §34)
 
-* User-function call arguments are not statically checked.
-* Field reads infer `Unknown`.
 * `if`/`match`/block expressions and lambdas infer `Unknown`.
-* No empty-map literal (`{}` is a block).
+* No default or variadic function arguments.
 * No tuple type (list sugar).
 * `try` requires `catch`.
 * `match` arm bodies that are bare control flow keywords need a block.
-* No named/default/variadic function arguments.
 * No nested named function declarations.
-* No `else if`.
 * No range step or `for…else`.
-* No lexicographic ordering for compound values.
+* No block comments.
+* No tuple type or lexicographic ordering for compound values.
 * No closure lifetime/ownership model (deliberate).
+
+### Completed milestones
+
+Feature 001 (static argument checking), Feature 002 (named arguments),
+Feature 003 (field-type propagation), Feature 004 (destructuring `let`),
+Feature 005 (empty-map literal), Feature 006 (`else if`), and the H1 pattern
+correctness/safety hardening are implemented. The 0.0.1 release hardening adds
+the scripting I/O and argument surface.
 
 ---
 
@@ -459,21 +468,31 @@ See `docs/FEATURE_001_DESIGN.md` for the full design.
 
 ## Future Feature Queue
 
-Ordered by a qualitative sense of value against risk, not by a score.
+Ordered by a qualitative sense of value against risk, not by a score. Items
+marked **done** have shipped; the release-hardening surface (0.0.1) is listed
+under "Release hardening" below.
 
 | Order | Feature | Class | Notes |
 |---|---|---|---|
-| 1 | Static argument checking | A | This proposal |
-| 2 | Empty-map literal | B | Needs a syntax decision before design |
-| 3 | Destructuring `let` | B | Incremental; reuses `match` patterns |
-| 4 | Field-type propagation | B | Extends the checker's reach |
-| 5 | Named function arguments | B | Reuses `Arg`; interacts with pipeline |
-| 6 | Range step / helpers | B | Possibly stdlib-only |
-| 7 | Default arguments | B | Interacts with arity |
-| 8 | Branch-join inference | B | Larger checker change |
-| 9 | User-defined methods | E/B | Large; resolution design required |
-| 10 | Modules | E | Separate design phase |
+| 1 | Static argument checking | A | **done** (Feature 001) |
+| 2 | Empty-map literal | B | **done** (Feature 005) |
+| 3 | Destructuring `let` | B | **done** (Feature 004) |
+| 4 | Field-type propagation | B | **done** (Feature 003) |
+| 5 | Named function arguments | B | **done** (Feature 002) |
+| 6 | `else if` | C | **done** (Feature 006) |
+| 7 | Range step / helpers | B | Possibly stdlib-only |
+| 8 | Default arguments | B | Interacts with arity |
+| 9 | Branch-join inference | B | Larger checker change |
+| 10 | Block comments | B | Lexical feature; needs a syntax decision |
+| 11 | User-defined methods | E/B | Large; resolution design required |
+| 12 | Modules | E | Separate design phase |
 | — | Generics / traits / async / VM | E | Not planned |
+
+### Release hardening (0.0.1)
+
+The first usable public scripting surface adds standard input, text-file I/O,
+and program arguments: `read_line`, `read_file`, `write_file`, `args`, and the
+`E4020` I/O diagnostic. See `docs/RELEASE_0_0_X_DESIGN.md`.
 
 ---
 

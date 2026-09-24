@@ -402,6 +402,57 @@ pub fn install(it: &mut Interp) {
             .collect();
         Ok(Value::list(pairs))
     });
+
+    // ---------------------------------------------------- scripting I/O
+    it.native("read_line", |it, args, span| {
+        arity(&args, 0, 0, "read_line", span)?;
+        match it.read_input_line()? {
+            Some(line) => Ok(Value::str(line)),
+            None => Ok(Value::None),
+        }
+    });
+    it.native("read_file", |_it, args, span| {
+        arity(&args, 1, 1, "read_file", span)?;
+        let path = string_arg(&args, 0, "read_file", span)?;
+        match std::fs::read_to_string(&path) {
+            Ok(text) => Ok(Value::str(text)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Value::None),
+            Err(e) => Err(err(codes::IO, format!("cannot read `{path}`: {e}"), span)),
+        }
+    });
+    it.native("write_file", |_it, args, span| {
+        arity(&args, 2, 2, "write_file", span)?;
+        let path = string_arg(&args, 0, "write_file", span)?;
+        let content = string_arg(&args, 1, "write_file", span)?;
+        std::fs::write(&path, content.as_bytes())
+            .map_err(|e| err(codes::IO, format!("cannot write `{path}`: {e}"), span))?;
+        Ok(Value::None)
+    });
+    it.native("args", |it, args, span| {
+        arity(&args, 0, 0, "args", span)?;
+        Ok(Value::list(
+            it.program_args()
+                .iter()
+                .map(|a| Value::str(a.clone()))
+                .collect(),
+        ))
+    });
+}
+
+/// Extract a `string` argument or produce a diagnostic.
+fn string_arg(args: &[Value], i: usize, what: &str, span: Span) -> Result<String> {
+    match arg(args, i, what, span)? {
+        Value::Str(s) => Ok(s.to_string()),
+        other => Err(err(
+            codes::TYPE_MISMATCH,
+            format!(
+                "`{what}` argument {} expects a string, found {}",
+                i + 1,
+                other.type_name()
+            ),
+            span,
+        )),
+    }
 }
 
 /// Extract a string map key or produce a diagnostic.

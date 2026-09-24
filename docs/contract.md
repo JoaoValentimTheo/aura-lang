@@ -171,6 +171,7 @@ The checker runs before execution and rejects, at minimum:
 | E3001 | type mismatch (annotations are checked) |
 | E3002 | unknown type or constructor |
 | E3005 | return type mismatch |
+| E4020 | I/O operation failed (file or standard input) |
 
 Beyond annotations, the checker also enforces, when it can prove the types
 involved:
@@ -225,6 +226,15 @@ The full, authoritative list lives in `docs/errors.md`, and
 * `==` compares structurally (lists, maps, structs, enums). `NaN == NaN` is
   `false`. Functions compare by identity (see §6).
 * `print(x)` writes `x.to_string()` plus a newline.
+* `read_line()` reads one line of standard input (terminator removed; `none`
+  at end of input); `read_file(path)` reads a whole UTF-8 file (`none` if the
+  path is absent); `write_file(path, content)` creates or overwrites a file;
+  `args()` returns the program arguments as `[string]`, excluding the command,
+  the subcommand, and the script path. A genuine file or standard-input
+  failure is `E4020`; a missing `read_file` path is `none`, not an error.
+  `E4020` is fatal and is not catchable, exactly like other runtime
+  diagnostics. Standard input and program arguments are supplied by `aura run`
+  (and standard input by `aura eval`); the REPL and library provide neither.
 * `try/catch` catches **only** an explicit `throw` value (including one
   thrown inside a called function). Runtime diagnostics such as division by
   zero, overflow, or an out-of-range index are fatal and are *not* catchable.

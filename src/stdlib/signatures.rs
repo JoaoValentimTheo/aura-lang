@@ -389,6 +389,35 @@ pub fn builtins() -> &'static [Signature] {
                 max_args: 2,
                 returns: Returns::Ty(Ty::List(Box::new(Ty::Unknown))),
             },
+            // ------------------------------------------------- scripting I/O
+            Signature {
+                name: "read_line",
+                params: vec![],
+                min_args: 0,
+                max_args: 0,
+                returns: Returns::Dynamic,
+            },
+            Signature {
+                name: "read_file",
+                params: vec![Param::one(TypeClass::Str)],
+                min_args: 1,
+                max_args: 1,
+                returns: Returns::Dynamic,
+            },
+            Signature {
+                name: "write_file",
+                params: vec![Param::one(TypeClass::Str), Param::one(TypeClass::Str)],
+                min_args: 2,
+                max_args: 2,
+                returns: Returns::Ty(Ty::Unknown),
+            },
+            Signature {
+                name: "args",
+                params: vec![],
+                min_args: 0,
+                max_args: 0,
+                returns: Returns::Ty(Ty::List(Box::new(Ty::String))),
+            },
             // -------------------------------------------------- python bridge
             Signature {
                 name: "py_eval",

@@ -165,6 +165,13 @@ pub struct Interp {
     pending_throw: Option<Value>,
     /// Output sink for `print`.
     pub stdout: Box<dyn std::io::Write>,
+    /// Program arguments exposed to `args()`; excludes the command, the
+    /// subcommand, and the script path. Empty in the REPL and library.
+    args: Vec<String>,
+    /// Program standard input for `read_line()`. `None` means "no input
+    /// source", so `read_line()` returns `none`. Configured only by the CLI
+    /// `run`/`eval` entry points.
+    input: Option<Box<dyn std::io::BufRead + Send>>,
 }
 
 type Native = Rc<dyn Fn(&mut Interp, Vec<Value>, Span) -> Result<Value>>;
@@ -183,6 +190,8 @@ impl Interp {
             ast_depth: 0,
             pending_throw: None,
             stdout: Box::new(std::io::stdout()),
+            args: Vec::new(),
+            input: None,
         };
         crate::stdlib::install(&mut it);
         it
@@ -207,6 +216,50 @@ impl Interp {
     /// Register a global value.
     pub fn global(&mut self, name: &str, v: Value) {
         self.globals.define(name.to_string(), v, false);
+    }
+
+    /// Configure the execution context: program arguments and an optional
+    /// standard-input source. Used by the CLI `run`/`eval` entry points; the
+    /// REPL and library leave the defaults (empty args, no input).
+    pub fn set_context(
+        &mut self,
+        args: Vec<String>,
+        input: Option<Box<dyn std::io::BufRead + Send>>,
+    ) {
+        self.args = args;
+        self.input = input;
+    }
+
+    /// The program arguments exposed to `args()`.
+    #[must_use]
+    pub fn program_args(&self) -> &[String] {
+        &self.args
+    }
+
+    /// Read one line from the configured input source, returning `None` at
+    /// end of input. Excludes the trailing `\n` and a preceding `\r`.
+    pub fn read_input_line(&mut self) -> Result<Option<String>> {
+        let Some(input) = self.input.as_mut() else {
+            return Ok(None);
+        };
+        let mut line = String::new();
+        let n = input.read_line(&mut line).map_err(|e| {
+            Diag::new(
+                codes::IO,
+                format!("standard input read failed: {e}"),
+                Span::default(),
+            )
+        })?;
+        if n == 0 {
+            return Ok(None);
+        }
+        if line.ends_with('\n') {
+            line.pop();
+            if line.ends_with('\r') {
+                line.pop();
+            }
+        }
+        Ok(Some(line))
     }
 
     /// Execute a module and call `main` if present.

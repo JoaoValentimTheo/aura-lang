@@ -334,3 +334,37 @@ fn else_if_break_continue_loop_context_is_unchanged() {
         Ok(())
     );
 }
+
+// ---------------------------------------------------------------------------
+// Aura 0.0.1 scripting I/O builtins (`docs/RELEASE_0_0_X_DESIGN.md`).
+// ---------------------------------------------------------------------------
+
+/// The four release builtins are registered and arity/type-checked by the
+/// shared signature registry, exactly like other builtins.
+#[test]
+fn scripting_io_builtins_are_checked() {
+    // Valid arities/types.
+    assert_eq!(
+        check("fn main() { read_line()\n let t = read_file(\"a\")\n write_file(\"a\", \"b\")\n let a = args() }"),
+        Ok(())
+    );
+    // Arity mismatches are `E3001`, consistent with the rest of the library.
+    assert_eq!(
+        check("fn main() { read_line(1) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        check("fn main() { read_file() }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        check("fn main() { write_file(\"a\") }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(check("fn main() { args(1) }"), Err(codes::TYPE_MISMATCH));
+    // Wrong argument type is a provable mismatch.
+    assert_eq!(
+        check("fn main() { read_file(1) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
