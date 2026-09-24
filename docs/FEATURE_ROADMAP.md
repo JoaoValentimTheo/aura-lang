@@ -117,8 +117,7 @@ is a prerequisite for the first feature.
 
 | Debt | Kind | Causes observable divergence? |
 |---|---|---|
-| `up`/`down` runtime aliases (unreachable) | dead code | No |
-| `json_*` bypass the shared `arity()` helper | internal inconsistency | No (checker validates first) |
+| `json_*` bypass the shared `arity()` helper | internal inconsistency | **fixed (0.0.1 hardening)** — arity now enforced centrally at native dispatch, including first-class builtin values |
 | `stdlib::arity` retains a min/max fallback | duplicate logic | No |
 | `Tok::As` lexed but unconsumed | dead token | No |
 | `E5003` defined but never produced | dead constant | No |
@@ -158,7 +157,7 @@ Classification keys:
 | `match` bare control-flow needs a block | **C** | Deliberate grammar decision |
 | No closure lifetime/ownership model | **C** | Deliberate; reference-counted environments are the model |
 | Inert `pub`/`use` | **C (until modules)** | Intentional placeholder; becomes real only with a module system |
-| `up`/`down` aliases | **D** | Dead code |
+| `up`/`down` aliases | **done (0.0.1 hardening)** | Removed |
 | `json_*` arity bypass | **D** | Internal |
 | `stdlib::arity` fallback | **D** | Internal |
 | `Tok::As` | **D** | Dead token |

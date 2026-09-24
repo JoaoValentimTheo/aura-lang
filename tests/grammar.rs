@@ -176,10 +176,12 @@ fn error_samples() -> Vec<(u16, String)> {
             "fn main() { print(match 5 { 1 -> \"a\" }) }".to_string(),
         ),
         // A `return`, `break`, `continue`, or `throw` produced while computing
-        // an expression escapes to value position.
+        // an expression escapes to value position. A `return` inside a
+        // function body propagates out of that function, so the escape must be
+        // demonstrated at top level, where no function is active.
         (
             codes::RETURN_POSITION,
-            "fn main() { let x = if true { return 1 } else { 2 } }".to_string(),
+            "let x = if true { return 1 } else { 2 }".to_string(),
         ),
     ];
     v.push((

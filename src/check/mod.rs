@@ -1034,7 +1034,7 @@ impl Checker {
                 format!("enum has no method `{name}`"),
                 span,
             )),
-            Ty::Named(n) if n == "range" => Ok(Some(TypeClass::Other)),
+            Ty::Named(n) if n == "range" => Ok(Some(TypeClass::Range)),
             Ty::Named(_) => Err(Diag::new(
                 codes::UNDEFINED,
                 format!("struct has no method `{name}`"),
@@ -1704,7 +1704,7 @@ impl Checker {
                     Ty::Unknown => {}
                     Ty::Named(n) if n == "range" => {
                         if crate::stdlib::signatures::method(
-                            crate::stdlib::signatures::TypeClass::Other,
+                            crate::stdlib::signatures::TypeClass::Range,
                             name,
                         )
                         .is_none()
@@ -1768,10 +1768,16 @@ impl Checker {
             Expr::Lambda(ps, body, _) => {
                 self.push();
                 let saved_loop = std::mem::take(&mut self.loop_depth);
+                // A lambda has no declared return type, so a `return` in its
+                // body must not be checked against the enclosing function's
+                // annotation. `return` inside a lambda returns from the
+                // lambda (`LANGUAGE_SPEC.md` §15.4).
+                let saved_return = std::mem::take(&mut self.return_type);
                 for p in ps {
                     self.declare(p, false, Span::default())?;
                 }
                 let r = self.expr(body);
+                self.return_type = saved_return;
                 self.loop_depth = saved_loop;
                 self.pop();
                 r?;

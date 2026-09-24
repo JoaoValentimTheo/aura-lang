@@ -43,6 +43,8 @@ pub enum TypeClass {
     List,
     /// `{string: V}`
     Map,
+    /// A `range` value.
+    Range,
     /// `none`
     None,
     /// A function/closure.
@@ -64,10 +66,11 @@ impl TypeClass {
             (TypeClass::Str, Ty::String) => true,
             (TypeClass::List, Ty::List(_)) => true,
             (TypeClass::Map, Ty::Map(_)) => true,
+            (TypeClass::Range, Ty::Named(n)) if n == "range" => true,
             (TypeClass::None, _) => false,
             (TypeClass::Function, _) => false,
             (TypeClass::Other, ty) => {
-                matches!(ty, Ty::Named(_) | Ty::Enum(_) | Ty::Unknown)
+                matches!(ty, Ty::Named(_) | Ty::Enum(_))
             }
             _ => false,
         };
@@ -84,6 +87,7 @@ impl TypeClass {
             TypeClass::Str => "string",
             TypeClass::List => "list",
             TypeClass::Map => "map",
+            TypeClass::Range => "range",
             TypeClass::None => "none",
             TypeClass::Function => "fn",
             TypeClass::Other => "value",
@@ -246,7 +250,7 @@ pub fn builtins() -> &'static [Signature] {
                     TypeClass::Str,
                     TypeClass::List,
                     TypeClass::Map,
-                    TypeClass::Other,
+                    TypeClass::Range,
                 ])],
                 min_args: 1,
                 max_args: 1,
@@ -802,7 +806,7 @@ pub fn methods() -> &'static [MethodSig] {
             // ---------------------------------------------------- range
             MethodSig {
                 name: "len",
-                receiver: TypeClass::Other,
+                receiver: TypeClass::Range,
                 params: vec![],
                 min_args: 0,
                 max_args: 0,

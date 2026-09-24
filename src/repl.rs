@@ -127,9 +127,18 @@ fn eval_line<W: Write>(
                 let _ = writeln!(writer, "{}", v.display());
                 true
             }
-            Ok(_) => true,
+            Ok(Ctl::Val(_)) => true,
+            // A residual control-flow signal at the top level is reported with
+            // the same diagnostic the other entry points produce, rather than
+            // being silently swallowed (`LANGUAGE_SPEC.md` §28.5).
+            Ok(other) => {
+                if let Err(d) = interp.finish_global(other) {
+                    let _ = writeln!(writer, "{d}");
+                }
+                false
+            }
             Err(e) => {
-                let _ = writeln!(writer, "{e}");
+                let _ = writeln!(writer, "{}", interp.uncaught_diag(e));
                 false
             }
         };
@@ -176,12 +185,14 @@ fn eval_line<W: Write>(
             for item in &module.items {
                 let result = match item {
                     Item::Expr(expr, _) => match interp.eval_globals(expr) {
-                        Ok(Ctl::Val(v)) => {
-                            let _ = writeln!(writer, "{}", v.display());
-                            Ok(())
-                        }
-                        Ok(_) => Ok(()),
-                        Err(e) => Err(e),
+                        Ok(ctl) => match interp.finish_global(ctl) {
+                            Ok(v) => {
+                                let _ = writeln!(writer, "{}", v.display());
+                                Ok(())
+                            }
+                            Err(e) => Err(e),
+                        },
+                        Err(e) => Err(interp.uncaught_diag(e)),
                     },
                     other => interp.run_item(other),
                 };

@@ -278,30 +278,21 @@ impl Interp {
             match item {
                 Item::Const { name, value, .. } => {
                     let globals = self.globals.clone();
-                    let v = self.eval(value, &globals)?.value(self, Span::default())?;
+                    let ctl = self.eval_toplevel(value, &globals)?;
+                    let v = self.finish_global(ctl)?;
                     self.globals.define(name.clone(), v, false);
                 }
                 Item::Expr(e, _) => {
                     let globals = self.globals.clone();
-                    self.eval(e, &globals)?.value(self, Span::default())?;
+                    let ctl = self.eval_toplevel(e, &globals)?;
+                    self.finish_global(ctl)?;
                 }
                 _ => {}
             }
         }
         if let Some(main) = self.functions.get("main").cloned() {
             if let Err(d) = self.call(&main, Vec::new(), Span::default()) {
-                if d.code == codes::THROWN {
-                    let shown = self
-                        .pending_throw
-                        .take()
-                        .map_or_else(|| "uncaught value".to_string(), |v| v.display());
-                    return Err(self.error(
-                        codes::FOREIGN,
-                        format!("uncaught value: {shown}"),
-                        Span::default(),
-                    ));
-                }
-                return Err(d);
+                return Err(self.uncaught(d));
             }
         }
         Ok(())
@@ -339,6 +330,42 @@ impl Interp {
 
     fn error(&self, code: u16, msg: impl Into<String>, span: Span) -> Diag {
         Diag::new(code, msg, span)
+    }
+
+    /// Convert an uncaught internal `THROWN` signal into the user-facing
+    /// uncaught-throw diagnostic (`E4026`), preserving the thrown value's
+    /// display. `E4099` is an internal call-boundary signal and MUST NOT reach
+    /// the user (`LANGUAGE_SPEC.md` §34.3); every non-`try` exit path funnels
+    /// through here. Any other diagnostic is returned unchanged.
+    fn uncaught(&mut self, d: Diag) -> Diag {
+        if d.code == codes::THROWN {
+            let shown = self
+                .pending_throw
+                .take()
+                .map_or_else(|| "uncaught value".to_string(), |v| v.display());
+            self.error(codes::FOREIGN, format!("uncaught value: {shown}"), d.span)
+        } else {
+            d
+        }
+    }
+
+    /// Finish a top-level statement or expression: map a residual control-flow
+    /// signal (`return`/`break`/`continue`) or an explicit `throw` to its
+    /// user-visible diagnostic, and normalize an internal throw signal. Used
+    /// by the top-level module pass and the REPL, so those surfaces agree with
+    /// `aura run` (`LANGUAGE_SPEC.md` §28.5).
+    pub fn finish_global(&mut self, c: Ctl) -> Result<Value> {
+        match c.value(self, Span::default()) {
+            Ok(v) => Ok(v),
+            Err(d) => Err(self.uncaught(d)),
+        }
+    }
+
+    /// Normalize an internal throw signal into the user-facing `E4026`
+    /// diagnostic. Used by the REPL so a runtime error reports the same code
+    /// as `aura run` (`LANGUAGE_SPEC.md` §28.5).
+    pub fn uncaught_diag(&mut self, d: Diag) -> Diag {
+        self.uncaught(d)
     }
 
     /// Call a user closure, returning its value.
@@ -411,20 +438,25 @@ impl Interp {
                 mutable,
                 ..
             } => {
-                let v = self.eval(value, env)?.value(self, Span::default())?;
+                // A `return`/`throw`/`break`/`continue` raised while computing
+                // the initializer propagates out of the statement unchanged
+                // (§14.4); it is not converted to a value-position error here.
+                let v = match self.eval(value, env)? {
+                    Ctl::Val(v) => v,
+                    other => return Ok(other),
+                };
                 env.define(name.clone(), v, *mutable);
                 Ok(Ctl::Val(Value::None))
             }
-            Stmt::LetPattern {
-                pattern,
-                value,
-                span,
-            } => {
+            Stmt::LetPattern { pattern, value, .. } => {
                 // Destructuring `let` is atomic (§4.7): match into a temporary
                 // child scope so a mismatch never leaves a partial binding in
                 // the real environment, then transfer every bound name on
                 // success.
-                let v = self.eval(value, env)?.value(self, *span)?;
+                let v = match self.eval(value, env)? {
+                    Ctl::Val(v) => v,
+                    other => return Ok(other),
+                };
                 let tmp = env.child();
                 self.bind_pattern(pattern, &v, &tmp)?;
                 for name in pattern.bindings() {
@@ -440,16 +472,28 @@ impl Interp {
                 op,
                 span,
             } => {
-                let rhs = self.eval(value, env)?.value(self, *span)?;
+                // A control-flow signal raised while computing the RHS or the
+                // target's subexpressions propagates out of the statement
+                // unchanged (§13, §14.4); it is never reinterpreted as a
+                // value-position error or an uncaught throw here.
+                let rhs = match self.eval(value, env)? {
+                    Ctl::Val(v) => v,
+                    other => return Ok(other),
+                };
                 let new = match op {
                     None => rhs,
                     Some(op) => {
-                        let cur = self.read_target(target, env)?;
+                        let cur = match self.read_target(target, env)? {
+                            Ctl::Val(v) => v,
+                            other => return Ok(other),
+                        };
                         self.binary(*op, cur, rhs, *span)?
                     }
                 };
-                self.write_target(target, new, env, *span)?;
-                Ok(Ctl::Val(Value::None))
+                match self.write_target(target, new, env, *span)? {
+                    Ctl::Val(_) => Ok(Ctl::Val(Value::None)),
+                    other => Ok(other),
+                }
             }
             Stmt::Expr(e, _) => self.eval(e, env),
             Stmt::Return(v, _span) => {
@@ -471,7 +515,10 @@ impl Interp {
             Stmt::Break(_) => Ok(Ctl::Break),
             Stmt::Continue(_) => Ok(Ctl::Continue),
             Stmt::While(cond, body, _) => loop {
-                let c = self.eval(cond, env)?.value(self, Span::default())?;
+                let c = match self.eval(cond, env)? {
+                    Ctl::Val(v) => v,
+                    other => return Ok(other),
+                };
                 if !c.truthy() {
                     return Ok(Ctl::Val(Value::None));
                 }
@@ -489,7 +536,10 @@ impl Interp {
                 }
             },
             Stmt::For(pat, iter, body, span) => {
-                let subject = self.eval(iter, env)?.value(self, *span)?;
+                let subject = match self.eval(iter, env)? {
+                    Ctl::Val(v) => v,
+                    other => return Ok(other),
+                };
                 // Ranges iterate lazily, so a `break` on the first element of a
                 // huge range never materializes the whole range.
                 let run = |this: &mut Self, item: Value| -> Result<Option<Ctl>> {
@@ -564,9 +614,9 @@ impl Interp {
         }
     }
 
-    fn read_target(&mut self, target: &Expr, env: &Env) -> Result<Value> {
+    fn read_target(&mut self, target: &Expr, env: &Env) -> Result<Ctl> {
         match target {
-            Expr::Name(name, span) => env.get(name).ok_or_else(|| {
+            Expr::Name(name, span) => env.get(name).map(Ctl::Val).ok_or_else(|| {
                 self.error(
                     codes::UNDEFINED,
                     format!("undefined variable `{name}`"),
@@ -574,13 +624,22 @@ impl Interp {
                 )
             }),
             Expr::Index(b, i, span) => {
-                let base = self.eval(b, env)?.value(self, *span)?;
-                let idx = self.eval(i, env)?.value(self, *span)?;
-                self.index_get(&base, &idx, *span)
+                let base = match self.eval(b, env)? {
+                    Ctl::Val(v) => v,
+                    other => return Ok(other),
+                };
+                let idx = match self.eval(i, env)? {
+                    Ctl::Val(v) => v,
+                    other => return Ok(other),
+                };
+                Ok(Ctl::Val(self.index_get(&base, &idx, *span)?))
             }
             Expr::Field(base, name, span) => {
-                let subject = self.eval(base, env)?.value(self, *span)?;
-                self.field_get(&subject, name, *span)
+                let subject = match self.eval(base, env)? {
+                    Ctl::Val(v) => v,
+                    other => return Ok(other),
+                };
+                Ok(Ctl::Val(self.field_get(&subject, name, *span)?))
             }
             other => Err(self.error(
                 codes::INVALID_ASSIGN,
@@ -590,28 +649,44 @@ impl Interp {
         }
     }
 
-    fn write_target(&mut self, target: &Expr, value: Value, env: &Env, span: Span) -> Result<()> {
+    fn write_target(&mut self, target: &Expr, value: Value, env: &Env, span: Span) -> Result<Ctl> {
         match target {
-            Expr::Name(name, nspan) => env.assign(name, value).map_err(|e| match e {
-                AssignError::Immutable => self.error(
-                    codes::ASSIGN_IMMUTABLE,
-                    format!("cannot assign to `{name}`: it is immutable (declare it `let mut`)"),
-                    *nspan,
-                ),
-                AssignError::Undefined => self.error(
-                    codes::UNDEFINED,
-                    format!("undefined variable `{name}`"),
-                    *nspan,
-                ),
-            }),
+            Expr::Name(name, nspan) => env
+                .assign(name, value)
+                .map(|()| Ctl::Val(Value::None))
+                .map_err(|e| match e {
+                    AssignError::Immutable => self.error(
+                        codes::ASSIGN_IMMUTABLE,
+                        format!(
+                            "cannot assign to `{name}`: it is immutable (declare it `let mut`)"
+                        ),
+                        *nspan,
+                    ),
+                    AssignError::Undefined => self.error(
+                        codes::UNDEFINED,
+                        format!("undefined variable `{name}`"),
+                        *nspan,
+                    ),
+                }),
             Expr::Index(b, i, ispan) => {
-                let base = self.eval(b, env)?.value(self, *ispan)?;
-                let idx = self.eval(i, env)?.value(self, *ispan)?;
-                self.index_set(&base, &idx, value, *ispan)
+                let base = match self.eval(b, env)? {
+                    Ctl::Val(v) => v,
+                    other => return Ok(other),
+                };
+                let idx = match self.eval(i, env)? {
+                    Ctl::Val(v) => v,
+                    other => return Ok(other),
+                };
+                self.index_set(&base, &idx, value, *ispan)?;
+                Ok(Ctl::Val(Value::None))
             }
             Expr::Field(base, name, fspan) => {
-                let subject = self.eval(base, env)?.value(self, *fspan)?;
-                self.field_set(&subject, name, value, *fspan)
+                let subject = match self.eval(base, env)? {
+                    Ctl::Val(v) => v,
+                    other => return Ok(other),
+                };
+                self.field_set(&subject, name, value, *fspan)?;
+                Ok(Ctl::Val(Value::None))
             }
             _ => Err(self.error(codes::INVALID_ASSIGN, "invalid assignment target", span)),
         }
@@ -1090,7 +1165,10 @@ impl Interp {
                 }
                 if let Some(n) = self.natives.get(name).cloned() {
                     // Builtins are positional; named arguments were rejected
-                    // by the checker.
+                    // by the checker. Arity is enforced against the shared
+                    // registry here too, so a directly named builtin cannot
+                    // bypass it.
+                    self.check_native_arity(name, vals.len(), *nspan)?;
                     return Ok(Ctl::Val(n(self, vals, *nspan)?));
                 }
                 if let Some(f) = env.get(name) {
@@ -1112,11 +1190,30 @@ impl Interp {
         }
     }
 
+    /// Enforce a builtin's registry arity at runtime. Used on every native
+    /// invocation path so that a builtin reached dynamically (a first-class
+    /// value or a pipeline) is validated exactly as a direct call is
+    /// (`LANGUAGE_SPEC.md` §25). Natives absent from the registry (internal
+    /// helpers) impose no constraint.
+    fn check_native_arity(&self, name: &str, count: usize, span: Span) -> Result<()> {
+        if let Some(sig) = crate::stdlib::signatures::builtin(name) {
+            if let Some(message) = sig.check_arity(count) {
+                return Err(self.error(codes::TYPE_MISMATCH, message, span));
+            }
+        }
+        Ok(())
+    }
+
     /// Call any callable value.
     pub fn call_value(&mut self, f: Value, args: Vec<Value>, span: Span) -> Result<Value> {
         match f {
             Value::Closure(c) => self.call(&c, args, span),
             Value::Native(name) => {
+                // A builtin referenced as a value (for example `let f = len`)
+                // bypasses the checker's static builtin-call validation; the
+                // registry arity is therefore enforced here, so the runtime is
+                // authoritative for every builtin invocation (§25).
+                self.check_native_arity(&name, args.len(), span)?;
                 let n = self.natives.get(&name).cloned().ok_or_else(|| {
                     self.error(codes::UNDEFINED, format!("unknown `{name}`"), span)
                 })?;
@@ -1138,7 +1235,19 @@ impl Interp {
     /// Evaluate an expression in the global scope (used by the REPL).
     pub fn eval_globals(&mut self, e: &Expr) -> Result<Ctl> {
         let globals = self.globals.clone();
-        self.eval(e, &globals)
+        match self.eval(e, &globals) {
+            Ok(c) => Ok(c),
+            Err(d) => Err(self.uncaught(d)),
+        }
+    }
+
+    /// Evaluate a top-level item's expression, normalizing an internal throw
+    /// signal into the user-facing diagnostic.
+    fn eval_toplevel(&mut self, e: &Expr, env: &Env) -> Result<Ctl> {
+        match self.eval(e, env) {
+            Ok(c) => Ok(c),
+            Err(d) => Err(self.uncaught(d)),
+        }
     }
 
     /// Execute a single statement in the global scope (used by the REPL).
@@ -1152,7 +1261,8 @@ impl Interp {
         match item {
             Item::Const { name, value, .. } => {
                 let globals = self.globals.clone();
-                let v = self.eval(value, &globals)?.value(self, Span::default())?;
+                let ctl = self.eval_toplevel(value, &globals)?;
+                let v = self.finish_global(ctl)?;
                 self.globals.define(name.clone(), v, false);
                 Ok(())
             }

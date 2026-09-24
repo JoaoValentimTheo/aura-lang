@@ -2243,13 +2243,14 @@ implementers do not assume guarantees the language does not make.
 ### 34.3 Implementation limitations
 
 * **`E5003`** is defined but unused and is not part of the normative surface.
-* **`E4099`** is an internal signal, not a user-facing code.
+* **`E4099`** is an internal signal, not a user-facing code. It is normalized
+  to `E4026` on every path that reaches the user.
 * **`Tok::As`** is lexed but no construct consumes it.
-* Runtime method aliases `up`/`down` exist in the interpreter's dispatch table
-  but not in the signature registry. Because the checker validates both
-  `receiver.name(...)` and no-parentheses `receiver.name` against the
-  registry, they are unreachable through the normal pipeline and are not part
-  of the language.
+* Runtime method aliases `up`/`down` were removed from the interpreter's
+  dispatch table. They were never in the signature registry, and the checker
+  validates both `receiver.name(...)` and no-parentheses `receiver.name`
+  against the registry; a plain `"x".up` is therefore `E2003` at the surface,
+  and no call path can reach a method the registry does not declare.
 
 ---
 

@@ -492,6 +492,24 @@ pub fn method(
     args: Vec<Value>,
     span: Span,
 ) -> Result<Value> {
+    // Enforce arity against the shared registry, so a call the checker could
+    // not resolve (an `Unknown` receiver) is still validated at runtime. This
+    // keeps the registry the single source of truth for both layers
+    // (`LANGUAGE_SPEC.md` §24).
+    let class = match recv {
+        Value::Str(_) => Some(signatures::TypeClass::Str),
+        Value::List(_) => Some(signatures::TypeClass::List),
+        Value::Map(_) => Some(signatures::TypeClass::Map),
+        Value::Range(_) => Some(signatures::TypeClass::Range),
+        _ => None,
+    };
+    if let Some(class) = class {
+        if let Some(sig) = signatures::method(class, name) {
+            if let Some(message) = sig.check_arity(args.len()) {
+                return Err(err(codes::TYPE_MISMATCH, message, span));
+            }
+        }
+    }
     match recv {
         Value::Str(s) => string_method(it, s, name, args, span),
         Value::List(l) => list_method(it, l, name, args, span),
@@ -521,8 +539,8 @@ fn string_method(
 ) -> Result<Value> {
     match name {
         "len" => Ok(Value::Int(s.chars().count() as i64)),
-        "upper" | "up" => Ok(Value::str(s.to_uppercase())),
-        "lower" | "down" => Ok(Value::str(s.to_lowercase())),
+        "upper" => Ok(Value::str(s.to_uppercase())),
+        "lower" => Ok(Value::str(s.to_lowercase())),
         "trim" => Ok(Value::str(s.trim().to_string())),
         "contains" => {
             let needle = arg(&args, 0, "contains", span)?;

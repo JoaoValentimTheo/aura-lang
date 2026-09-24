@@ -288,3 +288,35 @@ fn destructuring_does_not_change_annotated_let_persistence() {
     assert!(out.contains("E3001"), "{out}");
     assert!(out.contains('3'), "{out}");
 }
+
+// ---------------------------------------------------------------------------
+// 0.0.1 post-release hardening audit (H2)
+// ---------------------------------------------------------------------------
+
+/// H2-04/H2-08: an uncaught `throw` crossing a call boundary reports `E4026`
+/// in the REPL, not the internal `E4099` signal, matching `aura run`.
+#[test]
+fn h2_repl_uncaught_throw_uses_the_public_code() {
+    let out = body("fn f() { throw \"x\" }\nf()\n:quit\n");
+    assert!(out.contains("E4026"), "{out}");
+    assert!(!out.contains("E4099"), "internal code leaked: {out}");
+}
+
+/// H2-08: a bare top-level control-flow signal in the REPL is reported, not
+/// silently swallowed. `throw "X"` reports `E4026`; a top-level `return` used
+/// as a value reports `E4030`.
+#[test]
+fn h2_repl_top_level_control_flow_is_reported() {
+    let thrown = body("throw \"X\"\n:quit\n");
+    assert!(thrown.contains("E4026"), "{thrown}");
+    let ret = body("if true { return 1 } else { 2 }\n:quit\n");
+    assert!(ret.contains("E4030"), "{ret}");
+}
+
+/// H2-09: a `return` in a lambda inside a REPL submission is not checked
+/// against any enclosing function annotation and works at the session level.
+#[test]
+fn h2_repl_lambda_return_works() {
+    let out = body("fn f() -> int { let g = () -> { return \"s\" }\n return 3 }\nf()\n:quit\n");
+    assert!(out.contains('3'), "{out}");
+}

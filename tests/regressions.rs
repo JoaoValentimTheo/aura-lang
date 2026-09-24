@@ -1008,3 +1008,184 @@ fn destructuring_preserves_ordinary_constructs() {
         "3\n"
     );
 }
+
+// ---------------------------------------------------------------------------
+// 0.0.1 post-release hardening audit (H2)
+//
+// These lock down defects found by the adversarial audit. Each test names the
+// subsystem and the smallest reproducer.
+// ---------------------------------------------------------------------------
+
+/// H2-01: a `return` (or `throw`/`break`/`continue`) raised while computing a
+/// `let` initializer or an assignment RHS propagates out of the statement
+/// unchanged, instead of being converted to `E4030`/`E4026`. `LANGUAGE_SPEC.md`
+/// §14.4 and the H2 control-flow table require this; before the fix the
+/// value-position handler at the `let` and assignment sites dropped the signal.
+#[test]
+fn h2_01_return_in_initializer_propagates_from_the_function() {
+    assert_eq!(
+        out("fn f() -> int { let x = if true { return 7 } else { 0 }\n return x }\nfn main() { print(f()) }"),
+        "7\n"
+    );
+    // The same for an assignment RHS.
+    assert_eq!(
+        out("fn f() -> int { let mut x = 0\n x = if true { return 5 } else { 1 }\n return x }\nfn main() { print(f()) }"),
+        "5\n"
+    );
+}
+
+/// H2-02: a `throw` in a `let` initializer is catchable by an enclosing
+/// `try`, exactly as in any other expression position.
+#[test]
+fn h2_02_throw_in_initializer_is_catchable() {
+    assert_eq!(
+        out("fn main() { try { let v = if true { throw \"x\" } else { 0 }\n print(\"no\") } catch e -> { print(\"caught \" + e) } }"),
+        "caught x\n"
+    );
+    // A `throw` in a loop header (`while` condition / `for` iterable) is also
+    // catchable.
+    assert_eq!(
+        out("fn main() { try { while if true { throw \"w\" } else { false } {} } catch e -> { print(\"caught \" + e) } }"),
+        "caught w\n"
+    );
+    assert_eq!(
+        out("fn main() { try { for x in if true { throw \"fo\" } else { [1] } {} } catch e -> { print(\"caught \" + e) } }"),
+        "caught fo\n"
+    );
+    // And in an assignment target's subexpressions.
+    assert_eq!(
+        out("fn main() { let mut xs = [1, 2]\n try { xs[if true { throw \"i\" } else { 0 }] = 9 } catch e -> { print(\"caught \" + e) } }"),
+        "caught i\n"
+    );
+}
+
+/// H2-03: `E4030` is still reachable, but only where a `return` genuinely
+/// escapes to a value position with no enclosing function (top level).
+#[test]
+fn h2_03_return_position_is_reachable_at_top_level() {
+    assert_eq!(
+        fail("let x = if true { return 1 } else { 2 }"),
+        codes::RETURN_POSITION
+    );
+}
+
+/// H2-04: `E4099` is an internal call-boundary signal and MUST NOT reach the
+/// user (`LANGUAGE_SPEC.md` §34.3). An uncaught `throw` crossing a call
+/// boundary reports `E4026` on every entry point.
+#[test]
+fn h2_04_internal_throw_signal_never_reaches_the_user() {
+    assert_eq!(fail("fn f() { throw \"x\" }\nf()"), codes::FOREIGN);
+    assert_eq!(fail("fn f() { throw \"x\" }\nlet v = f()"), codes::FOREIGN);
+    // Via the explicit module-mode entry point used by `aura eval`.
+    let err = aura::run_toplevel_with("fn f() { throw \"x\" }\nf()", "<t>", Vec::new(), None)
+        .expect_err("uncaught throw");
+    assert_eq!(err.code, codes::FOREIGN);
+}
+
+/// H2-05: a `return` inside a lambda returns from the lambda, not from the
+/// enclosing function. The enclosing function's return annotation MUST NOT be
+/// applied to the lambda body (`LANGUAGE_SPEC.md` §15.4).
+#[test]
+fn h2_05_lambda_return_is_not_checked_against_the_enclosing_function() {
+    // The lambda's `return "s"` is not an `int`, but it is not the enclosing
+    // function's return value, so the program is valid and prints 3.
+    assert_eq!(
+        out(
+            "fn f() -> int { let g = () -> { return \"s\" }\n return 3 }\nfn main() { print(f()) }"
+        ),
+        "3\n"
+    );
+    // The lambda still works as a value.
+    assert_eq!(
+        out("fn f() -> int { let g = () -> { return 9 }\n return g() }\nfn main() { print(f()) }"),
+        "9\n"
+    );
+}
+
+/// H2-06: runtime method arity is validated against the shared registry, so a
+/// call the checker could not resolve (an `Unknown` receiver) is still
+/// rejected instead of silently ignoring extra arguments (`LANGUAGE_SPEC.md`
+/// §24, §15.7).
+#[test]
+fn h2_06_runtime_method_arity_is_enforced() {
+    assert_eq!(
+        fail("fn f(x) { return x.len(1, 2, 3) }\nfn main() { print(f([10, 20])) }"),
+        codes::TYPE_MISMATCH
+    );
+    assert_eq!(
+        fail("fn f(x) { return x.upper(1, 2) }\nfn main() { print(f(\"hi\")) }"),
+        codes::TYPE_MISMATCH
+    );
+    assert_eq!(
+        fail("fn f(x) { return x.pop(5) }\nfn main() { print(f([1, 2])) }"),
+        codes::TYPE_MISMATCH
+    );
+    assert_eq!(
+        fail("fn f(x) { return x.get(\"a\", 9, 9) }\nfn main() { print(f({\"a\": 1})) }"),
+        codes::TYPE_MISMATCH
+    );
+    // A correct call still succeeds.
+    assert_eq!(
+        out("fn f(x) { return x.len() }\nfn main() { print(f([10, 20])) }"),
+        "2\n"
+    );
+}
+
+/// H2-07: the dead `up`/`down` runtime aliases are removed, so they are not
+/// reachable through an `Unknown` receiver. `x.up` is an unknown method on a
+/// string at runtime (`E2003`), matching the checker (`LANGUAGE_SPEC.md`
+/// §34.3, frozen decision "one spelling per construct").
+#[test]
+fn h2_07_dead_method_aliases_are_unreachable() {
+    assert_eq!(
+        fail("fn f(x) { return x.up }\nfn main() { print(f(\"hi\")) }"),
+        codes::UNDEFINED
+    );
+    assert_eq!(
+        fail("fn f(x) { return x.down }\nfn main() { print(f(\"HI\")) }"),
+        codes::UNDEFINED
+    );
+    assert_eq!(
+        out("fn f(x) { return x.upper }\nfn main() { print(f(\"hi\")) }"),
+        "HI\n"
+    );
+}
+
+/// H2-08: every builtin's arity is enforced at runtime, including when the
+/// builtin is referenced as a first-class value (`let f = json_encode`) and
+/// therefore evades the checker's static builtin-call validation. Before the
+/// fix the `json_*`, `regex_*`, and `time_*` natives never consulted the
+/// registry, so `f(1, 2, 3)` silently ignored the extra arguments, violating
+/// `LANGUAGE_SPEC.md` §25 ("also enforced at runtime").
+#[test]
+fn h2_08_first_class_builtin_arity_is_enforced() {
+    assert_eq!(
+        fail("fn main() { let f = json_encode\n print(f(1, 2, 3)) }"),
+        codes::TYPE_MISMATCH
+    );
+    assert_eq!(
+        fail("fn main() { let f = json_decode\n print(f(\"null\", \"x\")) }"),
+        codes::TYPE_MISMATCH
+    );
+    assert_eq!(
+        fail("fn main() { let f = regex_match\n print(f(\"a\", \"b\", \"c\")) }"),
+        codes::TYPE_MISMATCH
+    );
+    assert_eq!(
+        fail("fn main() { let f = time_unix\n print(f(1)) }"),
+        codes::TYPE_MISMATCH
+    );
+    assert_eq!(
+        fail("fn main() { let f = sleep_ms\n print(f(1, 2)) }"),
+        codes::TYPE_MISMATCH
+    );
+    // The correct call still succeeds through the same path.
+    assert_eq!(
+        out("fn main() { let f = json_encode\n print(f(1)) }"),
+        "1\n"
+    );
+    assert_eq!(
+        out("fn main() { let f = regex_match\n print(f(\"a\", \"abc\")) }"),
+        "true\n"
+    );
+}
