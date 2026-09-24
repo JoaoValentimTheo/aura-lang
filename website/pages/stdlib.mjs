@@ -100,7 +100,7 @@ export const stdlibPage = {
 
     let m = {"name": "Aura", "kind": "language"}
     print(json_encode(m))
-    print(regex_find_all("[0-9]+", "version 0.0.1"))
+    print(regex_find_all("[0-9]+", "version 0.0.2"))
 }`,
         title: "stdlib.aura",
         runnable: true,

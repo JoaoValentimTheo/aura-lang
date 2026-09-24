@@ -1,8 +1,13 @@
 # The Aura Language Specification
 
-**Version:** Aura 0.0.1
+**Language version:** Aura 0.0.1
 **Status:** Frozen specification
 **Baseline commit:** `aba88668856173337b68cd4fb8e046f0467bf561`
+
+The **language version** above is the semantics this document defines. It is
+independent of the **release version** of the implementation: release `0.0.2`
+ships the unchanged `0.0.1` language. See `src/lib.rs` (`VERSION` vs
+`LANGUAGE_VERSION`).
 
 This document is the **normative semantic specification** of Aura. It defines
 what Aura programs mean. When this document and any other document or the

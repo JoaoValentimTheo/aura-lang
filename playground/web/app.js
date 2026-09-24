@@ -94,9 +94,11 @@ async function loadManifest() {
   for (const v of manifest.versions) {
     const option = document.createElement("option");
     option.value = v.id;
+    // The selector chooses a *release/runtime*; the language semantics it
+    // implements are shown alongside so the two identities are never confused.
     option.textContent = v.available
-      ? `Aura ${v.language_version}  (runtime ${v.runtime_version})`
-      : `Aura ${v.language_version}  (unavailable)`;
+      ? `Aura ${v.release_version || v.id}  (language ${v.language_version})`
+      : `Aura ${v.release_version || v.id}  (unavailable)`;
     option.disabled = !v.available;
     els.version.append(option);
   }

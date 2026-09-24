@@ -493,6 +493,25 @@ The first usable public scripting surface adds standard input, text-file I/O,
 and program arguments: `read_line`, `read_file`, `write_file`, `args`, and the
 `E4020` I/O diagnostic. See `docs/RELEASE_0_0_X_DESIGN.md`.
 
+### Infrastructure release (0.0.2)
+
+No language-semantic change. `0.0.2` adds portable execution and tooling on top
+of the frozen `0.0.1` language:
+
+* a WebAssembly runtime (`wasm32-unknown-unknown`) built from the same
+  interpreter, with no operating-system authority;
+* an explicit host boundary (`src/host.rs`) so every outside-world interaction
+  routes through one contract, with native and browser hosts;
+* a versioned, immutable browser Playground with hashed runtime artifacts;
+* the official website and GitHub Pages deployment;
+* cross-platform release infrastructure with checksummed artifacts.
+
+The release, language, and runtime versions are deliberately distinct:
+release `0.0.2`, language `0.0.1`, runtime `0.0.2`. After `0.0.2`, development
+enters the long language-maturation cycle (scope/binding audit, const design,
+syntax refinement, semantic consistency, stdlib/API refinement, diagnostics,
+hardening, conformance, and syntax freeze) before any OOP work begins.
+
 ---
 
 ## Feature Development Workflow

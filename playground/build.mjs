@@ -36,6 +36,7 @@ const PLAYGROUND_API_VERSION = 1;
 // is recorded as a historical, non-executable entry rather than fabricated.
 const FROZEN_0_0_1 = {
   id: "0.0.1",
+  release_version: "0.0.1",
   language_version: "0.0.1",
   runtime_version: null,
   host_abi_version: null,
@@ -58,15 +59,27 @@ function readCrateVersion(crateDir) {
   return m[1];
 }
 
+/**
+ * Read `LANGUAGE_VERSION` from the core crate source. The language semantics
+ * version is independent of the release version: 0.0.2 ships the frozen 0.0.1
+ * language. Reading the constant (rather than assuming the package version)
+ * keeps the manifest honest if the two ever diverge.
+ */
 function readLanguageVersion() {
-  const toml = readFileSync(join(repoRoot, "Cargo.toml"), "utf8");
-  const m = toml.match(/^version\s*=\s*"([^"]+)"/m);
-  if (!m) throw new Error("no version in repo Cargo.toml");
+  const src = readFileSync(join(repoRoot, "src", "lib.rs"), "utf8");
+  const m = src.match(/LANGUAGE_VERSION:\s*&str\s*=\s*"([^"]+)"/);
+  if (!m) throw new Error("cannot read LANGUAGE_VERSION from src/lib.rs");
   return m[1];
+}
+
+/** Read the release version from the core crate's Cargo.toml. */
+function readReleaseVersion() {
+  return readCrateVersion(repoRoot);
 }
 
 const runtimeVersion = readCrateVersion(runtimeDir);
 const languageVersion = readLanguageVersion();
+const releaseVersion = readReleaseVersion();
 const artifactName = "aura_playground_runtime.wasm";
 const wasmPath = join(
   runtimeDir,
@@ -165,6 +178,11 @@ const manifest = {
     FROZEN_0_0_1,
     {
       id: runtimeVersion,
+      // The release that ships this runtime. For 0.0.2 the runtime crate
+      // version and the release version coincide, but they are recorded
+      // separately so a future release can ship a runtime without implying a
+      // language change.
+      release_version: releaseVersion,
       language_version: languageVersion,
       runtime_version: runtimeVersion,
       host_abi_version: abiVersion,

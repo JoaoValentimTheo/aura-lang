@@ -4,7 +4,7 @@
 
 ```text
 $ aura repl
-Aura 0.0.1 REPL — :help for commands
+Aura 0.0.2 REPL — :help for commands
 aura> let x = 21
 aura> x * 2
 42

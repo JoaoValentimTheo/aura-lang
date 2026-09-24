@@ -8,10 +8,10 @@ const PHASES = [
     body: "A hardened runtime, cross-platform CI, a WebAssembly feasibility gate, a host contract and execution boundary, WASM semantic validation, and a versioned browser Playground that runs the real runtime.",
   },
   {
-    tag: "In development",
-    kind: "planned",
-    title: "0.0.2 · website and release infrastructure",
-    body: "The official website (this site), GitHub Pages deployment at aura.lang.dev, and release infrastructure. The runtime version selector and immutable artifacts are already in place.",
+    tag: "Released",
+    kind: "success",
+    title: "0.0.2 · WebAssembly, Playground, website",
+    body: "The WebAssembly runtime, the host boundary, the versioned Playground, the official website, GitHub Pages deployment, and cross-platform release infrastructure. The language semantics remain the frozen 0.0.1.",
   },
   {
     tag: "Planned",

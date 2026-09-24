@@ -62,7 +62,7 @@ function appBar(activeKey, base) {
     <a class="brand" href="${url("", base)}" aria-label="${site.name} home">
       <span class="brand__mark" aria-hidden="true">λ</span>
       <span class="brand__name">${site.name}</span>
-      <span class="brand__tag">${escapeHtml(site.languageVersion)}</span>
+      <span class="brand__tag">${escapeHtml(site.releaseVersion)}</span>
     </a>
     <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="primary-nav" aria-label="Toggle navigation" data-nav-toggle>
       <span data-nav-icon-open>${icon("menu")}</span>

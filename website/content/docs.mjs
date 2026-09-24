@@ -7,8 +7,13 @@
 // The `version` field records which Aura version a page documents. Versioned
 // documentation is first-class: pages can be added per version without
 // disturbing existing ones.
+//
+// `docsVersion` is the **release** the docs are published with. The language
+// semantics it documents are the frozen `docsLanguageVersion`; the two are
+// intentionally distinct.
 
-export const docsVersion = "0.0.1";
+export const docsVersion = "0.0.2";
+export const docsLanguageVersion = "0.0.1";
 
 export const docGroups = [
   {

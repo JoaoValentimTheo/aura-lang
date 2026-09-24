@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { docGroups, allDocs, docsVersion } from "../content/docs.mjs";
+import { docGroups, allDocs, docsVersion, docsLanguageVersion } from "../content/docs.mjs";
 import { renderMarkdown } from "../lib/markdown.mjs";
 import { url, escapeHtml } from "../lib/components.mjs";
 import { site } from "../site.config.mjs";
@@ -79,7 +79,8 @@ function buildDocPage(doc, markdown, base) {
   <article class="prose">
     ${bodyHtml}
     <div class="divider"></div>
-    <p class="muted">Documentation for Aura <strong>${docsVersion}</strong>.
+    <p class="muted">Documentation for Aura <strong>${docsVersion}</strong>,
+    which implements the language version <strong>${docsLanguageVersion}</strong>.
     Aura is under active development; the language specification linked in the
     sidebar is normative.</p>
   </article>

@@ -1,6 +1,6 @@
 [package]
 name = "aura-lang"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 rust-version = "1.83"
 description = "Aura: an expression-oriented scripting language with a native Rust runtime and optional Python interop (PyO3)."

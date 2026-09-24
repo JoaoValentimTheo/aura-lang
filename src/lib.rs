@@ -25,8 +25,22 @@ pub mod types;
 
 use std::sync::{Arc, Mutex};
 
-/// The compiler version.
+/// The release version of the Aura implementation (the package version).
+///
+/// This tracks the *release* identity used by the CLI, the Git tag, and the
+/// release artifacts. It is distinct from [`LANGUAGE_VERSION`]: a release can
+/// ship runtime, tooling, or packaging changes without changing the language's
+/// semantics.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// The version of the Aura *language semantics*.
+///
+/// The language specification (`docs/LANGUAGE_SPEC.md`) is frozen at this
+/// version. It changes only through the RFC process, independently of the
+/// release version. Aura 0.0.2 ships the 0.0.1 language: the 0.0.2 release adds
+/// the WebAssembly runtime, the host boundary, the Playground, the website, and
+/// release infrastructure, with no semantic change.
+pub const LANGUAGE_VERSION: &str = "0.0.1";
 
 /// Stack size for the interpreter thread. Recursive Aura programs recurse
 /// through several Rust frames per call, so a generous but bounded stack

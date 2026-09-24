@@ -15,9 +15,19 @@ fn session(input: &str) -> String {
     String::from_utf8(out).expect("utf8")
 }
 
-/// The printed body of a session, with prompts removed.
+/// The printed body of a session, with the version banner and prompts removed.
+///
+/// The banner carries the release version (`Aura 0.0.2 REPL — …`), which is not
+/// program output; stripping it keeps assertions about evaluated results
+/// independent of the release number.
 fn body(input: &str) -> String {
-    session(input).replace("aura> ", "").replace("  ... ", "")
+    session(input)
+        .lines()
+        .filter(|line| !line.starts_with("Aura "))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .replace("aura> ", "")
+        .replace("  ... ", "")
 }
 
 #[test]

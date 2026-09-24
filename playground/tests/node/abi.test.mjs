@@ -54,6 +54,8 @@ function expectCode(name, source, code, options) {
 
 // --- ABI identity ---------------------------------------------------------
 check("abi version is 1", runtime.abiVersion === 1, String(runtime.abiVersion));
+// The release is 0.0.2; the language semantics remain the frozen 0.0.1.
+check("release/runtime version is 0.0.2", runtime.runtimeVersion === "0.0.2", runtime.runtimeVersion);
 check("language version is 0.0.1", runtime.languageVersion === "0.0.1", runtime.languageVersion);
 check(
   "module has zero imports",

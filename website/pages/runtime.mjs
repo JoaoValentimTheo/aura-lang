@@ -92,9 +92,10 @@ export const runtimePage = {
 #
 #   id                 0.0.2
 #   language_version   0.0.1
+#   release_version    0.0.2
 #   host_abi_version   1
 #   artifact           0.0.2/aura_playground_runtime.wasm
-#   sha256             22f3913d…3197
+#   sha256             5a4ad3f7…34ed
 #
 # The loader refuses any artifact that declares imports,
 # so the runtime can never gain host authority.`,

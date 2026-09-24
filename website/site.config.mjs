@@ -15,10 +15,16 @@ export const site = {
   releases:
     "https://github.com/JoaoValentimTheo/aura-lang/releases",
   license: "MIT",
+  // Three distinct identities, deliberately not collapsed:
+  //   * releaseVersion  — the published release / runtime artifact (0.0.2)
+  //   * languageVersion — the frozen language semantics (0.0.1)
+  //   * previousRelease — the prior published release, kept addressable
+  releaseVersion: "0.0.2",
   languageVersion: "0.0.1",
   runtimeVersion: "0.0.2",
-  currentRelease: "0.0.1",
-  upcomingRelease: "0.0.2",
+  previousRelease: "0.0.1",
+  // Current published release, shown in the header and hero.
+  currentRelease: "0.0.2",
 };
 
 // Primary navigation. `key` links a nav entry to page metadata.

@@ -26,6 +26,17 @@ fn parse(json: &str) -> serde_json::Value {
 }
 
 #[test]
+fn version_model_is_coherent() {
+    // The language semantics stay at 0.0.1; the runtime artifact is 0.0.2.
+    assert_eq!(aura::LANGUAGE_VERSION, "0.0.1");
+    assert_eq!(aura::VERSION, "0.0.2");
+    assert_eq!(rt::RUNTIME_VERSION, "0.0.2");
+    assert_eq!(rt::ABI_VERSION, 1);
+    let (_json, _status, language_version) = rt::execute("fn main() {}", &[]);
+    assert_eq!(language_version, "0.0.1");
+}
+
+#[test]
 fn ok_result_is_structured() {
     let (json, status, version) = rt::execute("fn main() { print(1 + 2) }", &[]);
     assert_eq!(status, rt::status::OK);

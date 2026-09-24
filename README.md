@@ -15,11 +15,20 @@ No Python required to run.
 ## Status
 
 Aura v3 is a from-scratch Rust rewrite. The previous Python transpiler is
-gone; the last Python release is preserved as tag `v0.2.0a8`. Version
-`0.0.1` is the first usable public release: the language core, the runtime,
-the standard library (including scripting I/O), the CLI, the REPL, and the
-Python bridge are implemented and covered by an executable test suite, and
-the CI runs on Linux, macOS, and Windows with and without CPython.
+gone; the last Python release is preserved as tag `v0.2.0a8`.
+
+Version **`0.0.2`** is the current public release. It ships the frozen
+**`0.0.1` language semantics** and adds portable execution and tooling: a
+WebAssembly runtime built from the same interpreter, an explicit host
+boundary, a versioned browser Playground with immutable runtime artifacts, the
+official website at [aura.lang.dev](https://aura.lang.dev), and cross-platform
+release infrastructure. `0.0.1` was the first usable public release: the
+language core, the runtime, the standard library (including scripting I/O), the
+CLI, the REPL, and the Python bridge.
+
+Release, language, and runtime versions are deliberately distinct:
+`aura 0.0.2` implements language `0.0.1`, with runtime artifacts identified as
+`0.0.2`.
 
 | Area | State |
 |------|-------|
@@ -27,6 +36,10 @@ the CI runs on Linux, macOS, and Windows with and without CPython.
 | Static checks (names, mutability, reserved words) | Implemented |
 | Tree-walking interpreter | Implemented |
 | Core stdlib + `json`, `regex`, `time` | Implemented |
+| CLI, REPL, scripting I/O | Implemented |
+| WebAssembly runtime + host boundary | Implemented |
+| Versioned browser Playground | Implemented |
+| Official website (GitHub Pages) | Implemented |
 | Structured concurrency / async | Not in this alpha |
 | Compilation to native machine code | Not planned |
 | Optional Python bridge (`py` feature) | Implemented |

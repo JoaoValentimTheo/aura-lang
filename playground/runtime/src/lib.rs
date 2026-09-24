@@ -60,7 +60,7 @@ pub const ABI_VERSION: u32 = 1;
 /// The runtime artifact version.
 ///
 /// This is the version of the *WebAssembly runtime build*, which is distinct
-/// from the Aura *language* version reported by `aura::VERSION`. The frozen
+/// from the Aura *language* version reported by `aura::LANGUAGE_VERSION`. The frozen
 /// `0.0.1` release predates the WebAssembly substrate (so it has no wasm
 /// runtime at all); the first wasm-executable runtime is the `0.0.2`
 /// development line. Both are exposed so a version entry is unambiguous.
@@ -231,14 +231,14 @@ pub fn execute(source: &str, options_raw: &[u8]) -> (String, u32, &'static str) 
             Span::default(),
         );
         let (json, code) = diagnostic_result(&d, source, "");
-        return (json, code, aura::VERSION);
+        return (json, code, aura::LANGUAGE_VERSION);
     }
     let opts = match parse_options(options_raw) {
         Ok(o) => o,
         Err(message) => {
             let d = Diag::new(codes::IO, message, Span::default());
             let (json, code) = diagnostic_result(&d, source, "");
-            return (json, code, aura::VERSION);
+            return (json, code, aura::LANGUAGE_VERSION);
         }
     };
 
@@ -252,7 +252,7 @@ pub fn execute(source: &str, options_raw: &[u8]) -> (String, u32, &'static str) 
         }
         Err(d) => {
             let (json, code) = diagnostic_result(&d, source, "");
-            return (json, code, aura::VERSION);
+            return (json, code, aura::LANGUAGE_VERSION);
         }
     };
 
@@ -282,7 +282,7 @@ fn run_module(
         Ok(m) => m,
         Err(d) => {
             let (json, code) = diagnostic_result(&d, source, "");
-            return (json, code, aura::VERSION);
+            return (json, code, aura::LANGUAGE_VERSION);
         }
     };
     let stdin = opts.stdin.clone();
@@ -300,13 +300,13 @@ fn run_module(
             (
                 result_json("ok", &stdout, v.as_deref(), ""),
                 status::OK,
-                aura::VERSION,
+                aura::LANGUAGE_VERSION,
             )
         }
         Err(d) => {
             let stdout = take_stdout(&out);
             let (json, code) = diagnostic_result(&d, source, &stdout);
-            (json, code, aura::VERSION)
+            (json, code, aura::LANGUAGE_VERSION)
         }
     }
 }
@@ -364,11 +364,11 @@ fn finish(
         Ok(()) => (
             result_json("ok", &stdout, None, ""),
             status::OK,
-            aura::VERSION,
+            aura::LANGUAGE_VERSION,
         ),
         Err(d) => {
             let (json, code) = diagnostic_result(&d, source, &stdout);
-            (json, code, aura::VERSION)
+            (json, code, aura::LANGUAGE_VERSION)
         }
     }
 }
@@ -398,17 +398,21 @@ pub extern "C" fn aura_abi_version() -> u32 {
 }
 
 /// Length in bytes of the language version string.
+///
+/// This is the *language semantics* version (`aura::LANGUAGE_VERSION`), not the
+/// release version. The manifest records both so a version entry is
+/// unambiguous.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn aura_version_len() -> u32 {
-    aura::VERSION.len() as u32
+    aura::LANGUAGE_VERSION.len() as u32
 }
 
 /// Byte `i` of the language version string (0 past the end).
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn aura_version_byte(i: u32) -> u32 {
-    aura::VERSION
+    aura::LANGUAGE_VERSION
         .as_bytes()
         .get(i as usize)
         .copied()

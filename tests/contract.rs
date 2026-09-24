@@ -175,11 +175,21 @@ fn r10_defined_errors_documented() {
     assert_eq!(sorted.len(), all.len());
 }
 
-/// The release identity is `0.0.1`, derived from the package version (not a
+/// The release identity is `0.0.2`, derived from the package version (not a
 /// hardcoded duplicate). This keeps the crate version, the exported
 /// `aura::VERSION`, and `aura version` in agreement.
 #[test]
-fn release_version_is_zero_zero_one() {
-    assert_eq!(aura::VERSION, "0.0.1");
+fn release_version_is_zero_zero_two() {
+    assert_eq!(aura::VERSION, "0.0.2");
     assert_eq!(aura::VERSION, env!("CARGO_PKG_VERSION"));
+}
+
+/// The *language semantics* remain at the frozen `0.0.1` specification while
+/// the 0.0.2 release ships runtime, host, Playground, and website work. The
+/// two identities are deliberately distinct (see `src/lib.rs`), and the
+/// language version must never silently track the release version.
+#[test]
+fn language_version_is_frozen_at_zero_zero_one() {
+    assert_eq!(aura::LANGUAGE_VERSION, "0.0.1");
+    assert_ne!(aura::LANGUAGE_VERSION, aura::VERSION);
 }

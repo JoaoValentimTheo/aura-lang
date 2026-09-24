@@ -71,6 +71,14 @@ for (const entry of manifest.versions) {
     runtime.languageVersion === entry.language_version,
     `${runtime.languageVersion} != ${entry.language_version}`,
   );
+  // A version entry records the release it belongs to, separately from the
+  // language version, so the two cannot be conflated.
+  check(`release version present for ${entry.id}`, typeof entry.release_version === "string");
+  check(
+    `runtime version equals release version for ${entry.id}`,
+    entry.runtime_version === entry.release_version,
+    `${entry.runtime_version} != ${entry.release_version}`,
+  );
 }
 
 // The frozen 0.0.1 entry must be present and honest.

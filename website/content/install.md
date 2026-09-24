@@ -44,7 +44,8 @@ The release workflow publishes per-platform tarballs built for:
 * `x86_64-pc-windows-msvc`
 
 They are attached to each [GitHub release](https://github.com/JoaoValentimTheo/aura-lang/releases).
-The first usable public release is **v0.0.1**.
+The current release is **v0.0.2**, which implements the frozen **0.0.1** language
+semantics; **v0.0.1** was the first usable public release.
 
 ## Feature flags
 

@@ -4,6 +4,7 @@
   "versions": [
     {
       "id": "0.0.1",
+      "release_version": "0.0.1",
       "language_version": "0.0.1",
       "runtime_version": null,
       "host_abi_version": null,
@@ -15,12 +16,13 @@
     },
     {
       "id": "0.0.2",
+      "release_version": "0.0.2",
       "language_version": "0.0.1",
       "runtime_version": "0.0.2",
       "host_abi_version": 1,
       "available": true,
       "artifact": "0.0.2/aura_playground_runtime.wasm",
-      "sha256": "22f3913d529bc989784878f0f685ddf8ecb7f53765bf82a3331b0b60903e3197",
+      "sha256": "5a4ad3f7e3f786164d65df437d607e7ddd5e25947ea2c8dd9b436a5490b334ed",
       "bytes": 1366621
     }
   ]

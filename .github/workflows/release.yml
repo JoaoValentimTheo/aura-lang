@@ -169,10 +169,43 @@ jobs:
           for f in "${checks[@]}"; do
             (cd dist && "${verifier[@]}" "$(basename "$f")")
           done
+      - name: Package the Playground WebAssembly runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The runtime artifact is versioned and immutable. Ship the exact
+          # artifact the manifest names, alongside its checksum, so the release
+          # is self-describing and reproducible.
+          version="${GITHUB_REF_NAME#v}"
+          artifact="playground/runtimes/${version}/aura_playground_runtime.wasm"
+          if [ ! -f "$artifact" ]; then
+            echo "missing versioned runtime artifact: $artifact" >&2
+            exit 1
+          fi
+          cp "$artifact" "dist/aura-playground-runtime-${version}.wasm"
+          (cd dist && \
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "aura-playground-runtime-${version}.wasm" > "aura-playground-runtime-${version}.wasm.sha256"
+            else
+              shasum -a 256 "aura-playground-runtime-${version}.wasm" > "aura-playground-runtime-${version}.wasm.sha256"
+            fi)
+          cat "dist/aura-playground-runtime-${version}.wasm.sha256"
+      - name: Assemble release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          notes="docs/release-notes/v${version}.md"
+          if [ -f "$notes" ]; then
+            cp "$notes" dist/RELEASE_NOTES.md
+          else
+            printf '# Aura %s\n\nSee the repository changelog.\n' "$version" > dist/RELEASE_NOTES.md
+          fi
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          # Curated release notes when present; otherwise generated notes.
+          body_path: dist/RELEASE_NOTES.md
           # Historical artifacts are immutable: never silently overwrite a
           # released asset. A new version is the recovery path.
           overwrite_files: false
@@ -180,3 +213,4 @@ jobs:
           files: |
             dist/*.tar.gz
             dist/*.sha256
+            dist/aura-playground-runtime-*.wasm

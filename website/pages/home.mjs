@@ -36,14 +36,14 @@ export const homePage = {
     codeRepository: site.repository,
     license: "https://opensource.org/licenses/MIT",
     programmingLanguage: "Aura",
-    version: site.languageVersion,
+    version: site.releaseVersion,
   }),
   async render(base) {
     return `
 <section class="hero">
   <div class="container hero__grid">
     <div class="hero__copy">
-      <span class="hero__eyebrow">Aura ${site.languageVersion} · alpha</span>
+      <span class="hero__eyebrow">Aura ${site.releaseVersion} · released</span>
       <h1>A small language, built to be understood.</h1>
       <p class="hero__lede">
         Aura is a dynamically-typed, expression-oriented scripting language with a
@@ -215,9 +215,11 @@ fn main() {
         <div class="section__head">
           <span class="section__eyebrow">Current state</span>
           <h2>What exists today.</h2>
-          <p class="section__lede">Aura ${site.languageVersion} is the first usable
-          public release. ${site.upcomingRelease} is in development and adds the
-          website, WebAssembly runtime, and versioned Playground.</p>
+          <p class="section__lede">Aura ${site.releaseVersion} is the current public
+          release, implementing the frozen <strong>${site.languageVersion}</strong>
+          language. It adds the WebAssembly runtime, the host boundary, the
+          versioned Playground, and this website on top of the
+          ${site.previousRelease} language core.</p>
         </div>
         ${statusList([
           ["Lexer, parser, AST", "Implemented", "success"],
@@ -226,7 +228,7 @@ fn main() {
           ["Core stdlib + json, regex, time", "Implemented", "success"],
           ["CLI, REPL, scripting I/O", "Implemented", "success"],
           ["Cross-platform CI", "Implemented", "success"],
-          ["WebAssembly runtime + Playground", "In development", "planned"],
+          ["WebAssembly runtime + Playground", "Released", "success"],
           ["OOP, Python/PyO3, data ecosystem", "Planned", "planned"],
         ])}
       </div>
@@ -265,14 +267,16 @@ fn main() {
     <div class="section__head">
       <span class="section__eyebrow">Roadmap</span>
       <h2>Where Aura is going.</h2>
-      <p class="section__lede">After ${site.upcomingRelease}, development slows to a
-      deliberate language-maturity cycle before any new paradigm is added.</p>
+      <p class="section__lede">With ${site.releaseVersion} released, development
+      slows to a deliberate language-maturity cycle before any new paradigm is
+      added.</p>
     </div>
     ${dataTable(
       ["Stage", "Focus", "Status"],
       [
         ["Gaiola 1–7", "Runtime, CI, host boundary, WASM, Playground", chip("Complete", "success")],
-        ["0.0.2", "Website, release infrastructure", chip("In development", "planned")],
+        ["0.0.1", "Scripting I/O, language core, native runtime", chip("Released", "success")],
+        ["0.0.2", "WebAssembly, host boundary, Playground, website", chip("Released", "success")],
         ["Maturation", "Syntax refinement, semantics, stdlib, diagnostics", chip("Planned", "planned")],
         ["Hardening", "Conformance, differential testing, fuzzing", chip("Planned", "planned")],
         ["Syntax freeze", "Lock the language surface", chip("Planned", "planned")],
