@@ -104,18 +104,30 @@ pub const MAX_AST_DEPTH: usize = 256;
 
 /// The parser's recursion backstop: an implementation-safety bound on the
 /// depth of grouping tokens (parentheses), which add no AST depth and so are
-/// not governed by [`MAX_AST_DEPTH`].
+/// not governed by [`MAX_AST_DEPTH`]. It is measured in recursive-descent
+/// frames, not AST nodes.
 ///
 /// This is **not** a language limit; it protects the host stack. It is
-/// substrate-calibrated: native execution runs the parser on a 64 MiB stack
-/// and can afford a deep backstop, while WebAssembly runs inline on the
-/// engine's stack and needs a smaller budget so it returns `E1015` rather
-/// than trapping. Exceeding it is `E1015` on every substrate.
+/// substrate-calibrated:
+///
+/// * Native runs the parser on a dedicated 64 MiB stack, so the backstop is
+///   far above anything the semantic limit can require.
+/// * WebAssembly runs the parser inline on the engine stack. A program at the
+///   semantic AST limit (256) costs at most ~512 parser frames, so the WASM
+///   budget must exceed that to avoid rejecting programs the language permits;
+///   it must also stay below the point where the engine stack overflows.
+///   1024 satisfies both: it accepts every AST-valid program plus generous
+///   grouping, and it returns `E1015` well before the engine stack traps
+///   (observed trap onset is ~1600 frames on a default engine stack, and
+///   1024 is trap-free down to a 512 KiB stack).
+///
+/// Exceeding it is `E1015` on every substrate; it never redefines the
+/// semantic AST limit.
 #[must_use]
 pub const fn parse_recursion_budget() -> usize {
     #[cfg(target_arch = "wasm32")]
     {
-        512
+        1024
     }
     #[cfg(not(target_arch = "wasm32"))]
     {

@@ -322,6 +322,45 @@ fn native_parse_recursion_budget_is_2048() {
     assert_eq!(aura::parse::parse_recursion_budget(), 2048);
 }
 
+/// WASM validation gate: the parser backstop must not be so small that it
+/// rejects programs the semantic AST limit permits. A program at the AST limit
+/// costs ~512 parser frames, and any grouping adds to that, so the WASM
+/// budget must exceed 512. This test runs on both substrates and pins the
+/// invariant that the budget is greater than the AST-implied frame need.
+#[test]
+fn parser_backstop_covers_the_ast_limit_on_every_substrate() {
+    // The most frame-expensive AST-valid shape: a maximal nested collection
+    // wrapped in grouping parentheses. It must parse on every substrate. Its
+    // display is the nested brackets themselves.
+    let nested_display = format!("{}1{}", "[".repeat(250), "]".repeat(250));
+
+    let ast_max = format!(
+        "fn main() {{ print({}1{}) }}",
+        "[".repeat(250),
+        "]".repeat(250)
+    );
+    assert_eq!(run(&ast_max), Ok(format!("{nested_display}\n")));
+
+    let grouped = format!(
+        "fn main() {{ print({}{}1{}{}) }}",
+        "[".repeat(250),
+        "(".repeat(50),
+        ")".repeat(50),
+        "]".repeat(250)
+    );
+    assert_eq!(
+        run(&grouped),
+        Ok(format!("{nested_display}\n")),
+        "an AST-valid program with grouping must not be rejected by the parser backstop"
+    );
+
+    // A budget below the AST-implied peak would be an observable divergence.
+    assert!(
+        aura::parse::parse_recursion_budget() > 512,
+        "the parser backstop must exceed the AST-implied frame need (~512)"
+    );
+}
+
 /// The semantic AST limit (256) is unchanged by the host work: a program past
 /// it is still `E1015`, and the parser backstop is separate.
 #[test]

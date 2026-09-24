@@ -2114,6 +2114,14 @@ the parser on a dedicated large stack, uses a deeper budget than WebAssembly,
 which runs inline on the engine stack. The semantic AST-node limit (§31.1) is
 identical on every substrate.
 
+**Normative rule.** A program that is valid under the semantic AST-node limit
+(§31.1) MUST be accepted on every execution substrate: the backstop MUST be
+large enough to parse any AST-valid program, including one that also uses
+grouping. A backstop smaller than that would make the AST limit
+substrate-dependent, which this rule forbids. The backstop exists only to
+bound purely non-AST recursion (grouping) beyond what an AST-valid program can
+require.
+
 > **RESOLVED CONCEPTUAL DISTINCTION.** These are two distinct mechanisms:
 >
 > 1. the **semantic AST-node limit** (256; §31.1), which is the language
