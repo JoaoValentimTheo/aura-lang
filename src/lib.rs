@@ -14,6 +14,7 @@ pub mod ast;
 pub mod bridge;
 pub mod check;
 pub mod error;
+pub mod host;
 pub mod lex;
 pub mod parse;
 #[cfg(feature = "repl")]
@@ -32,52 +33,67 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// keeps the language's own recursion limit (`E4011`) authoritative.
 pub const INTERP_STACK: usize = 64 * 1024 * 1024;
 
-/// Run `f` on a thread with a large stack, so deep Aura recursion surfaces
-/// as `E4011` instead of a native stack overflow.
-fn on_interp_thread<T, F>(f: F) -> error::Result<T>
+/// Run `f` on the execution substrate, returning its result.
+///
+/// **Native:** `f` runs on a dedicated 64 MiB stack so that deeply recursive
+/// Aura programs surface the language's own limits (`E1015`, `E4011`) rather
+/// than a host stack overflow. A panic in the worker becomes an `INTERNAL`
+/// diagnostic instead of crossing the boundary.
+///
+/// **WebAssembly:** there are no OS threads and no stack-size knob, so `f`
+/// runs inline on the engine stack. Language limits remain the only bound a
+/// program can hit; the parser uses a smaller grouping budget on this
+/// substrate (see [`parse::parse_recursion_budget`]).
+///
+/// # Errors
+/// Returns whatever `f` returns. On native, a failure to start the thread is
+/// `FOREIGN`; a panic in the worker becomes `INTERNAL`.
+pub fn on_execution_stack<T, F>(f: F) -> error::Result<T>
 where
     T: Send + 'static,
     F: FnOnce() -> error::Result<T> + Send + 'static,
 {
-    let handle = std::thread::Builder::new()
-        .name("aura-interp".to_string())
-        .stack_size(INTERP_STACK)
-        .spawn(f)
-        .map_err(|e| {
-            error::Diag::new(
-                error::codes::FOREIGN,
-                format!("cannot start interpreter: {e}"),
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let handle = std::thread::Builder::new()
+            .name("aura-exec".to_string())
+            .stack_size(INTERP_STACK)
+            .spawn(f)
+            .map_err(|e| {
+                error::Diag::new(
+                    error::codes::FOREIGN,
+                    format!("cannot start execution thread: {e}"),
+                    error::Span::default(),
+                )
+            })?;
+        match handle.join() {
+            Ok(r) => r,
+            Err(_) => Err(error::Diag::new(
+                error::codes::INTERNAL,
+                "the execution thread aborted; this is a bug in Aura, not in your program",
                 error::Span::default(),
-            )
-        })?;
-    match handle.join() {
-        Ok(r) => r,
-        Err(_) => Err(error::Diag::new(
-            error::codes::INTERNAL,
-            "the interpreter thread aborted; this is a bug in Aura, not in your program",
-            error::Span::default(),
-        )),
+            )),
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        f()
     }
 }
 
-/// Run `f` on the large interpreter stack, returning its result.
+/// Run `f` on the large execution stack, returning its result.
 ///
-/// Front-end stages that recurse over the AST (the checker in particular) must
-/// run with enough native stack for a program at the language nesting limit, so
-/// the semantic limit (`E1015`/`E4011`) is the only bound a user can hit. The
-/// CLI entry points use this internally; the REPL runs its whole session here
-/// so no entry point overflows where another succeeds.
+/// Retained as the public name used by the REPL; delegates to
+/// [`on_execution_stack`].
 ///
 /// # Errors
-/// Returns whatever `f` returns. A failure to start the thread is `FOREIGN`;
-/// a panic in the worker becomes an `INTERNAL` diagnostic rather than
-/// propagating a panic across the boundary.
+/// Returns whatever `f` returns.
 pub fn on_large_stack<T, F>(f: F) -> error::Result<T>
 where
     T: Send + 'static,
     F: FnOnce() -> error::Result<T> + Send + 'static,
 {
-    on_interp_thread(f)
+    on_execution_stack(f)
 }
 
 /// A writer that appends to a shared buffer, so output can be read back
@@ -220,10 +236,10 @@ pub fn compile_with_mode(src: &str, mode: CompileMode) -> error::Result<ast::Mod
     check_on_big_stack(module, mode)
 }
 
-/// Run the checker on the large interpreter stack, returning the module so the
+/// Run the checker on the large execution stack, returning the module so the
 /// caller can still execute or inspect it.
 fn check_on_big_stack(module: ast::Module, mode: CompileMode) -> error::Result<ast::Module> {
-    on_interp_thread(move || {
+    on_execution_stack(move || {
         check::Checker::module_in_mode(&module, mode)?;
         Ok(module)
     })
@@ -249,10 +265,11 @@ pub fn execute(module: ast::Module, stdout: Option<Output>) -> error::Result<()>
     execute_with(module, stdout, Vec::new(), None)
 }
 
-/// Execute a compiled module with an explicit execution context: program
-/// arguments for `args()` and an optional standard-input source for
-/// `read_line()`. `execute` delegates here with empty defaults, so existing
-/// callers keep their behavior (no input, no arguments).
+/// Execute a compiled module with an explicit execution context: an optional
+/// output sink, program arguments for `args()`, and an optional standard-input
+/// source for `read_line()`. `execute` delegates here with empty defaults, so
+/// existing callers keep their behavior (process stdout, no input, no
+/// arguments).
 ///
 /// # Errors
 /// Returns the first runtime diagnostic.
@@ -262,12 +279,9 @@ pub fn execute_with(
     args: Vec<String>,
     input: Option<Input>,
 ) -> error::Result<()> {
-    on_interp_thread(move || {
+    on_execution_stack(move || {
         let mut interp = run::Interp::new();
-        if let Some(w) = stdout {
-            interp.stdout = w;
-        }
-        interp.set_context(args, input);
+        interp.set_host(host::host_from_parts(stdout, args, input));
         interp.run(&module)
     })
 }

@@ -140,6 +140,10 @@ pub mod codes {
     pub const RECURSION: u16 = 4011;
     /// Python bridge disabled or unsupported.
     pub const PY_UNSUPPORTED: u16 = 5002;
+    /// A host capability is not available in this execution environment.
+    /// Shares the code with [`PY_UNSUPPORTED`]: both mean "this build or host
+    /// cannot provide the requested capability".
+    pub const CAPABILITY_UNAVAILABLE: u16 = 5002;
     /// An optional standard-library feature is not compiled into this build.
     pub const FEATURE_UNAVAILABLE: u16 = 5003;
     /// Python error.

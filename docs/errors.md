@@ -66,7 +66,7 @@ Every rejection carries a stable code. Codes are grouped by phase:
 | Code  | Meaning | Example trigger |
 |-------|---------|-----------------|
 | E5001 | Python error | `py_eval("1 / 0")` |
-| E5002 | Python bridge unavailable or value cannot cross | `py_eval(...)` without the `py` feature; a non-string Python dict key |
+| E5002 | Capability unavailable (Python bridge, or a host capability) | `py_eval(...)` without the `py` feature; a non-string Python dict key; `time_unix`/`sleep_ms`/`read_file` in a host that does not provide the capability |
 
 ## Stability
 

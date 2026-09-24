@@ -290,3 +290,42 @@ fn deep_else_if_chain_is_bounded() {
     // A clearly-over chain is rejected with the existing nesting diagnostic.
     assert_eq!(run(&chain(2000)), Err(codes::NESTING));
 }
+
+/// Host gate: the parser recursion backstop is an implementation-safety limit,
+/// distinct from the semantic AST limit (256). On the native substrate the
+/// backstop is 2048, so a chain of grouping parentheses well past the AST
+/// limit is accepted when it stays under the backstop, and one past it is
+/// `E1015` — never a host overflow.
+#[test]
+fn parser_recursion_backstop_is_distinct_from_ast_limit() {
+    // 1000 grouping parentheses add no AST depth and stay under the native
+    // backstop of 2048.
+    let ok = format!(
+        "fn main() {{ print({}1{}) }}",
+        "(".repeat(1000),
+        ")".repeat(1000)
+    );
+    assert_eq!(run(&ok), Ok("1\n".to_string()));
+
+    // Past the backstop, the same construct is the stable nesting diagnostic.
+    let over = format!(
+        "fn main() {{ print({}1{}) }}",
+        "(".repeat(3000),
+        ")".repeat(3000)
+    );
+    assert_eq!(run(&over), Err(codes::NESTING));
+}
+
+/// The published budget is stable per substrate: native is 2048.
+#[test]
+fn native_parse_recursion_budget_is_2048() {
+    assert_eq!(aura::parse::parse_recursion_budget(), 2048);
+}
+
+/// The semantic AST limit (256) is unchanged by the host work: a program past
+/// it is still `E1015`, and the parser backstop is separate.
+#[test]
+fn semantic_ast_limit_is_unchanged_by_the_host_gate() {
+    let over = format!("fn main() {{ print({}) }}", vec!["1"; 256].join("+"));
+    assert_eq!(run(&over), Err(codes::NESTING));
+}

@@ -94,8 +94,11 @@ stable `E####` diagnostics on failure (see §30).
 *Implementation note.* The entry points are `lex::lex` (`src/lex/mod.rs`),
 `parse::parse` (`src/parse/mod.rs`), `check::Checker` (`src/check/mod.rs`),
 and `run::Interp::run` (`src/run/mod.rs`). They are composed by `compile` and
-`execute` in `src/lib.rs`. Parsing and execution each run on a dedicated
-large-stack thread; this is an implementation detail with no semantic effect.
+`execute` in `src/lib.rs`. Parsing and execution run on the *execution
+substrate* (`on_execution_stack`): on native, a dedicated 64 MiB-stack thread
+so the language's own nesting and recursion limits are the only bound a
+program can hit; on WebAssembly, inline on the engine stack. This is an
+implementation detail with no semantic effect.
 
 ### 2.2 Phase responsibilities
 
@@ -1842,8 +1845,18 @@ returns `[]`. Filesystem access is available in every execution mode.
 provably wrong argument type is `E3001` before execution, and is also enforced
 at runtime. An undefined builtin is `E2003`.
 
+**Normative rule (host capabilities).** `read_line`, `read_file`, `write_file`,
+`args`, `print`, and the `time` builtins obtain their effect from the
+interpreter's host. A capability the host does not provide is `E5002`
+(unavailable); a genuine I/O failure of a provided capability is `E4020`. The
+native host provides standard input/output, arguments, the filesystem, the
+clock, and sleep; a WebAssembly host may provide fewer, in which case the
+corresponding builtin is `E5002`. Language semantics do not otherwise depend
+on the host.
+
 *Evidence:* `builtins()` (`src/stdlib/signatures.rs`); natives in
-`src/stdlib/mod.rs`, `src/stdlib/ext.rs`, `src/bridge/mod.rs`.
+`src/stdlib/mod.rs`, `src/stdlib/ext.rs`, `src/bridge/mod.rs`; the host
+boundary in `src/host.rs`.
 
 ---
 
@@ -2093,12 +2106,21 @@ depth, are bounded by a separate internal recursion budget. Exceeding it is
 also `E1015`, so users see one consistent nesting diagnostic. This is a
 host-safety guard, not a second language nesting rule.
 
+**Normative rule.** The parser recursion backstop is *substrate-calibrated*:
+it is an implementation-safety bound, not a language limit, and its exact
+value may differ between execution substrates so long as over-limit input is
+reported as `E1015` rather than a host failure. Native execution, which runs
+the parser on a dedicated large stack, uses a deeper budget than WebAssembly,
+which runs inline on the engine stack. The semantic AST-node limit (§31.1) is
+identical on every substrate.
+
 > **RESOLVED CONCEPTUAL DISTINCTION.** These are two distinct mechanisms:
 >
 > 1. the **semantic AST-node limit** (256; §31.1), which is the language
 >    rule and is enforced iteratively after parsing; and
-> 2. the **parser recursion backstop**, which protects the host stack against
->    non-AST recursion (grouping) and reports the same code.
+> 2. the **parser recursion backstop** (`parse_recursion_budget`), which
+>    protects the host stack against non-AST recursion (grouping) and reports
+>    the same code.
 >
 > "256" describes **AST nodes**, not raw parentheses. A chain of grouping
 > parentheses is limited by mechanism 2, not by the number 256.
@@ -2120,7 +2142,7 @@ bounded at 10,000,000 elements; a larger range is `E4013`.
 host panic, stack overflow, or undefined behavior. Exceeding a limit produces
 a stable `E####` diagnostic.
 
-*Evidence:* `MAX_AST_DEPTH`, `MAX_PARSE_DEPTH`, `PARSE_STACK`
+*Evidence:* `MAX_AST_DEPTH`, `parse_recursion_budget`
 (`src/parse/mod.rs`); `MAX_CALL_FRAMES` (`src/run/mod.rs`);
 `tests/boundaries.rs`, `tests/adversarial.rs`.
 

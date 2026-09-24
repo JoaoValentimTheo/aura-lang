@@ -288,6 +288,20 @@ declarations, evaluates top-level constants and expressions in source order,
 then calls `main`. A missing `main` is `E4027`; a `main` with parameters is
 `E2011`.
 
+## 9a. Host boundary
+
+Every language-visible interaction with the outside world goes through the
+interpreter's **host** (`src/host.rs`), so Aura source cannot reach the
+operating system directly. The host supplies standard output, standard input,
+and program arguments, and may additionally supply a filesystem, a clock, and
+sleep. The native build installs the standard host (real process stdout, real
+filesystem, real clock, real sleep). A WebAssembly build installs a
+capability-limited host.
+
+A capability a host does not provide is reported as `E5002` (unavailable);
+a genuine I/O failure of a provided capability is `E4020`. Language semantics
+are identical across hosts; only capability availability differs.
+
 ## 10. Reserved syntax
 
 `use` and `pub` are **parsed and reserved but have no effect** in this

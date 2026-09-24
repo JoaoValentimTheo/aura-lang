@@ -90,7 +90,7 @@ pub fn install(it: &mut Interp) {
     ext::regex::install(it);
     #[cfg(feature = "time")]
     ext::time::install(it);
-    it.native("print", |it, args, _span| {
+    it.native("print", |it, args, span| {
         let mut line = String::new();
         for (i, a) in args.iter().enumerate() {
             if i > 0 {
@@ -98,7 +98,10 @@ pub fn install(it: &mut Interp) {
             }
             line.push_str(&a.display());
         }
-        writeln_line(it, &line);
+        line.push('\n');
+        it.host_mut()
+            .write_stdout(line.as_bytes())
+            .map_err(|e| e.into_diag(span))?;
         Ok(Value::None)
     });
     it.native("len", |_it, args, span| {
@@ -406,32 +409,33 @@ pub fn install(it: &mut Interp) {
     // ---------------------------------------------------- scripting I/O
     it.native("read_line", |it, args, span| {
         arity(&args, 0, 0, "read_line", span)?;
-        match it.read_input_line()? {
+        match it.host_mut().read_line().map_err(|e| e.into_diag(span))? {
             Some(line) => Ok(Value::str(line)),
             None => Ok(Value::None),
         }
     });
-    it.native("read_file", |_it, args, span| {
+    it.native("read_file", |it, args, span| {
         arity(&args, 1, 1, "read_file", span)?;
         let path = string_arg(&args, 0, "read_file", span)?;
-        match std::fs::read_to_string(&path) {
-            Ok(text) => Ok(Value::str(text)),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Value::None),
-            Err(e) => Err(err(codes::IO, format!("cannot read `{path}`: {e}"), span)),
+        match it.host().read_file(&path).map_err(|e| e.into_diag(span))? {
+            Some(text) => Ok(Value::str(text)),
+            None => Ok(Value::None),
         }
     });
-    it.native("write_file", |_it, args, span| {
+    it.native("write_file", |it, args, span| {
         arity(&args, 2, 2, "write_file", span)?;
         let path = string_arg(&args, 0, "write_file", span)?;
         let content = string_arg(&args, 1, "write_file", span)?;
-        std::fs::write(&path, content.as_bytes())
-            .map_err(|e| err(codes::IO, format!("cannot write `{path}`: {e}"), span))?;
+        it.host_mut()
+            .write_file(&path, &content)
+            .map_err(|e| e.into_diag(span))?;
         Ok(Value::None)
     });
     it.native("args", |it, args, span| {
         arity(&args, 0, 0, "args", span)?;
         Ok(Value::list(
-            it.program_args()
+            it.host()
+                .args()
                 .iter()
                 .map(|a| Value::str(a.clone()))
                 .collect(),
@@ -477,11 +481,6 @@ fn as_list(v: &Value, what: &str, span: Span) -> Result<Vec<Value>> {
             span,
         )),
     }
-}
-
-fn writeln_line(it: &mut Interp, line: &str) {
-    use std::io::Write;
-    let _ = writeln!(it.stdout, "{line}");
 }
 
 /// Method dispatch for strings, lists, and maps.

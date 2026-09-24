@@ -5,23 +5,12 @@ use crate::error::{codes, Diag, Result, Span};
 use crate::lex::lex;
 use crate::lex::token::{Tok, Token};
 
-/// Stack size for the parsing thread.
-///
-/// Parsing is recursive descent: a program within the semantic nesting limit
-/// costs a bounded number of Rust frames, but a caller's default thread stack
-/// (8 MiB on Linux) is too small for the full semantic limit plus grouping
-/// recursion. Parsing therefore runs on a dedicated large stack, exactly as
-/// execution already does, so the language's own nesting limit — not the host
-/// stack — is the only bound a user can hit. The parser's frame guard below
-/// remains as a backstop.
-const PARSE_STACK: usize = 64 * 1024 * 1024;
-
 /// Parse a full file.
 ///
 /// # Errors
 /// Returns the first lexer, parser, or nesting-limit diagnostic.
 pub fn parse(src: &str) -> Result<Module> {
-    on_parse_thread(src.to_string(), parse_inner)
+    on_parse_stack(src, parse_inner)
 }
 
 /// Parse one expression (used by the REPL and tests).
@@ -29,7 +18,7 @@ pub fn parse(src: &str) -> Result<Module> {
 /// # Errors
 /// Returns the first lexer, parser, or nesting-limit diagnostic.
 pub fn parse_expr(src: &str) -> Result<Expr> {
-    on_parse_thread(src.to_string(), parse_expr_inner)
+    on_parse_stack(src, parse_expr_inner)
 }
 
 /// Parse exactly one statement. Unlike module items, a bare `let mut` is a
@@ -38,35 +27,23 @@ pub fn parse_expr(src: &str) -> Result<Expr> {
 /// # Errors
 /// Returns the first lexer, parser, or nesting-limit diagnostic.
 pub fn parse_stmt(src: &str) -> Result<Stmt> {
-    on_parse_thread(src.to_string(), parse_stmt_inner)
+    on_parse_stack(src, parse_stmt_inner)
 }
 
-/// Run a parsing function on a large stack, so deep (but bounded) input does
-/// not overflow a small caller stack.
-fn on_parse_thread<T, F>(src: String, f: F) -> Result<T>
+/// Run a parsing function on the execution substrate, so deep (but bounded)
+/// input does not overflow a small caller stack.
+///
+/// This delegates to [`crate::on_execution_stack`], which uses a dedicated
+/// 64 MiB stack on native and runs inline on WebAssembly. The parser's
+/// recursion budget ([`parse_recursion_budget`]) is calibrated per substrate
+/// so that over-deep grouping is reported as `E1015` rather than trapping.
+fn on_parse_stack<T, F>(src: &str, f: F) -> Result<T>
 where
     T: Send + 'static,
     F: FnOnce(&str) -> Result<T> + Send + 'static,
 {
-    let handle = std::thread::Builder::new()
-        .name("aura-parse".to_string())
-        .stack_size(PARSE_STACK)
-        .spawn(move || f(&src))
-        .map_err(|e| {
-            Diag::new(
-                codes::FOREIGN,
-                format!("cannot start parser: {e}"),
-                Span::default(),
-            )
-        })?;
-    match handle.join() {
-        Ok(r) => r,
-        Err(_) => Err(Diag::new(
-            codes::INTERNAL,
-            "the parser thread aborted; this is a bug in Aura, not in your program",
-            Span::default(),
-        )),
-    }
+    let src = src.to_string();
+    crate::on_execution_stack(move || f(&src))
 }
 
 fn parse_inner(src: &str) -> Result<Module> {
@@ -124,6 +101,27 @@ fn parse_stmt_inner(src: &str) -> Result<Stmt> {
 /// Language limit on AST nesting. This is the single bound that keeps every
 /// later phase (clone, check, evaluate, drop) safe on a small stack.
 pub const MAX_AST_DEPTH: usize = 256;
+
+/// The parser's recursion backstop: an implementation-safety bound on the
+/// depth of grouping tokens (parentheses), which add no AST depth and so are
+/// not governed by [`MAX_AST_DEPTH`].
+///
+/// This is **not** a language limit; it protects the host stack. It is
+/// substrate-calibrated: native execution runs the parser on a 64 MiB stack
+/// and can afford a deep backstop, while WebAssembly runs inline on the
+/// engine's stack and needs a smaller budget so it returns `E1015` rather
+/// than trapping. Exceeding it is `E1015` on every substrate.
+#[must_use]
+pub const fn parse_recursion_budget() -> usize {
+    #[cfg(target_arch = "wasm32")]
+    {
+        512
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        2048
+    }
+}
 
 /// Iteratively verify that no expression/statement nests beyond
 /// [`MAX_AST_DEPTH`]. Uses an explicit heap stack and never recurses.
@@ -283,13 +281,10 @@ fn check_stmt_depth(stmts: &[Stmt], start: usize) -> Result<()> {
 /// *AST* and enforced iteratively by [`enforce_depth`]. Grouping tokens such
 /// as parentheses recurse in the parser without adding AST depth, so the
 /// parser needs its own frame budget; it is set well above what the semantic
-/// limit can consume (an AST level costs a small constant number of frames)
-/// and, because parsing runs on [`PARSE_STACK`], it is never the first limit
-/// a well-formed program meets. Over-limit input is reported as `E1015`, the
-/// same code as the semantic limit, so users see one consistent "nesting"
-/// diagnostic.
-const MAX_PARSE_DEPTH: usize = MAX_AST_DEPTH * 8;
-
+/// limit can consume (an AST level costs a small constant number of frames).
+/// The budget is substrate-calibrated by [`parse_recursion_budget`], and
+/// over-limit input is reported as `E1015`, the same code as the semantic
+/// limit, so users see one consistent "nesting" diagnostic.
 struct Parser {
     toks: Vec<Token>,
     pos: usize,
@@ -363,7 +358,7 @@ impl Parser {
 
     fn enter(&mut self) -> Result<()> {
         self.depth += 1;
-        if self.depth > MAX_PARSE_DEPTH {
+        if self.depth > parse_recursion_budget() {
             return Err(Diag::new(
                 codes::NESTING,
                 "expression nests too deeply",

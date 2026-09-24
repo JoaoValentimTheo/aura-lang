@@ -193,12 +193,14 @@ pub mod regex {
 #[cfg(feature = "time")]
 pub mod time {
     //! Time and date functions.
+    //!
+    //! These obtain their clock through the interpreter's host capability
+    //! boundary, so a browser host with no clock reports `E5002` rather than
+    //! reaching for the operating system.
 
     use crate::error::{codes, Diag, Span};
     use crate::run::value::Value;
     use crate::run::Interp;
-    use chrono::Timelike;
-    use chrono::{Datelike, Utc};
     use std::cell::RefCell;
     use std::collections::BTreeMap;
     use std::rc::Rc;
@@ -209,22 +211,24 @@ pub mod time {
 
     /// Install time functions.
     pub fn install(it: &mut Interp) {
-        it.native("time_now", |_it, _args, _span| {
-            let now = chrono::Local::now();
+        it.native("time_now", |it, _args, span| {
+            let now = it.host().now_local().map_err(|e| e.into_diag(span))?;
             let mut m = BTreeMap::new();
-            m.insert("year".to_string(), Value::Int(i64::from(now.year())));
-            m.insert("month".to_string(), Value::Int(i64::from(now.month())));
-            m.insert("day".to_string(), Value::Int(i64::from(now.day())));
-            m.insert("hour".to_string(), Value::Int(i64::from(now.hour())));
-            m.insert("minute".to_string(), Value::Int(i64::from(now.minute())));
-            m.insert("second".to_string(), Value::Int(i64::from(now.second())));
-            m.insert("unix".to_string(), Value::Int(now.timestamp()));
+            m.insert("year".to_string(), Value::Int(i64::from(now.year)));
+            m.insert("month".to_string(), Value::Int(i64::from(now.month)));
+            m.insert("day".to_string(), Value::Int(i64::from(now.day)));
+            m.insert("hour".to_string(), Value::Int(i64::from(now.hour)));
+            m.insert("minute".to_string(), Value::Int(i64::from(now.minute)));
+            m.insert("second".to_string(), Value::Int(i64::from(now.second)));
+            m.insert("unix".to_string(), Value::Int(now.unix));
             Ok(Value::Map(Rc::new(RefCell::new(m))))
         });
-        it.native("time_unix", |_it, _args, _span| {
-            Ok(Value::Int(Utc::now().timestamp()))
+        it.native("time_unix", |it, _args, span| {
+            Ok(Value::Int(
+                it.host().now_unix().map_err(|e| e.into_diag(span))?,
+            ))
         });
-        it.native("sleep_ms", |_it, args, span| {
+        it.native("sleep_ms", |it, args, span| {
             let Some(Value::Int(ms)) = args.first() else {
                 return Err(err(
                     "sleep_ms expects an integer number of milliseconds",
@@ -234,7 +238,7 @@ pub mod time {
             let Ok(ms) = u64::try_from(*ms) else {
                 return Err(err("sleep_ms expects a non-negative integer", span));
             };
-            std::thread::sleep(std::time::Duration::from_millis(ms.min(60_000)));
+            it.host_mut().sleep_ms(ms).map_err(|e| e.into_diag(span))?;
             Ok(Value::None)
         });
     }

@@ -163,15 +163,11 @@ pub struct Interp {
     ast_depth: usize,
     /// A thrown value in flight across a call boundary; consumed by `try`.
     pending_throw: Option<Value>,
-    /// Output sink for `print`.
-    pub stdout: Box<dyn std::io::Write>,
-    /// Program arguments exposed to `args()`; excludes the command, the
-    /// subcommand, and the script path. Empty in the REPL and library.
-    args: Vec<String>,
-    /// Program standard input for `read_line()`. `None` means "no input
-    /// source", so `read_line()` returns `none`. Configured only by the CLI
-    /// `run`/`eval` entry points.
-    input: Option<Box<dyn std::io::BufRead + Send>>,
+    /// The host capability boundary: standard output, standard input, program
+    /// arguments, and optional filesystem/clock/sleep capabilities. Every
+    /// language-visible interaction with the outside world goes through this;
+    /// the standard library never touches the operating system directly.
+    host: Box<dyn crate::host::Host>,
 }
 
 type Native = Rc<dyn Fn(&mut Interp, Vec<Value>, Span) -> Result<Value>>;
@@ -189,20 +185,46 @@ impl Interp {
             depth: 0,
             ast_depth: 0,
             pending_throw: None,
-            stdout: Box::new(std::io::stdout()),
-            args: Vec::new(),
-            input: None,
+            host: crate::host::default_host(),
         };
         crate::stdlib::install(&mut it);
         it
     }
 
-    /// Create an interpreter that discards output.
+    /// Create an interpreter that discards standard output.
+    ///
+    /// On native this keeps the real filesystem, clock, and sleep
+    /// capabilities and only silences `print`; on WebAssembly the host is
+    /// capability-limited.
     #[must_use]
     pub fn silent() -> Interp {
         let mut it = Interp::new();
-        it.stdout = Box::new(std::io::sink());
+        it.host = crate::host::silent_host();
         it
+    }
+
+    /// Create an interpreter with an explicit host.
+    #[must_use]
+    pub fn with_host(host: Box<dyn crate::host::Host>) -> Interp {
+        let mut it = Interp::new();
+        it.host = host;
+        it
+    }
+
+    /// Replace the host capability boundary.
+    pub fn set_host(&mut self, host: Box<dyn crate::host::Host>) {
+        self.host = host;
+    }
+
+    /// The host capability boundary.
+    #[must_use]
+    pub fn host(&self) -> &dyn crate::host::Host {
+        self.host.as_ref()
+    }
+
+    /// The host capability boundary, mutably.
+    pub fn host_mut(&mut self) -> &mut dyn crate::host::Host {
+        self.host.as_mut()
     }
 
     /// Register a native function.
@@ -219,47 +241,41 @@ impl Interp {
     }
 
     /// Configure the execution context: program arguments and an optional
-    /// standard-input source. Used by the CLI `run`/`eval` entry points; the
-    /// REPL and library leave the defaults (empty args, no input).
+    /// standard-input source.
+    ///
+    /// The output sink is the substrate default (process stdout on native),
+    /// matching the library entry points that use this. Embedders that need a
+    /// custom sink should build a host and call [`Interp::set_host`].
     pub fn set_context(
         &mut self,
         args: Vec<String>,
         input: Option<Box<dyn std::io::BufRead + Send>>,
     ) {
-        self.args = args;
-        self.input = input;
+        self.host = crate::host::default_host_from_parts(args, input);
     }
 
     /// The program arguments exposed to `args()`.
+    ///
+    /// The former `program_args(&self) -> &[String]` is gone: arguments are
+    /// now owned by the host, which reports them as owned data. Use
+    /// [`Interp::host`]`.args()` for direct access; the `args()` builtin is the
+    /// language-visible path.
     #[must_use]
-    pub fn program_args(&self) -> &[String] {
-        &self.args
+    pub fn program_args(&self) -> Vec<String> {
+        self.host.args()
     }
 
-    /// Read one line from the configured input source, returning `None` at
-    /// end of input. Excludes the trailing `\n` and a preceding `\r`.
+    /// Read one line from the host, returning `None` at end of input.
+    ///
+    /// The host is responsible for terminator normalization (a trailing `\n`
+    /// and a preceding `\r` are removed). A read failure is `E4020`.
+    ///
+    /// # Errors
+    /// Returns the host failure as a diagnostic.
     pub fn read_input_line(&mut self) -> Result<Option<String>> {
-        let Some(input) = self.input.as_mut() else {
-            return Ok(None);
-        };
-        let mut line = String::new();
-        let n = input.read_line(&mut line).map_err(|e| {
-            Diag::new(
-                codes::IO,
-                format!("standard input read failed: {e}"),
-                Span::default(),
-            )
-        })?;
-        if n == 0 {
-            return Ok(None);
-        }
-        if line.ends_with('\n') {
-            line.pop();
-            if line.ends_with('\r') {
-                line.pop();
-            }
-        }
-        Ok(Some(line))
+        self.host
+            .read_line()
+            .map_err(|e| e.into_diag(Span::default()))
     }
 
     /// Execute a module and call `main` if present.
