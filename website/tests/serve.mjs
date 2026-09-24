@@ -1,7 +1,7 @@
 // Static server for website tests and manual preview.
 //
-// Serves the built site from `website/dist/`. Supports a base prefix so a
-// non-root build can be previewed at the same path it will be deployed to.
+// Serves the built site from `website/dist/` under the same deployment base
+// the site was built with, resolved through the shared base helper.
 //
 // Usage: node website/tests/serve.mjs [port] [--base=/prefix/] [root]
 
@@ -9,12 +9,12 @@ import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveBase } from "../lib/base.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
 const portArg = args.find((a) => /^\d+$/.test(a));
-const baseArg = args.find((a) => a.startsWith("--base="));
-const base = baseArg ? baseArg.slice("--base=".length) : "/";
+const base = resolveBase(args, process.env);
 const rootArg = args.find((a) => !/^\d+$/.test(a) && !a.startsWith("--"));
 const root = resolve(rootArg || join(here, "..", "dist"));
 

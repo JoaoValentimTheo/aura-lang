@@ -15,7 +15,28 @@ function slugify(text) {
     .replace(/\s+/g, "-");
 }
 
-function inline(text) {
+/**
+ * Resolve a Markdown link target against the deployment base.
+ *
+ * Site-absolute links (`/docs/…`) and root-relative asset links are prefixed
+ * with the base so the same content works both at a project Pages path
+ * (`/aura-lang/`) and at a custom-domain root (`/`). External URLs, fragments,
+ * mailto links, and already-based links are left untouched.
+ */
+function resolveHref(href, base) {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//")) return href;
+  if (href.startsWith("#")) return href;
+  if (href.startsWith("/")) {
+    const b = base.endsWith("/") ? base : `${base}/`;
+    if (b === "/") return href;
+    // Avoid double-prefixing a link that already carries the base.
+    if (href === b.slice(0, -1) || href.startsWith(b)) return href;
+    return `${b}${href.slice(1)}`;
+  }
+  return href;
+}
+
+function inline(text, base = "/") {
   let s = escapeHtml(text);
   // Inline code first, so its contents are not further processed.
   const codes = [];
@@ -25,7 +46,7 @@ function inline(text) {
   });
   // Links [text](href)
   s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, href) => {
-    const safe = href.replace(/"/g, "%22");
+    const safe = resolveHref(href, base).replace(/"/g, "%22");
     const external = /^https?:\/\//.test(safe);
     const attrs = external ? ' target="_blank" rel="noopener"' : "";
     return `<a href="${safe}"${attrs}>${label}</a>`;
@@ -47,6 +68,7 @@ export function renderMarkdown(markdown, options = {}) {
   const out = [];
   let i = 0;
   const headings = options.headings || [];
+  const base = options.base || "/";
 
   while (i < lines.length) {
     const line = lines[i];
@@ -88,7 +110,7 @@ export function renderMarkdown(markdown, options = {}) {
       const text = heading[2].trim();
       const id = slugify(text);
       headings.push({ level, id, text });
-      out.push(`<h${level} id="${id}">${inline(text)}</h${level}>`);
+      out.push(`<h${level} id="${id}">${inline(text, base)}</h${level}>`);
       i += 1;
       continue;
     }
@@ -113,12 +135,12 @@ export function renderMarkdown(markdown, options = {}) {
         i += 1;
       }
       const thead = `<thead><tr>${header
-        .map((c) => `<th>${inline(c)}</th>`)
+        .map((c) => `<th>${inline(c, base)}</th>`)
         .join("")}</tr></thead>`;
       const tbody = `<tbody>${rows
         .map(
           (r) =>
-            `<tr>${r.map((c) => `<td>${inline(c)}</td>`).join("")}</tr>`,
+            `<tr>${r.map((c) => `<td>${inline(c, base)}</td>`).join("")}</tr>`,
         )
         .join("")}</tbody>`;
       out.push(
@@ -135,7 +157,7 @@ export function renderMarkdown(markdown, options = {}) {
         i += 1;
       }
       out.push(
-        `<blockquote><p>${inline(body.join(" "))}</p></blockquote>`,
+        `<blockquote><p>${inline(body.join(" "), base)}</p></blockquote>`,
       );
       continue;
     }
@@ -148,7 +170,7 @@ export function renderMarkdown(markdown, options = {}) {
         i += 1;
       }
       out.push(
-        `<ul>${items.map((it) => `<li>${inline(it)}</li>`).join("")}</ul>`,
+        `<ul>${items.map((it) => `<li>${inline(it, base)}</li>`).join("")}</ul>`,
       );
       continue;
     }
@@ -161,7 +183,7 @@ export function renderMarkdown(markdown, options = {}) {
         i += 1;
       }
       out.push(
-        `<ol>${items.map((it) => `<li>${inline(it)}</li>`).join("")}</ol>`,
+        `<ol>${items.map((it) => `<li>${inline(it, base)}</li>`).join("")}</ol>`,
       );
       continue;
     }
@@ -183,7 +205,7 @@ export function renderMarkdown(markdown, options = {}) {
       para.push(lines[i]);
       i += 1;
     }
-    out.push(`<p>${inline(para.join(" "))}</p>`);
+    out.push(`<p>${inline(para.join(" "), base)}</p>`);
   }
 
   return out.join("\n");

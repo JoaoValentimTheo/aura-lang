@@ -62,9 +62,7 @@ function toc(headings) {
 </nav>`;
 }
 
-function buildDocPage(doc, markdown, base) {
-  const headings = [];
-  const bodyHtml = renderMarkdown(markdown, { headings });
+function buildDocPage(doc, markdown) {
   const groupSlug = doc.group.toLowerCase().replace(/\s+/g, "-");
   return {
     title: doc.title,
@@ -73,6 +71,11 @@ function buildDocPage(doc, markdown, base) {
     activeKey: "docs",
     withContainer: false,
     async render(b) {
+      // Render the Markdown with the deployment base so in-content links
+      // resolve under the same base as the surrounding chrome. The headings
+      // collected here drive the on-this-page table of contents.
+      const headings = [];
+      const bodyHtml = renderMarkdown(markdown, { headings, base: b });
       return `<div class="container">${breadcrumbs(b)}</div>
 <div class="container docs-layout">
   ${sidebar(b, doc.slug, groupSlug)}
@@ -102,7 +105,7 @@ function buildDocPage(doc, markdown, base) {
 export function docPages() {
   return allDocs().map((doc) => {
     const markdown = readFileSync(join(contentDir, doc.file), "utf8");
-    return buildDocPage(doc, markdown, "/");
+    return buildDocPage(doc, markdown);
   });
 }
 

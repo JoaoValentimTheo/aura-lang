@@ -43,8 +43,8 @@ const routes = [
   "playground/",
 ];
 
-const { server, port } = await startServer(0);
-const base = `http://127.0.0.1:${port}/`;
+const { server, port, base: basePath } = await startServer(0);
+const base = `http://127.0.0.1:${port}${basePath}`;
 const browser = await chromium.launch();
 
 let passed = 0;

@@ -7,16 +7,19 @@
 //     expects them;
 //   * no page links to a missing route.
 //
-// Usage: node website/tests/check-links.mjs [distDir]
+// Usage: node website/tests/check-links.mjs [distDir] [--base=<path>]
+//
+// The base is resolved through the same shared helper the generator uses, so
+// the checker and the build can never disagree about the deployment base.
 
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
-import { dirname, join, resolve, extname } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveBase } from "../lib/base.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
-const baseArg = args.find((a) => a.startsWith("--base="));
-const base = baseArg ? baseArg.slice("--base=".length) : "/";
+const base = resolveBase(args, process.env);
 const distArg = args.find((a) => !a.startsWith("--"));
 const dist = resolve(distArg || join(here, "..", "dist"));
 

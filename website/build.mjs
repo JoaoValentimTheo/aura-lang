@@ -4,15 +4,24 @@
 // Usage:
 //   node website/build.mjs [--base=/path/]
 //
-// Production uses base "/" (served at https://aura.lang.dev/). A non-root base
-// can be used to preview a project subpath; every internal link, asset, worker,
-// and runtime URL is generated through the same helper, so the site works at
-// any base path.
+// The deployment base is explicit and selected by the environment, never
+// assumed:
+//
+//   * GitHub Pages **project site** (https://<user>.github.io/aura-lang/):
+//     base = /aura-lang/
+//   * **custom domain** (https://aura.lang.dev/): base = /
+//
+// Precedence: `--base=<path>` on the command line, then the `AURA_SITE_BASE`
+// environment variable, then the project-site default `/aura-lang/` so the
+// live Pages deployment is correct without extra configuration. Every
+// internal link, asset, Worker, and runtime URL is generated through one
+// helper, so the whole site moves with the base.
 //
 // Prerequisites: the Playground runtime artifacts must exist. Run
 // `node playground/build.mjs` first (or use the repo's combined build script).
 
 import { buildSite } from "./lib/site.mjs";
+import { resolveBase } from "./lib/base.mjs";
 
 import { homePage } from "./pages/home.mjs";
 import { learnPage } from "./pages/learn.mjs";
@@ -30,13 +39,7 @@ import { aboutPage } from "./pages/about.mjs";
 import { playgroundPage } from "./pages/playground.mjs";
 import { notFoundPage } from "./pages/not-found.mjs";
 
-function parseArgs() {
-  const baseArg = process.argv.find((a) => a.startsWith("--base="));
-  const base = baseArg ? baseArg.slice("--base=".length) : "/";
-  return { base: base.endsWith("/") ? base : `${base}/` };
-}
-
-const { base } = parseArgs();
+const base = resolveBase();
 
 const pages = [
   homePage,

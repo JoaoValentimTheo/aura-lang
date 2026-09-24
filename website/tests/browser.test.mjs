@@ -28,8 +28,10 @@ try {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dist = join(here, "..", "dist");
-const { server, port } = await startServer(0);
-const base = `http://127.0.0.1:${port}/`;
+// Serve under the same deployment base the site was built with (resolved from
+// `--base`/`AURA_SITE_BASE`, defaulting to the project-site base).
+const { server, port, base: basePath } = await startServer(0);
+const base = `http://127.0.0.1:${port}${basePath}`;
 
 // Routes discovered from the build on disk.
 function findRoutes(dir, prefix = "") {

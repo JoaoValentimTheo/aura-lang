@@ -3,10 +3,21 @@ name: Deploy website
 # Builds the static Aura website (including the versioned Playground runtime)
 # and deploys it to GitHub Pages.
 #
-# Production domain: https://aura.lang.dev — a GitHub Pages custom subdomain
-# configured with a DNS CNAME pointing at GitHub Pages and set in the
-# repository's Pages settings. The build writes `CNAME` (aura.lang.dev) into
-# the output, and the site's canonical URLs use https://aura.lang.dev.
+# Deployment base. The site is served from an explicit base path, never an
+# assumed one:
+#
+#   * GitHub Pages project site — https://<user>.github.io/aura-lang/
+#     AURA_SITE_BASE=/aura-lang/   (the current, active deployment)
+#   * custom domain — https://aura.lang.dev/
+#     AURA_SITE_BASE=/             (for when the custom domain is configured)
+#
+# The `AURA_SITE_BASE` repository variable selects the target; when it is unset
+# the build defaults to the project-site base. Switching to the custom domain
+# is therefore a one-variable change with no source edit.
+#
+# Custom domain: https://aura.lang.dev is the intended public origin; the
+# generator writes `CNAME` and the site's canonical URLs use it. Configuring
+# the custom domain in Pages settings and DNS is a separate, deliberate step.
 #
 # The site is fully static: no server, no database, no remote execution. The
 # Playground runs entirely in the browser.
@@ -60,14 +71,46 @@ jobs:
       - name: Verify versioned runtime manifest
         run: node playground/build.mjs --check
 
+      # The deployment base is explicit: the project-site base unless the
+      # AURA_SITE_BASE repository variable selects the custom-domain root.
       - name: Build the website
-        run: node website/build.mjs
+        env:
+          AURA_SITE_BASE: ${{ vars.AURA_SITE_BASE || '/aura-lang/' }}
+        run: |
+          echo "Building website with base: $AURA_SITE_BASE"
+          node website/build.mjs
 
       - name: Validate examples against the real runtime
         run: node website/tests/validate-examples.mjs
 
       - name: Validate links and required assets
-        run: node website/tests/check-links.mjs
+        env:
+          AURA_SITE_BASE: ${{ vars.AURA_SITE_BASE || '/aura-lang/' }}
+        run: |
+          node website/tests/check-links.mjs
+          node website/tests/check-base.mjs
+
+      - name: Assert internal links use the deployment base
+        env:
+          AURA_SITE_BASE: ${{ vars.AURA_SITE_BASE || '/aura-lang/' }}
+        run: |
+          set -euo pipefail
+          base="${AURA_SITE_BASE}"
+          if [ "$base" = "/" ]; then
+            echo "custom-domain build: root-relative links are expected"
+            exit 0
+          fi
+          # Under a project base, no generated HTML may reference an internal
+          # path outside that base (external URLs, fragments, and mailto are
+          # allowed).
+          stray=$(grep -rhoE '(href|src)="/[^"]*"' website/dist --include='*.html' \
+            | grep -v "\"${base}" || true)
+          if [ -n "$stray" ]; then
+            echo "internal links bypass the base ${base}:" >&2
+            echo "$stray" | sort -u >&2
+            exit 1
+          fi
+          echo "all internal links honour the base ${base}"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

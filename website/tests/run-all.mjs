@@ -30,6 +30,7 @@ if (!existsSync(dist)) {
 
 run("examples", "validate-examples.mjs");
 run("links", "check-links.mjs");
+run("base", "check-base.mjs");
 
 function haveDeps() {
   try {
