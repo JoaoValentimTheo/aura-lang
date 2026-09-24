@@ -1,0 +1,20 @@
+{
+  "name": "aura-playground",
+  "private": true,
+  "version": "0.0.2",
+  "description": "The versioned Aura Playground: an orchestration layer over the real Aura WebAssembly runtime.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "node build.mjs --check",
+    "serve": "node tests/node/serve.mjs 8080",
+    "test:abi": "node tests/node/abi.test.mjs runtimes/0.0.2/aura_playground_runtime.wasm",
+    "test:manifest": "node tests/node/manifest.test.mjs",
+    "test:browser": "node tests/node/browser.test.mjs",
+    "test:worker": "node tests/node/worker.test.mjs",
+    "test": "node tests/node/run-all.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  }
+}

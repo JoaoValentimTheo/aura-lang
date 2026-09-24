@@ -5,8 +5,8 @@
 //! operating system directly. Native execution installs [`StdHost`] (real
 //! filesystem, clock, and sleep); a WebAssembly runtime installs a
 //! capability-limited host whose unavailable capabilities are reported as
-//! `E5002`, and the browser will later supply its own host behind this same
-//! contract.
+//! `E5002`. The browser Playground installs [`BrowserHost`], a deterministic,
+//! self-contained host behind this same contract.
 //!
 //! The boundary carries only plain data (strings, integers, bytes). It never
 //! exposes JavaScript, the DOM, the network, process execution, environment
@@ -443,6 +443,167 @@ impl Host for LimitedHost {
     fn sleep_ms(&mut self, _ms: u64) -> HostResult<()> {
         // Deliberately unavailable: a synchronous WebAssembly instance must
         // not busy-wait or block the browser.
+        Err(HostError::unavailable(
+            "the sleep capability is not available in this host",
+        ))
+    }
+}
+
+/// A cloneable handle to a [`BrowserHost`]'s standard-output buffer.
+///
+/// The interpreter takes ownership of the host, so the embedder keeps this
+/// handle to read the collected output after execution. It is explicit
+/// shared state local to one execution, never global browser state.
+pub type BrowserStdout = std::sync::Arc<std::sync::Mutex<Vec<u8>>>;
+
+/// The browser-hosted Playground host.
+///
+/// It is a deterministic, self-contained [`Host`]: standard output is
+/// collected in memory, standard input is a caller-supplied string consumed
+/// line by line, and arguments are plain data. It holds no browser state, no
+/// global state, and no operating-system authority. Its optional capabilities
+/// (filesystem, clock, sleep) are unavailable and report `E5002`; it never
+/// fakes them and never reaches the network, the DOM, or storage.
+///
+/// Embedders construct it from an optional stdin string and arguments, keep a
+/// [`BrowserStdout`] handle, run a module through [`Interp`](crate::run::Interp)
+/// with it, then read the collected stdout back through the handle.
+pub struct BrowserHost {
+    stdout: BrowserStdout,
+    input: Option<std::io::Cursor<Vec<u8>>>,
+    args: Vec<String>,
+    max_stdout: Option<usize>,
+}
+
+impl BrowserHost {
+    /// A host with no input and no arguments and no output limit.
+    #[must_use]
+    pub fn new() -> BrowserHost {
+        BrowserHost {
+            stdout: BrowserStdout::default(),
+            input: None,
+            args: Vec::new(),
+            max_stdout: None,
+        }
+    }
+
+    /// A host with an optional standard-input string and program arguments.
+    #[must_use]
+    pub fn from_parts(stdin: Option<String>, args: Vec<String>) -> BrowserHost {
+        BrowserHost {
+            stdout: BrowserStdout::default(),
+            input: stdin.map(|s| std::io::Cursor::new(s.into_bytes())),
+            args,
+            max_stdout: None,
+        }
+    }
+
+    /// A host that writes standard output into a caller-supplied shared
+    /// buffer. The interpreter takes ownership of the host, so this is how an
+    /// embedder that cannot hold the host (for example a WebAssembly export
+    /// that builds it inside a closure) reads the output back afterwards.
+    #[must_use]
+    pub fn with_stdout(
+        stdout: BrowserStdout,
+        stdin: Option<String>,
+        args: Vec<String>,
+    ) -> BrowserHost {
+        BrowserHost {
+            stdout,
+            input: stdin.map(|s| std::io::Cursor::new(s.into_bytes())),
+            args,
+            max_stdout: None,
+        }
+    }
+
+    /// Bound the total number of bytes this host will accept on standard
+    /// output. This is an *application* resource policy, not a language
+    /// rule: exceeding it is a genuine host I/O failure (`E4020`), so a
+    /// runaway `print` loop cannot exhaust the embedder's memory before the
+    /// embedder terminates execution.
+    #[must_use]
+    pub fn with_stdout_limit(mut self, max_bytes: usize) -> BrowserHost {
+        self.max_stdout = Some(max_bytes);
+        self
+    }
+
+    /// A cloneable handle to this host's standard-output buffer.
+    #[must_use]
+    pub fn stdout_handle(&self) -> BrowserStdout {
+        self.stdout.clone()
+    }
+
+    /// The bytes written to standard output so far.
+    #[must_use]
+    pub fn stdout(&self) -> Vec<u8> {
+        self.stdout.lock().map(|v| v.clone()).unwrap_or_default()
+    }
+
+    /// The bytes written to standard output, as UTF-8 (lossily).
+    #[must_use]
+    pub fn stdout_text(&self) -> String {
+        String::from_utf8_lossy(&self.stdout()).into_owned()
+    }
+}
+
+impl Default for BrowserHost {
+    fn default() -> BrowserHost {
+        BrowserHost::new()
+    }
+}
+
+impl Host for BrowserHost {
+    fn write_stdout(&mut self, bytes: &[u8]) -> HostResult<()> {
+        if let Ok(mut v) = self.stdout.lock() {
+            if let Some(limit) = self.max_stdout {
+                if v.len().saturating_add(bytes.len()) > limit {
+                    return Err(HostError::io(format!(
+                        "standard output exceeded the {limit} byte limit"
+                    )));
+                }
+            }
+            v.extend_from_slice(bytes);
+        }
+        Ok(())
+    }
+
+    fn read_line(&mut self) -> HostResult<Option<String>> {
+        match self.input.as_mut() {
+            Some(reader) => read_normalized_line(reader),
+            None => Ok(None),
+        }
+    }
+
+    fn args(&self) -> Vec<String> {
+        self.args.clone()
+    }
+
+    fn read_file(&self, _path: &str) -> HostResult<Option<String>> {
+        Err(HostError::unavailable(
+            "the filesystem capability is not available in this host",
+        ))
+    }
+
+    fn write_file(&mut self, _path: &str, _content: &str) -> HostResult<()> {
+        Err(HostError::unavailable(
+            "the filesystem capability is not available in this host",
+        ))
+    }
+
+    fn now_unix(&self) -> HostResult<i64> {
+        Err(HostError::unavailable(
+            "the clock capability is not available in this host",
+        ))
+    }
+
+    fn now_local(&self) -> HostResult<LocalTime> {
+        Err(HostError::unavailable(
+            "the clock capability is not available in this host",
+        ))
+    }
+
+    fn sleep_ms(&mut self, _ms: u64) -> HostResult<()> {
+        // Deliberately unavailable: the browser must not busy-wait or block.
         Err(HostError::unavailable(
             "the sleep capability is not available in this host",
         ))

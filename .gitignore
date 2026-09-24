@@ -1,6 +1,13 @@
 # Rust
 /target/
 **/*.rs.bk
+# Playground runtime crate build output
+/playground/runtime/target/
+
+# Playground JS tooling (Playwright is installed on demand for browser tests)
+/playground/node_modules/
+/playground/package-lock.json
+/playground/test-results/
 
 # Aura build output
 output/

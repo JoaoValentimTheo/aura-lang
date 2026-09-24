@@ -9,7 +9,7 @@
 use std::io::Cursor;
 
 use aura::error::codes;
-use aura::host::{Host, HostError, HostResult, LimitedHost, LocalTime, StdHost};
+use aura::host::{BrowserHost, Host, HostError, HostResult, LimitedHost, LocalTime, StdHost};
 use aura::run::Interp;
 
 /// Run `src` against a fresh `LimitedHost` with the given args/input, returning
@@ -226,6 +226,74 @@ fn a_custom_host_supplies_every_capability() {
     let mut interp = Interp::with_host(Box::new(host));
     // read_file routes to the virtual filesystem and succeeds.
     interp.run(&module).expect("runs against the virtual host");
+}
+
+// ---------------------------------------------------------------------------
+// the browser Playground host is deterministic and capability-limited
+// ---------------------------------------------------------------------------
+
+/// Build a module and run it against a `BrowserHost`, returning stdout and the
+/// diagnostic code if execution failed.
+fn browser_run(src: &str, args: Vec<String>, stdin: Option<String>) -> (String, Option<u16>) {
+    let host = BrowserHost::from_parts(stdin, args);
+    let out = host.stdout_handle();
+    let module = match aura::compile_with_mode(src, aura::CompileMode::Program) {
+        Ok(m) => m,
+        Err(d) => return (String::new(), Some(d.code)),
+    };
+    let mut interp = Interp::with_host(Box::new(host));
+    let code = interp.run(&module).err().map(|d| d.code);
+    let text = String::from_utf8(out.lock().unwrap().clone()).unwrap();
+    (text, code)
+}
+
+#[test]
+fn browser_host_routes_stdout_args_and_stdin() {
+    let (out, code) = browser_run(
+        "fn main() { print(\"a\")\n print(args())\n print(read_line())\n print(read_line()) }",
+        vec!["x".into(), "y".into()],
+        Some("first\r\nsecond\n".to_string()),
+    );
+    assert_eq!(code, None);
+    assert_eq!(out, "a\n[\"x\", \"y\"]\nfirst\nsecond\n");
+}
+
+#[test]
+fn browser_host_sequential_reads_are_deterministic() {
+    let src = "fn main() { let a = read_line()\n let b = read_line()\n let c = read_line()\n print(a)\n print(b)\n print(c) }";
+    let first = browser_run(src, Vec::new(), Some("1\n2\n".to_string()));
+    let second = browser_run(src, Vec::new(), Some("1\n2\n".to_string()));
+    assert_eq!(first, second);
+    assert_eq!(first.0, "1\n2\nnone\n");
+}
+
+#[test]
+fn browser_host_has_no_filesystem_clock_or_sleep() {
+    for src in [
+        "fn main() { read_file(\"/x\") }",
+        "fn main() { write_file(\"/x\", \"y\") }",
+        "fn main() { time_unix() }",
+        "fn main() { time_now() }",
+        "fn main() { sleep_ms(1) }",
+    ] {
+        let (_, code) = browser_run(src, Vec::new(), None);
+        assert_eq!(code, Some(codes::CAPABILITY_UNAVAILABLE), "{src}");
+    }
+}
+
+#[test]
+fn browser_host_does_not_expose_browser_state() {
+    // There is no path from an Aura program to any ambient state: browser
+    // globals are not names, so they are rejected by the checker (E2003) and
+    // never reach a host method.
+    for name in ["window", "document", "localStorage", "fetch"] {
+        let src = format!("fn main() {{ print({name}) }}");
+        assert_eq!(
+            browser_run(&src, Vec::new(), None).1,
+            Some(codes::UNDEFINED),
+            "{name}"
+        );
+    }
 }
 
 #[cfg(feature = "time")]

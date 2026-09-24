@@ -1,0 +1,320 @@
+/* Aura Playground — a clean, Material-3-compatible foundation.
+ *
+ * Tokens are named to map directly onto a Material You colour scheme so the
+ * later Website can share them without reworking the Playground. No framework
+ * and no runtime CSS dependency: this file is self-contained.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Material 3-ish roles (light). */
+  --md-primary: #4a5c92;
+  --md-on-primary: #ffffff;
+  --md-primary-container: #dce1ff;
+  --md-on-primary-container: #04164a;
+  --md-surface: #fbf8ff;
+  --md-surface-container: #efedf6;
+  --md-surface-container-high: #e9e7f0;
+  --md-on-surface: #1b1b21;
+  --md-on-surface-variant: #45464f;
+  --md-outline: #767680;
+  --md-outline-variant: #c6c5d0;
+  --md-error: #ba1a1a;
+  --md-on-error: #ffffff;
+  --md-error-container: #ffdad6;
+  --md-on-error-container: #410002;
+  --md-success: #2e6d3f;
+  --md-code-bg: #f3f2fa;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --space: 16px;
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --md-primary: #b6c4ff;
+    --md-on-primary: #172457;
+    --md-primary-container: #313f70;
+    --md-on-primary-container: #dce1ff;
+    --md-surface: #131318;
+    --md-surface-container: #1e1e24;
+    --md-surface-container-high: #28282f;
+    --md-on-surface: #e5e1e9;
+    --md-on-surface-variant: #c6c5d0;
+    --md-outline: #90909a;
+    --md-outline-variant: #45464f;
+    --md-error: #ffb4ab;
+    --md-on-error: #690005;
+    --md-error-container: #93000a;
+    --md-on-error-container: #ffdad6;
+    --md-success: #7fd894;
+    --md-code-bg: #17171d;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  font-family: var(--font-ui);
+  background: var(--md-surface);
+  color: var(--md-on-surface);
+}
+
+/* ---------------------------------------------------------------- app bar */
+
+.app-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space);
+  padding: 10px 20px;
+  background: var(--md-surface-container);
+  border-bottom: 1px solid var(--md-outline-variant);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.brand-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+  font-size: 18px;
+}
+
+.version-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--md-on-surface-variant);
+}
+
+select {
+  font: inherit;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--md-outline);
+  background: var(--md-surface);
+  color: var(--md-on-surface);
+}
+
+/* ------------------------------------------------------------------ layout */
+
+.layout {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space);
+  padding: var(--space);
+  min-height: 0;
+}
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  background: var(--md-surface-container);
+  border: 1px solid var(--md-outline-variant);
+  border-radius: var(--radius-lg);
+  padding: var(--space);
+}
+
+.pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space);
+}
+
+.pane-head h2 {
+  margin: 0;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--md-on-surface-variant);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ----------------------------------------------------------------- buttons */
+
+.btn {
+  font: inherit;
+  font-weight: 600;
+  padding: 8px 20px;
+  border-radius: 999px;
+  border: 1px solid var(--md-outline);
+  background: transparent;
+  color: var(--md-on-surface);
+  cursor: pointer;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--md-surface-container-high);
+}
+
+.btn.primary {
+  background: var(--md-primary);
+  color: var(--md-on-primary);
+  border-color: transparent;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ------------------------------------------------------------------- editor */
+
+#source {
+  flex: 1;
+  min-height: 260px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.55;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--md-outline-variant);
+  background: var(--md-code-bg);
+  color: var(--md-on-surface);
+  tab-size: 4;
+}
+
+.inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field label {
+  font-size: 0.75rem;
+  color: var(--md-on-surface-variant);
+}
+
+.field textarea {
+  min-height: 68px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--md-outline-variant);
+  background: var(--md-code-bg);
+  color: var(--md-on-surface);
+}
+
+/* ------------------------------------------------------------------ output */
+
+.status {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--md-on-surface-variant);
+}
+
+.status.ok {
+  color: var(--md-success);
+}
+
+.status.error {
+  color: var(--md-error);
+}
+
+.stdout {
+  flex: 0 1 40%;
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: var(--md-code-bg);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.diagnostics {
+  flex: 1;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.diagnostics li {
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--md-error-container);
+  color: var(--md-on-error-container);
+  font-size: 13px;
+}
+
+.diagnostics .diag-code {
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+.diagnostics .diag-loc {
+  opacity: 0.75;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.diagnostics li.empty {
+  background: var(--md-surface-container-high);
+  color: var(--md-on-surface-variant);
+}
+
+.runtime-note {
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--md-error-container);
+  color: var(--md-on-error-container);
+  font-size: 13px;
+}
