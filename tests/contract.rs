@@ -174,3 +174,12 @@ fn r10_defined_errors_documented() {
     // distinct enough that duplicates would signal a copy/paste bug.
     assert_eq!(sorted.len(), all.len());
 }
+
+/// The release identity is `0.0.1`, derived from the package version (not a
+/// hardcoded duplicate). This keeps the crate version, the exported
+/// `aura::VERSION`, and `aura version` in agreement.
+#[test]
+fn release_version_is_zero_zero_one() {
+    assert_eq!(aura::VERSION, "0.0.1");
+    assert_eq!(aura::VERSION, env!("CARGO_PKG_VERSION"));
+}

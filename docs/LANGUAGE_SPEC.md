@@ -1,6 +1,6 @@
 # The Aura Language Specification
 
-**Version:** Aura v3 (`3.0.0-alpha.1`)
+**Version:** Aura 0.0.1
 **Status:** Frozen specification
 **Baseline commit:** `aba88668856173337b68cd4fb8e046f0467bf561`
 

@@ -16,10 +16,10 @@ No Python required to run.
 
 Aura v3 is a from-scratch Rust rewrite. The previous Python transpiler is
 gone; the last Python release is preserved as tag `v0.2.0a8`. Version
-`3.0.0-alpha.1` is an honest alpha: the language core, the runtime, the
-standard library, the CLI, the REPL, and the Python bridge are implemented
-and covered by an executable test suite, and the CI runs on Linux, macOS, and
-Windows with and without CPython.
+`0.0.1` is the first usable public release: the language core, the runtime,
+the standard library (including scripting I/O), the CLI, the REPL, and the
+Python bridge are implemented and covered by an executable test suite, and
+the CI runs on Linux, macOS, and Windows with and without CPython.
 
 | Area | State |
 |------|-------|
@@ -54,8 +54,9 @@ cargo install --path . --no-default-features --features cli,repl,json,regex,time
 aura run examples/tour.aura
 ```
 
-Prebuilt binaries for Linux, macOS, and Windows are attached to GitHub
-releases. Without Python at all:
+Prebuilt binaries for `x86_64-unknown-linux-gnu`, `aarch64-apple-darwin`, and
+`x86_64-pc-windows-msvc` are attached to GitHub releases. Without Python at
+all:
 
 ```bash
 cargo build --release --no-default-features --features cli,repl,json,regex,time
