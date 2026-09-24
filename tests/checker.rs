@@ -169,3 +169,73 @@ fn assignment_to_immutable_is_static() {
         Err(codes::ASSIGN_IMMUTABLE)
     );
 }
+
+// ---------------------------------------------------------------------------
+// FEATURE_004: destructuring `let` (`LANGUAGE_SPEC.md` §4.7).
+// ---------------------------------------------------------------------------
+
+/// A duplicate name in one destructuring pattern is `E2014`.
+#[test]
+fn destructuring_duplicate_binding_is_static() {
+    assert_eq!(
+        check("fn main() { let [a, a] = [1, 2] }"),
+        Err(codes::DUPLICATE_BINDING)
+    );
+    assert_eq!(
+        check("enum E { A(int) }\nfn main() { let [A(x), A(x)] = [A(1), A(2)] }"),
+        Err(codes::DUPLICATE_BINDING)
+    );
+}
+
+/// Declaring a name that already exists in the same scope is `E2007`.
+#[test]
+fn destructuring_same_scope_redeclaration_is_static() {
+    assert_eq!(
+        check("fn main() { let x = 1\n let [x, y] = [1, 2] }"),
+        Err(codes::REDECLARED)
+    );
+}
+
+/// An unknown variant tag in a `let` pattern is `E3002`.
+#[test]
+fn destructuring_unknown_variant_is_static() {
+    assert_eq!(
+        check("fn main() { let Nope(x) = [1] }"),
+        Err(codes::UNKNOWN_TYPE)
+    );
+}
+
+/// Destructuring validly declares every bound name, so later use type-checks
+/// and a same-scope reuse of a nested name is caught.
+#[test]
+fn destructuring_declares_all_names() {
+    // Outer/intact: using both names is fine.
+    assert_eq!(
+        check("fn main() { let [a, b] = [1, 2]\n print(a + b) }"),
+        Ok(())
+    );
+    // A nested binding is also declared and collides in the same scope.
+    assert_eq!(
+        check("fn main() { let [a, [b, c]] = [1, [2, 3]]\n a = 1 }"),
+        Err(codes::ASSIGN_IMMUTABLE)
+    );
+}
+
+/// Destructured names have no static type (they stay `Unknown`), so an
+/// incompatible annotation is never rejected on their account.
+#[test]
+fn destructuring_names_stay_unknown() {
+    assert_eq!(
+        check("struct S { x: int }\nfn main() { let [s] = [S { x: 1 }]\n let y: string = s.x }"),
+        Ok(())
+    );
+}
+
+/// Shadowing an outer-scope binding is allowed.
+#[test]
+fn destructuring_shadows_outer_scope() {
+    assert_eq!(
+        check("fn main() { let x = 1\n if true { let [x, y] = [1, 2]\n print(x + y) } }"),
+        Ok(())
+    );
+}

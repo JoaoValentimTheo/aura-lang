@@ -362,6 +362,25 @@ impl Interp {
                 env.define(name.clone(), v, *mutable);
                 Ok(Ctl::Val(Value::None))
             }
+            Stmt::LetPattern {
+                pattern,
+                value,
+                span,
+            } => {
+                // Destructuring `let` is atomic (§4.7): match into a temporary
+                // child scope so a mismatch never leaves a partial binding in
+                // the real environment, then transfer every bound name on
+                // success.
+                let v = self.eval(value, env)?.value(self, *span)?;
+                let tmp = env.child();
+                self.bind_pattern(pattern, &v, &tmp)?;
+                for name in pattern.bindings() {
+                    if let Some(bound) = tmp.get(&name) {
+                        env.define(name, bound, false);
+                    }
+                }
+                Ok(Ctl::Val(Value::None))
+            }
             Stmt::Assign {
                 target,
                 value,

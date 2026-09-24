@@ -250,6 +250,17 @@ pub enum Stmt {
         /// Span.
         span: Span,
     },
+    /// `let pattern = expr` (destructuring), where the pattern is a list or
+    /// variant pattern (possibly nested) as defined by §4.7 of the
+    /// specification. All names it binds are immutable.
+    LetPattern {
+        /// The destructuring pattern.
+        pattern: Pattern,
+        /// Initializer.
+        value: Expr,
+        /// Span.
+        span: Span,
+    },
     /// `target = value` / `target op= value`.
     Assign {
         /// Target.

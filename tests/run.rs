@@ -1,6 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 //! End-to-end execution tests.
 
+use aura::error::codes;
 use aura::error::Diag;
 use aura::run_source;
 
@@ -291,4 +292,111 @@ fn fstring_and_unicode() {
     assert_eq!(out("fn main() { print(f\"{1 + 1}\") }"), "2\n");
     assert_eq!(out("fn main() { print(\"ação\") }"), "ação\n");
     assert_eq!(out("fn main() { print(len(\"ação\")) }"), "4\n");
+}
+
+// ---------------------------------------------------------------------------
+// FEATURE_004: destructuring `let` (`LANGUAGE_SPEC.md` §4.7).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn destructuring_list_binds_each_name() {
+    assert_eq!(
+        out("fn main() { let [a, b] = [1, 2]\n print(a + b) }"),
+        "3\n"
+    );
+}
+
+#[test]
+fn destructuring_nested_list() {
+    assert_eq!(
+        out("fn main() { let [a, [b, c]] = [1, [2, 3]]\n print(a + b + c) }"),
+        "6\n"
+    );
+}
+
+#[test]
+fn destructuring_variant() {
+    assert_eq!(
+        out("enum E { A(int), B(int) }\nfn main() { let A(x) = A(5)\n print(x) }"),
+        "5\n"
+    );
+}
+
+#[test]
+fn destructuring_nested_variant_and_list() {
+    assert_eq!(
+        out("enum E { A(int), B(int) }\nfn main() { let [A(x), B(y)] = [A(1), B(2)]\n print(x + y) }"),
+        "3\n"
+    );
+}
+
+#[test]
+fn destructuring_underscore_binds_nothing() {
+    assert_eq!(out("fn main() { let [_, b] = [1, 2]\n print(b) }"), "2\n");
+}
+
+#[test]
+fn destructuring_runtime_mismatches_are_e3001() {
+    assert_eq!(
+        fails("fn main() { let [a, b] = [1] }").code,
+        codes::TYPE_MISMATCH
+    );
+    assert_eq!(
+        fails("fn main() { let [a, b] = 5 }").code,
+        codes::TYPE_MISMATCH
+    );
+    assert_eq!(
+        fails("enum E { A(int) }\nfn main() { let A(x) = 5 }").code,
+        codes::TYPE_MISMATCH
+    );
+    assert_eq!(
+        fails("enum E { A(int) }\nfn main() { let A(x) = A(1, 2) }").code,
+        codes::TYPE_MISMATCH
+    );
+}
+
+#[test]
+fn destructuring_rhs_evaluated_once() {
+    // `count()` is called exactly once; if the RHS were evaluated per name the
+    // printed value would exceed 1.
+    assert_eq!(
+        out("fn f() { print(\"x\")\n return [1, 2] }\nfn main() { let [a, b] = f()\n print(a + b) }"),
+        "x\n3\n"
+    );
+}
+
+#[test]
+fn destructuring_failure_is_e3001_and_binds_nothing() {
+    // A failed destructuring is the existing runtime `E3001`; the REPL tests
+    // prove that no partial binding is left behind (the checker rejects a
+    // same-scope redeclaration before execution, so atomicity is observed
+    // across REPL submissions where fresh names are used).
+    let err = fails("fn main() { let [a, [b, c]] = [1, [2]] }");
+    assert_eq!(err.code, codes::TYPE_MISMATCH);
+}
+
+#[test]
+fn destructuring_scope_subsequent_statements() {
+    assert_eq!(
+        out("fn main() { let [a, b] = [1, 2]\n let c = a + b\n print(c) }"),
+        "3\n"
+    );
+}
+
+#[test]
+fn destructuring_nested_block_sees_names() {
+    assert_eq!(
+        out("fn main() { let [a, b] = [1, 2]\n while false { }\n print(a + b) }"),
+        "3\n"
+    );
+}
+
+#[test]
+fn destructuring_shadows_outer_in_nested_scope() {
+    assert_eq!(
+        out(
+            "fn main() { let a = 100\n if true { let [a, b] = [1, 2]\n print(a + b) }\n print(a) }"
+        ),
+        "3\n100\n"
+    );
 }

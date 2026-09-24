@@ -944,3 +944,67 @@ fn field_read_hoisting_and_recursion() {
         "3\n"
     );
 }
+
+// ---------------------------------------------------------------------------
+// FEATURE_004: destructuring `let` integration.
+// ---------------------------------------------------------------------------
+
+/// Destructured names are `Unknown`, so Feature 001 argument checking does not
+/// falsely reject them.
+#[test]
+fn destructuring_names_do_not_trip_feature_001() {
+    assert_eq!(
+        check("fn f(a: int) { return a }\nfn main() { let [x] = [\"s\"]\n f(x) }"),
+        Ok(())
+    );
+}
+
+/// Feature 002 named arguments are unaffected by destructuring.
+#[test]
+fn destructuring_does_not_change_feature_002() {
+    assert_eq!(
+        out("fn f(a: int, b: int) { return a + b }\nfn main() { let [x, y] = [1, 2]\n print(f(b: y, a: x)) }"),
+        "3\n"
+    );
+}
+
+/// Feature 003 field inference is unchanged; a field read on a destructured
+/// name stays `Unknown`.
+#[test]
+fn destructuring_names_do_not_trip_feature_003() {
+    assert_eq!(
+        check("struct S { x: int }\nfn main() { let [s] = [S { x: 1 }]\n let y: string = s.x }"),
+        Ok(())
+    );
+    // A direct field read on a known struct still propagates (Feature 003).
+    assert_eq!(
+        check("struct S { x: int }\nfn main() { let s = S { x: 1 }\n let y: string = s.x }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+/// Pipeline behavior is unchanged when the initializer is a pipeline.
+#[test]
+fn destructuring_with_pipeline_initializer() {
+    assert_eq!(
+        out("fn pair(a) { return [a, a] }\nfn main() { let [x, y] = 5 |> pair\n print(x + y) }"),
+        "10\n"
+    );
+}
+
+/// Ordinary `let`, `for`, and `match` are unaffected.
+#[test]
+fn destructuring_preserves_ordinary_constructs() {
+    assert_eq!(
+        out("fn main() { let x = 1\n let mut y = 2\n y = y + x\n print(y) }"),
+        "3\n"
+    );
+    assert_eq!(
+        out("fn main() { for [a, b] in [[1, 2], [3, 4]] { print(a + b) } }"),
+        "3\n7\n"
+    );
+    assert_eq!(
+        out("fn main() { print(match [1, 2] { [a, b] -> a + b }) }"),
+        "3\n"
+    );
+}

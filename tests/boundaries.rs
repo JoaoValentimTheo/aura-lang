@@ -198,3 +198,24 @@ fn checker_survives_the_semantic_nesting_limit() {
     );
     assert_eq!(run(&calls), Err(codes::NESTING));
 }
+
+/// FEATURE_004: a deeply nested `let` pattern is bounded by the parser
+/// recursion backstop and reports `E1015`, never a host overflow.
+#[test]
+fn deep_destructuring_pattern_is_bounded() {
+    // A pattern within the backstop parses and checks (the undefined `v` is a
+    // checker diagnostic, not a nesting one).
+    let under = format!(
+        "fn main() {{ let v = 1\n let {}x{} = v }}",
+        "[".repeat(200),
+        "]".repeat(200)
+    );
+    assert!(run(&under).is_err());
+    // Far past the backstop, the pattern is rejected with the nesting code.
+    let over = format!(
+        "fn main() {{ let v = 1\n let {}x{} = v }}",
+        "[".repeat(3000),
+        "]".repeat(3000)
+    );
+    assert_eq!(run(&over), Err(codes::NESTING));
+}

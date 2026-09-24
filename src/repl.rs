@@ -121,16 +121,18 @@ fn eval_line<W: Write>(
             let _ = writeln!(writer, "{e}");
             return;
         }
-        match interp.exec_stmt_globals(&stmt) {
+        let executed = match interp.exec_stmt_globals(&stmt) {
             // A bare expression echoes its value; declarations stay silent.
             Ok(Ctl::Val(v)) if matches!(stmt, Stmt::Expr(..)) => {
                 let _ = writeln!(writer, "{}", v.display());
+                true
             }
-            Ok(_) => {}
+            Ok(_) => true,
             Err(e) => {
                 let _ = writeln!(writer, "{e}");
+                false
             }
-        }
+        };
         // A `let` introduces a binding; persist it only after it executed.
         if let Stmt::Let {
             name, mutable, ann, ..
@@ -142,6 +144,22 @@ fn eval_line<W: Write>(
                     mutable: *mutable,
                     ty: ann.clone(),
                 });
+            }
+        }
+        // A destructuring `let` persists each name it bound, but only when the
+        // statement actually executed: a failed match must not alter the
+        // session (§4.7). Destructured names carry no annotation.
+        if executed {
+            if let Stmt::LetPattern { pattern, .. } = &stmt {
+                for name in pattern.bindings() {
+                    if !decls.iter().any(|d| decl_name(d) == name) {
+                        decls.push(GlobalDecl::Binding {
+                            name,
+                            mutable: false,
+                            ty: None,
+                        });
+                    }
+                }
             }
         }
         return;

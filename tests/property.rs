@@ -315,3 +315,49 @@ proptest! {
         prop_assert!(aura::check::Checker::module(&module).is_ok());
     }
 }
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(200))]
+
+    /// FEATURE_004: for a generated list-destructuring `let`, every name it
+    /// binds is defined with the matching element, and the program runs.
+    #[test]
+    fn destructuring_binds_every_pattern_name(n in 1usize..5) {
+        let names: Vec<String> = (0..n).map(|i| format!("v{i}")).collect();
+        let values: Vec<String> = (0..n).map(|i| (i + 1).to_string()).collect();
+        let sum: i64 = (1..=n as i64).sum();
+        let src = format!(
+            "fn main() {{ let [{}] = [{}]\n print({}) }}",
+            names.join(", "),
+            values.join(", "),
+            names.join(" + ")
+        );
+        prop_assert_eq!(aura::run_source(&src, "<p>").expect("runs"), format!("{sum}\n"));
+    }
+
+    /// FEATURE_004 atomicity: a destructuring whose RHS is too short fails with
+    /// `E3001` and defines none of the pattern's names. Each name is then
+    /// referenced in a later statement; the first reference must be undefined,
+    /// proving no partial binding leaked.
+    #[test]
+    fn destructuring_failure_leaves_no_partial_binding(n in 2usize..5) {
+        let names: Vec<String> = (0..n).map(|i| format!("w{i}")).collect();
+        let short = vec!["1"; n - 1].join(", ");
+        let src = format!(
+            "fn main() {{ let [{}] = [{}]\n print({}) }}",
+            names.join(", "),
+            short,
+            names[0]
+        );
+        let err = aura::run_source(&src, "<p>").expect_err("must fail");
+        prop_assert_eq!(err.code, aura::error::codes::TYPE_MISMATCH);
+    }
+
+    /// FEATURE_004 compatibility: an ordinary identifier `let` still binds its
+    /// name to the initializer, exactly as before.
+    #[test]
+    fn ordinary_let_remains_equivalent(v in -1000i64..1000) {
+        let src = format!("fn main() {{ let x = {v}\n print(x) }}");
+        prop_assert_eq!(aura::run_source(&src, "<p>").expect("runs"), format!("{v}\n"));
+    }
+}

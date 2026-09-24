@@ -61,6 +61,8 @@ runtime rules in §7).
 let name = expr              # immutable binding
 let mut name = expr          # reassignable binding
 let name: int = 3            # annotated
+let [a, b] = pair            # destructuring: binds each name (immutably)
+let Ok(x) = result          # variant destructuring
 fn add(a: int, b: int) -> int { return a + b }
 struct Point { x: float, y: float }
 enum Result { Ok(string), Err(string) }
@@ -69,6 +71,13 @@ use stdlib.math              # reserved; currently inert (see §10)
 ```
 
 * Every binding requires an initializer. `let x` alone is `E2005`.
+* A `let` may bind a pattern: an identifier, or a (possibly nested) list or
+  variant pattern. Every name in the pattern is bound immutably from the
+  value. Only identifiers, list patterns, and variant patterns are allowed;
+  a literal or `none` pattern in `let` is `E1006`, as is an annotation or
+  `mut` on a non-identifier pattern. A destructuring `let` is atomic: if the
+  value does not match the pattern the statement produces the existing
+  `E3001` runtime diagnostic and binds nothing (see §6).
 * At the top level, `let` declares an immutable module constant; `let mut`
   is rejected there.
 * A function is declared with `fn` and returns `none` unless annotated.

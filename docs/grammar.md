@@ -45,7 +45,10 @@ stmt            = let_stmt | assign_or_expr | return_stmt | throw_stmt
                 | break_stmt | continue_stmt | while_stmt | loop_stmt
                 | for_stmt | try_stmt ;
 
-let_stmt        = "let" [ "mut" ] IDENT [ ":" type ] "=" expr terminator ;
+let_stmt        = "let" [ "mut" ] let_pattern [ ":" type ] "=" expr terminator ;
+let_pattern     = IDENT | let_list_pattern | let_variant_pattern ;
+let_list_pattern    = "[" [ let_pattern { "," let_pattern } [ "," ] ] "]" ;
+let_variant_pattern = IDENT [ "(" [ let_pattern { "," let_pattern } ] ")" ] ;
 assign_or_expr  = expr [ assign_op expr ] terminator ;
 assign_op       = "=" | "+=" | "-=" | "*=" | "/=" ;
 return_stmt     = "return" [ expr ] terminator ;

@@ -2,6 +2,7 @@
 //! Tests for the parser.
 
 use aura::ast::*;
+use aura::error::codes;
 use aura::parse::{parse, parse_expr};
 
 #[test]
@@ -159,4 +160,105 @@ fn struct_and_enum() {
 fn for_and_while() {
     let m = parse("fn f() { for x in xs { print(x) } while c { c = false } }").expect("parse");
     assert_eq!(m.items.len(), 1);
+}
+
+// ---------------------------------------------------------------------------
+// FEATURE_004: destructuring `let` (`LANGUAGE_SPEC.md` §4.7).
+// ---------------------------------------------------------------------------
+
+/// The supported destructuring forms parse.
+#[test]
+fn destructuring_let_parses_supported_forms() {
+    for src in [
+        "fn main() { let [a, b] = e }",
+        "fn main() { let [a, [b, c]] = e }",
+        "fn main() { let Ok(x) = e }",
+        "fn main() { let Some([a, b]) = e }",
+        "fn main() { let [Ok(a), Err(b)] = e }",
+        "fn main() { let _ = e }",
+        "fn main() { let [a, _] = e }",
+    ] {
+        assert!(parse(src).is_ok(), "should parse: {src}");
+    }
+}
+
+/// A lone identifier keeps the ordinary `let` path (same AST shape).
+#[test]
+fn destructuring_let_identifier_is_ordinary() {
+    let m = parse("fn main() { let x = 1 }").expect("parse");
+    match &m.items[0] {
+        Item::Fn { body, .. } => match &body[0] {
+            Stmt::Let {
+                name, ann, mutable, ..
+            } => {
+                assert_eq!(name, "x");
+                assert!(ann.is_none());
+                assert!(!mutable);
+            }
+            other => panic!("expected ordinary let, got {other:?}"),
+        },
+        _ => panic!("expected fn"),
+    }
+}
+
+/// Literal and `none` patterns are rejected specifically in `let`, but remain
+/// legal in `match`/`for`.
+#[test]
+fn destructuring_let_rejects_literals() {
+    for src in [
+        "fn main() { let 5 = e }",
+        "fn main() { let \"s\" = e }",
+        "fn main() { let true = e }",
+        "fn main() { let none = e }",
+        "fn main() { let [a, 5] = e }",
+        "fn main() { let Ok(5) = e }",
+    ] {
+        let err = parse(src).expect_err("must be rejected");
+        assert_eq!(err.code, codes::EXPECTED, "src: {src}");
+    }
+    // The general pattern parser still accepts literals.
+    assert!(parse("fn main() { match x { 5 -> 1\n _ -> 0 } }").is_ok());
+    assert!(parse("fn main() { for 5 in xs { } }").is_ok());
+}
+
+/// Annotations and `mut` are rejected on a destructuring `let`.
+#[test]
+fn destructuring_let_rejects_annotation_and_mut() {
+    assert_eq!(
+        parse("fn main() { let [a, b]: [int] = e }")
+            .expect_err("must be rejected")
+            .code,
+        codes::EXPECTED
+    );
+    assert_eq!(
+        parse("fn main() { let mut [a, b] = e }")
+            .expect_err("must be rejected")
+            .code,
+        codes::EXPECTED
+    );
+    // The ordinary annotated/mutable forms still parse.
+    assert!(parse("fn main() { let x: int = 1 }").is_ok());
+    assert!(parse("fn main() { let mut x = 1 }").is_ok());
+}
+
+/// A reserved word in binding position keeps its dedicated diagnostic.
+#[test]
+fn destructuring_let_reserved_word_is_e1009() {
+    assert_eq!(
+        parse("fn main() { let if = 1 }")
+            .expect_err("rejected")
+            .code,
+        codes::RESERVED_NAME
+    );
+}
+
+/// Destructuring requires an initializer.
+#[test]
+fn destructuring_let_requires_initializer() {
+    assert_eq!(
+        parse("fn main() { let [a, b] }")
+            .expect_err("rejected")
+            .code,
+        codes::LET_NO_INIT
+    );
 }

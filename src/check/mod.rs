@@ -1373,6 +1373,22 @@ impl Checker {
                 }
                 self.declare(name, *mutable, *span)?;
             }
+            Stmt::LetPattern {
+                pattern,
+                value,
+                span,
+            } => {
+                // A destructuring `let` (§4.7): validate the pattern with the
+                // same rules `match`/`for` use (duplicate binding `E2014`,
+                // unknown variant `E3002`), then declare every name immutably.
+                // No type inference is performed and no `value_types` entry is
+                // created, so destructured names stay `Ty::Unknown`.
+                self.expr(value)?;
+                self.check_pattern(pattern)?;
+                for name in pattern.bindings() {
+                    self.declare(&name, false, *span)?;
+                }
+            }
             Stmt::Assign {
                 target,
                 value,

@@ -244,3 +244,47 @@ fn field_read_failed_binding_is_isolated() {
     assert!(!out.contains("bad ="), "{out}");
     assert!(out.contains('3'), "{out}");
 }
+
+// ---------------------------------------------------------------------------
+// FEATURE_004: destructuring `let` across submissions (`LANGUAGE_SPEC.md` §4.7).
+// ---------------------------------------------------------------------------
+
+/// A successful destructuring persists every bound name across submissions.
+#[test]
+fn destructuring_persists_each_name() {
+    let out = body("let [a, b] = [10, 20]\na\nb\na + b\n:quit\n");
+    assert!(out.contains("10"), "{out}");
+    assert!(out.contains("20"), "{out}");
+    assert!(out.contains("30"), "{out}");
+}
+
+/// A failed destructuring leaves no binding behind: none of its names is
+/// visible in a later submission.
+#[test]
+fn destructuring_failure_persists_nothing() {
+    let out = body("let [p, [q, r]] = [1, [2]]\np\nq\nr\n:quit\n");
+    // The match fails at runtime...
+    assert!(out.contains("E3001"), "{out}");
+    // ...and none of the names were persisted.
+    assert!(out.contains("undefined variable `p`"), "{out}");
+    assert!(out.contains("undefined variable `q`"), "{out}");
+    assert!(out.contains("undefined variable `r`"), "{out}");
+}
+
+/// An arity failure does not persist the names that would have been bound.
+#[test]
+fn destructuring_arity_failure_persists_nothing() {
+    let out = body("let [p, q] = [1]\np\n:quit\n");
+    assert!(out.contains("E3001"), "{out}");
+    assert!(out.contains("undefined variable `p`"), "{out}");
+}
+
+/// Ordinary annotated `let` keeps Feature 003's type persistence.
+#[test]
+fn destructuring_does_not_change_annotated_let_persistence() {
+    let out = body(
+        "struct User { age: int }\nlet user: User = User { age: 3 }\nfn takes_str(x: string) { return x }\ntakes_str(user.age)\nuser.age\n:quit\n",
+    );
+    assert!(out.contains("E3001"), "{out}");
+    assert!(out.contains('3'), "{out}");
+}

@@ -351,7 +351,10 @@ terminator    = NEWLINE | ";" ;
 stmt          = let_stmt | assign_or_expr | return_stmt | throw_stmt
               | break_stmt | continue_stmt | while_stmt | loop_stmt
               | for_stmt | try_stmt ;
-let_stmt      = "let" [ "mut" ] IDENT [ ":" type ] "=" expr terminator ;
+let_stmt      = "let" [ "mut" ] let_pattern [ ":" type ] "=" expr terminator ;
+let_pattern   = IDENT | let_list_pattern | let_variant_pattern ;
+let_list_pattern    = "[" [ let_pattern { "," let_pattern } [ "," ] ] "]" ;
+let_variant_pattern = IDENT [ "(" [ let_pattern { "," let_pattern } ] ")" ] ;
 assign_or_expr= expr [ assign_op expr ] terminator ;
 assign_op     = "=" | "+=" | "-=" | "*=" | "/=" ;
 return_stmt   = "return" [ expr ] terminator ;
@@ -369,6 +372,25 @@ without `catch` (§14.5).
 
 **Normative rule.** `if` and `match` are expressions, not statements; they are
 reached through `assign_or_expr` (`expr`).
+
+**Normative rule (destructuring `let`).** A `let` statement binds a
+`let_pattern`:
+
+* `let IDENT = expr` and `let mut IDENT = expr` are ordinary bindings and are
+  exactly as specified in §16.1.
+* A `let_list_pattern` or `let_variant_pattern`, including nesting of them, is
+  a **destructuring binding**: the initializer is evaluated once and every
+  binding name in the pattern is bound from the result (§4.7).
+* Only `IDENT`, `let_list_pattern`, and `let_variant_pattern` are legal in
+  `let`-pattern position. A `literal_pattern` (`INT`, `STRING`, `"true"`,
+  `"false"`, `"none"`) is not a `let_pattern`, so a literal anywhere in a
+  `let` pattern — including a nested position — is a syntax error, reported
+  as `E1006`. This restriction is specific to `let`; literal patterns remain
+  legal in `match` and `for` (§4.6).
+* An optional `: type` annotation is legal only when the pattern is a single
+  `IDENT`. An annotation on any other pattern is `E1006`.
+* `mut` is legal only when the pattern is a single `IDENT`. `mut` on any other
+  pattern is `E1006`.
 
 ### 4.5 Expressions, precedence, and associativity
 
@@ -457,6 +479,64 @@ variant_pattern = IDENT [ "(" [ pattern { "," pattern } ] ")" ] ;
 
 **Normative rule.** A capitalized identifier in pattern position is a variant
 pattern; a lowercase identifier or `_` is a binding pattern. `_` binds nothing.
+Literal patterns (`INT`, `STRING`, `"true"`, `"false"`, `"none"`) are legal in
+`match` and `for` pattern position.
+
+### 4.7 Destructuring `let`
+
+**Normative rule (binding).** `let P = e` evaluates `e` exactly once and binds
+every name in `P.bindings()` (every `IDENT` in the pattern, except `_`) from
+the corresponding component of the resulting value. Every name bound by a
+destructuring `let` is immutable. `_` binds nothing.
+
+**Normative rule (scope).** The names bound by a destructuring `let` have the
+same scope and lifetime as an ordinary `let` in the same position (§16.3): they
+are visible from the statement to the end of the enclosing scope, including
+nested scopes, and they shadow outer bindings exactly as an ordinary `let`
+does. Declaring a name already declared in the same scope is `E2007`. All
+names become visible only after the initializer has been evaluated and the
+pattern has fully matched.
+
+**Normative rule (evaluation order).** The initializer expression is evaluated
+once, before any binding, under the strict left-to-right evaluation of §13.
+Pattern binding then binds the names of `P.bindings()`; because no user code
+runs during binding, the order in which the names are bound is not observable.
+A `return`, `throw`, `break`, or `continue` raised while evaluating the
+initializer propagates before any binding, exactly as for an ordinary `let`.
+
+**Normative rule (failure and atomicity).** Destructuring `let` is atomic. If
+the runtime value does not match the pattern, the statement fails and no
+binding is created or modified; the environment is left exactly as it was
+before the statement. The failure uses the existing runtime diagnostics of
+pattern binding: a list arity mismatch, a non-list value for a list pattern, a
+variant tag or payload-length mismatch, or a non-variant value for a variant
+pattern are each `E3001`.
+
+**Normative rule (checker).** The checker validates a destructuring `let`
+pattern with the same pattern validation used by `match` and `for` (§4.6): a
+variant pattern MUST name a declared variant (`E3002`), and a pattern MUST NOT
+bind the same name twice (`E2014`). Each bound name is declared in the current
+scope, so a same-scope redeclaration is `E2007`. The checker performs no type
+inference for destructured names: they have no static type and are treated as
+`Unknown` (§2.3). No annotation is checked for a destructuring `let`, because
+annotations are only legal on the single-`IDENT` form.
+
+**Normative rule (REPL).** Each name bound by a destructuring `let` is
+persisted across REPL submissions as an unannotated session binding, exactly
+as an ordinary unannotated `let` is (§16.1, §33 item 4). Because destructured names
+have no annotation, they persist with no declared type and are `Unknown` in
+later submissions. A failed destructuring submission does not persist any of
+its bindings and does not alter prior session state.
+
+**Normative rule (compatibility).** Destructuring `let` is an additive
+syntax extension. `let IDENT = e`, `let mut IDENT = e`, and `let IDENT: T = e`
+retain their existing meaning, AST, checker behavior, runtime behavior, and
+REPL persistence. No previously valid program changes meaning.
+
+*Evidence:* `Parser::pattern`, `Parser::stmt_inner` (`Tok::Let`)
+(`src/parse/mod.rs`); `check_pattern`, `Stmt::Let` (`src/check/mod.rs`);
+`bind_pattern`, `Env::child`/`get`/`define` (`src/run/mod.rs`);
+`eval_line` (`src/repl.rs`).
 
 ---
 
@@ -1210,7 +1290,9 @@ are expressed as lambdas bound to names.
 mutably. A plain reassignment to an immutable binding is `E2001` (checked when
 statically visible, and enforced by the runtime in all cases).
 
-**Normative rule.** Every binding requires an initializer (`E2005`).
+**Normative rule.** Every binding requires an initializer (`E2005`). A
+destructuring `let` (§4.7) binds each name in its pattern immutably and also
+requires an initializer.
 
 ### 16.2 Reassignment
 

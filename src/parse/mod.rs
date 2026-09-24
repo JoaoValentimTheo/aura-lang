@@ -242,6 +242,7 @@ fn check_stmt_depth(stmts: &[Stmt], start: usize) -> Result<()> {
         }
         match s {
             Stmt::Let { value, .. } => check_expr_depth(value, start)?,
+            Stmt::LetPattern { value, .. } => check_expr_depth(value, start)?,
             Stmt::Assign { target, value, .. } => {
                 check_expr_depth(target, start)?;
                 check_expr_depth(value, start)?;
@@ -665,25 +666,63 @@ impl Parser {
             Tok::Let => {
                 self.bump();
                 let mutable = self.eat(&Tok::Mut);
-                let name = self.ident("binding name")?;
-                let ann = if self.eat(&Tok::Colon) {
-                    Some(self.ty()?)
-                } else {
-                    None
-                };
+                // A `let` binds either a single identifier (the ordinary,
+                // optionally annotated and optionally mutable form) or a
+                // destructuring pattern (§4.7). Parse the pattern first, then
+                // route a lone binding name through the ordinary path so
+                // `let x`, `let mut x`, and `let x: T` keep their exact
+                // behavior.
+                let pattern = self.let_pattern()?;
+                if let Pattern::Bind(name) = pattern {
+                    let ann = if self.eat(&Tok::Colon) {
+                        Some(self.ty()?)
+                    } else {
+                        None
+                    };
+                    if !self.eat(&Tok::Assign) {
+                        return Err(Diag::new(
+                            codes::LET_NO_INIT,
+                            format!("`let {name}` needs an initializer: `let {name} = ...`"),
+                            span,
+                        ));
+                    }
+                    let value = self.expr()?;
+                    self.end_stmt();
+                    return Ok(Stmt::Let {
+                        mutable,
+                        name,
+                        ann,
+                        value,
+                        span,
+                    });
+                }
+                // Genuine destructuring: `mut` and annotations are not allowed
+                // (§4.7), and the pattern must be followed by `=`.
+                if mutable {
+                    return Err(Diag::new(
+                        codes::EXPECTED,
+                        "`mut` is not allowed on a destructuring `let`; every name it binds is immutable",
+                        span,
+                    ));
+                }
+                if self.eat(&Tok::Colon) {
+                    return Err(Diag::new(
+                        codes::EXPECTED,
+                        "a destructuring `let` cannot have a type annotation",
+                        span,
+                    ));
+                }
                 if !self.eat(&Tok::Assign) {
                     return Err(Diag::new(
                         codes::LET_NO_INIT,
-                        format!("`let {name}` needs an initializer: `let {name} = ...`"),
+                        "a destructuring `let` needs an initializer: `let <pattern> = ...`",
                         span,
                     ));
                 }
                 let value = self.expr()?;
                 self.end_stmt();
-                Ok(Stmt::Let {
-                    mutable,
-                    name,
-                    ann,
+                Ok(Stmt::LetPattern {
+                    pattern,
                     value,
                     span,
                 })
@@ -778,6 +817,82 @@ impl Parser {
                 }
                 self.end_stmt();
                 Ok(Stmt::Expr(expr, span))
+            }
+        }
+    }
+
+    /// Parse a `let`-position pattern (§4.7).
+    ///
+    /// This is the restricted subset of [`Self::pattern`] accepted by `let`:
+    /// binding names, list patterns, variant patterns, and any nesting of
+    /// those. Literal and `none` patterns are rejected with `E1006`, and the
+    /// general [`Self::pattern`] used by `for` and `match` is left untouched.
+    fn let_pattern(&mut self) -> Result<Pattern> {
+        self.enter()?;
+        let r = self.let_pattern_inner();
+        self.leave();
+        r
+    }
+
+    fn let_pattern_inner(&mut self) -> Result<Pattern> {
+        let span = self.span();
+        match self.at().clone() {
+            Tok::Ident(n) => {
+                self.bump();
+                if self.eat(&Tok::LParen) {
+                    let mut ps = Vec::new();
+                    if !self.eat(&Tok::RParen) {
+                        loop {
+                            ps.push(self.let_pattern()?);
+                            if !self.eat(&Tok::Comma) {
+                                self.expect(&Tok::RParen)?;
+                                break;
+                            }
+                        }
+                    }
+                    Ok(Pattern::Variant(n, ps))
+                } else if n.chars().next().is_some_and(char::is_uppercase) {
+                    Ok(Pattern::Variant(n, Vec::new()))
+                } else {
+                    Ok(Pattern::Bind(n))
+                }
+            }
+            Tok::LBracket => {
+                self.bump();
+                let mut parts = Vec::new();
+                if !self.eat(&Tok::RBracket) {
+                    loop {
+                        self.skip_newlines();
+                        parts.push(self.let_pattern()?);
+                        if !self.eat(&Tok::Comma) {
+                            self.skip_newlines();
+                            self.expect(&Tok::RBracket)?;
+                            break;
+                        }
+                    }
+                }
+                Ok(Pattern::List(parts))
+            }
+            other => {
+                // Literal and `none` patterns are unsupported in `let` and
+                // report `E1006`; a reserved word in binding position keeps
+                // its dedicated `E1009` diagnostic (matching the ordinary
+                // `let x` path); anything else is an unsupported pattern.
+                let code = match other {
+                    Tok::Int(_) | Tok::Str(_) | Tok::True | Tok::False | Tok::None => {
+                        codes::EXPECTED
+                    }
+                    ref t if is_keyword(t) => codes::RESERVED_NAME,
+                    _ => codes::EXPECTED,
+                };
+                Err(Diag::new(
+                    code,
+                    format!(
+                        "expected a binding, list, or variant pattern in `let`, found {}",
+                        other.describe()
+                    ),
+                    span,
+                ))
             }
         }
     }
