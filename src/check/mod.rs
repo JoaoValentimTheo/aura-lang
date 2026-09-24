@@ -841,7 +841,12 @@ impl Checker {
     fn check_pattern(&self, pat: &Pattern) -> Result<()> {
         match pat {
             Pattern::Variant(tag, ps) => {
-                if !self.variants.contains_key(tag) && !self.types.contains_key(tag) {
+                // A variant pattern MUST name a declared runtime variant tag.
+                // A struct name, enum type name, or alias name is not a
+                // variant and must not be accepted: the runtime matches only
+                // `Value::Variant` by tag, so accepting a type name would let
+                // `match` silently fall through (`LANGUAGE_SPEC.md` §19.3).
+                if !self.variants.contains_key(tag) {
                     return Err(Diag::new(
                         codes::UNKNOWN_TYPE,
                         format!("`{tag}` is not a declared enum variant"),
@@ -1540,6 +1545,11 @@ impl Checker {
                     ));
                 }
                 self.push();
+                // Validate the loop pattern with the same rules `match` and
+                // destructuring `let` use, so a non-variant tag or a duplicate
+                // binding is rejected statically and consistently with the
+                // runtime.
+                self.check_pattern(pat)?;
                 for b in pat.bindings() {
                     self.declare(&b, false, Span::default())?;
                 }

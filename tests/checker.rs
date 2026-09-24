@@ -253,3 +253,56 @@ fn empty_map_literal_is_a_map_typed_by_existing_rules() {
     // error, not accepted as a block.
     assert_eq!(check("fn main() { {:}.nope() }"), Err(codes::UNDEFINED));
 }
+
+// ---------------------------------------------------------------------------
+// H1a: pattern correctness (checker/runtime agreement, `LANGUAGE_SPEC.md` §19.3).
+// ---------------------------------------------------------------------------
+
+/// A variant pattern must name a declared runtime variant tag. A struct name,
+/// enum type name, or alias name is not a variant and is `E3002`.
+#[test]
+fn non_variant_type_names_are_rejected_as_patterns() {
+    assert_eq!(
+        check("struct P { x: int }\nfn main() { match P(1) { P(v) -> 1\n _ -> 2 } }"),
+        Err(codes::UNKNOWN_TYPE)
+    );
+    assert_eq!(
+        check("enum E { A }\nfn main() { match A() { E -> 1\n _ -> 2 } }"),
+        Err(codes::UNKNOWN_TYPE)
+    );
+    assert_eq!(
+        check("type Id = int\nfn main() { match 5 { Id -> 1\n _ -> 2 } }"),
+        Err(codes::UNKNOWN_TYPE)
+    );
+}
+
+/// `for` uses the same pattern validation as `match` and destructuring `let`.
+#[test]
+fn for_pattern_uses_the_same_validation_as_match() {
+    assert_eq!(
+        check("struct P { x: int }\nfn main() { for P(v) in [P(1)] { } }"),
+        Err(codes::UNKNOWN_TYPE)
+    );
+    assert_eq!(
+        check("fn main() { for Nope(v) in [1] { } }"),
+        Err(codes::UNKNOWN_TYPE)
+    );
+    assert_eq!(
+        check("enum E { A(int) }\nfn main() { for A(v) in [A(1)] { } }"),
+        Ok(())
+    );
+}
+
+/// A variant pattern that names a real variant tag remains accepted, including
+/// the case where a variant tag equals its enum type name.
+#[test]
+fn real_variant_tags_remain_accepted() {
+    assert_eq!(
+        check("enum E { A(int), B }\nfn main() { match A(1) { A(v) -> v\n B -> 0 } }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("enum E { E(int) }\nfn main() { match E(1) { E(v) -> v } }"),
+        Ok(())
+    );
+}

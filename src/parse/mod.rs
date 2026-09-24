@@ -898,6 +898,13 @@ impl Parser {
     }
 
     fn pattern(&mut self) -> Result<Pattern> {
+        self.enter()?;
+        let r = self.pattern_inner();
+        self.leave();
+        r
+    }
+
+    fn pattern_inner(&mut self) -> Result<Pattern> {
         let span = self.span();
         match self.at().clone() {
             Tok::Ident(n) => {

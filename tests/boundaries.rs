@@ -236,3 +236,37 @@ fn empty_map_literal_adds_no_nesting() {
     );
     assert_eq!(run(&over), Err(codes::NESTING));
 }
+
+/// H1b: a deeply nested `for`/`match` pattern is bounded by the parser
+/// recursion backstop and reports `E1015`, never a host stack overflow.
+#[test]
+fn deep_match_pattern_is_bounded() {
+    let over = format!(
+        "fn main() {{ let v = 1\n match v {{ {}x{} -> 1\n _ -> 0 }} }}",
+        "[".repeat(5000),
+        "]".repeat(5000)
+    );
+    assert_eq!(run(&over), Err(codes::NESTING));
+    let over_for = format!(
+        "fn main() {{ let xs = []\n for {}x{} in xs {{ }} }}",
+        "[".repeat(5000),
+        "]".repeat(5000)
+    );
+    assert_eq!(run(&over_for), Err(codes::NESTING));
+}
+
+/// H1b: a pattern within the parser backstop parses, checks, and executes
+/// without a host overflow (runtime pattern recursion is bounded by the
+/// parser-accepted depth and runs on the large interpreter stack).
+#[test]
+fn bounded_deep_pattern_executes_without_overflow() {
+    let n = 1000usize;
+    let src = format!(
+        "fn id(v) {{ return v }}\nfn main() {{ let mut x = id(1)\n \
+         for i in range(0, {n}) {{ x = id([x]) }}\n \
+         let r = match x {{ {pat} y {close} -> \"m\"\n _ -> \"f\" }}\n print(r) }}",
+        pat = "[".repeat(n),
+        close = "]".repeat(n),
+    );
+    assert_eq!(run(&src), Ok("m\n".to_string()));
+}

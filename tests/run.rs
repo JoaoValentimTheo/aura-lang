@@ -441,3 +441,31 @@ fn non_empty_map_literal_is_unchanged() {
         "2\n"
     );
 }
+
+// ---------------------------------------------------------------------------
+// H1a: pattern correctness at runtime is consistent with the checker.
+// ---------------------------------------------------------------------------
+
+/// `match` on a real variant still matches (no regression), and the checker
+/// no longer lets a non-variant tag reach a silent fall-through.
+#[test]
+fn variant_pattern_matching_is_unchanged() {
+    assert_eq!(
+        out("enum E { A(int), B(int) }\nfn main() { print(match A(5) { A(v) -> v\n B(w) -> w }) }"),
+        "5\n"
+    );
+    assert_eq!(
+        out("enum E { A, B }\nfn main() { print(match B() { A -> \"a\"\n B -> \"b\" }) }"),
+        "b\n"
+    );
+}
+
+/// A nullary variant whose tag equals a declared struct/enum type name is a
+/// real variant tag and still works.
+#[test]
+fn variant_tag_equal_to_type_name_matches() {
+    assert_eq!(
+        out("enum E { E(int) }\nfn main() { print(match E(7) { E(v) -> v }) }"),
+        "7\n"
+    );
+}
