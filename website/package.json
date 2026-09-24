@@ -1,0 +1,21 @@
+{
+  "name": "aura-website",
+  "private": true,
+  "version": "0.0.2",
+  "description": "The official Aura website: a static site with documentation, examples, and the versioned WebAssembly Playground.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "build:subpath": "node build.mjs --base=/aura-lang/",
+    "serve": "node tests/serve.mjs 8080",
+    "test": "node tests/run-all.mjs",
+    "test:examples": "node tests/validate-examples.mjs",
+    "test:links": "node tests/check-links.mjs",
+    "test:browser": "node tests/browser.test.mjs",
+    "test:a11y": "node tests/a11y.test.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0",
+    "@axe-core/playwright": "^4.10.0"
+  }
+}

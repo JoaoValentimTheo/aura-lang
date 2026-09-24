@@ -1,0 +1,86 @@
+name: Deploy website
+
+# Builds the static Aura website (including the versioned Playground runtime)
+# and deploys it to GitHub Pages.
+#
+# Production domain: https://aura.lang.dev — a GitHub Pages custom subdomain
+# configured with a DNS CNAME pointing at GitHub Pages and set in the
+# repository's Pages settings. The build writes `CNAME` (aura.lang.dev) into
+# the output, and the site's canonical URLs use https://aura.lang.dev.
+#
+# The site is fully static: no server, no database, no remote execution. The
+# Playground runs entirely in the browser.
+
+on:
+  push:
+    branches: ["rewrite/**", master, main]
+    paths:
+      - "website/**"
+      - "playground/**"
+      - "docs/**"
+      - "src/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build static site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # The runtime crate must be formatted and linted like the rest of the
+      # repository, and its native engine tested.
+      - name: "Runtime crate: fmt"
+        run: cargo fmt --manifest-path playground/runtime/Cargo.toml --all -- --check
+      - name: "Runtime crate: clippy"
+        run: cargo clippy --manifest-path playground/runtime/Cargo.toml --all-targets -- -D warnings
+      - name: "Runtime crate: native tests"
+        run: cargo test --manifest-path playground/runtime/Cargo.toml
+
+      # Build the immutable, versioned WebAssembly runtime and verify that the
+      # committed manifest still matches the artifact on disk. Website examples
+      # are validated against this exact artifact.
+      - name: Verify versioned runtime manifest
+        run: node playground/build.mjs --check
+
+      - name: Build the website
+        run: node website/build.mjs
+
+      - name: Validate examples against the real runtime
+        run: node website/tests/validate-examples.mjs
+
+      - name: Validate links and required assets
+        run: node website/tests/check-links.mjs
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/dist
+
+  deploy:
+    name: deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

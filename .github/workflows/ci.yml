@@ -186,3 +186,33 @@ jobs:
         run: node playground/build.mjs --check
       - name: Playground ABI + differential + manifest suites
         run: node playground/tests/node/run-all.mjs
+
+  # --------------------------------------------------------------- website
+  # Builds the static website, validates every example against the real wasm
+  # runtime, and checks internal links and required assets. Browser and
+  # accessibility suites run under Chromium when Playwright is available.
+  website:
+    name: website (static build + examples + links)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Verify the versioned runtime manifest
+        run: node playground/build.mjs --check
+      - name: Build the website
+        run: node website/build.mjs
+      - name: Validate examples against the real runtime
+        run: node website/tests/validate-examples.mjs
+      - name: Validate links and required assets
+        run: node website/tests/check-links.mjs
+      - name: Validate a non-root base path build
+        run: |
+          node website/build.mjs --base=/aura-lang/
+          node website/tests/check-links.mjs --base=/aura-lang/
+          node website/build.mjs

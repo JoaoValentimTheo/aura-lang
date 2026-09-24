@@ -1,0 +1,239 @@
+/* Aura — Material 3 design tokens.
+ *
+ * A complete Material You role palette expressed as CSS custom properties.
+ * Every component consumes these roles; no component hard-codes a colour.
+ * Light is the default; dark is applied via the `data-theme` attribute set by
+ * the theme controller, falling back to the OS preference with
+ * `prefers-color-scheme` when no explicit choice has been made.
+ *
+ * The palette is generated from an Aura source hue (indigo-violet) with a
+ * small tertiary accent, following the Material 3 tonal-palette model.
+ */
+
+:root {
+  /* ---- Typography ------------------------------------------------------- */
+  --font-brand: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+
+  /* Material 3 type scale (size / line-height / weight / tracking). */
+  --type-display-large: 3.5rem;
+  --type-display-medium: 2.75rem;
+  --type-display-small: 2.25rem;
+  --type-headline-large: 2rem;
+  --type-headline-medium: 1.75rem;
+  --type-headline-small: 1.5rem;
+  --type-title-large: 1.375rem;
+  --type-title-medium: 1rem;
+  --type-title-small: 0.875rem;
+  --type-body-large: 1rem;
+  --type-body-medium: 0.875rem;
+  --type-body-small: 0.75rem;
+  --type-label-large: 0.875rem;
+  --type-label-medium: 0.75rem;
+  --type-label-small: 0.6875rem;
+
+  /* ---- Shape ------------------------------------------------------------ */
+  --shape-none: 0;
+  --shape-xs: 4px;
+  --shape-sm: 8px;
+  --shape-md: 12px;
+  --shape-lg: 16px;
+  --shape-xl: 28px;
+  --shape-full: 999px;
+
+  /* ---- Spacing (4dp grid) ---------------------------------------------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+
+  /* ---- Elevation (Material 3 levels) ----------------------------------- */
+  --elevation-0: none;
+  --elevation-1: 0 1px 2px 0 rgb(0 0 0 / 0.3), 0 1px 3px 1px rgb(0 0 0 / 0.15);
+  --elevation-2: 0 1px 2px 0 rgb(0 0 0 / 0.3), 0 2px 6px 2px rgb(0 0 0 / 0.15);
+  --elevation-3: 0 4px 8px 3px rgb(0 0 0 / 0.15), 0 1px 3px 0 rgb(0 0 0 / 0.3);
+  --elevation-4: 0 6px 10px 4px rgb(0 0 0 / 0.15), 0 2px 3px 0 rgb(0 0 0 / 0.3);
+
+  /* ---- Motion ----------------------------------------------------------- */
+  --motion-short: 120ms;
+  --motion-medium: 220ms;
+  --motion-long: 400ms;
+  --easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --easing-emphasized: cubic-bezier(0.2, 0, 0, 1);
+
+  --content-width: 1200px;
+  --prose-width: 760px;
+}
+
+/* ---- Light colour roles (default) --------------------------------------- */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+
+  --md-primary: #4a57a9;
+  --md-on-primary: #ffffff;
+  --md-primary-container: #dfe0ff;
+  --md-on-primary-container: #00105c;
+
+  --md-secondary: #5b5d72;
+  --md-on-secondary: #ffffff;
+  --md-secondary-container: #e0e1f9;
+  --md-on-secondary-container: #181a2c;
+
+  --md-tertiary: #77536d;
+  --md-on-tertiary: #ffffff;
+  --md-tertiary-container: #ffd7f3;
+  --md-on-tertiary-container: #2d1128;
+
+  --md-error: #ba1a1a;
+  --md-on-error: #ffffff;
+  --md-error-container: #ffdad6;
+  --md-on-error-container: #410002;
+
+  --md-success: #206b45;
+  --md-on-success: #ffffff;
+  --md-success-container: #abeec3;
+  --md-on-success-container: #002110;
+
+  --md-background: #fbf8ff;
+  --md-on-background: #1a1b21;
+  --md-surface: #fbf8ff;
+  --md-on-surface: #1a1b21;
+  --md-surface-variant: #e3e1ec;
+  --md-on-surface-variant: #46464f;
+
+  --md-surface-container-lowest: #ffffff;
+  --md-surface-container-low: #f5f2fb;
+  --md-surface-container: #efedf6;
+  --md-surface-container-high: #e9e7f1;
+  --md-surface-container-highest: #e3e1ec;
+
+  --md-outline: #777680;
+  --md-outline-variant: #c7c5d0;
+
+  --md-inverse-surface: #2f3038;
+  --md-inverse-on-surface: #f1eff9;
+  --md-inverse-primary: #bcc2ff;
+
+  --md-code-bg: #f4f2fb;
+  --md-code-border: #dddbe6;
+  --md-scrim: rgb(0 0 0 / 0.32);
+}
+
+/* ---- Dark colour roles --------------------------------------------------- */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --md-primary: #bcc2ff;
+  --md-on-primary: #1b2678;
+  --md-primary-container: #333e90;
+  --md-on-primary-container: #dfe0ff;
+
+  --md-secondary: #c4c5dd;
+  --md-on-secondary: #2d2f42;
+  --md-secondary-container: #434559;
+  --md-on-secondary-container: #e0e1f9;
+
+  --md-tertiary: #e6bad7;
+  --md-on-tertiary: #44263d;
+  --md-tertiary-container: #5d3c55;
+  --md-on-tertiary-container: #ffd7f3;
+
+  --md-error: #ffb4ab;
+  --md-on-error: #690005;
+  --md-error-container: #93000a;
+  --md-on-error-container: #ffdad6;
+
+  --md-success: #8fd5a9;
+  --md-on-success: #003920;
+  --md-success-container: #005231;
+  --md-on-success-container: #a6f2c0;
+
+  --md-background: #121318;
+  --md-on-background: #e3e1ec;
+  --md-surface: #121318;
+  --md-on-surface: #e3e1ec;
+  --md-surface-variant: #46464f;
+  --md-on-surface-variant: #c7c5d0;
+
+  --md-surface-container-lowest: #0c0e13;
+  --md-surface-container-low: #1a1b21;
+  --md-surface-container: #1e1f25;
+  --md-surface-container-high: #292a30;
+  --md-surface-container-highest: #34343b;
+
+  --md-outline: #91909a;
+  --md-outline-variant: #46464f;
+
+  --md-inverse-surface: #e3e1ec;
+  --md-inverse-on-surface: #2f3038;
+  --md-inverse-primary: #4a57a9;
+
+  --md-code-bg: #191a20;
+  --md-code-border: #2e2f38;
+  --md-scrim: rgb(0 0 0 / 0.5);
+}
+
+/* When no explicit theme has been chosen, follow the OS preference. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --md-primary: #bcc2ff;
+    --md-on-primary: #1b2678;
+    --md-primary-container: #333e90;
+    --md-on-primary-container: #dfe0ff;
+
+    --md-secondary: #c4c5dd;
+    --md-on-secondary: #2d2f42;
+    --md-secondary-container: #434559;
+    --md-on-secondary-container: #e0e1f9;
+
+    --md-tertiary: #e6bad7;
+    --md-on-tertiary: #44263d;
+    --md-tertiary-container: #5d3c55;
+    --md-on-tertiary-container: #ffd7f3;
+
+    --md-error: #ffb4ab;
+    --md-on-error: #690005;
+    --md-error-container: #93000a;
+    --md-on-error-container: #ffdad6;
+
+    --md-success: #8fd5a9;
+    --md-on-success: #003920;
+    --md-success-container: #005231;
+    --md-on-success-container: #a6f2c0;
+
+    --md-background: #121318;
+    --md-on-background: #e3e1ec;
+    --md-surface: #121318;
+    --md-on-surface: #e3e1ec;
+    --md-surface-variant: #46464f;
+    --md-on-surface-variant: #c7c5d0;
+
+    --md-surface-container-lowest: #0c0e13;
+    --md-surface-container-low: #1a1b21;
+    --md-surface-container: #1e1f25;
+    --md-surface-container-high: #292a30;
+    --md-surface-container-highest: #34343b;
+
+    --md-outline: #91909a;
+    --md-outline-variant: #46464f;
+
+    --md-inverse-surface: #e3e1ec;
+    --md-inverse-on-surface: #2f3038;
+    --md-inverse-primary: #4a57a9;
+
+    --md-code-bg: #191a20;
+    --md-code-border: #2e2f38;
+    --md-scrim: rgb(0 0 0 / 0.5);
+  }
+}

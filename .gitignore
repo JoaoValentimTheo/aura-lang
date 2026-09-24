@@ -9,6 +9,11 @@
 /playground/package-lock.json
 /playground/test-results/
 
+# Website build output (static site generated for GitHub Pages)
+/website/dist/
+/website/node_modules/
+/website/package-lock.json
+
 # Aura build output
 output/
 *.log
