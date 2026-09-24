@@ -219,3 +219,20 @@ fn deep_destructuring_pattern_is_bounded() {
     );
     assert_eq!(run(&over), Err(codes::NESTING));
 }
+
+/// FEATURE_005: the empty-map literal `{:}` adds no AST nesting, so a program
+/// using it obeys the same depth limits as any other.
+#[test]
+fn empty_map_literal_adds_no_nesting() {
+    // A long chain of `{:}`-valued operators stays within the limit.
+    let expr = vec!["{:} == {:}"; 50].join(" == ");
+    let within = format!("fn main() {{ print({expr}) }}");
+    assert!(run(&within).is_ok());
+    // And a deeply nested grouping still reports the existing nesting limit.
+    let over = format!(
+        "fn main() {{ print({}1{}) }}",
+        "(".repeat(5000),
+        ")".repeat(5000)
+    );
+    assert_eq!(run(&over), Err(codes::NESTING));
+}

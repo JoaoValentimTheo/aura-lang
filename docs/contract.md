@@ -121,6 +121,9 @@ Precedence, lowest to highest:
   `r.m(x, a)`. A bare callable `x |> c` is `c(x)`.
 * `match` is an expression; every arm must yield when used as a value.
 * There is no ternary `? :`, no `&&`, no `||`, no `!` as `not`.
+* Map literals are string-keyed and ordered by key: `{"a": 1}`. `{:}` is the
+  empty-map literal. `{}` is a **block**, not an empty map, and yields `none`;
+  whitespace and newlines do not change this (`{ : }` is the same as `{:}`).
 * `to_string`, `to_int`, `to_float` are conversions; there is no cast syntax.
 
 ## 5. Statements

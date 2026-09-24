@@ -239,3 +239,17 @@ fn destructuring_shadows_outer_scope() {
         Ok(())
     );
 }
+
+// ---------------------------------------------------------------------------
+// FEATURE_005: empty-map literal typing (`LANGUAGE_SPEC.md` §20.3).
+// ---------------------------------------------------------------------------
+
+/// An empty map is compatible with any map annotation (its value type is
+/// `Unknown`), and is a map, not a block.
+#[test]
+fn empty_map_literal_is_a_map_typed_by_existing_rules() {
+    assert_eq!(check("fn main() { let m: {string: int} = {:} }"), Ok(()));
+    // It is a map value: a method that a map lacks is rejected as a method
+    // error, not accepted as a block.
+    assert_eq!(check("fn main() { {:}.nope() }"), Err(codes::UNDEFINED));
+}

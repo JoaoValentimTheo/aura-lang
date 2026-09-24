@@ -262,3 +262,50 @@ fn destructuring_let_requires_initializer() {
         codes::LET_NO_INIT
     );
 }
+
+// ---------------------------------------------------------------------------
+// FEATURE_005: empty-map literal `{:}` (`LANGUAGE_SPEC.md` §20.3).
+// ---------------------------------------------------------------------------
+
+fn empty_map_entries(e: &Expr) -> usize {
+    match e {
+        Expr::Map(entries, _) => entries.len(),
+        other => panic!("expected a map, got {other:?}"),
+    }
+}
+
+#[test]
+fn empty_map_literal_parses_to_empty_map() {
+    assert_eq!(empty_map_entries(&parse_expr("{:}").expect("parse")), 0);
+    // Whitespace and newlines around the colon do not change the meaning.
+    assert_eq!(empty_map_entries(&parse_expr("{ : }").expect("parse")), 0);
+    assert_eq!(empty_map_entries(&parse_expr("{\n:\n}").expect("parse")), 0);
+}
+
+#[test]
+fn empty_braces_still_parse_as_a_block() {
+    assert!(matches!(
+        parse_expr("{}").expect("parse"),
+        Expr::Block(_, _)
+    ));
+}
+
+#[test]
+fn non_empty_map_is_unchanged() {
+    assert_eq!(
+        empty_map_entries(&parse_expr("{\"a\": 1}").expect("parse")),
+        1
+    );
+    assert_eq!(
+        empty_map_entries(&parse_expr("{\"a\": 1, \"b\": 2}").expect("parse")),
+        2
+    );
+}
+
+#[test]
+fn malformed_empty_map_is_e1006() {
+    assert_eq!(
+        parse_expr("{: 1}").expect_err("rejected").code,
+        codes::EXPECTED
+    );
+}

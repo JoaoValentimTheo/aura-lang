@@ -97,7 +97,7 @@ atom            = INT | FLOAT | STRING | FSTRING
 
 lambda          = ( IDENT | "(" [ IDENT { "," IDENT } ] ")" ) "->" expr ;
 list            = "[" [ expr { "," expr } [ "," ] ] "]" ;
-map             = "{" entry { "," entry } [ "," ] "}" ;
+map             = "{" entry { "," entry } [ "," ] "}" | "{" ":" "}" ;
 entry           = expr ":" expr ;
 block_expr      = block ;
 ctor_args       = ctor_arg { "," ctor_arg } ;

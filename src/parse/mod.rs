@@ -1259,6 +1259,16 @@ impl Parser {
                     self.bump();
                     let mut entries = Vec::new();
                     self.skip_newlines();
+                    // `{:}` is the empty-map literal (§20.3): `{` `:` `}`.
+                    // Whitespace and newlines around the colon are already
+                    // skipped by the lexer and `skip_newlines`, so `{ : }`
+                    // and the multi-line form are identical. `{}` never
+                    // reaches this branch (`map_ahead` routes it to a block).
+                    if self.eat(&Tok::Colon) {
+                        self.skip_newlines();
+                        self.expect(&Tok::RBrace)?;
+                        return Ok(Expr::Map(entries, span));
+                    }
                     while !self.eat(&Tok::RBrace) {
                         let k = self.expr()?;
                         self.expect(&Tok::Colon)?;

@@ -361,3 +361,21 @@ proptest! {
         prop_assert_eq!(aura::run_source(&src, "<p>").expect("runs"), format!("{v}\n"));
     }
 }
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(128))]
+
+    /// FEATURE_005: `{:}` is an empty map, never a block. For any key `k`,
+    /// `{:}.has(k)` is `false` and `len({:})` is `0`; and `{:}` is unequal to
+    /// `none` (the value of a block `{}`).
+    #[test]
+    fn empty_map_literal_is_an_empty_map_not_a_block(k in "[a-zA-Z0-9_]{1,8}") {
+        let src = format!(
+            "fn main() {{ let m = {{:}}\n print(m.has(\"{k}\"))\n print(len(m))\n print(m == none) }}"
+        );
+        prop_assert_eq!(
+            aura::run_source(&src, "<p>").expect("runs"),
+            "false\n0\nfalse\n"
+        );
+    }
+}

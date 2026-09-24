@@ -400,3 +400,44 @@ fn destructuring_shadows_outer_in_nested_scope() {
         "3\n100\n"
     );
 }
+
+// ---------------------------------------------------------------------------
+// FEATURE_005: empty-map literal runtime (`LANGUAGE_SPEC.md` §20.3).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn empty_map_literal_is_an_empty_map() {
+    assert_eq!(out("fn main() { print(len({:})) }"), "0\n");
+    assert_eq!(out("fn main() { print({:}.has(\"x\")) }"), "false\n");
+    assert_eq!(out("fn main() { print({:}.keys()) }"), "[]\n");
+    assert_eq!(out("fn main() { print({:}.values()) }"), "[]\n");
+    assert_eq!(out("fn main() { print({:} == {:}) }"), "true\n");
+    assert_eq!(out("fn main() { print({:} == {\"a\": 1}) }"), "false\n");
+}
+
+#[test]
+fn empty_map_literal_whitespace_variants_are_equal() {
+    assert_eq!(out("fn main() { print({:} == { : }) }"), "true\n");
+    assert_eq!(out("fn main() { print({:} == {\n:\n}) }"), "true\n");
+}
+
+#[test]
+fn empty_map_missing_key_uses_existing_e2003() {
+    assert_eq!(fails("fn main() { {:}[\"x\"] }").code, codes::UNDEFINED);
+}
+
+#[test]
+fn empty_braces_remain_a_block_value() {
+    // `{}` yields `none`, not an empty map.
+    assert_eq!(out("fn main() { print({}) }"), "none\n");
+    assert_eq!(out("fn main() { print({} == none) }"), "true\n");
+    assert_eq!(out("fn main() { print({} == {:}) }"), "false\n");
+}
+
+#[test]
+fn non_empty_map_literal_is_unchanged() {
+    assert_eq!(
+        out("fn main() { let m = {\"a\": 1, \"b\": 2}\n print(m.len()) }"),
+        "2\n"
+    );
+}

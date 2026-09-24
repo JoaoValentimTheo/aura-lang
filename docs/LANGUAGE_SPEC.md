@@ -437,7 +437,7 @@ atom            = INT | FLOAT | STRING | FSTRING
                 | if_expr | match_expr ;
 lambda          = ( IDENT | "(" [ IDENT { "," IDENT } ] ")" ) "->" expr ;
 list            = "[" [ expr { "," expr } [ "," ] ] "]" ;
-map             = "{" entry { "," entry } [ "," ] "}" ;
+map             = "{" entry { "," entry } [ "," ] "}" | "{" ":" "}" ;
 entry           = expr ":" expr ;
 block_expr      = block ;
 ctor_args       = ctor_arg { "," ctor_arg } ;
@@ -1534,17 +1534,35 @@ a non-string key in a literal is `E3001` at runtime (and in an annotation).
 * Display: `{"k": v, ...}` in ascending key order.
 * Removal: `m.remove(k)` yields the removed value or `none`.
 
-### 20.3 Empty-map limitation
+### 20.3 Empty-map literal
 
-**Normative rule.** `{}` is an empty *block*, not an empty map; an empty block
-yields `none`. Aura has **no empty-map literal** in this version.
+**Normative rule.** `{:}` is the empty-map literal and constructs an empty
+string-keyed ordered map. It is the existing map literal syntax with zero
+entries and uses the same map value representation as `{k: v, ...}`; no
+distinct empty-map value exists.
 
-> **KNOWN LANGUAGE LIMITATION.** Because the map grammar requires at least one
-> entry and `{}` parses as a block, an empty map cannot be written directly.
-> This is a real limitation of the current language, not a designed feature.
+**Normative rule.** `{}` remains an empty *block*, not an empty map; an empty
+block yields `none`. `{:}` and `{}` are distinct constructs.
 
-*Evidence:* `Parser::atom` (`{` → `map_ahead` decides map vs block);
-`tests/boundaries.rs`; `docs/SEMANTIC_FREEZE_AUDIT.md`.
+**Normative rule.** Lexing is whitespace-insensitive and the map/block
+disambiguation skips newlines, so `{:}`, `{ : }`, and a multi-line `{`, `:`,
+`}` on separate lines all denote the same empty-map literal. Whitespace and
+newlines do not change the meaning.
+
+**Normative rule.** The type of `{:}` follows the existing map inference rule:
+it is `{string: Unknown}` (`Ty::Map(Unknown)`), because no value type can be
+inferred from an empty entry list. It acquires no special typing. Under the
+existing `Unknown` boundary it is compatible with any map annotation, so
+`let m: {string: int} = {:}` is accepted.
+
+**Normative rule.** `{:}` introduces no new runtime semantics and no new
+error code. It supports the existing map operations (`len`, `get`, `has`,
+`keys`, `values`, `remove`, indexing, equality, display, iteration).
+
+*Evidence:* `Parser::atom` and `Parser::map_ahead` (`src/parse/mod.rs`);
+`Expr::Map` (`src/ast/mod.rs`); `Checker::infer` (`src/check/mod.rs`);
+`Value::Map` and map evaluation (`src/run/value.rs`, `src/run/mod.rs`);
+`tests/run.rs::lists_maps_indexing`; `docs/SEMANTIC_FREEZE_AUDIT.md`.
 
 ---
 
@@ -2119,7 +2137,7 @@ and are hereby frozen. Future changes require the RFC process.
 9. **Nesting limits.** 256 AST levels (`E1015`); 512 call frames (`E4011`);
    a separate parser recursion backstop for grouping, also `E1015`.
 10. **Parenthesized comma-lists are lists; there is no tuple type.**
-11. **`{}` is a block, not an empty map.** (See Known Limitations.)
+11. **`{}` is a block, not an empty map; `{:}` is the empty-map literal.**
 12. **`pub` and `use` are inert.**
 13. **`try` requires `catch`.**
 14. **Enum tags are globally unique.**
@@ -2147,8 +2165,6 @@ implementers do not assume guarantees the language does not make.
 
 ### 34.1 Language limitations
 
-* **No empty-map literal.** `{}` is a block; a map requires at least one
-  entry (§20.3).
 * **No tuple type.** `(a, b)` is list sugar (§21).
 * **No `try` without `catch`** (§14.5).
 * **`match` arms cannot be bare control-flow keywords**; a block is required
