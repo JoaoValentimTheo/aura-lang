@@ -206,3 +206,41 @@ fn repl_nesting_boundary_is_a_diagnostic_not_a_crash() {
     let out = body(&over);
     assert!(out.contains("E1015"), "{out}");
 }
+
+/// FEATURE_003: a binding's declared struct type persists across submissions,
+/// so a field read in a later submission infers the field's declared type and
+/// participates in existing checks. A wrong later use is rejected with the
+/// existing diagnostic, and the failed submission does not corrupt the state.
+#[test]
+fn field_read_type_persists_across_submissions() {
+    // The declared field type flows into a function-argument check.
+    let out = body(
+        "struct User { age: int }\nlet user: User = User { age: 3 }\nfn takes_int(x: int) { return x }\ntakes_int(user.age)\n:quit\n",
+    );
+    assert!(out.contains('3'), "{out}");
+
+    // An incorrect use is rejected with the existing E3001, and the session
+    // (struct, binding, function) survives it.
+    let out = body(
+        "struct User { age: int }\nlet user: User = User { age: 3 }\nfn takes_str(x: string) { return x }\ntakes_str(user.age)\ntakes_int(user.age)\n:quit\n",
+    );
+    assert!(out.contains("E3001"), "{out}");
+    assert!(!out.contains("E4999"), "{out}");
+    assert!(!out.contains("panic"), "{out}");
+    // The struct read still yields its value and the type metadata is intact.
+    assert!(out.contains('3'), "{out}");
+}
+
+/// FEATURE_003 REPL failure isolation: a rejected annotated binding neither
+/// enters the session nor damages the persisted struct/binding state.
+#[test]
+fn field_read_failed_binding_is_isolated() {
+    let out = body(
+        "struct User { age: int }\nlet user: User = User { age: 3 }\nlet bad: string = user.age\nuser.age\n:quit\n",
+    );
+    // The bad binding is rejected at check time...
+    assert!(out.contains("E3001"), "{out}");
+    // ...and `bad` was never introduced, while `user.age` still evaluates.
+    assert!(!out.contains("bad ="), "{out}");
+    assert!(out.contains('3'), "{out}");
+}

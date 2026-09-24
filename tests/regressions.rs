@@ -768,3 +768,179 @@ fn named_arguments_positional_calls_unchanged() {
         "12\n"
     );
 }
+
+// ---------------------------------------------------------------------------
+// FEATURE_003: static field-type propagation (`LANGUAGE_SPEC.md` §17.5).
+// ---------------------------------------------------------------------------
+
+/// A field read on a known struct infers the declared field type, so an
+/// annotated binding is checked against it.
+#[test]
+fn field_read_infers_declared_type_for_primitives() {
+    // int, string, bool all propagate.
+    assert_eq!(
+        out("struct P { x: int }\nfn main() { let p = P { x: 1 }\n let y: int = p.x\n print(y) }"),
+        "1\n"
+    );
+    assert_eq!(
+        out("struct P { s: string }\nfn main() { let p = P { s: \"h\" }\n let y: string = p.s\n print(y) }"),
+        "h\n"
+    );
+    assert_eq!(
+        out("struct P { b: bool }\nfn main() { let p = P { b: true }\n let y: bool = p.b\n print(y) }"),
+        "true\n"
+    );
+    // Mismatches are `E3001` at check time.
+    assert_eq!(
+        check("struct P { x: int }\nfn main() { let p = P { x: 1 }\n let y: string = p.x }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        check("struct P { s: string }\nfn main() { let p = P { s: \"h\" }\n let y: int = p.s }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        check("struct P { b: bool }\nfn main() { let p = P { b: true }\n let y: int = p.b }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+/// A field whose annotation is a transparent alias propagates the resolved
+/// type.
+#[test]
+fn field_read_resolves_transparent_aliases() {
+    assert_eq!(
+        out("type Id = int\nstruct P { id: Id }\nfn main() { let p = P { id: 1 }\n let y: int = p.id\n print(y) }"),
+        "1\n"
+    );
+    assert_eq!(
+        check("type Id = int\nstruct P { id: Id }\nfn main() { let p = P { id: 1 }\n let y: string = p.id }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+/// Nested field reads propagate through repeated application of the same rule.
+#[test]
+fn field_read_propagates_through_nested_structs() {
+    let src = "struct Address { zip: int }\nstruct User { address: Address }\nfn main() { let u = User { address: Address { zip: 7 } }\n let y: int = u.address.zip\n print(y) }";
+    assert_eq!(out(src), "7\n");
+    let bad = "struct Address { zip: int }\nstruct User { address: Address }\nfn main() { let u = User { address: Address { zip: 7 } }\n let y: string = u.address.zip }";
+    assert_eq!(check(bad), Err(codes::TYPE_MISMATCH));
+}
+
+/// The propagated field type flows into Feature 001's argument checks.
+#[test]
+fn field_read_strengthens_function_argument_checking() {
+    // Correct field type accepted.
+    assert_eq!(
+        out("struct P { x: int }\nfn f(a: int) { return a }\nfn main() { let p = P { x: 1 }\n print(f(p.x)) }"),
+        "1\n"
+    );
+    // Incompatible field type rejected through the existing Feature 001 path.
+    assert_eq!(
+        check("struct P { x: int }\nfn f(a: string) { return a }\nfn main() { let p = P { x: 1 }\n f(p.x) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+/// The propagated field type flows into Feature 002's named-argument checks.
+#[test]
+fn field_read_strengthens_named_argument_checking() {
+    assert_eq!(
+        check("struct P { x: int }\nfn f(a: int, b: string) { return b }\nfn main() { let p = P { x: 1 }\n f(b: p.x, a: 1) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        out("struct P { x: int }\nfn f(a: int, b: int) { return a + b }\nfn main() { let p = P { x: 1 }\n print(f(b: p.x, a: 2)) }"),
+        "3\n"
+    );
+}
+
+/// The propagated field type flows into return, construction, and ordering
+/// checks without any feature-specific handling.
+#[test]
+fn field_read_flows_into_return_construction_and_ordering() {
+    // Return type.
+    assert_eq!(
+        check(
+            "struct P { x: int }\nfn g(p: P) -> string { return p.x }\nfn main() { g(P { x: 1 }) }"
+        ),
+        Err(codes::RETURN_MISMATCH)
+    );
+    // Struct construction field value.
+    assert_eq!(
+        check("struct Q { s: string }\nstruct P { x: int }\nfn main() { let p = P { x: 1 }\n Q { s: p.x } }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // Ordering still works and is checked.
+    assert_eq!(
+        out("struct P { x: int }\nfn main() { let p = P { x: 1 }\n print(p.x < 10) }"),
+        "true\n"
+    );
+}
+
+/// Field inference is strictly conservative: a receiver the checker cannot
+/// prove to be a struct keeps its field read `Unknown`, so no speculative
+/// rejection happens. The runtime remains authoritative.
+#[test]
+fn field_read_is_conservative_for_unproven_receivers() {
+    // An unannotated parameter is `Unknown`; `u.x` stays `Unknown`,
+    // so an incompatible annotation is accepted statically.
+    assert_eq!(
+        check("struct P { x: int }\nfn g(u) { let y: string = u.x }"),
+        Ok(())
+    );
+    // A list element read infers `Unknown`.
+    assert_eq!(
+        check("struct P { x: int }\nfn main() { let y: string = [P { x: 1 }][0].x }"),
+        Ok(())
+    );
+    // A map lookup infers `Unknown`.
+    assert_eq!(
+        check("struct P { x: int }\nfn main() { let m = {\"k\": P { x: 1 }}\n let y: string = m[\"k\"].x }"),
+        Ok(())
+    );
+    // A branch result infers `Unknown`.
+    assert_eq!(
+        check("struct P { x: int }\nfn main() { let p = if true { P { x: 1 } } else { P { x: 2 } }\n let y: string = p.x }"),
+        Ok(())
+    );
+    // A function call whose return type is not declared infers `Unknown`.
+    assert_eq!(
+        check("struct P { x: int }\nfn mk() { return P { x: 1 } }\nfn main() { let y: string = mk().x }"),
+        Ok(())
+    );
+}
+
+/// Field validity and field type inference are separate; a missing field does
+/// not become a valid `Unknown` expression, and the existing field diagnostic
+/// is unchanged.
+#[test]
+fn field_read_missing_field_keeps_existing_behavior() {
+    // Reading a missing field on a known struct: the checker does not fabricate
+    // a type, and the runtime reports it. (Read-side field errors are runtime,
+    // unchanged by Feature 003.)
+    assert_eq!(
+        fail("struct S { a: int }\nfn main() { let s = S { a: 1 }\n print(s.b) }"),
+        codes::UNDEFINED
+    );
+    // Writing a missing field on a known struct is still `E2003` at check time.
+    assert_eq!(
+        check("struct S { a: int }\nfn main() { let mut s = S { a: 1 }\n s.b = 2 }"),
+        Err(codes::UNDEFINED)
+    );
+}
+
+/// A struct declared after the read (hoisting) propagates, and a field read
+/// inside a recursive function propagates.
+#[test]
+fn field_read_hoisting_and_recursion() {
+    assert_eq!(
+        out("fn main() { let p = P { x: 5 }\n let y: int = p.x\n print(y) }\nstruct P { x: int }"),
+        "5\n"
+    );
+    assert_eq!(
+        out("struct N { v: int }\nfn sum(n: N) -> int { return n.v }\nfn main() { print(sum(N { v: 3 })) }"),
+        "3\n"
+    );
+}

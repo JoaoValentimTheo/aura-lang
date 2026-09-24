@@ -1309,9 +1309,14 @@ are not orderable.
 **Normative rule.** A struct displays as `Name { f: v, ... }` in declaration
 order, quoting nested strings.
 
-**Normative rule.** Struct field types are validated at construction; the
-checker does not track the static type of a field read (`s.field` infers
-`Unknown`).
+**Normative rule.** Struct field types are validated at construction. A field
+read `s.field` on a receiver whose inferred type is a declared struct `S`
+that has a field `field` infers the declared type of that field. A field read
+on any other receiver (an `Unknown` type, a primitive, a list, a map, an
+enum, or a struct without that field) infers `Unknown`. This inferred type
+participates in every existing check that uses compatibility or ordering
+(§6.3, §6.5, §9, §15.7). The runtime is unchanged and remains authoritative
+for field access.
 
 *Evidence:* `check_struct_construction`, `check_field_value`
 (`src/check/mod.rs`); `construct` (`src/run/mod.rs`);
@@ -2045,6 +2050,10 @@ and are hereby frozen. Future changes require the RFC process.
     is supplied exactly once; a duplicate, missing, or unknown parameter is
     `E3001`; built-ins, methods, and dynamic callables reject named arguments.
     Evaluation stays in source order and is independent of parameter binding.
+19. **Struct field reads propagate declared types.** When the receiver's
+    inferred type is a known struct, `s.field` infers the field's declared
+    type; otherwise it infers `Unknown`. This never evaluates anything and
+    never changes evaluation order.
 
 ---
 
@@ -2076,8 +2085,11 @@ implementers do not assume guarantees the language does not make.
   not a directly resolved top-level function are not checked statically**
   against arity or parameter annotations; a mismatch is a runtime `E3001`
   (§6.5). Directly resolved top-level calls **are** checked.
-* **Field reads infer `Unknown`**; the checker does not propagate a field's
-  declared type out of `s.field` (§17.5).
+* **Field reads infer a declared type only when the receiver's type is a
+  known struct.** A field read on a value whose type the checker cannot
+  determine (for example a parameter without an annotation, an `if`
+  expression, a call whose return type is not declared, or an element of a
+  list) still infers `Unknown` (§17.5), as do indexed reads and map lookups.
 * **`if`/`match`/block expressions and lambdas infer `Unknown`** (§2.3), so
   their results are not statically checked.
 

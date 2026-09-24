@@ -132,11 +132,15 @@ fn eval_line<W: Write>(
             }
         }
         // A `let` introduces a binding; persist it only after it executed.
-        if let Stmt::Let { name, mutable, .. } = &stmt {
+        if let Stmt::Let {
+            name, mutable, ann, ..
+        } = &stmt
+        {
             if !decls.iter().any(|d| decl_name(d) == name) {
                 decls.push(GlobalDecl::Binding {
                     name: name.clone(),
                     mutable: *mutable,
+                    ty: ann.clone(),
                 });
             }
         }
@@ -235,6 +239,7 @@ fn declarations_of(item: &Item) -> Vec<GlobalDecl> {
         Item::Const { name, .. } => vec![GlobalDecl::Binding {
             name: name.clone(),
             mutable: false,
+            ty: None,
         }],
         Item::Use { .. } | Item::Expr(..) => Vec::new(),
     }

@@ -40,6 +40,10 @@ pub enum GlobalDecl {
         name: String,
         /// Whether it is mutable.
         mutable: bool,
+        /// The binding's declared type annotation, if any. Carried across REPL
+        /// submissions so a field read on the binding can infer its struct type
+        /// (`LANGUAGE_SPEC.md` §17.5). Unannotated bindings carry `None`.
+        ty: Option<TypeExpr>,
     },
     /// `fn name(...) -> ret`
     Function {
@@ -174,6 +178,7 @@ impl Checker {
                     GlobalDecl::Binding {
                         name: name.clone(),
                         mutable: *mutable,
+                        ty: None,
                     }
                 }
             })
@@ -192,7 +197,11 @@ impl Checker {
         // to types declared in any order resolve.
         for d in decls {
             match d {
-                GlobalDecl::Binding { name, mutable } => {
+                GlobalDecl::Binding {
+                    name,
+                    mutable,
+                    ty: _,
+                } => {
                     c.scopes[0].declares.insert(name.clone(), Span::default());
                     c.scopes[0].vars.insert(name.clone(), *mutable);
                 }
@@ -264,6 +273,15 @@ impl Checker {
                         c.variants.insert(tag.clone(), String::new());
                         c.variant_payloads.insert(tag.clone(), tys);
                     }
+                }
+                // A persisted binding's declared type, restored into the same
+                // `value_types` state `infer` consults. Unannotated bindings
+                // stay `Unknown`, exactly as within a single submission.
+                GlobalDecl::Binding {
+                    name, ty: Some(t), ..
+                } => {
+                    let restored = Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t));
+                    c.value_types[0].insert(name.clone(), restored);
                 }
                 _ => {}
             }
@@ -938,8 +956,22 @@ impl Checker {
                 }
                 Ty::Unknown
             }
+            Expr::Field(recv, name, _) => {
+                // FEATURE_003: a field read on a statically known struct has
+                // that struct's declared field type. The field table stores
+                // alias-resolved types, so the propagated `Ty` is the
+                // semantically resolved one. Anything else (an `Unknown`
+                // receiver, a primitive, a list, a map, an enum, `range`, or a
+                // struct without that field) stays `Unknown` — the checker
+                // never speculates (`LANGUAGE_SPEC.md` §17.5).
+                if let Ty::Named(sname) = self.infer(recv) {
+                    if let Some(fty) = self.struct_fields.get(&sname).and_then(|m| m.get(name)) {
+                        return fty.clone();
+                    }
+                }
+                Ty::Unknown
+            }
             Expr::Pipe(_, _, _)
-            | Expr::Field(_, _, _)
             | Expr::Index(_, _, _)
             | Expr::Tuple(_, _)
             | Expr::Lambda(_, _, _) => Ty::Unknown,

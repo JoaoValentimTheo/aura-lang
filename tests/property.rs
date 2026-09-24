@@ -258,3 +258,60 @@ proptest! {
         prop_assert_eq!(expected, got);
     }
 }
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(400))]
+
+    /// FEATURE_003: for a struct field with a declared primitive type, a field
+    /// read used in a binding annotated with a *different* primitive is
+    /// rejected if and only if the two types differ (with `int`/`float` never
+    /// interchangeable), and otherwise the program runs. This is the
+    /// "field read infers the declared type" invariant observed through the
+    /// existing annotation check.
+    #[test]
+    fn field_read_type_agrees_with_declaration(
+        field_ty in prop_oneof![
+            Just("int").prop_map(str::to_string),
+            Just("float").prop_map(str::to_string),
+            Just("string").prop_map(str::to_string),
+            Just("bool").prop_map(str::to_string),
+        ],
+        bind_ty in prop_oneof![
+            Just("int").prop_map(str::to_string),
+            Just("float").prop_map(str::to_string),
+            Just("string").prop_map(str::to_string),
+            Just("bool").prop_map(str::to_string),
+        ],
+    ) {
+        let value = match field_ty.as_str() {
+            "int" => "1",
+            "float" => "1.5",
+            "string" => "\"s\"",
+            _ => "true",
+        };
+        let src = format!(
+            "struct S {{ f: {field_ty} }}\nfn main() {{ let s = S {{ f: {value} }}\n let y: {bind_ty} = s.f\n print(y) }}"
+        );
+        let module = aura::parse::parse(&src).expect("generated source parses");
+        let accepted = aura::check::Checker::module(&module).is_ok();
+        // The check accepts exactly when the declared field type equals the
+        // binding type (no implicit int/float coercion in annotations).
+        prop_assert_eq!(accepted, field_ty == bind_ty, "src: {}", src);
+        if accepted {
+            prop_assert!(aura::run_source(&src, "<p>").is_ok());
+        }
+    }
+
+    /// FEATURE_003 conservatism: a field read on a receiver the checker cannot
+    /// prove to be a struct stays `Unknown`, so an incompatible annotation is
+    /// never rejected statically.
+    #[test]
+    fn unproven_field_receiver_stays_permissive(bind_ty in "[a-z]{3,6}") {
+        // An unannotated parameter has type `Unknown`.
+        let src = format!(
+            "struct S {{ f: int }}\nfn g(u) {{ let y: string = u.f }}\nfn main() {{ print(\"{bind_ty}\") }}"
+        );
+        let module = aura::parse::parse(&src).expect("generated source parses");
+        prop_assert!(aura::check::Checker::module(&module).is_ok());
+    }
+}

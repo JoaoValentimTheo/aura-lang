@@ -185,6 +185,14 @@ involved:
   (for example `[1] < [2]`) is `E3001` before execution.
 * **Return types.** A call to a function with a declared return type infers
   that type, so a mismatch against an annotated binding is caught statically.
+* **Field reads.** A field read `s.field` on a receiver whose inferred type is
+  a declared struct infers the field's declared (alias-resolved) type, so it is
+  checked wherever an annotation applies — annotated bindings, function
+  arguments, returns, and construction. A field read on any other receiver
+  (an `Unknown` type, a primitive, a list, a map, an enum, or a struct without
+  that field) infers `Unknown` and is not rejected. Field validity and field
+  type inference are separate: reading a missing field on a known struct is
+  still the runtime's decision (`E2003` when writing), unchanged by this rule.
 * **Function equality.** Function values compare by identity: a function is
   equal only to itself. Distinct functions are never `==`, and `NaN == NaN`
   is `false`.
