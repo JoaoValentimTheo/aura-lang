@@ -19,6 +19,17 @@ pub mod json {
     }
 
     fn to_json(v: &Value) -> serde_json::Value {
+        to_json_depth(v, 0)
+    }
+
+    /// Convert an Aura value to JSON, bounded by [`Value::MAX_VALUE_DEPTH`]-style
+    /// depth so a cyclic or pathologically deep value cannot overflow the
+    /// native stack. A value nested beyond the bound serializes as `null`
+    /// (`LANGUAGE_SPEC.md` §31.5).
+    fn to_json_depth(v: &Value, depth: usize) -> serde_json::Value {
+        if depth >= crate::run::value::MAX_VALUE_DEPTH {
+            return serde_json::Value::Null;
+        }
         match v {
             Value::None => serde_json::Value::Null,
             Value::Bool(b) => serde_json::Value::Bool(*b),
@@ -26,18 +37,23 @@ pub mod json {
             Value::Float(f) => serde_json::Number::from_f64(*f)
                 .map_or(serde_json::Value::Null, serde_json::Value::Number),
             Value::Str(s) => serde_json::Value::String(s.to_string()),
-            Value::List(l) => serde_json::Value::Array(l.borrow().iter().map(to_json).collect()),
+            Value::List(l) => serde_json::Value::Array(
+                l.borrow()
+                    .iter()
+                    .map(|x| to_json_depth(x, depth + 1))
+                    .collect(),
+            ),
             Value::Map(m) => {
                 let mut obj = serde_json::Map::new();
                 for (k, v) in m.borrow().iter() {
-                    obj.insert(k.clone(), to_json(v));
+                    obj.insert(k.clone(), to_json_depth(v, depth + 1));
                 }
                 serde_json::Value::Object(obj)
             }
             Value::Instance(i) => {
                 let mut obj = serde_json::Map::new();
                 for (k, v) in i.fields.borrow().iter() {
-                    obj.insert(k.clone(), to_json(v));
+                    obj.insert(k.clone(), to_json_depth(v, depth + 1));
                 }
                 serde_json::Value::Object(obj)
             }
@@ -45,9 +61,14 @@ pub mod json {
                 if v.payload.is_empty() {
                     serde_json::Value::String(v.tag.clone())
                 } else if v.payload.len() == 1 {
-                    to_json(&v.payload[0])
+                    to_json_depth(&v.payload[0], depth + 1)
                 } else {
-                    serde_json::Value::Array(v.payload.iter().map(to_json).collect())
+                    serde_json::Value::Array(
+                        v.payload
+                            .iter()
+                            .map(|x| to_json_depth(x, depth + 1))
+                            .collect(),
+                    )
                 }
             }
             _ => serde_json::Value::Null,
@@ -55,6 +76,16 @@ pub mod json {
     }
 
     fn from_json(j: &serde_json::Value) -> Value {
+        from_json_depth(j, 0)
+    }
+
+    /// Decode JSON, bounded in depth so a hostile deeply nested document
+    /// cannot overflow the native stack. serde_json's parser already limits
+    /// nesting before this point; the bound keeps the conversion total.
+    fn from_json_depth(j: &serde_json::Value, depth: usize) -> Value {
+        if depth >= crate::run::value::MAX_VALUE_DEPTH {
+            return Value::None;
+        }
         match j {
             serde_json::Value::Null => Value::None,
             serde_json::Value::Bool(b) => Value::Bool(*b),
@@ -62,11 +93,13 @@ pub mod json {
                 .as_i64()
                 .map_or_else(|| Value::Float(n.as_f64().unwrap_or(0.0)), Value::Int),
             serde_json::Value::String(s) => Value::str(s.clone()),
-            serde_json::Value::Array(a) => Value::list(a.iter().map(from_json).collect()),
+            serde_json::Value::Array(a) => {
+                Value::list(a.iter().map(|x| from_json_depth(x, depth + 1)).collect())
+            }
             serde_json::Value::Object(o) => {
                 let mut m = BTreeMap::new();
                 for (k, v) in o {
-                    m.insert(k.clone(), from_json(v));
+                    m.insert(k.clone(), from_json_depth(v, depth + 1));
                 }
                 Value::Map(Rc::new(RefCell::new(m)))
             }

@@ -72,6 +72,17 @@ mod py {
 
     /// Python object -> Aura value.
     fn to_value(obj: &Bound<'_, PyAny>) -> Result<Value> {
+        to_value_depth(obj, 0)
+    }
+
+    /// Bounded-depth conversion so a deeply nested Python object cannot
+    /// overflow the native stack. Beyond the bound, the object becomes its
+    /// `repr`.
+    fn to_value_depth(obj: &Bound<'_, PyAny>, depth: usize) -> Result<Value> {
+        if depth >= crate::run::value::MAX_VALUE_DEPTH {
+            let repr = obj.repr().map_err(map_pyerr)?.to_string();
+            return Ok(Value::str(repr));
+        }
         if obj.is_none() {
             return Ok(Value::None);
         }
@@ -101,7 +112,7 @@ mod py {
         if let Ok(list) = obj.cast::<PyList>() {
             let mut out = Vec::new();
             for item in list.iter() {
-                out.push(to_value(&item)?);
+                out.push(to_value_depth(&item, depth + 1)?);
             }
             return Ok(Value::list(out));
         }
@@ -121,7 +132,7 @@ mod py {
                         Span::default(),
                     ));
                 };
-                map.insert(key, to_value(&v)?);
+                map.insert(key, to_value_depth(&v, depth + 1)?);
             }
             return Ok(Value::Map(Rc::new(RefCell::new(map))));
         }
@@ -132,6 +143,20 @@ mod py {
 
     /// Aura value -> Python object.
     fn to_py<'py>(py: Python<'py>, v: &Value) -> Result<Bound<'py, PyAny>> {
+        to_py_depth(py, v, 0)
+    }
+
+    /// Bounded-depth conversion so a deeply nested Aura value cannot overflow
+    /// the native stack when crossing into Python. Beyond the bound, the
+    /// value is rejected rather than risk a host overflow.
+    fn to_py_depth<'py>(py: Python<'py>, v: &Value, depth: usize) -> Result<Bound<'py, PyAny>> {
+        if depth >= crate::run::value::MAX_VALUE_DEPTH {
+            return Err(Diag::new(
+                codes::PY_UNSUPPORTED,
+                "value is nested too deeply to cross into Python",
+                Span::default(),
+            ));
+        }
         Ok(match v {
             Value::None => py.None().into_bound(py),
             Value::Bool(b) => b
@@ -149,14 +174,16 @@ mod py {
             Value::List(l) => {
                 let list = PyList::empty(py);
                 for item in l.borrow().iter() {
-                    list.append(to_py(py, item)?).map_err(map_pyerr)?;
+                    list.append(to_py_depth(py, item, depth + 1)?)
+                        .map_err(map_pyerr)?;
                 }
                 list.into_any()
             }
             Value::Map(m) => {
                 let dict = PyDict::new(py);
                 for (k, val) in m.borrow().iter() {
-                    dict.set_item(k, to_py(py, val)?).map_err(map_pyerr)?;
+                    dict.set_item(k, to_py_depth(py, val, depth + 1)?)
+                        .map_err(map_pyerr)?;
                 }
                 dict.into_any()
             }

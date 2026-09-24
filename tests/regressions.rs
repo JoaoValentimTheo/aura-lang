@@ -1189,3 +1189,138 @@ fn h2_08_first_class_builtin_arity_is_enforced() {
         "true\n"
     );
 }
+
+// ---------------------------------------------------------------------------
+// 0.0.2 pre-infrastructure bug hunt (BH1)
+//
+// A cyclic or pathologically deep runtime value must not crash the host.
+// `LANGUAGE_SPEC.md` §31.5: "No syntactically valid, well-formed program may
+// cause a host panic, stack overflow, or undefined behavior." Before the fix,
+// display, structural equality, JSON encoding, and value teardown all
+// recursed over the structure and aborted the process.
+// ---------------------------------------------------------------------------
+
+/// BH1-01: a cyclic list is constructible (`a.push(a)`) and must display,
+/// compare, and encode without overflowing the native stack.
+#[test]
+fn bh1_01_cyclic_list_operations_do_not_crash() {
+    // Display terminates (truncated) instead of aborting.
+    let shown = out("fn main() { let a = []\n a.push(a)\n print(a) }");
+    assert!(shown.starts_with('['), "unexpected display: {shown}");
+    // Reflexive equality holds; two structurally identical cycles are equal
+    // under the coinductive reading (`LANGUAGE_SPEC.md` §31.6).
+    assert_eq!(
+        out("fn main() { let a = []\n a.push(a)\n print(a == a) }"),
+        "true\n"
+    );
+    assert_eq!(
+        out("fn main() { let a = []\n a.push(a)\n let b = []\n b.push(b)\n print(a == b) }"),
+        "true\n"
+    );
+    // A differing element makes distinct cycles unequal.
+    assert_eq!(
+        out("fn main() { let a = []\n a.push(a)\n a.push(1)\n let b = []\n b.push(b)\n b.push(2)\n print(a == b) }"),
+        "false\n"
+    );
+    // JSON encoding terminates.
+    let json = out("fn main() { let a = []\n a.push(a)\n print(json_encode(a)) }");
+    assert!(json.starts_with('['), "unexpected json: {json}");
+}
+
+/// BH1-02: a cyclic map and a cycle crossing list<->map must not crash.
+#[test]
+fn bh1_02_cyclic_map_operations_do_not_crash() {
+    let shown = out("fn main() { let m = {:}\n m[\"s\"] = m\n print(m) }");
+    assert!(shown.starts_with('{'), "unexpected display: {shown}");
+    assert_eq!(
+        out("fn main() { let m = {:}\n m[\"s\"] = m\n print(m == m) }"),
+        "true\n"
+    );
+    assert_eq!(
+        out("fn main() { let a = []\n let b = [a]\n a.push(b)\n print(a == a) }"),
+        "true\n"
+    );
+}
+
+/// BH1-03: a deeply nested value built at runtime must not crash display,
+/// equality, JSON encoding, or teardown — even well past the depth at which
+/// naive recursion overflowed the 64 MiB interpreter stack.
+#[test]
+fn bh1_03_deep_runtime_value_operations_do_not_crash() {
+    let build =
+        "let a = []\n let mut c = a\n for i in range(0, 40000) { let n = []\n c.push(n)\n c = n }";
+    // Display (truncated) and equality both terminate.
+    let shown = out(&format!("fn main() {{ {build}\n print(a) }}"));
+    assert!(shown.starts_with('['), "unexpected display");
+    assert_eq!(
+        out(&format!("fn main() {{ {build}\n print(a == a) }}")),
+        "true\n"
+    );
+    // JSON encoding terminates.
+    let json = out(&format!("fn main() {{ {build}\n print(json_encode(a)) }}"));
+    assert!(json.starts_with('['), "unexpected json");
+    // Teardown of the deep value does not overflow (this is the statement
+    // whose mere execution is the test).
+    assert_eq!(
+        out(&format!("fn main() {{ {build}\n print(\"ok\") }}")),
+        "ok\n"
+    );
+}
+
+/// BH1-04: a recursive enum built to depth must not crash on teardown.
+#[test]
+fn bh1_04_deep_recursive_enum_does_not_crash() {
+    let src = "enum E { N(int), S(E) }\nfn main() { let mut a = N(1)\n for i in range(0, 40000) { a = S(a) }\n print(\"ok\") }";
+    assert_eq!(out(src), "ok\n");
+}
+
+/// BH1-05: shallow values keep their exact prior semantics — the depth guard
+/// is a host-safety bound, not a value-model change.
+#[test]
+fn bh1_05_shallow_value_semantics_are_unchanged() {
+    assert_eq!(
+        out("fn main() { print([1, [2, 3], {\"k\": true}]) }"),
+        "[1, [2, 3], {\"k\": true}]\n"
+    );
+    assert_eq!(out("fn main() { print([1, 2] == [1, 2]) }"), "true\n");
+    assert_eq!(out("fn main() { print([1, 2] == [1, 3]) }"), "false\n");
+    assert_eq!(
+        out("struct P { x: int }\nfn main() { print(P(1) == P(1)) }"),
+        "true\n"
+    );
+    assert_eq!(
+        out("fn main() { print(json_encode({\"a\": [1, 2], \"b\": true})) }"),
+        "{\"a\":[1,2],\"b\":true}\n"
+    );
+    assert_eq!(
+        out("fn main() { print(json_encode(json_decode(\"{\\\"a\\\": 1}\"))) }"),
+        "{\"a\":1}\n"
+    );
+}
+
+/// BH1-06: `receiver.name` without parentheses on a known enum is a
+/// zero-argument method call; since enums have no methods, it must be
+/// `E2003` at check time exactly as the parenthesized form is
+/// (`LANGUAGE_SPEC.md` §24). Before the fix the checker accepted it and the
+/// runtime rejected it, so the diagnostic phase diverged.
+#[test]
+fn bh1_06_no_paren_member_on_known_enum_is_checked() {
+    assert_eq!(
+        check("enum E { A }\nfn f(e: E) { return e.foo }\nfn main() { print(f(A())) }"),
+        Err(codes::UNDEFINED)
+    );
+    assert_eq!(
+        check("enum E { A }\nfn f(e: E) { return e.len }\nfn main() { print(f(A())) }"),
+        Err(codes::UNDEFINED)
+    );
+    // A struct receiver stays a field read, so a missing field is still
+    // runtime-authoritative (§17.5) and a present field still works.
+    assert_eq!(
+        check("struct P { x: int }\nfn f(p: P) { return p.nope }\nfn main() { f(P(1)) }"),
+        Ok(())
+    );
+    assert_eq!(
+        out("struct P { x: int }\nfn f(p: P) { return p.x }\nfn main() { print(f(P(1))) }"),
+        "1\n"
+    );
+}

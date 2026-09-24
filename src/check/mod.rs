@@ -1716,9 +1716,20 @@ impl Checker {
                             ));
                         }
                     }
-                    // Structs: a field read. Enums: neither fields nor methods;
-                    // the runtime reports. Both are left to runtime here.
-                    Ty::Named(_) | Ty::Enum(_) => {}
+                    // Structs: a field read. A missing field infers `Unknown`
+                    // (§17.5), so it is left to the runtime. Enums have
+                    // neither fields nor methods, so a no-parentheses member
+                    // on a known enum is an unknown zero-argument method and
+                    // is rejected at check time, exactly as the parenthesized
+                    // form is (§24).
+                    Ty::Named(_) => {}
+                    Ty::Enum(_) => {
+                        return Err(Diag::new(
+                            codes::UNDEFINED,
+                            format!("enum has no method `{name}`"),
+                            *span,
+                        ));
+                    }
                     ty => {
                         if let Some(class) = ty.type_class() {
                             if crate::stdlib::signatures::method(class, name).is_none() {

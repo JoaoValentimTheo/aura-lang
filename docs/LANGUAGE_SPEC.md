@@ -2124,6 +2124,37 @@ a stable `E####` diagnostic.
 (`src/parse/mod.rs`); `MAX_CALL_FRAMES` (`src/run/mod.rs`);
 `tests/boundaries.rs`, `tests/adversarial.rs`.
 
+### 31.6 Value structural depth
+
+**Normative rule.** The recursive rendering of a runtime value — its display
+form and its JSON encoding — is bounded at **512 levels** of nesting
+(`MAX_VALUE_DEPTH`), and value teardown is iterative. This is a host-safety
+guard: a cyclic value (for example `a.push(a)`) or a pathologically deep
+value MUST NOT cause a host stack overflow or abort the process (`§31.5`).
+
+**Normative rule.** Beyond the depth bound:
+
+* the display form elides the remainder with `…` (U+2026);
+* JSON encoding represents the over-deep part as `null`.
+
+**Normative rule.** Structural equality is exact and is not subject to the
+depth bound: it is computed iteratively and terminates on cyclic values by
+assuming a container pair already under comparison is equal. A list, map,
+struct, or variant is equal to itself by identity before any descent, so
+equality is reflexive at every depth, including cycles of `list`, `map`,
+`struct`, and enum payload.
+
+**Normative rule.** Value teardown is iterative and never follows an `Rc`
+cycle. As with any reference-counted container, a value that is reachable
+from itself is not reclaimed; this is memory-safe and is not an error.
+
+These bounds concern *value* depth, not *AST* depth (`§31.1`). A shallow
+program may build an arbitrarily deep value at runtime, and vice versa.
+
+*Evidence:* `MAX_VALUE_DEPTH`, `Value::repr`, `Value::equals`,
+`Value::drop` (`src/run/value.rs`); `to_json`/`from_json`
+(`src/stdlib/ext.rs`); `tests/regressions.rs::bh1_*`.
+
 ---
 
 ## 32. Python Boundary (feature `py`)

@@ -1,8 +1,17 @@
 //! Runtime values.
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::rc::Rc;
+
+/// Maximum structural depth traversed by the recursive *display* and *JSON
+/// encoding* of a value. This bounds native stack usage so that a cyclic or
+/// pathologically deep value cannot crash the host (`LANGUAGE_SPEC.md`
+/// §31.5). It is a host-safety guard, not a language type: display elides the
+/// remainder past this depth with `…`, and JSON encodes it as `null`.
+/// Structural equality is exact and iterative, so it is not bounded by this
+/// constant.
+pub const MAX_VALUE_DEPTH: usize = 512;
 
 /// A runtime value.
 #[derive(Clone)]
@@ -128,51 +137,117 @@ impl Value {
     }
 
     /// Structural equality.
+    ///
+    /// Comparison is exact for every acyclic value and is computed with an
+    /// explicit worklist, so a deeply nested value cannot exhaust the native
+    /// stack (`LANGUAGE_SPEC.md` §31.5). A pair of containers already under
+    /// comparison is assumed equal, which terminates on cyclic values and
+    /// gives the expected "unrolls identically" result for them. A list, map,
+    /// struct, or variant is equal to itself by identity before any descent,
+    /// so equality is reflexive at every depth.
     #[must_use]
     pub fn equals(&self, other: &Value) -> bool {
-        match (self, other) {
-            (Value::None, Value::None) => true,
-            (Value::Bool(a), Value::Bool(b)) => a == b,
-            (Value::Int(a), Value::Int(b)) => a == b,
-            (Value::Float(a), Value::Float(b)) => a == b,
-            (Value::Int(a), Value::Float(b)) | (Value::Float(b), Value::Int(a)) => {
-                (*a as f64) == *b
+        let mut stack: Vec<(Value, Value)> = vec![(self.clone(), other.clone())];
+        let mut seen: HashSet<(usize, usize)> = HashSet::new();
+        while let Some((a, b)) = stack.pop() {
+            match (&a, &b) {
+                (Value::None, Value::None) => {}
+                (Value::Bool(x), Value::Bool(y)) if x == y => {}
+                (Value::Int(x), Value::Int(y)) if x == y => {}
+                (Value::Float(x), Value::Float(y)) if x == y => {}
+                (Value::Int(x), Value::Float(y)) | (Value::Float(y), Value::Int(x))
+                    if (*x as f64) == *y => {}
+                (Value::Str(x), Value::Str(y)) if x == y => {}
+                (Value::List(x), Value::List(y)) => {
+                    if Rc::ptr_eq(x, y) {
+                        continue;
+                    }
+                    if !seen.insert((rc_addr(x), rc_addr(y))) {
+                        continue;
+                    }
+                    let (xb, yb) = (x.borrow(), y.borrow());
+                    if xb.len() != yb.len() {
+                        return false;
+                    }
+                    for (cx, cy) in xb.iter().zip(yb.iter()) {
+                        stack.push((cx.clone(), cy.clone()));
+                    }
+                }
+                (Value::Map(x), Value::Map(y)) => {
+                    if Rc::ptr_eq(x, y) {
+                        continue;
+                    }
+                    if !seen.insert((rc_addr(x), rc_addr(y))) {
+                        continue;
+                    }
+                    let (xb, yb) = (x.borrow(), y.borrow());
+                    if xb.len() != yb.len() {
+                        return false;
+                    }
+                    for (k, v) in xb.iter() {
+                        match yb.get(k) {
+                            Some(w) => stack.push((v.clone(), w.clone())),
+                            None => return false,
+                        }
+                    }
+                }
+                (Value::Instance(x), Value::Instance(y)) => {
+                    if Rc::ptr_eq(x, y) {
+                        continue;
+                    }
+                    if !seen.insert((rc_addr(x), rc_addr(y))) {
+                        continue;
+                    }
+                    if x.ty != y.ty {
+                        return false;
+                    }
+                    let (xb, yb) = (x.fields.borrow(), y.fields.borrow());
+                    if xb.len() != yb.len() {
+                        return false;
+                    }
+                    for ((k1, v1), (k2, v2)) in xb.iter().zip(yb.iter()) {
+                        if k1 != k2 {
+                            return false;
+                        }
+                        stack.push((v1.clone(), v2.clone()));
+                    }
+                }
+                (Value::Variant(x), Value::Variant(y)) => {
+                    if Rc::ptr_eq(x, y) {
+                        continue;
+                    }
+                    if !seen.insert((rc_addr(x), rc_addr(y))) {
+                        continue;
+                    }
+                    if x.tag != y.tag || x.payload.len() != y.payload.len() {
+                        return false;
+                    }
+                    for (p, q) in x.payload.iter().zip(y.payload.iter()) {
+                        stack.push((p.clone(), q.clone()));
+                    }
+                }
+                (Value::Range(x), Value::Range(y)) => {
+                    if x.start != y.start || x.end != y.end {
+                        return false;
+                    }
+                }
+                // Functions compare by identity: a closure is equal only to
+                // itself, and two natives are equal when they name the same
+                // builtin.
+                (Value::Closure(x), Value::Closure(y)) => {
+                    if !Rc::ptr_eq(x, y) {
+                        return false;
+                    }
+                }
+                (Value::Native(x), Value::Native(y)) => {
+                    if x != y {
+                        return false;
+                    }
+                }
+                _ => return false,
             }
-            (Value::Str(a), Value::Str(b)) => a == b,
-            (Value::List(a), Value::List(b)) => {
-                let (a, b) = (a.borrow(), b.borrow());
-                a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.equals(y))
-            }
-            (Value::Map(a), Value::Map(b)) => {
-                let (a, b) = (a.borrow(), b.borrow());
-                a.len() == b.len() && a.iter().all(|(k, v)| b.get(k).is_some_and(|w| v.equals(w)))
-            }
-            (Value::Instance(a), Value::Instance(b)) => {
-                a.ty == b.ty
-                    && a.fields.borrow().len() == b.fields.borrow().len()
-                    && a.fields
-                        .borrow()
-                        .iter()
-                        .zip(b.fields.borrow().iter())
-                        .all(|((k1, v1), (k2, v2))| k1 == k2 && v1.equals(v2))
-            }
-            (Value::Variant(a), Value::Variant(b)) => {
-                a.tag == b.tag
-                    && a.payload.len() == b.payload.len()
-                    && a.payload
-                        .iter()
-                        .zip(b.payload.iter())
-                        .all(|(x, y)| x.equals(y))
-            }
-            (Value::Range(a), Value::Range(b)) => a.start == b.start && a.end == b.end,
-            // Functions compare by identity: a closure is equal only to
-            // itself, and two natives are equal when they name the same
-            // builtin. This makes `g == g` true while distinct functions
-            // (even with identical bodies) are not equal.
-            (Value::Closure(a), Value::Closure(b)) => Rc::ptr_eq(a, b),
-            (Value::Native(a), Value::Native(b)) => a == b,
-            _ => false,
         }
+        true
     }
 
     /// Whether values of these two types can be ordered at all, even if a
@@ -207,16 +282,22 @@ impl Value {
     /// The display form (used by `print` and `to_string`).
     #[must_use]
     pub fn display(&self) -> String {
-        self.repr(true)
+        self.repr(true, 0)
     }
 
     /// The debug form (quotes strings inside collections).
     #[must_use]
     pub fn debug_repr(&self) -> String {
-        self.repr(false)
+        self.repr(false, 0)
     }
 
-    fn repr(&self, top: bool) -> String {
+    fn repr(&self, top: bool, depth: usize) -> String {
+        // A cyclic or very deep value is rendered truncated rather than
+        // recursing until the native stack overflows (`LANGUAGE_SPEC.md`
+        // §31.5). `…` marks the elided remainder.
+        if depth >= MAX_VALUE_DEPTH {
+            return "…".to_string();
+        }
         match self {
             Value::Int(i) => i.to_string(),
             Value::Float(f) => format_float(*f),
@@ -233,7 +314,7 @@ impl Value {
                 let inner = l
                     .borrow()
                     .iter()
-                    .map(Value::debug_repr)
+                    .map(|v| v.repr(false, depth + 1))
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("[{inner}]")
@@ -242,7 +323,7 @@ impl Value {
                 let inner = m
                     .borrow()
                     .iter()
-                    .map(|(k, v)| format!("\"{k}\": {}", v.debug_repr()))
+                    .map(|(k, v)| format!("\"{k}\": {}", v.repr(false, depth + 1)))
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("{{{inner}}}")
@@ -252,7 +333,7 @@ impl Value {
                     .fields
                     .borrow()
                     .iter()
-                    .map(|(k, v)| format!("{k}: {}", v.debug_repr()))
+                    .map(|(k, v)| format!("{k}: {}", v.repr(false, depth + 1)))
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("{} {{ {fields} }}", i.ty)
@@ -264,7 +345,7 @@ impl Value {
                     let inner = v
                         .payload
                         .iter()
-                        .map(Value::debug_repr)
+                        .map(|x| x.repr(false, depth + 1))
                         .collect::<Vec<_>>()
                         .join(", ");
                     format!("{}({inner})", v.tag)
@@ -279,6 +360,62 @@ impl Value {
 impl std::fmt::Debug for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.debug_repr())
+    }
+}
+
+/// The address of an `Rc` allocation, for the equality cycle-detection set.
+fn rc_addr<T>(rc: &Rc<T>) -> usize {
+    Rc::as_ptr(rc) as usize
+}
+
+/// Move the direct children of a uniquely-owned container into `out` so it can
+/// be torn down iteratively. A container with more than one owner (an alias or
+/// an `Rc` cycle) is left untouched: its `Rc` drop merely decrements.
+fn take_children(v: &mut Value, out: &mut Vec<Value>) {
+    match v {
+        Value::List(rc) => {
+            if let Some(items) = Rc::get_mut(rc) {
+                out.append(&mut items.borrow_mut());
+            }
+        }
+        Value::Map(rc) => {
+            if let Some(map) = Rc::get_mut(rc) {
+                for val in map.borrow_mut().values_mut() {
+                    out.push(std::mem::replace(val, Value::None));
+                }
+            }
+        }
+        Value::Instance(rc) => {
+            if let Some(inst) = Rc::get_mut(rc) {
+                for (_, val) in inst.fields.get_mut().iter_mut() {
+                    out.push(std::mem::replace(val, Value::None));
+                }
+            }
+        }
+        Value::Variant(rc) => {
+            if let Some(var) = Rc::get_mut(rc) {
+                out.append(&mut var.payload);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Drop a value without recursing on its structure.
+///
+/// The derived recursive drop overflows the native stack for a deeply nested
+/// or cyclic value, aborting the process — a §31.5 host-safety violation.
+/// This teardown takes each uniquely-owned container's children into an
+/// explicit worklist and drops them level by level. `Rc` cycles (a container
+/// reachable from itself) cannot be uniquely owned, so they are leaked rather
+/// than followed, which is the standard, memory-safe `Rc` behavior.
+impl Drop for Value {
+    fn drop(&mut self) {
+        let mut stack: Vec<Value> = Vec::new();
+        take_children(self, &mut stack);
+        while let Some(mut v) = stack.pop() {
+            take_children(&mut v, &mut stack);
+        }
     }
 }
 

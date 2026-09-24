@@ -1068,7 +1068,7 @@ impl Interp {
                 let mut map = std::collections::BTreeMap::new();
                 for (k, v) in entries {
                     let kv = val!(self.eval(k, env));
-                    let key = match kv {
+                    let key = match &kv {
                         Value::Str(s) => s.to_string(),
                         other => {
                             return Err(self.error(
@@ -1206,15 +1206,15 @@ impl Interp {
 
     /// Call any callable value.
     pub fn call_value(&mut self, f: Value, args: Vec<Value>, span: Span) -> Result<Value> {
-        match f {
-            Value::Closure(c) => self.call(&c, args, span),
+        match &f {
+            Value::Closure(c) => self.call(c, args, span),
             Value::Native(name) => {
                 // A builtin referenced as a value (for example `let f = len`)
                 // bypasses the checker's static builtin-call validation; the
                 // registry arity is therefore enforced here, so the runtime is
                 // authoritative for every builtin invocation (§25).
-                self.check_native_arity(&name, args.len(), span)?;
-                let n = self.natives.get(&name).cloned().ok_or_else(|| {
+                self.check_native_arity(name, args.len(), span)?;
+                let n = self.natives.get(name).cloned().ok_or_else(|| {
                     self.error(codes::UNDEFINED, format!("unknown `{name}`"), span)
                 })?;
                 n(self, args, span)

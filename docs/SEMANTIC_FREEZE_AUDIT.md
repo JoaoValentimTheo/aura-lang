@@ -282,11 +282,13 @@ that disagrees with the contract text.
   false. `Native`: name equality.
 * Cross-type otherwise: false (no error).
 * `NaN == NaN` → false; `0.0 == -0.0` → true.
-* **Cycles:** list/map cycle equality recurses without a visited set; a cyclic
-  structure would recurse. There is no way to construct a cycle in the language
-  today except via aliasing + self-reference through a mutable container, which
-  the evaluator cannot currently create (`push` can push a list into itself —
-  see §31 for the risk). This is an `UNSPECIFIED` edge.
+* **Cycles:** a list or map can be made to reach itself (`let a = [] a.push(a)`,
+  or `m["k"] = m`). Value operations are now cycle-safe and depth-bounded
+  (`LANGUAGE_SPEC.md` §31.6): display and JSON encoding truncate past
+  `MAX_VALUE_DEPTH`, structural equality is exact and iterative with a
+  visited-pair set, and teardown is iterative. This supersedes the earlier
+  note that a cycle was unreachable and an `UNSPECIFIED` edge; it is now
+  specified and covered by `tests/regressions.rs::bh1_*`.
 
 Equality is reflexive and symmetric for all constructs observed. Transitivity
 holds for the numeric cross-type rule.
