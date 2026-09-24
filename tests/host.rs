@@ -118,9 +118,27 @@ fn limited_host_reports_clock_and_sleep_as_unavailable() {
 
 #[test]
 fn stdhost_reports_genuine_io_failure_as_e4020() {
-    // A directory is a genuine I/O failure, not an absent path.
+    // A directory is a genuine I/O failure (`E4020`), not an absent path, on
+    // every platform. `std::env::temp_dir()` always exists; on Windows it
+    // ends with a separator, which is a directory spelling that must still be
+    // reported as an I/O failure rather than as `none`.
     let dir = std::env::temp_dir();
     let src = format!("fn main() {{ read_file({:?}) }}", dir.to_string_lossy());
+    let module = aura::compile_with_mode(&src, aura::CompileMode::Program).expect("compiles");
+    let mut interp = Interp::with_host(Box::new(StdHost::silent()));
+    assert_eq!(interp.run(&module).unwrap_err().code, codes::IO);
+}
+
+#[test]
+fn stdhost_reports_a_directory_with_trailing_separator_as_e4020() {
+    // Regression: a directory path with a trailing separator (the spelling
+    // `std::env::temp_dir()` uses on Windows) must be `E4020`, not `none`.
+    let dir = std::env::temp_dir();
+    let mut path = dir.to_string_lossy().into_owned();
+    if !path.ends_with(std::path::MAIN_SEPARATOR) {
+        path.push(std::path::MAIN_SEPARATOR);
+    }
+    let src = format!("fn main() {{ read_file({path:?}) }}");
     let module = aura::compile_with_mode(&src, aura::CompileMode::Program).expect("compiles");
     let mut interp = Interp::with_host(Box::new(StdHost::silent()));
     assert_eq!(interp.run(&module).unwrap_err().code, codes::IO);

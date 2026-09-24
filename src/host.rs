@@ -307,6 +307,17 @@ impl Host for StdHost {
     }
 
     fn read_file(&self, path: &str) -> HostResult<Option<String>> {
+        // A directory is a genuine I/O failure (`E4020`), never absence, on
+        // every platform. Windows rejects `read_to_string` on some directory
+        // spellings (for example a path with a trailing separator, as
+        // `std::env::temp_dir()` returns) with `NotFound`, which would
+        // otherwise be misreported as `none`. Detect the directory explicitly
+        // so the documented contract holds identically everywhere.
+        if std::path::Path::new(path).is_dir() {
+            return Err(HostError::io(format!(
+                "cannot read `{path}`: it is a directory"
+            )));
+        }
         match std::fs::read_to_string(path) {
             Ok(text) => Ok(Some(text)),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
