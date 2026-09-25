@@ -194,11 +194,15 @@ async function loadManifest() {
   for (const v of manifest.versions) {
     const option = document.createElement("option");
     option.value = v.id;
-    // The selector chooses a *release/runtime*; the language semantics it
-    // implements are shown alongside so the two identities are never confused.
+    // The selector chooses a *runtime artifact*. A development runtime is
+    // labelled as such and never presented as a published release; the release
+    // identity and the language semantics it implements are shown alongside so
+    // the three identities are never confused.
+    const channel = v.channel === "development" ? "development" : "release";
+    const label = channel === "development" ? `Aura ${v.id} (development runtime)` : `Aura ${v.release_version || v.id}`;
     option.textContent = v.available
-      ? `Aura ${v.release_version || v.id}  (language ${v.language_version})`
-      : `Aura ${v.release_version || v.id}  (unavailable)`;
+      ? `${label}  (language ${v.language_version})`
+      : `${label}  (unavailable)`;
     option.disabled = !v.available;
     els.version.append(option);
   }
@@ -211,6 +215,11 @@ function onVersionChange() {
   if (entry && !entry.available) {
     showNote(entry.reason || "This version has no browser runtime.");
     els.run.disabled = true;
+  } else if (entry && entry.channel === "development") {
+    showNote(
+      "Development runtime: not a published release. It exercises the current language and is replaced as development advances.",
+    );
+    els.run.disabled = false;
   } else {
     showNote("");
     els.run.disabled = false;

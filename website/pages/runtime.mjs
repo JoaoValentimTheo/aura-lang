@@ -88,17 +88,26 @@ export const runtimePage = {
       <div>
         ${codeBlock({
           source: `# The browser runtime is loaded from an immutable,
-# versioned artifact. Its manifest records:
+# versioned artifact. Its manifest records, per entry:
 #
-#   id                 0.0.2
+#   id                 0.0.2            (published release)
+#   channel            release
 #   language_version   0.0.1
 #   release_version    0.0.2
 #   host_abi_version   1
 #   artifact           0.0.2/aura_playground_runtime.wasm
 #   sha256             5a4ad3f7…34ed
 #
-# The loader refuses any artifact that declares imports,
-# so the runtime can never gain host authority.`,
+#   id                 0.0.2-dev        (development runtime)
+#   channel            development
+#   release_version    0.0.2
+#   host_abi_version   1
+#
+# Published release artifacts are frozen: their hashes are
+# pinned and never rewritten. A newer runtime is added as a
+# new entry, never substituted into an existing one. The
+# loader refuses any artifact that declares imports, so the
+# runtime can never gain host authority.`,
           title: "manifest.txt",
           base,
         })}

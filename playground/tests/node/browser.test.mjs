@@ -159,12 +159,37 @@ async function runAndWait(page, timeout = 15000) {
       text: o.textContent,
     })),
   );
-  check("0.0.2 selectable", options.some((o) => o.value === "0.0.2" && !o.disabled), JSON.stringify(options));
+  check("0.0.2 release selectable", options.some((o) => o.value === "0.0.2" && !o.disabled), JSON.stringify(options));
   check("0.0.1 present but unavailable", options.some((o) => o.value === "0.0.1" && o.disabled));
+  // The development runtime is present, selectable, and labelled as a
+  // development runtime rather than a release.
+  const dev = options.find((o) => o.value === "0.0.2-dev");
+  check("development runtime selectable", dev && !dev.disabled, JSON.stringify(options));
+  check("development runtime is labelled development", dev && /development/i.test(dev.text), dev && dev.text);
+
+  // Run against the published 0.0.2 release artifact: unchanged behavior.
   await page.selectOption("#version", "0.0.2");
   await setSource(page, "fn main() { print(\"v2\") }");
   const r = await runAndWait(page);
-  check("0.0.2 executes", r.stdout === "v2\n", JSON.stringify(r));
+  check("0.0.2 release executes", r.stdout === "v2\n", JSON.stringify(r));
+
+  // Run the evolved language against the development runtime.
+  await page.selectOption("#version", "0.0.2-dev");
+  const note = await page.textContent("#runtime-note");
+  check("development runtime explains itself", /development runtime/i.test(note), note);
+  await setSource(
+    page,
+    'type Number = int | float\nfn f(x: Number) { print(x) }\nfn main() {\n f(42)\n f(3.14)\n}',
+  );
+  const ru = await runAndWait(page);
+  check("development runtime executes a union program", ru.stdout === "42\n3.14\n", JSON.stringify(ru));
+  await setSource(page, "fn main() {\n for i in 0..3 { print(i) }\n}");
+  const rr = await runAndWait(page);
+  check("development runtime executes a range literal", rr.stdout === "0\n1\n2\n", JSON.stringify(rr));
+  await setSource(page, "<!--\nthis should disappear\n--!>\nfn main() { print(42) }");
+  const rc = await runAndWait(page);
+  check("development runtime executes through a multiline comment", rc.stdout === "42\n", JSON.stringify(rc));
+
   // The unavailable 0.0.1 option is disabled, so it cannot be selected by a
   // user; setting it programmatically still explains why it cannot run.
   const disabled = await page.evaluate(
@@ -177,8 +202,8 @@ async function runAndWait(page, timeout = 15000) {
     sel.dispatchEvent(new Event("change"));
   });
   await page.waitForFunction(() => document.getElementById("run").disabled === true);
-  const note = await page.textContent("#runtime-note");
-  check("unavailable version explains itself", /predates|no browser runtime/i.test(note), note);
+  const note2 = await page.textContent("#runtime-note");
+  check("unavailable version explains itself", /predates|no browser runtime/i.test(note2), note2);
   await page.close();
 }
 

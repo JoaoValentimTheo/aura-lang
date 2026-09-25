@@ -74,11 +74,41 @@ for (const entry of manifest.versions) {
   // A version entry records the release it belongs to, separately from the
   // language version, so the two cannot be conflated.
   check(`release version present for ${entry.id}`, typeof entry.release_version === "string");
-  check(
-    `runtime version equals release version for ${entry.id}`,
-    entry.runtime_version === entry.release_version,
-    `${entry.runtime_version} != ${entry.release_version}`,
-  );
+  if (entry.channel === "development") {
+    // A development runtime is on a release line but is not itself the
+    // release: its identity is a pre-release of that line, never equal to it.
+    check(
+      `development runtime ${entry.id} is a pre-release of its release line`,
+      entry.id !== entry.release_version && entry.id.startsWith(`${entry.release_version}-`),
+      `${entry.id} vs ${entry.release_version}`,
+    );
+  } else {
+    check(
+      `runtime version equals release version for ${entry.id}`,
+      entry.runtime_version === entry.release_version,
+      `${entry.runtime_version} != ${entry.release_version}`,
+    );
+  }
+}
+
+// The frozen release artifacts are pinned and must never move. Recompute each
+// release-channel hash independently of the manifest so an edited manifest
+// cannot hide an edited artifact.
+const PINNED_RELEASES = {
+  "0.0.2": {
+    sha256: "5a4ad3f7e3f786164d65df437d607e7ddd5e25947ea2c8dd9b436a5490b334ed",
+    bytes: 1366621,
+  },
+};
+for (const [id, want] of Object.entries(PINNED_RELEASES)) {
+  const p = join(runtimesDir, id, "aura_playground_runtime.wasm");
+  check(`frozen release ${id} present`, existsSync(p));
+  if (existsSync(p)) {
+    const bytes = readFileSync(p);
+    const hash = createHash("sha256").update(bytes).digest("hex");
+    check(`frozen release ${id} sha256 unchanged`, hash === want.sha256, `${hash} != ${want.sha256}`);
+    check(`frozen release ${id} size unchanged`, bytes.byteLength === want.bytes);
+  }
 }
 
 // The frozen 0.0.1 entry must be present and honest.

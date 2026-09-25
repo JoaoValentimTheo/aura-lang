@@ -27,10 +27,17 @@ fn parse(json: &str) -> serde_json::Value {
 
 #[test]
 fn version_model_is_coherent() {
-    // The language semantics stay at 0.0.1; the runtime artifact is 0.0.2.
+    // The language semantics stay at 0.0.1; the runtime artifact is a
+    // development pre-release on the 0.0.2 line, never equal to the release.
     assert_eq!(aura::LANGUAGE_VERSION, "0.0.1");
     assert_eq!(aura::VERSION, "0.0.2");
-    assert_eq!(rt::RUNTIME_VERSION, "0.0.2");
+    assert_eq!(rt::RUNTIME_VERSION, env!("CARGO_PKG_VERSION"));
+    assert!(
+        rt::RUNTIME_VERSION.starts_with("0.0.2-"),
+        "development runtime must be a pre-release of its release line: {}",
+        rt::RUNTIME_VERSION
+    );
+    assert_ne!(rt::RUNTIME_VERSION, aura::VERSION);
     assert_eq!(rt::ABI_VERSION, 1);
     let (_json, _status, language_version) = rt::execute("fn main() {}", &[]);
     assert_eq!(language_version, "0.0.1");

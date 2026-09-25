@@ -309,8 +309,12 @@ function check(name, cond, detail) {
       disabled: o.disabled,
     })),
   );
-  check("0.0.2 selectable", options.some((o) => o.value === "0.0.2" && !o.disabled));
+  check("0.0.2 release selectable", options.some((o) => o.value === "0.0.2" && !o.disabled));
   check("0.0.1 present but unavailable", options.some((o) => o.value === "0.0.1" && o.disabled));
+  check(
+    "development runtime selectable",
+    options.some((o) => o.value === "0.0.2-dev" && !o.disabled),
+  );
 
   check("playground no page errors", errors.length === 0, errors.join("; "));
   await page.close();

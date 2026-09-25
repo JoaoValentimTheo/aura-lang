@@ -41,11 +41,31 @@ const FROZEN_0_0_1 = {
   runtime_version: null,
   host_abi_version: null,
   available: false,
+  channel: "release",
   reason:
     "The published 0.0.1 predates the WebAssembly execution substrate and has no browser runtime. Selecting it will not execute any artifact.",
   artifact: null,
   sha256: null,
   bytes: null,
+};
+
+// The published, immutable 0.0.2 runtime artifact. Its hash and size are pinned
+// here as the single authoritative identity for the published release: the
+// build never regenerates it (the runtime crate version has moved on) and the
+// `--check` path refuses to pass if the artifact on disk ever drifts from this
+// record. Publishing a newer runtime means adding a *new* entry below, never
+// editing this one.
+const FROZEN_0_0_2 = {
+  id: "0.0.2",
+  release_version: "0.0.2",
+  language_version: "0.0.1",
+  runtime_version: "0.0.2",
+  host_abi_version: 1,
+  available: true,
+  channel: "release",
+  artifact: "0.0.2/aura_playground_runtime.wasm",
+  sha256: "5a4ad3f7e3f786164d65df437d607e7ddd5e25947ea2c8dd9b436a5490b334ed",
+  bytes: 1366621,
 };
 
 function sha256(buf) {
@@ -117,6 +137,37 @@ if (checkOnly) {
         );
         process.exit(1);
       }
+      // A release-channel artifact is frozen: its identity is pinned in source
+      // and must match the manifest exactly. A drift here means someone edited
+      // a historical artifact or the pinned identity, and the build refuses to
+      // proceed.
+      if (entry.channel === "release") {
+        const pinned = [FROZEN_0_0_1, FROZEN_0_0_2].find((f) => f.id === entry.id);
+        if (pinned && entry.available) {
+          if (pinned.sha256 !== entry.sha256 || pinned.bytes !== entry.bytes) {
+            console.error(
+              `build --check: release ${entry.id} is frozen; manifest identity does not match the pinned identity`,
+            );
+            process.exit(1);
+          }
+        }
+      }
+    }
+  }
+  // Every frozen release artifact must still be present, byte-for-byte, even
+  // if something removed it from the manifest.
+  for (const frozen of [FROZEN_0_0_2]) {
+    const p = join(runtimesDir, frozen.artifact);
+    if (!existsSync(p)) {
+      console.error(`build --check: frozen release artifact missing: ${frozen.artifact}`);
+      process.exit(1);
+    }
+    const hash = sha256(readFileSync(p));
+    if (hash !== frozen.sha256) {
+      console.error(
+        `build --check: frozen release artifact ${frozen.artifact} changed on disk: ${hash}`,
+      );
+      process.exit(1);
     }
   }
   console.log(`build --check: manifest matches ${manifest.versions.length} version(s)`);
@@ -173,20 +224,25 @@ const abiVersion = Number(abiMatch[1]);
 
 const manifest = {
   playground_api_version: PLAYGROUND_API_VERSION,
+  // The development runtime is the selector's default so the public Playground
+  // exercises the current language. The frozen release entries remain present,
+  // honest, and selectable, and are never substituted silently.
   current: runtimeVersion,
   versions: [
     FROZEN_0_0_1,
+    FROZEN_0_0_2,
     {
       id: runtimeVersion,
-      // The release that ships this runtime. For 0.0.2 the runtime crate
-      // version and the release version coincide, but they are recorded
-      // separately so a future release can ship a runtime without implying a
-      // language change.
+      // A development runtime is not a published release. It carries the
+      // release line it belongs to (`release_version`) while its own identity
+      // is the pre-release `runtime_version`. The channel makes the
+      // distinction explicit so the UI never presents it as a release.
       release_version: releaseVersion,
       language_version: languageVersion,
       runtime_version: runtimeVersion,
       host_abi_version: abiVersion,
       available: true,
+      channel: "development",
       artifact: `${runtimeVersion}/${artifactName}`,
       sha256: hash,
       bytes: wasm.byteLength,

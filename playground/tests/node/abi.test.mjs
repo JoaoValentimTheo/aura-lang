@@ -54,8 +54,10 @@ function expectCode(name, source, code, options) {
 
 // --- ABI identity ---------------------------------------------------------
 check("abi version is 1", runtime.abiVersion === 1, String(runtime.abiVersion));
-// The release is 0.0.2; the language semantics remain the frozen 0.0.1.
-check("release/runtime version is 0.0.2", runtime.runtimeVersion === "0.0.2", runtime.runtimeVersion);
+// The runtime artifact's own version is whatever the crate declares; the ABI
+// test must not hardcode a release so it works for any built artifact. The
+// language semantics remain the frozen 0.0.1.
+check("runtime version is reported", /^\d+\.\d+\.\d+/.test(runtime.runtimeVersion), runtime.runtimeVersion);
 check("language version is 0.0.1", runtime.languageVersion === "0.0.1", runtime.languageVersion);
 check(
   "module has zero imports",
@@ -95,6 +97,54 @@ expectOk(
   'fn main() {\n try { throw "boom" } catch e -> { print("caught " + e) }\n}',
   "caught boom\n",
 );
+
+// --- evolved language surfaces (general unions, `a..b`, comments) ----------
+// The runtime under test is the freshly built development artifact; these
+// prove the evolved language actually executes through the wasm ABI, not just
+// that the bytes exist.
+expectOk(
+  "general union",
+  "type Number = int | float\nfn f(x: Number) { print(x) }\nfn main() {\n f(42)\n f(3.14)\n}",
+  "42\n3.14\n",
+);
+expectCode(
+  "general union rejects a non-member E3001",
+  'type Number = int | float\nfn main() { let x: Number = "s"\n print(x) }',
+  3001,
+);
+expectOk(
+  "union alias chain",
+  "type ID = string | int\ntype UserID = ID\nfn main() { let u: UserID = 7\n print(u) }",
+  "7\n",
+);
+expectOk(
+  "range literal",
+  "fn main() {\n for i in 0..3 { print(i) }\n}",
+  "0\n1\n2\n",
+);
+expectOk(
+  "range literal equals builtin",
+  "fn main() { print(range(0, 10) == 0..10)\n print(len(0..5)) }",
+  "true\n5\n",
+);
+expectCode(
+  "range literal bounds are checked E3001",
+  "fn main() { let r = 1.5..3\n print(r) }",
+  3001,
+);
+expectOk(
+  "multiline comment",
+  "<!--\nthis should disappear\n--!>\nfn main() { print(42) }",
+  "42\n",
+);
+expectOk(
+  "multiline comment between expressions",
+  "fn main() { print(1 <!-- c --!> + <!-- c --!> 2) }",
+  "3\n",
+);
+expectCode("unterminated comment E1005", "fn main() { print(1) } <!-- nope", 1005);
+expectCode("malformed union E1006", "type N = int | | float\nfn main() {}", 1006);
+expectCode("malformed range E1006", "fn main() { print(1..) }", 1006);
 
 // --- host capabilities ----------------------------------------------------
 expectOk("args", "fn main() { print(args()) }", '["a", "b"]\n', { args: ["a", "b"] });
