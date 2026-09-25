@@ -214,6 +214,49 @@ async function runAndWait(page, timeout = 15000) {
   await page.close();
 }
 
+// --- 7b. URL handoff: the example travels with the navigation ---------------
+// The host site carries `?source=…&args=…&stdin=…` in the Playground link
+// itself, so the payload cannot be lost to a per-tab side effect. The
+// controller must load it into the editor, consume it, and execute it.
+{
+  const page = await browser.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const query = new URLSearchParams({
+    source: 'fn main() {\n print(args()[0])\n print(read_line())\n}',
+    args: JSON.stringify(["Ada"]),
+    stdin: "hello\n",
+  });
+  await page.goto(`${base}?${query.toString()}`);
+  await page.waitForFunction(() => document.querySelectorAll("#version option").length > 0);
+  const loaded = await page.evaluate(() => ({
+    source: document.getElementById("source").value,
+    args: document.getElementById("args").value,
+    stdin: document.getElementById("stdin").value,
+    search: location.search,
+    handoff: (() => {
+      try {
+        return sessionStorage.getItem("aura-playground-source");
+      } catch {
+        return "unavailable";
+      }
+    })(),
+  }));
+  check(
+    "query handoff loads source",
+    loaded.source === 'fn main() {\n print(args()[0])\n print(read_line())\n}',
+    JSON.stringify(loaded.source),
+  );
+  check("query handoff loads arguments", loaded.args === "Ada", JSON.stringify(loaded.args));
+  check("query handoff loads standard input", loaded.stdin === "hello\n", JSON.stringify(loaded.stdin));
+  check("query handoff is consumed from the URL", loaded.search === "", JSON.stringify(loaded.search));
+  check("query handoff leaves no storage handoff", loaded.handoff === null, JSON.stringify(loaded.handoff));
+  const r = await runAndWait(page);
+  check("query handoff program executes", r.stdout === "Ada\nhello\n", JSON.stringify(r));
+  check("query handoff no page errors", errors.length === 0, errors.join("; "));
+  await page.close();
+}
+
 // --- 8. long output scrolls inside its own container ------------------------
 {
   const { page } = await newPage();

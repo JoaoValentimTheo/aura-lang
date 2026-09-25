@@ -140,12 +140,21 @@ function markCopied(btn) {
 }
 
 /* --------------------------------------------------- run-in-playground */
-// A "Run" button on an example stashes the program — source plus its arguments
-// and standard input, when the example defines them — so the Playground can
-// load the *exact* example. This never executes code.
+// A "Run" action on an example already carries the program inside its own
+// link (`?source=…&args=…&stdin=…`), so the Playground receives the exact
+// example whatever the navigation mode. This never executes code.
+//
+// The `sessionStorage` copy below is a *redundant* secondary channel, and it
+// is written only for a plain left click that navigates this tab. Writing it
+// from a modifier click (which opens a new tab) or a middle click would leave
+// a stale handoff behind in this tab — and a later, unrelated visit to the
+// Playground would resurrect it instead of starting from the default program.
 const PLAYGROUND_HANDOFF_KEY = "aura-playground-source";
 for (const link of document.querySelectorAll("[data-run-example]")) {
-  link.addEventListener("click", () => {
+  link.addEventListener("click", (event) => {
+    if (event.defaultPrevented) return;
+    if (event.button !== 0) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const block = link.closest(".code-block");
     const btn = block && block.querySelector("[data-copy]");
     const code = btn ? btn.getAttribute("data-code") : null;

@@ -8,7 +8,9 @@
 //   * keyboard accessibility (skip link, focus visibility, nav toggle);
 //   * SEO metadata (title, description, canonical, Open Graph);
 //   * the Playground integration: real WASM run, diagnostics, args, stdin,
-//     Stop on a runaway, version switching, and lifecycle recovery.
+//     Stop on a runaway, version switching, and lifecycle recovery;
+//   * the example → Playground → Run data flow: the *executed* source must be
+//     the selected example, in every navigation mode.
 //
 // Usage: node website/tests/browser.test.mjs
 // Requires `playwright` with Chromium; skips otherwise.
@@ -28,6 +30,7 @@ try {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dist = join(here, "..", "dist");
+const { exampleById } = await import(join(here, "..", "examples", "examples.mjs"));
 // Serve under the same deployment base the site was built with (resolved from
 // `--base`/`AURA_SITE_BASE`, defaulting to the project-site base).
 const { server, port, base: basePath } = await startServer(0);
@@ -314,62 +317,204 @@ function check(name, cond, detail) {
 }
 
 /* --------------------------------- run-in-playground example handoff */
-// Regression: selecting an example's Run action must load that exact example
-// (source, and its arguments/standard input) into the Playground and execute
-// it, with output corresponding to the selected example.
+// Regression: selecting an example's Run action must make the Playground
+// *execute that exact example* — not merely display it, not merely change the
+// URL, and never fall back to the default Playground program.
+//
+// Every assertion below compares the editor against the catalog source
+// verbatim and then verifies the executed stdout, so a run that silently
+// executed DEFAULT_SOURCE (`hello, Aura` followed by `[4, 16]`) cannot pass.
 {
   const page = await browser.newPage();
-  async function loadExample(id) {
-    await page.goto(`${base}examples/`);
-    await page.click(`#${id} [data-run-example]`);
-    await page.waitForURL(/playground\//);
-    await page.waitForFunction(
+
+  async function waitForPlayground(p) {
+    await p.waitForFunction(
       () => document.querySelectorAll("#version option").length > 0,
-      { timeout: 15000 },
+      { timeout: 20000 },
     );
-    const loaded = await page.evaluate(() => ({
+  }
+  async function editorState(p) {
+    return p.evaluate(() => ({
       source: document.getElementById("source").value,
       args: document.getElementById("args").value,
       stdin: document.getElementById("stdin").value,
     }));
-    await page.click("#run");
-    await page.waitForFunction(
+  }
+  // Press Run and return what the runtime actually produced.
+  async function execute(p) {
+    await p.click("#run");
+    await p.waitForFunction(
       () => {
         const s = document.getElementById("status").textContent;
         return s !== "running…" && !s.startsWith("running (");
       },
-      { timeout: 20000 },
+      { timeout: 30000 },
     );
-    const out = await page.evaluate(() => ({
+    return p.evaluate(() => ({
       stdout: document.getElementById("stdout").textContent,
       status: document.getElementById("status").textContent,
     }));
+  }
+  // Case A/B/C/E: go to the examples page, select an example, run it.
+  async function loadExample(id, p) {
+    await p.goto(`${base}examples/`);
+    await p.click(`#${id} [data-run-example]`);
+    await p.waitForURL(/playground\//);
+    await waitForPlayground(p);
+    const loaded = await editorState(p);
+    const out = await execute(p);
     return { loaded, out };
   }
 
-  // A normal successful example.
-  let { loaded, out } = await loadExample("hello");
-  check("example hello loads source", loaded.source.includes('print("hello, Aura")'), JSON.stringify(loaded));
-  check("example hello runs", out.stdout === "hello, Aura\n", JSON.stringify(out));
-
-  // An example that reads arguments.
-  ({ loaded, out } = await loadExample("args"));
-  check("example args populates arguments", loaded.args === "Ada", JSON.stringify(loaded));
-  check("example args runs", out.stdout === "hello Ada\n", JSON.stringify(out));
-
-  // An example that reads standard input.
-  ({ loaded, out } = await loadExample("stdin"));
-  check("example stdin populates input", loaded.stdin === "hello\naura\n", JSON.stringify(loaded));
-  check("example stdin runs", out.stdout === "HELLO\nAURA\n", JSON.stringify(out));
-
-  // Selecting another example must replace the previous one.
-  ({ loaded, out } = await loadExample("expressions"));
+  // --- Case A: a plain Playground visit still runs the default program ----
+  await page.goto(`${base}playground/`);
+  await waitForPlayground(page);
+  const plain = await editorState(page);
   check(
-    "selecting another example replaces the previous source",
-    loaded.source.includes("1 + 2 * 3") && !loaded.source.includes("hello, Aura"),
-    JSON.stringify(loaded),
+    "plain playground starts at DEFAULT_SOURCE",
+    plain.source.includes("let xs = [1, 2, 3, 4, 5]") && plain.args === "" && plain.stdin === "",
+    JSON.stringify(plain),
   );
-  check("example expressions runs", out.stdout === "7\nbigger\n3.5\n", JSON.stringify(out));
+  const defaultOut = await execute(page);
+  check(
+    "plain playground executes the default program",
+    defaultOut.stdout === "hello, Aura\n[4, 16]\n",
+    JSON.stringify(defaultOut),
+  );
+
+  // --- Case B: selecting an example executes that example -----------------
+  const hello = exampleById("hello");
+  let { loaded, out } = await loadExample("hello", page);
+  check(
+    "example hello loads its exact source",
+    loaded.source === hello.source,
+    JSON.stringify(loaded.source),
+  );
+  check("example hello runs", out.stdout === hello.output, JSON.stringify(out));
+  check(
+    "hello output differs from the default program",
+    hello.output !== defaultOut.stdout,
+    JSON.stringify({ hello: hello.output, default: defaultOut.stdout }),
+  );
+
+  // An example whose output is unmistakably different from the default one.
+  const expr = exampleById("expressions");
+  ({ loaded, out } = await loadExample("expressions", page));
+  check(
+    "selecting another example replaces the previous source verbatim",
+    loaded.source === expr.source && !loaded.source.includes("let xs = [1, 2, 3, 4, 5]"),
+    JSON.stringify(loaded.source),
+  );
+  check("example expressions runs", out.stdout === expr.output, JSON.stringify(out));
+  check(
+    "expressions output differs from the default program",
+    expr.output !== defaultOut.stdout,
+    JSON.stringify({ expressions: expr.output, default: defaultOut.stdout }),
+  );
+
+  // --- Case D: arguments and standard input travel with the example -------
+  const argsExample = exampleById("args");
+  ({ loaded, out } = await loadExample("args", page));
+  check("example args populates arguments", loaded.args === "Ada", JSON.stringify(loaded));
+  check(
+    "example args executes with its arguments",
+    out.stdout === argsExample.output,
+    JSON.stringify(out),
+  );
+
+  const stdinExample = exampleById("stdin");
+  ({ loaded, out } = await loadExample("stdin", page));
+  check("example stdin populates input", loaded.stdin === "hello\naura\n", JSON.stringify(loaded));
+  check(
+    "example stdin executes with its input",
+    out.stdout === stdinExample.output,
+    JSON.stringify(out),
+  );
+
+  // --- Modifier click: the example must travel with the navigation --------
+  // A new tab has its own `sessionStorage`, so a per-tab handoff is lost and
+  // the new tab would silently run DEFAULT_SOURCE. The payload must be part
+  // of the link, and no stale handoff may be left behind in this tab.
+  {
+    const from = await browser.newPage();
+    await from.goto(`${base}examples/`);
+    const [popup] = await Promise.all([
+      from.context().waitForEvent("page"),
+      from.click("#expressions [data-run-example]", { modifiers: ["ControlOrMeta"] }),
+    ]);
+    await popup.waitForURL(/playground\//, { waitUntil: "domcontentloaded" });
+    await waitForPlayground(popup);
+    const inPopup = await editorState(popup);
+    check(
+      "modifier click carries the exact example into the new tab",
+      inPopup.source === expr.source,
+      JSON.stringify(inPopup.source),
+    );
+    const popupOut = await execute(popup);
+    check(
+      "new tab executes the selected example",
+      popupOut.stdout === expr.output,
+      JSON.stringify(popupOut),
+    );
+    const stale = await from.evaluate(() => {
+      try {
+        return sessionStorage.getItem("aura-playground-source");
+      } catch {
+        return "unavailable";
+      }
+    });
+    check(
+      "no stale handoff survives a modifier click",
+      stale === null,
+      JSON.stringify(stale),
+    );
+    const originalUrl = await from.evaluate(() => location.pathname);
+    check(
+      "modifier click leaves the original tab on the examples page",
+      originalUrl.endsWith("/examples/"),
+      originalUrl,
+    );
+    await popup.close();
+    await from.close();
+  }
+
+  // --- The shared site script is not on the critical path -----------------
+  // A click that lands before `assets/site.js` has attached its listener must
+  // still carry the example: the payload lives in the link itself.
+  {
+    const early = await browser.newPage();
+    let delayed = false;
+    await early.route("**/assets/site.js", async (route) => {
+      if (!delayed) {
+        delayed = true;
+        await new Promise((r) => setTimeout(r, 3000));
+      }
+      try {
+        await route.continue();
+      } catch {
+        /* the page navigated away while the script was delayed */
+      }
+    });
+    await early.goto(`${base}examples/`, { waitUntil: "commit" });
+    await early.waitForSelector("#hello [data-run-example]");
+    await early.click("#hello [data-run-example]");
+    await early.waitForURL(/playground\//, { waitUntil: "domcontentloaded" });
+    await waitForPlayground(early);
+    const inEarly = await editorState(early);
+    check(
+      "click before the shared script still loads the exact example",
+      inEarly.source === hello.source,
+      JSON.stringify(inEarly.source),
+    );
+    const earlyOut = await execute(early);
+    check(
+      "early click executes the selected example",
+      earlyOut.stdout === hello.output,
+      JSON.stringify(earlyOut),
+    );
+    await early.close();
+  }
+
   await page.close();
 }
 

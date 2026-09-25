@@ -35,11 +35,29 @@ export function icon(name) {
 }
 
 /**
+ * The Playground URL that carries a runnable example with the navigation.
+ *
+ * The payload lives *in the link itself* (`?source=…&args=…&stdin=…`), never
+ * in a per-tab side effect, so the selected example survives every navigation
+ * mode: a plain click, a modifier/middle click that opens a new tab, or a
+ * click that happens before the shared site script has attached its listener.
+ * A link that loses its payload cannot silently fall back to the Playground's
+ * default program, because the Playground reads this query on load.
+ */
+function playgroundHref({ source, args, stdin, base }) {
+  const params = new URLSearchParams();
+  params.set("source", source);
+  if (args && args.length) params.set("args", JSON.stringify(args.map(String)));
+  if (stdin) params.set("stdin", stdin);
+  return `${url(`playground/?${params.toString()}`, base)}#code`;
+}
+
+/**
  * A highlighted Aura code block with a copy button and an optional
  * "Run in Playground" action that hands the source to the Playground page.
  *
  * When `runnable` is set, `args` (array) and `stdin` (string) travel with the
- * source as data attributes, so a program that reads arguments or standard
+ * source inside the Run link, so a program that reads arguments or standard
  * input arrives in the Playground ready to run.
  */
 export function codeBlock({
@@ -54,10 +72,9 @@ export function codeBlock({
   const code = lang === "aura" ? highlight(source) : escapeHtml(source);
   const head = title || lang;
   const run = runnable
-    ? `<a class="btn btn--text btn--small" href="${url(
-        "playground/",
-        base,
-      )}#code" data-run-example>${icon("play")}<span>Run</span></a>`
+    ? `<a class="btn btn--text btn--small" href="${escapeHtml(
+        playgroundHref({ source, args, stdin, base }),
+      )}" data-run-example>${icon("play")}<span>Run</span></a>`
     : "";
   // The source is embedded in a data attribute for copy/run without a second
   // fetch. It is attribute-escaped. Arguments and input travel alongside so the

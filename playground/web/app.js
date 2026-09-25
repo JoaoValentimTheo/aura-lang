@@ -1,6 +1,8 @@
 // The Aura Playground orchestration layer.
 //
 // This file contains no Aura semantics. It:
+//   * applies a host site's selected-example handoff once, then leaves the
+//     editor as the single authoritative source of execution;
 //   * resolves the versioned runtime manifest and lets the user pick a version;
 //   * spawns a fresh Worker per run so execution is isolated from the UI thread;
 //   * terminates the Worker on Stop or completion (hard cancellation);
@@ -32,17 +34,69 @@ const DEFAULT_SOURCE = `fn main() {
 }
 `;
 
-// The key a host site (the Aura website) uses to hand a selected example to
-// the Playground. The value is JSON `{ source, args, stdin }`; a bare source
-// string is also accepted for backwards compatibility. The handoff is applied
-// once on load, then cleared so a later manual reload starts fresh.
+// The ways a host site (the Aura website) can hand a selected example to the
+// Playground:
+//
+//   1. *in the navigation itself* — `?source=…&args=…&stdin=…` on the
+//      Playground URL. This is the authoritative channel: it cannot be lost
+//      to a per-tab side effect, a modifier click that opens a new tab, or a
+//      click that lands before the host page's script has run.
+//   2. `sessionStorage` under HANDOFF_KEY, JSON `{ source, args, stdin }`; a
+//      bare source string is also accepted for backwards compatibility.
+//
+// Whichever channel delivers, the payload is consumed once: the editor takes
+// ownership of the program and the payload is removed, so a later manual
+// reload starts fresh.
 const HANDOFF_KEY = "aura-playground-source";
+const HANDOFF_PARAMS = ["source", "args", "stdin"];
 
 let manifest = null;
 let currentRun = null;
 let generation = 0;
 
-function takeHandoff() {
+function parseArgsParam(raw) {
+  if (raw == null || raw === "") return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed.map(String);
+  } catch {
+    /* malformed metadata is ignored; the source still loads */
+  }
+  return [];
+}
+
+/**
+ * Read the example payload carried by the navigation itself.
+ *
+ * On success the payload is consumed: the editor becomes the single
+ * authoritative source of execution, and the URL is stripped of it so the
+ * address bar never lies about what will run after the user edits.
+ */
+function takeUrlHandoff() {
+  let params;
+  try {
+    params = new URLSearchParams(window.location.search);
+  } catch {
+    return null;
+  }
+  if (!params.has("source")) return null;
+  const handoff = {
+    source: params.get("source"),
+    args: parseArgsParam(params.get("args")),
+    stdin: params.get("stdin") || "",
+  };
+  try {
+    const url = new URL(window.location.href);
+    for (const name of HANDOFF_PARAMS) url.searchParams.delete(name);
+    history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  } catch {
+    /* history is unavailable; the payload is already consumed either way */
+  }
+  return handoff;
+}
+
+/** Read (and clear) the legacy `sessionStorage` handoff. */
+function takeSessionHandoff() {
   let raw = null;
   try {
     raw = sessionStorage.getItem(HANDOFF_KEY);
@@ -64,6 +118,14 @@ function takeHandoff() {
     /* not JSON: fall through to the legacy bare-source form */
   }
   return { source: raw, args: [], stdin: "" };
+}
+
+function takeHandoff() {
+  // Any leftover storage copy is dropped even when the URL carried the
+  // payload, so a stale handoff can never survive to a later, unrelated load.
+  const fromUrl = takeUrlHandoff();
+  const fromStorage = takeSessionHandoff();
+  return fromUrl || fromStorage;
 }
 
 function applyHandoff() {
@@ -245,6 +307,9 @@ function run() {
     runId,
     artifactUrl,
     expectedAbi: entry.host_abi_version,
+    // Single authoritative source: Run executes exactly what the editor holds
+    // right now. It never reconstructs a program from the default source or
+    // from any consumed handoff state.
     source: els.source.value,
     args,
     stdin,
@@ -276,8 +341,9 @@ els.run.addEventListener("click", run);
 els.stop.addEventListener("click", () => stopCurrent("stopped"));
 els.version.addEventListener("change", onVersionChange);
 els.source.value = DEFAULT_SOURCE;
-// A handoff from the website's "Run in Playground" links replaces the default
-// source and populates arguments/input before any execution.
+// The initial program is the default one; a handoff from a host site's
+// "Run in Playground" link — carried by the navigation itself — replaces it,
+// along with the example's arguments/standard input, before any execution.
 applyHandoff();
 
 // The Worker is the primary cancellation mechanism; terminate it if the page
