@@ -52,7 +52,7 @@ export const aboutPage = {
             <li><strong>Repository:</strong> <a href="${site.repository}" target="_blank" rel="noopener">github.com/JoaoValentimTheo/aura-lang</a></li>
             <li><strong>Issues:</strong> <a href="${site.issues}" target="_blank" rel="noopener">issue tracker</a></li>
             <li><strong>Releases:</strong> <a href="${site.releases}" target="_blank" rel="noopener">releases</a></li>
-            <li><strong>Website:</strong> aura.lang.dev</li>
+            <li><strong>Website:</strong> ${site.publicUrl}</li>
           </ul>
           <div class="hero__actions" style="margin-top:var(--space-4)">
             <a class="btn btn--filled" href="${site.repository}" target="_blank" rel="noopener">${icon("github")} Source</a>
@@ -61,7 +61,7 @@ export const aboutPage = {
         </div>
         ${callout(
           "note",
-          "<p>GitHub is the project's source and development platform. The public website identity is <strong>aura.lang.dev</strong>.</p>",
+          "<p>GitHub is the project's source and development platform. The public website is hosted on <strong>GitHub Pages</strong>.</p>",
         )}
       </div>
     </div>

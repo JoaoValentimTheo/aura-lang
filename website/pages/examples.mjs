@@ -46,7 +46,7 @@ export const examplesPage = {
     <h2>${escapeHtml(e.title)}</h2>
     <p class="section__lede">${escapeHtml(e.summary)}</p>
   </div>
-  ${codeBlock({ source: e.source, title: `${e.id}.aura`, runnable: true, base })}
+  ${codeBlock({ source: e.source, title: `${e.id}.aura`, runnable: true, args: e.args, stdin: e.stdin, base })}
   ${e.note ? `<p>${e.note}</p>` : ""}
   ${e.output ? `<p class="muted">Expected output: <code>${escapeHtml(e.output.trimEnd())}</code></p>` : ""}
 </section>`,

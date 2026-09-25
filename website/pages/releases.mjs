@@ -28,10 +28,10 @@ export const releasesPage = {
       as 0.0.1 (<strong>language version 0.0.1</strong>) and adds portable
       execution, a versioned Playground, and the official website.</p>
       <ul>
-        <li>WebAssembly runtime built from the same interpreter (<code>wasm32-unknown-unknown</code>)</li>
+        <li>WebAssembly runtime built from the same interpreter</li>
         <li>An explicit host boundary; native and browser hosts behind one contract</li>
         <li>A versioned, immutable Playground with hashed runtime artifacts</li>
-        <li>The official website at <a href="${site.origin}">aura.lang.dev</a></li>
+        <li>The official website on <a href="${site.origin}">GitHub Pages</a></li>
         <li>Cross-platform release infrastructure with checksummed artifacts</li>
       </ul>
       <div class="hero__actions">

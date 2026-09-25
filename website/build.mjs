@@ -7,9 +7,8 @@
 // The deployment base is explicit and selected by the environment, never
 // assumed:
 //
-//   * GitHub Pages **project site** (https://<user>.github.io/aura-lang/):
+//   * GitHub Pages **project site** (https://joaovalentimtheo.github.io/aura-lang/):
 //     base = /aura-lang/
-//   * **custom domain** (https://aura.lang.dev/): base = /
 //
 // Precedence: `--base=<path>` on the command line, then the `AURA_SITE_BASE`
 // environment variable, then the project-site default `/aura-lang/` so the

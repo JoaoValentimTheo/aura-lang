@@ -90,7 +90,10 @@ function check(name, cond, detail) {
     }));
     check(`route ${route || "/"} has title`, meta.title.length > 0);
     check(`route ${route || "/"} has description`, meta.description.length > 0);
-    check(`route ${route || "/"} has canonical`, meta.canonical.startsWith("https://aura.lang.dev/"));
+    check(
+      `route ${route || "/"} has canonical`,
+      meta.canonical.startsWith("https://joaovalentimtheo.github.io/aura-lang/"),
+    );
     check(`route ${route || "/"} has og:title`, meta.ogTitle.length > 0);
     check(`route ${route || "/"} has h1`, meta.h1.length > 0);
     check(`route ${route || "/"} lang`, meta.lang === "en");
@@ -307,6 +310,194 @@ function check(name, cond, detail) {
   check("0.0.1 present but unavailable", options.some((o) => o.value === "0.0.1" && o.disabled));
 
   check("playground no page errors", errors.length === 0, errors.join("; "));
+  await page.close();
+}
+
+/* --------------------------------- run-in-playground example handoff */
+// Regression: selecting an example's Run action must load that exact example
+// (source, and its arguments/standard input) into the Playground and execute
+// it, with output corresponding to the selected example.
+{
+  const page = await browser.newPage();
+  async function loadExample(id) {
+    await page.goto(`${base}examples/`);
+    await page.click(`#${id} [data-run-example]`);
+    await page.waitForURL(/playground\//);
+    await page.waitForFunction(
+      () => document.querySelectorAll("#version option").length > 0,
+      { timeout: 15000 },
+    );
+    const loaded = await page.evaluate(() => ({
+      source: document.getElementById("source").value,
+      args: document.getElementById("args").value,
+      stdin: document.getElementById("stdin").value,
+    }));
+    await page.click("#run");
+    await page.waitForFunction(
+      () => {
+        const s = document.getElementById("status").textContent;
+        return s !== "running…" && !s.startsWith("running (");
+      },
+      { timeout: 20000 },
+    );
+    const out = await page.evaluate(() => ({
+      stdout: document.getElementById("stdout").textContent,
+      status: document.getElementById("status").textContent,
+    }));
+    return { loaded, out };
+  }
+
+  // A normal successful example.
+  let { loaded, out } = await loadExample("hello");
+  check("example hello loads source", loaded.source.includes('print("hello, Aura")'), JSON.stringify(loaded));
+  check("example hello runs", out.stdout === "hello, Aura\n", JSON.stringify(out));
+
+  // An example that reads arguments.
+  ({ loaded, out } = await loadExample("args"));
+  check("example args populates arguments", loaded.args === "Ada", JSON.stringify(loaded));
+  check("example args runs", out.stdout === "hello Ada\n", JSON.stringify(out));
+
+  // An example that reads standard input.
+  ({ loaded, out } = await loadExample("stdin"));
+  check("example stdin populates input", loaded.stdin === "hello\naura\n", JSON.stringify(loaded));
+  check("example stdin runs", out.stdout === "HELLO\nAURA\n", JSON.stringify(out));
+
+  // Selecting another example must replace the previous one.
+  ({ loaded, out } = await loadExample("expressions"));
+  check(
+    "selecting another example replaces the previous source",
+    loaded.source.includes("1 + 2 * 3") && !loaded.source.includes("hello, Aura"),
+    JSON.stringify(loaded),
+  );
+  check("example expressions runs", out.stdout === "7\nbigger\n3.5\n", JSON.stringify(out));
+  await page.close();
+}
+
+/* ------------------------------------------------- playground scrolling */
+// Regression: long output and long diagnostics must scroll inside their own
+// containers after Run, not stretch the page; repeated runs stay usable and
+// Stop must not corrupt the UI.
+{
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  await page.goto(`${base}playground/`);
+  await page.waitForFunction(() => document.querySelectorAll("#version option").length > 0, {
+    timeout: 15000,
+  });
+
+  async function longRun(source, timeout = 30000) {
+    await page.fill("#source", source);
+    await page.click("#run");
+    await page.waitForFunction(
+      () => {
+        const s = document.getElementById("status").textContent;
+        return s !== "running…" && !s.startsWith("running (");
+      },
+      { timeout },
+    );
+  }
+
+  const longStdout = "fn main() {\n let mut i = 0\n while i < 600 { print(i) i = i + 1 }\n}";
+  await longRun(longStdout);
+  let metrics = await page.evaluate(() => {
+    const o = document.getElementById("stdout");
+    const pageOverflow = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+    o.scrollTop = o.scrollHeight;
+    return {
+      scrollable: o.scrollHeight > o.clientHeight,
+      scrolled: o.scrollTop > 0,
+      pageOverflow,
+    };
+  });
+  check("long stdout scrolls inside its container", metrics.scrollable, JSON.stringify(metrics));
+  check("long stdout is reachable by scrolling", metrics.scrolled, JSON.stringify(metrics));
+  check(
+    "long stdout does not create unbounded page scroll",
+    metrics.pageOverflow < 4000,
+    JSON.stringify(metrics),
+  );
+
+  // Repeated runs remain usable.
+  await longRun("fn main() { print(99) }");
+  const repeat = await page.evaluate(() => document.getElementById("stdout").textContent);
+  check("repeated run after long output", repeat === "99\n", JSON.stringify(repeat));
+
+  // A program producing many diagnostics.
+  const manyDiags =
+    "fn main() {\n print(undefined_a)\n print(undefined_b)\n print(undefined_c)\n}";
+  await longRun(manyDiags);
+  const diagMetrics = await page.evaluate(() => {
+    const d = document.getElementById("diagnostics");
+    d.scrollTop = d.scrollHeight;
+    return { count: document.querySelectorAll("#diagnostics li:not(.empty)").length, scrolled: d.scrollTop > 0 };
+  });
+  check("diagnostics render", diagMetrics.count > 0, JSON.stringify(diagMetrics));
+
+  // Stop still leaves the UI consistent.
+  await page.fill("#source", "fn main() { while true {} }");
+  await page.click("#run");
+  await page.waitForFunction(
+    () => document.getElementById("status").textContent.startsWith("running"),
+    { timeout: 5000 },
+  );
+  await page.click("#stop");
+  await page.waitForFunction(
+    () => document.getElementById("status").textContent === "stopped",
+    { timeout: 5000 },
+  );
+  check("run re-enabled after stop", await page.isEnabled("#run"));
+  check("stop disabled after stop", (await page.isEnabled("#stop")) === false);
+  await page.close();
+}
+
+/* ----------------------------- narrow/short layout remains usable */
+// Regression: on a short landscape viewport the fixed pane height must fall
+// back to content height so the editor, inputs, and Run control are not clipped,
+// while long output still scrolls within its own container.
+{
+  const page = await browser.newPage({ viewport: { width: 667, height: 375 } });
+  await page.goto(`${base}playground/`);
+  await page.waitForFunction(() => document.querySelectorAll("#version option").length > 0, {
+    timeout: 15000,
+  });
+  await page.fill("#source", "fn main() {\n let mut i = 0\n while i < 400 { print(i) i = i + 1 }\n}");
+  await page.click("#run");
+  await page.waitForFunction(
+    () => {
+      const s = document.getElementById("status").textContent;
+      return s !== "running…" && !s.startsWith("running (");
+    },
+    { timeout: 30000 },
+  );
+  const m = await page.evaluate(() => {
+    const pane = document.querySelector(".pg-pane");
+    const out = document.getElementById("stdout");
+    out.scrollTop = out.scrollHeight;
+    return {
+      paneClipped: pane.scrollHeight > pane.clientHeight + 2,
+      runVisible:
+        document.getElementById("run").getBoundingClientRect().bottom <=
+        document.documentElement.scrollHeight,
+      outputScrolls: out.scrollHeight > out.clientHeight && out.scrollTop > 0,
+    };
+  });
+  check("short viewport does not clip the pane", m.paneClipped === false, JSON.stringify(m));
+  check("short viewport keeps Run reachable", m.runVisible === true, JSON.stringify(m));
+  check("short viewport output still scrolls", m.outputScrolls === true, JSON.stringify(m));
+  await page.close();
+}
+
+/* ------------------------------- no internal target strings in public UI */
+// The public pages must not expose internal toolchain identifiers such as the
+// Rust target triple.
+{
+  const page = await browser.newPage();
+  const terms = ["wasm32-unknown-unknown", "wasm-unknown", "target triple"];
+  for (const route of ["", "home", "runtime/", "releases/", "playground/", "docs/runtime-doc/"]) {
+    await page.goto(`${base}${route}`);
+    const text = await page.evaluate(() => document.body.innerText);
+    const leaked = terms.find((t) => text.includes(t));
+    check(`no internal target term on ${route || "/"}`, !leaked, leaked);
+  }
   await page.close();
 }
 

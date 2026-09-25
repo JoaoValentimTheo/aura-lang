@@ -6,10 +6,12 @@ export const site = {
   tagline: "A small, expression-oriented scripting language.",
   description:
     "Aura is a small, dynamically-typed, expression-oriented scripting language with a conservative static checker, a native Rust runtime, and a versioned in-browser WebAssembly Playground.",
-  // The intended public origin. Used for canonical URLs, Open Graph, sitemap,
-  // and the CNAME file written into the build. The GitHub repository path is
-  // deliberately not part of the public identity.
-  origin: "https://aura.lang.dev",
+  // The public origin. GitHub Pages is the definitive hosting platform, so the
+  // canonical origin is the project-site URL. It is used for canonical URLs,
+  // Open Graph, and the sitemap. The abandoned custom domain is not referenced.
+  origin: "https://joaovalentimtheo.github.io/aura-lang",
+  // Human-readable form of `origin`, for display in prose.
+  publicUrl: "joaovalentimtheo.github.io/aura-lang",
   repository: "https://github.com/JoaoValentimTheo/aura-lang",
   issues: "https://github.com/JoaoValentimTheo/aura-lang/issues",
   releases:

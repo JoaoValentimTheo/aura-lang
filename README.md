@@ -21,7 +21,7 @@ Version **`0.0.2`** is the current public release. It ships the frozen
 **`0.0.1` language semantics** and adds portable execution and tooling: a
 WebAssembly runtime built from the same interpreter, an explicit host
 boundary, a versioned browser Playground with immutable runtime artifacts, the
-official website at [aura.lang.dev](https://aura.lang.dev), and cross-platform
+official website on [GitHub Pages](https://joaovalentimtheo.github.io/aura-lang/), and cross-platform
 release infrastructure. `0.0.1` was the first usable public release: the
 language core, the runtime, the standard library (including scripting I/O), the
 CLI, the REPL, and the Python bridge.

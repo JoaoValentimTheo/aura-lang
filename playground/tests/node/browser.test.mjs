@@ -182,6 +182,57 @@ async function runAndWait(page, timeout = 15000) {
   await page.close();
 }
 
+// --- 7. host handoff loads source, arguments, and input ---------------------
+{
+  const { page } = await newPage();
+  // Seed the handoff the way a host site does before navigating to the
+  // Playground, then reload the page so the controller applies it on load.
+  await page.evaluate(() => {
+    sessionStorage.setItem(
+      "aura-playground-source",
+      JSON.stringify({
+        source: 'fn main() {\n print(args()[0])\n print(read_line())\n}',
+        args: ["Ada"],
+        stdin: "hello\n",
+      }),
+    );
+  });
+  await page.reload();
+  await page.waitForFunction(() => document.querySelectorAll("#version option").length > 0);
+  const loaded = await page.evaluate(() => ({
+    source: document.getElementById("source").value,
+    args: document.getElementById("args").value,
+    stdin: document.getElementById("stdin").value,
+    remaining: sessionStorage.getItem("aura-playground-source"),
+  }));
+  check("handoff loads source", loaded.source.includes("args()[0]"), JSON.stringify(loaded));
+  check("handoff loads arguments", loaded.args === "Ada", JSON.stringify(loaded));
+  check("handoff loads standard input", loaded.stdin === "hello\n", JSON.stringify(loaded));
+  check("handoff is consumed once", loaded.remaining === null, JSON.stringify(loaded));
+  const r = await runAndWait(page);
+  check("handoff program executes", r.stdout === "Ada\nhello\n", JSON.stringify(r));
+  await page.close();
+}
+
+// --- 8. long output scrolls inside its own container ------------------------
+{
+  const { page } = await newPage();
+  await setSource(page, "fn main() {\n let mut i = 0\n while i < 600 { print(i) i = i + 1 }\n}");
+  await runAndWait(page);
+  const metrics = await page.evaluate(() => {
+    const o = document.getElementById("stdout");
+    o.scrollTop = o.scrollHeight;
+    return {
+      scrollable: o.scrollHeight > o.clientHeight,
+      scrolled: o.scrollTop > 0,
+      atBottom: Math.abs(o.scrollTop + o.clientHeight - o.scrollHeight) <= 2,
+    };
+  });
+  check("standalone long stdout scrolls", metrics.scrollable, JSON.stringify(metrics));
+  check("standalone long stdout reachable", metrics.atBottom, JSON.stringify(metrics));
+  await page.close();
+}
+
 await browser.close();
 server.close();
 

@@ -40,9 +40,11 @@ const runtime = await AuraRuntime.fromBytes(readFileSync(wasmPath), "examples");
 let passed = 0;
 let failed = 0;
 for (const ex of examples) {
+  // Arguments and input come from the example model itself, the same fields
+  // the site hands to the Playground. No example is special-cased by id.
   const options = {
-    args: ex.id === "args" ? ["Ada"] : [],
-    stdin: ex.id === "stdin" ? "hello\naura\n" : null,
+    args: Array.isArray(ex.args) ? ex.args : [],
+    stdin: typeof ex.stdin === "string" && ex.stdin.length > 0 ? ex.stdin : null,
   };
   const result = runtime.run(ex.source, options);
   if (result.status !== "ok") {

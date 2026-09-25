@@ -14,7 +14,13 @@
 //   summary  one-line description
 //   source   the Aura program
 //   output   the expected stdout (only for runnable examples)
+//   args     optional program arguments (one per line in the Playground)
+//   stdin    optional standard input
 //   note     optional explanation shown under the code
+//
+// `args` and `stdin` are part of the example model: the website hands them to
+// the Playground alongside the source, and the build validation uses the same
+// fields, so an example is never special-cased by its id.
 
 export const examples = [
   {
@@ -212,6 +218,7 @@ fn main() {
     tags: ["io", "cli"],
     summary: "Read program arguments with `args()`.",
     output: "hello Ada\n",
+    args: ["Ada"],
     source: `fn main() {
     let who = args()[0]
     print(f"hello {who}")
@@ -225,6 +232,7 @@ fn main() {
     tags: ["io", "stdin"],
     summary: "Read standard input line by line until `none`.",
     output: "HELLO\nAURA\n",
+    stdin: "hello\naura\n",
     source: `fn main() {
     let mut line = read_line()
     while line != none {

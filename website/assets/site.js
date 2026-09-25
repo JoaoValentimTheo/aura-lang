@@ -140,19 +140,38 @@ function markCopied(btn) {
 }
 
 /* --------------------------------------------------- run-in-playground */
-// A "Run" button on an example stashes the source so the Playground can load
-// it. The Playground reads `sessionStorage` on load; this never executes code.
+// A "Run" button on an example stashes the program — source plus its arguments
+// and standard input, when the example defines them — so the Playground can
+// load the *exact* example. This never executes code.
+const PLAYGROUND_HANDOFF_KEY = "aura-playground-source";
 for (const link of document.querySelectorAll("[data-run-example]")) {
   link.addEventListener("click", () => {
     const block = link.closest(".code-block");
     const btn = block && block.querySelector("[data-copy]");
     const code = btn ? btn.getAttribute("data-code") : null;
-    if (code) {
-      try {
-        sessionStorage.setItem("aura-playground-source", code);
-      } catch {
-        /* ignore */
+    if (code == null) return;
+    const pre = block && block.querySelector("pre");
+    let args = [];
+    let stdin = "";
+    if (pre) {
+      const rawArgs = pre.getAttribute("data-args");
+      if (rawArgs) {
+        try {
+          const parsed = JSON.parse(rawArgs);
+          if (Array.isArray(parsed)) args = parsed.map(String);
+        } catch {
+          /* malformed metadata is ignored; source still loads */
+        }
       }
+      stdin = pre.getAttribute("data-stdin") || "";
+    }
+    try {
+      sessionStorage.setItem(
+        PLAYGROUND_HANDOFF_KEY,
+        JSON.stringify({ source: code, args, stdin }),
+      );
+    } catch {
+      /* ignore */
     }
   });
 }

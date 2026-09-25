@@ -37,8 +37,20 @@ export function icon(name) {
 /**
  * A highlighted Aura code block with a copy button and an optional
  * "Run in Playground" action that hands the source to the Playground page.
+ *
+ * When `runnable` is set, `args` (array) and `stdin` (string) travel with the
+ * source as data attributes, so a program that reads arguments or standard
+ * input arrives in the Playground ready to run.
  */
-export function codeBlock({ source, lang = "aura", title, runnable = false, base = "/" }) {
+export function codeBlock({
+  source,
+  lang = "aura",
+  title,
+  runnable = false,
+  args = null,
+  stdin = null,
+  base = "/",
+}) {
   const code = lang === "aura" ? highlight(source) : escapeHtml(source);
   const head = title || lang;
   const run = runnable
@@ -48,8 +60,11 @@ export function codeBlock({ source, lang = "aura", title, runnable = false, base
       )}#code" data-run-example>${icon("play")}<span>Run</span></a>`
     : "";
   // The source is embedded in a data attribute for copy/run without a second
-  // fetch. It is attribute-escaped.
+  // fetch. It is attribute-escaped. Arguments and input travel alongside so the
+  // Playground receives the exact example, not just its source.
   const data = escapeHtml(source);
+  const dataArgs = args && args.length ? escapeHtml(JSON.stringify(args)) : "";
+  const dataStdin = stdin ? escapeHtml(stdin) : "";
   return `<div class="code-block">
   <div class="code-block__head">
     <span class="code-block__title">${escapeHtml(head)}</span>
@@ -62,7 +77,9 @@ export function codeBlock({ source, lang = "aura", title, runnable = false, base
   </div>
   <pre tabindex="0" role="region" aria-label="${escapeHtml(
     lang,
-  )} code">${code ? `<code class="language-${escapeHtml(lang)}">${code}</code>` : ""}</pre>
+  )} code"${dataArgs ? ` data-args="${dataArgs}"` : ""}${
+    dataStdin ? ` data-stdin="${dataStdin}"` : ""
+  }>${code ? `<code class="language-${escapeHtml(lang)}">${code}</code>` : ""}</pre>
 </div>`;
 }
 

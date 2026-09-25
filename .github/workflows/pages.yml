@@ -1,25 +1,19 @@
-name: Deploy website (GitHub Pages fallback)
+name: Deploy website (GitHub Pages)
 
 # Builds the static Aura website (including the versioned Playground runtime)
 # and deploys it to GitHub Pages.
 #
-# FALLBACK ROLE. Primary website hosting is Vercel at https://aura.lang.dev/
-# (see docs/vercel-migration.md and vercel.json). This workflow keeps the
-# GitHub Pages **project site** available as a fallback until the Vercel
-# deployment and the custom domain are verified. It is not the primary host.
+# GitHub Pages is the definitive website hosting platform.
 #
 # Deployment base. The site is served from an explicit base path, never an
 # assumed one:
 #
-#   * GitHub Pages project site — https://<user>.github.io/aura-lang/
+#   * GitHub Pages project site — https://joaovalentimtheo.github.io/aura-lang/
 #     AURA_SITE_BASE=/aura-lang/   (this workflow)
-#   * root-domain host (Vercel) — https://aura.lang.dev/
-#     AURA_SITE_BASE=/             (see vercel.json)
 #
 # The build does NOT emit a `CNAME` file: a `CNAME` makes GitHub Pages claim
-# the named domain and 301-redirect this project URL to it, which is wrong for
-# a fallback. `CNAME` emission is opt-in (`AURA_EMIT_CNAME=1`) and reserved for
-# a deliberate Pages custom-domain deployment.
+# a custom domain and 301-redirect this project URL to it, which is exactly
+# what broke the public deployment before. No such domain is configured.
 #
 # The site is fully static: no server, no database, no remote execution. The
 # Playground runs entirely in the browser.
@@ -73,11 +67,10 @@ jobs:
       - name: Verify versioned runtime manifest
         run: node playground/build.mjs --check
 
-      # The deployment base is explicit: the project-site base unless the
-      # AURA_SITE_BASE repository variable selects the custom-domain root.
+      # The deployment base is the explicit GitHub Pages project-site base.
       - name: Build the website
         env:
-          AURA_SITE_BASE: ${{ vars.AURA_SITE_BASE || '/aura-lang/' }}
+          AURA_SITE_BASE: /aura-lang/
         run: |
           echo "Building website with base: $AURA_SITE_BASE"
           node website/build.mjs
@@ -87,24 +80,19 @@ jobs:
 
       - name: Validate links and required assets
         env:
-          AURA_SITE_BASE: ${{ vars.AURA_SITE_BASE || '/aura-lang/' }}
+          AURA_SITE_BASE: /aura-lang/
         run: |
           node website/tests/check-links.mjs
           node website/tests/check-base.mjs
 
       - name: Assert internal links use the deployment base
         env:
-          AURA_SITE_BASE: ${{ vars.AURA_SITE_BASE || '/aura-lang/' }}
+          AURA_SITE_BASE: /aura-lang/
         run: |
           set -euo pipefail
           base="${AURA_SITE_BASE}"
-          if [ "$base" = "/" ]; then
-            echo "custom-domain build: root-relative links are expected"
-            exit 0
-          fi
-          # Under a project base, no generated HTML may reference an internal
-          # path outside that base (external URLs, fragments, and mailto are
-          # allowed).
+          # No generated HTML may reference an internal path outside the
+          # project base (external URLs, fragments, and mailto are allowed).
           stray=$(grep -rhoE '(href|src)="/[^"]*"' website/dist --include='*.html' \
             | grep -v "\"${base}" || true)
           if [ -n "$stray" ]; then

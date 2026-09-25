@@ -74,10 +74,10 @@ export const runtimePage = {
         <h2>Execution substrates</h2>
         <p>On native targets the interpreter runs on a dedicated 64 MiB stack,
         so the language's own recursion limit (<code>E4011</code>) is reached
-        before any host-stack limit. On <code>wasm32-unknown-unknown</code> it
-        runs inline on the engine stack; the parser's grouping backstop is
-        calibrated per substrate so over-deep input is always <code>E1015</code>,
-        never a host failure.</p>
+        before any host-stack limit. In the browser runtime it runs inline on
+        the engine stack; the parser's grouping backstop is calibrated per
+        substrate so over-deep input is always <code>E1015</code>, never a host
+        failure.</p>
         <h2>Versioned artifacts</h2>
         <p>Each runtime build is an immutable artifact identified by version and
         SHA-256. A version entry records the language version, artifact, hash,

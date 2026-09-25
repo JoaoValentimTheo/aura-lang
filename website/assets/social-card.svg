@@ -18,5 +18,5 @@
   <text x="90" y="470" font-family="JetBrains Mono, Menlo, monospace"
         font-size="30" fill="#bcc2ff">Rust runtime · WebAssembly Playground · stable diagnostics</text>
   <text x="90" y="560" font-family="Inter, Helvetica, Arial, sans-serif"
-        font-size="28" fill="#c4c5dd">aura.lang.dev</text>
+        font-size="28" fill="#c4c5dd">github.io/aura-lang</text>
 </svg>

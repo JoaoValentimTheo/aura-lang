@@ -4,25 +4,20 @@
 // (the generator and the link checker) consumes the same value. A base change
 // therefore moves the whole site coherently.
 //
-// Deployment targets:
-//   * GitHub Pages project site — https://<user>.github.io/aura-lang/
+// Deployment target:
+//   * GitHub Pages project site — https://joaovalentimtheo.github.io/aura-lang/
 //     base = /aura-lang/
-//   * custom domain — https://aura.lang.dev/
-//     base = /
 //
 // Precedence:
 //   1. an explicit `--base=<path>` argument,
 //   2. the `AURA_SITE_BASE` environment variable,
 //   3. the built-in default.
 //
-// The built-in default is the **project-site** base (`/aura-lang/`) because
-// that is the currently active GitHub Pages deployment; a custom-domain build
-// must state its intent explicitly (`--base=/` or `AURA_SITE_BASE=/`). This
-// keeps a bare `node website/build.mjs` correct for the deployment that
-// actually exists.
+// The built-in default is the **project-site** base (`/aura-lang/`), which is
+// the definitive GitHub Pages deployment, so a bare `node website/build.mjs`
+// is correct without extra configuration.
 
 export const PROJECT_BASE = "/aura-lang/";
-export const CUSTOM_DOMAIN_BASE = "/";
 
 /** Normalize a base so it always starts and ends with exactly one slash. */
 export function normalizeBase(raw) {

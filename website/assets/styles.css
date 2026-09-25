@@ -1189,6 +1189,7 @@ table.data tr:last-child td {
   gap: var(--space-4);
   padding: var(--space-4) 0 var(--space-10);
   min-height: 70vh;
+  align-items: start;
 }
 
 .pg-pane {
@@ -1200,6 +1201,25 @@ table.data tr:last-child td {
   border-radius: var(--shape-lg);
   padding: var(--space-4);
   min-height: 0;
+  /* A definite height makes the pane's own scroll regions work: without it the
+     flex-basis percentages below resolve against the content, so long output
+     stretches the whole page instead of scrolling inside the pane. On very
+     short viewports we fall back to content height so nothing (editor, inputs,
+     Run) is clipped; the page scrolls instead. */
+  height: min(78vh, 760px);
+  overflow: hidden;
+}
+
+@media (max-height: 560px) {
+  .pg-pane {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+  .pg-stdout,
+  .pg-diagnostics {
+    max-height: 240px;
+  }
 }
 
 .pg-pane__head {

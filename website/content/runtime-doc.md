@@ -52,7 +52,7 @@ The pipeline is identical on both:
 lex → parse → check → execute
 ```
 
-The `wasm32-unknown-unknown` module has zero imports. The Playground can pass it
+The browser runtime module has zero imports. The Playground can pass it
 source and options and read back a structured JSON result, and nothing else.
 
 ## Versioned runtime artifacts

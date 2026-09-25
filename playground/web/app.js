@@ -32,9 +32,47 @@ const DEFAULT_SOURCE = `fn main() {
 }
 `;
 
+// The key a host site (the Aura website) uses to hand a selected example to
+// the Playground. The value is JSON `{ source, args, stdin }`; a bare source
+// string is also accepted for backwards compatibility. The handoff is applied
+// once on load, then cleared so a later manual reload starts fresh.
+const HANDOFF_KEY = "aura-playground-source";
+
 let manifest = null;
 let currentRun = null;
 let generation = 0;
+
+function takeHandoff() {
+  let raw = null;
+  try {
+    raw = sessionStorage.getItem(HANDOFF_KEY);
+    sessionStorage.removeItem(HANDOFF_KEY);
+  } catch {
+    return null;
+  }
+  if (raw == null) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") {
+      return {
+        source: typeof parsed.source === "string" ? parsed.source : null,
+        args: Array.isArray(parsed.args) ? parsed.args.map(String) : [],
+        stdin: typeof parsed.stdin === "string" ? parsed.stdin : "",
+      };
+    }
+  } catch {
+    /* not JSON: fall through to the legacy bare-source form */
+  }
+  return { source: raw, args: [], stdin: "" };
+}
+
+function applyHandoff() {
+  const handoff = takeHandoff();
+  if (!handoff) return;
+  if (handoff.source != null) els.source.value = handoff.source;
+  els.args.value = handoff.args.join("\n");
+  els.stdin.value = handoff.stdin;
+}
 
 function setStatus(text, kind) {
   els.status.textContent = text;
@@ -238,6 +276,9 @@ els.run.addEventListener("click", run);
 els.stop.addEventListener("click", () => stopCurrent("stopped"));
 els.version.addEventListener("change", onVersionChange);
 els.source.value = DEFAULT_SOURCE;
+// A handoff from the website's "Run in Playground" links replaces the default
+// source and populates arguments/input before any execution.
+applyHandoff();
 
 // The Worker is the primary cancellation mechanism; terminate it if the page
 // itself is going away so nothing keeps running invisibly.

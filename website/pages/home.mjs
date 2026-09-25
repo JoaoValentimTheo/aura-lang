@@ -191,9 +191,8 @@ fn main() {
       </div>
       <div class="card">
         <h3>WASM runtime</h3>
-        <p>The Playground loads a zero-import <code>wasm32-unknown-unknown</code>
-        module built from this repository's runtime. It reaches no DOM, network,
-        or storage.</p>
+        <p>The Playground loads a zero-import WebAssembly module built from
+        this repository's runtime. It reaches no DOM, network, or storage.</p>
       </div>
       <div class="card">
         <h3>Versioned artifacts</h3>
