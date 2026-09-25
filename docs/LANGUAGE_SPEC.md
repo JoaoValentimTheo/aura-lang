@@ -2290,6 +2290,12 @@ implementers do not assume guarantees the language does not make.
   (§15.7); built-ins, methods, and dynamic callables are positional.
 * **No nested named function declarations**; use lambdas (§15.8).
 * **No `for ... else`, no step on ranges** (§22.1).
+* **No `a..b` range literal.** The only range construction is `range(n)` /
+  `range(a, b)` (§22.1); `1..2` is an `E1006` syntax error, not a range. (A
+  range value is *displayed* as `start..end`, which is output, not syntax.)
+* **No general type union.** The only union spelling is `T | none` (§4.3);
+  `int | float` and `string | int` are `E1006` syntax errors in every type
+  position. Widening unions is a future extension, not a current feature.
 * **No lexicographic ordering for lists/maps/structs/enums/ranges** (§12).
 
 ### 34.2 Static-checking limitations

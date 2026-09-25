@@ -96,6 +96,8 @@ Aura today is a tree-walking interpreted language with a conservative checker.
 * `match` arm bodies that are bare control flow keywords need a block.
 * No nested named function declarations.
 * No range step or `for…else`.
+* No `a..b` range literal (only `range(a, b)`; §"Current vs. Future").
+* No general type union (only `T | none`; §"Current vs. Future").
 * No block comments.
 * No tuple type or lexicographic ordering for compound values.
 * No closure lifetime/ownership model (deliberate).
@@ -151,6 +153,8 @@ Classification keys:
 | No empty-map literal | **B** | Real expressiveness gap; needs a syntax decision |
 | No tuple type | **C** | Deliberate; list sugar is coherent for this language |
 | No range step | **B** | Expressible with `for` + arithmetic or a stdlib helper |
+| No `a..b` range literal | **B** | Ergonomic sugar over `range(a, b)`; a future extension, not a gap |
+| No general type union | **E** | `T | none` is the only frozen union; widening is a type-system redesign |
 | No lexicographic ordering | **C** | Deliberate; ordering is a scalar relation here |
 | No nested named functions | **C** | Lambdas cover the use case |
 | No `else if` | **C** | Deliberate "one spelling" decision; `match`/nesting cover it |
@@ -312,6 +316,69 @@ effects; and whether it redesigns a frozen concept.
 * A formatter, LSP, or package manager is largely orthogonal to the language
   core. The lexer drops comments, so lossless formatting needs lexer changes;
   this is a separate track.
+
+---
+
+## Current vs. Future: Type and Range Boundary
+
+This section exists to keep planned design distinct from the **frozen,
+normative** language. Nothing here is implemented or promised; it is recorded
+so that future developers do not mistake a design direction for current
+behavior. The single authority remains `docs/LANGUAGE_SPEC.md`.
+
+### Type unions
+
+**Current (normative).** The only union spelling is `T | none`
+(`LANGUAGE_SPEC.md` §4.3). Any other `|` union — `int | float`,
+`string | int`, and so on — is an `E1006` syntax error in every type position
+(alias target, binding, parameter, return, struct field, enum payload, and
+collection element). This is enforced by the parser and locked by regression
+tests (`tests/parser.rs::general_union_is_rejected_in_every_type_position`).
+
+```aura
+type Id = int          # current: transparent alias
+type Opt = int | none  # current: the only union form
+```
+
+**Future design direction (not current).** A general union that widens a value
+to several primitive types would be a language extension, not a bug fix. A
+plausible direction — if an RFC accepts it — is:
+
+```aura
+type Number = int | float
+type ID = string | int
+type UserID = ID       # alias chaining on top of a union
+```
+
+This would require a new `Ty` representation, a compatibility rule wider than
+"same type", and changes to the checker/runtime. It is **out of scope** until
+the RFC process (`docs/rfcs/README.md`) accepts it.
+
+### Ranges
+
+**Current (normative).** The language defines `range(n)` and `range(a, b)` only
+(`LANGUAGE_SPEC.md` §22.1): start-inclusive, end-exclusive, fixed step `+1`,
+lazy in `for`. There is no `a..b` operator; `1..2` is an `E1006` syntax error
+(`tests/parser.rs::future_dot_dot_range_syntax_is_rejected`). Note that `a..b`
+is *display* for a range value (`range(1, 3)` prints `1..3`), which is distinct
+from any source syntax.
+
+```aura
+range(0, 10)   # current: the only range construction
+```
+
+**Future design direction (not current).** A Rust-aligned `a..b` literal that
+denotes a `range` value (plus a possible `a..=b` inclusive form) is a plausible
+future ergonomic sugar:
+
+```aura
+1..10          # future: would denote range(1, 10)
+```
+
+Adding it would extend the lexer/parser and the precedence table, and would
+need an explicit decision about `..=` and about interaction with field access
+(`x.y`) and float literals (`1.5`). It is **out of scope** until the RFC
+process accepts it.
 
 ---
 
