@@ -242,3 +242,109 @@ fn non_exhaustive_match_has_its_own_code() {
         codes::NO_MATCH
     );
 }
+
+// ------------------------------------------- language evolution: unions/ranges
+
+/// A very long union chain is accepted and bounded by the existing parser
+/// nesting budget, never by unbounded recursion.
+#[test]
+fn long_union_chain_is_bounded() {
+    // A 200-member union parses and checks without blowing the stack.
+    let members = (0..200)
+        .map(|i| format!("type T{i} = int"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let union = (0..200)
+        .map(|i| format!("T{i}"))
+        .collect::<Vec<_>>()
+        .join(" | ");
+    let src = format!("{members}\ntype All = {union}\nfn main() {{ let x: All = 1 }}");
+    let module = aura::parse::parse(&src).expect("parses");
+    assert_eq!(Checker::module(&module).map_or_else(|d| d.code, |()| 0), 0);
+
+    // A very long *flat* union is bounded by the parser's iterative member
+    // loop (not recursion), so it checks cleanly rather than overflowing.
+    let flat = format!("type D = {}", vec!["int"; 5000].join(" | "));
+    let module = aura::parse::parse(&flat).expect("parses");
+    assert_eq!(Checker::module(&module).map_or_else(|d| d.code, |()| 0), 0);
+
+    // A deeply nested type expression on the language's own large-stack
+    // substrate does not crash; it is a deterministic diagnostic.
+    let deep = format!(
+        "fn main() {{ let x: {}int{} = 1 }}",
+        "[".repeat(5000),
+        "]".repeat(5000)
+    );
+    assert!(run_source(&deep, "<adv>").is_err());
+}
+
+/// A deep alias chain resolves iteratively through unions without unbounded
+/// recursion, and a cyclic union alias is `E3002` rather than a crash.
+#[test]
+fn deep_and_cyclic_union_aliases_are_safe() {
+    let chain = (0..100)
+        .map(|i| {
+            if i == 0 {
+                "type T0 = int | float".to_string()
+            } else {
+                format!("type T{i} = T{}", i - 1)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let src = format!("{chain}\nfn main() {{ let x: T99 = 1 }}");
+    let module = aura::parse::parse(&src).expect("parses");
+    assert_eq!(Checker::module(&module).map_or_else(|d| d.code, |()| 0), 0);
+
+    assert_eq!(check_code("type A = A | int"), codes::UNKNOWN_TYPE);
+    assert_eq!(
+        check_code("type A = B | int\ntype B = A"),
+        codes::UNKNOWN_TYPE
+    );
+    assert_eq!(
+        check_code("type A = B | int\ntype B = C\ntype C = A"),
+        codes::UNKNOWN_TYPE
+    );
+    assert_eq!(
+        check_code("type A = [B] | int\ntype B = A"),
+        codes::UNKNOWN_TYPE
+    );
+}
+
+/// Range literals around token boundaries and numeric ambiguity behave
+/// deterministically and never consume a float.
+#[test]
+fn range_and_numeric_ambiguity_is_deterministic() {
+    // `1..2` is a range of two ints, not a float and a dot.
+    assert_eq!(out("fn main() { print(len(1..2)) }"), "1\n");
+    // Floats still parse normally alongside int range bounds.
+    assert_eq!(out("fn main() { print([1.5, 2..4]) }"), "[1.5, 2..4]\n");
+    // A float bound anywhere is rejected; no implicit coercion.
+    assert_eq!(code("fn main() { print(2.5..4) }"), codes::TYPE_MISMATCH);
+    assert_eq!(code("fn main() { print(1.0..3) }"), codes::TYPE_MISMATCH);
+    // `1..1.5` has a float end bound: rejected.
+    assert_eq!(code("fn main() { print(1..1.5) }"), codes::TYPE_MISMATCH);
+    // A malformed `...` is a syntax error, not a range.
+    let src = "fn main() { print(1...2) }";
+    let d = aura::parse::parse(src).expect_err("malformed range");
+    assert_eq!(d.code, codes::EXPECTED);
+}
+
+/// Multiline comments around token boundaries and before EOF never corrupt
+/// the lexer, and an unterminated one is a bounded `E1005`.
+#[test]
+fn comments_at_boundaries_are_safe() {
+    assert_eq!(
+        out("fn main() { let x = 1 <!-- c --!> + 2\n print(x) }"),
+        "3\n"
+    );
+    // Comment between a receiver and its method.
+    assert_eq!(out("fn main() { print([1]<!-- c --!>.len()) }"), "1\n");
+    // Deeply many comments do not overflow.
+    let many = "<!-- c --!>".repeat(2000);
+    assert_eq!(out(&format!("fn main() {{ {many} print(1) }}")), "1\n");
+    // Unterminated is E1005.
+    let src = "fn main() { print(1) } <!-- nope";
+    let d = aura::run_source(src, "<adv>").expect_err("unterminated");
+    assert_eq!(d.code, codes::UNTERMINATED_COMMENT);
+}

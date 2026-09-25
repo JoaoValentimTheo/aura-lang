@@ -300,9 +300,13 @@ statement, inside any block, and at end of line.
 significant in expression position; this is the ordinary `else` newline rule
 and is not a comment-specific restriction.
 
-**Normative rule.** Block comments are **not** part of Feature 006 and remain
-future work; the spec sentence "There are no block comments" (§3.5) is
+**Normative rule.** Block comments are **not** part of Feature 006 and were
+out of scope for it; the spec sentence "There are no block comments" (§3.5) was
 unchanged by this feature.
+
+> **Note (superseded).** The language-evolution pass subsequently added
+> `<!-- ... --!>` multiline comments. `docs/LANGUAGE_SPEC.md` §3.5 is the
+> current authority; this historical design note is retained as written.
 
 ---
 

@@ -35,11 +35,14 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The version of the Aura *language semantics*.
 ///
-/// The language specification (`docs/LANGUAGE_SPEC.md`) is frozen at this
-/// version. It changes only through the RFC process, independently of the
-/// release version. Aura 0.0.2 ships the 0.0.1 language: the 0.0.2 release adds
-/// the WebAssembly runtime, the host boundary, the Playground, the website, and
-/// release infrastructure, with no semantic change.
+/// The language specification (`docs/LANGUAGE_SPEC.md`) is normative at this
+/// identifier. It changes only through the RFC process, independently of the
+/// release version. Aura `0.0.2` now ships the evolved language: general union
+/// types, transparent union composition through aliases, the Rust-style
+/// `a..b` range literal, and `<!-- ... --!>` multiline comments. The numeric
+/// identifier is retained because it is a release-boundary identity asserted
+/// by `tests/contract.rs`; the semantics it denotes are those of the current
+/// `docs/LANGUAGE_SPEC.md`.
 pub const LANGUAGE_VERSION: &str = "0.0.1";
 
 /// Stack size for the interpreter thread. Recursive Aura programs recurse

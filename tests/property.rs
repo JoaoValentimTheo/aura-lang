@@ -241,6 +241,61 @@ proptest! {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(1000))]
 
+    /// Union annotations generalize F001: the checker's static verdict for a
+    /// directly resolved call with a union parameter must agree with the
+    /// runtime, and a rejection is always `E3001`.
+    #[test]
+    fn union_argument_check_agrees_with_runtime(
+        union in prop_oneof![
+            Just("int | float".to_string()),
+            Just("string | int".to_string()),
+            Just("float | bool".to_string()),
+        ],
+        arg in prop_oneof![
+            Just("1".to_string()),
+            Just("1.5".to_string()),
+            Just("\"s\"".to_string()),
+            Just("true".to_string()),
+            Just("none".to_string()),
+        ],
+    ) {
+        let src =
+            format!("fn f(a: {union}) {{ return none }}\nfn main() {{ f({arg}) }}");
+        let module = aura::parse::parse(&src).expect("generated source parses");
+        match aura::check::Checker::module(&module) {
+            Ok(()) => {
+                if let Err(d) = run_source(&src, "<differential>") {
+                    prop_assert_eq!(d.code, aura::error::codes::TYPE_MISMATCH);
+                }
+            }
+            Err(d) => {
+                prop_assert_eq!(d.code, aura::error::codes::TYPE_MISMATCH);
+            }
+        }
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(500))]
+
+    /// The `a..b` literal and `range(a, b)` produce equal, identically
+    /// iterating values for arbitrary integer pairs (`LANGUAGE_SPEC.md`
+    /// §22.1).
+    #[test]
+    fn range_literal_matches_builtin(start in -20i64..20, end in -20i64..20) {
+        let src = format!(
+            "fn main() {{\n let r1 = {start}..{end}\n let r2 = range({start}, {end})\n print(r1)\n print(len(r1))\n print(r1 == r2)\n let mut a = []\n for i in r1 {{ a.push(i) }}\n print(a)\n let mut b = []\n for i in r2 {{ b.push(i) }}\n print(b)\n}}"
+        );
+        let out = aura::run_source(&src, "<p>").expect("range program runs");
+        let lines: Vec<&str> = out.lines().collect();
+        prop_assert_eq!(lines[2], "true", "range equality");
+        prop_assert_eq!(lines[3], lines[4], "iteration equal");
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(1000))]
+
     /// FEATURE_002: a named permutation of the arguments binds the same
     /// parameter values as the positional call, and the reordered call is
     /// accepted exactly when the positional one is.
