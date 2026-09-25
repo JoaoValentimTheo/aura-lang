@@ -94,6 +94,8 @@ pub mod codes {
     pub const INVALID_ESCAPE: u16 = 1003;
     /// Unterminated string literal.
     pub const UNTERMINATED_STRING: u16 = 1004;
+    /// Unterminated multiline comment (`<!--` without `--!>`).
+    pub const UNTERMINATED_COMMENT: u16 = 1005;
     /// Expected a different token.
     pub const EXPECTED: u16 = 1006;
     /// An expression, block, or statement nests too deeply.

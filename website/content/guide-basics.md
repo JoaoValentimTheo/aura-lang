@@ -70,4 +70,6 @@ let maybe: int | none = none
 
 ## Comments
 
-A comment runs from `#` to the end of the line. There are no block comments.
+A line comment runs from `#` to the end of the line. A multiline comment is
+written `<!-- ... --!>` and may span any number of lines; both kinds of comment
+are discarded before parsing. An unterminated multiline comment is `E1005`.

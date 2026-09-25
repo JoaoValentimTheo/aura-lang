@@ -82,8 +82,21 @@ pub fn run_with<R: BufRead, W: Write>(mut reader: R, mut writer: W) -> Result<()
 fn unbalanced(src: &str) -> bool {
     let mut depth = 0i32;
     let mut in_str: Option<char> = None;
+    let mut in_block_comment = false;
     let mut prev = '\0';
-    for c in src.chars() {
+    let bytes = src.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i] as char;
+        if in_block_comment {
+            if src[i..].starts_with("--!>") {
+                in_block_comment = false;
+                i += 4;
+                continue;
+            }
+            i += 1;
+            continue;
+        }
         match in_str {
             Some(q) => {
                 if c == q && prev != '\\' {
@@ -95,15 +108,27 @@ fn unbalanced(src: &str) -> bool {
                 '{' => depth += 1,
                 '}' => depth -= 1,
                 '#' => {
-                    // comment to end of line
-                    break;
+                    // line comment: skip to end of line
+                    while i < bytes.len() && bytes[i] != b'\n' {
+                        i += 1;
+                    }
+                    prev = '\0';
+                    continue;
+                }
+                '<' if src[i..].starts_with("<!--") => {
+                    in_block_comment = true;
+                    i += 4;
+                    continue;
                 }
                 _ => {}
             },
         }
         prev = c;
+        i += 1;
     }
-    depth > 0
+    // A submission is incomplete while braces are open or a multiline comment
+    // has not been closed yet, so the REPL keeps reading continuation lines.
+    depth > 0 || in_block_comment
 }
 
 fn eval_line<W: Write>(
