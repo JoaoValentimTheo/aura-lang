@@ -65,8 +65,9 @@ try {
 if (havePlaywright) {
   run("browser", [join(here, "browser.test.mjs")]);
   run("worker", [join(here, "worker.test.mjs")]);
+  run("cache", [join(here, "cache.test.mjs")]);
 } else {
-  console.log("\n=== browser/worker ===\nSKIPPED: Playwright not installed.");
+  console.log("\n=== browser/worker/cache ===\nSKIPPED: Playwright not installed.");
   console.log("Install with: (cd playground && npm install && npx playwright install chromium)");
 }
 

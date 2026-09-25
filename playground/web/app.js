@@ -187,7 +187,15 @@ function selectedVersion() {
 }
 
 async function loadManifest() {
-  const response = await fetch("./runtimes/manifest.json");
+  // The runtime *manifest* is mutable metadata: it changes whenever a runtime
+  // version is added. The immutable artifacts it names are content-addressed by
+  // version and can be cached forever, but the manifest itself must be
+  // revalidated on every load, or a browser holding a pre-deploy copy would
+  // render a stale version list (for example, missing a newly published
+  // development runtime). `no-cache` allows a cached response only after the
+  // server confirms it is still current (a cheap 304), so no manual
+  // cache-busting token is needed and the behavior is deterministic.
+  const response = await fetch("./runtimes/manifest.json", { cache: "no-cache" });
   if (!response.ok) throw new Error(`cannot load manifest (${response.status})`);
   manifest = await response.json();
   els.version.replaceChildren();
