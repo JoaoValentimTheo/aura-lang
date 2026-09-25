@@ -539,3 +539,88 @@ fn else_if_try_finally_interaction() {
     // i=0: continue -> finally prints f0; i=1: break -> finally prints f1; returns 7.
     assert_eq!(out(src), "f0\nf1\n7\n");
 }
+
+/// `range(n)` is `range(0, n)`, displayed `start..end` (`LANGUAGE_SPEC.md`
+/// §22.1), and a descending range is empty rather than reversed or an error.
+#[test]
+fn range_single_argument_display_and_direction() {
+    assert_eq!(out("fn main() { print(range(3)) }"), "0..3\n");
+    assert_eq!(out("fn main() { print(range(2, 5)) }"), "2..5\n");
+    assert_eq!(
+        out("fn main() { print(len(range(3, 1)))\n for i in range(3, 1) { print(i) }\n print(\"done\") }"),
+        "0\ndone\n"
+    );
+    assert_eq!(
+        out("fn main() { for i in range(-2, 1) { print(i) } }"),
+        "-2\n-1\n0\n"
+    );
+}
+
+/// Ranges compare by equality (start and end), are never equal to a list,
+/// and are not orderable (§22.1): `<` on two ranges is `E3001`.
+#[test]
+fn range_equality_and_unorderability() {
+    assert_eq!(
+        out("fn main() { print(range(1, 3) == range(1, 3))\n print(range(1, 3) == range(1, 4))\n print(range(0, 2) == [0, 1]) }"),
+        "true\nfalse\nfalse\n"
+    );
+    let d = fails("fn main() { print(range(0, 2) < range(0, 3)) }");
+    assert_eq!(d.code, codes::TYPE_MISMATCH);
+}
+
+/// A closure captures its defining environment by reference (§15.5): it
+/// observes later mutations of a `let mut` binding it closes over.
+#[test]
+fn closure_observes_later_mutation_of_captured_variable() {
+    let src = "fn main() { let mut x = 1\n let f = () -> x\n x = 2\n print(f()) }";
+    assert_eq!(out(src), "2\n");
+}
+
+/// Each `for` iteration binds a fresh environment (§16.3): closures created
+/// per iteration keep their own copy of the loop variable.
+#[test]
+fn for_loop_bindings_are_per_iteration() {
+    let src = "fn main() { let mut fs = []\n for i in range(3) { fs.push(() -> i) }\n for f in fs { print(f()) } }";
+    assert_eq!(out(src), "0\n1\n2\n");
+}
+
+/// Capture is by reference (§15.5), so a `while` loop counter declared
+/// outside the loop is one shared binding: every closure sees the final
+/// value. This is the deliberate contrast with the per-iteration `for`
+/// binding above.
+#[test]
+fn while_loop_counter_is_a_shared_captured_binding() {
+    let src = "fn main() { let mut fs = []\n let mut i = 0\n while i < 3 { fs.push(() -> i)\n i = i + 1 }\n for f in fs { print(f()) } }";
+    assert_eq!(out(src), "3\n3\n3\n");
+}
+
+/// A closure may assign to a captured `let mut` binding (capture by
+/// reference), and the write is visible outside; assigning to a captured
+/// immutable binding is a static `E2001`.
+#[test]
+fn closure_can_write_captured_mutable_binding() {
+    let src = "fn main() { let mut x = 1\n let f = () -> { x = 5 }\n f()\n print(x) }";
+    assert_eq!(out(src), "5\n");
+    let d = fails("fn main() { let x = 1\n let f = () -> { x = 5 }\n f() }");
+    assert_eq!(d.code, codes::ASSIGN_IMMUTABLE);
+}
+
+/// A `match` arm's pattern bindings live only in the arm scope; using the
+/// bound name after the match is a static `E2003`.
+#[test]
+fn match_arm_bindings_do_not_leak() {
+    let d = fails("fn main() { match [1, 2] { [a, b] -> { print(a + b) } }\n print(a) }");
+    assert_eq!(d.code, codes::UNDEFINED);
+    assert_eq!(
+        out("fn main() { let a = 9\n match [1, 2] { [a, b] -> { print(a) } }\n print(a) }"),
+        "1\n9\n"
+    );
+}
+
+/// A `catch` binding lives only in the catch scope; using it afterwards is a
+/// static `E2003`.
+#[test]
+fn catch_binding_does_not_leak() {
+    let d = fails("fn main() { try { throw \"e\" } catch err -> { print(err) }\n print(err) }");
+    assert_eq!(d.code, codes::UNDEFINED);
+}

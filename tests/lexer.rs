@@ -103,3 +103,21 @@ fn operators() {
         ]
     );
 }
+
+/// A `.` after a number is a decimal point only when a digit follows
+/// (`LANGUAGE_SPEC.md` §3.6.2), so `..` can never be absorbed into a float:
+/// `1..2` is exactly four tokens and `1.` is an integer plus the field
+/// operator. There is no `..` token and no range syntax.
+#[test]
+fn double_dot_never_forms_a_float() {
+    assert_eq!(
+        toks("1..2"),
+        vec![Tok::Int(1), Tok::Dot, Tok::Dot, Tok::Int(2), Tok::Eof]
+    );
+    assert_eq!(toks("1."), vec![Tok::Int(1), Tok::Dot, Tok::Eof]);
+    // A leading dot is the field operator, never a float prefix.
+    assert_eq!(toks(".5"), vec![Tok::Dot, Tok::Int(5), Tok::Eof]);
+    // A digit after the dot still makes a float.
+    assert_eq!(toks("1.5"), vec![Tok::Float(1.5), Tok::Eof]);
+    assert_eq!(toks("0.5"), vec![Tok::Float(0.5), Tok::Eof]);
+}

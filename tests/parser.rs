@@ -391,3 +391,48 @@ fn ordinary_if_else_is_unchanged() {
     // `else` still accepts an arbitrary expression.
     assert!(parse_expr("if a { 1 } else 2 + 3").is_ok());
 }
+
+/// The only union spelling is `T | none` (`LANGUAGE_SPEC.md` §4.3); every
+/// other `|` union is a deterministic syntax error, not a semantic one.
+#[test]
+fn non_none_union_is_syntax_error() {
+    assert_eq!(
+        parse("type N = int | float").map_err(|d| d.code),
+        Err(codes::EXPECTED)
+    );
+    assert_eq!(
+        parse("type N = int | string").map_err(|d| d.code),
+        Err(codes::EXPECTED)
+    );
+    assert_eq!(
+        parse("fn f(x: int | bool) { }").map_err(|d| d.code),
+        Err(codes::EXPECTED)
+    );
+    assert!(parse("type N = int | none").is_ok());
+}
+
+/// There is no `a..b` range syntax in the frozen grammar; `1..2` fails in the
+/// parser with `E1006` and never becomes a float or a runtime range (§3.6.2).
+#[test]
+fn double_dot_range_syntax_is_rejected() {
+    assert_eq!(
+        parse("fn main() { print(1..2) }").map_err(|d| d.code),
+        Err(codes::EXPECTED)
+    );
+    assert_eq!(parse_expr("1..2").map_err(|d| d.code), Err(codes::EXPECTED));
+}
+
+/// Module items are declarations and expression statements only
+/// (`docs/grammar.md`): a top-level loop is `E1006`, not a silent no-op.
+#[test]
+fn top_level_control_flow_is_not_an_item() {
+    assert_eq!(
+        parse("for i in range(3) { print(i) }").map_err(|d| d.code),
+        Err(codes::EXPECTED)
+    );
+    assert_eq!(
+        parse("while true { }").map_err(|d| d.code),
+        Err(codes::EXPECTED)
+    );
+    assert!(parse("print(1)").is_ok());
+}

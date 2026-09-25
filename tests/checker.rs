@@ -5,6 +5,8 @@
 //! what the contract says it must, and that the documented static codes are
 //! reachable before any code runs.
 
+use std::fmt::Write as _;
+
 use aura::check::Checker;
 use aura::error::codes;
 use aura::parse::parse;
@@ -367,4 +369,93 @@ fn scripting_io_builtins_are_checked() {
         check("fn main() { read_file(1) }"),
         Err(codes::TYPE_MISMATCH)
     );
+}
+
+/// A valid alias chain resolves transitively (`LANGUAGE_SPEC.md` §7): `A`
+/// denotes `int` through `B`, in both the accepting and the rejecting
+/// direction.
+#[test]
+fn chained_aliases_resolve_transitively() {
+    assert_eq!(
+        check("type B = int\ntype A = B\nfn main() { let x: A = 5 }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type B = int\ntype A = B\nfn main() { let x: A = \"s\" }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+/// An alias is transparent in every annotated position: return types, struct
+/// fields, and enum payloads (§7), never creating a nominal type.
+#[test]
+fn alias_is_transparent_in_return_field_and_payload_positions() {
+    assert_eq!(check("type Id = int\nfn f() -> Id { return 5 }"), Ok(()));
+    assert_eq!(
+        check("type Id = int\nfn f() -> Id { return \"s\" }"),
+        Err(codes::RETURN_MISMATCH)
+    );
+    assert_eq!(
+        check("type Id = int\nstruct S { id: Id }\nfn main() { let s = S(id: 3) }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type Id = int\nstruct S { id: Id }\nfn main() { let s = S(id: \"x\") }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        check("type Id = int\nenum E { A(Id) }\nfn main() { let e = A(5) }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type Id = int\nenum E { A(Id) }\nfn main() { let e = A(\"s\") }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+/// An alias chain through `T | none` resolves, and the optional annotation
+/// stays at the conservative `Unknown` boundary (§2.3, §6.4): it proves
+/// nothing, so it rejects nothing.
+#[test]
+fn alias_chain_through_optional_stays_conservative() {
+    assert_eq!(
+        check("type M = int | none\ntype N = M\nfn main() { let x: N = 5 }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type M = int | none\ntype N = M\nfn main() { let x: N = none }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type M = int | none\ntype N = M\nfn main() { let x: N = \"s\" }"),
+        Ok(())
+    );
+    // The inner position of `T | none` is still resolved and validated.
+    assert_eq!(check("type M = Nope | none"), Err(codes::UNKNOWN_TYPE));
+}
+
+/// An alias whose target is an unknown name is a declaration-time `E3002`,
+/// even when the alias is never used.
+#[test]
+fn alias_with_unknown_target_is_declaration_error() {
+    assert_eq!(check("type A = Nope"), Err(codes::UNKNOWN_TYPE));
+    assert_eq!(
+        check("type A = Nope\nfn main() { }"),
+        Err(codes::UNKNOWN_TYPE)
+    );
+}
+
+/// A long but acyclic alias chain resolves in bounded time and stack, in
+/// both the accepting and the rejecting direction.
+#[test]
+fn deep_alias_chain_resolves() {
+    let chain = |target: &str| {
+        let mut aliases = String::new();
+        for i in 1..200 {
+            writeln!(aliases, "type T{i} = T{}", i - 1).unwrap();
+        }
+        format!("type T0 = {target}\n{aliases}fn main() {{ let x: T199 = 5 }}\n")
+    };
+    assert_eq!(check(&chain("int")), Ok(()));
+    assert_eq!(check(&chain("string")), Err(codes::TYPE_MISMATCH));
 }
