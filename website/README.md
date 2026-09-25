@@ -22,27 +22,33 @@ website/
 * **Material 3.** `assets/tokens.css` defines the full Material You role
   palette; `assets/styles.css` consumes those roles. Light and dark themes are
   token-driven and respect `prefers-color-scheme`.
-* **Static, GitHub Pages-first.** The build writes `CNAME` (`aura.lang.dev`),
-  `robots.txt`, `sitemap.xml`, a `404.html`, and `.nojekyll`.
+* **Static.** The build writes `robots.txt`, `sitemap.xml`, a `404.html`, and
+  `.nojekyll`. It is host-agnostic static output, deployable to Vercel or
+  GitHub Pages.
 * **Explicit deployment base.** `lib/base.mjs` is the single source of truth
   for the base path. The default is the **project-site** base `/aura-lang/`
-  (the active GitHub Pages deployment); a custom-domain build states its intent
-  with `--base=/` or `AURA_SITE_BASE=/`. Every internal link, asset, the
-  Worker, and runtime URL is generated through one helper, and in-content
-  Markdown links are resolved through the same base, so the whole site moves
-  coherently.
+  (the GitHub Pages fallback); a root-domain build (Vercel / custom domain)
+  states its intent with `--base=/` or `AURA_SITE_BASE=/`. Every internal
+  link, asset, the Worker, and runtime URL is generated through one helper,
+  and in-content Markdown links are resolved through the same base, so the
+  whole site moves coherently.
+* **No CNAME by default.** `CNAME` is a GitHub Pages-only mechanism that makes
+  Pages claim a custom domain and 301-redirect its project URL to it. It is
+  emitted only when `AURA_EMIT_CNAME=1` is set for a deliberate Pages
+  custom-domain deployment. Vercel manages custom domains through its own
+  project settings and does not use this file.
 
 ## Deployment base
 
 | Target | URL | Base |
 |---|---|---|
-| GitHub Pages project site | `https://<user>.github.io/aura-lang/` | `/aura-lang/` |
-| Custom domain | `https://aura.lang.dev/` | `/` |
+| Vercel / custom domain (primary) | `https://aura.lang.dev/` | `/` |
+| GitHub Pages project site (fallback) | `https://<user>.github.io/aura-lang/` | `/aura-lang/` |
 
 Resolution order: `--base=<path>`, then `AURA_SITE_BASE`, then the
-project-site default. A bare `node website/build.mjs` therefore builds
-correctly for the deployment that actually exists, and switching to the custom
-domain is a one-variable change (`AURA_SITE_BASE=/`) with no source edit.
+project-site default. A bare `node website/build.mjs` builds correctly for the
+GitHub Pages fallback that currently exists; the Vercel production build sets
+`AURA_SITE_BASE=/`.
 
 ## Building
 
@@ -67,17 +73,22 @@ Playground **unchanged**. The build copies `playground/web/` and the immutable
 paths resolve exactly as they do for the standalone Playground. The website
 page only provides the shell; it contains no execution logic.
 
-## Custom domain
+## Hosting
+
+Primary hosting is **Vercel** at `https://aura.lang.dev/` (base `/`); GitHub
+Pages remains a fallback at the project URL (`/aura-lang/`). See
+[`../docs/vercel-migration.md`](../docs/vercel-migration.md) for the deployment
+model, the Vercel project settings, and the DNS steps.
 
 The intended public domain is `aura.lang.dev`. It is **not yet configured**:
-the site currently serves from the GitHub Pages project URL, `/aura-lang/`.
-The generator always writes the `CNAME` file (`aura.lang.dev`) and the site's
-canonical URLs use it, so once the domain is configured in the repository's
-Pages settings with a DNS record, only the build base changes:
+DNS currently has no `aura.lang.dev` record and the Vercel project does not yet
+exist (both require account-level actions outside the repository). The site's
+canonical URLs already use `https://aura.lang.dev`, so once the domain is
+attached to Vercel the only build change is the base:
 
 ```bash
 AURA_SITE_BASE=/ node website/build.mjs
 ```
 
-DNS and Pages settings are external, deliberate steps and are not performed by
-the build.
+DNS, the Vercel project, and the custom domain are external, deliberate steps
+and are not performed by the build.

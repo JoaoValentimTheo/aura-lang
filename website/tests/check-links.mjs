@@ -98,7 +98,6 @@ const required = [
   "playground/web/worker.js",
   "playground/web/runtime.mjs",
   "playground/runtimes/manifest.json",
-  "CNAME",
   "robots.txt",
   "sitemap.xml",
   "404.html",

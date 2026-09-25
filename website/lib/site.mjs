@@ -2,11 +2,19 @@
 //
 // It writes a fully static build into `website/dist/`: one directory per
 // route with an `index.html`, the shared assets, the versioned Playground
-// runtime artifacts, the CNAME file, robots.txt, a sitemap, and a 404 page.
+// runtime artifacts, robots.txt, a sitemap, and a 404 page.
 //
 // The generator supports a configurable base path so the same output can be
 // served from `https://aura.lang.dev/` (base `/`) or from a project subpath
-// for preview. Production uses `/`.
+// (`/aura-lang/`). The base is resolved by `lib/base.mjs`.
+//
+// The `CNAME` file is a **GitHub Pages-only** mechanism: when it is present,
+// GitHub Pages claims the named custom domain and 301-redirects the project
+// URL to it. It is therefore emitted only when explicitly requested
+// (`AURA_EMIT_CNAME=1`), never by default. Emitting it for a Vercel or
+// project-site deployment would hijack that deployment's host, which is
+// exactly what broke the GitHub Pages project-site fallback. Vercel manages
+// custom domains through its own project settings and ignores this file.
 
 import { mkdirSync, writeFileSync, rmSync, cpSync, existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -83,12 +91,19 @@ export async function buildSite({ base = "/", pages } = {}) {
     recursive: true,
   });
 
-  // 5. CNAME for GitHub Pages custom domain, robots.txt, sitemap.
-  const host = new URL(site.origin).host;
-  writeFileSync(join(distDir, "CNAME"), `${host}\n`);
+  // 5. robots.txt, sitemap, and the Jekyll bypass.
   writeFileSync(join(distDir, "robots.txt"), `User-agent: *\nAllow: /\nSitemap: ${site.origin}/sitemap.xml\n`);
   writeFileSync(join(distDir, "sitemap.xml"), buildSitemap(written));
   writeFileSync(join(distDir, ".nojekyll"), "");
+
+  // 5b. The GitHub Pages CNAME file is opt-in only (see the module header).
+  // It must be present only for a deliberate GitHub Pages custom-domain
+  // deployment, because it makes Pages claim the domain and redirect the
+  // project URL to it.
+  if (process.env.AURA_EMIT_CNAME === "1") {
+    const host = new URL(site.origin).host;
+    writeFileSync(join(distDir, "CNAME"), `${host}\n`);
+  }
 
   return written;
 }

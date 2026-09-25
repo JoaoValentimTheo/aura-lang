@@ -1,23 +1,25 @@
-name: Deploy website
+name: Deploy website (GitHub Pages fallback)
 
 # Builds the static Aura website (including the versioned Playground runtime)
 # and deploys it to GitHub Pages.
+#
+# FALLBACK ROLE. Primary website hosting is Vercel at https://aura.lang.dev/
+# (see docs/vercel-migration.md and vercel.json). This workflow keeps the
+# GitHub Pages **project site** available as a fallback until the Vercel
+# deployment and the custom domain are verified. It is not the primary host.
 #
 # Deployment base. The site is served from an explicit base path, never an
 # assumed one:
 #
 #   * GitHub Pages project site — https://<user>.github.io/aura-lang/
-#     AURA_SITE_BASE=/aura-lang/   (the current, active deployment)
-#   * custom domain — https://aura.lang.dev/
-#     AURA_SITE_BASE=/             (for when the custom domain is configured)
+#     AURA_SITE_BASE=/aura-lang/   (this workflow)
+#   * root-domain host (Vercel) — https://aura.lang.dev/
+#     AURA_SITE_BASE=/             (see vercel.json)
 #
-# The `AURA_SITE_BASE` repository variable selects the target; when it is unset
-# the build defaults to the project-site base. Switching to the custom domain
-# is therefore a one-variable change with no source edit.
-#
-# Custom domain: https://aura.lang.dev is the intended public origin; the
-# generator writes `CNAME` and the site's canonical URLs use it. Configuring
-# the custom domain in Pages settings and DNS is a separate, deliberate step.
+# The build does NOT emit a `CNAME` file: a `CNAME` makes GitHub Pages claim
+# the named domain and 301-redirect this project URL to it, which is wrong for
+# a fallback. `CNAME` emission is opt-in (`AURA_EMIT_CNAME=1`) and reserved for
+# a deliberate Pages custom-domain deployment.
 #
 # The site is fully static: no server, no database, no remote execution. The
 # Playground runs entirely in the browser.
