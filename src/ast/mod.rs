@@ -13,12 +13,14 @@ pub enum TypeExpr {
     Bool,
     /// `string`
     String,
+    /// `none` (only meaningful as a union member)
+    None,
     /// `[T]`
     List(Box<TypeExpr>),
     /// `{K: V}`
     Map(Box<TypeExpr>, Box<TypeExpr>),
-    /// `T | none`
-    Optional(Box<TypeExpr>),
+    /// `T1 | T2 | ...` (two or more members; a single member is its own type)
+    Union(Vec<TypeExpr>),
     /// A named user type.
     Named(String),
 }
@@ -32,9 +34,14 @@ impl TypeExpr {
             TypeExpr::Float => "float".into(),
             TypeExpr::Bool => "bool".into(),
             TypeExpr::String => "string".into(),
+            TypeExpr::None => "none".into(),
             TypeExpr::List(t) => format!("[{}]", t.name()),
             TypeExpr::Map(k, v) => format!("{{{}: {}}}", k.name(), v.name()),
-            TypeExpr::Optional(t) => format!("{} | none", t.name()),
+            TypeExpr::Union(ms) => ms
+                .iter()
+                .map(TypeExpr::name)
+                .collect::<Vec<_>>()
+                .join(" | "),
             TypeExpr::Named(n) => n.clone(),
         }
     }
@@ -197,6 +204,9 @@ pub enum Expr {
     Lambda(Vec<String>, Box<Expr>, Span),
     /// `x |> f`.
     Pipe(Box<Expr>, Box<Expr>, Span),
+    /// `start..end` — a Rust-style half-open range expression. Equivalent to
+    /// `range(start, end)` and evaluating to the same Range value.
+    Range(Box<Expr>, Box<Expr>, Span),
     /// `if c { a } else { b }` as an expression.
     If(Box<Expr>, Vec<Stmt>, Option<Box<Expr>>, Span),
     /// `match value { pat -> block ... }`.

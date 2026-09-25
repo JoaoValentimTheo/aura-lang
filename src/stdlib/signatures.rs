@@ -60,6 +60,12 @@ impl TypeClass {
     pub fn matches_ty(self, ty: &Ty) -> Option<bool> {
         let is = match (self, ty) {
             (_, Ty::Unknown) => return None,
+            // A union satisfies a class when any member does; a union never
+            // contains `Unknown` (it collapses to `Unknown`), so the answer is
+            // always decidable.
+            (_, Ty::Union(members)) => {
+                return Some(members.iter().any(|m| self.matches_ty(m) == Some(true)));
+            }
             (TypeClass::Int, Ty::Int) => true,
             (TypeClass::Float, Ty::Float) => true,
             (TypeClass::Bool, Ty::Bool) => true,

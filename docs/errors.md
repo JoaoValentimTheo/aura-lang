@@ -16,7 +16,8 @@ Every rejection carries a stable code. Codes are grouped by phase:
 | E1002 | Malformed number | `1abc`, `0xZZ`, out-of-range literal |
 | E1003 | Invalid escape | `"\q"` |
 | E1004 | Unterminated string | `"abc` |
-| E1006 | Expected token | `let = 1`, `fn ()`, `a \| b` |
+| E1005 | Unterminated multiline comment | `<!-- never closed` |
+| E1006 | Expected token | `let = 1`, `fn ()`, `int \| 5` |
 | E1009 | Reserved word as name | `let if = 1` |
 | E1015 | Expression/statement nests too deeply | a 5000-term expression |
 

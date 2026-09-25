@@ -977,6 +977,7 @@ impl Checker {
                 }
                 Ty::Unknown
             }
+            Expr::Range(_, _, _) => Ty::Named("range".to_string()),
             Expr::Pipe(_, _, _)
             | Expr::Index(_, _, _)
             | Expr::Tuple(_, _)
@@ -1120,8 +1121,12 @@ impl Checker {
                 Box::new(self.resolve_type_expr(k, span, visiting)?),
                 Box::new(self.resolve_type_expr(v, span, visiting)?),
             ),
-            TypeExpr::Optional(inner) => {
-                TypeExpr::Optional(Box::new(self.resolve_type_expr(inner, span, visiting)?))
+            TypeExpr::Union(members) => {
+                let mut resolved = Vec::with_capacity(members.len());
+                for m in members {
+                    resolved.push(self.resolve_type_expr(m, span, visiting)?);
+                }
+                TypeExpr::Union(resolved)
             }
             _ => t.clone(),
         })
@@ -1149,8 +1154,8 @@ impl Checker {
                     Box::new(go(checker, k, visiting)),
                     Box::new(go(checker, v, visiting)),
                 ),
-                TypeExpr::Optional(inner) => {
-                    TypeExpr::Optional(Box::new(go(checker, inner, visiting)))
+                TypeExpr::Union(members) => {
+                    TypeExpr::Union(members.iter().map(|m| go(checker, m, visiting)).collect())
                 }
                 _ => t.clone(),
             }
@@ -1796,6 +1801,26 @@ impl Checker {
             Expr::Pipe(l, r, _) => {
                 self.expr(l)?;
                 self.expr(r)?;
+            }
+            Expr::Range(l, r, span) => {
+                self.expr(l)?;
+                self.expr(r)?;
+                // Mirror the `range(a, b)` builtin's static check: a bound
+                // whose type is provably not `int` is `E3001`, and `Unknown`
+                // imposes no constraint (§2.3). This keeps the literal and the
+                // builtin statically equivalent.
+                for (which, bound) in [("start", l), ("end", r)] {
+                    let actual = self.infer(bound);
+                    if let Some(false) =
+                        crate::stdlib::signatures::TypeClass::Int.matches_ty(&actual)
+                    {
+                        return Err(Diag::new(
+                            codes::TYPE_MISMATCH,
+                            format!("range {which} expects an int, found `{}`", actual.name()),
+                            *span,
+                        ));
+                    }
+                }
             }
             Expr::If(c, then, els, _) => {
                 self.expr(c)?;

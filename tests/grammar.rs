@@ -24,9 +24,20 @@ const GRAMMAR_SAMPLES: &[&str] = &[
     "enum E { A, B(int), C(int, string) }",
     "type Id = int",
     "type Opt = int | none",
+    "type Number = int | float",
+    "type ID = string | int",
+    "type Wide = int | float | string | none",
     "let x = 1",
     "fn m() { let mut y = 2 }",
     "let z: int = 3",
+    "let w: int | float = 1",
+    // range literal
+    "fn rr() { for i in 0..10 { print(i) } }",
+    "fn rs() { let r = 1..3 }",
+    "fn rt() { print(range(0, 3) == 0..3) }",
+    // comments
+    "fn c1() { <!-- a comment --!> print(1) }",
+    "fn c2() { print(1) <!-- multi\nline\ncomment --!> print(2) }",
     // reserved syntax is accepted and inert
     "pub fn g2() { }",
     "use stdlib.math",
@@ -105,6 +116,10 @@ fn error_samples() -> Vec<(u16, String)> {
         (
             codes::UNTERMINATED_STRING,
             "fn main() { print(\"abc) }".to_string(),
+        ),
+        (
+            codes::UNTERMINATED_COMMENT,
+            "fn main() { print(1) } <!-- never closed".to_string(),
         ),
         (codes::EXPECTED, "fn () { }".to_string()),
         (codes::RESERVED_NAME, "fn main() { let if = 1 }".to_string()),

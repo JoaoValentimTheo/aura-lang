@@ -27,7 +27,8 @@ rule changes, the RFC process in `CONTRIBUTING.md` applies.
 ## 1. Source and lexical rules
 
 * Source is UTF-8. Identifiers are `[A-Za-z_][A-Za-z0-9_]*`.
-* Line comments start with `#`. There are no block comments.
+* Line comments start with `#`; `<!-- ... --!>` is a multiline comment. Both
+  are discarded. An unterminated multiline comment is `E1005`.
 * A newline or `;` terminates a statement.
 * Literals: decimal `123`, hex `0xff`, binary `0b1011`, float `1.5`, `1e9`;
   strings `"abc"` and `'abc'` (interchangeable); f-strings `f"x = {x}"`.
@@ -44,11 +45,14 @@ The composite types are:
 | `[T]`           | list of `T`                              |
 | `{K: V}`        | map from `K` to `V`                      |
 | `Name`          | user type declared with `struct`/`enum`  |
-| `T | none`      | optional `T`                             |
+| `T1 \| T2`      | union; `T \| none` is the common case    |
 
 Types are optional annotations. When present they are checked before
 execution. There are no implicit conversions between `int` and `string`.
 A `type Name = T` alias is transparent: `Name` denotes `T` in every position.
+A union accepts a value when one of its members does. A union containing `none`
+is permissive (it behaves as the untyped case), because `none` has no static
+type.
 An annotation is enforced where the checker can prove a mismatch: annotated
 bindings, function return types, function parameters used in a body, struct
 field values at construction, and enum payload values at construction. A value

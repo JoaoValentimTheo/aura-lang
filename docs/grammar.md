@@ -31,8 +31,8 @@ const_decl      = "let" IDENT [ ":" type ] "=" expr terminator ;
 (* top-level `let` is a module constant; `let mut` is rejected *)
 
 (* ----------------------------------------------------------------- types *)
-type            = base_type [ "|" "none" ] ;
-base_type       = "int" | "float" | "bool" | "string"
+type            = type_member { "|" type_member } ;
+type_member     = "int" | "float" | "bool" | "string" | "none"
                 | "[" type "]"
                 | "{" type ":" type "}"
                 | IDENT ;
@@ -72,7 +72,8 @@ pipe            = logic_or { "|>" logic_or } ;
 logic_or        = logic_and { "or" logic_and } ;
 logic_and       = equality { "and" equality } ;
 equality        = comparison { ( "==" | "!=" ) comparison } ;
-comparison      = additive { ( "<" | "<=" | ">" | ">=" ) additive } ;
+comparison      = range { ( "<" | "<=" | ">" | ">=" ) range } ;
+range           = additive [ ".." additive ] ;       (* Rust-style range *)
 additive        = multiplicative { ( "+" | "-" ) multiplicative } ;
 multiplicative  = power { ( "*" | "/" | "%" ) power } ;
 power           = unary [ "^" power ] ;              (* right associative *)
@@ -135,6 +136,14 @@ FSTRING         = 'f"' { fchar | "{{" | "}}" | "{" expr "}" } '"' ;
   have no effect (see `docs/contract.md` §10).
 * `type Name = T` is a transparent alias: it is validated but does not create
   a distinct nominal type.
+* A type expression is a `|`-separated union of one or more members; `T | none`
+  is the one-member-plus-`none` case. Member order and duplicates are
+  normalized away; a union containing `none` is permissive.
+* `a..b` is a range literal, equivalent to `range(a, b)`; `..` is a distinct
+  token, never part of a float. It binds looser than arithmetic and tighter
+  than comparison.
+* `#` line comments and `<!-- ... --!>` multiline comments are discarded by
+  the lexer; an unterminated multiline comment is `E1005`.
 * `(a, b)` creates a list of two elements; Aura has no distinct tuple value.
 * Call arguments may be named (`f(x: 1)`). All positional arguments must come
   before all named arguments; a positional argument after a named one is

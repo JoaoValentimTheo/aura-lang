@@ -30,8 +30,8 @@ type_alias      = "type" IDENT "=" type terminator ;
 const_decl      = "let" IDENT [ ":" type ] "=" expr terminator ;
 
 (* ----------------------------------------------------------------- types *)
-type            = base_type [ "|" "none" ] ;
-base_type       = "int" | "float" | "bool" | "string"
+type            = type_member { "|" type_member } ;
+type_member     = "int" | "float" | "bool" | "string" | "none"
                 | "[" type "]"
                 | "{" type ":" type "}"
                 | IDENT ;
@@ -65,7 +65,8 @@ pipe            = logic_or { "|>" logic_or } ;
 logic_or        = logic_and { "or" logic_and } ;
 logic_and       = equality { "and" equality } ;
 equality        = comparison { ( "==" | "!=" ) comparison } ;
-comparison      = additive { ( "<" | "<=" | ">" | ">=" ) additive } ;
+comparison      = range { ( "<" | "<=" | ">" | ">=" ) range } ;
+range           = additive [ ".." additive ] ;
 additive        = multiplicative { ( "+" | "-" ) multiplicative } ;
 multiplicative  = power { ( "*" | "/" | "%" ) power } ;
 power           = unary [ "^" power ] ;

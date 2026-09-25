@@ -392,84 +392,110 @@ fn ordinary_if_else_is_unchanged() {
     assert!(parse_expr("if a { 1 } else 2 + 3").is_ok());
 }
 
-/// The only union spelling is `T | none` (`LANGUAGE_SPEC.md` §4.3); every
-/// other `|` union is a deterministic syntax error, not a semantic one.
+/// General unions are now current syntax (`LANGUAGE_SPEC.md` §4.3): `T1 | T2`
+/// and longer chains parse in every annotation position, and `T | none` is
+/// just the one-member-plus-`none` case of the same grammar.
 #[test]
-fn non_none_union_is_syntax_error() {
-    assert_eq!(
-        parse("type N = int | float").map_err(|d| d.code),
-        Err(codes::EXPECTED)
-    );
-    assert_eq!(
-        parse("type N = int | string").map_err(|d| d.code),
-        Err(codes::EXPECTED)
-    );
-    assert_eq!(
-        parse("fn f(x: int | bool) { }").map_err(|d| d.code),
-        Err(codes::EXPECTED)
-    );
-    assert!(parse("type N = int | none").is_ok());
-}
-
-/// The `T | none`-only rule is positional, not special to the alias
-/// declaration: every other type position rejects a general union with the
-/// same `E1006` syntax error (`LANGUAGE_SPEC.md` §4.3). This is a boundary
-/// test: the future `int | float` / `string | int` forms are **not** current
-/// syntax and MUST stay rejected until an RFC changes the grammar.
-#[test]
-fn general_union_is_rejected_in_every_type_position() {
-    let rejected = [
-        // alias target
+fn general_union_parses_in_every_type_position() {
+    let accepted = [
         "type Number = int | float",
         "type ID = string | int",
-        // binding annotation
+        "type N = int | float | none",
         "fn main() { let x: int | float = 1 }",
-        // top-level constant annotation
         "let x: int | bool = true",
-        // function parameter annotation
         "fn f(x: string | int) { }",
-        // return annotation
         "fn f() -> int | float { return 1 }",
-        // struct field annotation
         "struct S { x: int | float }",
-        // enum payload annotation
         "enum E { A(string | int) }",
-        // collection element annotation
         "fn main() { let xs: [int | float] = [1] }",
-        // map value annotation
         "fn main() { let m: {string: int | float} = {\"a\": 1} }",
+        // `T | none` remains valid as a union with `none`.
+        "type N2 = int | none",
+        "fn f2(x: int | none) -> bool | none { return none }",
     ];
-    for src in rejected {
+    for src in accepted {
+        assert!(parse(src).is_ok(), "expected {src:?} to parse");
+    }
+}
+
+/// A union member must be a type, and the chain must not dangle: `int |`,
+/// `| int`, and `int | 5` are deterministic `E1006`.
+#[test]
+fn malformed_union_is_syntax_error() {
+    for src in [
+        "type N = int |",
+        "type N = | int",
+        "type N = int | 5",
+        "type N = int || string",
+        "fn f(x: int | ) { }",
+    ] {
         assert_eq!(
             parse(src).map_err(|d| d.code),
             Err(codes::EXPECTED),
             "expected E1006 for {src:?}"
         );
     }
-    // The one supported union form stays accepted in each position.
-    for src in [
-        "type N = int | none",
-        "fn main() { let x: string | none = none }",
-        "fn f(x: int | none) -> bool | none { return none }",
-        "struct S { x: int | none }",
-        "enum E { A(int | none) }",
-        "fn main() { let xs: [int | none] = [1] }",
-    ] {
-        assert!(parse(src).is_ok(), "expected {src:?} to parse");
+}
+
+/// The parser records a union as `TypeExpr::Union` with one node per member,
+/// in source order, so diagnostics and `name()` spell it back verbatim.
+#[test]
+fn union_is_parsed_into_a_multi_member_node() {
+    let m = parse("type N = int | float | string").expect("parse");
+    match &m.items[0] {
+        Item::Alias { target, .. } => {
+            assert_eq!(
+                target,
+                &TypeExpr::Union(vec![TypeExpr::Int, TypeExpr::Float, TypeExpr::String])
+            );
+            assert_eq!(target.name(), "int | float | string");
+        }
+        other => panic!("expected alias, got {other:?}"),
+    }
+    // Two members form a two-member union, not a nested pair.
+    let m = parse("type N = int | none").expect("parse");
+    match &m.items[0] {
+        Item::Alias { target, .. } => {
+            assert_eq!(
+                target,
+                &TypeExpr::Union(vec![TypeExpr::Int, TypeExpr::None])
+            );
+        }
+        other => panic!("expected alias, got {other:?}"),
     }
 }
 
-/// `a..b` is a **future** range syntax, not current language syntax: the
-/// frozen grammar defines only `range(a, b)` (`LANGUAGE_SPEC.md` §22.1). Every
-/// `..` spelling is a deterministic `E1006`, in expression and `for` position
-/// alike, and never lexes as a float or parses as a range.
+/// `a..b` is now current range syntax (`LANGUAGE_SPEC.md` §22.1): it parses in
+/// expression, `for`, list, and binding positions, and preserves the semantic
+/// distinction `Range ≠ List`.
 #[test]
-fn future_dot_dot_range_syntax_is_rejected() {
+fn dot_dot_range_syntax_parses() {
+    let e = parse_expr("1..2").expect("parse");
+    assert!(matches!(e, Expr::Range(_, _, _)));
     for src in [
         "fn main() { print(1..2) }",
         "fn main() { for i in 1..10 { } }",
         "fn main() { let xs = [1..3] }",
         "fn main() { let x = 0..0 }",
+        "fn main() { let r = 0..10 }",
+        // `..` binds looser than arithmetic, so both bounds are expressions.
+        "fn main() { let r = 1 + 2..n - 1 }",
+    ] {
+        assert!(parse(src).is_ok(), "expected {src:?} to parse");
+    }
+    // The builtin form and the sugar coexist.
+    assert!(parse("fn main() { for i in range(1, 10) { } }").is_ok());
+}
+
+/// A range needs both bounds: a dangling `..` or a trailing operator is a
+/// deterministic `E1006`, and `..` is never a float.
+#[test]
+fn malformed_range_is_syntax_error() {
+    for src in [
+        "fn main() { print(1..) }",
+        "fn main() { print(..2) }",
+        "fn main() { let x = 1...2 }",
+        "fn main() { let x = 1.. }",
     ] {
         assert_eq!(
             parse(src).map_err(|d| d.code),
@@ -477,20 +503,8 @@ fn future_dot_dot_range_syntax_is_rejected() {
             "expected E1006 for {src:?}"
         );
     }
-    assert_eq!(parse_expr("1..2").map_err(|d| d.code), Err(codes::EXPECTED));
-    // The supported form remains valid.
-    assert!(parse("fn main() { for i in range(1, 10) { } }").is_ok());
-}
-
-/// There is no `a..b` range syntax in the frozen grammar; `1..2` fails in the
-/// parser with `E1006` and never becomes a float or a runtime range (§3.6.2).
-#[test]
-fn double_dot_range_syntax_is_rejected() {
-    assert_eq!(
-        parse("fn main() { print(1..2) }").map_err(|d| d.code),
-        Err(codes::EXPECTED)
-    );
-    assert_eq!(parse_expr("1..2").map_err(|d| d.code), Err(codes::EXPECTED));
+    // A single dot still means field access, not a range.
+    assert!(parse_expr("a.b").is_ok());
 }
 
 /// Module items are declarations and expression statements only

@@ -557,3 +557,282 @@ fn alias_chain_to_unknown_target_is_declaration_error() {
         Err(codes::UNKNOWN_TYPE)
     );
 }
+
+/// A general union accepts a value of any member type and rejects a value of
+/// a type outside the union (`LANGUAGE_SPEC.md` §4.3, §6.3).
+#[test]
+fn general_union_accepts_members_and_rejects_others() {
+    // int | float accepts both primitives.
+    assert_eq!(
+        check("type Number = int | float\nfn main() { let x: Number = 1 }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type Number = int | float\nfn main() { let x: Number = 1.5 }"),
+        Ok(())
+    );
+    // ...but not a string.
+    assert_eq!(
+        check("type Number = int | float\nfn main() { let x: Number = \"s\" }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // string | int accepts both.
+    assert_eq!(
+        check("type ID = string | int\nfn main() { let a: ID = \"x\"\n let b: ID = 1 }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type ID = string | int\nfn main() { let x: ID = true }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // A union asserted inline (not through an alias) behaves identically.
+    assert_eq!(check("fn main() { let x: int | float = 2 }"), Ok(()));
+    assert_eq!(
+        check("fn main() { let x: int | float = \"s\" }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+/// Member order and duplicates do not matter: all of these are the same type
+/// and all accept an `int` (`LANGUAGE_SPEC.md` §4.3 normalization).
+#[test]
+fn union_normalization_is_order_and_duplicate_insensitive() {
+    for decl in [
+        "type N = int | float",
+        "type N = float | int",
+        "type N = int | int | float",
+        "type N = int | float | int",
+    ] {
+        let src = format!("{decl}\nfn main() {{ let x: N = 1 }}");
+        assert_eq!(check(&src), Ok(()), "expected {src:?} to accept an int");
+        let src = format!("{decl}\nfn main() {{ let x: N = 1.5 }}");
+        assert_eq!(check(&src), Ok(()), "expected {src:?} to accept a float");
+    }
+}
+
+/// A union nested in a union flattens: `(int | float) | string` accepts each
+/// member and rejects an outside type. Nested unions reach the checker through
+/// aliases, since `(T | U)` grouping is spelled with member unions.
+#[test]
+fn nested_union_flattens_through_aliases() {
+    assert_eq!(
+        check("type A = int | float\ntype B = A | string\nfn main() { let x: B = \"s\" }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type A = int | float\ntype B = A | string\nfn main() { let x: B = 1 }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type A = int | float\ntype B = A | string\nfn main() { let x: B = 2.5 }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type A = int | float\ntype B = A | string\nfn main() { let x: B = true }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+/// A union that includes `none` is permissive, generalizing the historical
+/// `T | none` behavior (`LANGUAGE_SPEC.md` §4.3, §5.2).
+#[test]
+fn union_with_none_is_permissive() {
+    // `int | float | none` accepts an int, a float, and none.
+    assert_eq!(
+        check("type N = int | float | none\nfn main() { let a: N = 1 }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type N = int | float | none\nfn main() { let a: N = 2.5 }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type N = int | float | none\nfn main() { let a: N = none }"),
+        Ok(())
+    );
+    // Because none is `Unknown`, even an out-of-union value is accepted — the
+    // documented permissiveness of `T | none`, generalized.
+    assert_eq!(
+        check("type N = int | float | none\nfn main() { let a: N = \"s\" }"),
+        Ok(())
+    );
+}
+
+/// Aliases compose transparently into, through, and over unions
+/// (`LANGUAGE_SPEC.md` §4.3, §7).
+#[test]
+fn alias_composition_with_unions() {
+    // alias -> union, chained aliases.
+    assert_eq!(
+        check("type A = int | float\ntype B = A\ntype C = B\nfn main() { let x: C = 1 }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type A = int | float\ntype B = A\ntype C = B\nfn main() { let x: C = \"s\" }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // union -> alias member.
+    assert_eq!(
+        check("type ID = string | int\ntype UserID = ID\nfn main() { let u: UserID = 7 }"),
+        Ok(())
+    );
+    // alias in one member of another union.
+    assert_eq!(
+        check("type A = int | float\ntype B = string | A\ntype C = B | none\nfn main() { let x: C = 1.5 }"),
+        Ok(())
+    );
+    // Forward declaration order resolves too.
+    assert_eq!(
+        check("type C = B | bool\ntype B = A\ntype A = int | float\nfn main() { let x: C = true }"),
+        Ok(())
+    );
+}
+
+/// Unions are enforced in every supported annotation position
+/// (`LANGUAGE_SPEC.md` §6.1, §6.2).
+#[test]
+fn union_in_supported_positions() {
+    // function parameter (directly resolved call, F001 semantics).
+    assert_eq!(
+        check("type N = int | float\nfn f(x: N) { return none }\nfn main() { f(1) }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type N = int | float\nfn f(x: N) { return none }\nfn main() { f(2.5) }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type N = int | float\nfn f(x: N) { return none }\nfn main() { f(\"s\") }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // inline parameter union.
+    assert_eq!(
+        check("fn f(x: string | int) { return none }\nfn main() { f(1) }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("fn f(x: string | int) { return none }\nfn main() { f(true) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // return annotation.
+    assert_eq!(
+        check("fn f() -> int | float { return 1.5 }\nfn main() { f() }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type M = int | float | none\nfn f() -> M { return none }\nfn main() { f() }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("fn f() -> int | float { return \"s\" }"),
+        Err(codes::RETURN_MISMATCH)
+    );
+    // struct field.
+    assert_eq!(
+        check("type Scalar = int | float\nstruct P { x: Scalar }\nfn main() { let p: P = P { x: 1 } }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type Scalar = int | float\nstruct P { x: Scalar }\nfn main() { let p: P = P { x: \"s\" } }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // enum payload.
+    assert_eq!(
+        check("type Scalar = int | float\nenum E { A(Scalar) }\nfn main() { let e: E = A(1.5) }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type Scalar = int | float\nenum E { A(Scalar) }\nfn main() { let e: E = A(\"s\") }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // collection element and map value.
+    assert_eq!(
+        check("type Scalar = int | float\nfn main() { let xs: [Scalar] = [1, 2.5] }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type Scalar = int | float\nfn main() { let xs: [Scalar] = [\"s\"] }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        check("type Scalar = int | float\nfn main() { let m: {string: Scalar} = {\"a\": 1} }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type Scalar = int | float\nfn main() { let m: {string: Scalar} = {\"a\": \"s\"} }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+/// Union cycles are caught by the existing `E3002` mechanism, including
+/// recursion through a union member (`LANGUAGE_SPEC.md` §7).
+#[test]
+fn union_alias_cycles_are_rejected_not_a_crash() {
+    assert_eq!(check("type A = A"), Err(codes::UNKNOWN_TYPE));
+    assert_eq!(check("type A = B\ntype B = A"), Err(codes::UNKNOWN_TYPE));
+    assert_eq!(
+        check("type A = B | int\ntype B = A"),
+        Err(codes::UNKNOWN_TYPE)
+    );
+    assert_eq!(
+        check("type A = B | int\ntype B = C\ntype C = A"),
+        Err(codes::UNKNOWN_TYPE)
+    );
+    assert_eq!(check("type A = [B]\ntype B = A"), Err(codes::UNKNOWN_TYPE));
+    // An unknown member anywhere in a union is still E3002.
+    assert_eq!(check("type A = int | Nope"), Err(codes::UNKNOWN_TYPE));
+    assert_eq!(
+        check("type A = int | [Nope] | string"),
+        Err(codes::UNKNOWN_TYPE)
+    );
+}
+
+/// A union whose members the checker cannot pin down stays decidable: a
+/// union value assigned to a concrete-union annotation is checked member by
+/// member, and `Unknown` (e.g. a `none`-typed source) imposes no constraint
+/// (`LANGUAGE_SPEC.md` §2.3, §6.4).
+#[test]
+fn union_and_unknown_boundary() {
+    // A value inferred `Unknown` is accepted by any union.
+    assert_eq!(
+        check("type N = int | float\nfn main() { let x: N = none }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type N = int | float\nfn main() { let x: N = if true { 1 } else { 2 } }"),
+        Ok(())
+    );
+    // A union annotation with an unknown member name is E3002, not silently
+    // permissive.
+    assert_eq!(
+        check("type N = int | float\nfn main() { let x: N = Widget }"),
+        Err(codes::UNDEFINED)
+    );
+}
+
+/// A range literal is statically equivalent to `range(a, b)`: a bound whose
+/// type the checker can prove is not `int` is `E3001` before execution
+/// (`LANGUAGE_SPEC.md` §22.1).
+#[test]
+fn range_literal_bounds_are_statically_checked() {
+    assert_eq!(
+        check("fn main() { let r = 1.5..3 }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        check("fn main() { let r = 1..2.5 }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        check("fn main() { let r = \"a\"..3 }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        check("fn main() { let r = 1..true }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // Int bounds and Unknown bounds are accepted.
+    assert_eq!(check("fn main() { let r = 0..10 }"), Ok(()));
+    assert_eq!(check("fn main() { let r = 1 + 2..10 - 1 }"), Ok(()));
+    assert_eq!(check("fn f(x) { let r = 0..x }"), Ok(()));
+}

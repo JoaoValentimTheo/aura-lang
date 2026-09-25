@@ -1,13 +1,20 @@
 # The Aura Language Specification
 
 **Language version:** Aura 0.0.1
-**Status:** Frozen specification
+**Status:** Current normative specification
 **Baseline commit:** `aba88668856173337b68cd4fb8e046f0467bf561`
 
+This revision incorporates the intentional **language evolution** that added
+general union types, transparent union composition through aliases, the
+Rust-style `a..b` range literal, and `<!-- ... --!>` multiline comments. These
+are current, implemented, and tested; they supersede the earlier
+`T | none`-only and `range(a, b)`-only boundaries recorded in the prior
+revision. The `release` version of the implementation is unchanged
+(`0.0.2`).
+
 The **language version** above is the semantics this document defines. It is
-independent of the **release version** of the implementation: release `0.0.2`
-ships the unchanged `0.0.1` language. See `src/lib.rs` (`VERSION` vs
-`LANGUAGE_VERSION`).
+independent of the **release version** of the implementation. See
+`src/lib.rs` (`VERSION` vs `LANGUAGE_VERSION`).
 
 This document is the **normative semantic specification** of Aura. It defines
 what Aura programs mean. When this document and any other document or the
@@ -183,11 +190,31 @@ lines and lines containing only whitespace or a comment are ignored.
 
 ### 3.5 Comments
 
-**Normative rule.** A comment begins with `#` and extends to the end of the
-line. There are no block comments. A `#` inside a string literal is not a
-comment.
+**Normative rule.** A line comment begins with `#` and extends to the end of
+the line. A multiline comment begins with `<!--` and extends to the next
+`--!>`; it MAY span any number of lines. A multiline comment that reaches end
+of input before `--!>` is `E1005`.
 
-*Evidence:* `Lexer::next_token` (`src/lex/mod.rs`).
+**Normative rule.** A comment produces no token, no AST node, and no runtime
+effect. A multiline comment is whitespace: the newlines it contains are **not**
+statement terminators, so a statement may span a multiline comment. Multiline
+comments do not nest; the first `--!>` closes the comment.
+
+**Normative rule.** A `#` or `<!--` inside a string literal is not a comment.
+
+*Evidence:* `Lexer::next_token` and `Lexer::multiline_comment`
+(`src/lex/mod.rs`).
+
+*Non-normative example.*
+
+```aura
+fn main() {
+    print(1) <!-- this
+    spans
+    lines --!>
+    print(2)
+}
+```
 
 ### 3.6 Literals
 
@@ -217,6 +244,10 @@ identifier character; `1abc` is an error (`E1002`), never two tokens.
 **Normative rule.** A float literal is a decimal magnitude with a fractional
 part (`1.5`) and/or an exponent (`1e9`, `1.5e-3`, `2E10`). A `.` is a decimal
 point only when followed by a digit; otherwise it is the field/method operator.
+Consequently `..` is never absorbed into a float: `1..2` lexes as `1`, `..`,
+`2` (an int range literal, §22.1), and `1.` is the integer `1` followed by the
+field operator. A float literal itself may not be the bound of a range
+(`1.5..3` is `E3001`).
 
 **Normative rule.** Float literals are IEEE-754 binary64. A literal that
 overflows the format (for example `1e309`) denotes positive infinity; it is
@@ -341,15 +372,33 @@ const_decl    = "let" IDENT [ ":" type ] "=" expr terminator ;
 ### 4.3 Types
 
 ```
-type          = base_type [ "|" "none" ] ;
-base_type     = "int" | "float" | "bool" | "string"
+type          = type_member { "|" type_member } ;
+type_member   = "int" | "float" | "bool" | "string" | "none"
               | "[" type "]"
               | "{" type ":" type "}"
               | IDENT ;
 ```
 
-**Normative rule.** The only union form is `T | none`. Any other `|` union is
-a syntax error.
+**Normative rule.** A type expression is a `|`-separated union of one or
+more members. A one-member union is simply that member. `T1 | T2` and longer
+chains are unions; `T | none` is the common union of `T` with `none`.
+Aliases are transparent and are expanded before union members are combined
+(§7).
+
+**Normative rule.** Union member order is not significant, duplicate members
+are removed, and nested unions are flattened. The canonical spelling of a
+union orders primitives by declaration (`int`, `float`, `bool`, `string`),
+then compounds (`[T]`, `{K: V}`) and named types by spelling. This
+normalization is total and deterministic.
+
+**Normative rule.** A union that includes `none` is **permissive**: because
+`none` has no static type (it is `Ty::Unknown`, §5.2), any union containing
+`none` has checker type `Unknown`, which is compatible with every value. This
+generalizes the historical `T | none` behavior; `int | float | none` is
+accepted for an `int`, a `float`, or `none`.
+
+**Normative rule.** Any other malformed union — a missing member, a non-type
+member, or a doubled `|` — is `E1006`.
 
 ### 4.4 Statements
 
@@ -411,6 +460,7 @@ Precedence, lowest binding first:
 | 3 | `and` | left |
 | 4 | `==` `!=` | left |
 | 5 | `<` `<=` `>` `>=` | left |
+| 5.5 | `..` range | left |
 | 6 | `+` `-` | left |
 | 7 | `*` `/` `%` | left |
 | 8 | `^` | **right** |
@@ -424,7 +474,8 @@ pipe            = logic_or { "|>" logic_or } ;
 logic_or        = logic_and { "or" logic_and } ;
 logic_and       = equality { "and" equality } ;
 equality        = comparison { ( "==" | "!=" ) comparison } ;
-comparison      = additive { ( "<" | "<=" | ">" | ">=" ) additive } ;
+comparison      = range { ( "<" | "<=" | ">" | ">=" ) range } ;
+range           = additive [ ".." additive ] ;
 additive        = multiplicative { ( "+" | "-" ) multiplicative } ;
 multiplicative  = power { ( "*" | "/" | "%" ) power } ;
 power           = unary [ "^" power ] ;
@@ -455,6 +506,17 @@ if_expr         = "if" expr block [ "else" expr ] ;
 match_expr      = "match" expr "{" { match_arm } "}" ;
 match_arm       = pattern [ "if" expr ] "->" ( block | expr terminator ) ;
 ```
+
+**Normative rule.** `a..b` is a range expression (§22.1). It is parsed at the
+`range` level, between comparison and additive, so each bound is an additive
+expression: `1 + 2..n - 1` is `(1 + 2)..(n - 1)`. `..` is left-associative
+and not chainable with meaning: `a..b..c` parses as `(a..b)..c` and is a
+check-time/runtime type error because `a..b` is not an int.
+
+**Normative rule.** A `..` MUST have an expression on both sides. A dangling
+`a..` or a leading `..b` is `E1006`. A single `.` remains field access/method
+call; `..` is a distinct token and never part of a float literal
+(§3.6.2).
 
 **Normative rule.** `x |> f(a)` desugars, at parse time, to `f(x, a)`;
 `x |> r.m(a)` desugars to `r.m(x, a)`; `x |> f` desugars to `f(x)`. See §23.
@@ -585,19 +647,34 @@ REPL persistence. No previously valid program changes meaning.
 **Normative rule.** The checker's type domain is:
 
 ```
-int, float, bool, string, [T], {string: V}, Named(name), Enum(name), Unknown
+int, float, bool, string, [T], {string: V}, Named(name), Enum(name),
+Union(T1 | T2 | ...), Unknown
 ```
 
 **Normative rule.** `[T]` is a list type, `{string: V}` a map type with a
 string key, `Named(n)` a user struct or alias-resolved type, `Enum(n)` an enum
-type, and `Unknown` the "not determined" type.
+type, `Union(...)` a union of two or more distinct member types, and
+`Unknown` the "not determined" type.
+
+**Normative rule.** A union type never contains `Unknown` as a member: because
+`none` has no static type, any union containing `none` (or an unresolved name
+that resolves to `Unknown`, such as `none`) collapses to `Unknown` at
+construction. Thus `T | none` and `int | float | none` are both `Unknown` to
+the checker, which is the historical, permissive behavior of `T | none`
+generalized. The members of a stored `Union` are always concrete.
 
 **Normative rule.** A `map` annotation with a non-`string` key is rejected
 (`E3001`); maps are string-keyed in this version.
 
 **Normative rule.** There is no static `none` type; `none` infers `Unknown`.
 
-*Evidence:* `Ty` (`src/types.rs`); `Ty::from_expr`; `Checker::infer`.
+**Normative rule.** A union is normalized on construction: nested unions are
+flattened, duplicate members removed, and members put in a canonical order
+(primitives in declaration order, then compounds and named types by spelling).
+Two unions that differ only in member order or duplicates are the *same* type.
+
+*Evidence:* `Ty` (`src/types.rs`); `Ty::union`; `Ty::from_expr`;
+`Checker::infer`.
 
 ### 5.3 Type properties
 
@@ -658,10 +735,16 @@ first) holds when:
 * both are the same primitive; or
 * both are `[T]`/`[T']` and `T` is compatible with `T'`; or
 * both are maps with compatible value types; or
-* both are the same `Named`/`Enum` type.
+* both are the same `Named`/`Enum` type; or
+* the expected type is a `Union` and the actual value is compatible with
+  **some** member; or
+* the actual type is a `Union` and **every** member is compatible with the
+  expected type.
 
 **Normative rule.** `int` and `float` are **not** compatible in annotations;
-there is no implicit numeric coercion in annotations.
+there is no implicit numeric coercion in annotations. Consequently a union
+such as `int | float` accepts an `int` value and a `float` value, but a value
+of any other type is `E3001`.
 
 *Evidence:* `Ty::compatible_with` (`src/types.rs`).
 
@@ -757,10 +840,11 @@ checker resolves them transitively.
 across later submissions (§29).
 
 **Normative rule.** Alias resolution recurses through compound positions
-(`[T]`, `{string: V}`, `T | none`). A **recursive alias** — a `type` whose
-target refers, directly or through other aliases, to itself — has no concrete
-target and MUST be rejected with `E3002`; it MUST NOT recurse without bound or
-crash the host.
+(`[T]`, `{string: V}`, and every union member of `T1 | T2 | ...`). A
+**recursive alias** — a `type` whose target refers, directly or through other
+aliases, to itself — has no concrete target and MUST be rejected with `E3002`;
+it MUST NOT recurse without bound or crash the host. This includes recursion
+through a union member (`type A = B | int; type B = A`).
 
 *Implementation note.* The checker stores alias targets and substitutes them
 with `resolve_type_expr`; the interpreter has no alias table.
@@ -776,23 +860,33 @@ with `resolve_type_expr`; the interpreter has no alias table.
 `E` = expected type, `A` = inferred/actual type. The cell states whether the
 checker accepts (`A` = accept, `R` = reject with `E3001`).
 
-| E \ A | int | float | bool | string | list | map | Named | Enum | Unknown |
-|---|---|---|---|---|---|---|---|---|---|
-| **int** | A | R | R | R | R | R | R | R | A |
-| **float** | R | A | R | R | R | R | R | R | A |
-| **bool** | R | R | A | R | R | R | R | R | A |
-| **string** | R | R | R | A | R | R | R | R | A |
-| **[T]** | R | R | R | R | A* | R | R | R | A |
-| **{string:V}** | R | R | R | R | R | A* | R | R | A |
-| **Named(n)** | R | R | R | R | R | R | A** | R | A |
-| **Enum(n)** | R | R | R | R | R | R | R | A** | A |
-| **Unknown** | A | A | A | A | A | A | A | A | A |
+| E \ A | int | float | bool | string | list | map | Named | Enum | Union | Unknown |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **int** | A | R | R | R | R | R | R | R | A† | A |
+| **float** | R | A | R | R | R | R | R | R | A† | A |
+| **bool** | R | R | A | R | R | R | R | R | R | A |
+| **string** | R | R | R | A | R | R | R | R | R | A |
+| **[T]** | R | R | R | R | A* | R | R | R | R | A |
+| **{string:V}** | R | R | R | R | R | A* | R | R | R | A |
+| **Named(n)** | R | R | R | R | R | R | A** | R | R | A |
+| **Enum(n)** | R | R | R | R | R | R | R | A** | R | A |
+| **Union** | A‡ | A‡ | A‡ | A‡ | A‡ | A‡ | A‡ | A‡ | A‡ | A |
+| **Unknown** | A | A | A | A | A | A | A | A | A | A |
 
 \* Element/value types must themselves be compatible.
 \** Same nominal name only.
+† A union expected type accepts the value when **some** member does; the row
+shows `int | float` and `string | int` respectively.
+‡ A union is accepted when **every** member is compatible with the same
+primitive/compound expected type, or when any member matches a union member.
+A union containing `none` is `Unknown`, not `Union`, and is thus always
+accepted.
 
 **Normative rule.** A `Named` value is compatible only with the same `Named`
 name; struct types are nominal.
+
+**Normative rule.** A `Union` never contains `Unknown` and its members are
+distinct (normalization, §5.2), so `compatible_with` on unions is decidable.
 
 This matrix is the normative statement behind §6.3 and §13.
 
@@ -1613,11 +1707,32 @@ and has `.len()` = 2.
 integers `a, a+1, ..., b-1`. The range is start-inclusive and end-exclusive,
 with step always `+1`. Bounds MUST be integers (`E3001` otherwise).
 
+**Normative rule.** The range literal `a..b` denotes exactly the same value as
+`range(a, b)`: the same lazy, half-open, start-inclusive Range abstraction.
+The two forms are interchangeable everywhere a Range is accepted and compare
+equal (`0..3 == range(0, 3)` is `true`). There is no second range
+representation and no implicit materialization.
+
+**Normative rule.** A Range is a Range, not a list. `[1..3]` is a list with
+one element (a Range), not `[1, 2]`. Materializing a range requires an
+existing, explicit construct such as a `for` loop; there is no dedicated
+range-to-list conversion.
+
+**Normative rule.** A range bound MUST be an integer. A float bound
+(`1.5..10`, `1..2.0`) is `E3001`, at check time when the bound type is known
+and at runtime otherwise. There is no numeric coercion. The literal's bound
+check is identical to `range(a, b)`'s, so the two forms are statically
+equivalent as well as dynamically equal.
+
+**Normative rule.** `a..b` binds looser than `+`/`-`/`*`/`/`/`%`/`^` and
+postfix, and tighter than comparison and equality, so `0..n - 1` is
+`0..(n - 1)`. A dangling `..` is `E1006`.
+
 **Normative rule.** An empty or descending range (`b <= a`) is empty. Negative
 bounds are permitted.
 
 **Normative rule.** `len(range(a, b))` is `max(0, b - a)` computed with
-saturating arithmetic.
+saturating arithmetic. `len(a..b)` is identical.
 
 **Normative rule.** Ranges are not orderable. Ranges compare by equality
 (`start` and `end`). Iterating a range yields its integers in increasing
@@ -1625,18 +1740,16 @@ order.
 
 ### 22.2 Iteration laziness
 
-**Normative rule.** `for x in range(a, b)` iterates lazily: an immediate
-`break` does not materialize the range. Materializing a range elsewhere is
-bounded by a limit of 10,000,000 elements (`E4013` beyond it).
+**Normative rule.** `for x in range(a, b)` and `for x in a..b` iterate lazily:
+an immediate `break` does not materialize the range. Materializing a range
+elsewhere is bounded by a limit of 10,000,000 elements (`E4013` beyond it).
 
 ### 22.3 `for` over other iterables
 
 **Normative rule.** `for` iterates lists (elements), strings (Unicode scalar
 characters), maps (keys, ascending), and ranges (integers). Iterating any
 other value is `E4018` (checked statically for known scalars, otherwise at
-runtime).
-
-### 22.4 Mutation during iteration
+runtime).### 22.4 Mutation during iteration
 
 **Normative rule.** Iteration over a list or map uses a snapshot of the
 iteration sequence; mutating the collection during iteration does not change
@@ -2029,6 +2142,7 @@ semantics (`E2007`).
 | E1002 | malformed number |
 | E1003 | invalid escape |
 | E1004 | unterminated string |
+| E1005 | unterminated multiline comment |
 | E1006 | expected token |
 | E1009 | reserved word used as a name |
 | E1015 | nesting limit exceeded |
@@ -2290,13 +2404,9 @@ implementers do not assume guarantees the language does not make.
   (§15.7); built-ins, methods, and dynamic callables are positional.
 * **No nested named function declarations**; use lambdas (§15.8).
 * **No `for ... else`, no step on ranges** (§22.1).
-* **No `a..b` range literal.** The only range construction is `range(n)` /
-  `range(a, b)` (§22.1); `1..2` is an `E1006` syntax error, not a range. (A
-  range value is *displayed* as `start..end`, which is output, not syntax.)
-* **No general type union.** The only union spelling is `T | none` (§4.3);
-  `int | float` and `string | int` are `E1006` syntax errors in every type
-  position. Widening unions is a future extension, not a current feature.
 * **No lexicographic ordering for lists/maps/structs/enums/ranges** (§12).
+* **`a..b` has no inclusive (`..=`) form.** Ranges are always half-open
+  (§22.1).
 
 ### 34.2 Static-checking limitations
 
