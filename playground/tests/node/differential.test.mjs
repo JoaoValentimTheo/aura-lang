@@ -43,6 +43,7 @@ const cases = [
   ['range equivalence', 'fn main() { print(range(0, 10) == 0..10)\n print([1..3]) }'],
   ['range float bound', 'fn main() { print(1.5..3) }'],
   ['multiline comment', 'fn main() {\n <!-- a\n multi line\n comment --!>\n print(42)\n}'],
+  ['multibyte comment', 'fn main() { <!-- λ🎉 世界 --!> print(1) }'],
   ['unterminated comment', 'fn main() { print(1) } <!-- nope'],
   ['try/catch', 'fn main() {\n try { throw "x" } catch e -> { print("c " + e) }\n}'],
   ['args', 'fn main() { print(args()) }'],

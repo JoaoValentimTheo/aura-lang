@@ -5,6 +5,7 @@
 //! forbidden construct (e.g. `break` outside a loop) is rejected by the
 //! parser or reported here.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::ast::*;
@@ -14,6 +15,48 @@ use crate::types::Ty;
 /// Re-export of the shared type representation, for callers that expect
 /// `check::types::Ty`.
 pub use crate::types;
+
+/// Normalize a resolved union's members at the `TypeExpr` level.
+///
+/// Alias resolution can duplicate a union member subtree (`type T = A | A`),
+/// which would otherwise grow the resolved type exponentially with each
+/// additional alias level. Resolved unions therefore flatten nested unions and
+/// remove structurally-equal duplicate members, mirroring the normalization
+/// [`Ty::union`] already performs. Member order is not canonicalized here
+/// because it is not observable: the only consumer is `Ty::from_expr`, which
+/// applies its own canonical `Ty::union`. A union with one remaining member is
+/// that member; `union` never yields an empty list.
+fn normalize_resolved_union(members: Vec<TypeExpr>) -> TypeExpr {
+    fn flatten(m: TypeExpr, out: &mut Vec<TypeExpr>) {
+        match m {
+            TypeExpr::Union(inner) => {
+                for x in inner {
+                    flatten(x, out);
+                }
+            }
+            other => out.push(other),
+        }
+    }
+    let mut flat = Vec::with_capacity(members.len());
+    for m in members {
+        flatten(m, &mut flat);
+    }
+    // Deduplicate by canonical spelling, which is an injective serialization
+    // for the type grammar, in one linear pass that preserves first-seen
+    // order. This is what collapses `T = A | A` after alias substitution.
+    let mut seen = std::collections::HashSet::new();
+    let mut unique = Vec::with_capacity(flat.len());
+    for m in flat {
+        if seen.insert(m.name()) {
+            unique.push(m);
+        }
+    }
+    match unique.len() {
+        0 => TypeExpr::None,
+        1 => unique.pop().unwrap_or(TypeExpr::None),
+        _ => TypeExpr::Union(unique),
+    }
+}
 
 /// Maximum AST nesting the checker will descend before reporting a limit.
 /// Prevents a flat but deeply nested program from exhausting the host stack.
@@ -134,6 +177,14 @@ pub struct Checker {
     /// Targets of `type Name = T` aliases, so a transparent alias resolves to
     /// the type it names.
     alias_targets: HashMap<String, TypeExpr>,
+    /// Memoized successful alias resolutions, keyed by alias name. An alias is
+    /// a global, context-free definition, so a resolution that succeeded (no
+    /// cycle was involved) is reusable everywhere. This keeps resolution
+    /// linear in the number of aliases even when an alias names another alias
+    /// more than once (for example `type T = A | A`), which would otherwise
+    /// fan out exponentially. Failures are never cached, so cycle diagnostics
+    /// keep their precise span.
+    resolved_aliases: RefCell<HashMap<String, TypeExpr>>,
 }
 
 impl Checker {
@@ -158,6 +209,7 @@ impl Checker {
             active_const: None,
             loop_depth: 0,
             alias_targets: HashMap::new(),
+            resolved_aliases: RefCell::new(HashMap::new()),
         }
     }
 
@@ -1107,9 +1159,18 @@ impl Checker {
                             span,
                         ));
                     }
+                    // A successful resolution is context-free and reusable.
+                    // Serving it from cache collapses the exponential fan-out
+                    // of aliases that name another alias more than once.
+                    if let Some(cached) = self.resolved_aliases.borrow().get(n) {
+                        return Ok(cached.clone());
+                    }
                     visiting.push(n.clone());
                     let resolved = self.resolve_type_expr(target, span, visiting)?;
                     visiting.pop();
+                    self.resolved_aliases
+                        .borrow_mut()
+                        .insert(n.clone(), resolved.clone());
                     resolved
                 }
                 None => t.clone(),
@@ -1126,7 +1187,7 @@ impl Checker {
                 for m in members {
                     resolved.push(self.resolve_type_expr(m, span, visiting)?);
                 }
-                TypeExpr::Union(resolved)
+                normalize_resolved_union(resolved)
             }
             _ => t.clone(),
         })
@@ -1141,9 +1202,20 @@ impl Checker {
             match t {
                 TypeExpr::Named(n) => match checker.alias_targets.get(n) {
                     Some(target) if !visiting.iter().any(|v| v == n) => {
+                        // Mirror the strict resolver's memoization so rebuilding
+                        // a session from declarations cannot fan out
+                        // exponentially. On this path the declarations already
+                        // passed strict checking, so no cycle can reach here.
+                        if let Some(cached) = checker.resolved_aliases.borrow().get(n) {
+                            return cached.clone();
+                        }
                         visiting.push(n.clone());
                         let resolved = go(checker, target, visiting);
                         visiting.pop();
+                        checker
+                            .resolved_aliases
+                            .borrow_mut()
+                            .insert(n.clone(), resolved.clone());
                         resolved
                     }
                     Some(_) => t.clone(),
@@ -1154,9 +1226,9 @@ impl Checker {
                     Box::new(go(checker, k, visiting)),
                     Box::new(go(checker, v, visiting)),
                 ),
-                TypeExpr::Union(members) => {
-                    TypeExpr::Union(members.iter().map(|m| go(checker, m, visiting)).collect())
-                }
+                TypeExpr::Union(members) => normalize_resolved_union(
+                    members.iter().map(|m| go(checker, m, visiting)).collect(),
+                ),
                 _ => t.clone(),
             }
         }

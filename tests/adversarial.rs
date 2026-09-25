@@ -348,3 +348,44 @@ fn comments_at_boundaries_are_safe() {
     let d = aura::run_source(src, "<adv>").expect_err("unterminated");
     assert_eq!(d.code, codes::UNTERMINATED_COMMENT);
 }
+
+/// P1: an alias chain where each alias names the previous one twice used to
+/// expand exponentially during resolution (`type T_i = T_{i-1} | T_{i-1}`),
+/// hanging the checker and bypassing the AST limits. Resolution must be
+/// bounded: a 200-level doubling chain completes promptly and still resolves
+/// to the correct member set.
+#[test]
+fn doubling_alias_union_resolves_in_linear_time() {
+    use std::fmt::Write as _;
+
+    let n = 200usize;
+    // A doubling chain `type T_i = T_{i-1} | T_{i-1}`.
+    let chain: String = (1..=n).fold(String::new(), |mut acc, i| {
+        let _ = writeln!(acc, "type T{i} = T{} | T{}", i - 1, i - 1);
+        acc
+    });
+
+    let src = format!("type T0 = int | float\n{chain}fn main() {{ print(1) }}");
+    let module = aura::parse::parse(&src).expect("parses");
+    assert_eq!(
+        Checker::module(&module).map_or_else(|d| d.code, |()| 0),
+        0,
+        "doubling alias chain must check cleanly"
+    );
+
+    // The resolved union is still correct after deduplication.
+    let ok = format!(
+        "type T0 = int | float\n{chain}type U = T{n} | string\nfn main() {{ let a: U = 1\n let b: U = 2.5\n let c: U = \"s\" }}"
+    );
+    let module = aura::parse::parse(&ok).expect("parses");
+    assert_eq!(Checker::module(&module).map_or_else(|d| d.code, |()| 0), 0);
+    // ...and a member outside the union is still rejected.
+    let bad = format!(
+        "type T0 = int | float\n{chain}type U = T{n} | string\nfn main() {{ let x: U = true }}"
+    );
+    let module = aura::parse::parse(&bad).expect("parses");
+    assert_eq!(
+        Checker::module(&module).map_or_else(|d| d.code, |()| 0),
+        codes::TYPE_MISMATCH
+    );
+}
