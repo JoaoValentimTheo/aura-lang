@@ -402,3 +402,23 @@ fn evolution_repl_unterminated_comment_does_not_corrupt() {
     let out = body("let y = 2\ny\n1 <!-- never closed\n:quit\n");
     assert!(out.contains('2'), "{out}");
 }
+
+/// P0: the REPL's submission-completeness scan must not slice a `&str` at a
+/// non-character boundary. A multiline comment containing a multibyte
+/// character used to panic the REPL thread (`E4999`), aborting the session;
+/// multi-byte content in any comment or line must now be harmless.
+#[test]
+fn multiline_comment_with_multibyte_chars_does_not_panic() {
+    // Multibyte inside a one-line multiline comment.
+    let out = body("<!-- λ --!>\n1+1\n:quit\n");
+    assert!(!out.contains("E4999"), "{out}");
+    assert!(out.contains('2'), "{out}");
+    // Multibyte inside a comment closed on a continuation line.
+    let out = body("let x = 1 <!-- 🎉\nstill --!>\nx\n:quit\n");
+    assert!(!out.contains("E4999"), "{out}");
+    assert!(out.contains('1'), "{out}");
+    // Multibyte immediately after the opening delimiter that still closes.
+    let out = body("let y = 1\n<!--λ--!>\ny\n:quit\n");
+    assert!(!out.contains("E4999"), "{out}");
+    assert!(out.contains('1'), "{out}");
+}

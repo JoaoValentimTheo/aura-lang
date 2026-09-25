@@ -89,7 +89,7 @@ fn unbalanced(src: &str) -> bool {
     while i < bytes.len() {
         let c = bytes[i] as char;
         if in_block_comment {
-            if src[i..].starts_with("--!>") {
+            if bytes[i..].starts_with(b"--!>") {
                 in_block_comment = false;
                 i += 4;
                 continue;
@@ -115,7 +115,7 @@ fn unbalanced(src: &str) -> bool {
                     prev = '\0';
                     continue;
                 }
-                '<' if src[i..].starts_with("<!--") => {
+                '<' if bytes[i..].starts_with(b"<!--") => {
                     in_block_comment = true;
                     i += 4;
                     continue;
