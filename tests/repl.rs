@@ -347,3 +347,58 @@ fn h2_repl_lambda_return_works() {
     let out = body("fn f() -> int { let g = () -> { return \"s\" }\n return 3 }\nf()\n:quit\n");
     assert!(out.contains('3'), "{out}");
 }
+
+// ---------------------------------------------------------------------------
+// Language evolution (0.0.2): unions, ranges, comments in the REPL
+// ---------------------------------------------------------------------------
+
+/// A `a..b` range literal persists across submissions like any other value and
+/// behaves identically to `range(a, b)`. (`print` writes to process stdout, so
+/// these assertions observe the REPL's own result echo.)
+#[test]
+fn evolution_repl_range_literal_persists() {
+    let out = body("let r = 0..10\nr\nlen(r)\n:quit\n");
+    assert!(out.contains("0..10"), "{out}");
+    assert!(out.contains("10"), "{out}");
+    // A range evaluated in a submission echoes its display.
+    let out = body("0..3\n:quit\n");
+    assert!(out.contains("0..3"), "{out}");
+    // Equivalence to the builtin, observable in the session.
+    let out = body("range(0, 10) == 0..10\n:quit\n");
+    assert!(out.contains("true"), "{out}");
+    // A `for` over a literal range runs; the loop itself yields none.
+    let out = body("for i in 0..3 { }\n:quit\n");
+    assert!(!out.contains('E'), "unexpected diagnostic: {out}");
+}
+
+/// A general union annotation persists across submissions and is enforced.
+#[test]
+fn evolution_repl_union_persists() {
+    let out = body("type Number = int | float\nlet x: Number = 2\nx\n:quit\n");
+    assert!(out.contains('2'), "{out}");
+    // A provable mismatch is E3001 even through the union alias.
+    let out = body("type Number = int | float\nlet x: Number = \"s\"\n:quit\n");
+    assert!(out.contains("E3001"), "{out}");
+}
+
+/// Multiline comments are discarded in the REPL, including across lines.
+#[test]
+fn evolution_repl_multiline_comment() {
+    let out = body("<!-- a\ncomment --!>\nlet x = 1\nx\n:quit\n");
+    assert!(out.contains('1'), "{out}");
+    assert!(!out.contains("comment"), "{out}");
+}
+
+/// An unterminated multiline comment keeps the REPL reading continuation
+/// lines (like an open brace) and is discarded at EOF without corrupting the
+/// session. The lexical `E1005` itself is locked by the lexer/grammar tests.
+#[test]
+fn evolution_repl_unterminated_comment_does_not_corrupt() {
+    // The comment is closed on a continuation line: the submission completes.
+    let out = body("let x = 1 <!-- open\nstill open --!>\nx\n:quit\n");
+    assert!(out.contains('1'), "{out}");
+    // A genuinely unterminated comment reaches EOF; the session exits cleanly
+    // and a preceding valid submission has already run.
+    let out = body("let y = 2\ny\n1 <!-- never closed\n:quit\n");
+    assert!(out.contains('2'), "{out}");
+}

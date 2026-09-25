@@ -606,6 +606,114 @@ fn large_range_iterates_lazily_with_early_break() {
     );
 }
 
+/// The `a..b` literal is the same Range value as `range(a, b)`
+/// (`LANGUAGE_SPEC.md` §22.1): display, `len`, equality, iteration, bounds,
+/// and negative bounds all agree, and `[1..3]` is a one-element list holding a
+/// Range rather than a materialized `[1, 2]`.
+#[test]
+fn range_literal_is_equivalent_to_the_builtin() {
+    // Display matches the builtin's display.
+    assert_eq!(out("fn main() { print(0..10) }"), "0..10\n");
+    // len is the same saturating half-open length.
+    assert_eq!(
+        out("fn main() { print(len(0..0))\n print(len(0..1))\n print(len(0..10))\n print(len(5..2)) }"),
+        "0\n1\n10\n0\n"
+    );
+    // Equality is structural, across both spellings.
+    assert_eq!(
+        out("fn main() { print(range(0, 10) == 0..10)\n print(0..0 == range(0, 0))\n print(0..3 == 0..4) }"),
+        "true\ntrue\nfalse\n"
+    );
+    // Iteration is half-open, matching the builtin exactly.
+    assert_eq!(out("fn main() { for i in 0..3 { print(i) } }"), "0\n1\n2\n");
+    assert_eq!(
+        out("fn main() { let mut acc = []\n for i in 10..20 { acc.push(i) }\n print(acc) }"),
+        "[10, 11, 12, 13, 14, 15, 16, 17, 18, 19]\n"
+    );
+    // Negative bounds.
+    assert_eq!(
+        out("fn main() { for i in -2..2 { print(i) } }"),
+        "-2\n-1\n0\n1\n"
+    );
+    // A range is not a list: `[1..3]` holds one Range.
+    assert_eq!(out("fn main() { print([1..3]) }"), "[1..3]\n");
+    assert_eq!(out("fn main() { print(len([1..3])) }"), "1\n");
+    // `..` binds looser than arithmetic: `0..n - 1` is `0..(n - 1)`.
+    assert_eq!(
+        out("fn main() { let n = 5\n for i in 0..n - 1 { print(i) } }"),
+        "0\n1\n2\n3\n"
+    );
+}
+
+/// `continue` and early `break` work on a range literal exactly as on the
+/// builtin, and a large literal range stays lazy (`LANGUAGE_SPEC.md` §22.2).
+#[test]
+fn range_literal_control_flow_and_laziness() {
+    assert_eq!(
+        out("fn main() { for i in 0..5 { if i == 2 { continue } print(i) } }"),
+        "0\n1\n3\n4\n"
+    );
+    assert_eq!(
+        out("fn main() { let mut n = 0\n for i in 0..100000000 { n = n + 1\n if i == 2 { break } }\n print(n) }"),
+        "3\n"
+    );
+}
+
+/// A range literal is a first-class value: it can be bound, passed to a
+/// function, and returned, and its bounds must be ints (`LANGUAGE_SPEC.md`
+/// §22.1).
+#[test]
+fn range_literal_is_a_first_class_value() {
+    assert_eq!(out("fn main() { let r = 0..7\n print(len(r)) }"), "7\n");
+    assert_eq!(
+        out("fn take(r) { return len(r) }\nfn main() { print(take(0..7))\n print(take(1..4)) }"),
+        "7\n3\n"
+    );
+    // A float bound is a type error, both directions.
+    let d = fails("fn main() { let r = 1.5..3 }");
+    assert_eq!(d.code, codes::TYPE_MISMATCH);
+    let d = fails("fn main() { let r = 1..2.5 }");
+    assert_eq!(d.code, codes::TYPE_MISMATCH);
+    // A non-int, non-float bound is also rejected.
+    let d = fails("fn main() { let r = \"a\"..3 }");
+    assert_eq!(d.code, codes::TYPE_MISMATCH);
+}
+
+/// Multiline comments are discarded everywhere whitespace is legal and have
+/// no runtime effect (`LANGUAGE_SPEC.md` §3.5).
+#[test]
+fn multiline_comments_are_transparent() {
+    // Between statements.
+    assert_eq!(out("fn main() { print(1) <!-- c --!> print(2) }"), "1\n2\n");
+    // Spanning lines.
+    assert_eq!(
+        out("fn main() {\n print(1) <!-- a\nb\nc --!>\n print(2)\n}"),
+        "1\n2\n"
+    );
+    // Between declarations.
+    assert_eq!(
+        out(
+            "<!-- header --!> fn helper() { return 1 } <!-- mid --!> fn main() { print(helper()) }"
+        ),
+        "1\n"
+    );
+    // Around an expression inside a call.
+    assert_eq!(
+        out("fn main() { print(1 <!-- one --!> + <!-- two --!> 2) }"),
+        "3\n"
+    );
+    // Empty comment and comment before EOF.
+    assert_eq!(out("fn main() { print(<!----!>4) }"), "4\n");
+    assert_eq!(out("fn main() { print(5) } <!-- trailing --!>"), "5\n");
+    // A `#` inside a multiline comment is just text.
+    assert_eq!(
+        out("fn main() { print(6) <!-- # not a line comment --!> }"),
+        "6\n"
+    );
+    // A `<!--` inside a string is not a comment.
+    assert_eq!(out("fn main() { print(\"<!--\") }"), "<!--\n");
+}
+
 /// A closure captures its defining environment by reference (§15.5): it
 /// observes later mutations of a `let mut` binding it closes over.
 #[test]

@@ -106,18 +106,45 @@ fn operators() {
 
 /// A `.` after a number is a decimal point only when a digit follows
 /// (`LANGUAGE_SPEC.md` §3.6.2), so `..` can never be absorbed into a float:
-/// `1..2` is exactly four tokens and `1.` is an integer plus the field
-/// operator. There is no `..` token and no range syntax.
+/// `1..2` is `int`, `..`, `int`, and `1.` is an integer plus the field
+/// operator. A leading dot is the field operator, never a float prefix.
 #[test]
-fn double_dot_never_forms_a_float() {
+fn double_dot_lexes_as_its_own_token() {
     assert_eq!(
         toks("1..2"),
-        vec![Tok::Int(1), Tok::Dot, Tok::Dot, Tok::Int(2), Tok::Eof]
+        vec![Tok::Int(1), Tok::DotDot, Tok::Int(2), Tok::Eof]
     );
     assert_eq!(toks("1."), vec![Tok::Int(1), Tok::Dot, Tok::Eof]);
-    // A leading dot is the field operator, never a float prefix.
     assert_eq!(toks(".5"), vec![Tok::Dot, Tok::Int(5), Tok::Eof]);
     // A digit after the dot still makes a float.
     assert_eq!(toks("1.5"), vec![Tok::Float(1.5), Tok::Eof]);
     assert_eq!(toks("0.5"), vec![Tok::Float(0.5), Tok::Eof]);
+    // Three dots: `a...b` lexes as `..` then `.`, and the parser rejects it
+    // as a malformed range (there is no `...` token).
+    assert_eq!(
+        toks("1...2"),
+        vec![Tok::Int(1), Tok::DotDot, Tok::Dot, Tok::Int(2), Tok::Eof]
+    );
+}
+
+/// `<!-- ... -->` is discarded by the lexer and produces no token
+/// (`LANGUAGE_SPEC.md` §3.4). It may span lines, and its newlines are not
+/// statement separators. An unterminated comment is `E1005`.
+#[test]
+fn multiline_comments_are_skipped() {
+    assert_eq!(
+        toks("1 <!-- skip me --!> 2"),
+        vec![Tok::Int(1), Tok::Int(2), Tok::Eof]
+    );
+    assert_eq!(
+        toks("<!--\nmulti\nline\n--!>3"),
+        vec![Tok::Int(3), Tok::Eof]
+    );
+    // Empty comment.
+    assert_eq!(toks("<!----!>4"), vec![Tok::Int(4), Tok::Eof]);
+    // Comment before EOF.
+    assert_eq!(toks("5<!-- trailing --!>"), vec![Tok::Int(5), Tok::Eof]);
+    // Unterminated: deterministic lexical error.
+    let err = lex("1 <!-- never closed").expect_err("unterminated comment");
+    assert_eq!(err.code, aura::error::codes::UNTERMINATED_COMMENT);
 }

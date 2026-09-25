@@ -55,12 +55,15 @@ loop context, so a `break` inside a lambda is not licensed by an outer loop.
 ```aura
 for i in range(5) { }        # 0, 1, 2, 3, 4
 for i in range(2, 6) { }     # 2, 3, 4, 5
+for i in 0..10 { }           # same as range(0, 10)
 ```
 
-Ranges are start-inclusive and end-exclusive with a fixed step of `+1`. An empty
-or descending range is empty. `len(range(a, b))` is `max(0, b - a)` with
-saturating arithmetic. A range is materialized lazily in a `for`, so an early
-`break` never builds the whole range.
+Ranges are start-inclusive and end-exclusive with a fixed step of `+1`. The
+`a..b` literal is exactly `range(a, b)`. An empty or descending range is empty.
+`len(range(a, b))` is `max(0, b - a)` with saturating arithmetic. A range is
+materialized lazily in a `for`, so an early `break` never builds the whole
+range. A range is a distinct value, not a list: `[1..3]` is a list holding one
+range.
 
 ## `return` and `throw`
 

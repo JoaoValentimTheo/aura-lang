@@ -103,6 +103,8 @@ pub enum Tok {
     Colon,
     /// `.`
     Dot,
+    /// `..` (range syntax)
+    DotDot,
     /// `->`
     Arrow,
     /// `=`
@@ -212,6 +214,7 @@ impl std::fmt::Display for Tok {
             Tok::Semi => ";",
             Tok::Colon => ":",
             Tok::Dot => ".",
+            Tok::DotDot => "..",
             Tok::Arrow => "->",
             Tok::Assign => "=",
             Tok::Plus => "+",

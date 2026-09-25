@@ -1127,6 +1127,37 @@ impl Interp {
                 let f = val!(self.eval(r, env));
                 Ok(Ctl::Val(self.call_value(f, vec![arg], *span)?))
             }
+            // `a..b` is the same Range value `range(a, b)` builds: a lazy,
+            // half-open, start-inclusive range. Bounds must be ints; there is
+            // no implicit coercion (`LANGUAGE_SPEC.md` §22).
+            Expr::Range(start, end, span) => {
+                let s = val!(self.eval(start, env));
+                let e = val!(self.eval(end, env));
+                let s = match s {
+                    Value::Int(i) => i,
+                    other => {
+                        return Err(Diag::new(
+                            codes::TYPE_MISMATCH,
+                            format!("range start expects an int, found {}", other.type_name()),
+                            *span,
+                        ))
+                    }
+                };
+                let e = match e {
+                    Value::Int(i) => i,
+                    other => {
+                        return Err(Diag::new(
+                            codes::TYPE_MISMATCH,
+                            format!("range end expects an int, found {}", other.type_name()),
+                            *span,
+                        ))
+                    }
+                };
+                Ok(Ctl::Val(Value::Range(Rc::new(value::RangeVal {
+                    start: s,
+                    end: e,
+                }))))
+            }
             Expr::If(cond, then, els, _) => {
                 let c = val!(self.eval(cond, env));
                 if c.truthy() {
@@ -1623,6 +1654,7 @@ fn span_of(e: &Expr) -> Span {
         | Expr::Tuple(_, s)
         | Expr::Lambda(_, _, s)
         | Expr::Pipe(_, _, s)
+        | Expr::Range(_, _, s)
         | Expr::If(_, _, _, s)
         | Expr::Match(_, _, s)
         | Expr::Block(_, s) => *s,

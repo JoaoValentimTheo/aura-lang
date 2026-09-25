@@ -67,6 +67,12 @@ impl Lexer<'_> {
                         self.pos += 1;
                     }
                 }
+                // Multiline comment: `<!-- ... --!>`. A comment produces no
+                // token and may span lines; newlines inside it are discarded
+                // like any other comment text.
+                Some(b'<') if self.starts_multiline_comment() => {
+                    self.multiline_comment()?;
+                }
                 Some(b'\n') => {
                     self.pos += 1;
                     return Ok(Some(Tok::Newline));
@@ -88,6 +94,38 @@ impl Lexer<'_> {
             return self.string().map(Some);
         }
         self.punct().map(Some)
+    }
+
+    /// Whether the bytes at the cursor begin a multiline comment (`<!--`).
+    fn starts_multiline_comment(&self) -> bool {
+        self.bytes[self.pos..].starts_with(b"<!--")
+    }
+
+    /// Consume a `<!-- ... -->` comment, including both delimiters.
+    ///
+    /// A multiline comment is pure whitespace: it produces no token and its
+    /// contents (including any newlines) are discarded, so it never acts as a
+    /// statement separator and has no runtime effect.
+    ///
+    /// # Errors
+    /// Returns `E1005` if EOF is reached before `--!>`.
+    fn multiline_comment(&mut self) -> Result<()> {
+        let start = self.pos;
+        self.pos += 4; // `<!--`
+        loop {
+            if self.bytes[self.pos..].starts_with(b"--!>") {
+                self.pos += 4;
+                return Ok(());
+            }
+            if self.peek().is_none() {
+                return Err(Diag::new(
+                    codes::UNTERMINATED_COMMENT,
+                    "unterminated multiline comment; expected `--!>`",
+                    Span::new(start, self.pos),
+                ));
+            }
+            self.pos += 1;
+        }
     }
 
     fn ident(&mut self) -> Tok {
@@ -305,7 +343,13 @@ impl Lexer<'_> {
             b',' => one(self, Tok::Comma),
             b';' => one(self, Tok::Semi),
             b':' => one(self, Tok::Colon),
-            b'.' => one(self, Tok::Dot),
+            b'.' => {
+                if self.peek2() == Some(b'.') {
+                    two(self, Tok::DotDot)
+                } else {
+                    one(self, Tok::Dot)
+                }
+            }
             b'+' => {
                 if self.peek2() == Some(b'=') {
                     two(self, Tok::PlusEq)

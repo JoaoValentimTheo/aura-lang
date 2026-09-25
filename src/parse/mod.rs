@@ -208,6 +208,10 @@ fn check_expr_depth(root: &Expr, start: usize) -> Result<()> {
                 stack.push((l, d));
                 stack.push((r, d));
             }
+            Expr::Range(l, r, _) => {
+                stack.push((l, d));
+                stack.push((r, d));
+            }
             Expr::If(c, then, els, _) => {
                 stack.push((c, d));
                 check_stmt_depth(then, d)?;
@@ -602,7 +606,23 @@ impl Parser {
     // ---------------------------------------------------------------- types
 
     fn ty(&mut self) -> Result<TypeExpr> {
-        let mut base = match self.at().clone() {
+        let first = self.ty_member()?;
+        if !self.eat(&Tok::Bar) {
+            return Ok(first);
+        }
+        let mut members = vec![first];
+        loop {
+            members.push(self.ty_member()?);
+            if !self.eat(&Tok::Bar) {
+                break;
+            }
+        }
+        Ok(TypeExpr::Union(members))
+    }
+
+    /// One member of a type expression (a union member).
+    fn ty_member(&mut self) -> Result<TypeExpr> {
+        Ok(match self.at().clone() {
             Tok::Ident(id) => {
                 self.bump();
                 match id.as_str() {
@@ -612,6 +632,10 @@ impl Parser {
                     "string" => TypeExpr::String,
                     _ => TypeExpr::Named(id),
                 }
+            }
+            Tok::None => {
+                self.bump();
+                TypeExpr::None
             }
             Tok::LBracket => {
                 self.bump();
@@ -634,12 +658,7 @@ impl Parser {
                     self.span(),
                 ))
             }
-        };
-        if self.eat(&Tok::Bar) {
-            self.expect(&Tok::None)?;
-            base = TypeExpr::Optional(Box::new(base));
-        }
-        Ok(base)
+        })
     }
 
     // --------------------------------------------------------------- blocks
@@ -994,6 +1013,30 @@ impl Parser {
         let mut lhs = self.unary()?;
         loop {
             let span = self.span();
+            // `a..b` — Rust-style range. Its binding power sits between
+            // comparison (7/8) and additive (11/12), so both operands are
+            // arithmetic expressions: `1 + 2..n - 1` is `(1 + 2)..(n - 1)`.
+            // Ranges are not chained by the grammar's associativity intent;
+            // `a..b..c` parses left-associatively and is a runtime type error
+            // at evaluation, like any other non-int bound.
+            if matches!(self.at(), Tok::DotDot) {
+                let (lbp, rbp) = (10, 10);
+                if lbp < min_bp {
+                    break;
+                }
+                self.bump();
+                if matches!(self.at(), Tok::Eof | Tok::Newline) {
+                    return Err(Diag::new(
+                        codes::EXPECTED,
+                        "expected an expression after `..`",
+                        self.span(),
+                    ));
+                }
+                self.count_node(span)?;
+                let rhs = self.expr_bp(rbp)?;
+                lhs = Expr::Range(Box::new(lhs), Box::new(rhs), span);
+                continue;
+            }
             let Some((lbp, rbp, op)) = infix(self.at()) else {
                 break;
             };
@@ -1654,6 +1697,7 @@ fn span_of(e: &Expr) -> Span {
         | Expr::Tuple(_, s)
         | Expr::Lambda(_, _, s)
         | Expr::Pipe(_, _, s)
+        | Expr::Range(_, _, s)
         | Expr::If(_, _, _, s)
         | Expr::Match(_, _, s)
         | Expr::Block(_, s) => *s,
