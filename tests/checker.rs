@@ -459,3 +459,101 @@ fn deep_alias_chain_resolves() {
     assert_eq!(check(&chain("int")), Ok(()));
     assert_eq!(check(&chain("string")), Err(codes::TYPE_MISMATCH));
 }
+
+/// A multi-level alias chain resolves in declaration order and forward order
+/// alike (`LANGUAGE_SPEC.md` §7): aliases are hoisted, so a target may be
+/// declared after the alias that names it, and a three-link chain through
+/// primitive and optional targets stays transparent.
+#[test]
+fn alias_chain_resolves_in_any_declaration_order() {
+    // Declaration order: target first.
+    assert_eq!(
+        check("type C = int\ntype B = C\ntype A = B\nfn main() { let x: A = 9 }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type C = int\ntype B = C\ntype A = B\nfn main() { let x: A = \"s\" }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // Forward order: target last.
+    assert_eq!(
+        check("type A = B\ntype B = C\ntype C = int\nfn main() { let x: A = 9 }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type A = B\ntype B = C\ntype C = int\nfn main() { let x: A = \"s\" }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+/// An alias resolves through collection and map compound positions, including
+/// a list/map of aliased element types, and a two-level chain inside a
+/// compound (`LANGUAGE_SPEC.md` §7).
+#[test]
+fn alias_resolves_through_collection_positions() {
+    // Alias as a list element type.
+    assert_eq!(
+        check("type Id = int\nfn main() { let xs: [Id] = [1, 2] }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type Id = int\nfn main() { let xs: [Id] = [\"a\"] }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // Alias as a map value type.
+    assert_eq!(
+        check("type Id = int\nfn main() { let m: {string: Id} = {\"a\": 1} }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("type Id = int\nfn main() { let m: {string: Id} = {\"a\": \"b\"} }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // Alias chain resolving to a list, used as a value type.
+    assert_eq!(
+        check("type Id = int\ntype Ids = [Id]\nfn main() { let xs: Ids = [1] }"),
+        Ok(())
+    );
+    // Alias in both sides of a chain nested through `T | none`.
+    assert_eq!(
+        check("type Id = int\ntype MaybeIds = [Id] | none\nfn main() { let xs: MaybeIds = [1] }"),
+        Ok(())
+    );
+}
+
+/// An alias may name a user struct or enum type and stay transparent: aliases
+/// never create nominal identity, so the aliased struct is still the same
+/// nominal type (`LANGUAGE_SPEC.md` §7).
+#[test]
+fn alias_to_user_type_is_transparent() {
+    assert_eq!(
+        check("struct P { x: int }\ntype Alias = P\nfn main() { let s: Alias = P { x: 1 } }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("struct P { x: int }\ntype Alias = P\nfn main() { let s: Alias = P { x: \"s\" } }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // A forward-declared struct target also resolves.
+    assert_eq!(
+        check("type Alias = P\nstruct P { x: int }\nfn main() { let s: Alias = P { x: 1 } }"),
+        Ok(())
+    );
+    // An aliased enum is usable in an annotated binding.
+    assert_eq!(
+        check("enum E { A(int) }\ntype AliasE = E\nfn main() { let e: AliasE = A(3) }"),
+        Ok(())
+    );
+}
+
+/// An alias chain that ends at an unknown name is `E3002`, whether the unknown
+/// name is the direct target or reached through another alias
+/// (`LANGUAGE_SPEC.md` §7).
+#[test]
+fn alias_chain_to_unknown_target_is_declaration_error() {
+    assert_eq!(check("type A = B\ntype B = Nope"), Err(codes::UNKNOWN_TYPE));
+    assert_eq!(
+        check("type A = B\ntype B = C\ntype C = Nope"),
+        Err(codes::UNKNOWN_TYPE)
+    );
+}

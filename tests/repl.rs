@@ -153,6 +153,23 @@ fn regression_repl_alias_persistence() {
     assert!(out.contains("P { id: 7 }"), "{out}");
 }
 
+/// A chained alias carries across submissions (`LANGUAGE_SPEC.md` §7): the
+/// resolved type is usable in a later binding once every link is declared.
+/// Each submission is its own module, so a forward reference to a target that
+/// has not been declared yet is `E3002`, exactly like a file.
+#[test]
+fn regression_repl_chained_alias_persistence() {
+    // Target declared first: B -> int, A -> B.
+    let out = body("type B = int\ntype A = B\nlet x: A = 5\nx\n:quit\n");
+    assert!(out.contains('5'), "{out}");
+    // A provable mismatch through a chained alias is still `E3001`.
+    let out = body("type B = int\ntype A = B\nlet x: A = \"s\"\n:quit\n");
+    assert!(out.contains("E3001"), "{out}");
+    // A submission naming a target the session has not seen is `E3002`.
+    let out = body("type A = B\n:quit\n");
+    assert!(out.contains("E3002"), "{out}");
+}
+
 /// A session that references an undeclared name still fails, and the session
 /// keeps working afterwards.
 #[test]

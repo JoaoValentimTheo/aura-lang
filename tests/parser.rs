@@ -411,6 +411,77 @@ fn non_none_union_is_syntax_error() {
     assert!(parse("type N = int | none").is_ok());
 }
 
+/// The `T | none`-only rule is positional, not special to the alias
+/// declaration: every other type position rejects a general union with the
+/// same `E1006` syntax error (`LANGUAGE_SPEC.md` §4.3). This is a boundary
+/// test: the future `int | float` / `string | int` forms are **not** current
+/// syntax and MUST stay rejected until an RFC changes the grammar.
+#[test]
+fn general_union_is_rejected_in_every_type_position() {
+    let rejected = [
+        // alias target
+        "type Number = int | float",
+        "type ID = string | int",
+        // binding annotation
+        "fn main() { let x: int | float = 1 }",
+        // top-level constant annotation
+        "let x: int | bool = true",
+        // function parameter annotation
+        "fn f(x: string | int) { }",
+        // return annotation
+        "fn f() -> int | float { return 1 }",
+        // struct field annotation
+        "struct S { x: int | float }",
+        // enum payload annotation
+        "enum E { A(string | int) }",
+        // collection element annotation
+        "fn main() { let xs: [int | float] = [1] }",
+        // map value annotation
+        "fn main() { let m: {string: int | float} = {\"a\": 1} }",
+    ];
+    for src in rejected {
+        assert_eq!(
+            parse(src).map_err(|d| d.code),
+            Err(codes::EXPECTED),
+            "expected E1006 for {src:?}"
+        );
+    }
+    // The one supported union form stays accepted in each position.
+    for src in [
+        "type N = int | none",
+        "fn main() { let x: string | none = none }",
+        "fn f(x: int | none) -> bool | none { return none }",
+        "struct S { x: int | none }",
+        "enum E { A(int | none) }",
+        "fn main() { let xs: [int | none] = [1] }",
+    ] {
+        assert!(parse(src).is_ok(), "expected {src:?} to parse");
+    }
+}
+
+/// `a..b` is a **future** range syntax, not current language syntax: the
+/// frozen grammar defines only `range(a, b)` (`LANGUAGE_SPEC.md` §22.1). Every
+/// `..` spelling is a deterministic `E1006`, in expression and `for` position
+/// alike, and never lexes as a float or parses as a range.
+#[test]
+fn future_dot_dot_range_syntax_is_rejected() {
+    for src in [
+        "fn main() { print(1..2) }",
+        "fn main() { for i in 1..10 { } }",
+        "fn main() { let xs = [1..3] }",
+        "fn main() { let x = 0..0 }",
+    ] {
+        assert_eq!(
+            parse(src).map_err(|d| d.code),
+            Err(codes::EXPECTED),
+            "expected E1006 for {src:?}"
+        );
+    }
+    assert_eq!(parse_expr("1..2").map_err(|d| d.code), Err(codes::EXPECTED));
+    // The supported form remains valid.
+    assert!(parse("fn main() { for i in range(1, 10) { } }").is_ok());
+}
+
 /// There is no `a..b` range syntax in the frozen grammar; `1..2` fails in the
 /// parser with `E1006` and never becomes a float or a runtime range (§3.6.2).
 #[test]

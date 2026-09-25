@@ -568,6 +568,44 @@ fn range_equality_and_unorderability() {
     assert_eq!(d.code, codes::TYPE_MISMATCH);
 }
 
+/// The documented `range(a, b)` edge cases (`LANGUAGE_SPEC.md` §22.1): an
+/// empty range, a single-element range, and a ten-element range all obey
+/// start-inclusive/end-exclusive, half-open semantics.
+#[test]
+fn range_edge_bounds_are_half_open() {
+    // range(0, 0) is empty; len is 0 and iteration yields nothing.
+    assert_eq!(
+        out("fn main() { print(len(range(0, 0)))\n for i in range(0, 0) { print(i) }\n print(\"done\") }"),
+        "0\ndone\n"
+    );
+    // range(0, 1) is the single element 0.
+    assert_eq!(
+        out("fn main() { print(len(range(0, 1)))\n for i in range(0, 1) { print(i) } }"),
+        "1\n0\n"
+    );
+    // range(0, 10) is 0..=9.
+    assert_eq!(
+        out("fn main() { print(len(range(0, 10)))\n let mut s = 0\n for i in range(0, 10) { s = s + i }\n print(s) }"),
+        "10\n45\n"
+    );
+    // The end bound is never yielded.
+    assert_eq!(
+        out("fn main() { for i in range(0, 2) { print(i) }\n print(\"end\") }"),
+        "0\n1\nend\n"
+    );
+}
+
+/// A large range is iterated lazily (§22.2): an immediate `break` returns
+/// before materializing the range, so a range far past the materialization cap
+/// still terminates.
+#[test]
+fn large_range_iterates_lazily_with_early_break() {
+    assert_eq!(
+        out("fn main() { let mut n = 0\n for i in range(0, 100000000) { n = n + 1\n if i == 2 { break } }\n print(n) }"),
+        "3\n"
+    );
+}
+
 /// A closure captures its defining environment by reference (§15.5): it
 /// observes later mutations of a `let mut` binding it closes over.
 #[test]
