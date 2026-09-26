@@ -521,3 +521,34 @@ fn top_level_control_flow_is_not_an_item() {
     );
     assert!(parse("print(1)").is_ok());
 }
+
+/// The grammar allows an optional trailing comma before the closing bracket of
+/// a list literal, a list pattern, and the `let` list pattern (`[ "," ]`).
+#[test]
+fn trailing_comma_is_accepted_in_list_forms() {
+    for src in [
+        "fn main() { let xs = [1, 2,] }",
+        "fn main() { match [1] { [a,] -> print(a) } }",
+        "fn main() { for [a,] in [[1]] { print(a) } }",
+        "fn main() { let [a,] = [1] }",
+    ] {
+        assert!(parse(src).is_ok(), "expected {src:?} to parse");
+    }
+    // Without the trailing comma nothing changes.
+    assert!(parse("fn main() { let xs = [1, 2] }").is_ok());
+}
+
+/// A one-element parenthesized comma-list is a one-element list, per the
+/// list-sugar production `"(" expr "," [ expr { "," expr } ] ")"` (§21).
+#[test]
+fn one_element_list_sugar_parses() {
+    match parse_expr("(1,)").expect("parse") {
+        Expr::Tuple(items, _) => assert_eq!(items.len(), 1),
+        other => panic!("unexpected {other:?}"),
+    }
+    // `(1)` is grouping, not list sugar.
+    assert!(matches!(
+        parse_expr("(1)").expect("parse"),
+        Expr::Lit(Lit::Int(1), _)
+    ));
+}

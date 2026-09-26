@@ -836,3 +836,50 @@ fn range_literal_bounds_are_statically_checked() {
     assert_eq!(check("fn main() { let r = 1 + 2..10 - 1 }"), Ok(()));
     assert_eq!(check("fn f(x) { let r = 0..x }"), Ok(()));
 }
+
+/// A struct MUST declare each field name at most once (`LANGUAGE_SPEC.md`
+/// §17.1); a duplicate was formerly accepted silently, with the later
+/// annotation winning.
+#[test]
+fn duplicate_struct_field_is_rejected() {
+    assert_eq!(
+        check("struct S { x: int, x: string }\nfn main() { }"),
+        Err(codes::DUPLICATE_FIELD)
+    );
+    // Distinct fields are unaffected.
+    assert_eq!(
+        check("struct S { x: int, y: string }\nfn main() { }"),
+        Ok(())
+    );
+}
+
+/// Both bounds of the `range` builtin are statically checked as `int`, so a
+/// provably wrong second bound is `E3001` before execution, matching `a..b`
+/// and the runtime (`LANGUAGE_SPEC.md` §22.1, §25).
+#[test]
+fn range_builtin_second_bound_is_statically_checked() {
+    assert_eq!(
+        check("fn main() { let r = range(0, \"x\") }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        check("fn main() { let r = range(0, 1.5) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(check("fn main() { let r = range(0, 10) }"), Ok(()));
+    // A single-argument call is still accepted, and an Unknown bound is
+    // undecidable and therefore permitted (§2.3).
+    assert_eq!(check("fn main() { let r = range(10) }"), Ok(()));
+    assert_eq!(check("fn f(x) { let r = range(0, x) }"), Ok(()));
+}
+
+/// A parenthesized comma-list is list sugar and is indistinguishable from a
+/// list literal (§21), so it is annotated like a list, not as `Unknown`.
+#[test]
+fn tuple_is_checked_like_a_list() {
+    assert_eq!(
+        check("fn main() { let x: [string] = (1, 2) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(check("fn main() { let x: [int] = (1, 2) }"), Ok(()));
+}

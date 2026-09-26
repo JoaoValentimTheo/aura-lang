@@ -770,3 +770,40 @@ fn catch_binding_does_not_leak() {
     let d = fails("fn main() { try { throw \"e\" } catch err -> { print(err) }\n print(err) }");
     assert_eq!(d.code, codes::UNDEFINED);
 }
+
+/// An optional trailing comma before `]` is accepted in list literals, list
+/// patterns, and the `let` list pattern, and the value is unchanged.
+#[test]
+fn trailing_comma_in_list_forms_is_transparent() {
+    assert_eq!(out("fn main() { print([1, 2,]) }"), "[1, 2]\n");
+    assert_eq!(
+        out("fn main() { let [a, b,] = [1, 2]\n print(a + b) }"),
+        "3\n"
+    );
+    assert_eq!(
+        out("fn main() { for [a, b,] in [[1, 2]] { print(a + b) } }"),
+        "3\n"
+    );
+    assert_eq!(out("fn main() { print([]) }"), "[]\n");
+}
+
+/// A one-element parenthesized comma-list is a one-element list (§21).
+#[test]
+fn one_element_list_sugar_is_a_list() {
+    assert_eq!(out("fn main() { print((1,)) }"), "[1]\n");
+    assert_eq!(out("fn main() { print((1,).len()) }"), "1\n");
+    assert_eq!(out("fn main() { print((1,) == [1]) }"), "true\n");
+}
+
+/// A literal pattern in `for` is assertive: a matching element runs the body,
+/// and a non-matching element is a type mismatch rather than a silent no-op
+/// (`LANGUAGE_SPEC.md` §4.6, §19.3).
+#[test]
+fn for_literal_patterns_are_assertive() {
+    assert_eq!(
+        out("fn main() { for 1 in [1] { print(\"hit\") } }"),
+        "hit\n"
+    );
+    let d = fails("fn main() { for 1 in [1, 2] { print(\"hit\") } }");
+    assert_eq!(d.code, codes::TYPE_MISMATCH);
+}

@@ -472,10 +472,19 @@ impl Checker {
         // Validate every written type annotation now that all names are known.
         for item in &m.items {
             match item {
-                Item::Struct { name, fields, .. } => {
+                Item::Struct { name, fields, span } => {
                     let mut map = HashMap::new();
                     let mut order = Vec::new();
                     for (fname, fty) in fields {
+                        if map.contains_key(fname) {
+                            return Err(Diag::new(
+                                codes::DUPLICATE_FIELD,
+                                format!(
+                                    "field `{fname}` is declared more than once in struct `{name}`"
+                                ),
+                                *span,
+                            ));
+                        }
                         let ty = self.annotation(fty, Span::default())?;
                         map.insert(fname.clone(), ty);
                         order.push(fname.clone());
@@ -943,7 +952,12 @@ impl Checker {
                 Lit::None => Ty::Unknown,
             },
             Expr::FStr(..) => Ty::String,
-            Expr::List(items, _) => {
+            // A parenthesized comma-list is list sugar (§21): it is
+            // indistinguishable from a list literal, so it infers the same
+            // list type. (It previously inferred `Unknown`, which let a
+            // `(1, 2)` pass an annotation that `[1, 2]` would be rejected
+            // for, contradicting the "indistinguishable" rule.)
+            Expr::List(items, _) | Expr::Tuple(items, _) => {
                 let mut elem = Ty::Unknown;
                 for item in items {
                     let t = self.infer(item);
@@ -1030,10 +1044,7 @@ impl Checker {
                 Ty::Unknown
             }
             Expr::Range(_, _, _) => Ty::Named("range".to_string()),
-            Expr::Pipe(_, _, _)
-            | Expr::Index(_, _, _)
-            | Expr::Tuple(_, _)
-            | Expr::Lambda(_, _, _) => Ty::Unknown,
+            Expr::Pipe(_, _, _) | Expr::Index(_, _, _) | Expr::Lambda(_, _, _) => Ty::Unknown,
         }
     }
 

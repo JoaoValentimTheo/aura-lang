@@ -911,7 +911,21 @@ impl Interp {
                     Span::default(),
                 )),
             },
-            _ => Ok(()),
+            // A literal pattern binds nothing but MUST match (§19.3). `let`
+            // rejects literal patterns at parse time, so this arm is reached
+            // only through `for`/`match`; validating here keeps a literal
+            // pattern in `for` assertive rather than a silent no-op.
+            Pattern::Int(_) | Pattern::Str(_) | Pattern::Bool(_) | Pattern::None => {
+                if self.match_pattern(pat, value) {
+                    Ok(())
+                } else {
+                    Err(self.error(
+                        codes::TYPE_MISMATCH,
+                        "literal pattern does not match the value",
+                        Span::default(),
+                    ))
+                }
+            }
         }
     }
 

@@ -124,6 +124,8 @@ pub mod codes {
     pub const DUPLICATE_BINDING: u16 = 2014;
     /// `break` or `continue` used outside a loop.
     pub const LOOP_CONTROL: u16 = 2015;
+    /// A struct declares the same field name more than once.
+    pub const DUPLICATE_FIELD: u16 = 2016;
     /// Type mismatch.
     pub const TYPE_MISMATCH: u16 = 3001;
     /// Return type mismatch.

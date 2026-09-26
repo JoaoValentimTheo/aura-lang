@@ -895,6 +895,11 @@ impl Parser {
                             self.expect(&Tok::RBracket)?;
                             break;
                         }
+                        // A trailing comma before `]` is allowed (§4.7).
+                        if matches!(self.at(), Tok::RBracket) {
+                            self.bump();
+                            break;
+                        }
                     }
                 }
                 Ok(Pattern::List(parts))
@@ -983,6 +988,11 @@ impl Parser {
                         if !self.eat(&Tok::Comma) {
                             self.skip_newlines();
                             self.expect(&Tok::RBracket)?;
+                            break;
+                        }
+                        // A trailing comma before `]` is allowed (§4.6).
+                        if matches!(self.at(), Tok::RBracket) {
+                            self.bump();
                             break;
                         }
                     }
@@ -1276,15 +1286,19 @@ impl Parser {
                 let first = self.expr()?;
                 if self.eat(&Tok::Comma) {
                     let mut items = vec![first];
-                    loop {
-                        self.skip_newlines();
-                        items.push(self.expr()?);
-                        self.skip_newlines();
-                        if !self.eat(&Tok::Comma) {
-                            break;
-                        }
-                        if matches!(self.at(), Tok::RParen) {
-                            break;
+                    // `(x,)` is a one-element list (§21); the grammar's
+                    // optional tail after the comma may be empty.
+                    if !matches!(self.at(), Tok::RParen) {
+                        loop {
+                            self.skip_newlines();
+                            items.push(self.expr()?);
+                            self.skip_newlines();
+                            if !self.eat(&Tok::Comma) {
+                                break;
+                            }
+                            if matches!(self.at(), Tok::RParen) {
+                                break;
+                            }
                         }
                     }
                     self.expect(&Tok::RParen)?;
@@ -1305,6 +1319,11 @@ impl Parser {
                         self.skip_newlines();
                         if !self.eat(&Tok::Comma) {
                             self.expect(&Tok::RBracket)?;
+                            break;
+                        }
+                        // A trailing comma before `]` is allowed (§4.5).
+                        if matches!(self.at(), Tok::RBracket) {
+                            self.bump();
                             break;
                         }
                     }

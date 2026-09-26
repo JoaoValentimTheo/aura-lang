@@ -285,7 +285,11 @@ pub fn builtins() -> &'static [Signature] {
             },
             Signature {
                 name: "range",
-                params: vec![Param::one(TypeClass::Int)],
+                // Both bounds are ints (§22.1, §25). The second `Param` was
+                // missing, so `range(0, "x")` passed the checker and failed
+                // only at runtime; declaring it makes the static and runtime
+                // checks agree.
+                params: vec![Param::one(TypeClass::Int), Param::one(TypeClass::Int)],
                 min_args: 1,
                 max_args: 2,
                 returns: Returns::Ty(Ty::Named("range".to_string())),
@@ -380,7 +384,11 @@ pub fn builtins() -> &'static [Signature] {
             },
             Signature {
                 name: "assert",
-                params: vec![Param::ANY],
+                // The optional second argument is the failure message. The
+                // runtime renders it with `display`, so any value is accepted;
+                // declaring the parameter keeps the registry's arity honest
+                // without constraining the type.
+                params: vec![Param::ANY, Param::ANY],
                 min_args: 1,
                 max_args: 2,
                 returns: Returns::Ty(Ty::Unknown),

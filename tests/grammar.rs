@@ -149,6 +149,10 @@ fn error_samples() -> Vec<(u16, String)> {
             "fn main() { match [1, 2] { [a, a] -> print(a)\n _ -> print(0) } }".to_string(),
         ),
         (
+            codes::DUPLICATE_FIELD,
+            "struct S { x: int, x: string }".to_string(),
+        ),
+        (
             codes::TYPE_MISMATCH,
             "fn main() { print(\"a\" + 1) }".to_string(),
         ),
