@@ -391,13 +391,29 @@ pub enum Item {
     Expr(Expr, Span),
     /// `impl Target { fn method(self, ...) { ... } }` — the behavior block
     /// attached to an already-declared nominal struct (`LANGUAGE_SPEC.md`
-    /// §17.6). `methods` holds only [`Item::Fn`] values whose first parameter
+    /// §17.6), or `impl Trait for Target { ... }` — a trait implementation
+    /// (§17.7). `methods` holds only [`Item::Fn`] values whose first parameter
     /// is the explicit receiver `self`; the parser guarantees this shape, so
-    /// no second function type is introduced.
+    /// no second function type is introduced. `trait_name` is `Some` for the
+    /// trait-implementation form.
     Impl {
         /// The nominal struct this behavior block belongs to.
         target: String,
+        /// The trait being implemented, when this is `impl Trait for Target`.
+        trait_name: Option<String>,
         /// Methods, each an [`Item::Fn`] with `self` as its first parameter.
+        methods: Vec<Item>,
+        /// Span.
+        span: Span,
+    },
+    /// `trait Name { fn method(self, ...) -> T ... }` — a behavioral contract
+    /// (`LANGUAGE_SPEC.md` §17.7). Declarations only: each entry is an
+    /// [`Item::Fn`] with a `self` receiver and no body. A trait introduces no
+    /// value type and no dispatch mechanism.
+    Trait {
+        /// Name.
+        name: String,
+        /// Declared method signatures, each an [`Item::Fn`] with an empty body.
         methods: Vec<Item>,
         /// Span.
         span: Span,

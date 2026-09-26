@@ -409,12 +409,14 @@ impl Parser {
 
     fn item(&mut self) -> Result<Item> {
         let public = self.eat(&Tok::Pub);
-        // `impl` is NOT a reserved word: it stays an ordinary identifier
-        // everywhere (`let impl = 1`, `fn impl(x)`, a field named `impl`, …).
-        // A behavior block is recognized only in this item position, where
-        // `impl <StructName> {` is unmistakable (§17.6, §3.3).
+        // `impl` and `trait` are NOT reserved words: they stay ordinary
+        // identifiers everywhere. A behavior block or trait is recognized
+        // only in this item position (§17.6, §17.7, §3.3).
         if self.at_impl_block() {
             return self.impl_item();
+        }
+        if self.at_trait_block() {
+            return self.trait_item();
         }
         match self.at().clone() {
             Tok::Fn => self.fn_item(public),
@@ -432,12 +434,35 @@ impl Parser {
         }
     }
 
-    /// Whether the tokens here begin a behavior block: `impl` `StructName` `{`.
-    /// Only an `impl` identifier immediately followed by a (capitalized) type
-    /// name and an opening brace is a behavior declaration; any other use of
-    /// `impl` is an ordinary expression/declaration and is left untouched.
+    /// Whether the tokens here begin a behavior block or a trait
+    /// implementation: `impl` `TypeName` `{` / `impl` `TypeName` `for` `Type`.
+    /// An `impl` identifier followed by a capitalized name and either `{` or
+    /// `for` is unmistakable; any other use of `impl` is left untouched.
     fn at_impl_block(&self) -> bool {
         if !matches!(self.at(), Tok::Ident(n) if n == "impl") {
+            return false;
+        }
+        let Some(next) = self.toks.get(self.pos + 1) else {
+            return false;
+        };
+        let Some(after) = self.toks.get(self.pos + 2) else {
+            return false;
+        };
+        if !matches!(&next.tok, Tok::Ident(name) if name.chars().next().is_some_and(char::is_uppercase))
+        {
+            return false;
+        }
+        // `impl Trait for Struct`, `impl Struct {`, or a malformed header such
+        // as `impl A B {` (treated as a behavior block so the error is a parse
+        // diagnostic rather than falling through to expression parsing).
+        matches!(after.tok, Tok::LBrace | Tok::For | Tok::Ident(_))
+    }
+
+    /// Whether the tokens here begin a trait declaration: `trait` `Name` `{`.
+    /// Contextual like `impl`: only an identifier `trait` followed by a
+    /// capitalized name and `{` is a declaration.
+    fn at_trait_block(&self) -> bool {
+        if !matches!(self.at(), Tok::Ident(n) if n == "trait") {
             return false;
         }
         let Some(next) = self.toks.get(self.pos + 1) else {
@@ -473,13 +498,23 @@ impl Parser {
     }
 
     /// `impl Struct { fn method(self, ...) { ... } ... }` — a behavior block
-    /// attached to an already-declared nominal struct (`LANGUAGE_SPEC.md`
-    /// §17.6). Only `fn` declarations may appear; each must declare the
+    /// attached to an already-declared nominal struct — or `impl Trait for
+    /// Struct { ... }` — a trait implementation (`LANGUAGE_SPEC.md` §17.6,
+    /// §17.7). Only `fn` declarations may appear; each must declare the
     /// explicit receiver `self` as its first parameter.
     fn impl_item(&mut self) -> Result<Item> {
         let span = self.span();
         self.bump();
-        let target = self.ident("struct name after `impl`")?;
+        let first = self.ident("struct or trait name after `impl`")?;
+        // `impl Trait for Struct` — `for` is a reserved token, used here as the
+        // trait-implementation separator.
+        let (trait_name, target) = if self.at() == &Tok::For {
+            self.bump();
+            let target = self.ident("struct name after `for`")?;
+            (Some(first), target)
+        } else {
+            (None, first)
+        };
         self.expect(&Tok::LBrace)?;
         let mut methods = Vec::new();
         loop {
@@ -503,7 +538,88 @@ impl Parser {
         }
         Ok(Item::Impl {
             target,
+            trait_name,
             methods,
+            span,
+        })
+    }
+
+    /// `trait Name { fn method(self, ...) -> T ... }` — a behavioral contract
+    /// (`LANGUAGE_SPEC.md` §17.7). Declarations only: every member is a `fn`
+    /// with a `self` receiver and no body.
+    fn trait_item(&mut self) -> Result<Item> {
+        let span = self.span();
+        self.bump();
+        let name = self.ident("trait name")?;
+        self.expect(&Tok::LBrace)?;
+        let mut methods = Vec::new();
+        loop {
+            self.skip_newlines();
+            if self.eat(&Tok::RBrace) {
+                break;
+            }
+            if matches!(self.at(), Tok::Eof) {
+                return Err(self.expected("`}` closing the `trait` block"));
+            }
+            let public = self.eat(&Tok::Pub);
+            if !matches!(self.at(), Tok::Fn) {
+                let found = self.at().describe();
+                return Err(Diag::new(
+                    codes::EXPECTED,
+                    format!(
+                        "expected a `fn` signature or `}}` in `trait`, found {found}; traits declare signatures only (no bodies, fields, or associated items)"
+                    ),
+                    self.span(),
+                ));
+            }
+            methods.push(self.trait_method_decl(public)?);
+        }
+        Ok(Item::Trait {
+            name,
+            methods,
+            span,
+        })
+    }
+
+    /// `fn name(self, ...) -> T` inside a trait: a declaration with no body.
+    fn trait_method_decl(&mut self, public: bool) -> Result<Item> {
+        let span = self.span();
+        self.bump();
+        let name = self.ident("trait method name")?;
+        self.expect(&Tok::LParen)?;
+        let params = self.params(true)?;
+        if params.is_empty() {
+            return Err(Diag::new(
+                codes::EXPECTED,
+                format!(
+                    "trait method `{name}` must declare the receiver `self` as its first parameter"
+                ),
+                span,
+            ));
+        }
+        let ret = if self.eat(&Tok::Arrow) {
+            Some(self.ty()?)
+        } else {
+            None
+        };
+        // A trait method is a declaration: no body. A following `{` would be a
+        // default body, which V1 does not support.
+        if matches!(self.at(), Tok::LBrace) {
+            return Err(Diag::new(
+                codes::EXPECTED,
+                format!(
+                    "trait method `{name}` must not have a body; traits declare signatures only"
+                ),
+                span,
+            ));
+        }
+        self.end_stmt();
+        Ok(Item::Fn {
+            name,
+            params,
+            ret,
+            body: Vec::new(),
+            public,
             span,
         })
     }

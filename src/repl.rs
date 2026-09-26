@@ -8,7 +8,7 @@
 use std::io::{BufRead, Write};
 
 use crate::ast::{Item, Stmt};
-use crate::check::GlobalDecl;
+use crate::check::{GlobalDecl, MethodDecl};
 use crate::error::Diag;
 use crate::run::{Ctl, Interp};
 
@@ -267,8 +267,23 @@ fn eval_line<W: Write>(
 /// declarations by their introduced name.
 fn same_decl(a: &GlobalDecl, b: &GlobalDecl) -> bool {
     match (a, b) {
-        (GlobalDecl::Impl { .. }, GlobalDecl::Impl { .. }) => decl_name(a) == decl_name(b),
-        (GlobalDecl::Impl { .. }, _) | (_, GlobalDecl::Impl { .. }) => false,
+        (
+            GlobalDecl::Impl {
+                target: at,
+                trait_name: an,
+                ..
+            },
+            GlobalDecl::Impl {
+                target: bt,
+                trait_name: bn,
+                ..
+            },
+        ) => at == bt && an == bn,
+        (GlobalDecl::Trait { name: an, .. }, GlobalDecl::Trait { name: bn, .. }) => an == bn,
+        (GlobalDecl::Impl { .. }, _)
+        | (_, GlobalDecl::Impl { .. })
+        | (GlobalDecl::Trait { .. }, _)
+        | (_, GlobalDecl::Trait { .. }) => false,
         _ => decl_name(a) == decl_name(b),
     }
 }
@@ -280,9 +295,10 @@ fn decl_name(d: &GlobalDecl) -> &str {
         | GlobalDecl::Function { name, .. }
         | GlobalDecl::Struct { name, .. }
         | GlobalDecl::Enum { name, .. }
-        | GlobalDecl::Alias { name, .. } => name,
+        | GlobalDecl::Alias { name, .. }
+        | GlobalDecl::Trait { name, .. } => name,
         // An `impl` block introduces no new global name; it is identified by
-        // its target struct, which the surrounding `struct` declaration owns.
+        // its target struct (and, for a trait impl, the trait).
         GlobalDecl::Impl { target, .. } => target,
     }
 }
@@ -319,25 +335,39 @@ fn declarations_of(item: &Item) -> Vec<GlobalDecl> {
         }],
         Item::Use { .. } | Item::Expr(..) => Vec::new(),
         Item::Impl {
-            target, methods, ..
+            target,
+            trait_name,
+            methods,
+            ..
         } => vec![GlobalDecl::Impl {
             target: target.clone(),
-            methods: methods
-                .iter()
-                .filter_map(|m| match m {
-                    Item::Fn {
-                        name, ret, params, ..
-                    } => Some((
-                        name.clone(),
-                        ret.clone(),
-                        params
-                            .iter()
-                            .map(|p| (p.name.clone(), p.ty.clone()))
-                            .collect(),
-                    )),
-                    _ => None,
-                })
-                .collect(),
+            trait_name: trait_name.clone(),
+            methods: method_decls(methods),
+        }],
+        Item::Trait { name, methods, .. } => vec![GlobalDecl::Trait {
+            name: name.clone(),
+            methods: method_decls(methods),
         }],
     }
+}
+
+/// The `(name, return annotation, parameters)` of each `fn` in an `impl` or
+/// `trait` block, for REPL persistence.
+fn method_decls(methods: &[Item]) -> Vec<MethodDecl> {
+    methods
+        .iter()
+        .filter_map(|m| match m {
+            Item::Fn {
+                name, ret, params, ..
+            } => Some((
+                name.clone(),
+                ret.clone(),
+                params
+                    .iter()
+                    .map(|p| (p.name.clone(), p.ty.clone()))
+                    .collect(),
+            )),
+            _ => None,
+        })
+        .collect()
 }

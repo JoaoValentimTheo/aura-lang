@@ -122,18 +122,30 @@ pub enum GlobalDecl {
     },
     /// Methods introduced by an `impl` block, grouped by their target struct.
     /// Carried across REPL submissions so methods declared in one submission
-    /// remain callable in later ones.
+    /// remain callable in later ones. `trait_name` is `Some` for
+    /// `impl Trait for Struct`.
     Impl {
         /// The nominal struct the methods belong to.
         target: String,
+        /// The trait being implemented, when this is `impl Trait for Struct`.
+        trait_name: Option<String>,
         /// Each method as `(name, return annotation, params)`.
+        methods: Vec<MethodDecl>,
+    },
+    /// A trait declared with `trait Name { ... }`. Carried across REPL
+    /// submissions so a trait declared in one submission can be implemented,
+    /// and its contract checked, in later ones.
+    Trait {
+        /// The trait name.
+        name: String,
+        /// Declared methods as `(name, return annotation, params)`.
         methods: Vec<MethodDecl>,
     },
 }
 
 /// A method's declaration carried across REPL submissions: `(name, return
 /// annotation, parameters)`.
-type MethodDecl = (String, Option<TypeExpr>, Vec<(String, Option<TypeExpr>)>);
+pub type MethodDecl = (String, Option<TypeExpr>, Vec<(String, Option<TypeExpr>)>);
 
 /// A top-level function's signature as known to the checker.
 ///
@@ -172,6 +184,13 @@ pub struct Checker {
     /// Structs that already have a behavior block. V1 permits one `impl`
     /// block per struct.
     impl_seen: HashMap<String, Span>,
+    /// Declared traits, by name, mapping each method name to its signature.
+    /// A trait is a behavioral contract with no value representation
+    /// (`LANGUAGE_SPEC.md` §17.7).
+    traits: HashMap<String, HashMap<String, FnSig>>,
+    /// Which trait each struct implements, keyed by `(struct, trait)`, so a
+    /// duplicate `impl Trait for Struct` can be rejected.
+    trait_impls: HashMap<(String, String), Span>,
     /// Enum variant tags declared anywhere, with defining enum name.
     variants: HashMap<String, String>,
     /// Payload types of each enum variant, by tag.
@@ -220,6 +239,8 @@ impl Checker {
             struct_field_order: HashMap::new(),
             struct_methods: HashMap::new(),
             impl_seen: HashMap::new(),
+            traits: HashMap::new(),
+            trait_impls: HashMap::new(),
             variants: HashMap::new(),
             variant_payloads: HashMap::new(),
             return_type: None,
@@ -321,6 +342,7 @@ impl Checker {
                     c.alias_targets.insert(name.clone(), target.clone());
                 }
                 GlobalDecl::Impl { .. } => {}
+                GlobalDecl::Trait { .. } => {}
             }
         }
         // Then record fields, payloads, and variant tags, resolving aliases
@@ -359,10 +381,18 @@ impl Checker {
                     let restored = Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t));
                     c.value_types[0].insert(name.clone(), restored);
                 }
-                GlobalDecl::Impl { target, methods } => {
+                GlobalDecl::Impl {
+                    target,
+                    trait_name,
+                    methods,
+                } => {
                     // Restore the persisted method table so a method declared
-                    // in an earlier submission resolves in later ones.
-                    let mut table: HashMap<String, FnSig> = HashMap::new();
+                    // in an earlier submission resolves in later ones. Methods
+                    // are merged into the struct's single surface, since
+                    // inherent and trait-provided methods share one namespace.
+                    // Resolve signatures first (which borrows `c`) and merge
+                    // afterwards so the table borrow does not overlap.
+                    let mut restored: Vec<(String, FnSig)> = Vec::new();
                     for (name, ret, params) in methods {
                         let ret_ty = ret
                             .as_ref()
@@ -376,16 +406,51 @@ impl Checker {
                                 (pname.clone(), ty)
                             })
                             .collect();
-                        table.insert(
+                        restored.push((
                             name.clone(),
+                            FnSig {
+                                ret: ret_ty,
+                                params: param_tys,
+                            },
+                        ));
+                    }
+                    let table = c.struct_methods.entry(target.clone()).or_default();
+                    for (name, sig) in restored {
+                        table.insert(name, sig);
+                    }
+                    if trait_name.is_none() {
+                        c.impl_seen.entry(target.clone()).or_default();
+                    } else if let Some(tname) = trait_name {
+                        c.trait_impls
+                            .insert((target.clone(), tname.clone()), Span::default());
+                    }
+                }
+                GlobalDecl::Trait { name, methods } => {
+                    // Restore the persisted trait contract so a later
+                    // submission can implement it.
+                    let mut table: HashMap<String, FnSig> = HashMap::new();
+                    for (mname, ret, params) in methods {
+                        let ret_ty = ret
+                            .as_ref()
+                            .map(|t| Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t)));
+                        let param_tys = params
+                            .iter()
+                            .map(|(pname, pty)| {
+                                let ty = pty.as_ref().map(|t| {
+                                    Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t))
+                                });
+                                (pname.clone(), ty)
+                            })
+                            .collect();
+                        table.insert(
+                            mname.clone(),
                             FnSig {
                                 ret: ret_ty,
                                 params: param_tys,
                             },
                         );
                     }
-                    c.struct_methods.insert(target.clone(), table);
-                    c.impl_seen.insert(target.clone(), Span::default());
+                    c.traits.insert(name.clone(), table);
                 }
                 _ => {}
             }
@@ -517,7 +582,7 @@ impl Checker {
                     self.type_kinds.insert(name.clone(), "alias".to_string());
                     self.alias_targets.insert(name.clone(), target.clone());
                 }
-                Item::Use { .. } | Item::Expr(..) | Item::Impl { .. } => {}
+                Item::Use { .. } | Item::Expr(..) | Item::Impl { .. } | Item::Trait { .. } => {}
             }
         }
         // Validate every written type annotation now that all names are known.
@@ -578,12 +643,73 @@ impl Checker {
                 _ => {}
             }
         }
-        // Behavior blocks last: field tables and method tables must both be
-        // populated before method/field collision and method signatures are
-        // resolved, regardless of source order.
+        // Behavior blocks last: field tables, trait tables, and method tables must
+        // all be populated before method/field collision and method signatures
+        // are resolved, regardless of source order.
+        // 1. Traits: register each declared trait's method signatures.
+        for item in &m.items {
+            if let Item::Trait {
+                name,
+                methods,
+                span,
+            } = item
+            {
+                if self.traits.contains_key(name) {
+                    return Err(Diag::new(
+                        codes::REDECLARED,
+                        format!("trait `{name}` is already declared"),
+                        *span,
+                    ));
+                }
+                let mut table: HashMap<String, FnSig> = HashMap::new();
+                for m_item in methods {
+                    let Item::Fn {
+                        name: mname,
+                        params,
+                        ret,
+                        span: mspan,
+                        ..
+                    } = m_item
+                    else {
+                        continue;
+                    };
+                    if table.contains_key(mname) {
+                        return Err(Diag::new(
+                            codes::REDECLARED,
+                            format!(
+                                "trait method `{mname}` is declared more than once in `{name}`"
+                            ),
+                            *mspan,
+                        ));
+                    }
+                    let mut param_tys = Vec::with_capacity(params.len());
+                    for p in params {
+                        let ty = match &p.ty {
+                            Some(pty) => Some(self.annotation(pty, p.span)?),
+                            None => None,
+                        };
+                        param_tys.push((p.name.clone(), ty));
+                    }
+                    let ret_ty = match ret {
+                        Some(rt) => Some(self.annotation(rt, Span::default())?),
+                        None => None,
+                    };
+                    table.insert(
+                        mname.clone(),
+                        FnSig {
+                            ret: ret_ty,
+                            params: param_tys,
+                        },
+                    );
+                }
+                self.traits.insert(name.clone(), table);
+            }
+        }
+        // 2. Inherent and trait implementations, merged into one method surface.
         for item in &m.items {
             if let Item::Impl {
                 target,
+                trait_name,
                 methods,
                 span,
             } = item
@@ -606,14 +732,101 @@ impl Checker {
                         ));
                     }
                 }
-                if self.impl_seen.insert(target.clone(), *span).is_some() {
+                // Only an inherent block counts against the one-block-per-struct
+                // limit; every trait may be implemented once, in addition.
+                if trait_name.is_none() && self.impl_seen.insert(target.clone(), *span).is_some() {
                     return Err(Diag::new(
                         codes::REDECLARED,
                         format!("`{target}` already has an `impl` block; V1 permits one"),
                         *span,
                     ));
                 }
-                let mut table: HashMap<String, FnSig> = HashMap::new();
+                // Validate the trait, when this is a trait implementation.
+                if let Some(tname) = trait_name {
+                    let Some(trait_sig) = self.traits.get(tname).cloned() else {
+                        return Err(Diag::new(
+                            codes::UNDEFINED,
+                            format!("unknown trait `{tname}`"),
+                            *span,
+                        ));
+                    };
+                    if self
+                        .trait_impls
+                        .insert((target.clone(), tname.clone()), *span)
+                        .is_some()
+                    {
+                        return Err(Diag::new(
+                            codes::REDECLARED,
+                            format!("`{target}` already implements trait `{tname}`"),
+                            *span,
+                        ));
+                    }
+                    // Every declared trait method must be implemented with a
+                    // compatible signature; a trait implementation may not add
+                    // methods beyond the contract.
+                    for m_item in methods {
+                        let Item::Fn {
+                            name: mname,
+                            span: mspan,
+                            ..
+                        } = m_item
+                        else {
+                            continue;
+                        };
+                        if !trait_sig.contains_key(mname) {
+                            return Err(Diag::new(
+                                codes::UNDEFINED,
+                                format!(
+                                    "trait `{tname}` has no method `{mname}`; a trait implementation may only implement the trait's methods"
+                                ),
+                                *mspan,
+                            ));
+                        }
+                    }
+                    for (mname, expected) in &trait_sig {
+                        let Some(impl_item) = methods
+                            .iter()
+                            .find(|mi| matches!(mi, Item::Fn { name, .. } if name == mname))
+                        else {
+                            return Err(Diag::new(
+                                codes::TRAIT_INCOMPLETE,
+                                format!(
+                                    "trait `{tname}` requires method `{mname}`, but `{target}` does not implement it"
+                                ),
+                                *span,
+                            ));
+                        };
+                        let Item::Fn { params, ret, .. } = impl_item else {
+                            continue;
+                        };
+                        let mut param_tys = Vec::with_capacity(params.len());
+                        for p in params {
+                            let ty = match &p.ty {
+                                Some(pty) => Some(self.annotation(pty, p.span)?),
+                                None => None,
+                            };
+                            param_tys.push((p.name.clone(), ty));
+                        }
+                        let ret_ty = match ret {
+                            Some(rt) => Some(self.annotation(rt, Span::default())?),
+                            None => None,
+                        };
+                        let actual = FnSig {
+                            ret: ret_ty,
+                            params: param_tys,
+                        };
+                        if !self.method_sigs_compatible(expected, &actual) {
+                            return Err(Diag::new(
+                                codes::TYPE_MISMATCH,
+                                format!(
+                                    "trait `{tname}` method `{mname}` has an incompatible signature in `{target}`"
+                                ),
+                                *span,
+                            ));
+                        }
+                    }
+                }
+                // Merge the methods into the struct's single method surface.
                 for m_item in methods {
                     let Item::Fn {
                         name,
@@ -625,10 +838,19 @@ impl Checker {
                     else {
                         continue;
                     };
-                    if table.contains_key(name) {
+                    if self
+                        .struct_methods
+                        .get(target)
+                        .is_some_and(|t| t.contains_key(name))
+                    {
+                        // Inherent vs trait, or two traits, providing the same
+                        // method name: one member namespace, so this is a
+                        // redefinition (`LANGUAGE_SPEC.md` §17.7).
                         return Err(Diag::new(
                             codes::REDECLARED,
-                            format!("method `{name}` is declared more than once for `{target}`"),
+                            format!(
+                                "method `{name}` is already defined for `{target}`; trait and inherent methods share one namespace"
+                            ),
                             *mspan,
                         ));
                     }
@@ -657,15 +879,17 @@ impl Checker {
                         Some(rt) => Some(self.annotation(rt, Span::default())?),
                         None => None,
                     };
-                    table.insert(
-                        name.clone(),
-                        FnSig {
-                            ret: ret_ty,
-                            params: param_tys,
-                        },
-                    );
+                    self.struct_methods
+                        .entry(target.clone())
+                        .or_default()
+                        .insert(
+                            name.clone(),
+                            FnSig {
+                                ret: ret_ty,
+                                params: param_tys,
+                            },
+                        );
                 }
-                self.struct_methods.insert(target.clone(), table);
             }
         }
         Ok(())
@@ -1047,7 +1271,11 @@ impl Checker {
                 }
             }
             Item::Expr(e, _) => self.expr(e)?,
-            Item::Struct { .. } | Item::Enum { .. } | Item::Alias { .. } | Item::Use { .. } => {}
+            Item::Struct { .. }
+            | Item::Enum { .. }
+            | Item::Alias { .. }
+            | Item::Use { .. }
+            | Item::Trait { .. } => {}
             Item::Impl {
                 target, methods, ..
             } => {
