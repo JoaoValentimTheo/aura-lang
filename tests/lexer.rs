@@ -48,6 +48,26 @@ fn fstrings() {
     );
 }
 
+/// An f-string with no closing quote is an unterminated string (`E1004`),
+/// exactly like a plain string, rather than a downstream parse error
+/// (`LANGUAGE_SPEC.md` §3.6.4).
+#[test]
+fn unterminated_fstring_is_e1004() {
+    for src in ["f\"abc", "f'abc", "f\"abc\nnext"] {
+        let err = lex(src).expect_err("unterminated f-string");
+        assert_eq!(
+            err.code,
+            aura::error::codes::UNTERMINATED_STRING,
+            "expected E1004 for {src:?}"
+        );
+    }
+    // A closed f-string still lexes, and its literal text stays raw.
+    assert_eq!(
+        toks("f\"a\\nb\""),
+        vec![Tok::FStr("a\\nb".into()), Tok::Eof]
+    );
+}
+
 #[test]
 fn keywords() {
     assert_eq!(

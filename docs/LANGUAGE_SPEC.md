@@ -297,7 +297,9 @@ it an *f-string*. Inside an f-string:
 * `}}` produces a literal `}`.
 
 The expression between braces MUST be a well-formed expression. An empty `{}`
-is an error (`E1006`); an unterminated `{` is an error (`E1004`).
+is an error (`E1006`); an unterminated `{` is an error (`E1004`). Like a plain
+string, an f-string whose body ends without its closing quote (at EOF or an
+unescaped newline) is an unterminated string literal (`E1004`).
 
 **Normative rule.** The literal text of an f-string is **raw**: backslash
 escape sequences are not decoded. `f"a\nb"` contains a backslash and an `n`,

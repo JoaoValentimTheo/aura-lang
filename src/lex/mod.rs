@@ -85,7 +85,7 @@ impl Lexer<'_> {
             Some(c) => c,
         };
         if Self::at_ident_start(c) {
-            return Ok(Some(self.ident()));
+            return Ok(Some(self.ident()?));
         }
         if c.is_ascii_digit() {
             return self.number().map(Some);
@@ -128,7 +128,7 @@ impl Lexer<'_> {
         }
     }
 
-    fn ident(&mut self) -> Tok {
+    fn ident(&mut self) -> Result<Tok> {
         let start = self.pos;
         // optional f-string prefix
         if (self.bytes[start] == b'f' || self.bytes[start] == b'F')
@@ -136,9 +136,20 @@ impl Lexer<'_> {
         {
             self.pos += 1;
             let quote = self.bytes[self.pos];
+            let start = self.pos;
             self.pos += 1;
             let raw = self.raw_string_body(quote);
-            return Tok::FStr(raw);
+            // Mirror the plain-string path: a body that did not end at the
+            // closing quote (EOF or an unescaped newline) is an unterminated
+            // string (`E1004`), not a downstream parse error in `E1006`.
+            if self.bytes.get(self.pos.wrapping_sub(1)) != Some(&quote) {
+                return Err(Diag::new(
+                    codes::UNTERMINATED_STRING,
+                    "unterminated string literal",
+                    Span::new(start, self.pos),
+                ));
+            }
+            return Ok(Tok::FStr(raw));
         }
         while self
             .peek()
@@ -147,7 +158,7 @@ impl Lexer<'_> {
             self.pos += 1;
         }
         let text = std::str::from_utf8(&self.bytes[start..self.pos]).unwrap_or_default();
-        match text {
+        Ok(match text {
             "let" => Tok::Let,
             "mut" => Tok::Mut,
             "fn" => Tok::Fn,
@@ -178,7 +189,7 @@ impl Lexer<'_> {
             "false" => Tok::False,
             "none" => Tok::None,
             _ => Tok::Ident(text.to_string()),
-        }
+        })
     }
 
     fn number(&mut self) -> Result<Tok> {
