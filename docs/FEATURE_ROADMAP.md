@@ -49,7 +49,7 @@ Aura today is a tree-walking interpreted language with a conservative checker.
 | Area | State |
 |---|---|
 | Lexing | ASCII identifiers; line comments; newline/semicolon statements; decimal/hex/binary/octal ints, floats, string/char quotes, f-strings |
-| Grammar | Recursive-descent + Pratt; right-associative `^`; left-associative everything else; explicit precedence table |
+| Grammar | Recursive-descent + Pratt; right-associative `^` and `..`; left-associative everything else; explicit precedence table |
 | Value model | `int`, `float`, `string`, `bool`, `none`, `list`, `map` (string-keyed, ordered), struct instance, enum variant, function, range |
 | Type model | Checker `Ty`: `Int`, `Float`, `Bool`, `String`, `List`, `Map`, `Named`, `Enum`, `Unknown` |
 | Unknown | Exact conservative boundary: the checker rejects only what it can prove |
