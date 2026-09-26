@@ -214,6 +214,22 @@ const cases = [
     'trait is contextual',
     'fn main() { let trait = 1\n let impl = 2\n print(trait + impl) }',
   ],
+  // Deterministic, declaration-ordered reporting: the missing/signature-bad
+  // method is named consistently on both substrates, never by hash order.
+  [
+    'trait missing method ordering',
+    'trait T { fn a(self)\n fn b(self)\n fn c(self)\n fn d(self) }\nstruct S { x: int }\nimpl T for S { fn a(self) { print(self.x) } }\nfn main() { print(1) }',
+  ],
+  [
+    'trait signature mismatch ordering',
+    'trait T { fn a(self, x: int)\n fn b(self, y: int)\n fn c(self, z: int) }\nstruct S { n: int }\nimpl T for S { fn a(self) { print(1) }\n fn b(self) { print(2) }\n fn c(self) { print(3) } }\nfn main() { print(1) }',
+  ],
+  // A trait method may not declare a parameter name twice (E2007), matching
+  // functions and inherent methods.
+  [
+    'trait duplicate parameter',
+    'trait T { fn a(self, x: int, x: int) }\nfn main() { print(1) }',
+  ],
   // Contextual `impl`/`self`: both stay ordinary identifiers outside a method
   // receiver / behavior-block context (§3.3).
   [
