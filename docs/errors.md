@@ -17,7 +17,7 @@ Every rejection carries a stable code. Codes are grouped by phase:
 | E1003 | Invalid escape | `"\q"` |
 | E1004 | Unterminated string | `"abc` |
 | E1005 | Unterminated multiline comment | `<!-- never closed` |
-| E1006 | Expected token | `let = 1`, `fn ()`, `int \| 5` |
+| E1006 | Expected token | `let = 1`, `fn ()`, `int \| 5`; a `const` name not starting with an uppercase letter (`const pi = 3`) |
 | E1009 | Reserved word as name | `let if = 1` |
 | E1015 | Expression/statement nests too deeply | a 5000-term expression |
 

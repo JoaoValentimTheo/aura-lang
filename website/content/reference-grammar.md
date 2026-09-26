@@ -44,7 +44,11 @@ variant         = IDENT [ "(" [ type { "," type } ] ")" ] ;
 
 type_alias      = "type" IDENT "=" type terminator ;
 
-const_decl      = "let" IDENT [ ":" type ] "=" expr terminator ;
+const_decl      = "const" NAME [ ":" type ] "=" expr terminator
+                | "let" IDENT [ ":" type ] "=" expr terminator ;
+NAME            = UPPER { LETTER | DIGIT | "_" } ;
+(* `const NAME = e` is the canonical module constant (NAME uppercase). A
+   top-level `let` is the same module constant, kept for compatibility. *)
 
 (* ----------------------------------------------------------------- types *)
 type            = type_member { "|" type_member } ;
@@ -134,7 +138,11 @@ FSTRING         = 'f"' { fchar | "{{" | "}}" | "{" expr "}" } '"' ;
 * `else if` is the nested form `if A { X } else { if B { Y } else { Z } }`.
 * `else`, `catch`, and `finally` must be on the same line as the preceding `}`.
 * `&&`, `||`, and `!` do not exist (`E1001`).
+* There are no bitwise operators (`&`, `|`, `~`, `<<`, `>>`) and no `++`/`--`.
 * A number may not be immediately followed by a name: `1abc` is `E1002`.
-* `let` requires an initializer (`E2005`).
+* `let` requires an initializer (`E2005`); `const NAME = e` is the canonical
+  module constant and its name is uppercase.
+* An f-string interpolates `{expr}` and escapes braces with `{{`/`}}`; it has
+  no format-specification mini-language.
 * `use` and `pub` are reserved and inert (they parse but do nothing).
 * A parenthesized comma list is list sugar; Aura has no distinct tuple value.

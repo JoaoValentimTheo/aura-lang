@@ -82,8 +82,10 @@ use stdlib.math              # reserved; currently inert (see §10)
   `mut` on a non-identifier pattern. A destructuring `let` is atomic: if the
   value does not match the pattern the statement produces the existing
   `E3001` runtime diagnostic and binds nothing (see §6).
-* At the top level, `let` declares an immutable module constant; `let mut`
-  is rejected there.
+* At the top level, `const NAME = e` declares an immutable module constant;
+  `NAME` must begin with an uppercase letter. A top-level `let` is the same
+  module constant; `let mut` is rejected there. Constants share the value
+  namespace with bindings and functions.
 * A function is declared with `fn` and returns `none` unless annotated.
 * Redefining a name in the same scope is `E2007`.
 * Parameter names starting with `_` must be unused (`E2009`).

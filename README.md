@@ -102,7 +102,10 @@ fn main() {
 * `none` is the only absence — not `null`, `nil`, or `undefined`.
 * `else if` is supported and is the nested form `else { if ... }`; `match` is
   available for multi-way branching.
-* `let` is immutable; `let mut` opts into reassignment.
+* `let` is immutable; `let mut` opts into reassignment. `const NAME = e`
+  declares a module-level constant (uppercase name).
+* There is no bitwise operator (`&`, `|`, `~`, `<<`, `>>`) and no `++`/`--`;
+  mutation is an explicit assignment.
 * Function calls accept positional arguments, or named arguments for
   top-level functions (`f(x: 1)`); positional arguments come first. Named
   arguments are for `struct` construction too; enum variant payloads are

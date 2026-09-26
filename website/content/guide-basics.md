@@ -29,6 +29,24 @@ y = y + 1
 Assigning to an immutable binding is `E2001`. A `let` without an initializer is
 `E2005`. Redeclaring a name in the same scope is `E2007`.
 
+A nested scope may **shadow** an outer binding; the outer binding is unchanged
+after the nested scope ends. A loop variable, match binding, and catch binding
+are scoped to their construct and never leak out.
+
+### Constants
+
+```aura
+const PI = 3.14159         # canonical module constant
+const LIMIT: int = 100     # with a checked annotation
+```
+
+A `const` name is uppercase; a lowercase name is `E1006`. A constant is
+immutable and is evaluated in source order after all declarations, so it may
+call a function or read an earlier constant but not a later one. A top-level
+`let` is the same kind of module constant. `const` protects the binding, not
+its interior: a list, map, or struct reached through a constant can still be
+mutated in place, but the binding cannot be reassigned.
+
 ### Destructuring bindings
 
 ```aura

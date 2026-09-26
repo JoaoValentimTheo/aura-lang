@@ -70,6 +70,19 @@ print(not 0)               # true  (0 is falsy)
 
 There is no `%=` or `^=`.
 
+## Operators Aura does not have
+
+These are intentionally absent, not merely unimplemented:
+
+* **No bitwise operators.** `&`, `|`, `~`, `<<`, and `>>` do not exist. `&`
+  and `~` are lexical errors, `|` is reserved for type unions, and a shift
+  fails to parse. `^` is exponentiation, not XOR.
+* **No `++` / `--`.** There is no pre- or post-increment or decrement. Write
+  the assignment explicitly: `x = x + 1` or `x += 1`.
+* **No f-string format mini-language.** An f-string interpolates `{expr}` and
+  escapes braces with `{{`/`}}`; Python's `{x:spec}`, `{x=}`, and `{x!r}` forms
+  are not part of Aura.
+
 ## Indexing and fields
 
 * `base[i]` — a list at an integer index (negative allowed), a string at an

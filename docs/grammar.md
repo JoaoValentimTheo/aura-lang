@@ -44,8 +44,13 @@ variant         = IDENT [ "(" [ type { "," type } ] ")" ] ;
 
 type_alias      = "type" IDENT "=" type terminator ;
 
-const_decl      = "let" IDENT [ ":" type ] "=" expr terminator ;
-(* top-level `let` is a module constant; `let mut` is rejected *)
+const_decl      = "const" NAME [ ":" type ] "=" expr terminator
+                | "let" IDENT [ ":" type ] "=" expr terminator ;
+NAME            = UPPER { LETTER | DIGIT | "_" } ;
+(* `const NAME = e` is the canonical module constant (NAME uppercase).
+   A top-level `let` is the same module constant, kept for compatibility;
+   `let mut` is rejected. Both are contextual declarations: `const` and `let`
+   stay ordinary identifiers elsewhere. *)
 
 (* ----------------------------------------------------------------- types *)
 type            = type_member { "|" type_member } ;
@@ -147,8 +152,14 @@ FSTRING         = 'f"' { fchar | "{{" | "}}" | "{" expr "}" } '"' ;
 * `else`, `catch`, and `finally` must appear on the same line as the closing
   `}` of the block they follow; a newline before them is `E1006`.
 * `&&`, `||`, and `!` do not exist as operators (`E1001`).
+* There are no bitwise operators (`&`, `|`, `~`, `<<`, `>>`) and no pre/post
+  increment or decrement (`++`, `--`); `^` is exponentiation.
 * A number may not be immediately followed by a name: `1abc` is `E1002`.
-* `let` requires an initializer (`E2005`).
+* `let` requires an initializer (`E2005`). `const NAME = e` is the canonical
+  module constant and its name is uppercase; a top-level `let` is the same
+  module constant.
+* An f-string interpolates `{expr}` and escapes braces with `{{`/`}}`; it has
+  no format-specification mini-language (`{x:spec}`, `{x=}`, `{x!r}`).
 * Patterns bind lowercase names; a capitalized name is a variant.
 * `use` and `pub` are **reserved and inert** in this version: they parse but
   have no effect (see `docs/contract.md` §10).

@@ -572,11 +572,14 @@ of the frozen `0.0.1` language:
 The release, language, and runtime versions are deliberately distinct:
 release `0.0.2`, language `0.0.1`, runtime `0.0.2`. OOP V1 (struct methods via
 `impl` with an explicit `self` receiver) is implemented and available in the
-development runtime. Traits (static behavioral contracts, §17.7) followed.
-After them, development continues with the long language-maturation cycle
-(scope/binding audit, const design, syntax refinement, semantic consistency,
-stdlib/API refinement, diagnostics, hardening, conformance, and syntax
-freeze) before further OOP work (generics and trait bounds).
+development runtime. Traits (static behavioral contracts, §17.7) followed, and
+the core contract was then synchronized (LSCS): `const NAME = e` is the
+canonical module constant, `let`/`mut`/shadowing/scope have one explicit rule
+with a published scope matrix, and the operator and f-string contracts are
+closed (no bitwise, no `++`/`--`, no f-string format mini-language). Development
+continues with syntax refinement, semantic consistency, stdlib/API refinement,
+diagnostics, hardening, conformance, and syntax freeze before further OOP work
+(generics and trait bounds).
 
 ---
 

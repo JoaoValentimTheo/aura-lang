@@ -333,6 +333,40 @@ while `"a\tb"` prints `a` followed by a tab and `b`.
 *Evidence:* `Lexer::ident` (f-prefix), `Parser::fstring`
 (`src/parse/mod.rs`).
 
+**Normative rule (no format specification).** Aura's f-string has exactly three
+features: `{ expr }` interpolation, `{{`, and `}}`. There is **no** format
+mini-language. In particular, Python's replacement-field machinery is absent:
+`{x=}` (self-documenting), `{x!s}`/`{x!r}`/`{x!a}` (conversions), and
+`{x:spec}` (fill, alignment, sign, `#`/`0`/`,`/`_` grouping, width, precision,
+and the `d`/`b`/`o`/`x`/`e`/`f`/`g`/`%` types), including dynamic width or
+precision, are **not** part of the language. `:`, `!`, and `=` after the
+interpolated expression are not recognized, so such a field fails to parse
+(`E1006`) or is reported by the ordinary expression rules; the f-string parser
+feeds the text between braces to the ordinary Aura expression parser and reuses
+the ordinary value/display system, so there is no second expression language
+(§24 rationale in `docs/FEATURE_ROADMAP.md`). To format a value, use an
+existing string method or build the string explicitly.
+
+*Non-normative.* These are **rejected** (not deferred):
+
+```aura
+f"{x:.2f}"      # no format spec
+f"{x=}"         # no self-documenting form
+f"{x!r}"        # no conversion
+```
+
+and these are **supported**:
+
+```aura
+f"{x}"          # interpolation
+f"{x + 1}"      # any expression
+f"{person.name}"
+f"{{literal}}"  # escaped braces
+```
+
+An interpolation's diagnostics carry the **real source location** of the
+expression inside the string, not the start of the file.
+
 #### 3.6.5 Boolean and `none` literals
 
 **Normative rule.** `true` and `false` are the boolean literals. `none` is the
@@ -395,11 +429,31 @@ field         = IDENT ":" type ;
 enum_decl     = "enum" IDENT "{" [ variant { "," variant } [ "," ] ] "}" ;
 variant       = IDENT [ "(" [ type { "," type } ] ")" ] ;
 type_alias    = "type" IDENT "=" type terminator ;
-const_decl    = "let" IDENT [ ":" type ] "=" expr terminator ;
+const_decl    = "const" NAME [ ":" type ] "=" expr terminator ;
+              | "let" IDENT [ ":" type ] "=" expr terminator ;
+NAME          = UPPER { LETTER | DIGIT | "_" } ;
 ```
 
-**Normative rule.** A top-level `let` declares an immutable module constant.
-`let mut` at the top level is rejected (`E1006`).
+**Normative rule.** `const NAME = e` declares an immutable module constant and
+is the canonical spelling. `NAME` MUST begin with an uppercase letter
+(`E1006` otherwise), so a constant declaration reads differently from an
+ordinary binding. The initializer is required (`E2005`). `const` is a
+**contextual word**, not reserved: it is a declaration only in item position
+followed by a name and `=` or `:`; everywhere else it is an ordinary
+identifier.
+
+**Normative rule.** A top-level `let` also declares an immutable module
+constant, with the same semantics and the same value namespace as `const`
+(declaring both forms for one name is `E2007`). `let mut` at the top level is
+rejected (`E1006`). The two forms are distinguished only by spelling: `const`
+is the intended, self-documenting form for a named constant; top-level `let`
+is retained for compatibility.
+
+**Normative rule.** Module constants and top-level `let` bindings are never
+deep-immutable: `const` (like an immutable `let`) protects the *binding*, not
+interior mutability. A list, map, or struct instance reached through a
+constant can still be mutated in place (§16.6), but the binding itself cannot
+be reassigned (`E2001`).
 
 ### 4.3 Types
 
@@ -550,6 +604,19 @@ check-time/runtime type error because `b..c` is not an int.
 `a..` or a leading `..b` is `E1006`. A single `.` remains field access/method
 call; `..` is a distinct token and never part of a float literal
 (§3.6.2).
+
+**Normative rule (operators deliberately absent).** Aura has **no** bitwise
+operators (`&`, `|`, `~`, `<<`, `>>`) and **no** pre/post increment or
+decrement operators (`++`, `--`). These are intentionally absent, not
+deferred: `^` is exponentiation (right-associative), `and`/`or`/`not` are the
+logical operators, and mutation is written as an explicit assignment
+(`x = x + 1`, `x += 1`). `&` and `~` are rejected at the lexer (`E1001`); `|`
+is reserved for type unions, and a shift such as `8 >> 1` fails to parse
+(`E1006`). The only compound assignments are `+=`, `-=`, `*=`, `/=`
+(§4.5, §24); there is no `%=` or `^=`.
+
+**Normative rule.** `a` value MUST have an expression on both sides of an
+operator. A dangling operator (`1 +`) is `E1006`.
 
 **Normative rule.** `x |> f(a)` desugars, at parse time, to `f(x, a)`;
 `x |> r.m(a)` desugars to `r.m(x, a)`; `x |> f` desugars to `f(x)`. See §23.
@@ -1470,6 +1537,28 @@ to its construct and is not visible afterwards.
 **Normative rule.** Shadowing in a nested scope is permitted. Declaring the
 same name twice in the *same* scope is `E2007`.
 
+**Scope matrix.** Every binding boundary follows the same one rule: a name is
+visible from its declaration to the end of its scope (including nested
+scopes), and it never leaks outward. Mutation requires `let mut` on the
+declaring binding (a parameter, loop variable, match binding, and catch
+binding are all immutable). A closure captures the defining environment by
+reference (§15.5), so it observes later mutations of a captured `let mut` and
+a per-iteration binding gets a fresh cell.
+
+| Boundary | Enters at | Leaves at | Shadow in nested | Capture | Mutation | Leaks out |
+|---|---|---|---|---|---|---|
+| top level | declaration | end of module | n/a | yes (closure) | no (module constant) | n/a |
+| block `{ }` | declaration | closing `}` | yes | yes | only `let mut` | no |
+| `if`/`else if`/`else` branch | first arm binding | closing `}` | yes | yes | only `let mut` | no |
+| `while` condition/body | body declaration | closing `}` | yes | yes | only `let mut` | no |
+| `loop` body | body declaration | closing `}` | yes | yes | only `let mut` | no |
+| `for` body | each iteration (per-iteration binding) | closing `}` | yes | yes (distinct per iteration) | no (loop var immutable) | no |
+| `match` arm | arm pattern match | end of arm body | yes | yes | only `let mut` | no |
+| `catch` binding | catch runs | end of catch body | yes | yes | no (immutable) | no |
+| function body | entry | `return`/end | yes | yes | only `let mut` | no |
+| lambda body | call | `return`/end | yes | yes | only captured `let mut` | no |
+| REPL submission | declaration | end of session | yes | yes | only `let mut` | persists (§29) |
+
 ### 16.4 Parameters
 
 **Normative rule.** Parameters are immutable bindings in the function's scope.
@@ -2169,10 +2258,19 @@ declaration order, including mutually recursive calls (§6.5).
 two user types with the same name is `E2012`; declaring two variants with the
 same tag anywhere is `E2013`.
 
-**Normative rule.** Constants and top-level expressions are evaluated in
-source order after all declarations are registered. A constant's initializer
-MUST NOT read a constant declared later (`E2003`), but functions may read
-constants freely because functions run after initialization.
+**Normative rule.** Constants (`const NAME = e`, and the compatible top-level
+`let NAME = e`) and top-level expressions are evaluated in source order after
+all declarations are registered. A constant's initializer MUST NOT read a
+constant declared later (`E2003`), but functions may read constants freely
+because functions run after initialization. A constant initializer MAY call a
+function, read an earlier constant, or construct any value; a cyclic
+`const A = B; const B = A` is `E2003` at the forward reference.
+
+**Normative rule.** Constants and top-level `let` bindings share the value
+namespace: a value name (binding, function, or constant) declared twice in the
+same scope is `E2007`. Types (`struct`/`enum`/`type`) live in the type
+namespace, so a value name and a type name may coincide (`fn S` and
+`struct S` coexist), exactly as in a module.
 
 **Normative rule.** Newlines separate statements, so the keyword `as` is
 reserved but no construct consumes it; `use a as b` is a parse error.
@@ -2262,6 +2360,7 @@ top-level `let`/`let mut`), a set of items, or a bare expression.
 **Normative rule.** Session state persists across submissions:
 
 * `let` bindings (and their mutability), including values;
+* constants (`const NAME = e`, persisted like a top-level `let`);
 * functions;
 * structs (with their fields);
 * enums (with their variants and payloads);
@@ -2288,7 +2387,11 @@ help; EOF ends the session cleanly. Blank lines are ignored.
 mode applies to each submission.
 
 **Normative rule.** Redefinition of an existing session name follows module
-semantics (`E2007`).
+semantics (`E2007` for a value name — a binding, function, or constant; `E2012`
+for a type name). A re-submitted `fn`, `const`, or `let` for a name already in
+the session is therefore rejected, and the earlier declaration keeps working.
+Value and type namespaces are separate, so a session may hold `fn S` and
+`struct S` together, and both persist.
 
 *Evidence:* `src/repl.rs`; `check::GlobalDecl`;
 `tests/repl.rs::regression_repl_struct_persistence`,
