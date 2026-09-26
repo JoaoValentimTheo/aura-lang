@@ -487,6 +487,28 @@ fn dot_dot_range_syntax_parses() {
     assert!(parse("fn main() { for i in range(1, 10) { } }").is_ok());
 }
 
+/// `..` is right-associative (`LANGUAGE_SPEC.md` §4.5): `a..b..c` parses as
+/// `a..(b..c)`, so the outer range's end is itself a range literal.
+#[test]
+fn range_is_right_associative() {
+    let m = parse("fn main() { let r = 1..2..3 }").expect("parse");
+    match &m.items[0] {
+        Item::Fn { body, .. } => match &body[0] {
+            Stmt::Let { value, .. } => match value {
+                Expr::Range(_, end, _) => {
+                    assert!(
+                        matches!(end.as_ref(), Expr::Range(_, _, _)),
+                        "expected a..(b..c), got {end:?}"
+                    );
+                }
+                other => panic!("unexpected {other:?}"),
+            },
+            other => panic!("unexpected {other:?}"),
+        },
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
 /// A range needs both bounds: a dangling `..` or a trailing operator is a
 /// deterministic `E1006`, and `..` is never a float.
 #[test]

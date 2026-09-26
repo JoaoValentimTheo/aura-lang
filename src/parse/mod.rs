@@ -1026,9 +1026,9 @@ impl Parser {
             // `a..b` — Rust-style range. Its binding power sits between
             // comparison (7/8) and additive (11/12), so both operands are
             // arithmetic expressions: `1 + 2..n - 1` is `(1 + 2)..(n - 1)`.
-            // Ranges are not chained by the grammar's associativity intent;
-            // `a..b..c` parses left-associatively and is a runtime type error
-            // at evaluation, like any other non-int bound.
+            // Ranges are right-associative and not chainable with meaning;
+            // `a..b..c` parses as `a..(b..c)` and is a runtime type error at
+            // evaluation, like any other non-int bound.
             if matches!(self.at(), Tok::DotDot) {
                 let (lbp, rbp) = (10, 10);
                 if lbp < min_bp {

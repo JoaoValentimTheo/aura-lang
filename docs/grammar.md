@@ -73,7 +73,7 @@ logic_or        = logic_and { "or" logic_and } ;
 logic_and       = equality { "and" equality } ;
 equality        = comparison { ( "==" | "!=" ) comparison } ;
 comparison      = range { ( "<" | "<=" | ">" | ">=" ) range } ;
-range           = additive [ ".." additive ] ;       (* Rust-style range *)
+range           = additive [ ".." range ] ;       (* Rust-style range *)
 additive        = multiplicative { ( "+" | "-" ) multiplicative } ;
 multiplicative  = power { ( "*" | "/" | "%" ) power } ;
 power           = unary [ "^" power ] ;              (* right associative *)

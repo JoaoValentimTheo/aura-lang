@@ -473,7 +473,7 @@ Precedence, lowest binding first:
 | 3 | `and` | left |
 | 4 | `==` `!=` | left |
 | 5 | `<` `<=` `>` `>=` | left |
-| 5.5 | `..` range | left |
+| 5.5 | `..` range | right |
 | 6 | `+` `-` | left |
 | 7 | `*` `/` `%` | left |
 | 8 | `^` | **right** |
@@ -488,7 +488,7 @@ logic_or        = logic_and { "or" logic_and } ;
 logic_and       = equality { "and" equality } ;
 equality        = comparison { ( "==" | "!=" ) comparison } ;
 comparison      = range { ( "<" | "<=" | ">" | ">=" ) range } ;
-range           = additive [ ".." additive ] ;
+range           = additive [ ".." range ] ;
 additive        = multiplicative { ( "+" | "-" ) multiplicative } ;
 multiplicative  = power { ( "*" | "/" | "%" ) power } ;
 power           = unary [ "^" power ] ;
@@ -523,9 +523,9 @@ match_arm       = pattern [ "if" expr ] "->" ( block | expr terminator ) ;
 
 **Normative rule.** `a..b` is a range expression (§22.1). It is parsed at the
 `range` level, between comparison and additive, so each bound is an additive
-expression: `1 + 2..n - 1` is `(1 + 2)..(n - 1)`. `..` is left-associative
-and not chainable with meaning: `a..b..c` parses as `(a..b)..c` and is a
-check-time/runtime type error because `a..b` is not an int.
+expression: `1 + 2..n - 1` is `(1 + 2)..(n - 1)`. `..` is right-associative
+and not chainable with meaning: `a..b..c` parses as `a..(b..c)` and is a
+check-time/runtime type error because `b..c` is not an int.
 
 **Normative rule.** A `..` MUST have an expression on both sides. A dangling
 `a..` or a leading `..b` is `E1006`. A single `.` remains field access/method

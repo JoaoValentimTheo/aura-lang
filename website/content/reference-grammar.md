@@ -66,7 +66,7 @@ logic_or        = logic_and { "or" logic_and } ;
 logic_and       = equality { "and" equality } ;
 equality        = comparison { ( "==" | "!=" ) comparison } ;
 comparison      = range { ( "<" | "<=" | ">" | ">=" ) range } ;
-range           = additive [ ".." additive ] ;
+range           = additive [ ".." range ] ;
 additive        = multiplicative { ( "+" | "-" ) multiplicative } ;
 multiplicative  = power { ( "*" | "/" | "%" ) power } ;
 power           = unary [ "^" power ] ;
