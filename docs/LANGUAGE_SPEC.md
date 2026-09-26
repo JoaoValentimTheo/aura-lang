@@ -1671,6 +1671,14 @@ compatibly.
 methods (the alias denotes the same nominal struct). Trait membership is side
 metadata on the nominal struct, never a distinct `Ty`.
 
+**Normative rule.** A trait method's parameter list follows the ordinary
+callable rules: it MUST declare `self` first (`E1006` otherwise), a parameter
+name MUST NOT be repeated in the same list (`E2007`, like a function or
+inherent method), and each annotation MUST name a known type (`E3002`
+otherwise). Completeness and signature diagnostics name the trait's **first
+declared** method that is affected, so reporting is deterministic and does not
+depend on hash order.
+
 **Normative rule.** `trait` is a **contextual word**, not reserved: it begins a
 trait declaration only at item position when followed by a capitalized name and
 `{`; elsewhere it is an ordinary identifier (`let trait = 1`, `fn trait(x)`)
