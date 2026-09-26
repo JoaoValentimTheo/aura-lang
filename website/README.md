@@ -62,8 +62,8 @@ deployment request CSS and routes from the domain root.
 
 ## Playground integration
 
-The [`/playground/`](pages/playground.mjs) page reuses the validated Gaiola 7
-Playground **unchanged**. The build copies `playground/web/` and the immutable
+The [`/playground/`](pages/playground.mjs) page reuses the validated Playground
+**unchanged**. The build copies `playground/web/` and the immutable
 `playground/runtimes/` into `dist/playground/`, so the controller's relative
 paths resolve exactly as they do for the standalone Playground. The website
 page only provides the shell; it contains no execution logic.

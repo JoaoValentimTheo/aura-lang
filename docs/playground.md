@@ -1,6 +1,6 @@
 # The Aura Playground
 
-**Status:** Gaiola 7 implementation. The Playground executes the **real Aura
+**Status:** implemented. The Playground executes the **real Aura
 WebAssembly runtime** produced from this repository. It contains no second
 interpreter and no JavaScript/TypeScript reimplementation of Aura semantics.
 

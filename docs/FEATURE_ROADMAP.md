@@ -70,7 +70,7 @@ Aura today is a tree-walking interpreted language with a conservative checker.
 | Tuples | `(a, b)` is list sugar; no distinct tuple type |
 | Loops/ranges | `range(a, b)` and `a..b`, step 1, end-exclusive, lazy in `for` |
 | Pipeline | `x \|> f(a)` is `f(x, a)` |
-| Methods | Built-in receiver kinds only (string/list/map/range); structs/enums have none |
+| Methods | Built-in receiver kinds (string/list/map/range) plus user methods on nominal structs via `impl` with an explicit `self` receiver (OOP V1); enum methods and bound-method values are not implemented |
 | Built-ins | Core builtins (incl. `read_line`, `read_file`, `write_file`, `args`) + method entries in one shared registry |
 | Aliases | Transparent; chained; recursive aliases rejected (`E3002`) |
 | REPL | Persistent session; bindings/functions/structs/enums/aliases; line-oriented submissions |
@@ -569,10 +569,13 @@ of the frozen `0.0.1` language:
 * cross-platform release infrastructure with checksummed artifacts.
 
 The release, language, and runtime versions are deliberately distinct:
-release `0.0.2`, language `0.0.1`, runtime `0.0.2`. After `0.0.2`, development
-enters the long language-maturation cycle (scope/binding audit, const design,
-syntax refinement, semantic consistency, stdlib/API refinement, diagnostics,
-hardening, conformance, and syntax freeze) before any OOP work begins.
+release `0.0.2`, language `0.0.1`, runtime `0.0.2`. OOP V1 (struct methods via
+`impl` with an explicit `self` receiver) is implemented and available in the
+development runtime. After it, development continues with the long
+language-maturation cycle (scope/binding audit, const design, syntax
+refinement, semantic consistency, stdlib/API refinement, diagnostics,
+hardening, conformance, and syntax freeze) before further OOP work (traits,
+generics).
 
 ---
 

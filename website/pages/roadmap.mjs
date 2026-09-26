@@ -4,14 +4,20 @@ const PHASES = [
   {
     tag: "Delivered",
     kind: "success",
-    title: "Gaiola 1–7 · runtime, host, WASM, Playground",
-    body: "A hardened runtime, cross-platform CI, a WebAssembly feasibility gate, a host contract and execution boundary, WASM semantic validation, and a versioned browser Playground that runs the real runtime.",
+    title: "Runtime, host, WASM and Playground",
+    body: "A hardened runtime, cross-platform CI, a WebAssembly execution substrate, a host contract and execution boundary, WASM semantic validation, and a versioned browser Playground that runs the real runtime.",
   },
   {
     tag: "Released",
     kind: "success",
     title: "0.0.2 · WebAssembly, Playground, website",
     body: "The WebAssembly runtime, the host boundary, the versioned Playground, the official website, GitHub Pages deployment, and cross-platform release infrastructure. The language semantics remain the frozen 0.0.1.",
+  },
+  {
+    tag: "Delivered",
+    kind: "success",
+    title: "OOP V1 · Struct methods",
+    body: "Behavior attached to structs with <code>impl</code> blocks and an explicit <code>self</code> receiver, plus composition. Structs remain data, methods remain functions, and there are no classes, inheritance, or dynamic dispatch. Available in the development runtime.",
   },
   {
     tag: "Planned",
@@ -32,10 +38,10 @@ const PHASES = [
     body: "Once the semantics are settled, the language surface is frozen so tools and documentation can stabilise.",
   },
   {
-    tag: "Long-term",
+    tag: "Future",
     kind: "planned",
-    title: "OOP architecture",
-    body: "Object-oriented design begins only after the freeze. Classes, inheritance, interfaces, and traits are not part of the current language.",
+    title: "Traits and generics",
+    body: "Abstraction and parameterisation build on the current OOP model of nominal structs and methods. Inheritance is not the direction: reuse stays composition-first.",
   },
   {
     tag: "Long-term",

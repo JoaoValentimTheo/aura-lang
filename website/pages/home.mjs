@@ -228,7 +228,8 @@ fn main() {
           ["CLI, REPL, scripting I/O", "Implemented", "success"],
           ["Cross-platform CI", "Implemented", "success"],
           ["WebAssembly runtime + Playground", "Released", "success"],
-          ["OOP, Python/PyO3, data ecosystem", "Planned", "planned"],
+          ["Struct methods (OOP V1)", "Delivered", "success"],
+          ["Traits, generics, Python/PyO3", "Future", "planned"],
         ])}
       </div>
       <div>
@@ -273,13 +274,14 @@ fn main() {
     ${dataTable(
       ["Stage", "Focus", "Status"],
       [
-        ["Gaiola 1–7", "Runtime, CI, host boundary, WASM, Playground", chip("Complete", "success")],
+        ["Runtime, host, WASM, Playground", chip("Complete", "success")],
         ["0.0.1", "Scripting I/O, language core, native runtime", chip("Released", "success")],
         ["0.0.2", "WebAssembly, host boundary, Playground, website", chip("Released", "success")],
+        ["OOP V1", "Struct methods: <code>impl</code>, <code>self</code>, composition", chip("Delivered", "success")],
         ["Maturation", "Syntax refinement, semantics, stdlib, diagnostics", chip("Planned", "planned")],
         ["Hardening", "Conformance, differential testing, fuzzing", chip("Planned", "planned")],
         ["Syntax freeze", "Lock the language surface", chip("Planned", "planned")],
-        ["OOP", "Architecture and implementation", chip("Planned", "planned")],
+        ["Traits & generics", "Abstraction and parameterisation", chip("Future", "planned")],
         ["Python / data", "PyO3 interop and the scientific ecosystem", chip("Long-term", "planned")],
       ],
     )}

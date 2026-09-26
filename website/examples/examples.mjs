@@ -143,6 +143,58 @@ fn main() {
     note: "Fields are declared with types. A struct literal uses `Name { field: value }`.",
   },
   {
+    id: "methods",
+    title: "Methods",
+    level: "intermediate",
+    tags: ["structs", "methods", "oop"],
+    summary: "Attach behavior to a struct with an `impl` block and an explicit `self`.",
+    output: "Hello Ada\nAda#1\n",
+    source: `struct User { name: string, id: int }
+
+impl User {
+    fn greet(self) {
+        print("Hello " + self.name)
+    }
+    fn label(self) -> string {
+        return self.name + "#" + to_string(self.id)
+    }
+}
+
+fn main() {
+    let u = User { name: "Ada", id: 1 }
+    u.greet()
+    print(u.label())
+}`,
+    note: "A method is a `fn` whose first parameter is `self`. Methods belong to the struct type, so two structs may share a method name; a field and a method may not.",
+  },
+  {
+    id: "composition",
+    title: "Composition",
+    level: "intermediate",
+    tags: ["structs", "methods", "composition", "oop"],
+    summary: "Reuse behavior by composing structs and calling methods through fields.",
+    output: "Aura GT (120hp)\n",
+    source: `struct Engine { power: int }
+
+impl Engine {
+    fn describe(self) { return f"{self.power}hp" }
+}
+
+struct Car { engine: Engine, name: string }
+
+impl Car {
+    fn describe(self) {
+        return self.name + " (" + self.engine.describe() + ")"
+    }
+}
+
+fn main() {
+    let car = Car { engine: Engine { power: 120 }, name: "Aura GT" }
+    print(car.describe())
+}`,
+    note: "A method reaches a nested struct's method through `self.field.method()`. Reuse is composition, not inheritance.",
+  },
+  {
     id: "enums",
     title: "Enums and pattern matching",
     level: "intermediate",
