@@ -151,6 +151,69 @@ const cases = [
     'unknown impl target',
     'impl Nope {\n fn f(self) { return 1 }\n}\nfn main() { print(1) }',
   ],
+  // Traits (`trait`, `impl Trait for Struct`) — §17.7. Static/nominal: the
+  // contract is checked, the methods merge into the struct's method surface,
+  // and there is no dynamic dispatch.
+  [
+    'trait basic',
+    'trait P { fn show(self) }\nstruct Person { name: string }\nimpl P for Person { fn show(self) { print(self.name) } }\nfn main() { Person { name: "Ada" }.show() }',
+  ],
+  [
+    'trait args and return',
+    'trait S { fn a(self) -> int\n fn b(self, k: int) -> int }\nstruct X { v: int }\nimpl S for X { fn a(self) { return self.v }\n fn b(self, k: int) { return self.v * k } }\nfn main() { let x = X { v: 3 }\n print(x.a())\n print(x.b(4)) }',
+  ],
+  [
+    'trait method mutation',
+    'trait I { fn bump(self) }\nstruct C { n: int }\nimpl I for C { fn bump(self) { self.n = self.n + 1 } }\nfn main() { let c = C { n: 0 }\n c.bump()\n c.bump()\n print(c.n) }',
+  ],
+  [
+    'trait composition',
+    'trait V { fn val(self) -> int }\nstruct E { p: int }\nstruct Car { e: E }\nimpl V for E { fn val(self) -> int { return self.p } }\nimpl V for Car { fn val(self) -> int { return self.e.val() } }\nfn main() { print(Car { e: E { p: 120 } }.val()) }',
+  ],
+  [
+    'trait via alias',
+    'trait T { fn a(self) }\nstruct S { n: int }\nimpl T for S { fn a(self) { print(self.n) } }\ntype Q = S\nfn main() { let q: Q = S { n: 5 }\n q.a() }',
+  ],
+  [
+    'trait missing method',
+    'trait T { fn a(self)\n fn b(self) }\nstruct S { x: int }\nimpl T for S { fn a(self) { print(self.x) } }\nfn main() { print(1) }',
+  ],
+  [
+    'trait wrong signature',
+    'trait T { fn a(self, x: int) }\nstruct S { x: int }\nimpl T for S { fn a(self) { print(self.x) } }\nfn main() { print(1) }',
+  ],
+  [
+    'trait extra method',
+    'trait T { fn a(self) }\nstruct S { x: int }\nimpl T for S { fn a(self) { print(self.x) }\n fn b(self) { print(2) } }\nfn main() { print(1) }',
+  ],
+  [
+    'trait unknown trait',
+    'struct S { x: int }\nimpl Nope for S { fn a(self) { print(1) } }\nfn main() { print(1) }',
+  ],
+  [
+    'trait duplicate impl',
+    'trait T { fn a(self) }\nstruct S { x: int }\nimpl T for S { fn a(self) { print(1) } }\nimpl T for S { fn a(self) { print(2) } }\nfn main() { print(1) }',
+  ],
+  [
+    'trait inherent method clash',
+    'trait T { fn a(self) }\nstruct S { x: int }\nimpl S { fn a(self) { print(1) } }\nimpl T for S { fn a(self) { print(2) } }\nfn main() { print(1) }',
+  ],
+  [
+    'trait field clash',
+    'trait T { fn x(self) }\nstruct S { x: int }\nimpl T for S { fn x(self) { print(1) } }\nfn main() { print(1) }',
+  ],
+  [
+    'trait method on unknown receiver',
+    'trait T { fn a(self) }\nstruct S { n: int }\nimpl T for S { fn a(self) { print(self.n) } }\nfn call(x) { x.a() }\nfn main() { call(S { n: 4 }) }',
+  ],
+  [
+    'trait union receiver',
+    'trait T { fn a(self) -> int }\nstruct A { x: int }\nstruct B { y: int }\nimpl T for A { fn a(self) -> int { return self.x } }\nimpl T for B { fn a(self) -> int { return self.y } }\ntype U = A | B\nfn main() { let u: U = A { x: 1 }\n print(u.a()) }',
+  ],
+  [
+    'trait is contextual',
+    'fn main() { let trait = 1\n let impl = 2\n print(trait + impl) }',
+  ],
   // Contextual `impl`/`self`: both stay ordinary identifiers outside a method
   // receiver / behavior-block context (§3.3).
   [

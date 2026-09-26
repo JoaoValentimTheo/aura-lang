@@ -84,6 +84,10 @@ const GRAMMAR_SAMPLES: &[&str] = &[
     // struct methods (`impl`, explicit `self`) — §17.6
     "struct P { x: int }\nimpl P {\n fn get(self) { return self.x }\n}\nfn m() { print(P { x: 1 }.get()) }",
     "struct P { x: int }\nimpl P {\n fn set(self, v: int) { self.x = v }\n fn get(self) -> int { return self.x }\n}\nfn m() { let p = P { x: 0 }\n p.set(2)\n print(p.get()) }",
+    // traits (`trait`, `impl Trait for Struct`) — §17.7
+    "trait T { fn a(self) }\nstruct S { x: int }\nimpl T for S { fn a(self) { print(self.x) } }\nfn m() { S { x: 1 }.a() }",
+    "trait T { fn a(self)\n fn b(self, k: int) -> int }\nstruct S { x: int }\nimpl T for S { fn a(self) { print(self.x) }\n fn b(self, k: int) -> int { return self.x + k } }\nfn m() { let s = S { x: 1 }\n s.a()\n print(s.b(2)) }",
+    "trait Empty { }\nstruct S { x: int }\nimpl Empty for S { }\nfn m() { print(1) }",
 ];
 
 #[test]
@@ -154,6 +158,10 @@ fn error_samples() -> Vec<(u16, String)> {
         (
             codes::DUPLICATE_FIELD,
             "struct S { x: int, x: string }".to_string(),
+        ),
+        (
+            codes::TRAIT_INCOMPLETE,
+            "trait T { fn a(self)\n fn b(self) }\nstruct S { x: int }\nimpl T for S { fn a(self) { print(self.x) } }".to_string(),
         ),
         (
             codes::TYPE_MISMATCH,

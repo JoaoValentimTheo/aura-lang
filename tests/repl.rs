@@ -403,6 +403,63 @@ fn evolution_repl_unterminated_comment_does_not_corrupt() {
     assert!(out.contains('2'), "{out}");
 }
 
+/// A trait declared, then a struct, then a trait implementation, then a call —
+/// each across separate submissions — must work, using the existing
+/// `GlobalDecl` persistence rather than parallel REPL state.
+#[test]
+fn traits_persist_across_submissions() {
+    let out = body(
+        "trait Printable {\n fn label(self) -> string\n}\n\
+         struct Person {\n name: string\n}\n\
+         impl Printable for Person {\n fn label(self) -> string {\n return self.name\n }\n}\n\
+         let p = Person { name: \"Ada\" }\np.label()\n:quit\n",
+    );
+    assert!(!out.contains('E'), "unexpected diagnostic: {out}");
+    assert!(out.contains("Ada"), "{out}");
+}
+
+/// A trait declared and implemented in one submission keeps its merged method
+/// surface callable in a later submission.
+#[test]
+fn trait_method_visible_in_later_submission() {
+    let out = body(
+        "trait T {\n fn a(self) -> int\n}\n\
+         struct S {\n n: int\n}\n\
+         impl T for S {\n fn a(self) -> int {\n return self.n\n }\n}\n\
+         let s: S = S { n: 7 }\n\
+         s.a()\n:quit\n",
+    );
+    assert!(!out.contains('E'), "unexpected diagnostic: {out}");
+    assert!(out.contains('7'), "{out}");
+}
+
+/// A duplicate trait implementation is rejected even when the first
+/// implementation came from an earlier submission.
+#[test]
+fn duplicate_trait_impl_detected_across_submissions() {
+    let out = body(
+        "trait T {\n fn a(self)\n}\nstruct S {\n n: int\n}\n\
+         impl T for S {\n fn a(self) {\n print(self.n)\n }\n}\n\
+         impl T for S {\n fn a(self) {\n print(2)\n }\n}\n:quit\n",
+    );
+    assert!(out.contains("E2007"), "{out}");
+}
+
+/// A trait declaration persisted by an earlier submission is implementable by a
+/// later submission, and its contract is enforced there: implementing only part
+/// of a trait declared in a prior submission is `E2017`.
+#[test]
+fn trait_contract_enforced_in_later_submission() {
+    // Submission 1 declares the trait and the struct; submission 2 implements
+    // only `a`, without re-declaring the trait. The persisted contract must
+    // still require `b` (`E2017`).
+    let out = body(
+        "trait T {\n fn a(self)\n fn b(self)\n}\nstruct S {\n n: int\n}\n\
+         impl T for S {\n fn a(self) {\n print(self.n)\n }\n}\n:quit\n",
+    );
+    assert!(out.contains("E2017"), "{out}");
+}
+
 /// P0: the REPL's submission-completeness scan must not slice a `&str` at a
 /// non-character boundary. A multiline comment containing a multibyte
 /// character used to panic the REPL thread (`E4999`), aborting the session;

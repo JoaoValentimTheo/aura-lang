@@ -574,3 +574,87 @@ fn one_element_list_sugar_parses() {
         Expr::Lit(Lit::Int(1), _)
     ));
 }
+
+/// `trait Name { fn m(self) ... }` parses to `Item::Trait` holding the
+/// declared method signatures (no bodies).
+#[test]
+fn trait_declaration() {
+    let m =
+        parse("trait Printable {\n fn print(self)\n fn label(self) -> string\n}").expect("parse");
+    match &m.items[0] {
+        Item::Trait { name, methods, .. } => {
+            assert_eq!(name, "Printable");
+            assert_eq!(methods.len(), 2);
+            assert!(methods.iter().all(|it| matches!(
+                it,
+                Item::Fn { body, .. } if body.is_empty()
+            )));
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+/// `impl Trait for Struct { ... }` parses to `Item::Impl` with a trait name.
+#[test]
+fn trait_impl_declaration() {
+    let m = parse(
+        "struct Person { name: string }\nimpl Printable for Person { fn print(self) { print(self.name) } }",
+    )
+    .expect("parse");
+    let impl_item = m
+        .items
+        .iter()
+        .find(|it| matches!(it, Item::Impl { .. }))
+        .expect("impl");
+    match impl_item {
+        Item::Impl {
+            target,
+            trait_name,
+            methods,
+            ..
+        } => {
+            assert_eq!(target, "Person");
+            assert_eq!(trait_name.as_deref(), Some("Printable"));
+            assert_eq!(methods.len(), 1);
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+/// An inherent `impl Struct { ... }` has no trait name.
+#[test]
+fn inherent_impl_has_no_trait_name() {
+    let m = parse("struct S { x: int }\nimpl S { fn get(self) { return self.x } }").expect("parse");
+    match m.items.iter().find(|it| matches!(it, Item::Impl { .. })) {
+        Some(Item::Impl { trait_name, .. }) => assert!(trait_name.is_none()),
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+/// `trait` and `impl` remain ordinary identifiers outside their item contexts.
+#[test]
+fn trait_and_impl_remain_identifiers() {
+    assert!(parse("fn main() { let trait = 1\n let impl = 2\n print(trait + impl) }").is_ok());
+    assert!(parse("fn trait() { }").is_ok());
+}
+
+/// Trait methods must declare `self`; a body or a non-`fn` member is rejected.
+#[test]
+fn malformed_trait_members_are_rejected() {
+    assert_eq!(
+        parse("trait T { fn a(self) { print(1) } }")
+            .map(|_| ())
+            .map_err(|d| d.code),
+        Err(codes::EXPECTED)
+    );
+    assert_eq!(
+        parse("trait T { field: int }")
+            .map(|_| ())
+            .map_err(|d| d.code),
+        Err(codes::EXPECTED)
+    );
+    assert_eq!(
+        parse("trait T { fn a() }").map(|_| ()).map_err(|d| d.code),
+        Err(codes::EXPECTED)
+    );
+}
