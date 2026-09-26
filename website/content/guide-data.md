@@ -53,6 +53,40 @@ Rules:
   method's first parameter. Elsewhere both are ordinary identifiers
   (`let impl = 1`, `fn self(x)`, a field named `impl`) and behave as before.
 
+## Traits
+
+A `trait` names a behavioral contract: a set of method signatures a struct
+agrees to provide. A trait has signatures only — no bodies, fields, or
+associated items — and introduces no value type. `impl Trait for Struct` must
+implement exactly the trait's methods.
+
+```aura
+trait Printable {
+    fn print(self)
+    fn label(self) -> string
+}
+
+struct User { name: string, id: int }
+
+impl Printable for User {
+    fn print(self) { print(self.name) }
+    fn label(self) -> string { return self.name + "#" + to_string(self.id) }
+}
+
+let u = User { name: "Ada", id: 1 }
+u.print()
+```
+
+Rules:
+
+* A trait implementation must provide every declared method (`E2017` if one is
+  missing) with a compatible signature (`E3001` if not), and no extras.
+* Traits add no dispatch: calls resolve statically by the receiver's nominal
+  type. There are no trait objects, vtables, or bounds.
+* Trait and inherent methods share one namespace: a name provided twice is
+  `E2007`.
+* `trait` is contextual (`let trait = 1` is valid), like `impl` and `self`.
+
 ## Enums
 
 An `enum` declares a tagged sum type. Each variant may carry a positional

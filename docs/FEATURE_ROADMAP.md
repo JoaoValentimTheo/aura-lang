@@ -169,7 +169,7 @@ Classification keys:
 | `Expr::Tuple` lowering | **D** | Documented |
 | `Field`/`Unknown` architecture | **D** | Covered by the checker |
 | Modules / imports | **E** | Requires a package model, visibility, initialization order, and a REPL story |
-| Generics / traits | **E** | Outside the current monomorphic `Ty`; a redesign |
+| Generics / trait bounds | **E** | Outside the current monomorphic `Ty`; a redesign (traits themselves exist, §17.7) |
 | Async / concurrency | **E** | Requires a different runtime |
 | Bytecode VM / codegen | **E** | Out of scope by design |
 
@@ -546,8 +546,9 @@ under "Release hardening" below.
 | 9 | Branch-join inference | B | Larger checker change |
 | 10 | Block comments | B | Lexical feature; needs a syntax decision |
 | 11 | User-defined methods | E/B | **done** (struct methods, §17.6; enum methods remain) |
+| 11b | Traits | E | **done** (static behavioral contracts, §17.7; no dynamic dispatch or bounds) |
 | 12 | Modules | E | Separate design phase |
-| — | Generics / traits / async / VM | E | Not planned |
+| — | Generics / trait bounds / async / VM | E | Not planned |
 
 ### Release hardening (0.0.1)
 
@@ -571,11 +572,11 @@ of the frozen `0.0.1` language:
 The release, language, and runtime versions are deliberately distinct:
 release `0.0.2`, language `0.0.1`, runtime `0.0.2`. OOP V1 (struct methods via
 `impl` with an explicit `self` receiver) is implemented and available in the
-development runtime. After it, development continues with the long
-language-maturation cycle (scope/binding audit, const design, syntax
-refinement, semantic consistency, stdlib/API refinement, diagnostics,
-hardening, conformance, and syntax freeze) before further OOP work (traits,
-generics).
+development runtime. Traits (static behavioral contracts, §17.7) followed.
+After them, development continues with the long language-maturation cycle
+(scope/binding audit, const design, syntax refinement, semantic consistency,
+stdlib/API refinement, diagnostics, hardening, conformance, and syntax
+freeze) before further OOP work (generics and trait bounds).
 
 ---
 

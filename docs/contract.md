@@ -188,7 +188,16 @@ involved:
   checker and the evaluator cannot drift.
 * **Methods.** A method call on a known receiver type must name a method that
   exists on that type (`E2003`); its argument count and argument types are
-  checked (`E3001`).
+  checked (`E3001`). A struct's methods include both its inherent `impl`
+  methods and the methods it provides through trait implementations; they share
+  one namespace (a duplicate name is `E2007`).
+* **Traits.** `trait Name { fn m(self) ... }` declares a behavioral contract of
+  method signatures only — no bodies, fields, or associated items. `impl Trait
+  for Struct { ... }` must provide exactly the declared methods (`E2017` if one
+  is missing, `E3001` if a signature disagrees, and no extras). An unknown trait
+  or struct is `E2003`; a trait declared twice or implemented twice for one
+  struct is `E2007`. Traits add no value type and no dispatch: calls resolve
+  statically by the receiver's nominal type.
 * **User-function calls.** A call the checker resolves to a specific top-level
   `fn` declaration is checked against its declared parameters (`E3001`): the
   argument count, and each argument's inferred type against the parameter's

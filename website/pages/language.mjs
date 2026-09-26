@@ -201,13 +201,14 @@ fn main() {
       ["Functions, closures, recursion", "Implemented", "success"],
       ["Structs, enums, type aliases", "Implemented", "success"],
       ["Struct methods: impl, self, composition (OOP V1)", "Implemented", "success"],
+      ["Traits: static behavioral contracts", "Implemented", "success"],
       ["Pattern matching and destructuring", "Implemented", "success"],
       ["Lists, maps, ranges, pipeline, methods", "Implemented", "success"],
       ["Errors: throw / try / catch / finally", "Implemented", "success"],
       ["Optional type annotations + conservative checker", "Implemented", "success"],
       ["Scripting I/O and arguments", "Implemented", "success"],
-      ["Traits and generics", "Future", "planned"],
       ["Modules and visibility", "Reserved (inert syntax)", "planned"],
+      ["Generics and trait bounds", "Future", "planned"],
       ["Python / PyO3 interop", "Long-term", "planned"],
     ])}
     <div style="margin-top:var(--space-6)">

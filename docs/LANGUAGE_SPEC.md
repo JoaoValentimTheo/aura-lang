@@ -177,21 +177,25 @@ true false none
 Using a reserved word where a name is required is a lexical/parse error
 (`E1009`, or `E1006` in declaration positions).
 
-**Normative rule (contextual words).** The words `impl` and `self` are **not**
-reserved. They remain ordinary identifiers everywhere (`let impl = 1`,
-`fn self(x)`, a field named `impl`, `self: int`, `catch self -> …`, and so on).
-They take on Aqua method meaning only in their dedicated syntactic contexts
-(§17.6):
+**Normative rule (contextual words).** The words `impl`, `self`, and `trait`
+are **not** reserved. They remain ordinary identifiers everywhere
+(`let impl = 1`, `fn self(x)`, `let trait = 1`, a field named `impl`,
+`self: int`, `catch self -> …`, and so on). They take on Aura meaning only in
+their dedicated syntactic contexts (§17.6, §17.7):
 
-* `impl` is recognized as a behavior declaration only at item position, when
-  it is immediately followed by a capitalized type name and `{`
-  (`impl StructName { … }`). Any other occurrence of `impl` is an ordinary
-  identifier and cannot start a behavior block.
+* `impl` is recognized as a behavior declaration or trait implementation only
+  at item position, when it is immediately followed by a capitalized type name
+  and `{` (`impl StructName { … }`) or by `for` (`impl Trait for Struct { … }`).
+  Any other occurrence of `impl` is an ordinary identifier and cannot start a
+  block.
+* `trait` is recognized as a trait declaration only at item position, when it
+  is immediately followed by a capitalized name and `{` (`trait Name { … }`).
+  Any other occurrence of `trait` is an ordinary identifier.
 * `self` has receiver semantics only as the first parameter of a method inside
   such a block (`fn method(self, …)`). Elsewhere it is an ordinary identifier
   with its previous lexical meaning.
 
-*Evidence:* `Parser::at_impl_block`, `Parser::params`
+*Evidence:* `Parser::at_impl_block`/`at_trait_block`, `Parser::params`
 (`src/parse/mod.rs`); `KEYWORDS` (`src/lex/mod.rs`).
 
 ### 3.4 Whitespace and line structure
@@ -1621,13 +1625,59 @@ display, or reference semantics: construction (§17.2), equality (§17.4),
 display (§17.5), and `Rc`-based reference sharing are unchanged.
 
 **Normative rule.** Aura has no constructors, destructors, visibility,
-inheritance, traits, interfaces, generics, or operator overloading in V1.
-(A future direction is Go-style visibility-by-naming once a module system
-exists; it is not implemented and adds no current rule.)
+inheritance, generics, or operator overloading. Traits exist as static
+behavioral contracts (§17.7). (A future direction is Go-style
+visibility-by-naming once a module system exists; it is not implemented and
+adds no current rule.)
 
 *Evidence:* `Parser::impl_item`/`method_item` (`src/parse/mod.rs`);
 `Checker::struct_methods` (`src/check/mod.rs`); `Interp::methods`
 (`src/run/mod.rs`); `tests/methods.rs`.
+
+### 17.7 Traits
+
+**Normative rule.** A trait is a named behavioral contract, declared with
+`trait Name { fn method(self, ...) -> T ... }`. A trait contains **method
+signatures only**: no method bodies (no defaults), no fields, no associated
+types, no associated constants, and no `self`-less associated functions. Each
+declared method MUST have `self` as its first parameter. A trait introduces no
+value type, no variant, and no dispatch mechanism; it is not a `Ty`.
+
+**Normative rule.** A trait is implemented with `impl Trait for Struct { ... }`,
+which MUST provide exactly the methods the trait declares: every declared
+method (`E2017` if missing) with a compatible signature (`E3001` if not), and
+no additional methods. The target MUST be a declared struct (`E2003`
+otherwise), the trait MUST be declared (`E2003` otherwise), a trait MAY be
+implemented at most once per struct (`E2007` otherwise), and a trait name may
+be declared at most once (`E2007` otherwise).
+
+**Normative rule.** Trait-provided methods and inherent methods share **one
+method namespace** per struct. A method name provided by both an inherent
+`impl` and a trait `impl`, or by two traits, is rejected (`E2007`); a method
+name that collides with a field is rejected (`E2016`). There is no
+qualification syntax (`Trait::method`). Trait methods are called exactly like
+inherent methods: `receiver.method(args)`.
+
+**Normative rule.** Method resolution is unchanged and static: a struct's
+method table contains its inherent and trait-provided methods, resolved by the
+receiver's nominal type. There is no dynamic dispatch, no trait object, no
+vtable, and no runtime trait lookup. Built-in receivers keep the built-in
+registry; `Unknown` receivers remain conservative (a name is accepted when it
+is a built-in method or a method of any declared struct, including trait
+methods); a union receiver requires every member to provide the method
+compatibly.
+
+**Normative rule.** Aliases are transparent and preserve trait-provided
+methods (the alias denotes the same nominal struct). Trait membership is side
+metadata on the nominal struct, never a distinct `Ty`.
+
+**Normative rule.** `trait` is a **contextual word**, not reserved: it begins a
+trait declaration only at item position when followed by a capitalized name and
+`{`; elsewhere it is an ordinary identifier (`let trait = 1`, `fn trait(x)`)
+exactly as `impl` and `self` are (§3.3).
+
+*Evidence:* `Parser::trait_item`/`trait_method_decl` (`src/parse/mod.rs`);
+`Checker::traits`/`trait_impls` (`src/check/mod.rs`); `tests/traits.rs`.
 
 ---
 
@@ -2561,7 +2611,10 @@ explicitly **out of scope** for this specification and are not language
 features:
 
 * module or package systems;
-* generics, traits, or interfaces;
+* generics, interfaces, or trait bounds (traits exist as static contracts,
+  §17.7);
+* inheritance, subtyping, or dynamic dispatch;
+* visibility (`pub`/`use` remain inert, §27);
 * async or concurrency;
 * macros;
 * a bytecode VM, optimizer, or native code generation;

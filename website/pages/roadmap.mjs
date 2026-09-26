@@ -20,6 +20,12 @@ const PHASES = [
     body: "Behavior attached to structs with <code>impl</code> blocks and an explicit <code>self</code> receiver, plus composition. Structs remain data, methods remain functions, and there are no classes, inheritance, or dynamic dispatch. Available in the development runtime.",
   },
   {
+    tag: "Delivered",
+    kind: "success",
+    title: "Traits · static behavioral contracts",
+    body: "A <code>trait</code> names a set of method signatures a struct agrees to implement with <code>impl Trait for Struct</code>. Traits add no value type and no dynamic dispatch: calls resolve statically by nominal type. Available in the development runtime.",
+  },
+  {
     tag: "Planned",
     kind: "planned",
     title: "Language maturation",

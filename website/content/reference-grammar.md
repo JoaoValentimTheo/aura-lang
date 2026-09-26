@@ -10,7 +10,7 @@ grammar disagree, the parser is wrong.
 file            = { NEWLINE | item } EOF ;
 item            = [ "pub" ] ( fn_decl | struct_decl | enum_decl
                             | type_alias | use_decl | const_decl
-                            | impl_decl )
+                            | impl_decl | trait_decl )
                 | expr_stmt ;
 
 use_decl        = "use" IDENT { "." IDENT } terminator ;
@@ -21,12 +21,20 @@ params          = param { "," param } ;
 param           = IDENT [ ":" type ] ;
 
 (* behavior block: one per struct; methods take the receiver `self` as their
-   first parameter. `impl` here is contextual — an `impl StructName {` item — and
-   `self` has receiver meaning only in this position; both stay ordinary
-   identifiers elsewhere. *)
-impl_decl       = "impl" IDENT "{" { NEWLINE | [ "pub" ] method_decl } "}" ;
+   first parameter. `impl` here is contextual — an `impl StructName {` item or
+   an `impl TraitName for StructName {` item — and `self` has receiver meaning
+   only in this position; both stay ordinary identifiers elsewhere. *)
+impl_decl       = "impl" IDENT [ "for" IDENT ] "{"
+                  { NEWLINE | [ "pub" ] method_decl } "}" ;
 method_decl     = "fn" IDENT "(" "self" [ "," param { "," param } ] ")"
                   [ "->" type ] block ;
+
+(* trait: a behavioral contract. Signatures only — no bodies, fields, or
+   associated items. `trait` is contextual and stays an ordinary identifier
+   outside this item form. *)
+trait_decl      = "trait" IDENT "{" { NEWLINE | [ "pub" ] trait_method } "}" ;
+trait_method    = "fn" IDENT "(" "self" [ "," param { "," param } ] ")"
+                  [ "->" type ] terminator ;
 
 struct_decl     = "struct" IDENT "{" [ field { "," field } [ "," ] ] "}" ;
 field           = IDENT ":" type ;
