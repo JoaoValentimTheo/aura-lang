@@ -1456,6 +1456,11 @@ same name twice in the *same* scope is `E2007`.
 **Normative rule.** Parameters are immutable bindings in the function's scope.
 Reassigning a parameter is `E2001`.
 
+**Normative rule.** A parameter list MUST NOT declare the same name twice;
+each parameter is a binding in the function's scope, so a duplicate parameter
+name is a same-scope redeclaration (`E2007`, §16.3), exactly as for a lambda
+parameter list. This was formerly reported as `E1006` by the parser.
+
 **Normative rule.** A parameter whose name begins with `_` MUST NOT be used in
 the body; using it is `E2009`.
 

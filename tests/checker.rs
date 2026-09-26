@@ -198,6 +198,27 @@ fn destructuring_same_scope_redeclaration_is_static() {
     );
 }
 
+/// A function declaring the same parameter name twice is a same-scope
+/// redeclaration (`E2007`, `LANGUAGE_SPEC.md` §16.3, §16.4), exactly like a
+/// lambda parameter list. It was formerly rejected by the parser as `E1006`.
+#[test]
+fn duplicate_function_parameter_is_a_redeclaration() {
+    assert_eq!(
+        check("fn f(a, a) { return a }\nfn main() { }"),
+        Err(codes::REDECLARED)
+    );
+    assert_eq!(
+        check("fn f(a: int, a: string) { return a }\nfn main() { }"),
+        Err(codes::REDECLARED)
+    );
+    // A lambda parameter list already reports the same code; the two callable
+    // forms must agree.
+    assert_eq!(
+        check("fn main() { let g = (a, a) -> a }"),
+        Err(codes::REDECLARED)
+    );
+}
+
 /// An unknown variant tag in a `let` pattern is `E3002`.
 #[test]
 fn destructuring_unknown_variant_is_static() {

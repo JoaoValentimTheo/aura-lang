@@ -88,6 +88,15 @@ const cases = [
   ['empty program', ''],
   ['just expr', '1 + 2'],
   ['unicode', 'fn main() { print("héllo λ 世界") }'],
+  // A function parameter list declaring the same name twice is a same-scope
+  // redeclaration: E2007 on every substrate (formerly E1006 from the parser,
+  // which disagreed with the lambda form).
+  ['duplicate fn parameter', 'fn f(a, a) { return a }\nfn main() { }'],
+  [
+    'duplicate fn parameter annotated',
+    'fn f(a: int, a: string) { return a }\nfn main() { }',
+  ],
+  ['duplicate lambda parameter', 'fn main() { let g = (a, a) -> a }'],
 ];
 
 const options = { args: ["alpha", "beta"], stdin: "line one\nline two\n" };

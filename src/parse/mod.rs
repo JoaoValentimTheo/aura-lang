@@ -455,13 +455,6 @@ impl Parser {
         loop {
             let span = self.span();
             let name = self.ident("parameter name")?;
-            if out.iter().any(|p: &Param| p.name == name) {
-                return Err(Diag::new(
-                    codes::EXPECTED,
-                    format!("duplicate parameter `{name}`"),
-                    span,
-                ));
-            }
             let ty = if self.eat(&Tok::Colon) {
                 Some(self.ty()?)
             } else {
