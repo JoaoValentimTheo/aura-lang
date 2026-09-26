@@ -133,6 +133,29 @@ fn fstring_parses_parts() {
     }
 }
 
+/// A name inside an f-string interpolation carries an absolute span, so a
+/// checker diagnostic names the real file location rather than byte 0.
+#[test]
+fn fstring_interpolation_spans_are_absolute() {
+    let src = "fn main() {\n  print(f\"x{ nope }y\")\n}\n";
+    let m = parse(src).expect("parse");
+    let Item::Fn { body, .. } = &m.items[0] else {
+        panic!("expected fn");
+    };
+    let Stmt::Expr(Expr::Call(_, args, _), _) = &body[0] else {
+        panic!("expected call");
+    };
+    let Expr::FStr(parts, _) = &args[0].value else {
+        panic!("expected f-string");
+    };
+    let FPart::Expr(Expr::Name(name, span)) = &parts[1] else {
+        panic!("expected interpolation");
+    };
+    assert_eq!(name, "nope");
+    // `nope` sits on line 2; its span must point there, not at offset 0.
+    assert_eq!(span.start, src.find("nope").expect("name present"));
+}
+
 #[test]
 fn deep_nesting_is_bounded() {
     // Grouping parentheses do not add AST depth, so a very long paren chain is

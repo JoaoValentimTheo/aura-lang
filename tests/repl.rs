@@ -460,6 +460,48 @@ fn trait_contract_enforced_in_later_submission() {
     assert!(out.contains("E2017"), "{out}");
 }
 
+/// `const` persists across submissions, is usable later, cannot be
+/// redefined, and a failed declaration does not corrupt the session.
+#[test]
+fn const_persists_and_cannot_be_redefined() {
+    let out = body("const PI = 3\nPI\n:quit\n");
+    assert!(!out.contains('E'), "unexpected diagnostic: {out}");
+    assert!(out.contains('3'), "{out}");
+
+    let out = body("const X = 5\nlet y = X + 1\ny\n:quit\n");
+    assert!(!out.contains('E'), "unexpected diagnostic: {out}");
+    assert!(out.contains('6'), "{out}");
+
+    // A duplicate constant follows module semantics (`E2007`).
+    let out = body("const A = 1\nconst A = 2\nA\n:quit\n");
+    assert!(out.contains("E2007"), "{out}");
+    // The original value survives the rejected redefinition.
+    assert!(out.contains('1'), "{out}");
+
+    // A failed initializer does not persist a value or corrupt prior state.
+    let out = body("const A = 1\nconst B = nope\nA\n:quit\n");
+    assert!(out.contains("E2003"), "{out}");
+    assert!(out.contains('1'), "{out}");
+}
+
+/// Redefining a session function is a redeclaration (`E2007`), matching
+/// module semantics, and the first definition keeps working.
+#[test]
+fn session_function_redefinition_is_rejected() {
+    let out = body("fn f() { return 1 }\nfn f() { return 2 }\nf()\n:quit\n");
+    assert!(out.contains("E2007"), "{out}");
+    assert!(out.contains('1'), "{out}");
+}
+
+/// A struct declared after a function that shares its name is still persisted:
+/// value and type namespaces are separate, exactly as in a module.
+#[test]
+fn session_struct_after_same_named_function_persists() {
+    let out = body("fn S() { return 1 }\nstruct S { a: int }\nS { a: 5 }.a\n:quit\n");
+    assert!(!out.contains('E'), "unexpected diagnostic: {out}");
+    assert!(out.contains('5'), "{out}");
+}
+
 /// P0: the REPL's submission-completeness scan must not slice a `&str` at a
 /// non-character boundary. A multiline comment containing a multibyte
 /// character used to panic the REPL thread (`E4999`), aborting the session;

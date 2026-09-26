@@ -230,6 +230,38 @@ const cases = [
     'trait duplicate parameter',
     'trait T { fn a(self, x: int, x: int) }\nfn main() { print(1) }',
   ],
+  // LSCS: `const` is the canonical module constant; `let` remains compatible.
+  [
+    'const declaration',
+    'const PI = 3\nconst N: int = 5\nfn main() { print(PI)\n print(N) }',
+  ],
+  ['const lowercase rejected', 'const pi = 3\nfn main() { print(pi) }'],
+  ['const forward reference', 'const A = B\nconst B = 1\nfn main() { print(A) }'],
+  ['const duplicate', 'const A = 1\nconst A = 2\nfn main() { print(A) }'],
+  [
+    'const interior mutability',
+    'const XS = [1, 2]\nfn main() { push(XS, 3)\n print(XS) }',
+  ],
+  [
+    'const and let share namespace',
+    'const A = 1\nlet A = 2\nfn main() { print(A) }',
+  ],
+  [
+    'value and type namespaces are separate',
+    'fn S() { return 1 }\nstruct S { a: int }\nfn main() { print(S { a: 5 }.a) }',
+  ],
+  // LSCS: f-string interpolation diagnostics carry an absolute span.
+  ['fstring undefined name', 'fn main() {\n print(f"value {nope} end")\n}'],
+  ['fstring empty interpolation', 'fn main() {\n print(f"x{ }y")\n}'],
+  [
+    'fstring expression and escapes',
+    'fn main() { let x = 5\n print(f"v={x + 1} {{lit}}") }',
+  ],
+  // LSCS: operators deliberately absent.
+  ['bitwise rejected', 'fn main() { print(6 & 3) }'],
+  ['shift rejected', 'fn main() { print(8 >> 1) }'],
+  ['increment rejected', 'fn main() { let mut x = 1\n x++\n print(x) }'],
+  ['caret is power', 'fn main() { print(2 ^ 10) }'],
   // Contextual `impl`/`self`: both stay ordinary identifiers outside a method
   // receiver / behavior-block context (§3.3).
   [
