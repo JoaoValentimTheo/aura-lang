@@ -312,14 +312,57 @@ function indentSelection(outdent) {
   const block = value.slice(lineStart, lineEnd);
   const lines = block.split("\n");
   const unit = "    ";
-  const changed = lines
+  let changed = false;
+  const updated = lines
     .map((l) => {
-      if (outdent) return l.startsWith(unit) ? l.slice(unit.length) : l.replace(/^ {1,4}/, "");
+      if (outdent) {
+        if (l.startsWith(unit)) {
+          changed = true;
+          return l.slice(unit.length);
+        }
+        const m = l.match(/^ {1,4}/);
+        if (m) {
+          changed = true;
+          return l.slice(m[0].length);
+        }
+        return l;
+      }
+      changed = true;
       return unit + l;
     })
     .join("\n");
-  ta.setRangeText(changed, lineStart, lineEnd, "select");
+  if (!changed) return false;
+  ta.setRangeText(updated, lineStart, lineEnd, "select");
   refreshEditor();
+  return true;
+}
+
+/** Whether the current line has any non-whitespace before the caret. */
+function lineHasContentBeforeCaret() {
+  const { value, selectionStart } = els.source;
+  const lineStart = value.lastIndexOf("\n", selectionStart - 1) + 1;
+  return value.slice(lineStart, selectionStart).trim().length > 0;
+}
+
+/** Whether the caret's whole line is empty or whitespace only. */
+function currentLineIsBlank() {
+  const { value, selectionStart } = els.source;
+  const lineStart = value.lastIndexOf("\n", selectionStart - 1) + 1;
+  let lineEnd = value.indexOf("\n", selectionStart);
+  if (lineEnd === -1) lineEnd = value.length;
+  return value.slice(lineStart, lineEnd).trim().length === 0;
+}
+
+/** Whether the selection spans more than one line. */
+function selectionSpansLines() {
+  const { value, selectionStart, selectionEnd } = els.source;
+  return value.slice(selectionStart, selectionEnd).includes("\n");
+}
+
+/** A predictable escape route: move focus to the primary toolbar control. */
+function focusToolbar() {
+  const target = els.run && !els.run.disabled ? els.run : els.version;
+  if (target) target.focus();
 }
 
 function installEditor() {
@@ -343,16 +386,52 @@ function installEditor() {
       run();
       return;
     }
-    // Escape stops a running program.
-    if (event.key === "Escape" && currentRun) {
-      event.preventDefault();
-      stopCurrent("stopped");
+    // Escape stops a running program, or — when idle — leaves the editor for
+    // the toolbar, so a keyboard user always has a predictable way out.
+    if (event.key === "Escape") {
+      if (currentRun) {
+        event.preventDefault();
+        stopCurrent("stopped");
+      } else {
+        event.preventDefault();
+        focusToolbar();
+      }
       return;
     }
-    // Tab indents, Shift+Tab unindents.
+    // Tab indents when there is an editing reason to, and otherwise lets focus
+    // move out of the editor so it is never a keyboard trap:
+    //   * a multi-line selection        -> indent the selection
+    //   * Shift+Tab with indentation    -> unindent, and stay in the editor
+    //   * Shift+Tab with nothing to cut -> allow normal (backwards) traversal
+    //   * Tab on a blank line at col 0  -> allow normal (forwards) traversal
+    //   * any other Tab                 -> insert one indentation unit
     if (event.key === "Tab") {
+      const spans = selectionSpansLines();
+      if (event.shiftKey) {
+        if (spans || els.source.selectionStart !== els.source.selectionEnd) {
+          event.preventDefault();
+          indentSelection(true);
+        } else if (!indentSelection(true)) {
+          // Nothing to unindent: let focus leave the editor.
+        } else {
+          event.preventDefault();
+        }
+        return;
+      }
+      if (spans) {
+        event.preventDefault();
+        indentSelection(false);
+        return;
+      }
+      // Plain Tab with a collapsed caret: release focus only on a blank line
+      // with nothing before the caret; otherwise indent.
+      if (currentLineIsBlank() && !lineHasContentBeforeCaret()) {
+        return; // allow default focus traversal
+      }
       event.preventDefault();
-      indentSelection(event.shiftKey);
+      const ta = els.source;
+      ta.setRangeText("    ", ta.selectionStart, ta.selectionEnd, "end");
+      refreshEditor();
     }
   });
   // Keep the highlight layer aligned when the window or pane resizes.

@@ -316,6 +316,31 @@ async function runAndWait(page, timeout = 15000) {
   check("standalone editor highlights keywords", view.hasImplHighlight, JSON.stringify(view.highlight));
   check("standalone editor shows line numbers", view.gutter.startsWith("1\n2\n3"), JSON.stringify(view.gutter));
 
+  // The editor must not be a keyboard trap: Tab can leave it, Escape (idle)
+  // moves focus to a toolbar control, and indentation still works.
+  const activeId = () =>
+    page.evaluate(() => document.activeElement?.id || document.activeElement?.tagName || "");
+  await page.fill("#source", "");
+  await page.focus("#source");
+  await page.keyboard.press("Tab");
+  check("standalone Tab leaves the editor from a blank line", (await activeId()) !== "source");
+  await page.fill("#source", "abc");
+  await page.focus("#source");
+  await page.evaluate(() => {
+    const s = document.getElementById("source");
+    s.setSelectionRange(1, 1);
+  });
+  await page.keyboard.press("Tab");
+  check("standalone Tab still indents mid-line", (await page.inputValue("#source")) === "a    bc");
+  await page.focus("#source");
+  await page.keyboard.press("Escape");
+  const esc = await activeId();
+  check(
+    "standalone Escape reaches a toolbar control",
+    esc === "run" || esc === "stop" || esc === "version",
+    esc,
+  );
+
   // Ctrl/Cmd + Enter runs.
   await page.fill("#source", 'fn main() { print("kb") }');
   await page.focus("#source");

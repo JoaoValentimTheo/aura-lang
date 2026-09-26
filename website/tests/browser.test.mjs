@@ -332,6 +332,56 @@ function check(name, cond, detail) {
   );
   check("editor shows line numbers", editorView.gutter.startsWith("1\n2\n3"), JSON.stringify(editorView.gutter));
 
+  // --- keyboard focus is not trapped in the editor (former P1) --------------
+  // Tab must be able to leave the editor. On a blank line Tab moves focus on;
+  // Escape (idle) moves focus to an actionable toolbar control; Shift+Tab at
+  // column 0 with nothing to unindent also leaves. Indentation is preserved
+  // where there is an editing reason to intercept the key.
+  const activeId = () =>
+    page.evaluate(() => document.activeElement?.id || document.activeElement?.tagName || "");
+  await page.fill("#source", "");
+  await page.focus("#source");
+  await page.keyboard.press("Tab");
+  const afterBlankTab = await activeId();
+  check("Tab leaves the editor from a blank line", afterBlankTab !== "source", afterBlankTab);
+
+  await page.fill("#source", "abc");
+  await page.focus("#source");
+  await page.evaluate(() => {
+    const s = document.getElementById("source");
+    s.setSelectionRange(1, 1);
+  });
+  await page.keyboard.press("Tab");
+  const indentValue = await page.inputValue("#source");
+  check("Tab still indents mid-line", indentValue === "a    bc", JSON.stringify(indentValue));
+
+  await page.fill("#source", "abc");
+  await page.focus("#source");
+  await page.evaluate(() => {
+    const s = document.getElementById("source");
+    s.setSelectionRange(0, 0);
+  });
+  await page.keyboard.press("Shift+Tab");
+  check("Shift+Tab with nothing to unindent leaves the editor", (await activeId()) !== "source");
+
+  await page.focus("#source");
+  await page.keyboard.press("Escape");
+  const afterEscape = await activeId();
+  check("Escape leaves the editor for a toolbar control", afterEscape !== "source", afterEscape);
+
+  // From the version combobox a keyboard user can reach the editor and then an
+  // actionable control without the mouse.
+  await page.focus("#version");
+  await page.keyboard.press("Tab");
+  check("Tab from the combobox reaches the editor", (await activeId()) === "source");
+  await page.keyboard.press("Escape");
+  const reachable = await activeId();
+  check(
+    "editor focus can reach an actionable control",
+    reachable === "run" || reachable === "stop" || reachable === "version",
+    reachable,
+  );
+
   // Ctrl/Cmd + Enter runs from the editor.
   await page.fill("#source", 'fn main() { print("kb") }');
   await page.focus("#source");
