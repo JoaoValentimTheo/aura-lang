@@ -267,7 +267,8 @@ MUST NOT contain an unescaped newline; a newline before the closing delimiter
 is an unterminated-string error (`E1004`).
 
 **Normative rule.** The following escape sequences are recognized inside a
-string literal:
+**plain** string literal (an f-string, §3.6.4, does not process these; see
+there):
 
 | Escape | Meaning |
 |---|---|
@@ -297,6 +298,16 @@ it an *f-string*. Inside an f-string:
 
 The expression between braces MUST be a well-formed expression. An empty `{}`
 is an error (`E1006`); an unterminated `{` is an error (`E1004`).
+
+**Normative rule.** The literal text of an f-string is **raw**: backslash
+escape sequences are not decoded. `f"a\nb"` contains a backslash and an `n`,
+not a line feed. `{{`/`}}` are the only brace escapes; the plain-string escapes
+`\{`/`\}` (§3.6.3) are not available in an f-string because `{` always begins
+an interpolation. To interpolate a value next to a literal backslash, use a
+plain string and concatenate.
+
+*Non-normative example.* `f"a\tb"` prints `a\tb` (a backslash, `t`, `b`),
+while `"a\tb"` prints `a` followed by a tab and `b`.
 
 *Evidence:* `Lexer::ident` (f-prefix), `Parser::fstring`
 (`src/parse/mod.rs`).
@@ -491,10 +502,11 @@ atom            = INT | FLOAT | STRING | FSTRING
                 | IDENT "(" [ ctor_args ] ")"        (* call or variant *)
                 | IDENT "{" [ field_init { "," field_init } ] "}"  (* struct *)
                 | "(" expr ")"
-                | "(" expr "," [ expr { "," expr } ] ")"          (* list sugar *)
+                | "(" expr "," [ expr { "," expr } [ "," ] ] ")"  (* list sugar *)
                 | lambda | list | map | block_expr
                 | if_expr | match_expr ;
-lambda          = ( IDENT | "(" [ IDENT { "," IDENT } ] ")" ) "->" expr ;
+lambda          = [ "fn" ] "(" [ IDENT { "," IDENT } ] ")" "->" expr
+                | "fn" IDENT "->" expr ;
 list            = "[" [ expr { "," expr } [ "," ] ] "]" ;
 map             = "{" entry { "," entry } [ "," ] "}" | "{" ":" "}" ;
 entry           = expr ":" expr ;
@@ -1202,6 +1214,13 @@ evaluates `B` and yields its value.
 * `for pattern in iterable { body }` binds the pattern to each element and
   runs the body. The loop yields `none`.
 
+**Normative rule.** A `for` pattern is **assertive**: the pattern must match
+every element. A list pattern whose arity differs, a non-list value for a list
+pattern, a variant tag or payload-length mismatch, a non-variant value for a
+variant pattern, and a literal pattern that is not equal to the element are
+each `E3001`; the loop does not silently skip a non-matching element. (This is
+the same matched-or-error discipline destructuring `let` uses in §4.7.)
+
 **Normative rule.** `break` ends the innermost loop and yields `none`.
 `continue` skips to the next iteration.
 
@@ -1307,10 +1326,16 @@ identity (§11).
 
 ### 15.4 Lambdas
 
-**Normative rule.** A lambda is written `x -> e`, `(x, y) -> e`, or
-`(x, y) -> { … }`. A block-bodied lambda uses the block as its body, so
-`return` works and the last expression is the value. An expression-bodied
-lambda returns that expression.
+**Normative rule.** A lambda is written `(x) -> e`, `(x, y) -> e`,
+`(x, y) -> { … }`, or any of those forms prefixed with `fn`. A single-
+parameter `fn` lambda may omit the parentheses: `fn x -> e`. A block-bodied
+lambda uses the block as its body, so `return` works and the last expression
+is the value. An expression-bodied lambda returns that expression.
+
+A **bare** identifier followed by `->` (for example `x -> e`) is **not** a
+lambda. In expression position it is a syntax error (`E1006`), because an
+identifier followed by `->` is reserved for `catch` bindings (`catch e -> …`)
+and `match` arms (`pattern -> …`, `pattern if guard -> …`).
 
 **Normative rule.** Lambda parameters, like function parameters, are immutable
 bindings.
@@ -1464,8 +1489,8 @@ only to reassign the *binding* itself.
 
 **Normative rule.** `struct Name { f1: T1, f2: T2, ... }` declares a nominal
 struct type with fields in declaration order. Every field MUST have a type
-annotation. Field names MUST be unique within the struct. The struct name MUST
-be unique among user types (`E2012`).
+annotation. Field names MUST be unique within the struct (`E2016` otherwise).
+The struct name MUST be unique among user types (`E2012`).
 
 ### 17.2 Construction
 
@@ -1900,7 +1925,7 @@ argument classes are normative. Return types marked `dynamic` are
 | `filter` | 2 | list, fn | `[T]` | keeps elements whose predicate is truthy |
 | `reduce` | 3 | list, fn, any | dynamic | left fold `f(acc, item)` |
 | `sum` | 1 | list | int/float | int overflow is `E4013` |
-| `assert` | 1–2 | any, string? | `none` | `E4028` if falsy |
+| `assert` | 1–2 | any, any? | `none` | `E4028` if falsy; the optional message is any value, rendered by display |
 | `enumerate` | 1 | list | `[[int, T]]` | index/value pairs |
 | `zip` | 2 | list, list | `[[T, U]]` | pairs, shortest length |
 | `read_line` | 0 | — | `string \| none` | one line of standard input; `none` at end of input |
@@ -2157,6 +2182,7 @@ semantics (`E2007`).
 | E2013 | duplicate enum variant tag |
 | E2014 | duplicate pattern binding |
 | E2015 | `break`/`continue` outside a loop |
+| E2016 | duplicate struct field |
 | E3001 | type mismatch |
 | E3002 | unknown type or constructor |
 | E3005 | return type mismatch |

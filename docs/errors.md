@@ -36,6 +36,7 @@ Every rejection carries a stable code. Codes are grouped by phase:
 | E2013 | Duplicate enum variant tag | `enum A { X }` + `enum B { X }` |
 | E2014 | Duplicate pattern binding | `match xs { [a, a] -> ... }` |
 | E2015 | `break`/`continue` outside a loop | `fn main() { break }` |
+| E2016 | Duplicate struct field | `struct S { x: int, x: string }` |
 
 ## Type-level (`E3xxx`, static)
 

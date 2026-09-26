@@ -69,3 +69,7 @@ arity:
 let [a, b] = [1, 2]         # ok
 let [a] = [1, 2]            # E3001: arity mismatch
 ```
+
+A `for` pattern is assertive: every element must match. A literal pattern, for
+example `for 1 in xs { ... }`, runs the body only while the element equals the
+literal and otherwise fails with `E3001` (it does not filter silently).

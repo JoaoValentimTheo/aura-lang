@@ -91,12 +91,13 @@ atom            = INT | FLOAT | STRING | FSTRING
                 | IDENT "(" [ ctor_args ] ")"          (* variant *)
                 | IDENT "{" [ field_init { "," field_init } ] "}"  (* struct *)
                 | "(" expr ")"
-                | "(" expr "," [ expr { "," expr } ] ")"          (* list sugar *)
+                | "(" expr "," [ expr { "," expr } [ "," ] ] ")"          (* list sugar *)
                 | lambda
                 | list | map | block_expr
                 | if_expr | match_expr ;
 
-lambda          = ( IDENT | "(" [ IDENT { "," IDENT } ] ")" ) "->" expr ;
+lambda          = [ "fn" ] "(" [ IDENT { "," IDENT } ] ")" "->" expr
+                | "fn" IDENT "->" expr ;
 list            = "[" [ expr { "," expr } [ "," ] ] "]" ;
 map             = "{" entry { "," entry } [ "," ] "}" | "{" ":" "}" ;
 entry           = expr ":" expr ;

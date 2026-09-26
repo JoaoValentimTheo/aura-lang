@@ -58,7 +58,8 @@ let evens = xs.filter(is_even)
 
 ## Lambdas and closures
 
-A lambda is `x -> e`, `(x, y) -> e`, or `(x, y) -> { ... }`. It captures its
+A lambda is `(x) -> e`, `(x, y) -> e`, `(x, y) -> { ... }`, or any of those
+prefixed with `fn` (`fn x -> e` is the single-parameter `fn` form). It captures its
 defining environment **by reference**, not by value:
 
 ```aura

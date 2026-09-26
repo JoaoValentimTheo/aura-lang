@@ -39,6 +39,7 @@ be produced by at least one program.
 | E2013 | Duplicate enum variant tag | `X` in two enums |
 | E2014 | Duplicate pattern binding | `match xs { [a, a] -> ... }` |
 | E2015 | `break`/`continue` outside a loop | `fn main() { break }` |
+| E2016 | Duplicate struct field | `struct S { x: int, x: string }` |
 
 ## Type-level
 

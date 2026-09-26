@@ -83,12 +83,13 @@ atom            = INT | FLOAT | STRING | FSTRING
                 | IDENT "(" [ call_args ] ")"
                 | IDENT "{" [ field_init { "," field_init } ] "}"
                 | "(" expr ")"
-                | "(" expr "," [ expr { "," expr } ] ")"
+                | "(" expr "," [ expr { "," expr } [ "," ] ] ")"
                 | lambda
                 | list | map | block_expr
                 | if_expr | match_expr ;
 
-lambda          = ( IDENT | "(" [ IDENT { "," IDENT } ] ")" ) "->" expr ;
+lambda          = [ "fn" ] "(" [ IDENT { "," IDENT } ] ")" "->" expr
+                | "fn" IDENT "->" expr ;
 list            = "[" [ expr { "," expr } [ "," ] ] "]" ;
 map             = "{" entry { "," entry } [ "," ] "}" | "{" ":" "}" ;
 entry           = expr ":" expr ;

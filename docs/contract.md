@@ -114,9 +114,11 @@ Precedence, lowest to highest:
 11 literals, names, groups, lists, maps, lambdas
 ```
 
-* Lambdas: `(x) -> x * x` or `x -> x * x`. A block-bodied lambda
+* Lambdas: `(x) -> x * x`, `(x, y) -> x + y`, or `fn x -> x * x`; every form
+  may be prefixed with `fn`. A block-bodied lambda
   `(x) -> { ... }` uses the block as its body, so `return` works and the last
-  expression is the value.
+  expression is the value. A bare `x -> x * x` is **not** a lambda (the
+  identifier-arrow form is reserved for `catch` and `match` arms).
 * `if` is an expression. With an `else` branch it yields that branch's
   value; without `else` it yields `none` when the condition is false:
   `let m = if a > b { a } else { b }`.
