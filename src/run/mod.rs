@@ -155,6 +155,10 @@ pub struct Interp {
     natives: HashMap<String, Native>,
 
     functions: HashMap<String, Rc<Closure>>,
+    /// Methods, keyed by `(struct name, method name)`. Keyed by the nominal
+    /// struct so method names never collide across types (`LANGUAGE_SPEC.md`
+    /// §17.6).
+    methods: HashMap<(String, String), Rc<Closure>>,
     structs: HashMap<String, Vec<String>>,
     variants: HashMap<String, (String, usize)>,
     depth: usize,
@@ -180,6 +184,7 @@ impl Interp {
             globals: Env::root(),
             natives: HashMap::new(),
             functions: HashMap::new(),
+            methods: HashMap::new(),
             structs: HashMap::new(),
             variants: HashMap::new(),
             depth: 0,
@@ -327,6 +332,28 @@ impl Interp {
                     env: self.globals.clone(),
                 });
                 self.functions.insert(name.clone(), closure);
+            }
+            Item::Impl {
+                target, methods, ..
+            } => {
+                // Methods are stored under `Struct.method`, keyed by the
+                // nominal type, so two structs may share a method name. Each
+                // method is an ordinary closure whose first parameter is the
+                // receiver (`LANGUAGE_SPEC.md` §17.6).
+                for m in methods {
+                    if let Item::Fn {
+                        name, params, body, ..
+                    } = m
+                    {
+                        let closure = Rc::new(Closure {
+                            name: format!("{target}.{name}"),
+                            params: params.iter().map(|p| p.name.clone()).collect(),
+                            body: body.clone(),
+                            env: self.globals.clone(),
+                        });
+                        self.methods.insert((target.clone(), name.clone()), closure);
+                    }
+                }
             }
             Item::Struct { name, fields, .. } => {
                 self.structs.insert(
@@ -1073,12 +1100,44 @@ impl Interp {
                 for a in args {
                     vals.push(val!(self.eval(&a.value, env)));
                 }
+                // A struct receiver resolves against its nominal method table
+                // only (§17.6); any other receiver uses the built-in registry.
+                if let Value::Instance(i) = &subject {
+                    let key = (i.ty.clone(), name.clone());
+                    if let Some(closure) = self.methods.get(&key).cloned() {
+                        let mut full = Vec::with_capacity(vals.len() + 1);
+                        full.push(subject.clone());
+                        full.extend(vals);
+                        return Ok(Ctl::Val(self.call(&closure, full, *span)?));
+                    }
+                    return Err(self.error(
+                        codes::UNDEFINED,
+                        format!("struct {} has no method `{name}`", i.ty),
+                        *span,
+                    ));
+                }
                 Ok(Ctl::Val(self.method(&subject, name, vals, *span)?))
             }
             Expr::Field(recv, name, span) => {
                 let subject = val!(self.eval(recv, env));
                 match &subject {
-                    Value::Instance(_) => Ok(Ctl::Val(self.field_get(&subject, name, *span)?)),
+                    Value::Instance(i) => {
+                        // A method is not a bound value: `s.m` names only a
+                        // field, and a missing field is `E2003` (§17.6).
+                        if self.methods.contains_key(&(i.ty.clone(), name.clone()))
+                            && !i.fields.borrow().iter().any(|(k, _)| k == name)
+                        {
+                            return Err(self.error(
+                                codes::UNDEFINED,
+                                format!(
+                                    "struct {} has method `{name}`; call it as `{name}(...)`",
+                                    i.ty
+                                ),
+                                *span,
+                            ));
+                        }
+                        Ok(Ctl::Val(self.field_get(&subject, name, *span)?))
+                    }
                     _ => Ok(Ctl::Val(self.method(&subject, name, Vec::new(), *span)?)),
                 }
             }

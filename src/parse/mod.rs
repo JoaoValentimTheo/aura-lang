@@ -416,6 +416,7 @@ impl Parser {
             Tok::Type => self.alias_item(),
             Tok::Use => self.use_item(),
             Tok::Let => self.const_item(),
+            Tok::Impl => self.impl_item(),
             _ => {
                 let e = self.expr()?;
                 let span = span_of(&e);
@@ -430,7 +431,7 @@ impl Parser {
         self.bump();
         let name = self.ident("function name")?;
         self.expect(&Tok::LParen)?;
-        let params = self.params()?;
+        let params = self.params(false)?;
         let ret = if self.eat(&Tok::Arrow) {
             Some(self.ty()?)
         } else {
@@ -447,14 +448,103 @@ impl Parser {
         })
     }
 
-    fn params(&mut self) -> Result<Vec<Param>> {
+    /// `impl Struct { fn method(self, ...) { ... } ... }` — a behavior block
+    /// attached to an already-declared nominal struct (`LANGUAGE_SPEC.md`
+    /// §17.6). Only `fn` declarations may appear; each must declare the
+    /// explicit receiver `self` as its first parameter.
+    fn impl_item(&mut self) -> Result<Item> {
+        let span = self.span();
+        self.bump();
+        let target = self.ident("struct name after `impl`")?;
+        self.expect(&Tok::LBrace)?;
+        let mut methods = Vec::new();
+        loop {
+            self.skip_newlines();
+            if self.eat(&Tok::RBrace) {
+                break;
+            }
+            if matches!(self.at(), Tok::Eof) {
+                return Err(self.expected("`}` closing the `impl` block"));
+            }
+            let public = self.eat(&Tok::Pub);
+            if !matches!(self.at(), Tok::Fn) {
+                let found = self.at().describe();
+                return Err(Diag::new(
+                    codes::EXPECTED,
+                    format!("expected a `fn` method declaration or `}}` in `impl`, found {found}"),
+                    self.span(),
+                ));
+            }
+            methods.push(self.method_item(public)?);
+        }
+        Ok(Item::Impl {
+            target,
+            methods,
+            span,
+        })
+    }
+
+    /// `fn name(self, ...) { ... }` inside an `impl` block. Identical to
+    /// [`Parser::fn_item`] except that the first parameter MUST be `self`.
+    fn method_item(&mut self, public: bool) -> Result<Item> {
+        let span = self.span();
+        self.bump();
+        let name = self.ident("method name")?;
+        self.expect(&Tok::LParen)?;
+        let params = self.params(true)?;
+        if params.is_empty() {
+            return Err(Diag::new(
+                codes::EXPECTED,
+                format!("method `{name}` must declare the receiver `self` as its first parameter"),
+                span,
+            ));
+        }
+        let ret = if self.eat(&Tok::Arrow) {
+            Some(self.ty()?)
+        } else {
+            None
+        };
+        let body = self.block()?;
+        Ok(Item::Fn {
+            name,
+            params,
+            ret,
+            body,
+            public,
+            span,
+        })
+    }
+
+    /// Parse a parameter list. When `receiver` is true, the first parameter
+    /// must be the keyword `self` (an ordinary binding named `self`); `self`
+    /// is a reserved word elsewhere and cannot name any other parameter.
+    fn params(&mut self, receiver: bool) -> Result<Vec<Param>> {
         let mut out = Vec::new();
+        let mut first = true;
         if self.eat(&Tok::RParen) {
             return Ok(out);
         }
         loop {
             let span = self.span();
-            let name = self.ident("parameter name")?;
+            let name = if receiver && first {
+                match self.at() {
+                    Tok::SelfKw => {
+                        self.bump();
+                        "self".to_string()
+                    }
+                    other => {
+                        let found = other.describe();
+                        return Err(Diag::new(
+                            codes::EXPECTED,
+                            format!("a method's first parameter must be `self`, found {found}"),
+                            span,
+                        ));
+                    }
+                }
+            } else {
+                self.ident("parameter name")?
+            };
+            first = false;
             let ty = if self.eat(&Tok::Colon) {
                 Some(self.ty()?)
             } else {
@@ -1227,6 +1317,11 @@ impl Parser {
                 let parts = self.fstring(&raw, span)?;
                 Expr::FStr(parts, span)
             }
+            Tok::SelfKw => {
+                // The receiver, as an ordinary binding reference.
+                self.bump();
+                Expr::Name("self".to_string(), span)
+            }
             Tok::Ident(name) => {
                 self.bump();
                 let is_type_name = name.chars().next().is_some_and(char::is_uppercase);
@@ -1669,6 +1764,8 @@ fn is_keyword(t: &Tok) -> bool {
             | Tok::Finally
             | Tok::Throw
             | Tok::Pub
+            | Tok::Impl
+            | Tok::SelfKw
             | Tok::True
             | Tok::False
             | Tok::None
@@ -1686,6 +1783,7 @@ fn starts_expr(t: &Tok) -> bool {
             | Tok::False
             | Tok::None
             | Tok::Ident(_)
+            | Tok::SelfKw
             | Tok::LParen
             | Tok::LBracket
             | Tok::LBrace

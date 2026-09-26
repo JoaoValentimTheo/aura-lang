@@ -228,7 +228,7 @@ fn eval_line<W: Write>(
             }
             for item in &module.items {
                 for d in declarations_of(item) {
-                    if !decls.iter().any(|e| decl_name(e) == decl_name(&d)) {
+                    if !decls.iter().any(|e| same_decl(e, &d)) {
                         decls.push(d);
                     }
                 }
@@ -254,6 +254,17 @@ fn eval_line<W: Write>(
     }
 }
 
+/// Whether two session declarations are the same one (so a re-submission does
+/// not duplicate it). An `impl` is identified by its target; other
+/// declarations by their introduced name.
+fn same_decl(a: &GlobalDecl, b: &GlobalDecl) -> bool {
+    match (a, b) {
+        (GlobalDecl::Impl { .. }, GlobalDecl::Impl { .. }) => decl_name(a) == decl_name(b),
+        (GlobalDecl::Impl { .. }, _) | (_, GlobalDecl::Impl { .. }) => false,
+        _ => decl_name(a) == decl_name(b),
+    }
+}
+
 /// The name a declaration introduces.
 fn decl_name(d: &GlobalDecl) -> &str {
     match d {
@@ -262,6 +273,9 @@ fn decl_name(d: &GlobalDecl) -> &str {
         | GlobalDecl::Struct { name, .. }
         | GlobalDecl::Enum { name, .. }
         | GlobalDecl::Alias { name, .. } => name,
+        // An `impl` block introduces no new global name; it is identified by
+        // its target struct, which the surrounding `struct` declaration owns.
+        GlobalDecl::Impl { target, .. } => target,
     }
 }
 
@@ -296,5 +310,26 @@ fn declarations_of(item: &Item) -> Vec<GlobalDecl> {
             ty: None,
         }],
         Item::Use { .. } | Item::Expr(..) => Vec::new(),
+        Item::Impl {
+            target, methods, ..
+        } => vec![GlobalDecl::Impl {
+            target: target.clone(),
+            methods: methods
+                .iter()
+                .filter_map(|m| match m {
+                    Item::Fn {
+                        name, ret, params, ..
+                    } => Some((
+                        name.clone(),
+                        ret.clone(),
+                        params
+                            .iter()
+                            .map(|p| (p.name.clone(), p.ty.clone()))
+                            .collect(),
+                    )),
+                    _ => None,
+                })
+                .collect(),
+        }],
     }
 }

@@ -9,7 +9,8 @@ parser is wrong.
 (* ---------------------------------------------------------------- file *)
 file            = { NEWLINE | item } EOF ;
 item            = [ "pub" ] ( fn_decl | struct_decl | enum_decl
-                            | type_alias | use_decl | const_decl )
+                            | type_alias | use_decl | const_decl
+                            | impl_decl )
                 | expr_stmt ;
 
 use_decl        = "use" IDENT { "." IDENT } terminator ;
@@ -18,6 +19,12 @@ use_decl        = "use" IDENT { "." IDENT } terminator ;
 fn_decl         = "fn" IDENT "(" [ params ] ")" [ "->" type ] block ;
 params          = param { "," param } ;
 param           = IDENT [ ":" type ] ;
+
+(* behavior block: one per struct; methods take the explicit receiver `self`
+   as their first parameter. `self` is reserved and names no other binding. *)
+impl_decl       = "impl" IDENT "{" { NEWLINE | [ "pub" ] method_decl } "}" ;
+method_decl     = "fn" IDENT "(" "self" [ "," param { "," param } ] ")"
+                  [ "->" type ] block ;
 
 struct_decl     = "struct" IDENT "{" [ field { "," field } [ "," ] ] "}" ;
 field           = IDENT ":" type ;

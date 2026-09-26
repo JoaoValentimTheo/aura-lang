@@ -1,6 +1,6 @@
 {
   "playground_api_version": 1,
-  "current": "0.0.2-dev.3",
+  "current": "0.0.2-dev.4",
   "versions": [
     {
       "id": "0.0.1",
@@ -28,16 +28,16 @@
       "bytes": 1366621
     },
     {
-      "id": "0.0.2-dev.3",
+      "id": "0.0.2-dev.4",
       "release_version": "0.0.2",
       "language_version": "0.0.1",
-      "runtime_version": "0.0.2-dev.3",
+      "runtime_version": "0.0.2-dev.4",
       "host_abi_version": 1,
       "available": true,
       "channel": "development",
-      "artifact": "0.0.2-dev.3/aura_playground_runtime.wasm",
-      "sha256": "1f0e1112b43b9b112a2024cf14627361e02dda063a32e637436e7428ddd1155f",
-      "bytes": 1388158
+      "artifact": "0.0.2-dev.4/aura_playground_runtime.wasm",
+      "sha256": "7730637ed338c3139d020dfcef530b85cc226dfe743471fff8d9b8178c6f8cd4",
+      "bytes": 1407980
     }
   ]
 }

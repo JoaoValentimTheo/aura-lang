@@ -81,6 +81,9 @@ const GRAMMAR_SAMPLES: &[&str] = &[
     "fn e18() { print({ 1 + 1 }) }",
     "fn e19() { print(\"a\".upper()) }",
     "fn e20() { print(\"a\".split(\",\")) }",
+    // struct methods (`impl`, explicit `self`) — §17.6
+    "struct P { x: int }\nimpl P {\n fn get(self) { return self.x }\n}\nfn m() { print(P { x: 1 }.get()) }",
+    "struct P { x: int }\nimpl P {\n fn set(self, v: int) { self.x = v }\n fn get(self) -> int { return self.x }\n}\nfn m() { let p = P { x: 0 }\n p.set(2)\n print(p.get()) }",
 ];
 
 #[test]

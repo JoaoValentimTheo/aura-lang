@@ -389,6 +389,19 @@ pub enum Item {
     },
     /// A top-level expression such as `main()`.
     Expr(Expr, Span),
+    /// `impl Target { fn method(self, ...) { ... } }` — the behavior block
+    /// attached to an already-declared nominal struct (`LANGUAGE_SPEC.md`
+    /// §17.6). `methods` holds only [`Item::Fn`] values whose first parameter
+    /// is the explicit receiver `self`; the parser guarantees this shape, so
+    /// no second function type is introduced.
+    Impl {
+        /// The nominal struct this behavior block belongs to.
+        target: String,
+        /// Methods, each an [`Item::Fn`] with `self` as its first parameter.
+        methods: Vec<Item>,
+        /// Span.
+        span: Span,
+    },
 }
 
 /// A whole file.

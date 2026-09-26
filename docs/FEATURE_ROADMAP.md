@@ -188,7 +188,8 @@ No class **E** item is proposed in this roadmap. They are recorded so that
    parameters; richer slice patterns.
 4. **Type-system improvements** — field-type propagation; branch-join
    inference; a static `none` type; function types.
-5. **Method / abstraction** — user-defined methods on structs/enums.
+5. **Methods** — struct methods are done (Feature: Aqua OOP V1); enum methods
+   and bound-method values remain.
 6. **Modules** — real `pub`/`use`.
 7. **Control-flow ergonomics** — `else if`; expression conditionals; match
    improvements.
@@ -257,19 +258,17 @@ effects; and whether it redesigns a frozen concept.
 * **Divergence risk.** Medium; binding rules must be specified precisely.
 * **Redesign?** No, but it is a cluster and should be staged.
 
-### 4. User-defined methods — **Class E/B**
+### 4. User-defined methods — **done (partial: struct methods; enum methods remain)**
 
 * **User value.** Medium–high (ergonomics and composition).
-* **New semantics.** Method definitions on structs/enums; receiver binding.
-* **Disturbances.** The method registry is currently keyed by `TypeClass` for
-  built-in kinds only; user methods would require a per-nominal-type method
-  table and a lookup order (user method vs field vs built-in).
-* **Type system.** Method signatures and receiver typing; likely a `Named`
-  method table.
-* **Divergence risk.** High; lookup precedence between fields, methods, and
-  no-paren calls must be exact.
-* **Redesign?** It touches the method model but not the value model. It is a
-  large, careful feature, not a version change.
+* **New semantics.** Struct methods via `impl`, with an explicit `self`
+  receiver (`LANGUAGE_SPEC.md` §17.6); one `impl` per struct; field/method
+  collisions rejected; static per-nominal-type lookup with no fallback.
+* **Disturbances.** A per-nominal-type method table now sits beside the
+  built-in `TypeClass` registry; the lookup order is fixed (field read without
+  parentheses, method with parentheses, no cross-category fallback).
+* **Remaining.** Enum methods, multiple `impl` blocks, and bound-method values
+  are not implemented.
 
 ### 5. Modules / imports — **Class E**
 
@@ -546,7 +545,7 @@ under "Release hardening" below.
 | 8 | Default arguments | B | Interacts with arity |
 | 9 | Branch-join inference | B | Larger checker change |
 | 10 | Block comments | B | Lexical feature; needs a syntax decision |
-| 11 | User-defined methods | E/B | Large; resolution design required |
+| 11 | User-defined methods | E/B | **done** (struct methods, §17.6; enum methods remain) |
 | 12 | Modules | E | Separate design phase |
 | — | Generics / traits / async / VM | E | Not planned |
 

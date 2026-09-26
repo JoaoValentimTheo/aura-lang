@@ -120,7 +120,20 @@ pub enum GlobalDecl {
         /// The aliased type expression.
         target: TypeExpr,
     },
+    /// Methods introduced by an `impl` block, grouped by their target struct.
+    /// Carried across REPL submissions so methods declared in one submission
+    /// remain callable in later ones.
+    Impl {
+        /// The nominal struct the methods belong to.
+        target: String,
+        /// Each method as `(name, return annotation, params)`.
+        methods: Vec<MethodDecl>,
+    },
 }
+
+/// A method's declaration carried across REPL submissions: `(name, return
+/// annotation, parameters)`.
+type MethodDecl = (String, Option<TypeExpr>, Vec<(String, Option<TypeExpr>)>);
 
 /// A top-level function's signature as known to the checker.
 ///
@@ -152,6 +165,13 @@ pub struct Checker {
     struct_fields: HashMap<String, HashMap<String, Ty>>,
     /// Struct field names in declaration order, for positional construction.
     struct_field_order: HashMap<String, Vec<String>>,
+    /// Methods of each struct, by struct name. The method table is keyed by
+    /// the nominal struct type, so two structs may declare a method with the
+    /// same name without collision (`LANGUAGE_SPEC.md` §17.6).
+    struct_methods: HashMap<String, HashMap<String, FnSig>>,
+    /// Structs that already have a behavior block. V1 permits one `impl`
+    /// block per struct.
+    impl_seen: HashMap<String, Span>,
     /// Enum variant tags declared anywhere, with defining enum name.
     variants: HashMap<String, String>,
     /// Payload types of each enum variant, by tag.
@@ -198,6 +218,8 @@ impl Checker {
             type_kinds: HashMap::new(),
             struct_fields: HashMap::new(),
             struct_field_order: HashMap::new(),
+            struct_methods: HashMap::new(),
+            impl_seen: HashMap::new(),
             variants: HashMap::new(),
             variant_payloads: HashMap::new(),
             return_type: None,
@@ -298,6 +320,7 @@ impl Checker {
                     c.type_kinds.insert(name.clone(), "alias".to_string());
                     c.alias_targets.insert(name.clone(), target.clone());
                 }
+                GlobalDecl::Impl { .. } => {}
             }
         }
         // Then record fields, payloads, and variant tags, resolving aliases
@@ -335,6 +358,34 @@ impl Checker {
                 } => {
                     let restored = Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t));
                     c.value_types[0].insert(name.clone(), restored);
+                }
+                GlobalDecl::Impl { target, methods } => {
+                    // Restore the persisted method table so a method declared
+                    // in an earlier submission resolves in later ones.
+                    let mut table: HashMap<String, FnSig> = HashMap::new();
+                    for (name, ret, params) in methods {
+                        let ret_ty = ret
+                            .as_ref()
+                            .map(|t| Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t)));
+                        let param_tys = params
+                            .iter()
+                            .map(|(pname, pty)| {
+                                let ty = pty.as_ref().map(|t| {
+                                    Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t))
+                                });
+                                (pname.clone(), ty)
+                            })
+                            .collect();
+                        table.insert(
+                            name.clone(),
+                            FnSig {
+                                ret: ret_ty,
+                                params: param_tys,
+                            },
+                        );
+                    }
+                    c.struct_methods.insert(target.clone(), table);
+                    c.impl_seen.insert(target.clone(), Span::default());
                 }
                 _ => {}
             }
@@ -466,7 +517,7 @@ impl Checker {
                     self.type_kinds.insert(name.clone(), "alias".to_string());
                     self.alias_targets.insert(name.clone(), target.clone());
                 }
-                Item::Use { .. } | Item::Expr(..) => {}
+                Item::Use { .. } | Item::Expr(..) | Item::Impl { .. } => {}
             }
         }
         // Validate every written type annotation now that all names are known.
@@ -525,6 +576,96 @@ impl Checker {
                     }
                 }
                 _ => {}
+            }
+        }
+        // Behavior blocks last: field tables and method tables must both be
+        // populated before method/field collision and method signatures are
+        // resolved, regardless of source order.
+        for item in &m.items {
+            if let Item::Impl {
+                target,
+                methods,
+                span,
+            } = item
+            {
+                // The target MUST be an already-declared nominal struct.
+                match self.type_kinds.get(target) {
+                    Some(kind) if kind == "struct" => {}
+                    Some(_) => {
+                        return Err(Diag::new(
+                            codes::UNDEFINED,
+                            format!("`{target}` is not a struct; `impl` requires a struct"),
+                            *span,
+                        ));
+                    }
+                    None => {
+                        return Err(Diag::new(
+                            codes::UNDEFINED,
+                            format!("unknown struct `{target}` in `impl`"),
+                            *span,
+                        ));
+                    }
+                }
+                if self.impl_seen.insert(target.clone(), *span).is_some() {
+                    return Err(Diag::new(
+                        codes::REDECLARED,
+                        format!("`{target}` already has an `impl` block; V1 permits one"),
+                        *span,
+                    ));
+                }
+                let mut table: HashMap<String, FnSig> = HashMap::new();
+                for m_item in methods {
+                    let Item::Fn {
+                        name,
+                        params,
+                        ret,
+                        span: mspan,
+                        ..
+                    } = m_item
+                    else {
+                        continue;
+                    };
+                    if table.contains_key(name) {
+                        return Err(Diag::new(
+                            codes::REDECLARED,
+                            format!("method `{name}` is declared more than once for `{target}`"),
+                            *mspan,
+                        ));
+                    }
+                    // A method name may not collide with a field of the same
+                    // struct (§17.6): member lookup must stay unambiguous.
+                    if self
+                        .struct_fields
+                        .get(target)
+                        .is_some_and(|fs| fs.contains_key(name))
+                    {
+                        return Err(Diag::new(
+                            codes::DUPLICATE_FIELD,
+                            format!("`{name}` is both a field and a method of struct `{target}`"),
+                            *mspan,
+                        ));
+                    }
+                    let mut param_tys = Vec::with_capacity(params.len());
+                    for p in params {
+                        let ty = match &p.ty {
+                            Some(pty) => Some(self.annotation(pty, p.span)?),
+                            None => None,
+                        };
+                        param_tys.push((p.name.clone(), ty));
+                    }
+                    let ret_ty = match ret {
+                        Some(rt) => Some(self.annotation(rt, Span::default())?),
+                        None => None,
+                    };
+                    table.insert(
+                        name.clone(),
+                        FnSig {
+                            ret: ret_ty,
+                            params: param_tys,
+                        },
+                    );
+                }
+                self.struct_methods.insert(target.clone(), table);
             }
         }
         Ok(())
@@ -616,7 +757,11 @@ impl Checker {
         if name.starts_with('_') {
             // leading-underscore names are allowed but flagged if used
         }
-        if crate::lex::KEYWORDS.contains(&name) {
+        // `self` is a reserved word, but it is the legitimate name of a
+        // method's receiver parameter (`LANGUAGE_SPEC.md` §17.6). The parser
+        // only ever produces it in receiver position, so allowing it here
+        // cannot admit `let self` or an ordinary `fn f(self)`.
+        if crate::lex::KEYWORDS.contains(&name) && name != "self" {
             return Err(Diag::new(
                 codes::RESERVED_NAME,
                 format!("`{name}` is a reserved word and cannot be used as a name"),
@@ -894,7 +1039,99 @@ impl Checker {
             }
             Item::Expr(e, _) => self.expr(e)?,
             Item::Struct { .. } | Item::Enum { .. } | Item::Alias { .. } | Item::Use { .. } => {}
+            Item::Impl {
+                target, methods, ..
+            } => {
+                // The method table was built in the hoist pass; here each
+                // method body is checked with `self` typed as the receiver's
+                // nominal struct, under the ordinary function rules.
+                let recv_ty = Ty::Named(target.clone());
+                for m_item in methods {
+                    let Item::Fn {
+                        name,
+                        params,
+                        ret,
+                        body,
+                        ..
+                    } = m_item
+                    else {
+                        continue;
+                    };
+                    self.check_method_body(target, name, &recv_ty, params, ret.as_ref(), body)?;
+                }
+            }
         }
+        Ok(())
+    }
+
+    /// Check one method body. Identical to a top-level function except that
+    /// the receiver parameter's type is the nominal struct `target` (so
+    /// `self.field` and `self.other_method(...)` resolve) and the method has
+    /// no declaration in the global function namespace.
+    fn check_method_body(
+        &mut self,
+        _target: &str,
+        _name: &str,
+        recv_ty: &Ty,
+        params: &[Param],
+        ret: Option<&TypeExpr>,
+        body: &[Stmt],
+    ) -> Result<()> {
+        self.push();
+        for (i, p) in params.iter().enumerate() {
+            self.declare(&p.name, false, p.span)?;
+            // The receiver `self` is typed as the nominal struct. An explicit
+            // receiver annotation, if written, must still name that struct.
+            if i == 0 {
+                self.value_types
+                    .last_mut()
+                    .map(|m| m.insert(p.name.clone(), recv_ty.clone()));
+            } else if let Some(pty) = &p.ty {
+                let t = self.annotation(pty, p.span)?;
+                self.value_types
+                    .last_mut()
+                    .map(|m| m.insert(p.name.clone(), t));
+            }
+        }
+        let saved_return = self.return_type.clone();
+        let saved_underscore = std::mem::take(&mut self.underscore_params);
+        let saved_used = std::mem::take(&mut self.used_names);
+        self.return_type = match ret {
+            Some(rt) => Some(self.annotation(rt, Span::default())?),
+            None => None,
+        };
+        for p in params {
+            if p.name.starts_with('_') {
+                self.underscore_params.push((p.name.clone(), p.span));
+            }
+        }
+        let r = self.block(body);
+        r?;
+        // The receiver is a parameter; using `self` is expected, so it is
+        // never treated as an unused `_` parameter. The remaining `_`-prefixed
+        // parameters keep the ordinary contract.
+        for (pname, _pspan) in std::mem::take(&mut self.underscore_params) {
+            if pname == "self" {
+                continue;
+            }
+            if let Some(use_span) = self.used_names.get(&pname).copied() {
+                self.return_type = saved_return;
+                self.underscore_params = saved_underscore;
+                self.used_names = saved_used;
+                self.pop();
+                return Err(Diag::new(
+                    codes::UNUSED_PARAM,
+                    format!(
+                        "parameter `{pname}` starts with `_`, which means it must stay unused; remove the `_` to use it"
+                    ),
+                    use_span,
+                ));
+            }
+        }
+        self.return_type = saved_return;
+        self.underscore_params = saved_underscore;
+        self.used_names = saved_used;
+        self.pop();
         Ok(())
     }
 
@@ -1021,6 +1258,12 @@ impl Checker {
                 _ => Ty::Unknown,
             },
             Expr::Method(recv, name, _, _) => {
+                if let Some(sname) = self.struct_name_of(&self.infer(recv)) {
+                    if let Some(sig) = self.method_sig(&sname, name) {
+                        return sig.ret.clone().unwrap_or(Ty::Unknown);
+                    }
+                    return Ty::Unknown;
+                }
                 if let Some(class) = self.infer(recv).type_class() {
                     if let Some(sig) = crate::stdlib::signatures::method(class, name) {
                         return sig.returns.ty();
@@ -1106,6 +1349,73 @@ impl Checker {
             )),
             other => Ok(other.type_class()),
         }
+    }
+
+    /// The nominal struct name of a statically known receiver, if it is a
+    /// struct. `range` is a built-in (not a struct); enums and non-nominal
+    /// primitives are not structs.
+    fn struct_name_of(&self, ty: &Ty) -> Option<String> {
+        match ty {
+            Ty::Named(n) if n != "range" => Some(n.clone()),
+            _ => None,
+        }
+    }
+
+    /// The signature of a method on a struct, if declared.
+    fn method_sig(&self, struct_name: &str, method: &str) -> Option<&FnSig> {
+        self.struct_methods.get(struct_name)?.get(method)
+    }
+
+    /// Check a statically resolved struct method call. The receiver is the
+    /// implicit first argument, so the user writes only the remaining
+    /// arguments; arity and per-parameter types are checked like a function.
+    fn check_struct_method_args(
+        &self,
+        struct_name: &str,
+        name: &str,
+        sig: &FnSig,
+        args: &[Arg],
+        span: Span,
+    ) -> Result<()> {
+        // `sig.params[0]` is the receiver; the call supplies the rest.
+        let rest = &sig.params[1..];
+        if args.len() != rest.len() {
+            return Err(Diag::new(
+                codes::TYPE_MISMATCH,
+                format!(
+                    "method `{struct_name}.{name}` expects {} argument(s), got {}",
+                    rest.len(),
+                    args.len()
+                ),
+                span,
+            ));
+        }
+        for (i, (pname, expected)) in rest.iter().enumerate() {
+            let Some(expected) = expected else { continue };
+            let arg = &args[i];
+            if let Some(named) = &arg.name {
+                if named != pname {
+                    return Err(Diag::new(
+                        codes::TYPE_MISMATCH,
+                        format!("method `{struct_name}.{name}` has no parameter named `{named}`"),
+                        span,
+                    ));
+                }
+            }
+            let actual = self.infer(&arg.value);
+            if !expected.compatible_with(&actual) {
+                return Err(Diag::new(
+                    codes::TYPE_MISMATCH,
+                    format!(
+                        "method `{struct_name}.{name}` parameter `{pname}` expects `{}`, found `{}`",
+                        expected.name(),
+                        actual.name()
+                    ),
+                    span,
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// Validate a method call when the receiver type is statically known.
@@ -1767,27 +2077,67 @@ impl Checker {
             }
             Expr::Method(r, name, args, span) => {
                 self.expr(r)?;
-                if !crate::stdlib::signatures::method_exists_anywhere(name) {
+                let recv = self.infer(r);
+                // A statically known struct resolves against its nominal method
+                // table only (§17.6); there is no fallback to the built-in
+                // registry or to another struct.
+                if let Some(sname) = self.struct_name_of(&recv) {
+                    let Some(sig) = self.method_sig(&sname, name).cloned() else {
+                        return Err(Diag::new(
+                            codes::UNDEFINED,
+                            format!("struct `{sname}` has no method `{name}`"),
+                            *span,
+                        ));
+                    };
+                    self.reject_named_args(name, args, *span)?;
+                    self.check_struct_method_args(&sname, name, &sig, args, *span)?;
+                } else if let Ty::Union(ms) = &recv {
+                    // A union member is available only if every member type
+                    // provides it (`LANGUAGE_SPEC.md` §17.6).
+                    let all = ms.iter().all(|m| {
+                        self.struct_name_of(m)
+                            .is_some_and(|s| self.method_sig(&s, name).is_some())
+                    });
+                    if !all {
+                        return Err(Diag::new(
+                            codes::UNDEFINED,
+                            format!("not every union member has method `{name}`"),
+                            *span,
+                        ));
+                    }
+                    self.reject_named_args(name, args, *span)?;
+                } else if !crate::stdlib::signatures::method_exists_anywhere(name) {
                     return Err(Diag::new(
                         codes::UNDEFINED,
                         format!("no method `{name}` on any type"),
                         *span,
                     ));
+                } else {
+                    // Methods are positional; named arguments are out of scope.
+                    self.reject_named_args(name, args, *span)?;
+                    self.check_method_call(r, name, args, *span)?;
                 }
-                // Methods are positional; named arguments are out of scope.
-                self.reject_named_args(name, args, *span)?;
-                self.check_method_call(r, name, args, *span)?;
                 for a in args {
                     self.expr(&a.value)?;
                 }
             }
             Expr::Field(r, name, span) => {
                 self.expr(r)?;
-                // `receiver.name` without parentheses is a field read on a
-                // struct, and a zero-argument method call on any other known
-                // receiver kind (§24). A known struct field needs no method
-                // check; an enum has neither fields nor methods; `range` has
-                // only `len`; primitive/list/map receivers are method calls.
+                // On a statically known struct, `r.name` is always a field
+                // read; a method must be invoked with parentheses (§17.6).
+                // A missing field stays `Unknown` (§17.5), unchanged.
+                if let Some(sname) = self.struct_name_of(&self.infer(r)) {
+                    if self.method_sig(&sname, name).is_some() {
+                        return Err(Diag::new(
+                            codes::UNDEFINED,
+                            format!(
+                                "struct `{sname}` has method `{name}`; call it as `{name}(...)`"
+                            ),
+                            *span,
+                        ));
+                    }
+                    return Ok(());
+                }
                 match self.infer(r) {
                     Ty::Unknown => {}
                     Ty::Named(n) if n == "range" => {

@@ -97,6 +97,60 @@ const cases = [
     'fn f(a: int, a: string) { return a }\nfn main() { }',
   ],
   ['duplicate lambda parameter', 'fn main() { let g = (a, a) -> a }'],
+  // Struct methods (`impl`, explicit `self`) — §17.6. Behavior must be
+  // identical on native and wasm, including diagnostics.
+  [
+    'method reads fields',
+    'struct Point { x: int, y: int }\nimpl Point {\n fn sum(self) { return self.x + self.y }\n}\nfn main() { print(Point { x: 1, y: 2 }.sum()) }',
+  ],
+  [
+    'method mutates receiver',
+    'struct C { n: int }\nimpl C {\n fn bump(self, by: int) { self.n = self.n + by }\n}\nfn main() { let c = C { n: 0 }\n c.bump(5)\n print(c.n) }',
+  ],
+  [
+    'method calls method',
+    'struct P { x: int }\nimpl P {\n fn base(self) { return self.x }\n fn twice(self) { return self.base() * 2 }\n}\nfn main() { print(P { x: 5 }.twice()) }',
+  ],
+  [
+    'method through composition',
+    'struct Inner { v: int }\nstruct Outer { inner: Inner }\nimpl Inner {\n fn get(self) { return self.v }\n}\nfn main() { let o = Outer { inner: Inner { v: 7 } }\n print(o.inner.get()) }',
+  ],
+  [
+    'method via alias',
+    'struct P { x: int }\nimpl P {\n fn get(self) { return self.x }\n}\ntype Q = P\nfn main() { let q: Q = P { x: 3 }\n print(q.get()) }',
+  ],
+  [
+    'methods keep equality',
+    'struct P { x: int }\nimpl P {\n fn get(self) { return self.x }\n}\nfn main() { print(P { x: 1 } == P { x: 1 }) }',
+  ],
+  [
+    'unknown method on struct',
+    'struct P { x: int }\nfn main() { let p = P { x: 1 }\n print(p.nope()) }',
+  ],
+  [
+    'field method collision',
+    'struct P { x: int }\nimpl P {\n fn x(self) { return 1 }\n}\nfn main() { print(1) }',
+  ],
+  [
+    'method without parens is field read',
+    'struct P { x: int }\nimpl P {\n fn m(self) { return 1 }\n}\nfn main() { let p = P { x: 1 }\n print(p.m) }',
+  ],
+  [
+    'method arguments',
+    'struct P { x: int }\nimpl P {\n fn add(self, n: int) { return self.x + n }\n}\nfn main() { print(P { x: 1 }.add(2)) }',
+  ],
+  [
+    'method names are type scoped',
+    'struct A { x: int }\nstruct B { y: int }\nimpl A {\n fn get(self) { return self.x }\n}\nimpl B {\n fn get(self) { return self.y }\n}\nfn main() { print(A { x: 1 }.get())\n print(B { y: 2 }.get()) }',
+  ],
+  [
+    'mutation through shared reference',
+    'struct C { n: int }\nimpl C {\n fn set(self, v: int) { self.n = v }\n}\nfn main() { let a = C { n: 0 }\n let b = a\n a.set(9)\n print(b.n) }',
+  ],
+  [
+    'unknown impl target',
+    'impl Nope {\n fn f(self) { return 1 }\n}\nfn main() { print(1) }',
+  ],
 ];
 
 const options = { args: ["alpha", "beta"], stdin: "line one\nline two\n" };

@@ -16,7 +16,38 @@ Construction uses `Name { field: value }`. Fields may also be supplied by name
 in any order. A missing field, an unknown field, or a wrongly typed field is
 `E3001`. Struct equality is nominal (same type name) and then structural.
 
-Structs have **no methods** in this version; calling one is `E2003`.
+## Methods
+
+Behavior is attached to a struct with an `impl` block. A method's first
+parameter is the explicit receiver `self`; it is an ordinary immutable binding,
+and Aura's reference semantics let a method mutate `self.field` directly.
+
+```aura
+struct Counter { n: int }
+
+impl Counter {
+    fn bump(self, by: int) {
+        self.n = self.n + by
+    }
+    fn get(self) -> int { return self.n }
+}
+
+let c = Counter { n: 0 }
+c.bump(3)
+print(c.get())      # 3
+```
+
+Rules:
+
+* One `impl` block per struct; method names are scoped to the struct, so two
+  structs may each declare `fn get(self)`.
+* `s.field` reads a field; `s.method(args)` calls a method. A method requires
+  parentheses — `s.method` without them is not a bound method (`E2003`).
+* A field and a method of the same struct may not share a name (`E2016`).
+* An unknown member on a known struct is `E2003`; there is no fallback to a
+  built-in method or another struct.
+* There is no inheritance, no constructor, and no visibility: reuse is
+  composition plus methods and free functions.
 
 ## Enums
 

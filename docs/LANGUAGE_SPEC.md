@@ -1548,6 +1548,64 @@ for field access.
 (`src/check/mod.rs`); `construct` (`src/run/mod.rs`);
 `tests/regressions.rs::b3_*`, `b4_*`.
 
+### 17.6 Methods
+
+**Normative rule.** Behavior is attached to an already-declared nominal struct
+with an `impl` block: `impl Struct { fn name(self, p: T, ...) -> R { ... } ...
+}`. The target MUST be a declared struct (`E2003` if unknown, if an enum, or if
+a non-struct type). V1 permits **one** `impl` block per struct (`E2007` for a
+second) and **one** method of a given name per struct (`E2007` for a duplicate).
+There is no `class`, no inheritance, and no second object model.
+
+**Normative rule.** A method's first parameter MUST be the reserved receiver
+`self`; it is an ordinary immutable binding in the method's scope (reassigning
+it is `E2001`; using `self` is never an `E2009` unused-parameter error). It may
+be captured by closures and passed as a value. No `mut self`, `&self`, or
+implicit receiver exists: Aura has reference semantics and no ownership model.
+
+**Normative rule.** `self.field` reads a declared field; `self.field = v`
+assigns one; `self.other(...)` calls another method of the same struct. The
+receiver's declared type is the target struct, so field reads and method calls
+resolve statically.
+
+**Normative rule.** Member lookup is total and deterministic:
+
+* On a receiver of a statically known struct `S`, `r.name` is a **field read**
+  and `r.name(args)` is a **method call**. A field and a method of `S` MUST NOT
+  share a name (`E2016`); therefore neither can shadow the other.
+* A name `r.name(args)` that `S` does not declare as a method is `E2003`. The
+  checker MUST NOT fall back to a built-in method, a different struct, or a
+  global function. `r.name` without parentheses is never a bound method value:
+  if `S` declares method `name` but no field `name`, it is `E2003`.
+* On a built-in receiver (string/list/map/range), the existing built-in method
+  table applies (§24), unchanged.
+* On an `Unknown` receiver, the same rule is applied at runtime; a struct
+  method is looked up by the receiver's nominal type only.
+* On a union receiver, a member is available only if **every** member type
+  provides it compatibly; otherwise `E3001`/`E2003`.
+
+**Normative rule.** Method parameters after `self` are checked exactly like
+function parameters: a wrong argument count or a provably wrong argument type
+is `E3001`; method returns are checked like function returns (`E3005`). Methods
+are positional; named arguments are not supported.
+
+**Normative rule.** Method names are scoped to their nominal struct type, so
+two structs may each declare `fn area(self)`. Methods are not in the global
+function namespace and cannot be called as free functions.
+
+**Normative rule.** Methods do not change a struct's data, identity, equality,
+display, or reference semantics: construction (§17.2), equality (§17.4),
+display (§17.5), and `Rc`-based reference sharing are unchanged.
+
+**Normative rule.** Aura has no constructors, destructors, visibility,
+inheritance, traits, interfaces, generics, or operator overloading in V1.
+(A future direction is Go-style visibility-by-naming once a module system
+exists; it is not implemented and adds no current rule.)
+
+*Evidence:* `Parser::impl_item`/`method_item` (`src/parse/mod.rs`);
+`Checker::struct_methods` (`src/check/mod.rs`); `Interp::methods`
+(`src/run/mod.rs`); `tests/methods.rs`.
+
 ---
 
 ## 18. Enums
@@ -1827,21 +1885,25 @@ pipeline_passes_the_left_operand_as_the_first_argument`.
 ## 24. Method Calls
 
 **Normative rule.** `receiver.name(args)` calls a method on `receiver`.
-Methods are defined only on built-in receiver kinds (string, list, map, range);
-structs and enums have no methods.
+Built-in methods are defined on built-in receiver kinds (string, list, map,
+range); methods on a user struct are declared in that struct's `impl` block
+(§17.6). Enums have no methods.
 
 **Normative rule.** A method call on a receiver whose type the checker knows
 MUST name a method that exists on that type (`E2003` otherwise), and its
-argument count and argument types are checked (`E3001`). This includes a
-receiver whose type is a user struct or enum: since those types have no
-methods, **any** method call on a known struct or enum receiver is `E2003` at
-check time. A `range` receiver exposes only `len`; any other method is `E2003`
-at check time. A receiver of type `Unknown` remains permissive (§2.3).
+argument count and argument types are checked (`E3001`). For a known struct
+receiver the method table is the struct's own `impl` methods only (§17.6);
+there is no fallback to a built-in or to another struct. A receiver whose type
+is a known enum is `E2003` for any method. A `range` receiver exposes only
+`len`; any other method is `E2003` at check time. A receiver of type `Unknown`
+remains permissive (§2.3).
 
 **Normative rule.** `receiver.name` **without parentheses** on a non-struct
 receiver is a **zero-argument method call** and is validated against the same
 method table as the parenthesized form (`E2003` when the method does not exist
-on a known receiver type). On a struct receiver it is a field read.
+on a known receiver type). On a struct receiver it is a field read; if the
+struct declares a method `name` but no field `name`, it is `E2003` (a method is
+never a bound value, §17.6).
 
 > **SPECIFICATION STATUS — no-paren method calls.** This behavior is
 > implemented (`Expr::Field` dispatches to a zero-argument method for
@@ -2481,7 +2543,7 @@ features:
 * macros;
 * a bytecode VM, optimizer, or native code generation;
 * operator overloading;
-* user-defined methods on structs/enums;
+* methods on enums (struct methods exist, §17.6);
 * reflection or runtime type inspection beyond the built-ins in §25.
 
 These do not exist in Aura. This document defines the language as it is, not
