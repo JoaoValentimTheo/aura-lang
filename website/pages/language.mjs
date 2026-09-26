@@ -134,6 +134,12 @@ fn main() {
         <h3>Records with types</h3>
         <p>Struct fields carry annotations that are validated and enforced where
         provable.</p>
+        <h3>Methods</h3>
+        <p>A struct stays data; behavior is attached separately with an
+        <code>impl</code> block whose methods take an explicit receiver
+        <code>self</code>. Structs compose, and a method reaches a nested
+        struct’s method through <code>self.field.method()</code>. There are no
+        classes, inheritance, or dynamic dispatch.</p>
         <h3>Tagged unions</h3>
         <p>Enum variants carry positional payloads, constructed by name and
         destructured by <code>match</code>.</p>
@@ -194,12 +200,13 @@ fn main() {
     ${statusList([
       ["Functions, closures, recursion", "Implemented", "success"],
       ["Structs, enums, type aliases", "Implemented", "success"],
+      ["Struct methods: impl, self, composition (OOP V1)", "Implemented", "success"],
       ["Pattern matching and destructuring", "Implemented", "success"],
       ["Lists, maps, ranges, pipeline, methods", "Implemented", "success"],
       ["Errors: throw / try / catch / finally", "Implemented", "success"],
       ["Optional type annotations + conservative checker", "Implemented", "success"],
       ["Scripting I/O and arguments", "Implemented", "success"],
-      ["Classes, inheritance, traits, generics", "Planned", "planned"],
+      ["Traits and generics", "Future", "planned"],
       ["Modules and visibility", "Reserved (inert syntax)", "planned"],
       ["Python / PyO3 interop", "Long-term", "planned"],
     ])}

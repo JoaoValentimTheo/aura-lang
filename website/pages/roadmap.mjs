@@ -87,7 +87,8 @@ export const roadmapPage = {
       artifacts before it grows its syntax.</p>
       <p>After 0.0.2, development slows — on purpose — into a maturation cycle
       of syntax refinement, semantic consistency, diagnostics, and conformance
-      testing. Only after a syntax freeze does object-oriented design begin.</p>
+      testing. OOP V1 (struct methods) is already delivered; further
+      object-model work (traits, generics) follows the maturation cycle.</p>
       <a class="eyebrow-link" href="${url("releases/", base)}">See releases →</a>
     </div>
   </div>

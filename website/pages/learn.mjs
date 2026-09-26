@@ -44,6 +44,12 @@ const STEPS = [
     cta: "Structs and enums",
   },
   {
+    title: "Methods",
+    body: "Attach behavior to a struct with impl and an explicit self.",
+    href: "docs/guide-data/",
+    cta: "Methods",
+  },
+  {
     title: "Pattern matching",
     body: "Destructure values with match, guards, and let patterns.",
     href: "docs/guide-matching/",
