@@ -177,7 +177,22 @@ true false none
 Using a reserved word where a name is required is a lexical/parse error
 (`E1009`, or `E1006` in declaration positions).
 
-*Evidence:* `KEYWORDS` (`src/lex/mod.rs`), `Parser::ident` (`src/parse/mod.rs`).
+**Normative rule (contextual words).** The words `impl` and `self` are **not**
+reserved. They remain ordinary identifiers everywhere (`let impl = 1`,
+`fn self(x)`, a field named `impl`, `self: int`, `catch self -> …`, and so on).
+They take on Aqua method meaning only in their dedicated syntactic contexts
+(§17.6):
+
+* `impl` is recognized as a behavior declaration only at item position, when
+  it is immediately followed by a capitalized type name and `{`
+  (`impl StructName { … }`). Any other occurrence of `impl` is an ordinary
+  identifier and cannot start a behavior block.
+* `self` has receiver semantics only as the first parameter of a method inside
+  such a block (`fn method(self, …)`). Elsewhere it is an ordinary identifier
+  with its previous lexical meaning.
+
+*Evidence:* `Parser::at_impl_block`, `Parser::params`
+(`src/parse/mod.rs`); `KEYWORDS` (`src/lex/mod.rs`).
 
 ### 3.4 Whitespace and line structure
 
@@ -1555,13 +1570,17 @@ with an `impl` block: `impl Struct { fn name(self, p: T, ...) -> R { ... } ...
 }`. The target MUST be a declared struct (`E2003` if unknown, if an enum, or if
 a non-struct type). V1 permits **one** `impl` block per struct (`E2007` for a
 second) and **one** method of a given name per struct (`E2007` for a duplicate).
-There is no `class`, no inheritance, and no second object model.
+There is no `class`, no inheritance, and no second object model. `impl` is a
+contextual word, not a reserved one: it begins a behavior block only in item
+position when followed by a capitalized type name and `{` (§3.3).
 
-**Normative rule.** A method's first parameter MUST be the reserved receiver
-`self`; it is an ordinary immutable binding in the method's scope (reassigning
-it is `E2001`; using `self` is never an `E2009` unused-parameter error). It may
-be captured by closures and passed as a value. No `mut self`, `&self`, or
-implicit receiver exists: Aura has reference semantics and no ownership model.
+**Normative rule.** A method's first parameter MUST be `self`; it is an
+ordinary immutable binding in the method's scope (reassigning it is `E2001`;
+using `self` is never an `E2009` unused-parameter error). It may be captured by
+closures and passed as a value. No `mut self`, `&self`, or implicit receiver
+exists: Aura has reference semantics and no ownership model. `self` is a
+contextual word: it has receiver semantics only as a method's first parameter;
+everywhere else it is an ordinary identifier (§3.3).
 
 **Normative rule.** `self.field` reads a declared field; `self.field = v`
 assigns one; `self.other(...)` calls another method of the same struct. The
@@ -1579,10 +1598,14 @@ resolve statically.
   if `S` declares method `name` but no field `name`, it is `E2003`.
 * On a built-in receiver (string/list/map/range), the existing built-in method
   table applies (§24), unchanged.
-* On an `Unknown` receiver, the same rule is applied at runtime; a struct
-  method is looked up by the receiver's nominal type only.
+* On an `Unknown` receiver, the checker stays conservative: the call is
+  rejected (`E2003`) only when the name is neither a built-in method nor a
+  method of any declared struct. Otherwise it is left to runtime resolution,
+  where a struct method is looked up by the receiver's nominal type only.
 * On a union receiver, a member is available only if **every** member type
-  provides it compatibly; otherwise `E3001`/`E2003`.
+  provides it as a method with a compatible signature (same arity and mutually
+  compatible parameter and return types); otherwise the call is `E2003` when a
+  member lacks it and `E3001` when the signatures disagree.
 
 **Normative rule.** Method parameters after `self` are checked exactly like
 function parameters: a wrong argument count or a provably wrong argument type

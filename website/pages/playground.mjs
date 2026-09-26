@@ -31,7 +31,7 @@ export const playgroundPage = {
   <div class="container">
     ${callout(
       "info",
-      "<p>The selected <strong>runtime version</strong> is a real, immutable artifact with a recorded hash, not a label. The <strong>development runtime</strong> (<code>0.0.2-dev.4</code>) exercises the current language — struct methods, general unions, <code>a..b</code> ranges, and <code>&lt;!-- … --!&gt;</code> comments — while the published <code>0.0.2</code> release remains frozen and selectable. Filesystem, clock, and sleep are unavailable here and report <code>E5002</code>; standard input and arguments work.</p>",
+      "<p>The selected <strong>runtime version</strong> is a real, immutable artifact with a recorded hash, not a label. The <strong>development runtime</strong> (<code>0.0.2-dev.5</code>) exercises the current language — struct methods, general unions, <code>a..b</code> ranges, and <code>&lt;!-- … --!&gt;</code> comments — while the published <code>0.0.2</code> release remains frozen and selectable. Filesystem, clock, and sleep are unavailable here and report <code>E5002</code>; standard input and arguments work.</p>",
     )}
   </div>
 </section>

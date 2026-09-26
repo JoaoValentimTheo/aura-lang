@@ -151,6 +151,34 @@ const cases = [
     'unknown impl target',
     'impl Nope {\n fn f(self) { return 1 }\n}\nfn main() { print(1) }',
   ],
+  // Contextual `impl`/`self`: both stay ordinary identifiers outside a method
+  // receiver / behavior-block context (§3.3).
+  [
+    'impl and self as identifiers',
+    'fn main() { let impl = 1\n let self = 2\n print(impl + self) }',
+  ],
+  [
+    'impl as function name, self as param',
+    'fn self(x) { return x }\nstruct S { impl: int }\nfn main() { print(self(S { impl: 5 }.impl)) }',
+  ],
+  [
+    'contextual impl block beside identifier impl',
+    'struct P { x: int }\nimpl P { fn g(self) { return self.x } }\nlet impl = 2\nfn main() { print(P { x: 5 }.g())\n print(impl) }',
+  ],
+  [
+    'for binding named self',
+    'fn main() { for self in [1, 2] { print(self) } }',
+  ],
+  // Unknown receiver may resolve a user struct method (C4).
+  [
+    'unknown receiver user method',
+    'struct P { x: int }\nimpl P { fn set(self, v: int) { self.x = v }\n fn get(self) { return self.x } }\nfn f(p) { p.set(7)\n print(p.get()) }\nfn main() { f(P { x: 0 }) }',
+  ],
+  // Union signature compatibility (C5): incompatible arity is rejected.
+  [
+    'union incompatible method signatures',
+    'struct A { x: int }\nstruct B { y: int }\nimpl A { fn m(self, n: int) { return n } }\nimpl B { fn m(self) { return self.y } }\ntype U = A | B\nfn main() { let u: U = A { x: 1 }\n print(u.m()) }',
+  ],
 ];
 
 const options = { args: ["alpha", "beta"], stdin: "line one\nline two\n" };

@@ -409,6 +409,13 @@ impl Parser {
 
     fn item(&mut self) -> Result<Item> {
         let public = self.eat(&Tok::Pub);
+        // `impl` is NOT a reserved word: it stays an ordinary identifier
+        // everywhere (`let impl = 1`, `fn impl(x)`, a field named `impl`, …).
+        // A behavior block is recognized only in this item position, where
+        // `impl <StructName> {` is unmistakable (§17.6, §3.3).
+        if self.at_impl_block() {
+            return self.impl_item();
+        }
         match self.at().clone() {
             Tok::Fn => self.fn_item(public),
             Tok::Struct => self.struct_item(),
@@ -416,7 +423,6 @@ impl Parser {
             Tok::Type => self.alias_item(),
             Tok::Use => self.use_item(),
             Tok::Let => self.const_item(),
-            Tok::Impl => self.impl_item(),
             _ => {
                 let e = self.expr()?;
                 let span = span_of(&e);
@@ -424,6 +430,24 @@ impl Parser {
                 Ok(Item::Expr(e, span))
             }
         }
+    }
+
+    /// Whether the tokens here begin a behavior block: `impl` `StructName` `{`.
+    /// Only an `impl` identifier immediately followed by a (capitalized) type
+    /// name and an opening brace is a behavior declaration; any other use of
+    /// `impl` is an ordinary expression/declaration and is left untouched.
+    fn at_impl_block(&self) -> bool {
+        if !matches!(self.at(), Tok::Ident(n) if n == "impl") {
+            return false;
+        }
+        let Some(next) = self.toks.get(self.pos + 1) else {
+            return false;
+        };
+        let Some(after) = self.toks.get(self.pos + 2) else {
+            return false;
+        };
+        matches!(&next.tok, Tok::Ident(name) if name.chars().next().is_some_and(char::is_uppercase))
+            && matches!(after.tok, Tok::LBrace)
     }
 
     fn fn_item(&mut self, public: bool) -> Result<Item> {
@@ -516,8 +540,9 @@ impl Parser {
     }
 
     /// Parse a parameter list. When `receiver` is true, the first parameter
-    /// must be the keyword `self` (an ordinary binding named `self`); `self`
-    /// is a reserved word elsewhere and cannot name any other parameter.
+    /// MUST be the identifier `self`, which becomes the method's receiver
+    /// binding. `self` is not a reserved word elsewhere: this is the only
+    /// position with receiver semantics (§17.6, §3.3).
     fn params(&mut self, receiver: bool) -> Result<Vec<Param>> {
         let mut out = Vec::new();
         let mut first = true;
@@ -528,7 +553,7 @@ impl Parser {
             let span = self.span();
             let name = if receiver && first {
                 match self.at() {
-                    Tok::SelfKw => {
+                    Tok::Ident(n) if n == "self" => {
                         self.bump();
                         "self".to_string()
                     }
@@ -1317,11 +1342,6 @@ impl Parser {
                 let parts = self.fstring(&raw, span)?;
                 Expr::FStr(parts, span)
             }
-            Tok::SelfKw => {
-                // The receiver, as an ordinary binding reference.
-                self.bump();
-                Expr::Name("self".to_string(), span)
-            }
             Tok::Ident(name) => {
                 self.bump();
                 let is_type_name = name.chars().next().is_some_and(char::is_uppercase);
@@ -1764,8 +1784,6 @@ fn is_keyword(t: &Tok) -> bool {
             | Tok::Finally
             | Tok::Throw
             | Tok::Pub
-            | Tok::Impl
-            | Tok::SelfKw
             | Tok::True
             | Tok::False
             | Tok::None
@@ -1783,7 +1801,6 @@ fn starts_expr(t: &Tok) -> bool {
             | Tok::False
             | Tok::None
             | Tok::Ident(_)
-            | Tok::SelfKw
             | Tok::LParen
             | Tok::LBracket
             | Tok::LBrace

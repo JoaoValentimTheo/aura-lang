@@ -249,6 +249,33 @@ impl Ty {
             TypeExpr::Named(n) => Ty::Named(n.clone()),
         }
     }
+
+    /// Convert a checker type back to a written type expression, when it can be
+    /// represented. `Unknown` (and any union containing it) has no source
+    /// spelling and becomes `None`. Used to persist an inferred binding type in
+    /// the REPL so a later submission keeps the same nominal type information a
+    /// single module would have.
+    #[must_use]
+    pub fn to_type_expr(&self) -> Option<TypeExpr> {
+        Some(match self {
+            Ty::Int => TypeExpr::Int,
+            Ty::Float => TypeExpr::Float,
+            Ty::Bool => TypeExpr::Bool,
+            Ty::String => TypeExpr::String,
+            Ty::List(inner) => TypeExpr::List(Box::new(inner.to_type_expr()?)),
+            Ty::Map(v) => TypeExpr::Map(Box::new(TypeExpr::String), Box::new(v.to_type_expr()?)),
+            Ty::Named(n) => TypeExpr::Named(n.clone()),
+            Ty::Enum(n) => TypeExpr::Named(n.clone()),
+            Ty::Union(members) => {
+                let mut out = Vec::with_capacity(members.len());
+                for m in members {
+                    out.push(m.to_type_expr()?);
+                }
+                TypeExpr::Union(out)
+            }
+            Ty::Unknown => return None,
+        })
+    }
 }
 
 /// Flatten a type into `out`, splicing nested unions into their members.

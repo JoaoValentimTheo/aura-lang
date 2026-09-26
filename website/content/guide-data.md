@@ -48,6 +48,10 @@ Rules:
   built-in method or another struct.
 * There is no inheritance, no constructor, and no visibility: reuse is
   composition plus methods and free functions.
+* `impl` and `self` are **contextual**, not reserved: `impl Struct { … }` is a
+  behavior block only at item position, and `self` is the receiver only as a
+  method's first parameter. Elsewhere both are ordinary identifiers
+  (`let impl = 1`, `fn self(x)`, a field named `impl`) and behave as before.
 
 ## Enums
 

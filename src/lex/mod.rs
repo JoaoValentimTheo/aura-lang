@@ -9,7 +9,7 @@ use token::{Tok, Token};
 pub const KEYWORDS: &[&str] = &[
     "let", "mut", "fn", "if", "else", "match", "while", "loop", "for", "in", "return", "break",
     "continue", "use", "as", "struct", "enum", "type", "and", "or", "not", "try", "catch",
-    "finally", "throw", "pub", "impl", "self", "true", "false", "none",
+    "finally", "throw", "pub", "true", "false", "none",
 ];
 
 /// Tokenize `src` into a stream ending in `Eof`.
@@ -185,8 +185,6 @@ impl Lexer<'_> {
             "finally" => Tok::Finally,
             "throw" => Tok::Throw,
             "pub" => Tok::Pub,
-            "impl" => Tok::Impl,
-            "self" => Tok::SelfKw,
             "true" => Tok::True,
             "false" => Tok::False,
             "none" => Tok::None,

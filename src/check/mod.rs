@@ -680,6 +680,19 @@ impl Checker {
         self.stmt(s)
     }
 
+    /// The statically inferred type of a `let` binding's initializer, as a
+    /// written type expression, given the session declarations. Returns `None`
+    /// when the type is `Unknown` (no source spelling) or the statement is not
+    /// a `let`. The REPL uses this to persist an unannotated binding's nominal
+    /// type across submissions (`LANGUAGE_SPEC.md` §17.6).
+    #[must_use]
+    pub fn let_binding_type(&self, s: &Stmt) -> Option<TypeExpr> {
+        let Stmt::Let { value, .. } = s else {
+            return None;
+        };
+        self.infer(value).to_type_expr()
+    }
+
     /// Record a REPL global so later submissions can see it. Functions are
     /// also made callable.
     pub fn add_global(&mut self, name: &str, is_fn: bool) {
@@ -757,11 +770,7 @@ impl Checker {
         if name.starts_with('_') {
             // leading-underscore names are allowed but flagged if used
         }
-        // `self` is a reserved word, but it is the legitimate name of a
-        // method's receiver parameter (`LANGUAGE_SPEC.md` §17.6). The parser
-        // only ever produces it in receiver position, so allowing it here
-        // cannot admit `let self` or an ordinary `fn f(self)`.
-        if crate::lex::KEYWORDS.contains(&name) && name != "self" {
+        if crate::lex::KEYWORDS.contains(&name) {
             return Err(Diag::new(
                 codes::RESERVED_NAME,
                 format!("`{name}` is a reserved word and cannot be used as a name"),
@@ -1364,6 +1373,41 @@ impl Checker {
     /// The signature of a method on a struct, if declared.
     fn method_sig(&self, struct_name: &str, method: &str) -> Option<&FnSig> {
         self.struct_methods.get(struct_name)?.get(method)
+    }
+
+    /// Whether any declared struct has a method with this name. Used to keep
+    /// an `Unknown`-receiver call conservative without gating it by the
+    /// built-in registry (a user method may resolve at runtime).
+    fn user_method_exists_anywhere(&self, method: &str) -> bool {
+        self.struct_methods
+            .values()
+            .any(|table| table.contains_key(method))
+    }
+
+    /// Whether two methods of different union members are call-compatible:
+    /// the same arity and mutually compatible parameter and return types. The
+    /// receiver (`params[0]`) differs by member, so only the remaining
+    /// parameters and the return are compared.
+    fn method_sigs_compatible(&self, a: &FnSig, b: &FnSig) -> bool {
+        let (a_rest, b_rest) = (&a.params[1..], &b.params[1..]);
+        if a_rest.len() != b_rest.len() {
+            return false;
+        }
+        for ((_, at), (_, bt)) in a_rest.iter().zip(b_rest) {
+            if !Self::param_tys_compatible(at.as_ref(), bt.as_ref()) {
+                return false;
+            }
+        }
+        Self::param_tys_compatible(a.ret.as_ref(), b.ret.as_ref())
+    }
+
+    /// Parameter/return type comparability. `None` (unannotated) is compatible
+    /// with anything; two annotated types must be mutually compatible.
+    fn param_tys_compatible(a: Option<&Ty>, b: Option<&Ty>) -> bool {
+        match (a, b) {
+            (Some(x), Some(y)) => x.compatible_with(y) && y.compatible_with(x),
+            _ => true,
+        }
     }
 
     /// Check a statically resolved struct method call. The receiver is the
@@ -2093,20 +2137,51 @@ impl Checker {
                     self.check_struct_method_args(&sname, name, &sig, args, *span)?;
                 } else if let Ty::Union(ms) = &recv {
                     // A union member is available only if every member type
-                    // provides it (`LANGUAGE_SPEC.md` §17.6).
-                    let all = ms.iter().all(|m| {
-                        self.struct_name_of(m)
-                            .is_some_and(|s| self.method_sig(&s, name).is_some())
-                    });
-                    if !all {
-                        return Err(Diag::new(
-                            codes::UNDEFINED,
-                            format!("not every union member has method `{name}`"),
-                            *span,
-                        ));
+                    // provides it as the same member kind with a compatible
+                    // signature (`LANGUAGE_SPEC.md` §17.6). Comparing the
+                    // signatures here keeps the checker from accepting a call
+                    // that a concrete member would reject at runtime.
+                    let mut first: Option<&FnSig> = None;
+                    for m in ms {
+                        let Some(sname) = self.struct_name_of(m) else {
+                            return Err(Diag::new(
+                                codes::UNDEFINED,
+                                format!("not every union member has method `{name}`"),
+                                *span,
+                            ));
+                        };
+                        let Some(sig) = self.method_sig(&sname, name) else {
+                            return Err(Diag::new(
+                                codes::UNDEFINED,
+                                format!("not every union member has method `{name}`"),
+                                *span,
+                            ));
+                        };
+                        match first {
+                            None => first = Some(sig),
+                            Some(prev) => {
+                                if !self.method_sigs_compatible(prev, sig) {
+                                    return Err(Diag::new(
+                                        codes::TYPE_MISMATCH,
+                                        format!(
+                                            "union members disagree on the signature of method `{name}`"
+                                        ),
+                                        *span,
+                                    ));
+                                }
+                            }
+                        }
                     }
                     self.reject_named_args(name, args, *span)?;
-                } else if !crate::stdlib::signatures::method_exists_anywhere(name) {
+                } else if !crate::stdlib::signatures::method_exists_anywhere(name)
+                    && !self.user_method_exists_anywhere(name)
+                {
+                    // For an `Unknown` receiver the checker stays conservative:
+                    // a call is impossible only when the name is neither a
+                    // built-in method nor a method of any declared struct. A
+                    // user struct method with this name is a valid runtime
+                    // target, so it must not be gated by the built-in registry
+                    // alone (`LANGUAGE_SPEC.md` §2.3, §17.6).
                     return Err(Diag::new(
                         codes::UNDEFINED,
                         format!("no method `{name}` on any type"),

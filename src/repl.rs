@@ -146,6 +146,9 @@ fn eval_line<W: Write>(
             let _ = writeln!(writer, "{e}");
             return;
         }
+        // Capture the inferred binding type here, while the checker still has
+        // the statement checked and the session declarations loaded.
+        let inferred_ty = checker.let_binding_type(&stmt);
         let executed = match interp.exec_stmt_globals(&stmt) {
             // A bare expression echoes its value; declarations stay silent.
             Ok(Ctl::Val(v)) if matches!(stmt, Stmt::Expr(..)) => {
@@ -168,15 +171,20 @@ fn eval_line<W: Write>(
             }
         };
         // A `let` introduces a binding; persist it only after it executed.
+        // The declared annotation is used when present; otherwise the
+        // statically inferred nominal type (a user struct, or a builtin type)
+        // is persisted so later submissions keep the same type information a
+        // single module would have (`LANGUAGE_SPEC.md` §3.2, §17.6).
         if let Stmt::Let {
             name, mutable, ann, ..
         } = &stmt
         {
             if !decls.iter().any(|d| decl_name(d) == name) {
+                let ty = ann.clone().or(inferred_ty);
                 decls.push(GlobalDecl::Binding {
                     name: name.clone(),
                     mutable: *mutable,
-                    ty: ann.clone(),
+                    ty,
                 });
             }
         }

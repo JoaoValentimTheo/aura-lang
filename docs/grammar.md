@@ -20,8 +20,10 @@ fn_decl         = "fn" IDENT "(" [ params ] ")" [ "->" type ] block ;
 params          = param { "," param } ;
 param           = IDENT [ ":" type ] ;
 
-(* behavior block: one per struct; methods take the explicit receiver `self`
-   as their first parameter. `self` is reserved and names no other binding. *)
+(* behavior block: one per struct; methods take the receiver `self` as their
+   first parameter. `impl` here is contextual — an `impl StructName {` item — and
+   `self` has receiver meaning only in this position; both stay ordinary
+   identifiers elsewhere. *)
 impl_decl       = "impl" IDENT "{" { NEWLINE | [ "pub" ] method_decl } "}" ;
 method_decl     = "fn" IDENT "(" "self" [ "," param { "," param } ] ")"
                   [ "->" type ] block ;

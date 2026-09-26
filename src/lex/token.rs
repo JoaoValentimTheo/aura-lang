@@ -81,11 +81,6 @@ pub enum Tok {
     Throw,
     /// `pub`
     Pub,
-    /// `impl`
-    Impl,
-    /// `self` — the explicit method receiver. Reserved everywhere; valid only
-    /// as a method's first parameter and as the binding it names.
-    SelfKw,
 
     // punctuation
     /// `(`
@@ -209,8 +204,6 @@ impl std::fmt::Display for Tok {
             Tok::Finally => "finally",
             Tok::Throw => "throw",
             Tok::Pub => "pub",
-            Tok::Impl => "impl",
-            Tok::SelfKw => "self",
             Tok::LParen => "(",
             Tok::RParen => ")",
             Tok::LBracket => "[",
