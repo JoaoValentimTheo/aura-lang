@@ -21,6 +21,15 @@ fn check(src: &str) -> Result<(), u16> {
     Checker::module(&module).map_err(|d| d.code)
 }
 
+/// The full diagnostic message for a rejected program, so deterministic
+/// reporting (which member is named) can be asserted.
+fn check_msg(src: &str) -> String {
+    let module = parse(src).expect("parses");
+    Checker::module(&module)
+        .expect_err("program should be rejected")
+        .message
+}
+
 /// A trait implementation satisfies the contract and its methods are callable.
 #[test]
 fn valid_trait_implementation_runs() {
@@ -90,6 +99,39 @@ impl T for S { fn a(self) { print(self.x) } }
 fn main() { print(1) }
 "#;
     assert_eq!(check(src), Err(codes::TRAIT_INCOMPLETE));
+}
+
+/// Missing-method reporting is deterministic: when several methods are absent,
+/// the trait's first declared method is named, regardless of hashing. This
+/// guards against iteration over an unordered signature map (`E2017`).
+#[test]
+fn missing_trait_method_report_is_deterministic() {
+    let src = "trait T { fn a(self)\n fn b(self)\n fn c(self)\n fn d(self) }\n\
+               struct S { x: int }\n\
+               impl T for S { fn a(self) { print(self.x) } }\n\
+               fn main() { print(1) }";
+    // Repeated checks must name the same (declaration-first) method every time.
+    for _ in 0..32 {
+        let msg = check_msg(src);
+        assert!(msg.contains("requires method `b`"), "unexpected: {msg}");
+    }
+}
+
+/// A trait method declaring the same parameter name twice is a same-scope
+/// redeclaration (`E2007`), exactly like a function or inherent method. Without
+/// this, a trait could declare a contract no implementation could satisfy,
+/// since the matching `impl` method rejects the duplicate parameter.
+#[test]
+fn duplicate_trait_parameter_is_a_redeclaration() {
+    assert_eq!(
+        check("trait T { fn a(self, x: int, x: int) }\nfn main() { print(1) }"),
+        Err(codes::REDECLARED)
+    );
+    // A repeat of the receiver name is the same defect.
+    assert_eq!(
+        check("trait T { fn a(self, self: int) }\nfn main() { print(1) }"),
+        Err(codes::REDECLARED)
+    );
 }
 
 /// A signature that disagrees on arity, a parameter type, or the return type

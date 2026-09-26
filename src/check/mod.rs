@@ -184,10 +184,12 @@ pub struct Checker {
     /// Structs that already have a behavior block. V1 permits one `impl`
     /// block per struct.
     impl_seen: HashMap<String, Span>,
-    /// Declared traits, by name, mapping each method name to its signature.
-    /// A trait is a behavioral contract with no value representation
-    /// (`LANGUAGE_SPEC.md` §17.7).
-    traits: HashMap<String, HashMap<String, FnSig>>,
+    /// Declared traits, by name, each holding its method signatures in
+    /// declaration order. A trait is a behavioral contract with no value
+    /// representation (`LANGUAGE_SPEC.md` §17.7). Order is preserved so
+    /// completeness and signature diagnostics deterministically name the first
+    /// affected method.
+    traits: HashMap<String, Vec<(String, FnSig)>>,
     /// Which trait each struct implements, keyed by `(struct, trait)`, so a
     /// duplicate `impl Trait for Struct` can be rejected.
     trait_impls: HashMap<(String, String), Span>,
@@ -427,8 +429,9 @@ impl Checker {
                 }
                 GlobalDecl::Trait { name, methods } => {
                     // Restore the persisted trait contract so a later
-                    // submission can implement it.
-                    let mut table: HashMap<String, FnSig> = HashMap::new();
+                    // submission can implement it. Method order is preserved
+                    // so diagnostics name the first declared method.
+                    let mut table: Vec<(String, FnSig)> = Vec::with_capacity(methods.len());
                     for (mname, ret, params) in methods {
                         let ret_ty = ret
                             .as_ref()
@@ -442,13 +445,13 @@ impl Checker {
                                 (pname.clone(), ty)
                             })
                             .collect();
-                        table.insert(
+                        table.push((
                             mname.clone(),
                             FnSig {
                                 ret: ret_ty,
                                 params: param_tys,
                             },
-                        );
+                        ));
                     }
                     c.traits.insert(name.clone(), table);
                 }
@@ -661,7 +664,7 @@ impl Checker {
                         *span,
                     ));
                 }
-                let mut table: HashMap<String, FnSig> = HashMap::new();
+                let mut table: Vec<(String, FnSig)> = Vec::with_capacity(methods.len());
                 for m_item in methods {
                     let Item::Fn {
                         name: mname,
@@ -673,7 +676,7 @@ impl Checker {
                     else {
                         continue;
                     };
-                    if table.contains_key(mname) {
+                    if table.iter().any(|(n, _)| n == mname) {
                         return Err(Diag::new(
                             codes::REDECLARED,
                             format!(
@@ -684,6 +687,18 @@ impl Checker {
                     }
                     let mut param_tys = Vec::with_capacity(params.len());
                     for p in params {
+                        // A parameter name declared twice is a same-scope
+                        // redeclaration, exactly like a function or inherent
+                        // method (`LANGUAGE_SPEC.md` §16.3). Without this a
+                        // trait could declare a contract no `impl` could
+                        // satisfy, since the matching method rejects it.
+                        if param_tys.iter().any(|(n, _)| n == &p.name) {
+                            return Err(Diag::new(
+                                codes::REDECLARED,
+                                format!("`{}` is already declared in this scope", p.name),
+                                p.span,
+                            ));
+                        }
                         let ty = match &p.ty {
                             Some(pty) => Some(self.annotation(pty, p.span)?),
                             None => None,
@@ -694,13 +709,13 @@ impl Checker {
                         Some(rt) => Some(self.annotation(rt, Span::default())?),
                         None => None,
                     };
-                    table.insert(
+                    table.push((
                         mname.clone(),
                         FnSig {
                             ret: ret_ty,
                             params: param_tys,
                         },
-                    );
+                    ));
                 }
                 self.traits.insert(name.clone(), table);
             }
@@ -773,7 +788,7 @@ impl Checker {
                         else {
                             continue;
                         };
-                        if !trait_sig.contains_key(mname) {
+                        if !trait_sig.iter().any(|(n, _)| n == mname) {
                             return Err(Diag::new(
                                 codes::UNDEFINED,
                                 format!(
