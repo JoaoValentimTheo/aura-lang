@@ -70,6 +70,21 @@ const cases = [
     'over-limit grouping',
     `fn main() { print(${"[".repeat(400)}1${"]".repeat(400)}) }`,
   ],
+  // Nested call arguments are the most frame-expensive recursive parser path
+  // (expr -> unary -> postfix -> atom -> call_args -> cons_arg -> expr). On a
+  // default 1 MiB wasm linear stack it exhausted the stack at ~907 frames,
+  // below the 1024-frame wasm backstop, and trapped (`memory access out of
+  // bounds`) where native reported E1015. `playground/runtime/build.rs`
+  // reserves a 4 MiB wasm stack so every path reaches the backstop. These
+  // depths bracket the historical onset (905/907/1000/1200).
+  ...[905, 907, 1000, 1200].map((d) => [
+    `nested len calls d=${d}`,
+    `fn main() { print(${"len(".repeat(d)}[1]${")".repeat(d)}) }`,
+  ]),
+  ...[907, 1000, 1200].map((d) => [
+    `nested id calls d=${d}`,
+    `fn id(x) { return x }\nfn main() { print(${"id(".repeat(d)}1${")".repeat(d)}) }`,
+  ]),
   ['empty program', ''],
   ['just expr', '1 + 2'],
   ['unicode', 'fn main() { print("héllo λ 世界") }'],
@@ -100,15 +115,24 @@ function norm(r) {
   });
 }
 
+/** Run on wasm, turning a guest trap into a comparable sentinel. */
+function wasmResult(src) {
+  try {
+    return { text: norm(runtime.run(src, options)), trap: null };
+  } catch (err) {
+    return { text: `trap:${err && err.message ? err.message : String(err)}`, trap: err };
+  }
+}
+
 let passed = 0;
 let failed = 0;
 for (const [name, src] of cases) {
-  const wasm = runtime.run(src, options);
+  const wasm = wasmResult(src);
   const srcFile = join(dir, `${name.replace(/[^a-z0-9]+/gi, "_")}.aura`);
   writeFileSync(srcFile, src);
   const nativeJson = execFileSync(nativeBin, [srcFile, optionsFile], { encoding: "utf8" }).trim();
   const native = JSON.parse(nativeJson);
-  const a = norm(wasm);
+  const a = wasm.text;
   const b = norm(native);
   if (a === b) {
     passed += 1;
@@ -116,6 +140,18 @@ for (const [name, src] of cases) {
     failed += 1;
     console.error(`FAIL ${name}\n  wasm:   ${a}\n  native: ${b}`);
   }
+}
+
+// A rejected over-deep program must leave the wasm instance usable: the trap
+// below the backstop used to poison the instance for every later run
+// (`memory access out of bounds` on all subsequent calls). Run a known-good
+// program after the deepest rejected one and require it to still succeed.
+const postError = wasmResult("fn main() { print(1 + 2) }");
+if (postError.text === norm({ status: "ok", stdout: "3\n", result: null, diagnostics: [] })) {
+  passed += 1;
+} else {
+  failed += 1;
+  console.error(`FAIL instance recovery after rejected deep input\n  wasm: ${postError.text}`);
 }
 
 console.log(`\nDifferential: ${passed} passed, ${failed} failed`);

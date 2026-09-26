@@ -98,7 +98,7 @@ export const runtimePage = {
 #   artifact           0.0.2/aura_playground_runtime.wasm
 #   sha256             5a4ad3f7…34ed
 #
-#   id                 0.0.2-dev        (development runtime)
+#   id                 0.0.2-dev.2      (development runtime)
 #   channel            development
 #   release_version    0.0.2
 #   host_abi_version   1

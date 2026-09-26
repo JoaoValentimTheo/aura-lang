@@ -163,7 +163,7 @@ async function runAndWait(page, timeout = 15000) {
   check("0.0.1 present but unavailable", options.some((o) => o.value === "0.0.1" && o.disabled));
   // The development runtime is present, selectable, and labelled as a
   // development runtime rather than a release.
-  const dev = options.find((o) => o.value === "0.0.2-dev");
+  const dev = options.find((o) => o.value === "0.0.2-dev.2");
   check("development runtime selectable", dev && !dev.disabled, JSON.stringify(options));
   check("development runtime is labelled development", dev && /development/i.test(dev.text), dev && dev.text);
 
@@ -174,7 +174,7 @@ async function runAndWait(page, timeout = 15000) {
   check("0.0.2 release executes", r.stdout === "v2\n", JSON.stringify(r));
 
   // Run the evolved language against the development runtime.
-  await page.selectOption("#version", "0.0.2-dev");
+  await page.selectOption("#version", "0.0.2-dev.2");
   const note = await page.textContent("#runtime-note");
   check("development runtime explains itself", /development runtime/i.test(note), note);
   await setSource(

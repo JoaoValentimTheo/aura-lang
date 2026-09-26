@@ -116,10 +116,15 @@ pub const MAX_AST_DEPTH: usize = 256;
 ///   semantic AST limit (256) costs at most ~512 parser frames, so the WASM
 ///   budget must exceed that to avoid rejecting programs the language permits;
 ///   it must also stay below the point where the engine stack overflows.
-///   1024 satisfies both: it accepts every AST-valid program plus generous
-///   grouping, and it returns `E1015` well before the engine stack traps
-///   (observed trap onset is ~1600 frames on a default engine stack, and
-///   1024 is trap-free down to a 512 KiB stack).
+///   1024 satisfies the first: it accepts every AST-valid program plus
+///   generous grouping. For the second, the runtime crate reserves a 4 MiB
+///   wasm linear stack (`playground/runtime/build.rs`), because the default
+///   1 MiB stack is exhausted by the most frame-expensive recursive path
+///   (nested call arguments, `f(f(f(…)))`, which recurses through `expr`,
+///   `unary`, `postfix`, `atom`, `call_args`, and `cons_arg`) at ~907 frames —
+///   below 1024 — which trapped before `E1015` could be reported. With the
+///   reserved stack the budget is reached on every path and the backstop
+///   reports `E1015` instead of trapping.
 ///
 /// Exceeding it is `E1015` on every substrate; it never redefines the
 /// semantic AST limit.
