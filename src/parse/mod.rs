@@ -2,8 +2,8 @@
 
 use crate::ast::*;
 use crate::error::{codes, Diag, Result, Span};
-use crate::lex::lex;
 use crate::lex::token::{Tok, Token};
+use crate::lex::{lex, lex_at};
 
 /// Parse a full file.
 ///
@@ -77,6 +77,25 @@ fn parse_expr_inner(src: &str) -> Result<Expr> {
     // Enforce the language nesting limit for this entry point too, so a
     // statement/expression parsed for the REPL cannot exceed the same bound
     // as a module.
+    check_expr_depth(&e, 1)?;
+    Ok(e)
+}
+
+/// Parse one expression whose text is a verbatim substring of a larger source
+/// beginning at byte offset `base` (used for f-string interpolations). Token
+/// spans stay absolute, so diagnostics name the real file location.
+fn parse_expr_at(src: &str, base: usize) -> Result<Expr> {
+    let toks = lex_at(src, base)?;
+    let mut p = Parser {
+        toks,
+        pos: 0,
+        depth: 0,
+        expr_nodes: 0,
+    };
+    p.skip_newlines();
+    let e = p.expr()?;
+    p.skip_newlines();
+    p.expect_eof()?;
     check_expr_depth(&e, 1)?;
     Ok(e)
 }
@@ -418,6 +437,9 @@ impl Parser {
         if self.at_trait_block() {
             return self.trait_item();
         }
+        if self.at_const_decl() {
+            return self.const_decl_item();
+        }
         match self.at().clone() {
             Tok::Fn => self.fn_item(public),
             Tok::Struct => self.struct_item(),
@@ -473,6 +495,66 @@ impl Parser {
         };
         matches!(&next.tok, Tok::Ident(name) if name.chars().next().is_some_and(char::is_uppercase))
             && matches!(after.tok, Tok::LBrace)
+    }
+
+    /// Whether the tokens here begin a `const` declaration:
+    /// `const` `IDENT` (`=` | `:`). `const` is contextual, like `impl` and
+    /// `trait`: an identifier followed by a name and either `=` or an
+    /// annotation is unmistakably a declaration; any other use of `const` is
+    /// an ordinary name. A lowercase name is still recognized, so it can be
+    /// rejected with a clear "must be uppercase" diagnostic rather than an
+    /// incidental parse error.
+    fn at_const_decl(&self) -> bool {
+        if !matches!(self.at(), Tok::Ident(n) if n == "const") {
+            return false;
+        }
+        let Some(next) = self.toks.get(self.pos + 1) else {
+            return false;
+        };
+        let Some(after) = self.toks.get(self.pos + 2) else {
+            return false;
+        };
+        matches!(&next.tok, Tok::Ident(_))
+            && matches!(
+                after.tok,
+                Tok::Assign | Tok::Colon | Tok::Newline | Tok::Semi | Tok::Eof
+            )
+    }
+
+    /// `const NAME [: T] = expr` — the canonical module-level constant
+    /// declaration (`LANGUAGE_SPEC.md` §4.2, §26). The name MUST be uppercase
+    /// so a constant declaration reads differently from an ordinary binding.
+    fn const_decl_item(&mut self) -> Result<Item> {
+        let span = self.span();
+        self.bump();
+        let name = self.ident("constant name")?;
+        if !name.chars().next().is_some_and(char::is_uppercase) {
+            return Err(Diag::new(
+                codes::EXPECTED,
+                "a `const` name must begin with an uppercase letter",
+                span,
+            ));
+        }
+        let ann = if self.eat(&Tok::Colon) {
+            Some(self.ty()?)
+        } else {
+            None
+        };
+        if !self.eat(&Tok::Assign) {
+            return Err(Diag::new(
+                codes::LET_NO_INIT,
+                format!("`const {name}` needs an initializer: `const {name} = ...`"),
+                span,
+            ));
+        }
+        let value = self.expr()?;
+        self.end_stmt();
+        Ok(Item::Const {
+            name,
+            ann,
+            value,
+            span,
+        })
     }
 
     fn fn_item(&mut self, public: bool) -> Result<Item> {
@@ -1754,23 +1836,33 @@ impl Parser {
     fn fstring(&mut self, raw: &str, span: Span) -> Result<Vec<FPart>> {
         let mut parts = Vec::new();
         let mut lit = String::new();
+        // The raw body is a verbatim substring of the source, beginning just
+        // after the `f`/`F` prefix and its opening quote. Tracking a byte
+        // offset lets an interpolation's diagnostics point at the real file
+        // location instead of the start of the source.
+        let base = span.start + 2;
+        let mut offset = 0usize;
         let mut chars = raw.chars().peekable();
         while let Some(c) = chars.next() {
+            offset += c.len_utf8();
             match c {
                 '{' => {
                     if chars.peek() == Some(&'{') {
                         chars.next();
+                        offset += 1;
                         lit.push('{');
                         continue;
                     }
                     if !lit.is_empty() {
                         parts.push(FPart::Lit(std::mem::take(&mut lit)));
                     }
+                    let inner_start = offset;
                     let mut inner = String::new();
                     let mut depth = 1usize;
                     loop {
                         match chars.next() {
                             Some('}') => {
+                                offset += 1;
                                 depth -= 1;
                                 if depth == 0 {
                                     break;
@@ -1778,10 +1870,14 @@ impl Parser {
                                 inner.push('}');
                             }
                             Some('{') => {
+                                offset += 1;
                                 depth += 1;
                                 inner.push('{');
                             }
-                            Some(c2) => inner.push(c2),
+                            Some(c2) => {
+                                offset += c2.len_utf8();
+                                inner.push(c2);
+                            }
                             None => {
                                 return Err(Diag::new(
                                     codes::UNTERMINATED_STRING,
@@ -1792,14 +1888,25 @@ impl Parser {
                         }
                     }
                     if inner.trim().is_empty() {
-                        return Err(Diag::new(codes::EXPECTED, "empty `{}` in f-string", span));
+                        return Err(Diag::new(
+                            codes::EXPECTED,
+                            "empty `{}` in f-string",
+                            Span::new(base + inner_start, base + offset),
+                        ));
                     }
-                    let e = parse_expr_inner(&inner)?;
+                    let e = {
+                        // The lexer folds leading trivia into the first token's
+                        // span, so trim it and shift the base to keep the
+                        // expression's spans exactly on the source text.
+                        let lead = inner.len() - inner.trim_start().len();
+                        parse_expr_at(inner.trim_start(), base + inner_start + lead)?
+                    };
                     parts.push(FPart::Expr(e));
                 }
                 '}' => {
                     if chars.peek() == Some(&'}') {
                         chars.next();
+                        offset += 1;
                     }
                     lit.push('}');
                 }

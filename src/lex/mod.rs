@@ -17,6 +17,21 @@ pub fn lex(src: &str) -> Result<Vec<Token>> {
     Lexer {
         bytes: src.as_bytes(),
         pos: 0,
+        base: 0,
+    }
+    .run()
+}
+
+/// Tokenize `src` as if it began at byte offset `base` in a larger source.
+///
+/// Used for the expression inside an f-string interpolation, where the parsed
+/// text is a verbatim substring of the original file: spans stay absolute, so
+/// a diagnostic names the real location instead of the start of the file.
+pub fn lex_at(src: &str, base: usize) -> Result<Vec<Token>> {
+    Lexer {
+        bytes: src.as_bytes(),
+        pos: 0,
+        base,
     }
     .run()
 }
@@ -24,6 +39,8 @@ pub fn lex(src: &str) -> Result<Vec<Token>> {
 struct Lexer<'a> {
     bytes: &'a [u8],
     pos: usize,
+    /// Offset of this input within the enclosing source, added to every span.
+    base: usize,
 }
 
 impl Lexer<'_> {
@@ -33,6 +50,12 @@ impl Lexer<'_> {
 
     fn peek2(&self) -> Option<u8> {
         self.bytes.get(self.pos + 1).copied()
+    }
+
+    /// Build a span at `start..end` relative to this input, shifted by `base`
+    /// so nested inputs (f-string interpolations) report absolute locations.
+    fn span(&self, start: usize, end: usize) -> Span {
+        Span::new(start + self.base, end + self.base)
     }
 
     fn run(mut self) -> Result<Vec<Token>> {
@@ -45,7 +68,7 @@ impl Lexer<'_> {
             let is_eof = tok == Tok::Eof;
             out.push(Token {
                 tok,
-                span: Span::new(start, self.pos),
+                span: self.span(start, self.pos),
             });
             if is_eof {
                 return Ok(out);
@@ -121,7 +144,7 @@ impl Lexer<'_> {
                 return Err(Diag::new(
                     codes::UNTERMINATED_COMMENT,
                     "unterminated multiline comment; expected `--!>`",
-                    Span::new(start, self.pos),
+                    self.span(start, self.pos),
                 ));
             }
             self.pos += 1;
@@ -146,7 +169,7 @@ impl Lexer<'_> {
                 return Err(Diag::new(
                     codes::UNTERMINATED_STRING,
                     "unterminated string literal",
-                    Span::new(start, self.pos),
+                    self.span(start, self.pos),
                 ));
             }
             return Ok(Tok::FStr(raw));
@@ -216,7 +239,7 @@ impl Lexer<'_> {
                 Diag::new(
                     codes::INVALID_NUMBER,
                     "invalid integer literal",
-                    Span::new(start, self.pos),
+                    self.span(start, self.pos),
                 )
             })?;
             return Ok(Tok::Int(value));
@@ -254,7 +277,7 @@ impl Lexer<'_> {
                 Diag::new(
                     codes::INVALID_NUMBER,
                     "invalid float literal",
-                    Span::new(start, self.pos),
+                    self.span(start, self.pos),
                 )
             })?;
             Ok(Tok::Float(v))
@@ -268,7 +291,7 @@ impl Lexer<'_> {
                     return Err(Diag::new(
                         codes::INVALID_NUMBER,
                         "integer out of range",
-                        Span::new(start, self.pos),
+                        self.span(start, self.pos),
                     ))
                 }
             };
@@ -284,7 +307,7 @@ impl Lexer<'_> {
             return Err(Diag::new(
                 codes::INVALID_NUMBER,
                 "a number may not be directly followed by a name; add a space",
-                Span::new(start, self.pos + 1),
+                self.span(start, self.pos + 1),
             ));
         }
         Ok(())
@@ -299,7 +322,7 @@ impl Lexer<'_> {
             return Err(Diag::new(
                 codes::UNTERMINATED_STRING,
                 "unterminated string literal",
-                Span::new(start, self.pos),
+                self.span(start, self.pos),
             ));
         }
         Ok(Tok::Str(unescape(&raw, self.pos)?))
@@ -407,7 +430,7 @@ impl Lexer<'_> {
                     return Err(Diag::new(
                         codes::INVALID_CHAR,
                         "`!` is not an operator; use `not`",
-                        Span::new(start, start + 1),
+                        self.span(start, start + 1),
                     ));
                 }
             }
@@ -436,7 +459,7 @@ impl Lexer<'_> {
                 return Err(Diag::new(
                     codes::INVALID_CHAR,
                     "`&` is not an operator; use `and`",
-                    Span::new(start, start + 1),
+                    self.span(start, start + 1),
                 ));
             }
             other => {
@@ -448,7 +471,7 @@ impl Lexer<'_> {
                 return Err(Diag::new(
                     codes::INVALID_CHAR,
                     format!("unexpected character `{ch}`"),
-                    Span::new(start, start + 1),
+                    self.span(start, start + 1),
                 ));
             }
         };

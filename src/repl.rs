@@ -263,8 +263,11 @@ fn eval_line<W: Write>(
 }
 
 /// Whether two session declarations are the same one (so a re-submission does
-/// not duplicate it). An `impl` is identified by its target; other
-/// declarations by their introduced name.
+/// not duplicate it). A declaration is identified by its name **and its kind**:
+/// a function, a constant, and a struct that share a name are distinct
+/// declarations in distinct namespaces, exactly as in a module, so a `struct S`
+/// after a `fn S` must still be recorded. An `impl` is identified by its
+/// target; a trait by its name.
 fn same_decl(a: &GlobalDecl, b: &GlobalDecl) -> bool {
     match (a, b) {
         (
@@ -284,7 +287,12 @@ fn same_decl(a: &GlobalDecl, b: &GlobalDecl) -> bool {
         | (_, GlobalDecl::Impl { .. })
         | (GlobalDecl::Trait { .. }, _)
         | (_, GlobalDecl::Trait { .. }) => false,
-        _ => decl_name(a) == decl_name(b),
+        (GlobalDecl::Binding { name: an, .. }, GlobalDecl::Binding { name: bn, .. }) => an == bn,
+        (GlobalDecl::Function { name: an, .. }, GlobalDecl::Function { name: bn, .. }) => an == bn,
+        (GlobalDecl::Struct { name: an, .. }, GlobalDecl::Struct { name: bn, .. }) => an == bn,
+        (GlobalDecl::Enum { name: an, .. }, GlobalDecl::Enum { name: bn, .. }) => an == bn,
+        (GlobalDecl::Alias { name: an, .. }, GlobalDecl::Alias { name: bn, .. }) => an == bn,
+        _ => false,
     }
 }
 

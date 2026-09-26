@@ -226,6 +226,11 @@ pub struct Checker {
     /// fan out exponentially. Failures are never cached, so cycle diagnostics
     /// keep their precise span.
     resolved_aliases: RefCell<HashMap<String, TypeExpr>>,
+    /// Value-namespace names carried from earlier REPL submissions (bindings,
+    /// functions, constants). Used so a new submission cannot redeclare one
+    /// (`E2007`). Types live in their own namespace (`types`) and are checked
+    /// there, so `struct S` and `fn S` may coexist exactly as in a module.
+    session_value_names: HashMap<String, Span>,
 }
 
 impl Checker {
@@ -255,6 +260,7 @@ impl Checker {
             loop_depth: 0,
             alias_targets: HashMap::new(),
             resolved_aliases: RefCell::new(HashMap::new()),
+            session_value_names: HashMap::new(),
         }
     }
 
@@ -302,10 +308,12 @@ impl Checker {
                 } => {
                     c.scopes[0].declares.insert(name.clone(), Span::default());
                     c.scopes[0].vars.insert(name.clone(), *mutable);
+                    c.session_value_names.insert(name.clone(), Span::default());
                 }
                 GlobalDecl::Function { name, ret, params } => {
                     c.scopes[0].declares.insert(name.clone(), Span::default());
                     c.scopes[0].vars.insert(name.clone(), false);
+                    c.session_value_names.insert(name.clone(), Span::default());
                     let ret_ty = ret.as_ref().map(Ty::from_expr_lenient);
                     let param_tys = params
                         .iter()
@@ -502,7 +510,14 @@ impl Checker {
                     params,
                     ..
                 } => {
-                    if declared.insert(name.clone(), *span).is_some() {
+                    // A value name already declared in this scope is `E2007`,
+                    // whether the previous declaration is in this module or
+                    // carried from an earlier REPL submission (§16.3, §29).
+                    // Types are a separate namespace, so `struct S` and
+                    // `fn S` may coexist as they do in a module.
+                    if declared.insert(name.clone(), *span).is_some()
+                        || self.session_value_names.contains_key(name)
+                    {
                         return Err(Diag::new(
                             codes::REDECLARED,
                             format!("`{name}` is already declared in this scope"),
@@ -522,7 +537,13 @@ impl Checker {
                     self.scopes[0].vars.insert(name.clone(), false);
                 }
                 Item::Const { name, span, .. } => {
-                    if declared.insert(name.clone(), *span).is_some() {
+                    // Constants share the value-namespace scope rule: a prior
+                    // declaration (module or session) makes this `E2007`.
+                    // `const NAME` and a top-level `let NAME` are the same
+                    // declaration.
+                    if declared.insert(name.clone(), *span).is_some()
+                        || self.session_value_names.contains_key(name)
+                    {
                         return Err(Diag::new(
                             codes::REDECLARED,
                             format!("`{name}` is already declared in this scope"),
