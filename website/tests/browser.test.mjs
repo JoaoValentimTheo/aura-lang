@@ -313,7 +313,7 @@ function check(name, cond, detail) {
   check("0.0.1 present but unavailable", options.some((o) => o.value === "0.0.1" && o.disabled));
   check(
     "development runtime selectable",
-    options.some((o) => o.value === "0.0.2-dev.7" && !o.disabled),
+    options.some((o) => o.value === "0.0.2-dev.8" && !o.disabled),
   );
 
   // --- redesigned IDE affordances -------------------------------------------
