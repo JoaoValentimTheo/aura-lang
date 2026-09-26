@@ -360,7 +360,7 @@ let r = 0..3
 ```
 
 Implementation: `Tok::DotDot` (lexer), `Expr::Range` (AST + parser precedence
-`range = additive [ ".." additive ]`), `Ty::Named("range")` inference, and
+`range = additive [ ".." range ]`), `Ty::Named("range")` inference, and
 `eval` building the existing `RangeVal` — no second range subsystem. Tests:
 `tests/lexer.rs`, `tests/parser.rs`, `tests/run.rs`, `tests/repl.rs`.
 
