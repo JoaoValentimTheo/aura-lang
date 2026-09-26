@@ -92,6 +92,53 @@ for (const theme of ["light", "dark"]) {
   }
 }
 
+// Focused assertions for the Playground's primary controls, which axe's
+// page-level scan does not exercise directly: the runtime version combobox and
+// the source editor must be labelled, keyboard-focusable, and expose selection.
+{
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await page.goto(`${base}playground/`, { waitUntil: "load" });
+  await page.waitForFunction(
+    () => document.querySelectorAll("#version option").length > 0,
+    { timeout: 15000 },
+  );
+  const facts = await page.evaluate(() => {
+    const sel = document.getElementById("version");
+    const label = document.querySelector('label[for="version"]');
+    const source = document.getElementById("source");
+    sel.focus();
+    const selFocused = document.activeElement === sel;
+    source.focus();
+    const srcFocused = document.activeElement === source;
+    return {
+      hasSelect: !!sel,
+      labelled: !!label && label.textContent.trim().length > 0,
+      hasAriaLabel: sel.getAttribute("aria-label"),
+      selected: sel.value,
+      selectedExposed: sel.selectedOptions.length === 1,
+      selFocused,
+      srcLabelled: !!source.getAttribute("aria-label"),
+      srcFocused,
+    };
+  });
+  const checks = [
+    ["combobox exists", facts.hasSelect],
+    ["combobox has an accessible label", facts.labelled && !!facts.hasAriaLabel],
+    ["combobox exposes the selected runtime", facts.selectedExposed && facts.selected.length > 0],
+    ["combobox is keyboard-focusable", facts.selFocused],
+    ["editor is labelled", facts.srcLabelled],
+    ["editor is keyboard-focusable", facts.srcFocused],
+  ];
+  for (const [name, ok] of checks) {
+    if (ok) passed += 1;
+    else {
+      failed += 1;
+      findings.push(`playground control a11y: ${name}`);
+    }
+  }
+  await page.close();
+}
+
 await browser.close();
 server.close();
 

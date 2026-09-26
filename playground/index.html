@@ -9,26 +9,51 @@
   <body>
     <header class="app-bar">
       <div class="brand">
-        <span class="brand-mark">λ</span>
+        <span class="brand-mark" aria-hidden="true">λ</span>
         <span class="brand-name">Aura Playground</span>
       </div>
-      <div class="version-picker">
-        <label for="version">Runtime</label>
-        <select id="version" aria-label="Aura runtime version"></select>
+      <div class="app-bar__actions">
+        <div class="version-picker">
+          <label for="version">Runtime</label>
+          <select id="version" aria-label="Aura runtime version"></select>
+        </div>
+        <div class="actions">
+          <button id="run" class="btn primary" type="button" title="Ctrl/Cmd + Enter">
+            Run <kbd>⌘⏎</kbd>
+          </button>
+          <button id="stop" class="btn" type="button" disabled>Stop</button>
+        </div>
       </div>
     </header>
 
-    <main class="layout">
-      <section class="pane editor-pane">
-        <div class="pane-head">
-          <h2>Source</h2>
-          <div class="actions">
-            <button id="run" class="btn primary" type="button">Run</button>
-            <button id="stop" class="btn" type="button" disabled>Stop</button>
+    <main class="workbench">
+      <aside class="explorer" aria-label="Explorer">
+        <div class="explorer__head">Explorer</div>
+        <nav class="explorer__group" aria-label="Examples">
+          <div class="explorer__label">Examples</div>
+          <ul id="examples" class="explorer__list"></ul>
+        </nav>
+      </aside>
+
+      <section class="editor-pane" aria-label="Editor">
+        <div class="editor-pane__tabs">
+          <span class="tab tab--active">main.aura</span>
+        </div>
+        <div id="editor" class="editor">
+          <pre id="gutter" class="editor__gutter" aria-hidden="true"></pre>
+          <div class="editor__scroll">
+            <pre id="highlight" class="editor__highlight" aria-hidden="true"></pre>
+            <textarea
+              id="source"
+              class="editor__input"
+              spellcheck="false"
+              autocomplete="off"
+              autocapitalize="off"
+              aria-label="Aura source"
+            ></textarea>
           </div>
         </div>
-        <textarea id="source" spellcheck="false" autocomplete="off" aria-label="Aura source"></textarea>
-        <div class="inputs">
+        <div class="editor-inputs">
           <div class="field">
             <label for="args">Arguments (one per line)</label>
             <textarea id="args" spellcheck="false" aria-label="Program arguments"></textarea>
@@ -40,16 +65,42 @@
         </div>
       </section>
 
-      <section class="pane output-pane">
-        <div class="pane-head">
-          <h2>Output</h2>
-          <span id="status" class="status" role="status" aria-live="polite">idle</span>
+      <section class="output-pane" aria-label="Output">
+        <div class="output-pane__tabs" role="tablist" aria-label="Output views">
+          <button
+            id="tab-output"
+            class="tab"
+            role="tab"
+            type="button"
+            aria-selected="true"
+            aria-controls="panel-output"
+          >
+            Output
+          </button>
+          <button
+            id="tab-problems"
+            class="tab"
+            role="tab"
+            type="button"
+            aria-selected="false"
+            aria-controls="panel-problems"
+          >
+            Problems<span id="problems-count" class="tab__count"></span>
+          </button>
         </div>
-        <pre id="stdout" class="stdout" aria-label="Standard output"></pre>
-        <div class="pane-head">
-          <h2>Diagnostics</h2>
+        <div id="panel-output" class="panel" role="tabpanel" aria-labelledby="tab-output">
+          <div class="panel__bar">
+            <span class="panel__label">stdout</span>
+            <span id="status" class="status" role="status" aria-live="polite">idle</span>
+          </div>
+          <pre id="stdout" class="stdout" aria-label="Standard output"></pre>
         </div>
-        <ul id="diagnostics" class="diagnostics" aria-label="Diagnostics"></ul>
+        <div id="panel-problems" class="panel" role="tabpanel" aria-labelledby="tab-problems" hidden>
+          <div class="panel__bar">
+            <span class="panel__label">Problems</span>
+          </div>
+          <ul id="diagnostics" class="diagnostics" aria-label="Problems"></ul>
+        </div>
         <div id="runtime-note" class="runtime-note" hidden></div>
       </section>
     </main>

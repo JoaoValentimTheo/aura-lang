@@ -3,7 +3,7 @@ import { site } from "../site.config.mjs";
 
 // The Playground page.
 //
-// It reuses the validated Gaiola 7 Playground engine unchanged: the same
+// It reuses the validated Playground engine unchanged: the same
 // `playground/web/app.js` controller, `playground/web/worker.js` Worker, and
 // `playground/web/runtime.mjs` loader. The build copies those assets and the
 // immutable `playground/runtimes` artifacts under `/playground/`, so the
@@ -31,25 +31,48 @@ export const playgroundPage = {
   <div class="container">
     ${callout(
       "info",
-      "<p>The selected <strong>runtime version</strong> is a real, immutable artifact with a recorded hash, not a label. The <strong>development runtime</strong> (<code>0.0.2-dev.5</code>) exercises the current language — struct methods, general unions, <code>a..b</code> ranges, and <code>&lt;!-- … --!&gt;</code> comments — while the published <code>0.0.2</code> release remains frozen and selectable. Filesystem, clock, and sleep are unavailable here and report <code>E5002</code>; standard input and arguments work.</p>",
+      "<p>The <strong>Runtime</strong> selector chooses a real, immutable artifact with a recorded hash, not a label. The <strong>development runtime</strong> (<code>0.0.2-dev.5</code>) exercises the current language — struct methods, general unions, <code>a..b</code> ranges, and <code>&lt;!-- … --!&gt;</code> comments — while the published <code>0.0.2</code> release remains frozen and selectable. Filesystem, clock, and sleep are unavailable here and report <code>E5002</code>; standard input and arguments work.</p>",
     )}
   </div>
 </section>
 
-<div class="container playground-shell" data-playground>
-  <section class="pg-pane" aria-label="Editor">
-    <div class="pg-pane__head">
-      <h2>Source</h2>
+<div class="container pg-workbench" data-playground>
+  <aside class="pg-explorer" aria-label="Explorer">
+    <div class="pg-pane__head"><h2>Explorer</h2></div>
+    <div class="pg-explorer__group" aria-label="Examples">
+      <div class="pg-explorer__label">Examples</div>
+      <ul id="examples" class="pg-explorer__list"></ul>
+    </div>
+  </aside>
+
+  <section class="pg-pane pg-pane--editor" aria-label="Editor">
+    <div class="pg-editor__tabs">
+      <span class="tab tab--active">main.aura</span>
       <div class="pg-actions">
-        <button id="run" class="btn btn--filled btn--small" type="button">Run</button>
+        <button id="run" class="btn btn--filled btn--small" type="button" title="Ctrl/Cmd + Enter">
+          Run
+        </button>
         <button id="stop" class="btn btn--outlined btn--small" type="button" disabled>Stop</button>
       </div>
     </div>
     <div class="pg-versions">
-      <label for="version" class="muted">Runtime</label>
+      <label for="version">Runtime</label>
       <select id="version" aria-label="Aura runtime version"></select>
     </div>
-    <textarea id="source" class="pg-editor" spellcheck="false" autocomplete="off" aria-label="Aura source"></textarea>
+    <div id="editor" class="pg-editor-wrap">
+      <pre id="gutter" class="pg-editor__gutter" aria-hidden="true"></pre>
+      <div class="pg-editor__scroll">
+        <pre id="highlight" class="pg-editor__highlight" aria-hidden="true"></pre>
+        <textarea
+          id="source"
+          class="pg-editor__input"
+          spellcheck="false"
+          autocomplete="off"
+          autocapitalize="off"
+          aria-label="Aura source"
+        ></textarea>
+      </div>
+    </div>
     <div class="pg-inputs">
       <div class="pg-field">
         <label for="args">Arguments (one per line)</label>
@@ -62,14 +85,44 @@ export const playgroundPage = {
     </div>
   </section>
 
-  <section class="pg-pane" aria-label="Output">
-    <div class="pg-pane__head">
-      <h2>Output</h2>
+  <section class="pg-pane pg-pane--output" aria-label="Output">
+    <div class="pg-editor__tabs" role="tablist" aria-label="Output views">
+      <button
+        id="tab-output"
+        class="tab"
+        role="tab"
+        type="button"
+        aria-selected="true"
+        aria-controls="panel-output"
+      >
+        Output
+      </button>
+      <button
+        id="tab-problems"
+        class="tab"
+        role="tab"
+        type="button"
+        aria-selected="false"
+        aria-controls="panel-problems"
+      >
+        Problems<span id="problems-count" class="tab__count"></span>
+      </button>
+    </div>
+    <div class="pg-statusbar">
       <span id="status" class="status" role="status" aria-live="polite">idle</span>
     </div>
-    <pre id="stdout" class="pg-stdout" role="region" aria-label="Standard output"></pre>
-    <div class="pg-pane__head"><h2>Diagnostics</h2></div>
-    <ul id="diagnostics" class="pg-diagnostics" aria-label="Diagnostics"></ul>
+    <div id="panel-output" class="pg-panel" role="tabpanel" aria-labelledby="tab-output">
+      <pre id="stdout" class="pg-stdout" role="region" aria-label="Standard output"></pre>
+    </div>
+    <div
+      id="panel-problems"
+      class="pg-panel"
+      role="tabpanel"
+      aria-labelledby="tab-problems"
+      hidden
+    >
+      <ul id="diagnostics" class="pg-diagnostics" aria-label="Problems"></ul>
+    </div>
     <div id="runtime-note" class="pg-note" hidden></div>
   </section>
 </div>

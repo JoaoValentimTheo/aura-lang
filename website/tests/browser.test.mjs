@@ -316,6 +316,62 @@ function check(name, cond, detail) {
     options.some((o) => o.value === "0.0.2-dev.5" && !o.disabled),
   );
 
+  // --- redesigned IDE affordances -------------------------------------------
+  // The editor paints highlighting and line numbers behind the (transparent)
+  // textarea, so the textarea itself must still be the source of truth.
+  await page.fill("#source", "fn main() {\n print(1 + 2)\n}");
+  const editorView = await page.evaluate(() => ({
+    highlight: document.getElementById("highlight")?.textContent || "",
+    gutter: document.getElementById("gutter")?.textContent || "",
+    value: document.getElementById("source").value,
+  }));
+  check(
+    "editor highlights the source",
+    editorView.highlight.includes("fn main()"),
+    JSON.stringify(editorView.highlight),
+  );
+  check("editor shows line numbers", editorView.gutter.startsWith("1\n2\n3"), JSON.stringify(editorView.gutter));
+
+  // Ctrl/Cmd + Enter runs from the editor.
+  await page.fill("#source", 'fn main() { print("kb") }');
+  await page.focus("#source");
+  await page.keyboard.press("ControlOrMeta+Enter");
+  await page.waitForFunction(() => {
+    const s = document.getElementById("status").textContent;
+    return s !== "running…" && !s.startsWith("running (");
+  });
+  let kbd = await page.evaluate(() => document.getElementById("stdout").textContent);
+  check("Ctrl/Cmd+Enter runs", kbd === "kb\n", JSON.stringify(kbd));
+
+  // A failing program populates the Problems tab with the real code and a
+  // clickable entry that moves the editor selection to the diagnostic line.
+  await page.fill("#source", 'fn main() {\n print(1 + "a")\n}');
+  await page.click("#run");
+  await page.waitForFunction(() => {
+    const s = document.getElementById("status").textContent;
+    return s !== "running…" && !s.startsWith("running (");
+  });
+  const problems = await page.evaluate(() => {
+    const tab = document.getElementById("tab-problems");
+    const items = [...document.querySelectorAll("#diagnostics .problem")];
+    return {
+      selected: tab?.getAttribute("aria-selected"),
+      count: document.getElementById("problems-count")?.textContent || "",
+      firstCode: items[0]?.querySelector(".diag-code")?.textContent || "",
+      hasClickableHead: !!items[0]?.querySelector(".problem__head"),
+    };
+  });
+  check(
+    "problems tab shows the diagnostic",
+    /E\d{4}/.test(problems.firstCode) && problems.hasClickableHead,
+    JSON.stringify(problems),
+  );
+
+  // Selecting an example loads it into the editor.
+  await page.click('#examples .explorer__item[data-example="methods"]');
+  const exLoaded = await page.inputValue("#source");
+  check("explorer example loads source", exLoaded.includes("impl User"), exLoaded.slice(0, 40));
+
   check("playground no page errors", errors.length === 0, errors.join("; "));
   await page.close();
 }

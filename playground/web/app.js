@@ -7,10 +7,13 @@
 //   * spawns a fresh Worker per run so execution is isolated from the UI thread;
 //   * terminates the Worker on Stop or completion (hard cancellation);
 //   * ignores stale messages by execution generation id;
-//   * renders the structured ExecutionResult.
+//   * renders the structured ExecutionResult as a developer-facing Output /
+//     Problems view.
 //
 // The version selector is real: the chosen entry's immutable artifact URL is
 // what the Worker fetches and executes.
+
+import { highlight } from "./highlight.js";
 
 const els = {
   version: document.getElementById("version"),
@@ -23,6 +26,16 @@ const els = {
   diagnostics: document.getElementById("diagnostics"),
   status: document.getElementById("status"),
   runtimeNote: document.getElementById("runtime-note"),
+  // Optional presentation elements (present in both shells; guarded anyway).
+  highlight: document.getElementById("highlight"),
+  gutter: document.getElementById("gutter"),
+  problemsCount: document.getElementById("problems-count"),
+  problemsTab: document.getElementById("tab-problems"),
+  outputTab: document.getElementById("tab-output"),
+  outputPanel: document.getElementById("panel-output"),
+  problemsPanel: document.getElementById("panel-problems"),
+  examples: document.getElementById("examples"),
+  editor: document.getElementById("editor"),
 };
 
 const DEFAULT_SOURCE = `fn main() {
@@ -33,6 +46,88 @@ const DEFAULT_SOURCE = `fn main() {
     print(evens.map((x) -> x * x))
 }
 `;
+
+// Small, valid examples that teach one idea each. They are shown in the
+// Explorer; selecting one replaces the current buffer (there is a single source
+// buffer — the Playground does not pretend to have a filesystem).
+const EXAMPLES = [
+  {
+    id: "hello",
+    title: "hello.aura",
+    source: `fn main() {
+    print("hello, Aura")
+}
+`,
+  },
+  {
+    id: "functions",
+    title: "functions.aura",
+    source: `fn fib(n) -> int {
+    if n < 2 { return n }
+    return fib(n - 1) + fib(n - 2)
+}
+
+fn main() {
+    print(f"fib(10) = {fib(10)}")
+}
+`,
+  },
+  {
+    id: "structs",
+    title: "structs.aura",
+    source: `struct Point { x: int, y: int }
+
+fn main() {
+    let p = Point { x: 3, y: 4 }
+    print(f"({p.x}, {p.y})")
+}
+`,
+  },
+  {
+    id: "methods",
+    title: "methods.aura",
+    source: `struct User { name: string, id: int }
+
+impl User {
+    fn greet(self) {
+        print("Hello " + self.name)
+    }
+    fn label(self) -> string {
+        return self.name + "#" + to_string(self.id)
+    }
+}
+
+fn main() {
+    let u = User { name: "Ada", id: 1 }
+    u.greet()
+    print(u.label())
+}
+`,
+  },
+  {
+    id: "composition",
+    title: "composition.aura",
+    source: `struct Engine { power: int }
+
+impl Engine {
+    fn describe(self) { return f"{self.power}hp" }
+}
+
+struct Car { engine: Engine, name: string }
+
+impl Car {
+    fn describe(self) {
+        return self.name + " (" + self.engine.describe() + ")"
+    }
+}
+
+fn main() {
+    let car = Car { engine: Engine { power: 120 }, name: "Aura GT" }
+    print(car.describe())
+}
+`,
+  },
+];
 
 // The ways a host site (the Aura website) can hand a selected example to the
 // Playground:
@@ -141,9 +236,172 @@ function setStatus(text, kind) {
   els.status.className = `status${kind ? ` ${kind}` : ""}`;
 }
 
+// ------------------------------------------------------------------ editor
+//
+// The editor is a transparent <textarea> layered over a highlighted <pre>.
+// The textarea remains the single source of truth (selection, undo/redo,
+// clipboard, and accessibility all behave normally); the layers below only
+// paint colour, line numbers, and the current-line band, and are aria-hidden.
+
+let sourceDirty = true;
+
+function refreshEditor() {
+  const text = els.source.value;
+  if (els.highlight) {
+    els.highlight.innerHTML = `${highlight(text)}\n`;
+  }
+  if (els.gutter) {
+    const lines = text.split("\n").length;
+    let g = "";
+    for (let i = 1; i <= lines; i += 1) g += `${i}\n`;
+    els.gutter.textContent = g;
+  }
+  syncEditorScroll();
+  paintCurrentLine();
+  sourceDirty = false;
+}
+
+function syncEditorScroll() {
+  if (!els.highlight || !els.editor) return;
+  const pre = els.highlight;
+  pre.scrollTop = els.source.scrollTop;
+  pre.scrollLeft = els.source.scrollLeft;
+  if (els.gutter) els.gutter.scrollTop = els.source.scrollTop;
+}
+
+/** The 1-based line the caret is on, derived from the textarea's selection. */
+function caretLine() {
+  const upToCaret = els.source.value.slice(0, els.source.selectionStart);
+  return upToCaret.split("\n").length;
+}
+
+function paintCurrentLine() {
+  if (!els.highlight) return;
+  const line = caretLine();
+  const height = els.source.scrollHeight;
+  const lineHeight = parseFloat(getComputedStyle(els.source).lineHeight) || 0;
+  const pad = parseFloat(getComputedStyle(els.source).paddingTop) || 0;
+  const top = pad + (line - 1) * lineHeight;
+  els.highlight.style.setProperty("--current-line-top", `${top}px`);
+  els.highlight.style.setProperty("--current-line-height", `${lineHeight}px`);
+  void height;
+}
+
+/** Select the whole line a diagnostic points at (1-based line/column). */
+function focusLine(line) {
+  if (!line || line < 1) return;
+  const lines = els.source.value.split("\n");
+  let start = 0;
+  for (let i = 0; i < line - 1 && i < lines.length; i += 1) start += lines[i].length + 1;
+  const end = start + (lines[line - 1] ? lines[line - 1].length : 0);
+  els.source.focus();
+  els.source.setSelectionRange(start, end);
+  // Bring the caret into view.
+  const lineHeight = parseFloat(getComputedStyle(els.source).lineHeight) || 0;
+  els.source.scrollTop = Math.max(0, (line - 3) * lineHeight);
+  paintCurrentLine();
+  syncEditorScroll();
+}
+
+function indentSelection(outdent) {
+  const ta = els.source;
+  const { selectionStart: s, selectionEnd: e, value } = ta;
+  const lineStart = value.lastIndexOf("\n", s - 1) + 1;
+  let lineEnd = value.indexOf("\n", e);
+  if (lineEnd === -1) lineEnd = value.length;
+  const block = value.slice(lineStart, lineEnd);
+  const lines = block.split("\n");
+  const unit = "    ";
+  const changed = lines
+    .map((l) => {
+      if (outdent) return l.startsWith(unit) ? l.slice(unit.length) : l.replace(/^ {1,4}/, "");
+      return unit + l;
+    })
+    .join("\n");
+  ta.setRangeText(changed, lineStart, lineEnd, "select");
+  refreshEditor();
+}
+
+function installEditor() {
+  els.source.addEventListener("input", () => {
+    sourceDirty = true;
+    refreshEditor();
+  });
+  els.source.addEventListener("scroll", syncEditorScroll);
+  els.source.addEventListener("keyup", () => {
+    paintCurrentLine();
+    syncEditorScroll();
+  });
+  els.source.addEventListener("click", () => {
+    paintCurrentLine();
+    syncEditorScroll();
+  });
+  els.source.addEventListener("keydown", (event) => {
+    // Ctrl/Cmd + Enter runs.
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      run();
+      return;
+    }
+    // Escape stops a running program.
+    if (event.key === "Escape" && currentRun) {
+      event.preventDefault();
+      stopCurrent("stopped");
+      return;
+    }
+    // Tab indents, Shift+Tab unindents.
+    if (event.key === "Tab") {
+      event.preventDefault();
+      indentSelection(event.shiftKey);
+    }
+  });
+  // Keep the highlight layer aligned when the window or pane resizes.
+  window.addEventListener("resize", syncEditorScroll);
+  if (sourceDirty) refreshEditor();
+}
+
+function mountExamples() {
+  if (!els.examples) return;
+  els.examples.replaceChildren();
+  for (const ex of EXAMPLES) {
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "explorer__item";
+    btn.textContent = ex.title;
+    btn.dataset.example = ex.id;
+    btn.addEventListener("click", () => {
+      els.source.value = ex.source;
+      for (const other of els.examples.querySelectorAll(".explorer__item")) {
+        other.removeAttribute("aria-current");
+      }
+      btn.setAttribute("aria-current", "true");
+      refreshEditor();
+      els.source.focus();
+    });
+    li.append(btn);
+    els.examples.append(li);
+  }
+}
+
+function showTab(which) {
+  const output = which === "output";
+  if (els.outputPanel) els.outputPanel.hidden = !output;
+  if (els.problemsPanel) els.problemsPanel.hidden = output;
+  if (els.outputTab) els.outputTab.setAttribute("aria-selected", String(output));
+  if (els.problemsTab) els.problemsTab.setAttribute("aria-selected", String(!output));
+}
+
+function setProblemsCount(n) {
+  if (els.problemsCount) els.problemsCount.textContent = n > 0 ? ` (${n})` : "";
+}
+
+// ------------------------------------------------------------------ run/stop
+
 function clearOutput() {
   els.stdout.textContent = "";
   els.diagnostics.replaceChildren();
+  setProblemsCount(0);
 }
 
 function showNote(text) {
@@ -156,26 +414,53 @@ function showNote(text) {
   els.runtimeNote.textContent = text;
 }
 
+// Aura's phase model groups diagnostics by authority; the Playground only
+// labels where a diagnostic came from, never changing its code or message.
+function phaseLabel(codeText) {
+  const n = parseInt(String(codeText).replace(/^E/, ""), 10);
+  if (Number.isNaN(n)) return "";
+  if (n >= 1000 && n < 2000) return "lex/parse";
+  if (n >= 2000 && n < 3000) return "check";
+  if (n >= 3000 && n < 4000) return "type";
+  if (n >= 4000 && n < 5000) return "runtime";
+  return "host";
+}
+
 function renderDiagnostics(diagnostics) {
   els.diagnostics.replaceChildren();
-  if (!diagnostics || diagnostics.length === 0) {
+  const list = diagnostics || [];
+  setProblemsCount(list.length);
+  if (list.length === 0) {
     const li = document.createElement("li");
     li.className = "empty";
-    li.textContent = "No diagnostics.";
+    li.textContent = "No problems.";
     els.diagnostics.append(li);
+    showTab("output");
     return;
   }
-  for (const d of diagnostics) {
+  showTab("problems");
+  for (const d of list) {
+    const codeText = d.code_text || `E${String(d.code).padStart(4, "0")}`;
     const li = document.createElement("li");
+    li.className = "problem";
+    const head = document.createElement("button");
+    head.type = "button";
+    head.className = "problem__head";
     const code = document.createElement("span");
     code.className = "diag-code";
-    code.textContent = d.code_text || `E${String(d.code).padStart(4, "0")}`;
+    code.textContent = codeText;
+    const phase = document.createElement("span");
+    phase.className = "diag-phase";
+    phase.textContent = phaseLabel(codeText);
     const loc = document.createElement("span");
     loc.className = "diag-loc";
-    loc.textContent = `  ${d.line}:${d.column}`;
+    loc.textContent = `${d.line}:${d.column}`;
+    head.append(code, loc, phase);
+    head.addEventListener("click", () => focusLine(d.line));
     const msg = document.createElement("div");
+    msg.className = "problem__msg";
     msg.textContent = d.message;
-    li.append(code, loc, msg);
+    li.append(head, msg);
     els.diagnostics.append(li);
   }
 }
@@ -207,10 +492,11 @@ async function loadManifest() {
     // identity and the language semantics it implements are shown alongside so
     // the three identities are never confused.
     const channel = v.channel === "development" ? "development" : "release";
-    const label = channel === "development" ? `Aura ${v.id} (development runtime)` : `Aura ${v.release_version || v.id}`;
-    option.textContent = v.available
-      ? `${label}  (language ${v.language_version})`
-      : `${label}  (unavailable)`;
+    const label =
+      channel === "development"
+        ? `Aura ${v.id} — development runtime`
+        : `Aura ${v.release_version || v.id} — release`;
+    option.textContent = v.available ? label : `${label} (unavailable)`;
     option.disabled = !v.available;
     els.version.append(option);
   }
@@ -266,9 +552,7 @@ function run() {
   const record = { runId, worker, stopped: false };
   currentRun = record;
 
-  const args = els.args.value
-    .split("\n")
-    .filter((l) => l.length > 0);
+  const args = els.args.value.split("\n").filter((l) => l.length > 0);
   const stdinRaw = els.stdin.value;
   const stdin = stdinRaw.length > 0 ? stdinRaw : null;
 
@@ -358,10 +642,17 @@ els.run.addEventListener("click", run);
 els.stop.addEventListener("click", () => stopCurrent("stopped"));
 els.version.addEventListener("change", onVersionChange);
 els.source.value = DEFAULT_SOURCE;
+mountExamples();
+installEditor();
+if (els.outputTab) els.outputTab.addEventListener("click", () => showTab("output"));
+if (els.problemsTab) els.problemsTab.addEventListener("click", () => showTab("problems"));
+showTab("output");
+
 // The initial program is the default one; a handoff from a host site's
 // "Run in Playground" link — carried by the navigation itself — replaces it,
 // along with the example's arguments/standard input, before any execution.
 applyHandoff();
+refreshEditor();
 
 // The Worker is the primary cancellation mechanism; terminate it if the page
 // itself is going away so nothing keeps running invisibly.

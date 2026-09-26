@@ -161,11 +161,14 @@ async function runAndWait(page, timeout = 15000) {
   );
   check("0.0.2 release selectable", options.some((o) => o.value === "0.0.2" && !o.disabled), JSON.stringify(options));
   check("0.0.1 present but unavailable", options.some((o) => o.value === "0.0.1" && o.disabled));
+  const release = options.find((o) => o.value === "0.0.2");
+  check("release is labelled release", release && /release/i.test(release.text), release && release.text);
   // The development runtime is present, selectable, and labelled as a
   // development runtime rather than a release.
   const dev = options.find((o) => o.value === "0.0.2-dev.5");
   check("development runtime selectable", dev && !dev.disabled, JSON.stringify(options));
   check("development runtime is labelled development", dev && /development/i.test(dev.text), dev && dev.text);
+  check("development is distinguished from release", dev && release && dev.text !== release.text);
 
   // Run against the published 0.0.2 release artifact: unchanged behavior.
   await page.selectOption("#version", "0.0.2");
@@ -298,6 +301,50 @@ async function runAndWait(page, timeout = 15000) {
   });
   check("standalone long stdout scrolls", metrics.scrollable, JSON.stringify(metrics));
   check("standalone long stdout reachable", metrics.atBottom, JSON.stringify(metrics));
+  await page.close();
+}
+
+// --- 9. IDE affordances: highlight, line numbers, keyboard, explorer --------
+{
+  const { page } = await newPage();
+  await page.fill("#source", "fn main() {\n print(1)\n}");
+  const view = await page.evaluate(() => ({
+    highlight: document.getElementById("highlight")?.textContent || "",
+    gutter: document.getElementById("gutter")?.textContent || "",
+    hasImplHighlight: document.getElementById("highlight")?.innerHTML.includes("tok-keyword"),
+  }));
+  check("standalone editor highlights keywords", view.hasImplHighlight, JSON.stringify(view.highlight));
+  check("standalone editor shows line numbers", view.gutter.startsWith("1\n2\n3"), JSON.stringify(view.gutter));
+
+  // Ctrl/Cmd + Enter runs.
+  await page.fill("#source", 'fn main() { print("kb") }');
+  await page.focus("#source");
+  await page.keyboard.press("ControlOrMeta+Enter");
+  await page.waitForFunction(() => {
+    const s = document.getElementById("status").textContent;
+    return s !== "running…" && !s.startsWith("running (");
+  });
+  const kbd = await page.evaluate(() => document.getElementById("stdout").textContent);
+  check("standalone Ctrl/Cmd+Enter runs", kbd === "kb\n", JSON.stringify(kbd));
+
+  // Problems tab shows the diagnostic and is clickable.
+  await page.fill("#source", 'fn main() {\n print(1 + "a")\n}');
+  await page.click("#run");
+  await page.waitForFunction(() => {
+    const s = document.getElementById("status").textContent;
+    return s !== "running…" && !s.startsWith("running (");
+  });
+  const problems = await page.evaluate(() => ({
+    code: document.querySelector("#diagnostics .diag-code")?.textContent || "",
+    clickable: !!document.querySelector("#diagnostics .problem__head"),
+  }));
+  check("standalone problems list shows a code", /E\d{4}/.test(problems.code), JSON.stringify(problems));
+  check("standalone problems are clickable", problems.clickable, JSON.stringify(problems));
+
+  // Explorer example loads source.
+  await page.click('#examples .explorer__item[data-example="methods"]');
+  const ex = await page.inputValue("#source");
+  check("standalone explorer loads example", ex.includes("impl User"), ex.slice(0, 40));
   await page.close();
 }
 

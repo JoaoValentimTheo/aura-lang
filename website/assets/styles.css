@@ -1183,16 +1183,17 @@ table.data tr:last-child td {
 }
 
 /* --------------------------------------------------------- playground */
-.playground-shell {
+.pg-workbench {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: 210px minmax(0, 1.1fr) minmax(0, 1fr);
   gap: var(--space-4);
   padding: var(--space-4) 0 var(--space-10);
-  min-height: 70vh;
-  align-items: start;
+  min-height: 72vh;
+  align-items: stretch;
 }
 
-.pg-pane {
+.pg-pane,
+.pg-explorer {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -1201,17 +1202,18 @@ table.data tr:last-child td {
   border-radius: var(--shape-lg);
   padding: var(--space-4);
   min-height: 0;
-  /* A definite height makes the pane's own scroll regions work: without it the
-     flex-basis percentages below resolve against the content, so long output
-     stretches the whole page instead of scrolling inside the pane. On very
-     short viewports we fall back to content height so nothing (editor, inputs,
-     Run) is clipped; the page scrolls instead. */
   height: min(78vh, 760px);
   overflow: hidden;
 }
 
+.pg-explorer {
+  padding: var(--space-3);
+  gap: var(--space-1);
+}
+
 @media (max-height: 560px) {
-  .pg-pane {
+  .pg-pane,
+  .pg-explorer {
     height: auto;
     min-height: 0;
     overflow: visible;
@@ -1238,9 +1240,83 @@ table.data tr:last-child td {
   color: var(--md-on-surface-variant);
 }
 
+.pg-explorer__group {
+  overflow: auto;
+}
+
+.pg-explorer__label {
+  font-size: var(--type-label-small);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--md-on-surface-variant);
+  padding: var(--space-2);
+}
+
+.pg-explorer__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .pg-actions {
   display: flex;
   gap: var(--space-2);
+}
+
+/* explorer items are buttons rendered by the controller */
+.pg-explorer__list .explorer__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: var(--type-body-medium);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--shape-sm);
+  background: transparent;
+  color: var(--md-on-surface);
+  cursor: pointer;
+}
+
+.pg-explorer__list .explorer__item:hover {
+  background: var(--md-surface-container-high);
+}
+
+.pg-explorer__list .explorer__item[aria-current="true"] {
+  background: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+}
+
+.pg-editor__tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.pg-editor__tabs .tab {
+  font: inherit;
+  font-size: var(--type-label-medium);
+  padding: var(--space-1) var(--space-3);
+  border: 0;
+  border-radius: var(--shape-sm);
+  background: var(--md-surface-container-high);
+  color: var(--md-on-surface-variant);
+  cursor: pointer;
+}
+
+.pg-editor__tabs .tab--active,
+.pg-editor__tabs .tab[aria-selected="true"] {
+  background: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+  font-weight: 650;
+}
+
+.pg-editor__tabs .tab__count {
+  opacity: 0.8;
 }
 
 .pg-field {
@@ -1265,19 +1341,80 @@ table.data tr:last-child td {
   color: var(--md-on-surface);
 }
 
-.pg-editor {
+/* Overlay editor: a transparent textarea over a highlighted <pre>. */
+.pg-editor-wrap {
   flex: 1;
+  display: grid;
+  grid-template-columns: auto 1fr;
   min-height: 280px;
-  resize: vertical;
-  font-family: var(--font-mono);
-  font-size: var(--type-body-medium);
-  line-height: 1.6;
-  padding: var(--space-3);
   border-radius: var(--shape-md);
   border: 1px solid var(--md-outline);
   background: var(--md-code-bg);
-  color: var(--md-on-surface);
+  overflow: hidden;
+}
+
+.pg-editor__gutter {
+  margin: 0;
+  padding: var(--space-3) var(--space-2) var(--space-3) var(--space-3);
+  overflow: hidden;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--type-body-medium);
+  line-height: 1.6;
+  color: var(--md-on-surface-variant);
+  border-right: 1px solid var(--md-outline-variant);
+  user-select: none;
+}
+
+.pg-editor__scroll {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.pg-editor__highlight,
+.pg-editor__input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-body-medium);
+  line-height: 1.6;
   tab-size: 4;
+  white-space: pre;
+  overflow: auto;
+  border: 0;
+}
+
+.pg-editor__highlight {
+  pointer-events: none;
+  color: var(--md-on-surface);
+  background: transparent;
+  z-index: 0;
+}
+
+.pg-editor__highlight::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--current-line-top, -9999px);
+  height: var(--current-line-height, 0);
+  background: color-mix(in srgb, var(--md-primary) 10%, transparent);
+  pointer-events: none;
+}
+
+.pg-editor__input {
+  resize: none;
+  color: transparent;
+  caret-color: var(--md-primary);
+  background: transparent;
+  z-index: 1;
+}
+
+.pg-editor__input::selection {
+  background: color-mix(in srgb, var(--md-primary) 35%, transparent);
 }
 
 .pg-inputs {
@@ -1298,21 +1435,38 @@ table.data tr:last-child td {
   color: var(--md-on-surface);
 }
 
-.pg-status {
+.status {
   font-size: var(--type-label-medium);
   font-weight: 650;
   color: var(--md-on-surface-variant);
+  margin-left: auto;
 }
 
-.pg-status.ok {
+.pg-statusbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.status.ok {
   color: var(--md-success);
 }
-.pg-status.error {
+.status.error {
   color: var(--md-error);
 }
 
+.pg-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pg-panel[hidden] {
+  display: none;
+}
+
 .pg-stdout {
-  flex: 0 1 42%;
+  flex: 1;
   overflow: auto;
   margin: 0;
   padding: var(--space-3);
@@ -1338,16 +1492,39 @@ table.data tr:last-child td {
 }
 
 .pg-diagnostics li {
-  padding: var(--space-3);
   border-radius: var(--shape-md);
   background: var(--md-error-container);
   color: var(--md-on-error-container);
   font-size: var(--type-body-small);
+  overflow: hidden;
+}
+
+.pg-diagnostics .problem__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  font: inherit;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.pg-diagnostics .problem__head:hover {
+  background: color-mix(in srgb, var(--md-on-error-container) 8%, transparent);
+}
+
+.pg-diagnostics .problem__msg {
+  padding: 0 var(--space-3) var(--space-3);
 }
 
 .pg-diagnostics li.empty {
   background: var(--md-surface-container-high);
   color: var(--md-on-surface-variant);
+  padding: var(--space-3);
 }
 
 .pg-diagnostics .diag-code {
@@ -1360,11 +1537,19 @@ table.data tr:last-child td {
   opacity: 0.75;
 }
 
+.pg-diagnostics .diag-phase {
+  margin-left: auto;
+  font-size: var(--type-label-small);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.75;
+}
+
 .pg-note {
   padding: var(--space-3);
   border-radius: var(--shape-md);
-  background: var(--md-error-container);
-  color: var(--md-on-error-container);
+  background: var(--md-primary-container);
+  color: var(--md-on-primary-container);
   font-size: var(--type-body-small);
 }
 
@@ -1374,6 +1559,7 @@ table.data tr:last-child td {
   gap: var(--space-2);
   align-items: center;
 }
+
 
 /* ------------------------------------------------------ responsive */
 @media (max-width: 1024px) {
@@ -1402,7 +1588,7 @@ table.data tr:last-child td {
   .footer-grid {
     grid-template-columns: 1fr 1fr;
   }
-  .playground-shell {
+  .pg-workbench {
     grid-template-columns: 1fr;
   }
 }
