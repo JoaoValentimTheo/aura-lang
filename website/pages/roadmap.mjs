@@ -26,10 +26,28 @@ const PHASES = [
     body: "A <code>trait</code> names a set of method signatures a struct agrees to implement with <code>impl Trait for Struct</code>. Traits add no value type and no dynamic dispatch: calls resolve statically by nominal type. Available in the development runtime.",
   },
   {
-    tag: "Planned",
+    tag: "Delivered",
+    kind: "success",
+    title: "Language foundation · contract synchronized",
+    body: "The core contract was synchronised end to end: <code>const</code> as the canonical module constant, one explicit scope/binding matrix, the mutation-capability model (<code>let mut</code> / <code>mut self</code>), the bitwise operator family with compound assignments, a small f-string format mini-language, and uniform trailing commas.",
+  },
+  {
+    tag: "Delivered",
+    kind: "success",
+    title: "Shadowing · variable bindings",
+    body: "<code>let</code> and <code>let mut</code> always create a new binding and may shadow an existing one, including in the same scope. The initializer resolves against the previous binding, and <code>mut</code> belongs to the new binding. <code>const</code> is not shadowable.",
+  },
+  {
+    tag: "Delivered",
+    kind: "success",
+    title: "Foundation stability · CI and clean-room verified",
+    body: "A full validation, Break-the-Aura destruction pass, semantic-consistency audit, and PC ↔ Web symmetry gate, with CI, a clean-room build, and native/WASM differential all green. The foundation is frozen for feature development.",
+  },
+  {
+    tag: "Next",
     kind: "planned",
-    title: "Language maturation",
-    body: "Syntax refinement, semantic consistency, standard-library and API refinement, diagnostics, and parser/checker/runtime hardening. This is a deliberately slow cycle.",
+    title: "Method overloading",
+    body: "The first feature built on the frozen foundation. Overloading is designed against the existing nominal <code>impl</code>/<code>trait</code> model; it does not change bindings, scopes, or the mutation model.",
   },
   {
     tag: "Planned",
@@ -38,16 +56,10 @@ const PHASES = [
     body: "Conformance suites, differential testing, and fuzzing. The goal is confidence that the language behaves identically across every substrate.",
   },
   {
-    tag: "Planned",
+    tag: "Later",
     kind: "planned",
-    title: "Syntax freeze",
-    body: "Once the semantics are settled, the language surface is frozen so tools and documentation can stabilise.",
-  },
-  {
-    tag: "Future",
-    kind: "planned",
-    title: "Traits and generics",
-    body: "Abstraction and parameterisation build on the current OOP model of nominal structs and methods. Inheritance is not the direction: reuse stays composition-first.",
+    title: "Generics and trait bounds",
+    body: "Parameterisation builds on the current OOP model of nominal structs, methods, and traits. Inheritance is not the direction: reuse stays composition-first.",
   },
   {
     tag: "Long-term",
@@ -63,7 +75,7 @@ export const roadmapPage = {
   path: "roadmap/",
   activeKey: "roadmap",
   description:
-    "The Aura roadmap: delivered infrastructure, the 0.0.2 website and release, the language-maturation cycle, and long-term directions.",
+    "The Aura roadmap: delivered infrastructure, the 0.0.2 website and release, the delivered language foundation (OOP V1/V2, shadowing, stability), and the next features — method overloading, then generics.",
   async render(base) {
     const items = PHASES.map(
       (p) => `<div class="card card--elevated">
@@ -75,7 +87,7 @@ export const roadmapPage = {
     return `${pageHead({
       eyebrow: "Roadmap",
       title: "Where Aura is going",
-      lede: "Aura is built in deliberate stages. Infrastructure and portability come first; the language surface settles before any new paradigm is added.",
+      lede: "Aura is built in deliberate stages. Infrastructure and portability came first; the language foundation is now synchronized and frozen before the next feature is added.",
     })}
 <section class="section">
   <div class="container">
@@ -91,10 +103,12 @@ export const roadmapPage = {
       its reproducibility. Aura therefore prioritises a hardened runtime, a
       clean host boundary, verified WebAssembly execution, and versioned
       artifacts before it grows its syntax.</p>
-      <p>After 0.0.2, development slows — on purpose — into a maturation cycle
-      of syntax refinement, semantic consistency, diagnostics, and conformance
-      testing. OOP V1 (struct methods) is already delivered; further
-      object-model work (traits, generics) follows the maturation cycle.</p>
+      <p>After 0.0.2, development moved through a deliberate maturation
+      cycle — syntax refinement, semantic consistency, diagnostics, and
+      conformance testing — which is now complete. OOP V1 (struct methods) and
+      OOP V2 (traits) are delivered, and the language foundation (bindings,
+      scopes, mutation, operators, f-strings) is synchronized, stabilised, and
+      frozen. The next feature is method overloading; generics follow later.</p>
       <a class="eyebrow-link" href="${url("releases/", base)}">See releases →</a>
     </div>
   </div>

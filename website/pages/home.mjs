@@ -113,7 +113,7 @@ export const homePage = {
     </div>
     <div class="grid grid--2">
       ${feature("◆", "One spelling per construct", "Functions are <code>fn</code>; logic is <code>and</code>, <code>or</code>, <code>not</code>; absence is <code>none</code>. There is no <code>&&</code>, <code>null</code>, or <code>def</code> to trip over.")}
-      ${feature("◇", "Immutable by default", "<code>let</code> binds immutably; <code>let mut</code> opts into reassignment. Mutation is visible and intentional.")}
+      ${feature("◇", "Immutable by default", "<code>let</code> binds immutably; <code>let mut</code> opts into mutation, and a later <code>let</code> shadows. Mutation is visible and intentional.")}
       ${feature("▲", "Structured diagnostics", "Every rejection carries a stable <code>E####</code> code, grouped by phase: lexical, checking, type, runtime, capability. Codes are never reused.")}
       ${feature("▼", "One runtime, every substrate", "The same pipeline — <code>lex → parse → check → execute</code> — runs from the CLI, the REPL, the library, and the browser WASM runtime.")}
     </div>
@@ -229,7 +229,9 @@ fn main() {
           ["Cross-platform CI", "Implemented", "success"],
           ["WebAssembly runtime + Playground", "Released", "success"],
           ["Struct methods (OOP V1)", "Delivered", "success"],
-          ["Traits, generics, Python/PyO3", "Future", "planned"],
+          ["Traits, shadowing, language foundation", "Delivered", "success"],
+          ["Method overloading", "Next", "planned"],
+          ["Generics, modules, Python/PyO3", "Later", "planned"],
         ])}
       </div>
       <div>
@@ -278,10 +280,10 @@ fn main() {
         ["0.0.1", "Scripting I/O, language core, native runtime", chip("Released", "success")],
         ["0.0.2", "WebAssembly, host boundary, Playground, website", chip("Released", "success")],
         ["OOP V1", "Struct methods: <code>impl</code>, <code>self</code>, composition", chip("Delivered", "success")],
-        ["Maturation", "Syntax refinement, semantics, stdlib, diagnostics", chip("Planned", "planned")],
+        ["OOP V2 & foundation", "Traits, shadowing, mutation, operators, f-strings, stability", chip("Delivered", "success")],
+        ["Method overloading", "Overloads on the existing <code>impl</code>/<code>trait</code> model", chip("Next", "planned")],
         ["Hardening", "Conformance, differential testing, fuzzing", chip("Planned", "planned")],
-        ["Syntax freeze", "Lock the language surface", chip("Planned", "planned")],
-        ["Traits & generics", "Abstraction and parameterisation", chip("Future", "planned")],
+        ["Generics", "Abstraction and parameterisation", chip("Later", "planned")],
         ["Python / data", "PyO3 interop and the scientific ecosystem", chip("Long-term", "planned")],
       ],
     )}

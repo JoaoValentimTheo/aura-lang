@@ -33,7 +33,9 @@ export const languagePage = {
           functions; <code>and</code>/<code>or</code>/<code>not</code> for logic;
           <code>none</code> for absence.</li>
           <li><strong>Immutable by default.</strong> <code>let</code> binds
-          immutably; <code>let mut</code> opts into reassignment.</li>
+          immutably; <code>let mut</code> opts into mutation. A later
+          <code>let</code> shadows (a new binding), while <code>const</code> is
+          a non-shadowable module constant.</li>
           <li><strong>Expression-oriented.</strong> <code>if</code>,
           <code>match</code>, and blocks yield values.</li>
           <li><strong>Conservative checking.</strong> Reject only what can be
@@ -204,13 +206,17 @@ fn main() {
       ["Structs, enums, type aliases", "Implemented", "success"],
       ["Struct methods: impl, self, composition (OOP V1)", "Implemented", "success"],
       ["Traits: static behavioral contracts", "Implemented", "success"],
+      ["Bindings, shadowing, const, mutation capability", "Implemented", "success"],
+      ["Operators incl. bitwise and compound assignment", "Implemented", "success"],
+      ["f-strings with a format mini-language", "Implemented", "success"],
       ["Pattern matching and destructuring", "Implemented", "success"],
       ["Lists, maps, ranges, pipeline, methods", "Implemented", "success"],
       ["Errors: throw / try / catch / finally", "Implemented", "success"],
       ["Optional type annotations + conservative checker", "Implemented", "success"],
       ["Scripting I/O and arguments", "Implemented", "success"],
+      ["Method overloading", "Next", "planned"],
       ["Modules and visibility", "Reserved (inert syntax)", "planned"],
-      ["Generics and trait bounds", "Future", "planned"],
+      ["Generics and trait bounds", "Later", "planned"],
       ["Python / PyO3 interop", "Long-term", "planned"],
     ])}
     <div style="margin-top:var(--space-6)">

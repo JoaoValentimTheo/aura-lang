@@ -12,6 +12,15 @@ xs.push(4)          # append
 let last = xs.pop() # remove and return the last element
 ```
 
+Mutating a list — through index assignment, a mutating builtin such as `push`
+or `pop`, or a `mut self` method — requires the binding to be `mut`. This is
+the general mutation-capability rule, not a special case for `push`:
+
+```aura
+let ys = [1, 2]
+ys.push(3)          # E2001: ys is immutable
+```
+
 * Indexing uses an integer; negative indices count from the end. Out of range is
   `E4019`.
 * Equality is length- and element-wise.

@@ -4,6 +4,11 @@ Every builtin below is defined in the shared signature registry
 (`src/stdlib/signatures.rs`) that both the checker and the runtime consult, so
 the two cannot disagree about arity or argument types.
 
+Some builtins mutate an argument in place (`push`, `pop`, `remove`). Under the
+general mutation-capability rule, mutating through a binding requires that
+binding to be `mut` (`E2001` otherwise); the registry marks which builtins
+mutate, so this is one rule rather than a per-function special case.
+
 ## Core functions
 
 | Function | Signature | Returns |
