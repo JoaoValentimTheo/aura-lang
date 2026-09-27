@@ -2756,6 +2756,22 @@ impl Checker {
         match e {
             Expr::Lit(_, _) => {}
             Expr::Name(name, span) => {
+                // A bare reference to an *overloaded* function carries no
+                // argument types, so there is no way to pick an overload. This
+                // is deferred (`LANGUAGE_SPEC.md` §15.7): referencing an
+                // overloaded name as a value is rejected deterministically
+                // rather than silently binding the first overload.
+                if let Some(set) = self.functions.get(name) {
+                    if set.len() > 1 && self.resolves_to_user_function(name) {
+                        return Err(Diag::new(
+                            codes::TYPE_MISMATCH,
+                            format!(
+                                "`{name}` is an overloaded function and cannot be used as a value; call it or bind a single-overload function"
+                            ),
+                            *span,
+                        ));
+                    }
+                }
                 if self.lookup(name).is_none() {
                     return Err(Diag::new(
                         codes::UNDEFINED,

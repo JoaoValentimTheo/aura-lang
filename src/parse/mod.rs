@@ -2025,7 +2025,10 @@ impl Parser {
 /// * `lhs |> f(a, b)`  -> `f(lhs, a, b)`
 /// * `lhs |> r.m(a)`   -> `r.m(lhs, a)`
 ///
-/// Any other right-hand side is a callable value, so it becomes `rhs(lhs)`.
+/// A bare name on the right is `f(lhs)`: desugaring it to a call (rather than
+/// keeping it a function value) is what lets a piped value resolve an
+/// overloaded function by its type (`LANGUAGE_SPEC.md` §23). Any other
+/// right-hand side is a callable value, so it becomes `rhs(lhs)`.
 fn desugar_pipe(lhs: Expr, rhs: Expr, span: Span) -> Expr {
     match rhs {
         Expr::Call(callee, mut args, cspan) => {
@@ -2050,6 +2053,14 @@ fn desugar_pipe(lhs: Expr, rhs: Expr, span: Span) -> Expr {
             );
             Expr::Method(recv, name, args, mspan)
         }
+        Expr::Name(..) => Expr::Call(
+            Box::new(rhs),
+            vec![Arg {
+                name: None,
+                value: lhs,
+            }],
+            span,
+        ),
         other => Expr::Pipe(Box::new(lhs), Box::new(other), span),
     }
 }
