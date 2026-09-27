@@ -1142,7 +1142,9 @@ impl Parser {
                 let body = self.block()?;
                 self.expect(&Tok::Catch)?;
                 let catch = self.ident("catch binding")?;
-                self.expect(&Tok::Arrow)?;
+                // The catch binding is followed directly by its block:
+                // `catch e { ... }`. There is no `->` here (`LANGUAGE_SPEC.md`
+                // §14.5).
                 let catch_body = self.block()?;
                 let finally = if self.eat(&Tok::Finally) {
                     Some(self.block()?)

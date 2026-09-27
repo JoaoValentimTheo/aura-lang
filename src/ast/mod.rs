@@ -420,7 +420,7 @@ pub enum Stmt {
     Loop(Vec<Stmt>, Span),
     /// `for pat in iter { body }`.
     For(Pattern, Expr, Vec<Stmt>, Span),
-    /// `try { } catch e -> { } finally { }`.
+    /// `try { } catch e { } finally { }`.
     Try {
         /// Try body.
         body: Vec<Stmt>,
