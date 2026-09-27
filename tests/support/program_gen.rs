@@ -187,7 +187,7 @@ fn bool_expr(rng: &mut Rng, vars: &[Var]) -> String {
 }
 
 fn gen_stmt(rng: &mut Rng, vars: &mut Vec<Var>, out: &mut String, depth: usize) {
-    let choice = rng.below(12);
+    let choice = rng.below(14);
     match choice {
         0 => {
             let name = format!("i{}", vars.len());
@@ -242,16 +242,50 @@ fn gen_stmt(rng: &mut Rng, vars: &mut Vec<Var>, out: &mut String, depth: usize) 
         }
         8 => {
             // Aliasing / cycle construction, then a cycle-safe observation.
+            // The cases below deliberately build **shared subgraphs with
+            // fan-out >= 2** (`push(c, c)` twice, `[c, c]`, `x = [x, x]`), the
+            // exact shape AUDIT-4 showed depth-only cycle detection does not
+            // bound: cycle detection != work-bounded traversal. Ordinary
+            // single-cycle cases alone do not exercise combinatorial
+            // re-traversal, so they are not sufficient coverage here.
             if let Some(Var::AnyList(n)) =
                 vars.iter().find(|v| matches!(v, Var::AnyList(_))).cloned()
             {
-                match rng.below(3) {
+                match rng.below(6) {
+                    // Single self-cycle (terminates trivially).
                     0 => out.push_str(&format!("    push({n}, {n})\n")),
                     1 => out.push_str(&format!("    push({n}, {})\n", rng.below(9))),
-                    _ => {
+                    // Fan-out 2: the cycle is reachable from two positions.
+                    2 => {
                         out.push_str(&format!("    push({n}, {n})\n"));
-                        out.push_str(&format!("    print({n} == {n})\n"));
+                        out.push_str(&format!("    push({n}, {n})\n"));
+                        out.push_str(&format!("    print(len(to_string({n})))\n"));
+                    }
+                    3 => {
+                        out.push_str(&format!("    push({n}, {n})\n"));
+                        out.push_str(&format!("    push({n}, {n})\n"));
                         out.push_str(&format!("    print(len(json_encode({n})))\n"));
+                    }
+                    // A shared DAG: an inner reference duplicated in an outer
+                    // list, so the same subgraph is traversed twice.
+                    4 => {
+                        out.push_str(&format!("    push({n}, {n})\n"));
+                        let m = format!("m{}", vars.len());
+                        out.push_str(&format!("    let {m} = [{n}, {n}]\n"));
+                        out.push_str(&format!("    print(len(to_string({m})))\n"));
+                        out.push_str(&format!("    print(len(json_encode({m})))\n"));
+                    }
+                    // Deep fan-out amplification: `x = [x, x]` repeated.
+                    _ => {
+                        let g = format!("g{}", vars.len());
+                        out.push_str(&format!("    let mut {g} = {n}\n"));
+                        let reps = 1 + rng.below(4);
+                        for _ in 0..reps {
+                            out.push_str(&format!("    {g} = [{g}, {g}]\n"));
+                        }
+                        out.push_str(&format!("    print(len(to_string({g})))\n"));
+                        out.push_str(&format!("    print(len(json_encode({g})))\n"));
+                        out.push_str(&format!("    print({n} == {n})\n"));
                     }
                 }
             } else {
@@ -302,11 +336,25 @@ fn gen_stmt(rng: &mut Rng, vars: &mut Vec<Var>, out: &mut String, depth: usize) 
     }
 }
 
-/// The canonical seed corpus for the generated-program layer: a handful of
-/// fixed seeds whose programs are also committed as permanent corpus fixtures.
+/// The canonical seed corpus for the generated-program layer: a fixed set of
+/// seeds whose programs are committed as permanent corpus fixtures.
+///
+/// The first twelve seeds (`0..12`) are the original spread chosen so the
+/// corpus covers each statement kind at least once. The remaining seeds are
+/// **curated for the shared-subgraph / fan-out surface** AUDIT-4 exposed:
+/// seeds whose generated program builds a cycle with reference fan-out >= 2
+/// (`push(c, c)` twice, `x = [x, x]`, or a duplicated inner reference) and
+/// observes it through display, JSON, and equality. A generator that only ever
+/// produced simple single cycles was what let AUDIT-4's combinatorial
+/// re-traversal escape the earlier fuzzing round, so those shapes are pinned
+/// in the committed corpus rather than left to chance.
 #[must_use]
 pub fn seed_corpus() -> Vec<(u64, String)> {
-    // A spread of seeds chosen so the corpus covers each statement kind at
-    // least once. The exact programs are snapshotted into `tests/corpus/`.
-    (0u64..12).map(|s| (s, generate(s))).collect()
+    const SEEDS: &[u64] = &[
+        // Original statement-kind spread.
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+        // Curated cycle / shared-fan-out coverage (AUDIT-4 surface).
+        14, 105, 123, 161, 264, 265, 398,
+    ];
+    SEEDS.iter().map(|&s| (s, generate(s))).collect()
 }

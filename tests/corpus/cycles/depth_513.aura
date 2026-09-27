@@ -1,0 +1,8 @@
+fn grow(xs, n) {
+ let mut cur = xs
+ let mut i = 0
+ while i < n { cur = [cur]
+ i = i + 1 }
+ return cur
+}
+fn main() { print(len(to_string(grow([1], 513)))) }

@@ -11,12 +11,15 @@ fn describe(c: Color) -> int { return match c { Red() -> 0
  Blue() -> 2 } }
 fn on_show<T: Show>(x: T) -> int { return x.show() }
 fn main() {
-    print(2)
-    let mut l0 = [17, 25, 32]
-    let mut i1 = on_show(Num { n: 4 })
-    for x in l0 { print(x) }
-    push(l0, 12)
-    print(len(l0))
+    for x in 0..3 { print(x) }
+    for x in 0..3 { print(x) }
+    if true {
+    let mut l0 = [44, 45, 13, 29]
+    } else {
+        print(9)
+    }
     print(1)
+    let k0 = Green()
+    let b1 = false
     print(0)
 }

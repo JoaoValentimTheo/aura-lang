@@ -11,8 +11,8 @@ fn describe(c: Color) -> int { return match c { Red() -> 0
  Blue() -> 2 } }
 fn on_show<T: Show>(x: T) -> int { return x.show() }
 fn main() {
-    for x in 0..3 { print(x) }
-    let p0 = Point { x: 46, y: 41 }
-    let p1 = Point { x: 24, y: 36 }
+    print(len([1, 2, 3]))
+    let mut c0 = []
+    push(c0, 0)
     print(0)
 }

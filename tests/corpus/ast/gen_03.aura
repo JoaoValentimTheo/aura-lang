@@ -11,21 +11,21 @@ fn describe(c: Color) -> int { return match c { Red() -> 0
  Blue() -> 2 } }
 fn on_show<T: Show>(x: T) -> int { return x.show() }
 fn main() {
-    let k0 = Blue()
-    print(2)
     print(1)
+    print((to_int("7") + 7))
+    let s0 = "abc".upper()
+    let k1 = Green()
+    for x in 0..3 { print(x) }
+    for x in 0..3 { print(x) }
+    let p2 = Point { x: 14, y: 42 }
+    let mut i3 = add(6, 1)
+    print(len([1, 2, 3]))
+    if s0 == "a" {
+    let mut c4 = []
     print(2)
-    print(2)
-    let mut i1 = abs(-3)
-    if i1 < 10 {
-    let b2 = true
-    let mut i3 = i1
     } else {
         print(9)
     }
-    let s2 = to_string(i1)
-    let b3 = false
-    let s4 = "abc".upper()
-    print(1)
+    for x in 0..3 { print(x) }
     print(0)
 }

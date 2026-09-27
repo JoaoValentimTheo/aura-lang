@@ -11,11 +11,17 @@ fn describe(c: Color) -> int { return match c { Red() -> 0
  Blue() -> 2 } }
 fn on_show<T: Show>(x: T) -> int { return x.show() }
 fn main() {
-    let p0 = Point { x: 36, y: 46 }
-    let b1 = true
-    let b2 = false
-    for x in 0..3 { print(x) }
-    print(3)
-    let mut c3 = []
+    print(1)
+    let mut l0 = [13]
+    let mut c1 = []
+    push(c1, c1)
+    push(c1, c1)
+    print(len(json_encode(c1)))
+    let mut i2 = len(c1)
+    let mut l3 = [11, 47, 33]
+    for x in l0 { print(x) }
+    print(len(c1))
+    let mut c4 = []
+    let b5 = (l3.contains(1) and true)
     print(0)
 }

@@ -1,0 +1,3 @@
+fn rec<T>(x: T, n: int) -> int { if n <= 0 { return 0 }
+ return rec(x, n - 1) }
+fn main() { print(rec(1, 513)) }

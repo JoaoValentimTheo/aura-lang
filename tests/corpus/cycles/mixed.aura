@@ -1,0 +1,8 @@
+struct N { xs: [int] }
+fn main() { let mut shared = []
+ push(shared, 1)
+ let n = N { xs: shared }
+ let mut m = { "k": n }
+ push(shared, m)
+ push(shared, shared)
+ print(len(to_string(shared))) }

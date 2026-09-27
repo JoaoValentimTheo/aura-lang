@@ -1,0 +1,8 @@
+struct A { xs: [int] }
+struct B { ys: [int] }
+fn main() { let mut shared = []
+ let a = A { xs: shared }
+ push(shared, 1)
+ let b = B { ys: shared }
+ push(shared, a)
+ print(len(to_string(b))) }

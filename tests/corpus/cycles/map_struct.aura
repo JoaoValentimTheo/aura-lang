@@ -1,0 +1,8 @@
+struct N { m: {string: int} }
+fn main() { let mut m = { "v": 1 }
+ let n = N { m: m }
+ let mut xs = []
+ push(xs, m)
+ push(xs, n)
+ push(xs, xs)
+ print(len(to_string(xs))) }

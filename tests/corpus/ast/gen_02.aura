@@ -11,15 +11,16 @@ fn describe(c: Color) -> int { return match c { Red() -> 0
  Blue() -> 2 } }
 fn on_show<T: Show>(x: T) -> int { return x.show() }
 fn main() {
-    let mut l0 = [49]
-    let mut l1 = [5, 39, 32]
-    let p2 = Point { x: 15, y: 47 }
-    let k3 = Green()
-    push(l0, 98)
-    print(len(l0))
-    let mut i4 = describe(k3)
-    push(l0, 89)
-    print(len(l0))
-    let mut c5 = []
+    print(to_int("7"))
+    let p0 = Point { x: 39, y: 32 }
+    print(add(5, 1))
+    let p1 = Point { x: 14, y: 20 }
+    let b2 = 1 < 2
+    let s3 = "a"
+    let mut c4 = []
+    push(c4, c4)
+    let m5 = [c4, c4]
+    print(len(to_string(m5)))
+    print(len(json_encode(m5)))
     print(0)
 }

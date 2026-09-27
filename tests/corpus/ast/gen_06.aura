@@ -11,8 +11,13 @@ fn describe(c: Color) -> int { return match c { Red() -> 0
  Blue() -> 2 } }
 fn on_show<T: Show>(x: T) -> int { return x.show() }
 fn main() {
-    print(2)
+    let p0 = Point { x: 15, y: 15 }
+    if 1 < 2 {
+    let mut i1 = (to_int("7") + 1)
     for x in 0..3 { print(x) }
-    print(2)
+    } else {
+        print(9)
+    }
+    for x in 0..3 { print(x) }
     print(0)
 }

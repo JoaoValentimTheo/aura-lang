@@ -1,0 +1,5 @@
+fn a(n) { if n <= 0 { return 0 }
+ return b(n - 1) }
+fn b(n) { if n <= 0 { return 1 }
+ return a(n - 1) }
+fn main() { print(a(513)) }

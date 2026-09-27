@@ -11,7 +11,7 @@ fn describe(c: Color) -> int { return match c { Red() -> 0
  Blue() -> 2 } }
 fn on_show<T: Show>(x: T) -> int { return x.show() }
 fn main() {
-    print((4 + 4))
-    let b0 = false
+    print(2)
+    let mut c0 = []
     print(0)
 }
