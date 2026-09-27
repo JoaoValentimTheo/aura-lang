@@ -359,13 +359,13 @@ impl Interp {
             Item::Struct { name, fields, .. } => {
                 self.structs.insert(
                     name.clone(),
-                    fields.iter().map(|(f, _)| f.clone()).collect(),
+                    fields.iter().map(|f| f.name.clone()).collect(),
                 );
             }
             Item::Enum { name, variants, .. } => {
-                for (tag, payload) in variants {
+                for v in variants {
                     self.variants
-                        .insert(tag.clone(), (name.clone(), payload.len()));
+                        .insert(v.tag.clone(), (name.clone(), v.payload.len()));
                 }
             }
             _ => {}
@@ -892,20 +892,21 @@ impl Interp {
 
     fn bind_pattern(&mut self, pat: &Pattern, value: &Value, env: &Env) -> Result<()> {
         match pat {
-            Pattern::Bind(n) => {
+            Pattern::Bind(n, _) => {
                 if n != "_" {
                     env.define(n.clone(), value.clone(), false);
                 }
                 Ok(())
             }
-            Pattern::List(ps) => match value {
+            Pattern::List(ps, span) => match value {
+                // `span` is the list pattern's span, used below.
                 Value::List(l) => {
                     let l = l.borrow();
                     if l.len() != ps.len() {
                         return Err(self.error(
                             codes::TYPE_MISMATCH,
                             "list pattern arity mismatch",
-                            Span::default(),
+                            *span,
                         ));
                     }
                     for (p, v) in ps.iter().zip(l.iter()) {
@@ -913,19 +914,16 @@ impl Interp {
                     }
                     Ok(())
                 }
-                _ => Err(self.error(
-                    codes::TYPE_MISMATCH,
-                    "pattern expects a list",
-                    Span::default(),
-                )),
+                _ => Err(self.error(codes::TYPE_MISMATCH, "pattern expects a list", *span)),
             },
-            Pattern::Variant(tag, ps) => match value {
+            Pattern::Variant(tag, ps, span) => match value {
+                // `span` is the variant pattern's span, used below.
                 Value::Variant(v) => {
                     if &v.tag != tag || v.payload.len() != ps.len() {
                         return Err(self.error(
                             codes::TYPE_MISMATCH,
                             "variant pattern mismatch",
-                            Span::default(),
+                            *span,
                         ));
                     }
                     for (p, val) in ps.iter().zip(v.payload.iter()) {
@@ -933,24 +931,20 @@ impl Interp {
                     }
                     Ok(())
                 }
-                _ => Err(self.error(
-                    codes::TYPE_MISMATCH,
-                    "pattern expects a variant",
-                    Span::default(),
-                )),
+                _ => Err(self.error(codes::TYPE_MISMATCH, "pattern expects a variant", *span)),
             },
             // A literal pattern binds nothing but MUST match (§19.3). `let`
             // rejects literal patterns at parse time, so this arm is reached
             // only through `for`/`match`; validating here keeps a literal
             // pattern in `for` assertive rather than a silent no-op.
-            Pattern::Int(_) | Pattern::Str(_) | Pattern::Bool(_) | Pattern::None => {
+            Pattern::Int(..) | Pattern::Str(..) | Pattern::Bool(..) | Pattern::None(_) => {
                 if self.match_pattern(pat, value) {
                     Ok(())
                 } else {
                     Err(self.error(
                         codes::TYPE_MISMATCH,
                         "literal pattern does not match the value",
-                        Span::default(),
+                        pat.span(),
                     ))
                 }
             }
@@ -959,12 +953,12 @@ impl Interp {
 
     fn match_pattern(&self, pat: &Pattern, value: &Value) -> bool {
         match pat {
-            Pattern::Bind(_) => true,
-            Pattern::Int(i) => matches!(value, Value::Int(n) if n == i),
-            Pattern::Str(s) => matches!(value, Value::Str(n) if &**n == s),
-            Pattern::Bool(b) => matches!(value, Value::Bool(n) if n == b),
-            Pattern::None => matches!(value, Value::None),
-            Pattern::List(ps) => match value {
+            Pattern::Bind(..) => true,
+            Pattern::Int(i, _) => matches!(value, Value::Int(n) if n == i),
+            Pattern::Str(s, _) => matches!(value, Value::Str(n) if &**n == s),
+            Pattern::Bool(b, _) => matches!(value, Value::Bool(n) if n == b),
+            Pattern::None(_) => matches!(value, Value::None),
+            Pattern::List(ps, _) => match value {
                 Value::List(l) => {
                     let l = l.borrow();
                     l.len() == ps.len()
@@ -975,7 +969,7 @@ impl Interp {
                 }
                 _ => false,
             },
-            Pattern::Variant(tag, ps) => match value {
+            Pattern::Variant(tag, ps, _) => match value {
                 Value::Variant(v) => {
                     &v.tag == tag
                         && v.payload.len() == ps.len()

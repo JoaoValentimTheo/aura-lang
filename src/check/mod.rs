@@ -634,21 +634,22 @@ impl Checker {
                         ));
                     }
                     self.type_kinds.insert(name.clone(), "enum".to_string());
-                    for (tag, _) in variants {
-                        if let Some(prev) = self.variants.get(tag) {
+                    for variant in variants {
+                        if let Some(prev) = self.variants.get(&variant.tag) {
                             return Err(Diag::new(
                                 codes::DUPLICATE_VARIANT,
                                 if prev == name {
-                                    format!("variant `{tag}` is declared more than once")
+                                    format!("variant `{}` is declared more than once", variant.tag)
                                 } else {
                                     format!(
-                                        "variant `{tag}` is already declared by enum `{prev}`; variant names must be unique across the program"
+                                        "variant `{}` is already declared by enum `{prev}`; variant names must be unique across the program",
+                                        variant.tag
                                     )
                                 },
-                                *span,
+                                variant.span,
                             ));
                         }
-                        self.variants.insert(tag.clone(), name.clone());
+                        self.variants.insert(variant.tag.clone(), name.clone());
                     }
                 }
                 Item::Alias { name, target, span } => {
@@ -668,37 +669,38 @@ impl Checker {
         // Validate every written type annotation now that all names are known.
         for item in &m.items {
             match item {
-                Item::Struct { name, fields, span } => {
+                Item::Struct { name, fields, .. } => {
                     let mut map = HashMap::new();
                     let mut order = Vec::new();
-                    for (fname, fty) in fields {
-                        if map.contains_key(fname) {
+                    for field in fields {
+                        if map.contains_key(&field.name) {
                             return Err(Diag::new(
                                 codes::DUPLICATE_FIELD,
                                 format!(
-                                    "field `{fname}` is declared more than once in struct `{name}`"
+                                    "field `{}` is declared more than once in struct `{name}`",
+                                    field.name
                                 ),
-                                *span,
+                                field.span,
                             ));
                         }
-                        let ty = self.annotation(fty, Span::default())?;
-                        map.insert(fname.clone(), ty);
-                        order.push(fname.clone());
+                        let ty = self.annotation(&field.ty, field.span)?;
+                        map.insert(field.name.clone(), ty);
+                        order.push(field.name.clone());
                     }
                     self.struct_fields.insert(name.clone(), map);
                     self.struct_field_order.insert(name.clone(), order);
                 }
                 Item::Enum { variants, .. } => {
-                    for (tag, payload) in variants {
-                        let mut tys = Vec::with_capacity(payload.len());
-                        for pty in payload {
-                            tys.push(self.annotation(pty, Span::default())?);
+                    for variant in variants {
+                        let mut tys = Vec::with_capacity(variant.payload.len());
+                        for pty in &variant.payload {
+                            tys.push(self.annotation(pty, variant.span)?);
                         }
-                        self.variant_payloads.insert(tag.clone(), tys);
+                        self.variant_payloads.insert(variant.tag.clone(), tys);
                     }
                 }
-                Item::Alias { target, .. } => {
-                    self.annotation(target, Span::default())?;
+                Item::Alias { target, span, .. } => {
+                    self.annotation(target, *span)?;
                 }
                 Item::Fn {
                     name, params, ret, ..
@@ -1507,7 +1509,7 @@ impl Checker {
     /// and a pattern never binds the same name twice.
     fn check_pattern(&self, pat: &Pattern) -> Result<()> {
         match pat {
-            Pattern::Variant(tag, ps) => {
+            Pattern::Variant(tag, ps, span) => {
                 // A variant pattern MUST name a declared runtime variant tag.
                 // A struct name, enum type name, or alias name is not a
                 // variant and must not be accepted: the runtime matches only
@@ -1517,14 +1519,14 @@ impl Checker {
                     return Err(Diag::new(
                         codes::UNKNOWN_TYPE,
                         format!("`{tag}` is not a declared enum variant"),
-                        Span::default(),
+                        *span,
                     ));
                 }
                 for p in ps {
                     self.check_pattern(p)?;
                 }
             }
-            Pattern::List(ps) => {
+            Pattern::List(ps, _) => {
                 for p in ps {
                     self.check_pattern(p)?;
                 }
@@ -1537,7 +1539,7 @@ impl Checker {
                 return Err(Diag::new(
                     codes::DUPLICATE_BINDING,
                     format!("`{b}` is bound more than once in the same pattern"),
-                    Span::default(),
+                    pat.span(),
                 ));
             }
             seen.push(b);

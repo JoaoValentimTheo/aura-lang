@@ -141,26 +141,67 @@ pub enum UnOp {
     BitNot,
 }
 
+/// A struct field declaration: a name, a type, and its source span.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FieldDecl {
+    /// Field name.
+    pub name: String,
+    /// Field type.
+    pub ty: TypeExpr,
+    /// Source span of the field declaration.
+    pub span: Span,
+}
+
+/// An enum variant declaration: a tag, its payload types, and its span.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VariantDecl {
+    /// Variant tag.
+    pub tag: String,
+    /// Payload types.
+    pub payload: Vec<TypeExpr>,
+    /// Source span of the variant declaration.
+    pub span: Span,
+}
+
 /// Match patterns.
+///
+/// Every pattern carries the source span of the text that produced it, so a
+/// diagnostic about a pattern (an unknown variant tag, a duplicate binding, an
+/// arity mismatch) points at the real location rather than the file start
+/// (`LANGUAGE_SPEC.md` §30.3).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Pattern {
     /// An integer literal.
-    Int(i64),
+    Int(i64, Span),
     /// A string literal.
-    Str(String),
+    Str(String, Span),
     /// A boolean literal.
-    Bool(bool),
+    Bool(bool, Span),
     /// `none`.
-    None,
+    None(Span),
     /// A binding name (lowercase) or `_`.
-    Bind(String),
+    Bind(String, Span),
     /// `[p, p, ...]`.
-    List(Vec<Pattern>),
+    List(Vec<Pattern>, Span),
     /// `Variant(p, ...)`.
-    Variant(String, Vec<Pattern>),
+    Variant(String, Vec<Pattern>, Span),
 }
 
 impl Pattern {
+    /// The source span of this pattern.
+    #[must_use]
+    pub fn span(&self) -> Span {
+        match self {
+            Pattern::Int(_, s)
+            | Pattern::Str(_, s)
+            | Pattern::Bool(_, s)
+            | Pattern::None(s)
+            | Pattern::Bind(_, s)
+            | Pattern::List(_, s)
+            | Pattern::Variant(_, _, s) => *s,
+        }
+    }
+
     /// Names this pattern binds.
     #[must_use]
     pub fn bindings(&self) -> Vec<String> {
@@ -171,8 +212,8 @@ impl Pattern {
 
     fn collect(&self, out: &mut Vec<String>) {
         match self {
-            Pattern::Bind(n) if n != "_" => out.push(n.clone()),
-            Pattern::List(ps) | Pattern::Variant(_, ps) => {
+            Pattern::Bind(n, _) if n != "_" => out.push(n.clone()),
+            Pattern::List(ps, _) | Pattern::Variant(_, ps, _) => {
                 for p in ps {
                     p.collect(out);
                 }
@@ -431,8 +472,8 @@ pub enum Item {
     Struct {
         /// Name.
         name: String,
-        /// Fields.
-        fields: Vec<(String, TypeExpr)>,
+        /// Fields, each with its source span.
+        fields: Vec<FieldDecl>,
         /// Span.
         span: Span,
     },
@@ -440,8 +481,8 @@ pub enum Item {
     Enum {
         /// Name.
         name: String,
-        /// Variants.
-        variants: Vec<(String, Vec<TypeExpr>)>,
+        /// Variants, each with its source span.
+        variants: Vec<VariantDecl>,
         /// Span.
         span: Span,
     },

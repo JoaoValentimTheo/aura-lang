@@ -805,10 +805,15 @@ impl Parser {
             if self.eat(&Tok::RBrace) {
                 break;
             }
+            let fspan = self.span();
             let fname = self.ident("field name")?;
             self.expect(&Tok::Colon)?;
             let fty = self.ty()?;
-            fields.push((fname, fty));
+            fields.push(FieldDecl {
+                name: fname,
+                ty: fty,
+                span: fspan,
+            });
             self.skip_newlines();
             if !self.eat(&Tok::Comma) {
                 self.skip_newlines();
@@ -830,6 +835,7 @@ impl Parser {
             if self.eat(&Tok::RBrace) {
                 break;
             }
+            let vspan = self.span();
             let vname = self.ident("variant name")?;
             let mut payload = Vec::new();
             if self.eat(&Tok::LParen) {
@@ -843,7 +849,11 @@ impl Parser {
                     }
                 }
             }
-            variants.push((vname, payload));
+            variants.push(VariantDecl {
+                tag: vname,
+                payload,
+                span: vspan,
+            });
             self.skip_newlines();
             if !self.eat(&Tok::Comma) {
                 self.skip_newlines();
@@ -1023,7 +1033,7 @@ impl Parser {
                 // `let x`, `let mut x`, and `let x: T` keep their exact
                 // behavior.
                 let pattern = self.let_pattern()?;
-                if let Pattern::Bind(name) = pattern {
+                if let Pattern::Bind(name, _) = pattern {
                     let ann = if self.eat(&Tok::Colon) {
                         Some(self.ty()?)
                     } else {
@@ -1206,11 +1216,11 @@ impl Parser {
                             }
                         }
                     }
-                    Ok(Pattern::Variant(n, ps))
+                    Ok(Pattern::Variant(n, ps, span))
                 } else if n.chars().next().is_some_and(char::is_uppercase) {
-                    Ok(Pattern::Variant(n, Vec::new()))
+                    Ok(Pattern::Variant(n, Vec::new(), span))
                 } else {
-                    Ok(Pattern::Bind(n))
+                    Ok(Pattern::Bind(n, span))
                 }
             }
             Tok::LBracket => {
@@ -1232,7 +1242,7 @@ impl Parser {
                         }
                     }
                 }
-                Ok(Pattern::List(parts))
+                Ok(Pattern::List(parts, span))
             }
             other => {
                 // Literal and `none` patterns are unsupported in `let` and
@@ -1281,32 +1291,32 @@ impl Parser {
                             }
                         }
                     }
-                    Ok(Pattern::Variant(n, ps))
+                    Ok(Pattern::Variant(n, ps, span))
                 } else if n.chars().next().is_some_and(char::is_uppercase) {
-                    Ok(Pattern::Variant(n, Vec::new()))
+                    Ok(Pattern::Variant(n, Vec::new(), span))
                 } else {
-                    Ok(Pattern::Bind(n))
+                    Ok(Pattern::Bind(n, span))
                 }
             }
             Tok::Int(v) => {
                 self.bump();
-                Ok(Pattern::Int(v))
+                Ok(Pattern::Int(v, span))
             }
             Tok::Str(s) => {
                 self.bump();
-                Ok(Pattern::Str(s))
+                Ok(Pattern::Str(s, span))
             }
             Tok::True => {
                 self.bump();
-                Ok(Pattern::Bool(true))
+                Ok(Pattern::Bool(true, span))
             }
             Tok::False => {
                 self.bump();
-                Ok(Pattern::Bool(false))
+                Ok(Pattern::Bool(false, span))
             }
             Tok::None => {
                 self.bump();
-                Ok(Pattern::None)
+                Ok(Pattern::None(span))
             }
             Tok::LBracket => {
                 self.bump();
@@ -1327,7 +1337,7 @@ impl Parser {
                         }
                     }
                 }
-                Ok(Pattern::List(parts))
+                Ok(Pattern::List(parts, span))
             }
             other => Err(Diag::new(
                 codes::EXPECTED,

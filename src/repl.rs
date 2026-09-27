@@ -323,11 +323,17 @@ fn declarations_of(item: &Item) -> Vec<GlobalDecl> {
         }],
         Item::Struct { name, fields, .. } => vec![GlobalDecl::Struct {
             name: name.clone(),
-            fields: fields.clone(),
+            fields: fields
+                .iter()
+                .map(|f| (f.name.clone(), f.ty.clone()))
+                .collect(),
         }],
         Item::Enum { name, variants, .. } => vec![GlobalDecl::Enum {
             name: name.clone(),
-            variants: variants.clone(),
+            variants: variants
+                .iter()
+                .map(|v| (v.tag.clone(), v.payload.clone()))
+                .collect(),
         }],
         Item::Alias { name, target, .. } => vec![GlobalDecl::Alias {
             name: name.clone(),
