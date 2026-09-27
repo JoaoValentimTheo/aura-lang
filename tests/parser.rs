@@ -127,7 +127,7 @@ fn fstring_parses_parts() {
     match e {
         Expr::FStr(parts, _) => {
             assert_eq!(parts.len(), 3);
-            assert!(matches!(parts[1], FPart::Expr(_)));
+            assert!(matches!(parts[1], FPart::Expr(_, _)));
         }
         other => panic!("unexpected {other:?}"),
     }
@@ -148,7 +148,7 @@ fn fstring_interpolation_spans_are_absolute() {
     let Expr::FStr(parts, _) = &args[0].value else {
         panic!("expected f-string");
     };
-    let FPart::Expr(Expr::Name(name, span)) = &parts[1] else {
+    let FPart::Expr(Expr::Name(name, span), _) = &parts[1] else {
         panic!("expected interpolation");
     };
     assert_eq!(name, "nope");
@@ -680,4 +680,12 @@ fn malformed_trait_members_are_rejected() {
         parse("trait T { fn a() }").map(|_| ()).map_err(|d| d.code),
         Err(codes::EXPECTED)
     );
+}
+
+#[test]
+fn zz_debug_mut_param() {
+    let m = parse("fn f(mut x) { return x }\nfn main() {}").expect("parse");
+    if let Item::Fn { params, .. } = &m.items[0] {
+        eprintln!("param mutable = {}", params[0].mutable);
+    }
 }

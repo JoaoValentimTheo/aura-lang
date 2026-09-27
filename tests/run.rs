@@ -273,12 +273,12 @@ fn main() {
 fn lists_maps_indexing() {
     let src = r#"
 fn main() {
-    let xs = [10, 20, 30]
+    let mut xs = [10, 20, 30]
     xs.push(40)
     print(xs[0])
     print(xs[-1])
     print(xs.len())
-    let m = {"k": 1}
+    let mut m = {"k": 1}
     m["j"] = 2
     print(m.get("j"))
     print(m.has("k"))

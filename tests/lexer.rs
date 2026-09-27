@@ -90,10 +90,10 @@ fn comments_are_skipped() {
 
 #[test]
 fn and_or_not_only() {
-    assert!(lex("a && b").is_err());
+    // `&&` and `||` are not single tokens; they lex as two `&`/`|` tokens and
+    // are rejected by the parser, never gaining an accidental meaning.
+    assert!(lex("a && b").is_ok());
     assert!(lex("!a").is_err());
-    // `|` is a valid token (type unions); `||` is therefore two tokens and
-    // is rejected later, by the parser.
     assert!(lex("a || b").is_ok());
 }
 
@@ -119,6 +119,27 @@ fn operators() {
             Tok::MinusEq,
             Tok::StarEq,
             Tok::SlashEq,
+            Tok::Eof
+        ]
+    );
+}
+
+#[test]
+fn bitwise_and_compound_tokens() {
+    assert_eq!(
+        toks("& | ~ << >> &= |= <<= >>= %= ^="),
+        vec![
+            Tok::Amp,
+            Tok::Bar,
+            Tok::Tilde,
+            Tok::Shl,
+            Tok::Shr,
+            Tok::AmpEq,
+            Tok::BarEq,
+            Tok::ShlEq,
+            Tok::ShrEq,
+            Tok::PercentEq,
+            Tok::CaretEq,
             Tok::Eof
         ]
     );

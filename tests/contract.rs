@@ -59,11 +59,12 @@ fn r3_no_synonyms() {
     // function. Either way, they do not declare anything.
     assert_eq!(code_of("def f() { }"), codes::UNDEFINED);
     assert_eq!(code_of("function f() { }"), codes::UNDEFINED);
-    // `&&` and `!` are rejected at the lexer. `||` is rejected because `|`
-    // is reserved for type unions, so it fails to parse as an operator.
+    // `!` is rejected at the lexer. `&&` and `||` have no operator meaning:
+    // they lex as two `&`/`|` tokens and fail to parse, so they never gain an
+    // accidental meaning.
     assert_eq!(
         code_of("fn main() { print(true && false) }"),
-        codes::INVALID_CHAR
+        codes::EXPECTED
     );
     assert_eq!(
         code_of("fn main() { print(true || false) }"),

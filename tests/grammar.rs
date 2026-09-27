@@ -85,7 +85,7 @@ const GRAMMAR_SAMPLES: &[&str] = &[
     "fn e20() { print(\"a\".split(\",\")) }",
     // struct methods (`impl`, explicit `self`) — §17.6
     "struct P { x: int }\nimpl P {\n fn get(self) { return self.x }\n}\nfn m() { print(P { x: 1 }.get()) }",
-    "struct P { x: int }\nimpl P {\n fn set(self, v: int) { self.x = v }\n fn get(self) -> int { return self.x }\n}\nfn m() { let p = P { x: 0 }\n p.set(2)\n print(p.get()) }",
+    "struct P { x: int }\nimpl P {\n fn set(mut self, v: int) { self.x = v }\n fn get(self) -> int { return self.x }\n}\nfn m() { let mut p = P { x: 0 }\n p.set(2)\n print(p.get()) }",
     // traits (`trait`, `impl Trait for Struct`) — §17.7
     "trait T { fn a(self) }\nstruct S { x: int }\nimpl T for S { fn a(self) { print(self.x) } }\nfn m() { S { x: 1 }.a() }",
     "trait T { fn a(self)\n fn b(self, k: int) -> int }\nstruct S { x: int }\nimpl T for S { fn a(self) { print(self.x) }\n fn b(self, k: int) -> int { return self.x + k } }\nfn m() { let s = S { x: 1 }\n s.a()\n print(s.b(2)) }",
@@ -113,7 +113,7 @@ fn grammar_samples_parse_and_run() {
 /// feature-disabled build (`E5002`) are covered by dedicated tests below.
 fn error_samples() -> Vec<(u16, String)> {
     let mut v: Vec<(u16, String)> = vec![
-        (codes::INVALID_CHAR, "fn main() { a && b }".to_string()),
+        (codes::INVALID_CHAR, "fn main() { !true }".to_string()),
         (
             codes::INVALID_NUMBER,
             "fn main() { print(1abc) }".to_string(),

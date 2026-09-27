@@ -42,9 +42,9 @@ fn method_mutation_is_observable() {
     let src = r#"
 struct Counter { n: int }
 impl Counter {
-    fn bump(self, by: int) { self.n = self.n + by }
+    fn bump(mut self, by: int) { self.n = self.n + by }
 }
-fn main() { let c = Counter { n: 0 }
+fn main() { let mut c = Counter { n: 0 }
     c.bump(3)
     c.bump(4)
     print(c.n) }
@@ -210,9 +210,9 @@ fn mutation_visible_through_shared_reference() {
     let src = r#"
 struct C { n: int }
 impl C {
-    fn set(self, v: int) { self.n = v }
+    fn set(mut self, v: int) { self.n = v }
 }
-fn main() { let a = C { n: 0 }
+fn main() { let mut a = C { n: 0 }
     let b = a
     a.set(9)
     print(b.n) }
@@ -332,7 +332,7 @@ fn unknown_receiver_user_method_resolves() {
     let src = r#"
 struct P { x: int }
 impl P {
-    fn set(self, v: int) { self.x = v }
+    fn set(mut self, v: int) { self.x = v }
     fn get(self) { return self.x }
 }
 fn f(p) { p.set(7)

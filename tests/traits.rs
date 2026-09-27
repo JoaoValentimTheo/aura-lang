@@ -71,16 +71,16 @@ fn main() { let b = Box { v: 3 }
 fn trait_method_reads_mutates_and_delegates() {
     let src = r#"
 trait Counter {
-    fn bump(self)
+    fn bump(mut self)
     fn value(self) -> int
 }
 struct C { n: int }
 impl C { fn base(self) -> int { return self.n } }
 impl Counter for C {
-    fn bump(self) { self.n = self.base() + 1 }
+    fn bump(mut self) { self.n = self.base() + 1 }
     fn value(self) -> int { return self.base() }
 }
-fn main() { let c = C { n: 0 }
+fn main() { let mut c = C { n: 0 }
     c.bump()
     c.bump()
     print(c.value()) }

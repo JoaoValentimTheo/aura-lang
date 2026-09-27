@@ -262,6 +262,44 @@ const cases = [
   ['shift rejected', 'fn main() { print(8 >> 1) }'],
   ['increment rejected', 'fn main() { let mut x = 1\n x++\n print(x) }'],
   ['caret is power', 'fn main() { print(2 ^ 10) }'],
+  // Bitwise operators and compound assignments.
+  ['bitwise and or', 'fn main() { print(6 & 3)\n print(6 | 1) }'],
+  ['bitwise not', 'fn main() { print(~0) }'],
+  ['shift', 'fn main() { print(1 << 4)\n print(256 >> 4) }'],
+  ['bitwise precedence', 'fn main() { print(1 | 2 & 3)\n print(1 << 2 + 1) }'],
+  ['shift out of range', 'fn main() { print(1 << 64) }'],
+  ['bitwise requires int', 'fn main() { print(1.0 & 2) }'],
+  ['compound bitwise assign', 'fn main() { let mut x = 6\n x |= 1\n x &= 3\n print(x) }'],
+  ['compound shift assign', 'fn main() { let mut x = 1\n x <<= 5\n x >>= 2\n print(x) }'],
+  // Mutation capability.
+  ['push immutable rejected', 'fn main() { let xs = [1]\n xs.push(2) }'],
+  ['push mutable allowed', 'fn main() { let mut xs = [1]\n xs.push(2)\n print(xs) }'],
+  ['index immutable rejected', 'fn main() { let xs = [1]\n xs[0] = 9 }'],
+  ['field immutable rejected', 'struct S { n: int }\nfn main() { let s = S { n: 0 }\n s.n = 1 }'],
+  [
+    'mut self required to mutate receiver',
+    'struct S { n: int }\nimpl S { fn bump(self) { self.n = self.n + 1 } }\nfn main() { let mut s = S { n: 0 }\n s.bump() }',
+  ],
+  [
+    'mut self with mutable receiver',
+    'struct S { n: int }\nimpl S { fn bump(mut self) { self.n = self.n + 1 } }\nfn main() { let mut s = S { n: 0 }\n s.bump()\n print(s.n) }',
+  ],
+  ['const mutation rejected', 'const XS = [1]\nfn main() { push(XS, 2) }'],
+  // f-string formatting.
+  ['fstring precision', 'fn main() { print(f"{3.14159:.2f}") }'],
+  ['fstring width align', "fn main() { print(f\"[{42:>6}]\\n[{'hi':<6}]\\n[{'hi':^6}]\") }"],
+  ['fstring zero pad', 'fn main() { print(f"{42:06d}") }'],
+  ['fstring sign', 'fn main() { print(f"{5:+}") }'],
+  ['fstring hex bin', 'fn main() { print(f"{255:x} {10:b} {10:o}") }'],
+  ['fstring percent exp', 'fn main() { print(f"{0.5:.1%} {1234.5:.2e}") }'],
+  ['fstring type mismatch', "fn main() { print(f\"{'s':d}\") }"],
+  ['fstring unknown type', 'fn main() { print(f"{5:z}") }'],
+  ['fstring escapes still', 'fn main() { print(f"{{x}} {1 + 1}") }'],
+  // Trailing comma uniformity.
+  [
+    'trailing comma everywhere',
+    'struct S { a: int, }\nenum E { A(int, int), }\nfn f(a, b,) { return a + b }\nfn main() { print([1, 2,])\n print({\"k\": 1,})\n print(f(1, 2,))\n print(S { a: 1, }.a)\n match A(1, 2,) { A(x, y) -> print(x + y) } }',
+  ],
   // Contextual `impl`/`self`: both stay ordinary identifiers outside a method
   // receiver / behavior-block context (§3.3).
   [

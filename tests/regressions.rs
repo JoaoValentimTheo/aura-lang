@@ -1205,39 +1205,41 @@ fn h2_08_first_class_builtin_arity_is_enforced() {
 #[test]
 fn bh1_01_cyclic_list_operations_do_not_crash() {
     // Display terminates (truncated) instead of aborting.
-    let shown = out("fn main() { let a = []\n a.push(a)\n print(a) }");
+    let shown = out("fn main() { let mut a = []\n a.push(a)\n print(a) }");
     assert!(shown.starts_with('['), "unexpected display: {shown}");
     // Reflexive equality holds; two structurally identical cycles are equal
     // under the coinductive reading (`LANGUAGE_SPEC.md` §31.6).
     assert_eq!(
-        out("fn main() { let a = []\n a.push(a)\n print(a == a) }"),
+        out("fn main() { let mut a = []\n a.push(a)\n print(a == a) }"),
         "true\n"
     );
     assert_eq!(
-        out("fn main() { let a = []\n a.push(a)\n let b = []\n b.push(b)\n print(a == b) }"),
+        out(
+            "fn main() { let mut a = []\n a.push(a)\n let mut b = []\n b.push(b)\n print(a == b) }"
+        ),
         "true\n"
     );
     // A differing element makes distinct cycles unequal.
     assert_eq!(
-        out("fn main() { let a = []\n a.push(a)\n a.push(1)\n let b = []\n b.push(b)\n b.push(2)\n print(a == b) }"),
+        out("fn main() { let mut a = []\n a.push(a)\n a.push(1)\n let mut b = []\n b.push(b)\n b.push(2)\n print(a == b) }"),
         "false\n"
     );
     // JSON encoding terminates.
-    let json = out("fn main() { let a = []\n a.push(a)\n print(json_encode(a)) }");
+    let json = out("fn main() { let mut a = []\n a.push(a)\n print(json_encode(a)) }");
     assert!(json.starts_with('['), "unexpected json: {json}");
 }
 
 /// BH1-02: a cyclic map and a cycle crossing list<->map must not crash.
 #[test]
 fn bh1_02_cyclic_map_operations_do_not_crash() {
-    let shown = out("fn main() { let m = {:}\n m[\"s\"] = m\n print(m) }");
+    let shown = out("fn main() { let mut m = {:}\n m[\"s\"] = m\n print(m) }");
     assert!(shown.starts_with('{'), "unexpected display: {shown}");
     assert_eq!(
-        out("fn main() { let m = {:}\n m[\"s\"] = m\n print(m == m) }"),
+        out("fn main() { let mut m = {:}\n m[\"s\"] = m\n print(m == m) }"),
         "true\n"
     );
     assert_eq!(
-        out("fn main() { let a = []\n let b = [a]\n a.push(b)\n print(a == a) }"),
+        out("fn main() { let mut a = []\n let b = [a]\n a.push(b)\n print(a == a) }"),
         "true\n"
     );
 }

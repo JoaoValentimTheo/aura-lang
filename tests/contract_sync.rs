@@ -155,6 +155,160 @@ fn constant_and_struct_names_are_separate_namespaces() {
     );
 }
 
+// -------------------------------------------------------------- bitwise ops
+
+/// The bitwise operators (`&`, `|`, `~`, `<<`, `>>`) operate on integers.
+#[test]
+fn bitwise_operators() {
+    assert_eq!(ok("fn main() { print(6 & 3) }"), "2\n");
+    assert_eq!(ok("fn main() { print(6 | 1) }"), "7\n");
+    assert_eq!(ok("fn main() { print(~0) }"), "-1\n");
+    assert_eq!(ok("fn main() { print(1 << 4) }"), "16\n");
+    assert_eq!(ok("fn main() { print(256 >> 4) }"), "16\n");
+}
+
+/// `&` binds tighter than `|`, and shift binds tighter than additive.
+#[test]
+fn bitwise_precedence() {
+    // `1 | (2 & 3)` == 3
+    assert_eq!(ok("fn main() { print(1 | 2 & 3) }"), "3\n");
+    // `1 << (2 + 1)` == 8, since shift is *looser* than additive here: the
+    // additive runs first. This mirrors Python's `<<`/`+` ordering.
+    assert_eq!(ok("fn main() { print(1 << 2 + 1) }"), "8\n");
+}
+
+/// `^` remains exponentiation, not XOR: Aura has no XOR operator.
+#[test]
+fn caret_is_power_not_xor() {
+    assert_eq!(ok("fn main() { print(2 ^ 10) }"), "1024\n");
+}
+
+/// Bitwise operators require integers.
+#[test]
+fn bitwise_requires_integers() {
+    assert_eq!(code("fn main() { print(1.0 & 2) }"), codes::TYPE_MISMATCH);
+    assert_eq!(code("fn main() { print(~true) }"), codes::TYPE_MISMATCH);
+}
+
+/// A shift count that is negative or too large is a runtime error, never a
+/// host panic.
+#[test]
+fn shift_count_is_checked() {
+    assert_eq!(code("fn main() { print(1 << -1) }"), codes::OVERFLOW);
+    assert_eq!(code("fn main() { print(1 << 64) }"), codes::OVERFLOW);
+}
+
+/// The bitwise and shift compound assignments exist alongside the arithmetic
+/// ones.
+#[test]
+fn compound_assignments() {
+    assert_eq!(ok("fn main() { let mut x = 6\n x |= 1\n print(x) }"), "7\n");
+    assert_eq!(ok("fn main() { let mut x = 6\n x &= 3\n print(x) }"), "2\n");
+    assert_eq!(
+        ok("fn main() { let mut x = 1\n x <<= 3\n print(x) }"),
+        "8\n"
+    );
+    assert_eq!(
+        ok("fn main() { let mut x = 16\n x >>= 2\n print(x) }"),
+        "4\n"
+    );
+    assert_eq!(ok("fn main() { let mut x = 7\n x %= 3\n print(x) }"), "1\n");
+    assert_eq!(ok("fn main() { let mut x = 2\n x ^= 3\n print(x) }"), "8\n");
+}
+
+/// `|` is contextual: a type-union separator in type position, bitwise OR in
+/// expression position.
+#[test]
+fn bar_is_union_in_types_and_or_in_expressions() {
+    assert_eq!(
+        ok("struct A { x: int }\nstruct B { y: int }\ntype U = A | B\nfn main() { let u: U = A { x: 1 }\n print(u.x) }"),
+        "1\n"
+    );
+    assert_eq!(ok("fn main() { print(1 | 2) }"), "3\n");
+}
+
+// ------------------------------------------------------- f-string formatting
+
+/// f-strings interpolate, escape braces, and support a small, orthogonal
+/// format mini-language.
+#[test]
+fn fstring_format_mini_language() {
+    // Interpolation and escapes (unchanged).
+    assert_eq!(ok("fn main() { let x = 5\n print(f\"v={x}\") }"), "v=5\n");
+    assert_eq!(
+        ok("fn main() { print(f\"{{literal}} {1 + 1}\") }"),
+        "{literal} 2\n"
+    );
+    // Precision.
+    assert_eq!(ok("fn main() { print(f\"{3.14159:.2f}\") }"), "3.14\n");
+    // Width, alignment, and fill.
+    assert_eq!(ok("fn main() { print(f\"[{42:>6}]\") }"), "[    42]\n");
+    assert_eq!(ok("fn main() { print(f\"[{'hi':<6}]\") }"), "[hi    ]\n");
+    assert_eq!(ok("fn main() { print(f\"[{'hi':^6}]\") }"), "[  hi  ]\n");
+    assert_eq!(ok("fn main() { print(f\"[{'hi':*>7}]\") }"), "[*****hi]\n");
+    // Zero padding.
+    assert_eq!(ok("fn main() { print(f\"{42:06d}\") }"), "000042\n");
+    // Sign.
+    assert_eq!(ok("fn main() { print(f\"{5:+}\") }"), "+5\n");
+    // Presentation types.
+    assert_eq!(ok("fn main() { print(f\"{255:x} {255:X}\") }"), "ff FF\n");
+    assert_eq!(ok("fn main() { print(f\"{10:b} {10:o}\") }"), "1010 12\n");
+    assert_eq!(ok("fn main() { print(f\"{0.5:.1%}\") }"), "50.0%\n");
+    assert_eq!(ok("fn main() { print(f\"{1234.5:.2e}\") }"), "1.23e3\n");
+    // Width and precision together.
+    assert_eq!(
+        ok("fn main() { print(f\"[{3.14159:10.2f}]\") }"),
+        "[      3.14]\n"
+    );
+}
+
+/// A format type that does not apply to the value is a type error, and an
+/// unknown format type is a parse error.
+#[test]
+fn fstring_format_diagnostics() {
+    assert_eq!(
+        code("fn main() { print(f\"{'s':d}\") }"),
+        codes::TYPE_MISMATCH
+    );
+    assert_eq!(code("fn main() { print(f\"{5:z}\") }"), codes::EXPECTED);
+}
+
+// --------------------------------------------- deliberately absent features
+
+/// Aura has no `++`/`--`: increment is an explicit assignment.
+#[test]
+fn increment_operators_are_absent() {
+    assert_eq!(code("fn main() { let mut x = 1\n x++ }"), codes::EXPECTED);
+    assert_eq!(code("fn main() { let mut x = 1\n ++x }"), codes::EXPECTED);
+}
+
+// ------------------------------------------------------------ trailing comma
+
+/// A trailing comma is accepted uniformly before every closing delimiter, so
+/// lists of any kind may be written and extended line by line.
+#[test]
+fn trailing_comma_is_uniform() {
+    assert_eq!(ok("fn main() { print([1, 2,]) }"), "[1, 2]\n");
+    assert_eq!(ok("fn main() { print({\"a\": 1,}) }"), "{\"a\": 1}\n");
+    assert_eq!(
+        ok("fn f(a, b,) { return a + b }\nfn main() { print(f(1, 2,)) }"),
+        "3\n"
+    );
+    assert_eq!(
+        ok("struct S { a: int, }\nfn main() { print(S { a: 1, }.a) }"),
+        "1\n"
+    );
+    assert_eq!(
+        ok("enum E { A(int, int), }\nfn main() { match A(1, 2,) { A(x, y) -> print(x + y) } }"),
+        "3\n"
+    );
+    // Layout across lines is allowed at a trailing comma.
+    assert_eq!(
+        ok("fn f(a, b) { return a + b }\nfn main() { print(f(\n 1,\n 2,\n)) }"),
+        "3\n"
+    );
+}
+
 /// Checker-level: `const` and top-level `let` occupy the same value namespace.
 #[test]
 fn const_and_let_share_the_value_namespace() {
