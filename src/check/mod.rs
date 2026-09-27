@@ -192,6 +192,8 @@ struct FnSig {
     /// the body mutable capability over the caller's value. Always `false`
     /// for a plain function.
     mut_receiver: bool,
+    /// The declaration's source span, for overload diagnostics.
+    span: Span,
 }
 
 /// A parameter's checker signature (name and declared type). Whether the
@@ -225,9 +227,11 @@ pub struct Checker {
     scopes: Vec<Scope>,
     /// Whether a `main` function was seen.
     pub has_main: bool,
-    /// Every top-level function (hoisted), by name, for call resolution and
-    /// static argument checking.
-    functions: HashMap<String, FnSig>,
+    /// Every top-level function (hoisted), by name, as an ordered **overload
+    /// set** (`LANGUAGE_SPEC.md` §15.7). Overload identity is the name plus the
+    /// ordered parameter types; the return type is not part of identity, so two
+    /// declarations with the same input types are a duplicate.
+    functions: HashMap<String, Vec<FnSig>>,
     /// Names of every top-level type (struct, enum, alias).
     types: HashMap<String, Span>,
     /// The kind of each user type: `struct`, `enum`, or `alias`.
@@ -236,10 +240,12 @@ pub struct Checker {
     struct_fields: HashMap<String, HashMap<String, Ty>>,
     /// Struct field names in declaration order, for positional construction.
     struct_field_order: HashMap<String, Vec<String>>,
-    /// Methods of each struct, by struct name. The method table is keyed by
-    /// the nominal struct type, so two structs may declare a method with the
-    /// same name without collision (`LANGUAGE_SPEC.md` §17.6).
-    struct_methods: HashMap<String, HashMap<String, FnSig>>,
+    /// Methods of each struct, by struct name, then by method name as an
+    /// ordered overload set. The method table is keyed by the nominal struct
+    /// type, so two structs may declare a method with the same name without
+    /// collision (`LANGUAGE_SPEC.md` §17.6). Overload identity is the method
+    /// name plus the ordered parameter types (the receiver included).
+    struct_methods: HashMap<String, HashMap<String, Vec<FnSig>>>,
     /// Structs that already have a behavior block. V1 permits one `impl`
     /// block per struct.
     impl_seen: HashMap<String, Span>,
@@ -384,14 +390,12 @@ impl Checker {
                                 .map(|t| Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t))),
                         })
                         .collect();
-                    c.functions.insert(
-                        name.clone(),
-                        FnSig {
-                            ret: ret_ty,
-                            params: param_tys,
-                            mut_receiver: false,
-                        },
-                    );
+                    c.functions.entry(name.clone()).or_default().push(FnSig {
+                        ret: ret_ty,
+                        params: param_tys,
+                        mut_receiver: false,
+                        span: Span::default(),
+                    });
                 }
                 GlobalDecl::Struct { name, .. } => {
                     c.scopes[0].declares.insert(name.clone(), Span::default());
@@ -476,12 +480,13 @@ impl Checker {
                                 ret: ret_ty,
                                 params: param_tys,
                                 mut_receiver: m.params.first().is_some_and(|p| p.mutable),
+                                span: Span::default(),
                             },
                         ));
                     }
                     let table = c.struct_methods.entry(target.clone()).or_default();
                     for (name, sig) in restored {
-                        table.insert(name, sig);
+                        table.entry(name).or_default().push(sig);
                     }
                     if trait_name.is_none() {
                         c.impl_seen.entry(target.clone()).or_default();
@@ -507,6 +512,7 @@ impl Checker {
                                 ret: ret_ty,
                                 params: param_tys,
                                 mut_receiver: m.params.first().is_some_and(|p| p.mutable),
+                                span: Span::default(),
                             },
                         ));
                     }
@@ -550,6 +556,15 @@ impl Checker {
     /// the checker agree with the runtime's declaration-then-initialize order.
     fn hoist(&mut self, m: &Module) -> Result<()> {
         let mut declared: HashMap<String, Span> = HashMap::new();
+        // Whether the value name first declared here is a function, so a later
+        // item may overload only another function, never a constant or binding
+        // (`LANGUAGE_SPEC.md` §15.7).
+        let mut declared_is_fn: HashMap<String, bool> = HashMap::new();
+        // For each name, the index of the first overload pushed by *this*
+        // module. `with_declarations` may already have restored overloads from
+        // earlier REPL submissions, and the annotation pass below must fill
+        // this module's signatures, not overwrite the restored ones.
+        let mut new_fn_base: HashMap<String, usize> = HashMap::new();
         for item in &m.items {
             match item {
                 Item::Fn {
@@ -559,20 +574,23 @@ impl Checker {
                     params,
                     ..
                 } => {
-                    // A value name already declared in this scope is `E2007`,
-                    // whether the previous declaration is in this module or
-                    // carried from an earlier REPL submission (§16.3, §29).
-                    // Types are a separate namespace, so `struct S` and
-                    // `fn S` may coexist as they do in a module.
-                    if declared.insert(name.clone(), *span).is_some()
-                        || self.session_value_names.contains_key(name)
-                    {
+                    // Overloading: several top-level functions may share a name
+                    // when their ordered parameter types differ. A name already
+                    // declared by a non-function (a constant or top-level
+                    // `let`), or carried from an earlier REPL submission as a
+                    // non-function, is `E2007`. Types are a separate namespace,
+                    // so `struct S` and `fn S` may coexist as in a module.
+                    let is_session = self.session_value_names.contains_key(name);
+                    let clash_non_fn = is_session && !self.functions.contains_key(name);
+                    if clash_non_fn || declared_is_fn.get(name).is_some_and(|&is_fn| !is_fn) {
                         return Err(Diag::new(
                             codes::REDECLARED,
                             format!("`{name}` is already declared in this scope"),
                             *span,
                         ));
                     }
+                    declared.entry(name.clone()).or_insert(*span);
+                    declared_is_fn.insert(name.clone(), true);
                     let ret_ty = ret.as_ref().map(Ty::from_expr_lenient);
                     // Parameter names are recorded now; parameter types are
                     // filled in by the annotation pass below, once every type
@@ -584,11 +602,14 @@ impl Checker {
                             ty: None,
                         })
                         .collect();
-                    self.functions.entry(name.clone()).or_insert(FnSig {
+                    self.functions.entry(name.clone()).or_default().push(FnSig {
                         ret: ret_ty,
                         params: param_sigs,
                         mut_receiver: false,
+                        span: *span,
                     });
+                    let base = self.functions.get(name).map_or(0, Vec::len) - 1;
+                    new_fn_base.entry(name.clone()).or_insert(base);
                     self.scopes[0].declares.entry(name.clone()).or_insert(*span);
                     self.scopes[0].vars.insert(name.clone(), false);
                 }
@@ -597,15 +618,15 @@ impl Checker {
                     // declaration (module or session) makes this `E2007`.
                     // `const NAME` and a top-level `let NAME` are the same
                     // declaration.
-                    if declared.insert(name.clone(), *span).is_some()
-                        || self.session_value_names.contains_key(name)
-                    {
+                    if declared.contains_key(name) || self.session_value_names.contains_key(name) {
                         return Err(Diag::new(
                             codes::REDECLARED,
                             format!("`{name}` is already declared in this scope"),
                             *span,
                         ));
                     }
+                    declared.insert(name.clone(), *span);
+                    declared_is_fn.insert(name.clone(), false);
                     self.scopes[0].declares.entry(name.clone()).or_insert(*span);
                     self.scopes[0].vars.insert(name.clone(), false);
                     let ord = self.const_order.len();
@@ -667,6 +688,10 @@ impl Checker {
             }
         }
         // Validate every written type annotation now that all names are known.
+        // `filled` tracks, per function name, how many of its hoisted overload
+        // signatures have been annotated, so the Nth declaration fills the Nth
+        // signature.
+        let mut filled: HashMap<String, usize> = HashMap::new();
         for item in &m.items {
             match item {
                 Item::Struct { name, fields, .. } => {
@@ -720,12 +745,40 @@ impl Checker {
                         Some(rt) => Some(self.annotation(rt, Span::default())?),
                         None => None,
                     };
-                    if let Some(sig) = self.functions.get_mut(name) {
-                        sig.ret = ret_ty;
-                        sig.params = param_tys;
+                    // `hoist` pushed one signature per declaration in source
+                    // order; fill this declaration's signature in the same
+                    // order so overloads are annotated positionally.
+                    if let Some(set) = self.functions.get_mut(name) {
+                        let base = *new_fn_base.get(name).unwrap_or(&0);
+                        let idx = *filled.entry(name.clone()).or_insert(base);
+                        if let Some(sig) = set.get_mut(idx) {
+                            sig.ret = ret_ty;
+                            sig.params = param_tys;
+                        }
+                        filled.insert(name.clone(), idx + 1);
                     }
                 }
                 _ => {}
+            }
+        }
+        // Overload identity is the name plus the ordered parameter types: two
+        // top-level functions that share a name AND a parameter-type list are a
+        // duplicate declaration (`E2007`), never two overloads
+        // (`LANGUAGE_SPEC.md` §15.7). The return type and `mut` are not part of
+        // identity.
+        for (name, set) in &self.functions {
+            for i in 0..set.len() {
+                for j in (i + 1)..set.len() {
+                    if Self::sig_identical(&set[i], &set[j]) {
+                        return Err(Diag::new(
+                            codes::REDECLARED,
+                            format!(
+                                "function `{name}` is already defined with the same parameter types"
+                            ),
+                            set[j].span,
+                        ));
+                    }
+                }
             }
         }
         // Behavior blocks last: field tables, trait tables, and method tables must
@@ -800,6 +853,7 @@ impl Checker {
                             ret: ret_ty,
                             params: param_tys,
                             mut_receiver: params.first().is_some_and(|p| p.mutable),
+                            span: *mspan,
                         },
                     ));
                 }
@@ -833,14 +887,13 @@ impl Checker {
                         ));
                     }
                 }
-                // Only an inherent block counts against the one-block-per-struct
-                // limit; every trait may be implemented once, in addition.
-                if trait_name.is_none() && self.impl_seen.insert(target.clone(), *span).is_some() {
-                    return Err(Diag::new(
-                        codes::REDECLARED,
-                        format!("`{target}` already has an `impl` block; V1 permits one"),
-                        *span,
-                    ));
+                // Multiple `impl` blocks for one struct are allowed: their
+                // methods merge into the struct's single method surface, and
+                // method overloading (`LANGUAGE_SPEC.md` §15.7) lets a later
+                // block add an overload. A method with an identity already
+                // present is rejected below as a duplicate.
+                if trait_name.is_none() {
+                    self.impl_seen.entry(target.clone()).or_default();
                 }
                 // Validate the trait, when this is a trait implementation.
                 if let Some(tname) = trait_name {
@@ -862,19 +915,23 @@ impl Checker {
                             *span,
                         ));
                     }
-                    // Every declared trait method must be implemented with a
-                    // compatible signature; a trait implementation may not add
-                    // methods beyond the contract.
+                    // Every declared trait method must be implemented exactly
+                    // once with a compatible signature; a trait implementation
+                    // may not add methods beyond the contract, and may not add
+                    // a *second* method with a trait method's name of a
+                    // different signature (`LANGUAGE_SPEC.md` §17.7).
                     for m_item in methods {
                         let Item::Fn {
                             name: mname,
+                            params,
+                            ret,
                             span: mspan,
                             ..
                         } = m_item
                         else {
                             continue;
                         };
-                        if !trait_sig.iter().any(|(n, _)| n == mname) {
+                        let Some((_, expected)) = trait_sig.iter().find(|(n, _)| n == mname) else {
                             return Err(Diag::new(
                                 codes::UNDEFINED,
                                 format!(
@@ -882,24 +939,22 @@ impl Checker {
                                 ),
                                 *mspan,
                             ));
-                        }
-                    }
-                    for (mname, expected) in &trait_sig {
-                        let Some(impl_item) = methods
+                        };
+                        // A trait method may be implemented only once.
+                        if methods
                             .iter()
-                            .find(|mi| matches!(mi, Item::Fn { name, .. } if name == mname))
-                        else {
+                            .filter(|mi| matches!(mi, Item::Fn { name, .. } if name == mname))
+                            .count()
+                            > 1
+                        {
                             return Err(Diag::new(
-                                codes::TRAIT_INCOMPLETE,
+                                codes::REDECLARED,
                                 format!(
-                                    "trait `{tname}` requires method `{mname}`, but `{target}` does not implement it"
+                                    "trait `{tname}` method `{mname}` is implemented more than once in `{target}`"
                                 ),
-                                *span,
+                                *mspan,
                             ));
-                        };
-                        let Item::Fn { params, ret, .. } = impl_item else {
-                            continue;
-                        };
+                        }
                         let mut param_tys = Vec::with_capacity(params.len());
                         for p in params {
                             let ty = match &p.ty {
@@ -919,12 +974,28 @@ impl Checker {
                             ret: ret_ty,
                             params: param_tys,
                             mut_receiver: params.first().is_some_and(|p| p.mutable),
+                            span: *mspan,
                         };
                         if !self.method_sigs_compatible(expected, &actual) {
                             return Err(Diag::new(
                                 codes::TYPE_MISMATCH,
                                 format!(
                                     "trait `{tname}` method `{mname}` has an incompatible signature in `{target}`"
+                                ),
+                                *mspan,
+                            ));
+                        }
+                    }
+                    // Every declared trait method must be present.
+                    for (mname, _) in &trait_sig {
+                        if !methods
+                            .iter()
+                            .any(|mi| matches!(mi, Item::Fn { name, .. } if name == mname))
+                        {
+                            return Err(Diag::new(
+                                codes::TRAIT_INCOMPLETE,
+                                format!(
+                                    "trait `{tname}` requires method `{mname}`, but `{target}` does not implement it"
                                 ),
                                 *span,
                             ));
@@ -943,22 +1014,6 @@ impl Checker {
                     else {
                         continue;
                     };
-                    if self
-                        .struct_methods
-                        .get(target)
-                        .is_some_and(|t| t.contains_key(name))
-                    {
-                        // Inherent vs trait, or two traits, providing the same
-                        // method name: one member namespace, so this is a
-                        // redefinition (`LANGUAGE_SPEC.md` §17.7).
-                        return Err(Diag::new(
-                            codes::REDECLARED,
-                            format!(
-                                "method `{name}` is already defined for `{target}`; trait and inherent methods share one namespace"
-                            ),
-                            *mspan,
-                        ));
-                    }
                     // A method name may not collide with a field of the same
                     // struct (§17.6): member lookup must stay unambiguous.
                     if self
@@ -988,17 +1043,35 @@ impl Checker {
                         None => None,
                     };
                     let mut_receiver = params.first().is_some_and(|p| p.mutable);
+                    let sig = FnSig {
+                        ret: ret_ty,
+                        params: param_tys,
+                        mut_receiver,
+                        span: *mspan,
+                    };
+                    // One member namespace: inherent and trait methods, and two
+                    // traits, share it. Overloading is allowed when the ordered
+                    // parameter types differ; the same identity is a duplicate
+                    // (`LANGUAGE_SPEC.md` §17.7).
+                    let duplicate = self.struct_methods.get(target).is_some_and(|t| {
+                        t.get(name)
+                            .is_some_and(|set| set.iter().any(|s| Self::sig_identical(s, &sig)))
+                    });
+                    if duplicate {
+                        return Err(Diag::new(
+                            codes::REDECLARED,
+                            format!(
+                                "method `{name}` is already defined for `{target}` with the same parameter types"
+                            ),
+                            *mspan,
+                        ));
+                    }
                     self.struct_methods
                         .entry(target.clone())
                         .or_default()
-                        .insert(
-                            name.clone(),
-                            FnSig {
-                                ret: ret_ty,
-                                params: param_tys,
-                                mut_receiver,
-                            },
-                        );
+                        .entry(name.clone())
+                        .or_default()
+                        .push(sig);
                 }
             }
         }
@@ -1035,14 +1108,15 @@ impl Checker {
             .insert(name.to_string(), Span::default());
         self.scopes[0].vars.insert(name.to_string(), false);
         if is_fn {
-            self.functions.insert(
-                name.to_string(),
-                FnSig {
+            let set = self.functions.entry(name.to_string()).or_default();
+            if set.is_empty() {
+                set.push(FnSig {
                     ret: None,
                     params: Vec::new(),
                     mut_receiver: false,
-                },
-            );
+                    span: Span::default(),
+                });
+            }
         }
     }
 
@@ -1208,6 +1282,155 @@ impl Checker {
     /// Evaluation order is not a concern here: the checker inspects types, not
     /// runtime values. The runtime binds values after evaluating them in
     /// source order (see `run::Interp::eval_call`).
+    ///
+    /// Resolve a call to a function overload set, returning the index of the
+    /// selected overload. Uses the shared selector
+    /// (`crate::types::resolve_overload`) so the checker and runtime agree.
+    ///
+    /// Arguments are mapped to each candidate's parameters: a positional
+    /// argument fills the next unfilled parameter; a named argument fills its
+    /// parameter by name. A candidate whose parameter names cannot accept the
+    /// argument names is not viable. Returns `None` when no candidate matches
+    /// or the call is ambiguous (the caller reports the diagnostic).
+    fn resolve_call_sig(&self, set: &[FnSig], args: &[Arg]) -> Option<usize> {
+        if args.iter().all(|a| a.name.is_none()) {
+            let candidates: Vec<crate::types::OverloadParams> = set
+                .iter()
+                .map(|s| s.params.iter().map(|p| p.ty.clone()).collect())
+                .collect();
+            let actual: Vec<Ty> = args.iter().map(|a| self.infer(&a.value)).collect();
+            return match crate::types::resolve_overload(&candidates, &actual) {
+                crate::types::OverloadResolution::Selected(i) => Some(i),
+                _ => None,
+            };
+        }
+        // Named arguments: map per candidate, then pick the most specific.
+        let mut best: Option<(usize, u32)> = None;
+        let mut tie = false;
+        for (index, sig) in set.iter().enumerate() {
+            let Some(actual) = self.map_args_to_params(&sig.params, args) else {
+                continue;
+            };
+            let score: u32 = sig
+                .params
+                .iter()
+                .zip(&actual)
+                .map(|(p, t)| match &p.ty {
+                    Some(e) if e == t => 2,
+                    Some(_) => 1,
+                    None => 0,
+                })
+                .sum();
+            match best {
+                Some((_, s)) if score < s => {}
+                Some((_, s)) if score == s => tie = true,
+                _ => {
+                    best = Some((index, score));
+                    tie = false;
+                }
+            }
+        }
+        match best {
+            Some((i, _)) if !tie => Some(i),
+            _ => None,
+        }
+    }
+
+    /// Map arguments to a candidate's parameters, returning the actual types in
+    /// parameter order, or `None` when the names/arity do not fit.
+    fn map_args_to_params(&self, params: &[ParamSig], args: &[Arg]) -> Option<Vec<Ty>> {
+        if args.len() != params.len() {
+            return None;
+        }
+        let mut slots: Vec<Option<Ty>> = vec![None; params.len()];
+        let mut next = 0usize;
+        for arg in args {
+            let idx = match &arg.name {
+                None => {
+                    while next < params.len() && slots[next].is_some() {
+                        next += 1;
+                    }
+                    if next >= params.len() {
+                        return None;
+                    }
+                    let i = next;
+                    next += 1;
+                    i
+                }
+                Some(n) => params.iter().position(|p| &p.name == n)?,
+            };
+            if slots[idx].is_some() {
+                return None;
+            }
+            slots[idx] = Some(self.infer(&arg.value));
+        }
+        slots.into_iter().collect()
+    }
+
+    /// A deterministic diagnostic for a call that no overload accepts, or that
+    /// is ambiguous. The argument types are listed so the report is
+    /// reproducible regardless of hash order.
+    fn no_overload_diag(&self, name: &str, set: &[FnSig], args: &[Arg], span: Span) -> Diag {
+        let actual = args
+            .iter()
+            .map(|a| match &a.name {
+                Some(n) => format!("{n}: {}", self.infer(&a.value).name()),
+                None => self.infer(&a.value).name().clone(),
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        // Re-run the shared selector to distinguish ambiguity from no-match.
+        let candidates: Vec<crate::types::OverloadParams> = set
+            .iter()
+            .map(|s| s.params.iter().map(|p| p.ty.clone()).collect())
+            .collect();
+        let actual_tys: Vec<Ty> = args.iter().map(|a| self.infer(&a.value)).collect();
+        let message = match crate::types::resolve_overload(&candidates, &actual_tys) {
+            crate::types::OverloadResolution::Ambiguous(tied) => format!(
+                "call to `{name}` is ambiguous: {} overloads accept ({actual})",
+                tied.len()
+            ),
+            _ => format!(
+                "no overload of `{name}` accepts ({actual}); {} candidate(s) declared",
+                set.len()
+            ),
+        };
+        Diag::new(codes::TYPE_MISMATCH, message, span)
+    }
+
+    /// The method analogue of [`Checker::no_overload_diag`]: a deterministic
+    /// diagnostic when no method overload accepts the arguments.
+    fn no_method_overload_diag(
+        &self,
+        struct_name: &str,
+        name: &str,
+        set: &[FnSig],
+        args: &[Arg],
+        span: Span,
+    ) -> Diag {
+        let actual = args
+            .iter()
+            .map(|a| self.infer(&a.value).name().clone())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let candidates: Vec<crate::types::OverloadParams> = set
+            .iter()
+            .map(|s| s.params[1..].iter().map(|p| p.ty.clone()).collect())
+            .collect();
+        let actual_tys: Vec<Ty> = args.iter().map(|a| self.infer(&a.value)).collect();
+        let message = match crate::types::resolve_overload(&candidates, &actual_tys) {
+            crate::types::OverloadResolution::Ambiguous(tied) => format!(
+                "call to `{struct_name}.{name}` is ambiguous: {} overloads accept ({actual})",
+                tied.len()
+            ),
+            _ => format!(
+                "no overload of `{struct_name}.{name}` accepts ({actual}); {} candidate(s) declared",
+                set.len()
+            ),
+        };
+        Diag::new(codes::TYPE_MISMATCH, message, span)
+    }
+
     fn check_user_call(&self, name: &str, sig: &FnSig, args: &[Arg], span: Span) -> Result<()> {
         // Map each declared parameter index to the argument index that fills
         // it, or `None` if it is missing.
@@ -1638,10 +1861,12 @@ impl Checker {
                 }
                 Ty::Unknown
             }
-            Expr::Call(f, _, _) => match f.as_ref() {
+            Expr::Call(f, args, _) => match f.as_ref() {
                 Expr::Name(name, _) => {
-                    if let Some(sig) = self.functions.get(name) {
-                        sig.ret.clone().unwrap_or(Ty::Unknown)
+                    if let Some(set) = self.functions.get(name) {
+                        self.resolve_call_sig(set, args).map_or(Ty::Unknown, |i| {
+                            set[i].ret.clone().unwrap_or(Ty::Unknown)
+                        })
                     } else if let Some(sig) = crate::stdlib::signatures::builtin(name) {
                         sig.returns.ty()
                     } else {
@@ -1650,10 +1875,12 @@ impl Checker {
                 }
                 _ => Ty::Unknown,
             },
-            Expr::Method(recv, name, _, _) => {
+            Expr::Method(recv, name, args, _) => {
                 if let Some(sname) = self.struct_name_of(&self.infer(recv)) {
-                    if let Some(sig) = self.method_sig(&sname, name) {
-                        return sig.ret.clone().unwrap_or(Ty::Unknown);
+                    if let Some(set) = self.method_set(&sname, name) {
+                        if let Some(i) = self.resolve_method_sig(set, args) {
+                            return set[i].ret.clone().unwrap_or(Ty::Unknown);
+                        }
                     }
                     return Ty::Unknown;
                 }
@@ -1754,9 +1981,24 @@ impl Checker {
         }
     }
 
-    /// The signature of a method on a struct, if declared.
-    fn method_sig(&self, struct_name: &str, method: &str) -> Option<&FnSig> {
+    /// The overload set of a method on a struct, if declared.
+    fn method_set(&self, struct_name: &str, method: &str) -> Option<&Vec<FnSig>> {
         self.struct_methods.get(struct_name)?.get(method)
+    }
+
+    /// Resolve a method overload by its non-receiver argument types. The
+    /// receiver is not part of the argument list; candidates are compared on
+    /// their parameters after the receiver.
+    fn resolve_method_sig(&self, set: &[FnSig], args: &[Arg]) -> Option<usize> {
+        let actual: Vec<Ty> = args.iter().map(|a| self.infer(&a.value)).collect();
+        let candidates: Vec<crate::types::OverloadParams> = set
+            .iter()
+            .map(|s| s.params[1..].iter().map(|p| p.ty.clone()).collect())
+            .collect();
+        match crate::types::resolve_overload(&candidates, &actual) {
+            crate::types::OverloadResolution::Selected(i) => Some(i),
+            _ => None,
+        }
     }
 
     /// Resolve the root binding of a place expression, if it is a simple
@@ -1830,6 +2072,27 @@ impl Checker {
             (Some(x), Some(y)) => x.compatible_with(y) && y.compatible_with(x),
             _ => true,
         }
+    }
+
+    /// Overload identity: two signatures are the same overload when they have
+    /// the same ordered parameter types. The return type, `mut self`, and
+    /// parameter names are NOT part of identity (`LANGUAGE_SPEC.md` §15.7).
+    fn sig_identical(a: &FnSig, b: &FnSig) -> bool {
+        if a.params.len() != b.params.len() {
+            return false;
+        }
+        a.params
+            .iter()
+            .zip(&b.params)
+            .all(|(x, y)| match (&x.ty, &y.ty) {
+                // Two annotated parameters are the same identity only when
+                // they resolve to the same type.
+                (Some(t1), Some(t2)) => t1 == t2,
+                // Unannotated (any) is its own input type: `fn f(x)` and
+                // `fn f(x: int)` are different overloads, not duplicates.
+                (None, None) => true,
+                _ => false,
+            })
     }
 
     /// Check a statically resolved struct method call. The receiver is the
@@ -2533,10 +2796,19 @@ impl Checker {
                         // or a callable local. Functions are hoisted, so
                         // forward references resolve.
                         if self.resolves_to_user_function(name) {
-                            // A directly resolved top-level function: check the
-                            // call against its declared signature (§6.5, §15.7).
-                            if let Some(sig) = self.functions.get(name) {
-                                self.check_user_call(name, sig, args, *span)?;
+                            // A directly resolved top-level function: select the
+                            // overload by argument types and check the call
+                            // against that signature (§6.5, §15.7).
+                            if let Some(set) = self.functions.get(name) {
+                                match self.resolve_call_sig(set, args) {
+                                    Some(i) => {
+                                        let sig = set[i].clone();
+                                        self.check_user_call(name, &sig, args, *span)?;
+                                    }
+                                    None => {
+                                        return Err(self.no_overload_diag(name, set, args, *span))
+                                    }
+                                }
                             }
                         } else if let Some(sig) = crate::stdlib::signatures::builtin(name) {
                             // Builtins are positional; named arguments require
@@ -2579,7 +2851,7 @@ impl Checker {
                 // table only (§17.6); there is no fallback to the built-in
                 // registry or to another struct.
                 if let Some(sname) = self.struct_name_of(&recv) {
-                    let Some(sig) = self.method_sig(&sname, name).cloned() else {
+                    let Some(set) = self.method_set(&sname, name) else {
                         return Err(Diag::new(
                             codes::UNDEFINED,
                             format!("struct `{sname}` has no method `{name}`"),
@@ -2587,6 +2859,10 @@ impl Checker {
                         ));
                     };
                     self.reject_named_args(name, args, *span)?;
+                    let Some(i) = self.resolve_method_sig(set, args) else {
+                        return Err(self.no_method_overload_diag(&sname, name, set, args, *span));
+                    };
+                    let sig = set[i].clone();
                     self.check_struct_method_args(&sname, name, &sig, args, *span)?;
                     // A method whose receiver is `mut self` mutates the
                     // caller's value, so that value must be reachable through
@@ -2609,13 +2885,19 @@ impl Checker {
                                 *span,
                             ));
                         };
-                        let Some(sig) = self.method_sig(&sname, name) else {
+                        let Some(set) = self.method_set(&sname, name) else {
                             return Err(Diag::new(
                                 codes::UNDEFINED,
                                 format!("not every union member has method `{name}`"),
                                 *span,
                             ));
                         };
+                        let Some(i) = self.resolve_method_sig(set, args) else {
+                            return Err(
+                                self.no_method_overload_diag(&sname, name, set, args, *span)
+                            );
+                        };
+                        let sig = &set[i];
                         match first {
                             None => first = Some(sig),
                             Some(prev) => {
@@ -2666,7 +2948,7 @@ impl Checker {
                 // read; a method must be invoked with parentheses (§17.6).
                 // A missing field stays `Unknown` (§17.5), unchanged.
                 if let Some(sname) = self.struct_name_of(&self.infer(r)) {
-                    if self.method_sig(&sname, name).is_some() {
+                    if self.method_set(&sname, name).is_some() {
                         return Err(Diag::new(
                             codes::UNDEFINED,
                             format!(
@@ -2761,8 +3043,18 @@ impl Checker {
                 // annotation. `return` inside a lambda returns from the
                 // lambda (`LANGUAGE_SPEC.md` §15.4).
                 let saved_return = std::mem::take(&mut self.return_type);
+                // A lambda shares the function parameter model: a `mut`
+                // parameter grants body capability over the bound name, and a
+                // parameter annotation is checked and recorded like a
+                // function's.
                 for p in ps {
-                    self.declare(p, false, Span::default())?;
+                    self.declare(&p.name, p.mutable, p.span)?;
+                    if let Some(pty) = &p.ty {
+                        let t = self.annotation(pty, p.span)?;
+                        self.value_types
+                            .last_mut()
+                            .map(|m| m.insert(p.name.clone(), t));
+                    }
                 }
                 let r = self.expr(body);
                 self.return_type = saved_return;

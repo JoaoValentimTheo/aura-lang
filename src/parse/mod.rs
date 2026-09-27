@@ -1788,19 +1788,17 @@ impl Parser {
             Tok::Fn => {
                 self.bump();
                 let params = if self.eat(&Tok::LParen) {
-                    let mut ps = Vec::new();
-                    if !self.eat(&Tok::RParen) {
-                        loop {
-                            ps.push(self.ident("lambda parameter")?);
-                            if !self.eat(&Tok::Comma) {
-                                self.expect(&Tok::RParen)?;
-                                break;
-                            }
-                        }
-                    }
-                    ps
+                    self.params(false)?
                 } else {
-                    vec![self.ident("lambda parameter")?]
+                    let pspan = self.span();
+                    let mutable = self.eat(&Tok::Mut);
+                    let name = self.ident("lambda parameter")?;
+                    vec![Param {
+                        name,
+                        ty: None,
+                        mutable,
+                        span: pspan,
+                    }]
                 };
                 self.expect(&Tok::Arrow)?;
                 let body = self.expr()?;
@@ -1835,27 +1833,57 @@ impl Parser {
         Ok(Arg { name: None, value })
     }
 
-    /// If the tokens form `(x, y) ->` or `(x) ->`, return the params and
-    /// consume through the arrow.
-    fn try_lambda_params(&mut self) -> Option<Vec<String>> {
+    /// If the tokens form `(x, y) ->` or `(x: T, mut y) ->`, return the
+    /// parameters and consume through the arrow. Uses the same parameter model
+    /// as ordinary functions (`Param`: name, annotation, `mut`), so lambdas and
+    /// functions share one signature model (`LANGUAGE_SPEC.md` §15.4).
+    fn try_lambda_params(&mut self) -> Option<Vec<Param>> {
         let save = self.pos;
-        let mut names = Vec::new();
+        let mut params = Vec::new();
+        // A zero-parameter lambda `() -> body` is allowed.
+        if self.eat(&Tok::RParen) {
+            return if self.eat(&Tok::Arrow) {
+                Some(params)
+            } else {
+                self.pos = save;
+                None
+            };
+        }
         loop {
-            match self.at().clone() {
+            let pspan = self.span();
+            let mutable = self.eat(&Tok::Mut);
+            let name = match self.at().clone() {
                 Tok::Ident(n) => {
                     self.bump();
-                    names.push(n);
-                }
-                Tok::RParen => {
-                    self.bump();
-                    break;
+                    n
                 }
                 _ => {
                     self.pos = save;
                     return None;
                 }
-            }
+            };
+            let ty = if self.eat(&Tok::Colon) {
+                match self.ty() {
+                    Ok(t) => Some(t),
+                    Err(_) => {
+                        self.pos = save;
+                        return None;
+                    }
+                }
+            } else {
+                None
+            };
+            params.push(Param {
+                name,
+                ty,
+                mutable,
+                span: pspan,
+            });
             if self.eat(&Tok::Comma) {
+                // A trailing comma before `)` is allowed.
+                if self.eat(&Tok::RParen) {
+                    break;
+                }
                 continue;
             }
             if self.eat(&Tok::RParen) {
@@ -1865,7 +1893,7 @@ impl Parser {
             return None;
         }
         if self.eat(&Tok::Arrow) {
-            Some(names)
+            Some(params)
         } else {
             self.pos = save;
             None

@@ -255,8 +255,10 @@ pub enum Expr {
     Construct(String, Vec<Arg>, Span),
     /// `(a, b)` tuple (kept minimal; single element is a group).
     Tuple(Vec<Expr>, Span),
-    /// `(x, y) -> body` or `x -> body`.
-    Lambda(Vec<String>, Box<Expr>, Span),
+    /// `(x: int, mut y) -> body` or `x -> body`. A lambda shares the function
+    /// parameter model (`Param`: name, optional annotation, `mut`), so
+    /// functions and lambdas are one semantic model (`LANGUAGE_SPEC.md` §15.4).
+    Lambda(Vec<Param>, Box<Expr>, Span),
     /// `x |> f`.
     Pipe(Box<Expr>, Box<Expr>, Span),
     /// `start..end` — a Rust-style half-open range expression. Equivalent to

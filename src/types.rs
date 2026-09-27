@@ -289,3 +289,85 @@ fn flatten_into(ty: Ty, out: &mut Vec<Ty>) {
         other => out.push(other),
     }
 }
+
+/// One overload candidate: its parameter types in order. A `None` entry is an
+/// unannotated parameter, which accepts any argument.
+pub type OverloadParams = Vec<Option<Ty>>;
+
+/// The result of resolving a call against a set of overloads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OverloadResolution {
+    /// No candidate accepts the argument types.
+    NoMatch,
+    /// Every candidate here accepts the arguments and they are equally
+    /// specific, so the call is ambiguous. The indices are the tied
+    /// candidates, in declaration order.
+    Ambiguous(Vec<usize>),
+    /// Exactly one most-specific candidate accepts the arguments.
+    Selected(usize),
+}
+
+/// Resolve a call against `candidates` by argument types.
+///
+/// This is the single overload selector shared by the checker and the runtime,
+/// so they cannot disagree. The rules (`LANGUAGE_SPEC.md` §15.7):
+///
+/// * identity is `name + ordered input types` — the return type is never used;
+/// * a candidate is *viable* when its arity matches and every annotated
+///   parameter is compatible with the corresponding argument type;
+/// * among viable candidates the most *specific* wins, where an exact type
+///   match is more specific than a merely compatible one (a union or
+///   `Unknown` match), which is more specific than an unannotated parameter;
+/// * a tie between equally specific viable candidates is ambiguous.
+///
+/// Unannotated parameters contribute no specificity, so an annotated overload
+/// is preferred over an unannotated one when both accept. When the argument
+/// type is itself `Unknown`, no candidate can be proven an exact match, so
+/// annotated and unannotated candidates all score via the compatible tier and
+/// a genuinely tied set is reported ambiguous rather than guessed.
+#[must_use]
+pub fn resolve_overload(candidates: &[OverloadParams], actual: &[Ty]) -> OverloadResolution {
+    let mut viable: Vec<(usize, u32)> = Vec::new();
+    for (index, params) in candidates.iter().enumerate() {
+        if params.len() != actual.len() {
+            continue;
+        }
+        if !params
+            .iter()
+            .zip(actual)
+            .all(|(expected, arg)| match expected {
+                Some(e) => e.compatible_with(arg),
+                None => true,
+            })
+        {
+            continue;
+        }
+        let score: u32 = params
+            .iter()
+            .zip(actual)
+            .map(|(expected, arg)| match expected {
+                // Exact (non-union, non-unknown) match: most specific.
+                Some(e) if e == arg => 2,
+                // Compatible but not identical (union, or `Unknown` argument).
+                Some(_) => 1,
+                // Unannotated parameter: least specific.
+                None => 0,
+            })
+            .sum();
+        viable.push((index, score));
+    }
+    if viable.is_empty() {
+        return OverloadResolution::NoMatch;
+    }
+    let best = viable.iter().map(|(_, s)| *s).max().unwrap_or(0);
+    let winners: Vec<usize> = viable
+        .iter()
+        .filter(|(_, s)| *s == best)
+        .map(|(i, _)| *i)
+        .collect();
+    if winners.len() == 1 {
+        OverloadResolution::Selected(winners[0])
+    } else {
+        OverloadResolution::Ambiguous(winners)
+    }
+}

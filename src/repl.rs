@@ -279,33 +279,83 @@ fn eval_line<W: Write>(
     }
 }
 
+/// Whether two method declaration lists are the same set: same names and same
+/// ordered parameter type annotations, in any order. Used to decide whether an
+/// `impl` re-submission is the same declaration or a new overload.
+fn methods_identical(a: &[MethodDecl], b: &[MethodDecl]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter().all(|m| {
+        b.iter().any(|n| {
+            n.name == m.name
+                && n.ret == m.ret
+                && n.params.len() == m.params.len()
+                && n.params
+                    .iter()
+                    .zip(&m.params)
+                    .all(|(x, y)| x.ty == y.ty && x.mutable == y.mutable)
+        })
+    })
+}
+
 /// Whether two session declarations are the same one (so a re-submission does
 /// not duplicate it). A declaration is identified by its name **and its kind**:
 /// a function, a constant, and a struct that share a name are distinct
 /// declarations in distinct namespaces, exactly as in a module, so a `struct S`
-/// after a `fn S` must still be recorded. An `impl` is identified by its
-/// target; a trait by its name.
+/// after a `fn S` must still be recorded. An `impl` is identified by its target
+/// and method set; a trait by its name.
 fn same_decl(a: &GlobalDecl, b: &GlobalDecl) -> bool {
     match (a, b) {
         (
             GlobalDecl::Impl {
                 target: at,
                 trait_name: an,
-                ..
+                methods: am,
             },
             GlobalDecl::Impl {
                 target: bt,
                 trait_name: bn,
-                ..
+                methods: bm,
             },
-        ) => at == bt && an == bn,
+        ) => {
+            // Two `impl` blocks are the same declaration only when they define
+            // the identical method signature set. A block that adds a new
+            // overload (`LANGUAGE_SPEC.md` §15.7) is a distinct declaration
+            // and must be persisted so the overload set grows across
+            // submissions.
+            at == bt && an == bn && methods_identical(am, bm)
+        }
         (GlobalDecl::Trait { name: an, .. }, GlobalDecl::Trait { name: bn, .. }) => an == bn,
         (GlobalDecl::Impl { .. }, _)
         | (_, GlobalDecl::Impl { .. })
         | (GlobalDecl::Trait { .. }, _)
         | (_, GlobalDecl::Trait { .. }) => false,
         (GlobalDecl::Binding { name: an, .. }, GlobalDecl::Binding { name: bn, .. }) => an == bn,
-        (GlobalDecl::Function { name: an, .. }, GlobalDecl::Function { name: bn, .. }) => an == bn,
+        (
+            GlobalDecl::Function {
+                name: an,
+                ret: ar,
+                params: ap,
+            },
+            GlobalDecl::Function {
+                name: bn,
+                ret: br,
+                params: bp,
+            },
+        ) => {
+            // Two function declarations are the same only when they share a
+            // name AND an identical parameter-type list (`LANGUAGE_SPEC.md`
+            // §15.7). A same-name declaration with different parameter types is
+            // a new overload and must be persisted so the set grows.
+            an == bn
+                && ar == br
+                && ap.len() == bp.len()
+                && ap
+                    .iter()
+                    .zip(bp)
+                    .all(|(x, y)| x.ty == y.ty && x.mutable == y.mutable)
+        }
         (GlobalDecl::Struct { name: an, .. }, GlobalDecl::Struct { name: bn, .. }) => an == bn,
         (GlobalDecl::Enum { name: an, .. }, GlobalDecl::Enum { name: bn, .. }) => an == bn,
         (GlobalDecl::Alias { name: an, .. }, GlobalDecl::Alias { name: bn, .. }) => an == bn,

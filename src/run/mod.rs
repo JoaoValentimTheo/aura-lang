@@ -32,6 +32,10 @@ pub struct Closure {
     /// Parameter names and whether each is declared `mut` (which grants
     /// mutable capability over the argument inside the body).
     pub params: Vec<(String, bool)>,
+    /// Parameter type annotations, resolved at declaration time, aligned with
+    /// `params`. `None` is an unannotated parameter. Used by overload
+    /// resolution (`LANGUAGE_SPEC.md` §15.7).
+    pub param_tys: Vec<Option<crate::types::Ty>>,
     /// Body.
     pub body: Vec<Stmt>,
     /// Captured environment.
@@ -177,11 +181,13 @@ pub struct Interp {
     globals: Env,
     natives: HashMap<String, Native>,
 
-    functions: HashMap<String, Rc<Closure>>,
-    /// Methods, keyed by `(struct name, method name)`. Keyed by the nominal
-    /// struct so method names never collide across types (`LANGUAGE_SPEC.md`
-    /// §17.6).
-    methods: HashMap<(String, String), Rc<Closure>>,
+    /// Top-level functions, by name, as an ordered overload set
+    /// (`LANGUAGE_SPEC.md` §15.7).
+    functions: HashMap<String, Vec<Rc<Closure>>>,
+    /// Methods, keyed by `(struct name, method name)`, each an ordered
+    /// overload set. Keyed by the nominal struct so method names never collide
+    /// across types (`LANGUAGE_SPEC.md` §17.6).
+    methods: HashMap<(String, String), Vec<Rc<Closure>>>,
     structs: HashMap<String, Vec<String>>,
     variants: HashMap<String, (String, usize)>,
     depth: usize,
@@ -334,7 +340,7 @@ impl Interp {
                 _ => {}
             }
         }
-        if let Some(main) = self.functions.get("main").cloned() {
+        if let Some(main) = self.functions.get("main").and_then(|s| s.first()).cloned() {
             if let Err(d) = self.call(&main, Vec::new(), Span::default()) {
                 return Err(self.uncaught(d));
             }
@@ -351,10 +357,17 @@ impl Interp {
                 let closure = Rc::new(Closure {
                     name: name.clone(),
                     params: params.iter().map(|p| (p.name.clone(), p.mutable)).collect(),
+                    param_tys: params
+                        .iter()
+                        .map(|p| p.ty.as_ref().map(crate::types::Ty::from_expr_lenient))
+                        .collect(),
                     body: body.clone(),
                     env: self.globals.clone(),
                 });
-                self.functions.insert(name.clone(), closure);
+                self.functions
+                    .entry(name.clone())
+                    .or_default()
+                    .push(closure);
             }
             Item::Impl {
                 target, methods, ..
@@ -371,10 +384,17 @@ impl Interp {
                         let closure = Rc::new(Closure {
                             name: format!("{target}.{name}"),
                             params: params.iter().map(|p| (p.name.clone(), p.mutable)).collect(),
+                            param_tys: params
+                                .iter()
+                                .map(|p| p.ty.as_ref().map(crate::types::Ty::from_expr_lenient))
+                                .collect(),
                             body: body.clone(),
                             env: self.globals.clone(),
                         });
-                        self.methods.insert((target.clone(), name.clone()), closure);
+                        self.methods
+                            .entry((target.clone(), name.clone()))
+                            .or_default()
+                            .push(closure);
                     }
                 }
             }
@@ -1052,8 +1072,14 @@ impl Interp {
             Expr::Name(name, span) => {
                 if let Some(v) = env.get(name) {
                     Ok(Ctl::Val(v))
-                } else if let Some(closure) = self.functions.get(name).cloned() {
-                    // A named function used as a value.
+                } else if let Some(closure) =
+                    self.functions.get(name).and_then(|s| s.first()).cloned()
+                {
+                    // A named function used as a value. A bare function
+                    // reference does not carry argument types, so only a
+                    // single-overload function can be used this way; a
+                    // first-class reference to an overloaded name is deferred
+                    // (`LANGUAGE_SPEC.md` §15.7).
                     Ok(Ctl::Val(Value::Closure(closure)))
                 } else if self.natives.contains_key(name) {
                     // A native used as a value: wrap it in a callable value.
@@ -1144,11 +1170,14 @@ impl Interp {
                 // only (§17.6); any other receiver uses the built-in registry.
                 if let Value::Instance(i) = &subject {
                     let key = (i.ty.clone(), name.clone());
-                    if let Some(closure) = self.methods.get(&key).cloned() {
+                    if let Some(set) = self.methods.get(&key).cloned() {
+                        // Resolve the method overload by the non-receiver
+                        // argument values (`LANGUAGE_SPEC.md` §17.7).
+                        let c = self.select_method_overload(&i.ty, name, &set, &vals, *span)?;
                         let mut full = Vec::with_capacity(vals.len() + 1);
                         full.push(subject.clone());
                         full.extend(vals);
-                        return Ok(Ctl::Val(self.call(&closure, full, *span)?));
+                        return Ok(Ctl::Val(self.call(&c, full, *span)?));
                     }
                     return Err(self.error(
                         codes::UNDEFINED,
@@ -1230,7 +1259,11 @@ impl Interp {
                 };
                 Ok(Ctl::Val(Value::Closure(Rc::new(Closure {
                     name: "<lambda>".to_string(),
-                    params: params.iter().map(|p| (p.clone(), false)).collect(),
+                    params: params.iter().map(|p| (p.name.clone(), p.mutable)).collect(),
+                    param_tys: params
+                        .iter()
+                        .map(|p| p.ty.as_ref().map(crate::types::Ty::from_expr_lenient))
+                        .collect(),
                     body: body_stmts,
                     env: env.clone(),
                 }))))
@@ -1315,7 +1348,14 @@ impl Interp {
         }
         match callee {
             Expr::Name(name, nspan) => {
-                if let Some(c) = self.functions.get(name).cloned() {
+                if let Some(set) = self.functions.get(name).cloned() {
+                    // Resolve the overload by argument value types, using the
+                    // same selector the checker uses (`crate::types::resolve_overload`)
+                    // so the two never disagree. A single candidate is used
+                    // directly; the checker has already rejected ambiguous and
+                    // unmatched direct calls, so a runtime miss here is a
+                    // dynamically-typed path (an `Unknown` receiver/argument).
+                    let c = self.select_overload(name, &set, &vals, *nspan)?;
                     // Bind by parameter name: positional arguments fill the
                     // next unfilled parameter; named arguments fill their
                     // parameter. `vals` stays in source order; only the
@@ -1347,6 +1387,81 @@ impl Interp {
                     other => Ok(other),
                 }
             }
+        }
+    }
+
+    /// Select the overload of `name` whose parameter types accept the runtime
+    /// argument values, using the same selector the checker uses
+    /// (`crate::types::resolve_overload`). A single-overload function (or one
+    /// with no typed parameters) is returned directly, so ordinary calls and
+    /// dynamically-typed arguments keep their existing permissive behavior.
+    fn select_overload(
+        &self,
+        name: &str,
+        set: &[Rc<Closure>],
+        args: &[Value],
+        span: Span,
+    ) -> Result<Rc<Closure>> {
+        if set.len() == 1 {
+            return Ok(set[0].clone());
+        }
+        let candidates: Vec<crate::types::OverloadParams> =
+            set.iter().map(|c| c.param_tys.clone()).collect();
+        let actual: Vec<crate::types::Ty> = args.iter().map(Value::ty).collect();
+        match crate::types::resolve_overload(&candidates, &actual) {
+            crate::types::OverloadResolution::Selected(i) => Ok(set[i].clone()),
+            crate::types::OverloadResolution::Ambiguous(_) => Err(self.error(
+                codes::TYPE_MISMATCH,
+                format!("call to `{name}` is ambiguous"),
+                span,
+            )),
+            crate::types::OverloadResolution::NoMatch => {
+                // Fall back to a single unannotated candidate if one exists;
+                // otherwise report no match. The checker rejects statically
+                // provable mismatches, so this path is for dynamic values.
+                if let Some(c) = set.iter().find(|c| c.param_tys.iter().all(Option::is_none)) {
+                    Ok(c.clone())
+                } else {
+                    Err(self.error(
+                        codes::TYPE_MISMATCH,
+                        format!("no overload of `{name}` accepts these arguments"),
+                        span,
+                    ))
+                }
+            }
+        }
+    }
+
+    /// The method analogue of [`Interp::select_overload`]. The receiver is
+    /// `params[0]`, so candidates are compared on the remaining parameters.
+    fn select_method_overload(
+        &self,
+        struct_name: &str,
+        name: &str,
+        set: &[Rc<Closure>],
+        args: &[Value],
+        span: Span,
+    ) -> Result<Rc<Closure>> {
+        if set.len() == 1 {
+            return Ok(set[0].clone());
+        }
+        let candidates: Vec<crate::types::OverloadParams> = set
+            .iter()
+            .map(|c| c.param_tys.iter().skip(1).cloned().collect())
+            .collect();
+        let actual: Vec<crate::types::Ty> = args.iter().map(Value::ty).collect();
+        match crate::types::resolve_overload(&candidates, &actual) {
+            crate::types::OverloadResolution::Selected(i) => Ok(set[i].clone()),
+            crate::types::OverloadResolution::Ambiguous(_) => Err(self.error(
+                codes::TYPE_MISMATCH,
+                format!("call to `{struct_name}.{name}` is ambiguous"),
+                span,
+            )),
+            crate::types::OverloadResolution::NoMatch => Err(self.error(
+                codes::TYPE_MISMATCH,
+                format!("no overload of `{struct_name}.{name}` accepts these arguments"),
+                span,
+            )),
         }
     }
 

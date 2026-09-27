@@ -121,6 +121,28 @@ impl Value {
         }
     }
 
+    /// The checker-level type of this value, for overload resolution. A
+    /// container yields its *element-agnostic* type (`[Unknown]`, `{Unknown}`)
+    /// because a runtime value carries no static element type; this stays
+    /// consistent with how the checker infers an unannotated collection.
+    #[must_use]
+    pub fn ty(&self) -> crate::types::Ty {
+        use crate::types::Ty;
+        match self {
+            Value::Int(_) => Ty::Int,
+            Value::Float(_) => Ty::Float,
+            Value::Str(_) => Ty::String,
+            Value::Bool(_) => Ty::Bool,
+            Value::None => Ty::Unknown,
+            Value::List(_) => Ty::List(Box::new(Ty::Unknown)),
+            Value::Map(_) => Ty::Map(Box::new(Ty::Unknown)),
+            Value::Instance(i) => Ty::Named(i.ty.clone()),
+            Value::Variant(v) => Ty::Enum(v.ty.clone()),
+            Value::Closure(_) | Value::Native(_) => Ty::Unknown,
+            Value::Range(_) => Ty::Unknown,
+        }
+    }
+
     /// Truthiness: `none` and `false` are falsy; `0` and `""` are falsy too.
     #[must_use]
     pub fn truthy(&self) -> bool {
