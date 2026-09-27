@@ -280,17 +280,15 @@ effects; and whether it redesigns a frozen concept.
   (encapsulation is structural; visibility is deferred, §27) are not
   implemented. See `docs/OOP.md` for the finalized four-pillar model.
 
-### 5. Modules / imports — **Class E**
+### 5. Modules / imports — **DELIVERED (in-source)**
 
 * **User value.** High for larger programs.
-* **New semantics.** Symbol visibility, file boundaries, initialization order,
-  a dependency graph.
-* **Disturbances.** Turns inert syntax into semantics; changes the meaning of
-  existing `pub`/`use`.
-* **Type system.** Cross-module type identity.
-* **REPL / build.** A package/build model.
-* **Redesign?** This is the largest candidate; it requires a deliberate
-  design phase of its own and is explicitly out of scope now.
+* **Delivered.** `module Name { ... }` (nestable), private-by-default items,
+  `pub` to export, `use path [as Alias]` imports, and `::`-qualified paths,
+  enforced by `src/resolve.rs` and the checker (`LANGUAGE_SPEC.md` §27).
+  In-source, because the WebAssembly host has no filesystem.
+* **Remaining (future).** Filesystem-backed modules, cross-file imports, and a
+  package/build model remain a separate design phase; Aura does not have them.
 
 ### 6. Destructuring — **Class B**
 

@@ -216,7 +216,7 @@ fn main() {
       ["Scripting I/O and arguments", "Implemented", "success"],
       ["Function & method overloading", "Implemented", "success"],
       ["OOP model: encapsulation, traits, composition, overloading", "Implemented", "success"],
-      ["Modules and visibility", "Reserved (inert syntax)", "planned"],
+      ["Modules and visibility (in-source, private by default, pub/use)", "Implemented", "success"],
       ["Generics and trait bounds", "Later", "planned"],
       ["Python / PyO3 interop", "Long-term", "planned"],
     ])}

@@ -149,8 +149,28 @@ fn f(id: Id) -> Id { return id }
 Aliases may be chained and are resolved transitively. A recursive alias is
 rejected with `E3002`.
 
-## `use` and `pub`
+## Modules, `pub`, and `use`
 
-`use` and `pub` are **parsed and reserved but inert** in this version. They
-exist so that future module and visibility semantics can be introduced without a
-syntax break. Using them is not an error; they do nothing.
+A `module` is a real visibility boundary. Its items are private by default and
+exported with `pub`; a `::` path or a `use` import reaches an exported name.
+
+```aura
+module shapes {
+    pub struct Point { pub x: int, pub y: int }
+    pub fn origin() -> Point { return Point { x: 0, y: 0 } }
+    fn hidden() -> int { return 42 }         # private to `shapes`
+}
+
+use shapes::Point
+
+fn main() {
+    let p = shapes::origin()
+    print(p.x)                                # 0
+    print(shapes::hidden())                   # E2018: `hidden` is private
+}
+```
+
+Modules nest, and a descendant may reach an ancestor's private items. A private
+access is `E2018`; an unknown module or import is `E2019`. An `impl` block has
+no name, so `pub` on it is `E1006`. Visibility never grants mutation, and a
+`mut` binding never bypasses visibility.

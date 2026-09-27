@@ -175,8 +175,11 @@ type            = "d" | "b" | "o" | "x" | "X" | "f" | "F" | "e" | "E" | "%" ;
 * A trailing comma is accepted before every closing delimiter (call arguments,
   parameters, list/map/struct/enum items, struct field initializers).
 * Patterns bind lowercase names; a capitalized name is a variant.
-* `use` and `pub` are **reserved and inert** in this version: they parse but
-  have no effect (see `docs/contract.md` §10).
+* `module Name { items }` declares an **in-source module**, and `pub`/`use`
+  are **real semantics**: items are private to their module by default, `pub`
+  exports them, and `use path [as Alias]` imports a name (see
+  `docs/contract.md` §10). Modules nest; `::` is the path separator. `pub` on
+  an `impl` block is rejected (`E1006`).
 * `type Name = T` is a transparent alias: it is validated but does not create
   a distinct nominal type.
 * A type expression is a `|`-separated union of one or more members; `T | none`

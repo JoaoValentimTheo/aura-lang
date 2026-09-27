@@ -21,7 +21,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
-    Arm, Expr, FieldDecl, FPart, Item, Module, Param, Pattern, Stmt, TypeExpr, VariantDecl,
+    Arm, Expr, FPart, FieldDecl, Item, Module, Param, Pattern, Stmt, TypeExpr, VariantDecl,
 };
 use crate::error::{codes, Diag, Result, Span};
 
@@ -120,13 +120,12 @@ pub fn resolve_stmt(stmt: Stmt, session: &Session) -> Result<Stmt> {
     r.seed_session(&session.items, &session.imports);
     r.collect_module(&module.items, &[])?;
     let resolved = r.flatten(&module.items, &[])?;
-    let Item::Fn { body, .. } = resolved
-        .items
-        .into_iter()
-        .next()
-        .expect("one synthetic statement item")
-    else {
-        unreachable!("synthetic item is a function")
+    let Some(Item::Fn { body, .. }) = resolved.items.into_iter().next() else {
+        return Err(Diag::new(
+            codes::INTERNAL,
+            "statement resolution produced no statement",
+            Span::default(),
+        ));
     };
     body.into_iter().next().ok_or_else(|| {
         Diag::new(
@@ -330,18 +329,12 @@ impl Resolver {
                     self.declare(prefix, name, *public, Namespace::Value, item_span(item));
                 }
                 Item::Const {
-                    name,
-                    public,
-                    span,
-                    ..
+                    name, public, span, ..
                 } => {
                     self.declare(prefix, name, *public, Namespace::Value, *span);
                 }
                 Item::Struct {
-                    name,
-                    public,
-                    span,
-                    ..
+                    name, public, span, ..
                 } => {
                     self.declare(prefix, name, *public, Namespace::Type, *span);
                 }
@@ -370,18 +363,12 @@ impl Resolver {
                     }
                 }
                 Item::Alias {
-                    name,
-                    public,
-                    span,
-                    ..
+                    name, public, span, ..
                 } => {
                     self.declare(prefix, name, *public, Namespace::Type, *span);
                 }
                 Item::Trait {
-                    name,
-                    public,
-                    span,
-                    ..
+                    name, public, span, ..
                 } => {
                     self.declare(prefix, name, *public, Namespace::Type, *span);
                 }
@@ -422,12 +409,11 @@ impl Resolver {
         for item in items {
             match item {
                 Item::Use {
-                    path,
-                    alias,
-                    span,
-                    ..
-                } => self.apply_use(path, alias, prefix, *span)?,
-                Item::Module { items: inner, name, .. } => {
+                    path, alias, span, ..
+                } => self.apply_use(path, alias.as_deref(), prefix, *span)?,
+                Item::Module {
+                    items: inner, name, ..
+                } => {
                     let mut child = prefix.to_vec();
                     child.push(name.clone());
                     self.apply_imports(inner, &child)?;
@@ -441,7 +427,7 @@ impl Resolver {
     fn apply_use(
         &mut self,
         path: &[String],
-        alias: &Option<String>,
+        alias: Option<&str>,
         prefix: &[String],
         span: Span,
     ) -> Result<()> {
@@ -450,10 +436,7 @@ impl Resolver {
         // makes its items reachable by path, but it binds no root name.
         if !self.items.contains_key(&canonical) {
             if self.module_paths.contains(&canonical_path_from(path))
-                || self
-                    .module_paths
-                    .iter()
-                    .any(|m| m.join("::") == canonical)
+                || self.module_paths.iter().any(|m| m.join("::") == canonical)
             {
                 return Ok(());
             }
@@ -467,9 +450,7 @@ impl Resolver {
             ));
         }
         let namespace = self.items.get(&canonical).map(|i| i.namespace);
-        let local = alias
-            .clone()
-            .unwrap_or_else(|| path.last().cloned().unwrap_or_default());
+        let local = alias.map_or_else(|| path.last().cloned().unwrap_or_default(), str::to_string);
         // Importing across a module boundary respects visibility: a private
         // target is `E2018`, exactly as a direct path would be.
         self.check_visible(&canonical, prefix, span)?;
@@ -478,7 +459,9 @@ impl Resolver {
         if self.name_visible_locally(prefix, &local) {
             return Err(Diag::new(
                 codes::REDECLARED,
-                format!("`{local}` is already declared in this module; rename the import with `as`"),
+                format!(
+                    "`{local}` is already declared in this module; rename the import with `as`"
+                ),
                 span,
             ));
         }
@@ -518,10 +501,6 @@ impl Resolver {
         .into_iter()
         .flatten()
         .any(|m| m.contains_key(local))
-            // A local declaration may share a name with a parent's item; only
-            // a genuine local collision (including the module's own name) is
-            // rejected, and the child-local maps above already cover that.
-            || false
     }
 
     /// Record a declaration in a module's scope. Duplicate detection is
@@ -569,12 +548,7 @@ impl Resolver {
         let mut base: Option<Vec<String>> = None;
         for end in (0..=prefix.len()).rev() {
             let scope = prefix[..end].to_vec();
-            if let Some(child) = self
-                .modules
-                .get(&scope)
-                .and_then(|m| m.get(first))
-                .cloned()
-            {
+            if let Some(child) = self.modules.get(&scope).and_then(|m| m.get(first)).cloned() {
                 base = Some(child);
                 break;
             }
@@ -865,7 +839,9 @@ impl Resolver {
 
     fn rewrite_type(&self, t: &TypeExpr, prefix: &[String]) -> Result<TypeExpr> {
         Ok(match t {
-            TypeExpr::Named(n) => TypeExpr::Named(self.canonical_type(n, prefix, Span::default())?),
+            TypeExpr::Named(n) => {
+                TypeExpr::Named(self.canonical_type(n, prefix, Span::default())?)
+            }
             TypeExpr::List(i) => TypeExpr::List(Box::new(self.rewrite_type(i, prefix)?)),
             TypeExpr::Map(k, v) => TypeExpr::Map(
                 Box::new(self.rewrite_type(k, prefix)?),
@@ -1006,7 +982,7 @@ impl Resolver {
 
     fn rewrite_block(
         &self,
-        body: &mut Vec<Stmt>,
+        body: &mut [Stmt],
         locals: &mut Locals,
         prefix: &[String],
     ) -> Result<()> {
@@ -1021,20 +997,15 @@ impl Resolver {
     fn rewrite_stmt(&self, s: &mut Stmt, locals: &mut Locals, prefix: &[String]) -> Result<()> {
         match s {
             Stmt::Let {
-                name,
-                ann,
-                value,
-                ..
+                name, ann, value, ..
             } => {
-                *value = self.rewrite_expr(value, locals, prefix)?.into();
+                *value = self.rewrite_expr(value, locals, prefix)?;
                 if let Some(a) = ann {
                     *a = self.rewrite_type(a, prefix)?;
                 }
                 locals.declare(name);
             }
-            Stmt::LetPattern {
-                pattern, value, ..
-            } => {
+            Stmt::LetPattern { pattern, value, .. } => {
                 *value = self.rewrite_expr(value, locals, prefix)?;
                 self.collect_pattern_bindings(pattern, locals);
             }
@@ -1046,9 +1017,7 @@ impl Resolver {
             Stmt::Return(Some(e), _) | Stmt::Throw(e, _) => {
                 *e = self.rewrite_expr(e, locals, prefix)?;
             }
-            Stmt::Return(None, _)
-            | Stmt::Break(_)
-            | Stmt::Continue(_) => {}
+            Stmt::Return(None, _) | Stmt::Break(_) | Stmt::Continue(_) => {}
             Stmt::While(c, body, _) => {
                 *c = self.rewrite_expr(c, locals, prefix)?;
                 self.rewrite_block(body, locals, prefix)?;
@@ -1110,11 +1079,10 @@ impl Resolver {
     ) -> Result<Vec<Param>> {
         let mut out = Vec::with_capacity(params.len());
         for p in params {
-            let ty = p
-                .ty
-                .as_ref()
-                .map(|t| self.rewrite_type(t, prefix))
-                .transpose()?;
+            let ty =
+                p.ty.as_ref()
+                    .map(|t| self.rewrite_type(t, prefix))
+                    .transpose()?;
             locals.declare(&p.name);
             out.push(Param {
                 name: p.name.clone(),
@@ -1126,12 +1094,7 @@ impl Resolver {
         Ok(out)
     }
 
-    fn rewrite_expr(
-        &self,
-        e: &Expr,
-        locals: &mut Locals,
-        prefix: &[String],
-    ) -> Result<Expr> {
+    fn rewrite_expr(&self, e: &Expr, locals: &mut Locals, prefix: &[String]) -> Result<Expr> {
         Ok(match e {
             Expr::Name(n, span) => {
                 if locals.contains(n) {
@@ -1176,9 +1139,11 @@ impl Resolver {
                 self.rewrite_args(args, locals, prefix)?,
                 *span,
             ),
-            Expr::Field(r, name, span) => {
-                Expr::Field(Box::new(self.rewrite_expr(r, locals, prefix)?), name.clone(), *span)
-            }
+            Expr::Field(r, name, span) => Expr::Field(
+                Box::new(self.rewrite_expr(r, locals, prefix)?),
+                name.clone(),
+                *span,
+            ),
             Expr::Index(b, i, span) => Expr::Index(
                 Box::new(self.rewrite_expr(b, locals, prefix)?),
                 Box::new(self.rewrite_expr(i, locals, prefix)?),
@@ -1263,7 +1228,8 @@ impl Resolver {
                     .collect::<Result<Vec<_>>>()?;
                 Expr::FStr(parts, *span)
             }
-            other => other.clone(),
+            // Literals and other leaves carry no names to rewrite.
+            other @ Expr::Lit(..) => other.clone(),
         })
     }
 
@@ -1293,7 +1259,7 @@ impl Resolver {
             .transpose()?;
         let pattern = self.rewrite_pattern(&a.pattern, prefix)?;
         let mut body = a.body.clone();
-        for s in body.iter_mut() {
+        for s in &mut body {
             self.rewrite_stmt(s, locals, prefix)?;
         }
         locals.pop();

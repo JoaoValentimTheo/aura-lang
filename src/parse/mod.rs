@@ -535,7 +535,10 @@ impl Parser {
         let first_ok = match &next.tok {
             Tok::Ident(name) if name.chars().next().is_some_and(char::is_uppercase) => true,
             Tok::Ident(_) => {
-                matches!(self.toks.get(self.pos + 2).map(|t| &t.tok), Some(Tok::ColonColon))
+                matches!(
+                    self.toks.get(self.pos + 2).map(|t| &t.tok),
+                    Some(Tok::ColonColon)
+                )
             }
             _ => false,
         };
@@ -1103,8 +1106,10 @@ impl Parser {
             Tok::Ident(id) => {
                 // A `::`-qualified path names an item in another module
                 // (`shapes::Point`). The canonical name is joined with `::`.
-                if matches!(self.toks.get(self.pos + 1).map(|t| &t.tok), Some(Tok::ColonColon))
-                {
+                if matches!(
+                    self.toks.get(self.pos + 1).map(|t| &t.tok),
+                    Some(Tok::ColonColon)
+                ) {
                     let (segments, _) = self.path_segments()?;
                     TypeExpr::Named(segments.join("::"))
                 } else {
@@ -1441,10 +1446,7 @@ impl Parser {
                 // A `::`-qualified pattern names a variant in another module
                 // (`shapes::Color::Red`); join the segments into one canonical
                 // name, exactly like a construct expression.
-                let n = if matches!(
-                    self.at(),
-                    Tok::ColonColon
-                ) {
+                let n = if matches!(self.at(), Tok::ColonColon) {
                     let mut segs = vec![n];
                     while self.eat(&Tok::ColonColon) {
                         segs.push(self.ident("path segment")?);

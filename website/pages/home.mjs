@@ -231,7 +231,8 @@ fn main() {
           ["Struct methods (OOP V1)", "Delivered", "success"],
           ["Traits, shadowing, foundation, overloading", "Delivered", "success"],
           ["OOP completion (four pillars, no inheritance)", "Delivered", "success"],
-          ["Generics, modules, Python/PyO3", "Later", "planned"],
+          ["In-source modules and visibility (pub/use)", "Delivered", "success"],
+          ["Generics, Python/PyO3", "Later", "planned"],
         ])}
       </div>
       <div>

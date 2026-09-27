@@ -88,10 +88,11 @@ export const aboutPage = {
       Struct</code>, reuse is composition, and polymorphism is method/function
       overloading plus static union resolution. Beyond that, to keep the project
       honest: Aura has no classes or inheritance, no dynamic dispatch, no
-      interfaces or trait objects, and no generics or trait bounds; no modules
-      beyond inert <code>use</code> and <code>pub</code>; no LSP, debugger,
-      formatter, or package manager; and no data-science or AI ecosystem.
-      Generics are the next direction, listed on the
+      interfaces or trait objects, and no generics or trait bounds; modules are
+      in-source (private by default, <code>pub</code> to export,
+      <code>use</code> to import) rather than filesystem-backed, and there is
+      no package manager; no LSP, debugger, or formatter; and no data-science
+      or AI ecosystem. Generics are the next direction, listed on the
       <a href="${url("roadmap/", base)}">roadmap</a>.</p>
     </div>
   </div>

@@ -1,5 +1,12 @@
 # Aura v3 — Mandatory Corrections Report
 
+> **Later resolution (OOP completion).** F-08 and F-13 are now resolved:
+> `pub` and `use` are real semantics, not inert syntax. In-source modules,
+> `pub`/private visibility on items, fields, methods, and traits, and `use`
+> imports are implemented and documented in `LANGUAGE_SPEC.md` §27,
+> `docs/OOP.md`, and `docs/contract.md` §10. The statements below describe the
+> state at the time of this audit and are retained as history.
+
 **Scope:** the mandatory architectural corrections demanded by
 [`ARCHITECTURE_REVIEW.md`](ARCHITECTURE_REVIEW.md) §G.1 (F-01, F-02/F-03,
 F-14) plus the "soon" semantic-completion items §G.2 (F-04, F-05, F-06, F-10,

@@ -738,10 +738,7 @@ impl Checker {
                     }
                 }
                 Item::Alias {
-                    name,
-                    target,
-                    span,
-                    ..
+                    name, target, span, ..
                 } => {
                     if self.types.insert(name.clone(), *span).is_some() {
                         return Err(Diag::new(
@@ -1235,10 +1232,10 @@ impl Checker {
                     ret: None,
                     params: Vec::new(),
                     mut_receiver: false,
-                        owner: Vec::new(),
-                        public: true,
-                        span: Span::default(),
-                    });
+                    owner: Vec::new(),
+                    public: true,
+                    span: Span::default(),
+                });
             }
         }
     }
@@ -1667,10 +1664,8 @@ impl Checker {
             } => {
                 // The canonical name encodes the declaring module, so a method
                 // call inside this body is visibility-checked relative to it.
-                let saved_module = std::mem::replace(
-                    &mut self.current_module,
-                    canonical_module_of(name),
-                );
+                let saved_module =
+                    std::mem::replace(&mut self.current_module, canonical_module_of(name));
                 if name == "main" {
                     if !params.is_empty() {
                         return Err(Diag::new(
@@ -1835,8 +1830,7 @@ impl Checker {
         // declared in (its canonical name carries the path), so calling a
         // private method of the same module is allowed and calling a foreign
         // private one is not.
-        let saved_module =
-            std::mem::replace(&mut self.current_module, canonical_module_of(target));
+        let saved_module = std::mem::replace(&mut self.current_module, canonical_module_of(target));
         self.push();
         for (i, p) in params.iter().enumerate() {
             // The receiver's mutability comes from `mut self`; an ordinary
@@ -2014,13 +2008,12 @@ impl Checker {
             Expr::Call(f, args, _) => match f.as_ref() {
                 Expr::Name(name, _) => {
                     if let Some(set) = self.functions.get(name) {
-                        let visible: Vec<FnSig> = set
-                            .iter()
-                            .filter(|s| self.fn_visible(s))
-                            .cloned()
-                            .collect();
+                        let visible: Vec<FnSig> =
+                            set.iter().filter(|s| self.fn_visible(s)).cloned().collect();
                         self.resolve_call_sig(&visible, args)
-                            .map_or(Ty::Unknown, |i| visible[i].ret.clone().unwrap_or(Ty::Unknown))
+                            .map_or(Ty::Unknown, |i| {
+                                visible[i].ret.clone().unwrap_or(Ty::Unknown)
+                            })
                     } else if let Some(sig) = crate::stdlib::signatures::builtin(name) {
                         sig.returns.ty()
                     } else {
@@ -2156,9 +2149,7 @@ impl Checker {
     /// Whether a free function overload is reachable from the current module.
     /// A root-level function has an empty owner, so it is always visible.
     fn fn_visible(&self, sig: &FnSig) -> bool {
-        sig.owner.is_empty()
-            || sig.public
-            || is_descendant_module(&self.current_module, &sig.owner)
+        sig.owner.is_empty() || sig.public || is_descendant_module(&self.current_module, &sig.owner)
     }
 
     /// Whether a struct field is reachable from the current module. A field is
@@ -2533,7 +2524,9 @@ impl Checker {
                 if !self.field_visible(name, f) {
                     return Err(Diag::new(
                         codes::PRIVATE_ACCESS,
-                        format!("field `{f}` of `{name}` is private; it cannot be set from this module"),
+                        format!(
+                            "field `{f}` of `{name}` is private; it cannot be set from this module"
+                        ),
                         span,
                     ));
                 }
@@ -3068,11 +3061,8 @@ impl Checker {
                             // overloads only, then check the call against that
                             // signature (§6.5, §15.7, §28).
                             if let Some(set) = self.functions.get(name) {
-                                let visible: Vec<FnSig> = set
-                                    .iter()
-                                    .filter(|s| self.fn_visible(s))
-                                    .cloned()
-                                    .collect();
+                                let visible: Vec<FnSig> =
+                                    set.iter().filter(|s| self.fn_visible(s)).cloned().collect();
                                 if visible.is_empty() {
                                     return Err(Diag::new(
                                         codes::PRIVATE_ACCESS,

@@ -36,11 +36,31 @@ fn main() {
 The same rule governs methods: a mutating method declares `mut self`, and its
 caller must reach the receiver through a `mut` binding.
 
-Aura has **no visibility and no private members**: there are no modules yet, so
-there is no boundary relative to which "private" could mean anything. `pub`
-and `use` are parsed, reserved, and **inert**: they carry no visibility
-meaning. Encapsulation in Aura is the coherence of data, behavior, and the
-mutation-capability rule — not access control.
+On top of that, `module Name { ... }` gives Aura a **real access boundary**:
+every item, field, and method is private to its module by default and exported
+with `pub`. Modules nest, and `use path [as Alias]` imports a name.
+
+```aura
+module counter {
+    pub struct Counter { n: int }            # field `n` is private
+    pub fn make() -> Counter { return Counter { n: 0 } }
+    impl Counter {
+        pub fn get(self) -> int { return self.n }
+    }
+}
+
+fn main() {
+    let c = counter::make()
+    print(c.get())                           # 0
+    print(c.n)                               # E2018: field `n` is private
+}
+```
+
+A private access is `E2018`; an unknown module or import is `E2019`. The
+boundary is in-source — the WebAssembly host has no filesystem — which keeps
+Native and Web semantics identical. Visibility is independent of mutation:
+`pub` never grants mutable capability, and a `mut` binding never bypasses
+visibility.
 
 ## Abstraction
 
@@ -135,6 +155,7 @@ Aura deliberately has **no subtype polymorphism and no dynamic dispatch**, and
 
 Classes; inheritance; subtyping; implicit upcasting; dynamic dispatch; trait
 objects; default methods; supertraits; associated items; generics and trait
-bounds; modules, visibility, and private members; constructors and destructors;
+bounds; filesystem-backed modules and finer visibility levels than
+`pub`/private; constructors and destructors;
 operator overloading; reflection; metaclasses. Each absence is a decision, not
 an oversight — see `docs/OOP.md` and the specification §35.

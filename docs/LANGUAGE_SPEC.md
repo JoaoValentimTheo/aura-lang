@@ -434,13 +434,17 @@ parser in `src/parse/mod.rs`. The authoritative EBNF is also maintained in
 ```
 file          = { NEWLINE | item } EOF ;
 item          = [ "pub" ] ( fn_decl | struct_decl | enum_decl
-                          | type_alias | use_decl | const_decl )
+                          | type_alias | module_decl | use_decl | const_decl )
               | expr_stmt ;
-use_decl      = "use" IDENT { "." IDENT } terminator ;
+module_decl   = "module" IDENT "{" { item } "}" ;
+use_decl      = "use" IDENT { ( "::" | "." ) IDENT } [ "as" IDENT ] terminator ;
 ```
 
-**Normative rule.** `pub` is accepted on any item and is semantically inert
-(§27). `use` is parsed and inert (§27).
+**Normative rule.** `pub` exports an item from its module and `use` imports a
+name into the current module (§27). Both are real semantics: a module is a
+visibility boundary, not inert syntax. `use` accepts `::` and the historical
+dotted `.` separator alike. `pub` on an `impl` block is rejected (`E1006`),
+since an `impl` block has no name.
 
 ### 4.2 Declarations
 
@@ -2517,22 +2521,89 @@ const_forward_reference_is_rejected_by_checker_and_runtime`.
 
 ---
 
-## 27. `pub` and `use`
+## 27. Modules, `pub`, and `use`
 
-**Normative rule.** `pub` and `use` are **reserved and semantically inert**.
+**Normative rule.** Aura modules are **in-source**: `module Name { items }`,
+where `Name` is an ordinary identifier (capitalized by convention) and `items`
+is a sequence of declarations. Modules **nest**. `module` is **contextual**: it
+begins a module only in item position when followed by an identifier and `{`;
+elsewhere it is an ordinary identifier, so `let module = 1` remains valid.
 
-* `pub` MAY prefix any item (`fn`, `struct`, `enum`, `type`) and has no
-  effect; it carries no visibility meaning and is never consulted by the
-  checker or the runtime.
-* `use path.to.module` is accepted anywhere an item may appear and is a no-op.
-  `use stdlib` and `use a.b.c` are equivalent.
+```text
+item        := pub? module Name { item* }
+             | pub? fn ...
+             | pub? struct Name { field* }
+             | pub? enum Name { variant* }
+             | pub? type Name = T
+             | pub? let NAME = expr
+             | pub? const NAME = expr
+             | pub? trait Name { sig* }
+             | impl [Trait for] Type { method* }
+             | pub? use path (as Name)?
+field       := pub? name : T
+path        := Name (:: Name)*
+```
 
-**Normative rule.** There is no module system, no imports, and no visibility
-in this version. `pub`/`use` exist so that future syntax can be added without
-a breaking change.
+**Normative rule.** A module is a **real visibility boundary**. There is no
+filesystem component: a module is declared in source and has no file of its
+own. This is deliberate — the WebAssembly/Playground host has no filesystem,
+so a boundary that depended on files the guest cannot see could not keep
+Native and WebAssembly semantics identical.
 
-*Evidence:* `Parser::item` (`pub` read and ignored except forwarding),
-`Item::Use` inert in checker and runtime; `docs/contract.md` §10.
+**Normative rule.** Every declaration is **private to its module by default**;
+`pub` exports it. A name is reachable from a module `M` when:
+
+* it is exported (`pub`), or
+* `M` is the declaring module or a **descendant** of it.
+
+A reference to a private item from outside its module is `E2018`. An unknown
+module, or an unknown item in a `use` path, is `E2019`. A `pub` on an `impl`
+block is meaningless (an `impl` has no name) and is `E1006`.
+
+* A **field** with no `pub` cannot be named in a construction, read, or
+  written from outside its struct's module (in either named or positional
+  form).
+* A **method** with no `pub` cannot be called from outside its struct's
+  module. A method provided by a trait implementation follows the **trait's**
+  visibility, not the implementing struct's.
+* A **trait**'s methods are reachable exactly when the trait is.
+* Overload visibility is **per overload**: an inaccessible overload is never a
+  candidate, so it cannot be selected and cannot perturb the selection of an
+  accessible one. A call whose only matching overload is private is `E2018`,
+  not an undefined-name error.
+
+**Normative rule (references).** A `::`-separated path names an item in a
+module: `shapes::Point`, `a::b::f`. An enum variant is named by its enum's path
+plus the tag (`shapes::Color::Red`) or by the module path plus the tag
+(`shapes::Red`); both denote the same variant.
+
+**Normative rule (`use`).** `use path` binds the imported item's last segment
+in the current module; `use path as Alias` binds it under `Alias`. An import
+may not silently shadow a name already declared in that module
+(`E2007`); rename it with `as`. `use` of a private item is `E2018`. `use` of a
+module itself is allowed and binds no local name.
+
+**Normative rule (mutation separation).** Visibility never grants mutation
+capability and a mutable binding never bypasses visibility: a `pub` mutating
+method still requires the receiver to be reachable through `mut` (`E2001`),
+and a `mut` binding cannot reach a private field (`E2018`).
+
+**Normative rule (resolved form).** The resolver (`src/resolve.rs`) runs between
+parsing and checking. It flattens the module tree into a single item list whose
+names are canonical (an item's name prefixed by its module path) and rewrites
+every free reference to the name it denotes. The checker and the runtime
+consume this flat program and are module-agnostic; because they consume the
+same resolved tree, they cannot disagree about which declaration a name
+reaches.
+
+*Evidence:* `src/resolve.rs`; `src/parse/mod.rs` (`at_module_block`,
+`module_item`, `path_segments`); `src/check/mod.rs` (`trait_public`,
+`current_module`, `method_visible`, `field_visible`, `fn_visible`);
+`tests/modules.rs`; `docs/contract.md` §10.
+
+**Normative rule (determinism).** Diagnostics do not depend on hash iteration
+order: when several declarations duplicate one another, the reported
+diagnostic is chosen by source position, so the CLI exit code is stable.
 
 ---
 
@@ -2897,7 +2968,9 @@ and are hereby frozen. Future changes require the RFC process.
    a separate parser recursion backstop for grouping, also `E1015`.
 10. **Parenthesized comma-lists are lists; there is no tuple type.**
 11. **`{}` is a block, not an empty map; `{:}` is the empty-map literal.**
-12. **`pub` and `use` are inert.**
+12. **Modules are in-source; visibility is real.** `module Name { ... }`
+    declares a boundary; items are private unless `pub`; `use` imports a
+    name; qualified access uses `::` (§27).
 13. **`try` requires `catch`.**
 14. **Enum tags are globally unique.**
 15. **No-paren member access on a non-struct receiver is a zero-argument
@@ -2971,11 +3044,11 @@ Everything a user can write is described in this document. The following are
 explicitly **out of scope** for this specification and are not language
 features:
 
-* module or package systems;
+* package managers, filesystem-backed modules, or cross-file imports
+  (in-source modules with visibility exist, §27);
 * generics, interfaces, or trait bounds (traits exist as static contracts,
   §17.7);
 * inheritance, subtyping, or dynamic dispatch;
-* visibility (`pub`/`use` remain inert, §27);
 * async or concurrency;
 * macros;
 * a bytecode VM, optimizer, or native code generation;

@@ -97,7 +97,12 @@ CLI (run/check/eval/repl)          REPL (statement-first, persistent globals)
 | parse→check | `Module` | caller | no nesting > 256 | `enforce_depth` |
 | check→run | `Module` | caller | names/types valid | checker only |
 | run→stdlib | `Vec<Value>` | interp | arity/types correct | **runtime only** |
-| AST→run | `Module` | caller | `Item::Use`/`alias` inert | nowhere |
+| AST→run | `Module` | caller | names canonical and visibility-correct | resolver + checker |
+
+> **Resolved since this review.** The `parse→check` hand-off now passes
+> through `src/resolve.rs`, which flattens in-source modules into canonical
+> path-qualified names and enforces visibility. `pub`/`use` are no longer
+> inert; F-08 and F-13 below are resolved (`LANGUAGE_SPEC.md` §27).
 
 The critical observation: **the checker validates a strict subset of what
 the runtime enforces.** Everything the runtime checks that the checker does
@@ -220,17 +225,11 @@ language work.
 
 ### F-08 — `pub` is inconsistently handled — **P3** — cheap
 
-* **Area:** parser/AST.
-* **Evidence:** `item()` reads `pub` (`src/parse/mod.rs:312`) but forwards it
-  only to `fn_item`; `pub struct`/`pub enum`/`pub type`/`pub use`/`pub let`
-  silently drop it. `Item::Fn.public` is never read by checker or runtime.
-* **Reproduction:** `pub struct S { x: int }` parses and runs, `pub` ignored.
-* **Why it matters:** accepted syntax with discarded semantics is an
-  abstraction leak; it is documented as "inert", but the inconsistency
-  (some items carry the flag, some don't) is not.
-* **Direction:** either reject `pub` on non-`fn` items, or record it on all
-  items uniformly. Documented as inert, so this is low priority.
-* **Now?** Cheap; do with F-13.
+* **Area:** parser/AST. **RESOLVED.** `pub` is now recorded uniformly on every
+  item (`fn`, `struct`, `enum`, `type`, `const`, `let`, `trait`, `module`, and
+  each field) and is consumed by the resolver and the checker: it exports the
+  item from its module (`LANGUAGE_SPEC.md` §27). `pub` on an `impl` block is
+  rejected (`E1006`).
 
 ### F-09 — `Expr::Tuple` is semantically a list — **P3** — defer
 
@@ -349,8 +348,8 @@ Legend: ✅ agree · ⚠️ partial/undocumented · ❌ disagree
 | builtin arity/type | ✅ static | — | — | ❌ none | ✅ | ✅ | ❌ F-03 |
 | call return type | ✅ checked | — | — | ❌ Unknown | ✅ | ⚠️ | ❌ F-04 |
 | enum variant tag unique | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `pub` semantics | ✅ inert | ⚠️ | ⚠️ partial | — | ✅ | — | ⚠️ F-08 |
-| `use` semantics | ✅ inert | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `pub` semantics | ✅ real | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ §27 |
+| `use` semantics | ✅ real | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ §27 |
 | recursion limit 512 | ✅ | — | — | — | ✅ | ✅ | ✅ |
 | nesting limit 256 | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ |
 | magic: no aliases | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -383,8 +382,8 @@ operand. (F-17 — P3 documentation drift.)
 12. F-12 control-flow match arms (parser convenience).
 
 **Intentional**
-13. F-13 `use` inert.
-14. `pub` inert (but see F-08 for consistency).
+13. F-13 `use` is real: it imports across a module boundary (§27). *(resolved)*
+14. `pub` exports from a module (§27). *(resolved)*
 15. Globally unique enum tags.
 16. 256 expression nesting; 512 call frames.
 17. Maps string-keyed.
@@ -397,8 +396,8 @@ Readiness: **GREEN** natural · **YELLOW** targeted refactor · **RED** fights i
 
 | Category | Readiness | Why |
 |---|---|---|
-| Modules/imports | **YELLOW** | `use` is inert; `resolve`/module loader absent, but the `Item::Use` slot and a single-namespace model exist. Needs F-14 first. |
-| Visibility (`pub`) | **YELLOW** | Parsed; needs a symbol table with visibility, and to fix F-08. |
+| Modules/imports | **GREEN** | Delivered: in-source modules with canonical resolution and `use` imports (`src/resolve.rs`, §27). |
+| Visibility (`pub`) | **GREEN** | Delivered: `pub`/private on items, fields, methods, and traits, enforced by the resolver and the checker. |
 | Richer type system | **YELLOW** | `Ty` exists and is advisory; function signatures (F-04) and orderability (F-05) are the prerequisites. A real inference engine is a new component, not a rewrite. |
 | Generic collections | **RED** | `Ty::List/Map` are monomorphic; there are no type parameters anywhere. Adding `[T]` payload typing is a type-system project. |
 | Interfaces/traits | **RED** | No method tables, no nominal method sets; the value model has no dispatch beyond stdlib receiver-type match. |
@@ -442,7 +441,7 @@ a deliberate future milestone, not an accident.
 9. `try` requires `catch` (F-11) — freeze or extend deliberately.
 10. `((a,b))` is a list (F-09) — freeze and simplify the AST.
 11. Function equality (F-06) — freeze.
-12. `pub`/`use` inert (F-08/F-13) — freeze until a module system.
+12. `pub`/`use` are real semantics (F-08/F-13, §27) — frozen as implemented.
 13. Globally unique enum tags — freeze.
 
 ### 4. Features that can safely follow

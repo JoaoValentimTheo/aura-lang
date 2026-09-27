@@ -10,7 +10,7 @@ use std::io::{BufRead, Write};
 use crate::ast::{Item, Stmt};
 use crate::check::{GlobalDecl, MethodDecl, ParamDecl};
 use crate::error::Diag;
-use crate::resolve::{Session, resolve_stmt, resolve_with_session, session_items};
+use crate::resolve::{resolve_stmt, resolve_with_session, session_items, Session};
 use crate::run::{Ctl, Interp};
 
 /// Run an interactive session on stdin/stdout.

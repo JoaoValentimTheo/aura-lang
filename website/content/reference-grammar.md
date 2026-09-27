@@ -158,5 +158,5 @@ type            = "d" | "b" | "o" | "x" | "X" | "f" | "F" | "e" | "E" | "%" ;
 * An f-string interpolates `{expr}`, escapes braces with `{{`/`}}`, and accepts
   a small format spec after `:` (`{x:.2f}`, `{n:>6}`, `{n:06d}`, `{n:x}`); it
   has no `{x=}` or `{x!r}`.
-* `use` and `pub` are reserved and inert (they parse but do nothing).
+* `module Name { ... }` declares an in-source module; items are private by default and exported with `pub`; `use path [as Alias]` imports a name; `::` is the path separator.
 * A parenthesized comma list is list sugar; Aura has no distinct tuple value.

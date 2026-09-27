@@ -26,6 +26,7 @@ Aura has one object model, not several overlapping ones:
 | Implementation | `impl Trait for Name { ... }` | Provides exactly the trait's methods, once each, with compatible signatures. |
 | Reuse | Composition (`struct A { b: B }`) + traits + free functions | A method reaches a nested struct's method through `self.field.method()`. |
 | Selection | Method/function **overloading** | One name, several declarations; the call resolves by argument types. |
+| Boundary | `module Name { ... }`, `pub`, `use path [as A]`, `path::item` | An in-source visibility boundary: private by default, `pub` to export. |
 
 There is no `class`. A struct is data; a method is a function bound to a
 nominal type; a trait is a static contract. Inherent methods (`impl S`) and
@@ -40,45 +41,53 @@ ones.
 **Classical concept.** Bundle state with the operations on it and restrict
 external access to implementation details.
 
-**Aura interpretation.** Aura's encapsulation is *coherence*, not
-*access control*. A struct's state is its typed fields; its operations are its
-`impl` methods; the two are kept unambiguous by one rule — **a field and a
-method of the same struct may not share a name** (`E2016`). Member lookup on a
-statically known struct is total and deterministic: `r.name` is a field read,
-`r.name(args)` is a method call, and an unknown member is `E2003` with no
-fallback to a built-in or another struct.
+**Aura interpretation.** Encapsulation has two layers, and Aura now provides
+both:
 
-Mutation is a separate, orthogonal dimension. Reading through a binding is
-free; writing — a field assignment, an index assignment, a mutating built-in,
-or a `mut self` method — requires the root binding to be reachable through
-`mut` (`E2001`). This is **mutation capability**, not visibility.
+1. **Structural coherence.** A struct's state is its typed fields; its
+   operations are its `impl` methods. The two are kept unambiguous by one rule
+   — **a field and a method of the same struct may not share a name**
+   (`E2016`). Member lookup on a statically known struct is total and
+   deterministic: `r.name` is a field read, `r.name(args)` is a method call,
+   and an unknown member is `E2003` with no fallback.
+
+2. **A real access boundary — modules.** `module Name { items }` declares an
+   in-source module; modules nest, and are reached by `::`-separated paths and
+   `use path [as Alias]` imports. Every declaration, field, and method is
+   **private to its module by default**; `pub` exports it. A name is reachable
+   from module `M` when it is `pub`, or when `M` is the declaring module or a
+   descendant. A private access is `E2018`; an unknown module or import target
+   is `E2019`.
+
+   An `impl` block has no name, so `pub` on it is rejected (`E1006`). A
+   trait-provided method follows its **trait's** visibility. Overload
+   visibility is **per overload**.
+
+**Why in-source.** The WebAssembly/Playground host has **no filesystem**. A
+boundary that depended on files the guest cannot see could not keep Native and
+WebAssembly semantics identical, so Aura's module is declared in source and has
+no file of its own. This is the smallest model that is a *real* boundary and
+survives every substrate.
+
+**Mutation is a separate dimension.** Reading through a binding is free;
+writing — a field assignment, an index assignment, a mutating built-in, or a
+`mut self` method — requires the root binding to be reachable through `mut`
+(`E2001`). This is **mutation capability**, not visibility.
 
 **Implemented.** Nominal structs; typed fields validated at construction;
 deterministic member lookup; field/method name-collision rejection;
-mutation-capability enforcement.
+mutation-capability enforcement; in-source modules; `pub`; `use` with `as`;
+private/public fields, methods, functions, constants, and traits; qualified
+`::` paths; and their REPL persistence.
 
-**Deliberately absent.** Modules; `pub`; `use`; private/default visibility;
-private fields; private methods; module boundaries. `pub` and `use` are
-**parsed, reserved, and semantically inert** (§27): they exist so a future
-module system can be added without a syntax break, and they carry no visibility
-meaning today. There is no scope in which a member is hidden, because there is
-no module boundary that would define "inside" and "outside".
-
-**Reason.** Visibility is meaningful only relative to a module boundary, and
-Aura has deliberately deferred modules to a separate design phase (they are a
-large surface: file boundaries, name resolution across modules, cyclic imports,
-and their REPL semantics). Adding field-level privacy *without* modules would
-introduce a second, weaker notion of "scope" that conflicts with the deferred
-decision and touches construction, field access, the checker, the runtime, the
-REPL, and every existing example. The smallest coherent choice is to keep
-encapsulation structural and defer visibility to the module phase — formalized
-here as a decision, not left ambiguous.
+**Deliberately absent.** Filesystem-backed modules; package management;
+cross-file imports; `pub(crate)`-style granularity. The module model has one
+visibility level (`pub` or private) and one boundary kind (a module), which is
+what encapsulation requires and nothing more.
 
 **Invariant.** Visibility, mutability, and method resolution are **separate
 semantic dimensions**. No visibility rule may grant mutation capability, and a
-mutable binding may not bypass a visibility rule. (With visibility deferred,
-only the mutability dimension is live; the separation is preserved for when it
-is added.)
+mutable binding may not bypass a visibility rule.
 
 ---
 
@@ -246,6 +255,10 @@ path for them:
   types it compares.
 * **Aliases** are transparent and context-free, so generic aliases are a
   natural extension.
+* A **module** is a pure visibility boundary over a flat canonical namespace,
+  so a generic declaration is exported, imported, and reached by the same
+  rules as any other; visibility composes with type parameters without a new
+  mechanism.
 * No **subtype** relation exists to reconcile, and no dynamic dispatch must be
   preserved, so parametric polymorphism can be added statically.
 
@@ -259,7 +272,8 @@ machinery is introduced early.
 * classes, struct inheritance, subtype inheritance, implicit upcasting;
 * dynamic dispatch, trait objects, vtables, runtime type inspection;
 * default/variadic parameters, constructors, destructors, lifecycle hooks;
-* modules, visibility, private members (`pub`/`use` inert);
+* filesystem-backed modules, package management, cross-file imports,
+  finer visibility levels than `pub`/private;
 * generics, trait bounds, associated types/constants, operator overloading;
 * reflection, metaclasses, multiple inheritance.
 

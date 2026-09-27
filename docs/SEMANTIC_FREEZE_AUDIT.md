@@ -1,5 +1,10 @@
 # Aura Language — Semantic Freeze, Contract & Conformance Audit
 
+> **Later change (OOP completion).** `pub` and `use` are no longer inert:
+> in-source modules with `pub`/private visibility and `use` imports are
+> implemented (`LANGUAGE_SPEC.md` §27). The statements below describe the
+> audited HEAD `d940fbed` and are retained as history.
+
 **Audit HEAD:** `d940fbed54d8afee020e6e7949fe6b2266847422`
 **Branch:** `rewrite/v3-rust` (tracks `origin/master`)
 **Working tree:** clean at the time of audit

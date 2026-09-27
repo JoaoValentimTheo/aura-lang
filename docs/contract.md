@@ -352,17 +352,36 @@ A capability a host does not provide is reported as `E5002` (unavailable);
 a genuine I/O failure of a provided capability is `E4020`. Language semantics
 are identical across hosts; only capability availability differs.
 
-## 10. Reserved syntax
+## 10. Modules and visibility
 
-`use` and `pub` are **parsed and reserved but have no effect** in this
-version. They exist so that future module and visibility semantics can be
-introduced without a syntax break. Using them is not an error; they simply do
-nothing. Nothing in the language depends on them.
+Aura modules are **in-source**: `module Name { items }`, nestable, reached by
+`::`-separated paths and `use path [as Alias]` imports. A module is a **real
+visibility boundary** (`LANGUAGE_SPEC.md` §27). There is no filesystem
+component: the WebAssembly host has no filesystem, so a file-backed boundary
+could not keep Native and WebAssembly semantics identical.
 
-`pub` is accepted uniformly on `fn`, `struct`, `enum`, and `type` items and is
-inert on all of them; it carries no visibility meaning and is never consulted
-by the checker or the runtime. `use` is likewise accepted anywhere an item may
-appear and is inert; `use stdlib` and `use a.b.c` are equivalent to a no-op.
+* Every declaration — function, struct, enum, alias, constant, trait, field,
+  and method — is **private to its module by default**; `pub` exports it.
+* A name is reachable from module `M` when it is `pub`, or when `M` is the
+  declaring module or a descendant. A private access is `E2018`; an unknown
+  module or import target is `E2019`.
+* A field with no `pub` cannot be constructed, read, or written from outside
+  its struct's module. A method with no `pub` cannot be called from outside
+  its struct's module; a trait-provided method follows the **trait's**
+  visibility.
+* Overload visibility is per overload: an inaccessible overload is never a
+  candidate. A call whose only matching overload is private is `E2018`.
+* `use` binds a name in the current module and may not silently shadow a local
+  declaration (`E2007`); rename it with `as`.
+* Visibility is independent of mutation: `pub` never grants mutable
+  capability, and a `mut` binding never bypasses visibility.
+
+The resolver (`src/resolve.rs`) flattens the module tree into canonical
+path-qualified names before checking, so the checker and the runtime consume
+one flat program and cannot disagree.
+
+`pub` on an `impl` block is rejected (`E1006`): an `impl` block has no name to
+export.
 
 `type Name = T` declares a transparent alias. It is validated (the target
 type must exist) but does not create a distinct nominal type.

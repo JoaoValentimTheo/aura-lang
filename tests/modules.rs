@@ -91,7 +91,10 @@ fn use_binds_and_aliases_imports() {
         codes::PRIVATE_ACCESS
     );
     // Importing something that does not exist is E2019.
-    assert_eq!(code("use nope\nfn main() { print(1) }"), codes::UNKNOWN_MODULE);
+    assert_eq!(
+        code("use nope\nfn main() { print(1) }"),
+        codes::UNKNOWN_MODULE
+    );
 }
 
 /// An import may not silently shadow a name already declared in the module.
