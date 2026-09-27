@@ -1864,9 +1864,8 @@ impl Checker {
             Expr::Call(f, args, _) => match f.as_ref() {
                 Expr::Name(name, _) => {
                     if let Some(set) = self.functions.get(name) {
-                        self.resolve_call_sig(set, args).map_or(Ty::Unknown, |i| {
-                            set[i].ret.clone().unwrap_or(Ty::Unknown)
-                        })
+                        self.resolve_call_sig(set, args)
+                            .map_or(Ty::Unknown, |i| set[i].ret.clone().unwrap_or(Ty::Unknown))
                     } else if let Some(sig) = crate::stdlib::signatures::builtin(name) {
                         sig.returns.ty()
                     } else {
