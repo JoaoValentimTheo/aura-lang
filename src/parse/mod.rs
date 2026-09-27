@@ -131,19 +131,18 @@ pub const MAX_AST_DEPTH: usize = 256;
 ///
 /// * Native runs the parser on a dedicated 64 MiB stack, so the backstop is
 ///   far above anything the semantic limit can require.
-/// * WebAssembly runs the parser inline on the engine stack. A program at the
-///   semantic AST limit (256) costs at most ~512 parser frames, so the WASM
-///   budget must exceed that to avoid rejecting programs the language permits;
-///   it must also stay below the point where the engine stack overflows.
-///   1024 satisfies the first: it accepts every AST-valid program plus
-///   generous grouping. For the second, the runtime crate reserves a 4 MiB
-///   wasm linear stack (`playground/runtime/build.rs`), because the default
-///   1 MiB stack is exhausted by the most frame-expensive recursive path
-///   (nested call arguments, `f(f(f(…)))`, which recurses through `expr`,
-///   `unary`, `postfix`, `atom`, `call_args`, and `cons_arg`) at ~907 frames —
-///   below 1024 — which trapped before `E1015` could be reported. With the
-///   reserved stack the budget is reached on every path and the backstop
-///   reports `E1015` instead of trapping.
+/// * WebAssembly runs the parser inline on the engine's own call stack, which
+///   cannot be enlarged by a linker flag. The most frame-expensive path
+///   (nested call arguments, `f(f(f(…)))`) traps the engine stack at roughly
+///   950 nesting levels. The budget must therefore be *below* that physical
+///   ceiling while still comfortably above what any AST-valid program needs.
+///   A program at the semantic AST limit (256 nodes) costs on the order of
+///   256–512 frames, so 768 is chosen: it accepts every AST-valid program with
+///   room for grouping, and fires `E1015` well before the engine stack is
+///   exhausted. (Native, on a dedicated 64 MiB stack, keeps a larger budget.)
+///   This value is re-calibrated whenever parser frame sizes change; the
+///   mutation-capability and f-string work enlarged those frames, so 1024 no
+///   longer sat below the physical ceiling.
 ///
 /// Exceeding it is `E1015` on every substrate; it never redefines the
 /// semantic AST limit.
@@ -151,7 +150,7 @@ pub const MAX_AST_DEPTH: usize = 256;
 pub const fn parse_recursion_budget() -> usize {
     #[cfg(target_arch = "wasm32")]
     {
-        1024
+        768
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -257,7 +256,7 @@ fn check_expr_depth(root: &Expr, start: usize) -> Result<()> {
         // F-string interpolations are expressions too.
         if let Expr::FStr(parts, _) = e {
             for p in parts {
-                if let FPart::Expr(inner) = p {
+                if let FPart::Expr(inner, _) = p {
                     stack.push((inner, d));
                 }
             }
@@ -749,6 +748,11 @@ impl Parser {
         }
         loop {
             let span = self.span();
+            // `mut` may prefix a receiver (`fn m(mut self)`) or an ordinary
+            // parameter (`fn f(mut x)`), granting mutable capability over the
+            // bound name for the body. A receiver's `mut` additionally marks
+            // the method as mutating its caller's value (§16.6).
+            let mutable = self.eat(&Tok::Mut);
             let name = if receiver && first {
                 match self.at() {
                     Tok::Ident(n) if n == "self" => {
@@ -773,9 +777,18 @@ impl Parser {
             } else {
                 None
             };
-            out.push(Param { name, ty, span });
+            out.push(Param {
+                name,
+                ty,
+                mutable,
+                span,
+            });
             if !self.eat(&Tok::Comma) {
                 self.expect(&Tok::RParen)?;
+                return Ok(out);
+            }
+            // A trailing comma before the closing `)` is allowed.
+            if self.eat(&Tok::RParen) {
                 return Ok(out);
             }
         }
@@ -1139,6 +1152,12 @@ impl Parser {
                     Tok::MinusEq => Some(Some(BinOp::Sub)),
                     Tok::StarEq => Some(Some(BinOp::Mul)),
                     Tok::SlashEq => Some(Some(BinOp::Div)),
+                    Tok::PercentEq => Some(Some(BinOp::Rem)),
+                    Tok::CaretEq => Some(Some(BinOp::Pow)),
+                    Tok::BarEq => Some(Some(BinOp::BitOr)),
+                    Tok::AmpEq => Some(Some(BinOp::BitAnd)),
+                    Tok::ShlEq => Some(Some(BinOp::Shl)),
+                    Tok::ShrEq => Some(Some(BinOp::Shr)),
                     _ => None,
                 };
                 if let Some(compound) = op {
@@ -1334,14 +1353,14 @@ impl Parser {
         let mut lhs = self.unary()?;
         loop {
             let span = self.span();
-            // `a..b` — Rust-style range. Its binding power sits between
-            // comparison (7/8) and additive (11/12), so both operands are
+            // `a..b` — Rust-style range. Its binding power sits above every
+            // bitwise operator and below additive (20/21), so both operands are
             // arithmetic expressions: `1 + 2..n - 1` is `(1 + 2)..(n - 1)`.
             // Ranges are right-associative and not chainable with meaning;
             // `a..b..c` parses as `a..(b..c)` and is a runtime type error at
             // evaluation, like any other non-int bound.
             if matches!(self.at(), Tok::DotDot) {
-                let (lbp, rbp) = (10, 10);
+                let (lbp, rbp) = (17, 17);
                 if lbp < min_bp {
                     break;
                 }
@@ -1404,6 +1423,11 @@ impl Parser {
                 self.bump();
                 let e = self.unary()?;
                 Ok(Expr::Unary(UnOp::Not, Box::new(e), span))
+            }
+            Tok::Tilde => {
+                self.bump();
+                let e = self.unary()?;
+                Ok(Expr::Unary(UnOp::BitNot, Box::new(e), span))
             }
             _ => self.postfix(),
         }
@@ -1481,6 +1505,12 @@ impl Parser {
             self.skip_newlines();
             if !self.eat(&Tok::Comma) {
                 self.expect(&Tok::RParen)?;
+                return Ok(out);
+            }
+            // A trailing comma before the closing `)` is allowed, so a list of
+            // arguments may be extended line by line.
+            self.skip_newlines();
+            if self.eat(&Tok::RParen) {
                 return Ok(out);
             }
         }
@@ -1563,6 +1593,11 @@ impl Parser {
                                 self.expect(&Tok::RBrace)?;
                                 break;
                             }
+                            // A trailing comma before `}` is allowed.
+                            self.skip_newlines();
+                            if self.eat(&Tok::RBrace) {
+                                break;
+                            }
                         }
                     }
                     return Ok(Expr::Construct(name, args, span));
@@ -1579,6 +1614,11 @@ impl Parser {
                             self.skip_newlines();
                             if !self.eat(&Tok::Comma) {
                                 self.expect(&Tok::RParen)?;
+                                break;
+                            }
+                            // A trailing comma before `)` is allowed.
+                            self.skip_newlines();
+                            if self.eat(&Tok::RParen) {
                                 break;
                             }
                         }
@@ -1894,14 +1934,24 @@ impl Parser {
                             Span::new(base + inner_start, base + offset),
                         ));
                     }
+                    // A top-level `:` separates the expression from its format
+                    // specification. A `:` inside brackets/parens belongs to a
+                    // slice or call, so split only at depth zero.
+                    let (expr_src, spec_src) = split_format_spec(&inner);
                     let e = {
                         // The lexer folds leading trivia into the first token's
                         // span, so trim it and shift the base to keep the
                         // expression's spans exactly on the source text.
-                        let lead = inner.len() - inner.trim_start().len();
-                        parse_expr_at(inner.trim_start(), base + inner_start + lead)?
+                        let lead = expr_src.len() - expr_src.trim_start().len();
+                        parse_expr_at(expr_src.trim_start(), base + inner_start + lead)?
                     };
-                    parts.push(FPart::Expr(e));
+                    let spec = match spec_src {
+                        Some((spec_text, spec_off)) => {
+                            Some(parse_format_spec(spec_text, base + inner_start + spec_off)?)
+                        }
+                        None => None,
+                    };
+                    parts.push(FPart::Expr(e, spec));
                 }
                 '}' => {
                     if chars.peek() == Some(&'}') {
@@ -1956,6 +2006,167 @@ fn desugar_pipe(lhs: Expr, rhs: Expr, span: Span) -> Expr {
 }
 
 /// Infix binding powers: `(left, right, op)`. `None` op means pipeline.
+/// Split an f-string interpolation body into `(expression, format spec)` at the
+/// first top-level `:`. Returns `(whole, None)` when there is no format spec.
+/// Depth tracking keeps a `:` inside `a[1:2]` or `f(k: v)` part of the
+/// expression.
+fn split_format_spec(s: &str) -> (&str, Option<(&str, usize)>) {
+    let mut depth = 0i32;
+    let mut in_str: Option<char> = None;
+    let mut escaped = false;
+    for (i, c) in s.char_indices() {
+        if let Some(q) = in_str {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == q {
+                in_str = None;
+            }
+            continue;
+        }
+        match c {
+            '"' | '\'' => in_str = Some(c),
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth -= 1,
+            ':' if depth == 0 => {
+                let spec_start = i + 1;
+                return (&s[..i], Some((&s[spec_start..], spec_start)));
+            }
+            _ => {}
+        }
+    }
+    (s, None)
+}
+
+/// Parse an f-string format specification (`LANGUAGE_SPEC.md` §3.6.4).
+///
+/// Grammar, in order:
+///
+/// ```text
+/// spec  = [ [fill] align ] [ sign ] [ width ] [ "." precision ] [ type ]
+/// align = "<" | ">" | "^"
+/// sign  = "+" | "-" | " "
+/// type  = "d" | "b" | "o" | "x" | "X" | "f" | "F" | "e" | "E" | "%"
+/// ```
+fn parse_format_spec(spec: &str, base: usize) -> Result<FormatSpec> {
+    let span = Span::new(base, base + spec.len());
+    let chars: Vec<char> = spec.chars().collect();
+    let mut i = 0usize;
+    let mut out = FormatSpec {
+        span,
+        ..FormatSpec::default()
+    };
+    // Fill and alignment: either `align`, or `fill` followed by `align`.
+    if let Some(&c) = chars.get(i) {
+        if let Some(a) = align_of(c) {
+            out.align = Some(a);
+            i += 1;
+        } else if let Some(&next) = chars.get(i + 1) {
+            if let Some(a) = align_of(next) {
+                out.fill = Some(c);
+                out.align = Some(a);
+                i += 2;
+            }
+        }
+    }
+    // Sign.
+    if let Some(&c) = chars.get(i) {
+        match c {
+            '+' => {
+                out.sign = Some(Sign::Plus);
+                i += 1;
+            }
+            '-' => {
+                out.sign = Some(Sign::Minus);
+                i += 1;
+            }
+            ' ' => {
+                out.sign = Some(Sign::Space);
+                i += 1;
+            }
+            _ => {}
+        }
+    }
+    // Width. A leading `0` before the digits is the zero-padding flag: it
+    // sets fill `0` and (for numbers) right alignment, as in Python's `06d`.
+    if chars.get(i) == Some(&'0') && chars.get(i + 1).is_some_and(char::is_ascii_digit) {
+        out.fill = Some('0');
+        out.align.get_or_insert(Align::Right);
+        i += 1;
+    }
+    let (w, ni) = take_digits(&chars, i);
+    if let Some(w) = w {
+        out.width = Some(w);
+        i = ni;
+    }
+    // Precision.
+    if chars.get(i) == Some(&'.') {
+        let (p, ni) = take_digits(&chars, i + 1);
+        let Some(p) = p else {
+            return Err(Diag::new(
+                codes::EXPECTED,
+                "expected digits after `.` in f-string format specification",
+                span,
+            ));
+        };
+        out.precision = Some(p);
+        i = ni;
+    }
+    // Type.
+    if let Some(&c) = chars.get(i) {
+        out.ty = Some(match c {
+            'd' => FormatType::Dec,
+            'b' => FormatType::Binary,
+            'o' => FormatType::Octal,
+            'x' => FormatType::Hex { upper: false },
+            'X' => FormatType::Hex { upper: true },
+            'f' | 'F' => FormatType::Fixed,
+            'e' | 'E' => FormatType::Exp,
+            '%' => FormatType::Percent,
+            _ => {
+                return Err(Diag::new(
+                    codes::EXPECTED,
+                    format!("unknown format type `{c}` in f-string"),
+                    span,
+                ))
+            }
+        });
+        i += 1;
+    }
+    if i != chars.len() {
+        return Err(Diag::new(
+            codes::EXPECTED,
+            format!("unexpected `{}` in f-string format specification", chars[i]),
+            span,
+        ));
+    }
+    Ok(out)
+}
+
+fn align_of(c: char) -> Option<Align> {
+    match c {
+        '<' => Some(Align::Left),
+        '>' => Some(Align::Right),
+        '^' => Some(Align::Center),
+        _ => None,
+    }
+}
+
+/// Consume a run of ASCII digits, returning the value and the next index.
+fn take_digits(chars: &[char], start: usize) -> (Option<usize>, usize) {
+    let mut i = start;
+    let mut value = 0usize;
+    let mut any = false;
+    while let Some(&c) = chars.get(i) {
+        let Some(d) = c.to_digit(10) else { break };
+        value = value.saturating_mul(10).saturating_add(d as usize);
+        any = true;
+        i += 1;
+    }
+    (any.then_some(value), i)
+}
+
 fn infix(t: &Tok) -> Option<(u8, u8, Option<BinOp>)> {
     Some(match t {
         Tok::Pipe => (1, 2, None),
@@ -1967,12 +2178,21 @@ fn infix(t: &Tok) -> Option<(u8, u8, Option<BinOp>)> {
         Tok::Le => (9, 10, Some(BinOp::Le)),
         Tok::Gt => (9, 10, Some(BinOp::Gt)),
         Tok::Ge => (9, 10, Some(BinOp::Ge)),
-        Tok::Plus => (11, 12, Some(BinOp::Add)),
-        Tok::Minus => (11, 12, Some(BinOp::Sub)),
-        Tok::Star => (13, 14, Some(BinOp::Mul)),
-        Tok::Slash => (13, 14, Some(BinOp::Div)),
-        Tok::Percent => (13, 14, Some(BinOp::Rem)),
-        Tok::Caret => (16, 15, Some(BinOp::Pow)),
+        // Bitwise sits above comparison and below shift, so `a | b == c`
+        // groups as `a | (b == c)` is avoided by keeping comparison weakest;
+        // here comparison is weaker (lower binding power), so `a == b | c`
+        // groups as `a == (b | c)`, matching Python's ordering.
+        Tok::Bar => (11, 12, Some(BinOp::BitOr)),
+        Tok::Amp => (13, 14, Some(BinOp::BitAnd)),
+        Tok::Shl => (15, 16, Some(BinOp::Shl)),
+        Tok::Shr => (15, 16, Some(BinOp::Shr)),
+        Tok::Plus => (20, 21, Some(BinOp::Add)),
+        Tok::Minus => (20, 21, Some(BinOp::Sub)),
+        Tok::Star => (22, 23, Some(BinOp::Mul)),
+        Tok::Slash => (22, 23, Some(BinOp::Div)),
+        Tok::Percent => (22, 23, Some(BinOp::Rem)),
+        // Right-associative: the left binding power is higher than the right.
+        Tok::Caret => (25, 24, Some(BinOp::Pow)),
         _ => return None,
     })
 }

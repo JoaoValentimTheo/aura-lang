@@ -93,6 +93,14 @@ pub enum BinOp {
     And,
     /// `or`
     Or,
+    /// `&`
+    BitAnd,
+    /// `|`
+    BitOr,
+    /// `<<`
+    Shl,
+    /// `>>`
+    Shr,
 }
 
 impl BinOp {
@@ -114,6 +122,10 @@ impl BinOp {
             BinOp::Ge => ">=",
             BinOp::And => "and",
             BinOp::Or => "or",
+            BinOp::BitAnd => "&",
+            BinOp::BitOr => "|",
+            BinOp::Shl => "<<",
+            BinOp::Shr => ">>",
         }
     }
 }
@@ -125,6 +137,8 @@ pub enum UnOp {
     Neg,
     /// `not x`
     Not,
+    /// `~x`
+    BitNot,
 }
 
 /// Match patterns.
@@ -229,8 +243,75 @@ pub struct Arg {
 pub enum FPart {
     /// Static text.
     Lit(String),
-    /// An interpolation, already parsed.
-    Expr(Expr),
+    /// An interpolation: the expression and its optional format specification.
+    Expr(Expr, Option<FormatSpec>),
+}
+
+/// A parsed f-string format specification: `{value:spec}`.
+///
+/// The mini-language is deliberately small and orthogonal: an optional fill
+/// and alignment, an optional sign, then width, precision, and type, in that
+/// order. This is the whole language; anything else is a diagnostic.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct FormatSpec {
+    /// Fill character, default a space. Only meaningful with an alignment.
+    pub fill: Option<char>,
+    /// Alignment: `<`, `>`, or `^`.
+    pub align: Option<Align>,
+    /// Sign for numbers: `+` (always), `-` (only negatives), or ` ` (space).
+    pub sign: Option<Sign>,
+    /// Minimum field width.
+    pub width: Option<usize>,
+    /// Precision: digits after the decimal point.
+    pub precision: Option<usize>,
+    /// Presentation type.
+    pub ty: Option<FormatType>,
+    /// Source span of the whole spec (for diagnostics).
+    pub span: Span,
+}
+
+/// Alignment in a format spec.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Align {
+    /// `<` — left.
+    Left,
+    /// `>` — right.
+    Right,
+    /// `^` — center.
+    Center,
+}
+
+/// Sign in a format spec.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sign {
+    /// `+`
+    Plus,
+    /// `-`
+    Minus,
+    /// ` ` (space)
+    Space,
+}
+
+/// Presentation type in a format spec.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FormatType {
+    /// `d` — decimal integer.
+    Dec,
+    /// `b` — binary.
+    Binary,
+    /// `o` — octal.
+    Octal,
+    /// `x` / `X` — hexadecimal (case of the digits).
+    Hex {
+        /// Uppercase digits.
+        upper: bool,
+    },
+    /// `f` / `F` — fixed-point float.
+    Fixed,
+    /// `e` / `E` — scientific notation.
+    Exp,
+    /// `%` — percentage.
+    Percent,
 }
 
 /// One `match` arm.
@@ -320,6 +401,10 @@ pub struct Param {
     pub name: String,
     /// Optional type.
     pub ty: Option<TypeExpr>,
+    /// Whether the parameter is declared `mut`, granting mutable capability
+    /// over the bound name inside the body (and, for a receiver, over the
+    /// caller's value at the call site).
+    pub mutable: bool,
     /// Span.
     pub span: Span,
 }

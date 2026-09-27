@@ -363,6 +363,10 @@ impl Lexer<'_> {
             l.pos += 2;
             t
         };
+        let three = |l: &mut Self, t: Tok| -> Tok {
+            l.pos += 3;
+            t
+        };
         let one = |l: &mut Self, t: Tok| -> Tok {
             l.pos += 1;
             t
@@ -414,8 +418,21 @@ impl Lexer<'_> {
                     one(self, Tok::Slash)
                 }
             }
-            b'%' => one(self, Tok::Percent),
-            b'^' => one(self, Tok::Caret),
+            b'%' => {
+                if self.peek2() == Some(b'=') {
+                    two(self, Tok::PercentEq)
+                } else {
+                    one(self, Tok::Percent)
+                }
+            }
+            b'^' => {
+                if self.peek2() == Some(b'=') {
+                    two(self, Tok::CaretEq)
+                } else {
+                    one(self, Tok::Caret)
+                }
+            }
+            b'~' => one(self, Tok::Tilde),
             b'=' => {
                 if self.peek2() == Some(b'=') {
                     two(self, Tok::EqEq)
@@ -437,6 +454,12 @@ impl Lexer<'_> {
             b'<' => {
                 if self.peek2() == Some(b'=') {
                     two(self, Tok::Le)
+                } else if self.peek2() == Some(b'<') {
+                    if self.bytes.get(self.pos + 2) == Some(&b'=') {
+                        three(self, Tok::ShlEq)
+                    } else {
+                        two(self, Tok::Shl)
+                    }
                 } else {
                     one(self, Tok::Lt)
                 }
@@ -444,6 +467,12 @@ impl Lexer<'_> {
             b'>' => {
                 if self.peek2() == Some(b'=') {
                     two(self, Tok::Ge)
+                } else if self.peek2() == Some(b'>') {
+                    if self.bytes.get(self.pos + 2) == Some(&b'=') {
+                        three(self, Tok::ShrEq)
+                    } else {
+                        two(self, Tok::Shr)
+                    }
                 } else {
                     one(self, Tok::Gt)
                 }
@@ -451,16 +480,18 @@ impl Lexer<'_> {
             b'|' => {
                 if self.peek2() == Some(b'>') {
                     two(self, Tok::Pipe)
+                } else if self.peek2() == Some(b'=') {
+                    two(self, Tok::BarEq)
                 } else {
                     one(self, Tok::Bar)
                 }
             }
             b'&' => {
-                return Err(Diag::new(
-                    codes::INVALID_CHAR,
-                    "`&` is not an operator; use `and`",
-                    self.span(start, start + 1),
-                ));
+                if self.peek2() == Some(b'=') {
+                    two(self, Tok::AmpEq)
+                } else {
+                    one(self, Tok::Amp)
+                }
             }
             other => {
                 let ch = if other.is_ascii_graphic() {

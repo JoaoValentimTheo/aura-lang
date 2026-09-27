@@ -8,7 +8,7 @@
 use std::io::{BufRead, Write};
 
 use crate::ast::{Item, Stmt};
-use crate::check::{GlobalDecl, MethodDecl};
+use crate::check::{GlobalDecl, MethodDecl, ParamDecl};
 use crate::error::Diag;
 use crate::run::{Ctl, Interp};
 
@@ -319,10 +319,7 @@ fn declarations_of(item: &Item) -> Vec<GlobalDecl> {
         } => vec![GlobalDecl::Function {
             name: name.clone(),
             ret: ret.clone(),
-            params: params
-                .iter()
-                .map(|p| (p.name.clone(), p.ty.clone()))
-                .collect(),
+            params: params.iter().map(ParamDecl::from_param).collect(),
         }],
         Item::Struct { name, fields, .. } => vec![GlobalDecl::Struct {
             name: name.clone(),
@@ -359,22 +356,19 @@ fn declarations_of(item: &Item) -> Vec<GlobalDecl> {
     }
 }
 
-/// The `(name, return annotation, parameters)` of each `fn` in an `impl` or
-/// `trait` block, for REPL persistence.
+/// The declarations of each `fn` in an `impl` or `trait` block, for REPL
+/// persistence.
 fn method_decls(methods: &[Item]) -> Vec<MethodDecl> {
     methods
         .iter()
         .filter_map(|m| match m {
             Item::Fn {
                 name, ret, params, ..
-            } => Some((
-                name.clone(),
-                ret.clone(),
-                params
-                    .iter()
-                    .map(|p| (p.name.clone(), p.ty.clone()))
-                    .collect(),
-            )),
+            } => Some(MethodDecl {
+                name: name.clone(),
+                ret: ret.clone(),
+                params: params.iter().map(ParamDecl::from_param).collect(),
+            }),
             _ => None,
         })
         .collect()

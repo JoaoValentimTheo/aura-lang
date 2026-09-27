@@ -135,8 +135,16 @@ pub enum Tok {
     Ge,
     /// `|>`
     Pipe,
-    /// `|` (type unions only)
+    /// `|` (bitwise OR in expressions; type-union separator in types)
     Bar,
+    /// `&` (bitwise AND)
+    Amp,
+    /// `~` (bitwise NOT, unary)
+    Tilde,
+    /// `<<` (shift left)
+    Shl,
+    /// `>>` (shift right)
+    Shr,
     /// `+=`
     PlusEq,
     /// `-=`
@@ -145,6 +153,18 @@ pub enum Tok {
     StarEq,
     /// `/=`
     SlashEq,
+    /// `%=`
+    PercentEq,
+    /// `^=`
+    CaretEq,
+    /// `|=`
+    BarEq,
+    /// `&=`
+    AmpEq,
+    /// `<<=`
+    ShlEq,
+    /// `>>=`
+    ShrEq,
     /// Newline (statement separator).
     Newline,
     /// End of file.
@@ -231,10 +251,20 @@ impl std::fmt::Display for Tok {
             Tok::Ge => ">=",
             Tok::Pipe => "|>",
             Tok::Bar => "|",
+            Tok::Amp => "&",
+            Tok::Tilde => "~",
+            Tok::Shl => "<<",
+            Tok::Shr => ">>",
             Tok::PlusEq => "+=",
             Tok::MinusEq => "-=",
             Tok::StarEq => "*=",
             Tok::SlashEq => "/=",
+            Tok::PercentEq => "%=",
+            Tok::CaretEq => "^=",
+            Tok::BarEq => "|=",
+            Tok::AmpEq => "&=",
+            Tok::ShlEq => "<<=",
+            Tok::ShrEq => ">>=",
             Tok::Newline => "<newline>",
             Tok::Eof => "<eof>",
         };

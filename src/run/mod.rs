@@ -29,8 +29,9 @@ pub const MAX_AST_DEPTH: usize = 256;
 pub struct Closure {
     /// Name (for diagnostics).
     pub name: String,
-    /// Parameter names.
-    pub params: Vec<String>,
+    /// Parameter names and whether each is declared `mut` (which grants
+    /// mutable capability over the argument inside the body).
+    pub params: Vec<(String, bool)>,
     /// Body.
     pub body: Vec<Stmt>,
     /// Captured environment.
@@ -327,7 +328,7 @@ impl Interp {
             } => {
                 let closure = Rc::new(Closure {
                     name: name.clone(),
-                    params: params.iter().map(|p| p.name.clone()).collect(),
+                    params: params.iter().map(|p| (p.name.clone(), p.mutable)).collect(),
                     body: body.clone(),
                     env: self.globals.clone(),
                 });
@@ -347,7 +348,7 @@ impl Interp {
                     {
                         let closure = Rc::new(Closure {
                             name: format!("{target}.{name}"),
-                            params: params.iter().map(|p| p.name.clone()).collect(),
+                            params: params.iter().map(|p| (p.name.clone(), p.mutable)).collect(),
                             body: body.clone(),
                             env: self.globals.clone(),
                         });
@@ -426,8 +427,8 @@ impl Interp {
             ));
         }
         let env = closure.env.child();
-        for (p, v) in closure.params.iter().zip(args) {
-            env.define(p.clone(), v, false);
+        for ((p, mutable), v) in closure.params.iter().zip(args) {
+            env.define(p.clone(), v, *mutable);
         }
         // The limit counts every active call frame, including the entry call
         // to `main`. Exceeding it is a language-level diagnostic (E4011), not
@@ -1045,9 +1046,12 @@ impl Interp {
                 for p in parts {
                     match p {
                         FPart::Lit(t) => out.push_str(t),
-                        FPart::Expr(e) => {
+                        FPart::Expr(e, spec) => {
                             let v = val!(self.eval(e, env));
-                            out.push_str(&v.display());
+                            match spec {
+                                None => out.push_str(&v.display()),
+                                Some(s) => out.push_str(&self.format_value(&v, s)?),
+                            }
                         }
                     }
                 }
@@ -1070,6 +1074,17 @@ impl Interp {
                         )),
                     },
                     UnOp::Not => Ok(Ctl::Val(Value::Bool(!v.truthy()))),
+                    UnOp::BitNot => match v {
+                        Value::Int(i) => Ok(Ctl::Val(Value::Int(!i))),
+                        other => Err(self.error(
+                            codes::TYPE_MISMATCH,
+                            format!(
+                                "operator `~` requires an integer, found {}",
+                                other.type_name()
+                            ),
+                            *span,
+                        )),
+                    },
                 }
             }
             Expr::Binary(op, l, r, span) => {
@@ -1190,7 +1205,7 @@ impl Interp {
                 };
                 Ok(Ctl::Val(Value::Closure(Rc::new(Closure {
                     name: "<lambda>".to_string(),
-                    params: params.clone(),
+                    params: params.iter().map(|p| (p.clone(), false)).collect(),
                     body: body_stmts,
                     env: env.clone(),
                 }))))
@@ -1496,7 +1511,9 @@ impl Interp {
     }
 
     fn binary(&mut self, op: BinOp, l: Value, r: Value, span: Span) -> Result<Value> {
-        use BinOp::{Add, Div, Eq, Ge, Gt, Le, Lt, Mul, Ne, Pow, Rem, Sub};
+        use BinOp::{
+            Add, BitAnd, BitOr, Div, Eq, Ge, Gt, Le, Lt, Mul, Ne, Pow, Rem, Shl, Shr, Sub,
+        };
         match op {
             Eq => Ok(Value::Bool(l.equals(&r))),
             Ne => Ok(Value::Bool(!l.equals(&r))),
@@ -1538,6 +1555,10 @@ impl Interp {
                 _ => self.numeric(op, l, r, span),
             },
             Sub | Mul | Div | Rem | Pow => self.numeric(op, l, r, span),
+            BitAnd => self.bitwise(l, r, span, |a, b| a & b, "&"),
+            BitOr => self.bitwise(l, r, span, |a, b| a | b, "|"),
+            Shl => self.shift(l, r, span, false),
+            Shr => self.shift(l, r, span, true),
             // `and`/`or` are handled by short-circuit in `eval` and never
             // reach here; returning an internal error rather than panicking
             // keeps the "no panics" invariant even if that ever changes.
@@ -1547,6 +1568,146 @@ impl Interp {
                 span,
             )),
         }
+    }
+
+    /// Bitwise AND/OR on two integers.
+    fn bitwise(
+        &mut self,
+        l: Value,
+        r: Value,
+        span: Span,
+        f: fn(i64, i64) -> i64,
+        op: &str,
+    ) -> Result<Value> {
+        match (&l, &r) {
+            (Value::Int(a), Value::Int(b)) => Ok(Value::Int(f(*a, *b))),
+            _ => Err(self.error(
+                codes::TYPE_MISMATCH,
+                format!(
+                    "operator `{op}` requires two integers, found {} and {}",
+                    l.type_name(),
+                    r.type_name()
+                ),
+                span,
+            )),
+        }
+    }
+
+    /// `<<` / `>>` on two integers. A negative or oversized shift count is a
+    /// runtime error, not a host panic.
+    fn shift(&mut self, l: Value, r: Value, span: Span, right: bool) -> Result<Value> {
+        let (Value::Int(a), Value::Int(b)) = (&l, &r) else {
+            return Err(self.error(
+                codes::TYPE_MISMATCH,
+                format!(
+                    "operator `{}` requires two integers, found {} and {}",
+                    if right { ">>" } else { "<<" },
+                    l.type_name(),
+                    r.type_name()
+                ),
+                span,
+            ));
+        };
+        let n = u32::try_from(*b).ok().filter(|n| *n < 64).ok_or_else(|| {
+            self.error(
+                codes::OVERFLOW,
+                format!("shift amount `{b}` is out of range"),
+                span,
+            )
+        })?;
+        // Shifts never overflow: bits shifted out are discarded.
+        Ok(Value::Int(if right {
+            ((*a as u64) >> n) as i64
+        } else {
+            a.wrapping_shl(n)
+        }))
+    }
+
+    /// Render a value under an f-string format specification
+    /// (`LANGUAGE_SPEC.md` §3.6.4). The mini-language is small: an optional
+    /// sign and type coerce or present the value, then width, fill, and
+    /// alignment pad it.
+    fn format_value(&mut self, v: &Value, spec: &FormatSpec) -> Result<String> {
+        use crate::ast::{Align, FormatType, Sign};
+        // 1. Produce the core text under the presentation type.
+        let mut text = match (spec.ty, v) {
+            (None, _) => v.display(),
+            (Some(FormatType::Dec), Value::Int(i)) => i.to_string(),
+            (Some(FormatType::Binary), Value::Int(i)) => format!("{:b}", *i as u64),
+            (Some(FormatType::Octal), Value::Int(i)) => format!("{:o}", *i as u64),
+            (Some(FormatType::Hex { upper }), Value::Int(i)) => {
+                if upper {
+                    format!("{:X}", *i as u64)
+                } else {
+                    format!("{:x}", *i as u64)
+                }
+            }
+            (Some(FormatType::Fixed), Value::Float(f)) => {
+                format!("{:.*}", spec.precision.unwrap_or(6), f)
+            }
+            (Some(FormatType::Fixed), Value::Int(i)) => {
+                format!("{:.*}", spec.precision.unwrap_or(6), *i as f64)
+            }
+            (Some(FormatType::Exp), Value::Float(f)) => {
+                format!("{:.*e}", spec.precision.unwrap_or(6), f)
+            }
+            (Some(FormatType::Exp), Value::Int(i)) => {
+                format!("{:.*e}", spec.precision.unwrap_or(6), *i as f64)
+            }
+            (Some(FormatType::Percent), Value::Float(f)) => {
+                format!("{:.*}%", spec.precision.unwrap_or(6), f * 100.0)
+            }
+            (Some(FormatType::Percent), Value::Int(i)) => {
+                format!("{:.*}%", spec.precision.unwrap_or(6), *i as f64 * 100.0)
+            }
+            (Some(ty), other) => {
+                return Err(self.error(
+                    codes::TYPE_MISMATCH,
+                    format!(
+                        "format type `{}` does not apply to {}",
+                        format_type_name(ty),
+                        other.type_name()
+                    ),
+                    spec.span,
+                ))
+            }
+        };
+        // 2. Precision for a plain float without an explicit float type.
+        if spec.ty.is_none() {
+            if let (Some(p), Value::Float(f)) = (spec.precision, v) {
+                text = format!("{f:.p$}");
+            }
+        }
+        // 3. Sign.
+        match spec.sign {
+            Some(Sign::Plus) if !text.starts_with('-') => text.insert(0, '+'),
+            Some(Sign::Space) if !text.starts_with('-') => text.insert(0, ' '),
+            _ => {}
+        }
+        // 4. Width, fill, and alignment. Numeric values default to
+        // right-alignment; everything else to left.
+        if let Some(width) = spec.width {
+            let len = text.chars().count();
+            if len < width {
+                let pad = width - len;
+                let numeric = matches!(v, Value::Int(_) | Value::Float(_));
+                let align = spec
+                    .align
+                    .unwrap_or(if numeric { Align::Right } else { Align::Left });
+                let fill = spec.fill.unwrap_or(' ');
+                let (left, right) = match align {
+                    Align::Left => (0, pad),
+                    Align::Right => (pad, 0),
+                    Align::Center => (pad / 2, pad - pad / 2),
+                };
+                let mut padded = String::with_capacity(width);
+                padded.extend(std::iter::repeat_n(fill, left));
+                padded.push_str(&text);
+                padded.extend(std::iter::repeat_n(fill, right));
+                text = padded;
+            }
+        }
+        Ok(text)
     }
 
     fn numeric(&mut self, op: BinOp, l: Value, r: Value, span: Span) -> Result<Value> {
@@ -1648,10 +1809,25 @@ impl Interp {
 /// (§15.7), so the mapping is total here; any residual problem (for example a
 /// named argument reaching a call the checker could not resolve) is reported
 /// as a runtime `E3001`, preserving runtime validation as the final layer.
+/// The source spelling of a format type, for diagnostics.
+fn format_type_name(t: crate::ast::FormatType) -> &'static str {
+    use crate::ast::FormatType;
+    match t {
+        FormatType::Dec => "d",
+        FormatType::Binary => "b",
+        FormatType::Octal => "o",
+        FormatType::Hex { upper: false } => "x",
+        FormatType::Hex { upper: true } => "X",
+        FormatType::Fixed => "f",
+        FormatType::Exp => "e",
+        FormatType::Percent => "%",
+    }
+}
+
 fn bind_arguments(
     args: &[Arg],
     vals: &[Value],
-    params: &[String],
+    params: &[(String, bool)],
     span: Span,
 ) -> Result<Vec<Value>> {
     let mut bound: Vec<Option<Value>> = vec![None; params.len()];
@@ -1671,7 +1847,7 @@ fn bind_arguments(
                 next_positional += 1;
             }
             Some(param_name) => {
-                let Some(index) = params.iter().position(|p| p == param_name) else {
+                let Some(index) = params.iter().position(|(p, _)| p == param_name) else {
                     return Err(Diag::new(
                         codes::TYPE_MISMATCH,
                         format!("no parameter named `{param_name}`"),

@@ -95,9 +95,8 @@ pub enum GlobalDecl {
         name: String,
         /// Declared return type, if any.
         ret: Option<TypeExpr>,
-        /// Parameters in declaration order: `(name, annotation)`; the
-        /// annotation is `None` when the parameter is unannotated.
-        params: Vec<(String, Option<TypeExpr>)>,
+        /// Parameters in declaration order.
+        params: Vec<ParamDecl>,
     },
     /// `struct Name { fields... }`
     Struct {
@@ -143,9 +142,39 @@ pub enum GlobalDecl {
     },
 }
 
-/// A method's declaration carried across REPL submissions: `(name, return
-/// annotation, parameters)`.
-pub type MethodDecl = (String, Option<TypeExpr>, Vec<(String, Option<TypeExpr>)>);
+/// A parameter declaration carried across REPL submissions.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParamDecl {
+    /// Parameter name.
+    pub name: String,
+    /// Declared type annotation, if any.
+    pub ty: Option<TypeExpr>,
+    /// Whether the parameter was declared `mut`.
+    pub mutable: bool,
+}
+
+impl ParamDecl {
+    /// Build from an AST parameter.
+    #[must_use]
+    pub fn from_param(p: &Param) -> ParamDecl {
+        ParamDecl {
+            name: p.name.clone(),
+            ty: p.ty.clone(),
+            mutable: p.mutable,
+        }
+    }
+}
+
+/// A method's declaration carried across REPL submissions.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MethodDecl {
+    /// Method name.
+    pub name: String,
+    /// Declared return type, if any.
+    pub ret: Option<TypeExpr>,
+    /// Parameters in declaration order (the first is the receiver).
+    pub params: Vec<ParamDecl>,
+}
 
 /// A top-level function's signature as known to the checker.
 ///
@@ -157,8 +186,38 @@ pub type MethodDecl = (String, Option<TypeExpr>, Vec<(String, Option<TypeExpr>)>
 struct FnSig {
     /// The declared return type, if annotated.
     ret: Option<Ty>,
-    /// One entry per parameter, in declaration order: `(name, annotation)`.
-    params: Vec<(String, Option<Ty>)>,
+    /// One entry per parameter, in declaration order.
+    params: Vec<ParamSig>,
+    /// For a method, whether its receiver is declared `mut self`, which grants
+    /// the body mutable capability over the caller's value. Always `false`
+    /// for a plain function.
+    mut_receiver: bool,
+}
+
+/// A parameter's checker signature (name and declared type). Whether the
+/// parameter is `mut` is a property of the callee's body, not of a call, so it
+/// is not part of the call-checking signature.
+#[derive(Debug, Clone)]
+struct ParamSig {
+    /// Parameter name.
+    name: String,
+    /// Declared type, if annotated.
+    ty: Option<Ty>,
+}
+
+/// Resolve a carried-across parameter declaration list into checker signatures,
+/// expanding type aliases leniently (the same policy as hoisting).
+fn params_of(params: &[ParamDecl], c: &Checker) -> Vec<ParamSig> {
+    params
+        .iter()
+        .map(|p| ParamSig {
+            name: p.name.clone(),
+            ty: p
+                .ty
+                .as_ref()
+                .map(|t| Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t))),
+        })
+        .collect()
 }
 
 /// The checker. Reports the first error, matching the CLI contract.
@@ -317,11 +376,12 @@ impl Checker {
                     let ret_ty = ret.as_ref().map(Ty::from_expr_lenient);
                     let param_tys = params
                         .iter()
-                        .map(|(pname, pty)| {
-                            let ty = pty
+                        .map(|p| ParamSig {
+                            name: p.name.clone(),
+                            ty: p
+                                .ty
                                 .as_ref()
-                                .map(|t| Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t)));
-                            (pname.clone(), ty)
+                                .map(|t| Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t))),
                         })
                         .collect();
                     c.functions.insert(
@@ -329,6 +389,7 @@ impl Checker {
                         FnSig {
                             ret: ret_ty,
                             params: param_tys,
+                            mut_receiver: false,
                         },
                     );
                 }
@@ -403,24 +464,18 @@ impl Checker {
                     // Resolve signatures first (which borrows `c`) and merge
                     // afterwards so the table borrow does not overlap.
                     let mut restored: Vec<(String, FnSig)> = Vec::new();
-                    for (name, ret, params) in methods {
-                        let ret_ty = ret
+                    for m in methods {
+                        let ret_ty = m
+                            .ret
                             .as_ref()
                             .map(|t| Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t)));
-                        let param_tys = params
-                            .iter()
-                            .map(|(pname, pty)| {
-                                let ty = pty.as_ref().map(|t| {
-                                    Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t))
-                                });
-                                (pname.clone(), ty)
-                            })
-                            .collect();
+                        let param_tys = params_of(&m.params, &c);
                         restored.push((
-                            name.clone(),
+                            m.name.clone(),
                             FnSig {
                                 ret: ret_ty,
                                 params: param_tys,
+                                mut_receiver: m.params.first().is_some_and(|p| p.mutable),
                             },
                         ));
                     }
@@ -440,24 +495,18 @@ impl Checker {
                     // submission can implement it. Method order is preserved
                     // so diagnostics name the first declared method.
                     let mut table: Vec<(String, FnSig)> = Vec::with_capacity(methods.len());
-                    for (mname, ret, params) in methods {
-                        let ret_ty = ret
+                    for m in methods {
+                        let ret_ty = m
+                            .ret
                             .as_ref()
                             .map(|t| Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t)));
-                        let param_tys = params
-                            .iter()
-                            .map(|(pname, pty)| {
-                                let ty = pty.as_ref().map(|t| {
-                                    Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t))
-                                });
-                                (pname.clone(), ty)
-                            })
-                            .collect();
+                        let param_tys = params_of(&m.params, &c);
                         table.push((
-                            mname.clone(),
+                            m.name.clone(),
                             FnSig {
                                 ret: ret_ty,
                                 params: param_tys,
+                                mut_receiver: m.params.first().is_some_and(|p| p.mutable),
                             },
                         ));
                     }
@@ -528,10 +577,17 @@ impl Checker {
                     // Parameter names are recorded now; parameter types are
                     // filled in by the annotation pass below, once every type
                     // name is known.
-                    let param_sigs = params.iter().map(|p| (p.name.clone(), None)).collect();
+                    let param_sigs = params
+                        .iter()
+                        .map(|p| ParamSig {
+                            name: p.name.clone(),
+                            ty: None,
+                        })
+                        .collect();
                     self.functions.entry(name.clone()).or_insert(FnSig {
                         ret: ret_ty,
                         params: param_sigs,
+                        mut_receiver: false,
                     });
                     self.scopes[0].declares.entry(name.clone()).or_insert(*span);
                     self.scopes[0].vars.insert(name.clone(), false);
@@ -653,7 +709,10 @@ impl Checker {
                             Some(pty) => Some(self.annotation(pty, p.span)?),
                             None => None,
                         };
-                        param_tys.push((p.name.clone(), ty));
+                        param_tys.push(ParamSig {
+                            name: p.name.clone(),
+                            ty,
+                        });
                     }
                     let ret_ty = match ret {
                         Some(rt) => Some(self.annotation(rt, Span::default())?),
@@ -706,14 +765,14 @@ impl Checker {
                             *mspan,
                         ));
                     }
-                    let mut param_tys = Vec::with_capacity(params.len());
+                    let mut param_tys: Vec<ParamSig> = Vec::with_capacity(params.len());
                     for p in params {
                         // A parameter name declared twice is a same-scope
                         // redeclaration, exactly like a function or inherent
                         // method (`LANGUAGE_SPEC.md` §16.3). Without this a
                         // trait could declare a contract no `impl` could
                         // satisfy, since the matching method rejects it.
-                        if param_tys.iter().any(|(n, _)| n == &p.name) {
+                        if param_tys.iter().any(|q| q.name == p.name) {
                             return Err(Diag::new(
                                 codes::REDECLARED,
                                 format!("`{}` is already declared in this scope", p.name),
@@ -724,7 +783,10 @@ impl Checker {
                             Some(pty) => Some(self.annotation(pty, p.span)?),
                             None => None,
                         };
-                        param_tys.push((p.name.clone(), ty));
+                        param_tys.push(ParamSig {
+                            name: p.name.clone(),
+                            ty,
+                        });
                     }
                     let ret_ty = match ret {
                         Some(rt) => Some(self.annotation(rt, Span::default())?),
@@ -735,6 +797,7 @@ impl Checker {
                         FnSig {
                             ret: ret_ty,
                             params: param_tys,
+                            mut_receiver: params.first().is_some_and(|p| p.mutable),
                         },
                     ));
                 }
@@ -841,7 +904,10 @@ impl Checker {
                                 Some(pty) => Some(self.annotation(pty, p.span)?),
                                 None => None,
                             };
-                            param_tys.push((p.name.clone(), ty));
+                            param_tys.push(ParamSig {
+                                name: p.name.clone(),
+                                ty,
+                            });
                         }
                         let ret_ty = match ret {
                             Some(rt) => Some(self.annotation(rt, Span::default())?),
@@ -850,6 +916,7 @@ impl Checker {
                         let actual = FnSig {
                             ret: ret_ty,
                             params: param_tys,
+                            mut_receiver: params.first().is_some_and(|p| p.mutable),
                         };
                         if !self.method_sigs_compatible(expected, &actual) {
                             return Err(Diag::new(
@@ -909,12 +976,16 @@ impl Checker {
                             Some(pty) => Some(self.annotation(pty, p.span)?),
                             None => None,
                         };
-                        param_tys.push((p.name.clone(), ty));
+                        param_tys.push(ParamSig {
+                            name: p.name.clone(),
+                            ty,
+                        });
                     }
                     let ret_ty = match ret {
                         Some(rt) => Some(self.annotation(rt, Span::default())?),
                         None => None,
                     };
+                    let mut_receiver = params.first().is_some_and(|p| p.mutable);
                     self.struct_methods
                         .entry(target.clone())
                         .or_default()
@@ -923,6 +994,7 @@ impl Checker {
                             FnSig {
                                 ret: ret_ty,
                                 params: param_tys,
+                                mut_receiver,
                             },
                         );
                 }
@@ -966,6 +1038,7 @@ impl Checker {
                 FnSig {
                     ret: None,
                     params: Vec::new(),
+                    mut_receiver: false,
                 },
             );
         }
@@ -1135,7 +1208,7 @@ impl Checker {
                     next_positional += 1;
                 }
                 Some(param_name) => {
-                    let Some(param_index) = sig.params.iter().position(|(p, _)| p == param_name)
+                    let Some(param_index) = sig.params.iter().position(|p| &p.name == param_name)
                     else {
                         return Err(Diag::new(
                             codes::TYPE_MISMATCH,
@@ -1158,19 +1231,22 @@ impl Checker {
         }
 
         // Every parameter must be satisfied.
-        for (param_index, (param_name, _)) in sig.params.iter().enumerate() {
+        for (param_index, param) in sig.params.iter().enumerate() {
             if filled[param_index].is_none() {
                 return Err(Diag::new(
                     codes::TYPE_MISMATCH,
-                    format!("missing argument for parameter `{param_name}` of `{name}`"),
+                    format!(
+                        "missing argument for parameter `{}` of `{name}`",
+                        param.name
+                    ),
                     span,
                 ));
             }
         }
 
         // Type-check each parameter against the argument mapped to it.
-        for (param_index, (_, expected)) in sig.params.iter().enumerate() {
-            let Some(expected) = expected else { continue };
+        for (param_index, param) in sig.params.iter().enumerate() {
+            let Some(expected) = &param.ty else { continue };
             let Some(arg_index) = filled[param_index] else {
                 continue;
             };
@@ -1180,7 +1256,7 @@ impl Checker {
                     codes::TYPE_MISMATCH,
                     format!(
                         "`{name}` parameter `{}` expects `{}`, found `{}`",
-                        sig.params[param_index].0,
+                        sig.params[param_index].name,
                         expected.name(),
                         actual.name()
                     ),
@@ -1235,7 +1311,9 @@ impl Checker {
                 // and parameter bindings are introduced here.
                 self.push();
                 for p in params {
-                    self.declare(&p.name, false, p.span)?;
+                    // `mut` on a parameter grants mutable capability over the
+                    // bound name inside the body (§16.6).
+                    self.declare(&p.name, p.mutable, p.span)?;
                     if let Some(pty) = &p.ty {
                         let t = self.annotation(pty, p.span)?;
                         self.value_types
@@ -1290,6 +1368,10 @@ impl Checker {
                 let r = self.expr(value);
                 self.active_const = saved;
                 r?;
+                // Record the constant's type so a member access on it (e.g.
+                // `XS.push(...)`, `p.field`) resolves instead of staying
+                // `Unknown`. This mirrors a `let` binding's inference and is
+                // what lets the mutation-capability check see the receiver.
                 if let Some(ann) = ann {
                     let expected = self.annotation(ann, *span)?;
                     let actual = self.infer(value);
@@ -1303,6 +1385,16 @@ impl Checker {
                             ),
                             *span,
                         ));
+                    }
+                    self.value_types
+                        .last_mut()
+                        .map(|m| m.insert(name.clone(), expected));
+                } else {
+                    let inferred = self.infer(value);
+                    if !matches!(inferred, Ty::Unknown) {
+                        self.value_types
+                            .last_mut()
+                            .map(|m| m.insert(name.clone(), inferred));
                     }
                 }
             }
@@ -1352,7 +1444,10 @@ impl Checker {
     ) -> Result<()> {
         self.push();
         for (i, p) in params.iter().enumerate() {
-            self.declare(&p.name, false, p.span)?;
+            // The receiver's mutability comes from `mut self`; an ordinary
+            // parameter's from `mut name`. This grants the body mutable
+            // capability over the bound name (§16.6).
+            self.declare(&p.name, p.mutable, p.span)?;
             // The receiver `self` is typed as the nominal struct. An explicit
             // receiver annotation, if written, must still name that struct.
             if i == 0 {
@@ -1498,6 +1593,7 @@ impl Checker {
             }
             Expr::Unary(UnOp::Not, _, _) => Ty::Bool,
             Expr::Unary(UnOp::Neg, inner, _) => self.infer(inner),
+            Expr::Unary(UnOp::BitNot, inner, _) => self.infer(inner),
             Expr::Binary(op, l, _, _) => match op {
                 BinOp::Eq
                 | BinOp::Ne
@@ -1639,6 +1735,39 @@ impl Checker {
         self.struct_methods.get(struct_name)?.get(method)
     }
 
+    /// Resolve the root binding of a place expression, if it is a simple
+    /// binding reached through field/index projections. Returns the root name
+    /// and its span. Anything else (a literal, a call result, a composite)
+    /// has no binding, so mutation capability cannot apply.
+    fn place_root(expr: &Expr) -> Option<(&str, Span)> {
+        match expr {
+            Expr::Name(n, s) => Some((n.as_str(), *s)),
+            Expr::Field(b, _, _) | Expr::Index(b, _, _) => Self::place_root(b),
+            _ => None,
+        }
+    }
+
+    /// Enforce that a mutation reached through `place` has mutable capability:
+    /// the root binding must be declared `mut` (`LANGUAGE_SPEC.md` §16.6).
+    /// A place with no root binding (a temporary or a call result) is always
+    /// mutable, since no caller-visible binding protects it.
+    fn require_mutable_place(&self, place: &Expr, what: &str) -> Result<()> {
+        let Some((name, span)) = Self::place_root(place) else {
+            return Ok(());
+        };
+        match self.lookup(name) {
+            Some(true) => Ok(()),
+            Some(false) => Err(Diag::new(
+                codes::ASSIGN_IMMUTABLE,
+                format!("cannot {what} `{name}`: it is immutable (declare it `let mut`)"),
+                span,
+            )),
+            // An unknown root is reported by the ordinary expression check;
+            // do not duplicate that diagnostic here.
+            None => Ok(()),
+        }
+    }
+
     /// Whether any declared struct has a method with this name. Used to keep
     /// an `Unknown`-receiver call conservative without gating it by the
     /// built-in registry (a user method may resolve at runtime).
@@ -1653,12 +1782,17 @@ impl Checker {
     /// receiver (`params[0]`) differs by member, so only the remaining
     /// parameters and the return are compared.
     fn method_sigs_compatible(&self, a: &FnSig, b: &FnSig) -> bool {
+        // Receiver mutability is part of the contract: a trait that declares
+        // `mut self` must be implemented with `mut self`, and vice versa.
+        if a.mut_receiver != b.mut_receiver {
+            return false;
+        }
         let (a_rest, b_rest) = (&a.params[1..], &b.params[1..]);
         if a_rest.len() != b_rest.len() {
             return false;
         }
-        for ((_, at), (_, bt)) in a_rest.iter().zip(b_rest) {
-            if !Self::param_tys_compatible(at.as_ref(), bt.as_ref()) {
+        for (at, bt) in a_rest.iter().zip(b_rest) {
+            if !Self::param_tys_compatible(at.ty.as_ref(), bt.ty.as_ref()) {
                 return false;
             }
         }
@@ -1698,11 +1832,11 @@ impl Checker {
                 span,
             ));
         }
-        for (i, (pname, expected)) in rest.iter().enumerate() {
-            let Some(expected) = expected else { continue };
+        for (i, param) in rest.iter().enumerate() {
+            let Some(expected) = &param.ty else { continue };
             let arg = &args[i];
             if let Some(named) = &arg.name {
-                if named != pname {
+                if named != &param.name {
                     return Err(Diag::new(
                         codes::TYPE_MISMATCH,
                         format!("method `{struct_name}.{name}` has no parameter named `{named}`"),
@@ -1715,7 +1849,8 @@ impl Checker {
                 return Err(Diag::new(
                     codes::TYPE_MISMATCH,
                     format!(
-                        "method `{struct_name}.{name}` parameter `{pname}` expects `{}`, found `{}`",
+                        "method `{struct_name}.{name}` parameter `{}` expects `{}`, found `{}`",
+                        param.name,
                         expected.name(),
                         actual.name()
                     ),
@@ -1740,6 +1875,11 @@ impl Checker {
         };
         if let Some(message) = sig.check_arity(args.len()) {
             return Err(Diag::new(codes::TYPE_MISMATCH, message, span));
+        }
+        // A mutating built-in method requires the receiver to be reachable
+        // through a `mut` binding (§16.6).
+        if sig.mutates_receiver {
+            self.require_mutable_place(recv, "mutate")?;
         }
         for (i, param) in sig.params.iter().enumerate() {
             let Some(arg) = args.get(i) else { break };
@@ -2154,9 +2294,11 @@ impl Checker {
                     Expr::Index(base, idx, _) => {
                         self.expr(base)?;
                         self.expr(idx)?;
+                        self.require_mutable_place(base, "assign through")?;
                     }
                     Expr::Field(base, fname, fspan) => {
                         self.expr(base)?;
+                        self.require_mutable_place(base, "assign to a field of")?;
                         // If the base is a known struct, the assigned value
                         // must match the declared field type.
                         if op.is_none() {
@@ -2323,7 +2465,7 @@ impl Checker {
             }
             Expr::FStr(parts, _) => {
                 for p in parts {
-                    if let FPart::Expr(inner) = p {
+                    if let FPart::Expr(inner, _) = p {
                         self.expr(inner)?;
                     }
                 }
@@ -2361,6 +2503,13 @@ impl Checker {
                             // a resolved user-function parameter list.
                             self.reject_named_args(name, args, *span)?;
                             self.check_builtin_call(sig, args, *span)?;
+                            // A mutating builtin requires the mutated argument
+                            // to be reached through a `mut` binding (§16.6).
+                            if let Some(i) = sig.mutates_arg {
+                                if let Some(arg) = args.get(i) {
+                                    self.require_mutable_place(&arg.value, "mutate")?;
+                                }
+                            }
                         } else if self.lookup(name).is_some() {
                             // A callable binding (closure value): dynamic.
                             self.reject_named_args(name, args, *span)?;
@@ -2399,6 +2548,12 @@ impl Checker {
                     };
                     self.reject_named_args(name, args, *span)?;
                     self.check_struct_method_args(&sname, name, &sig, args, *span)?;
+                    // A method whose receiver is `mut self` mutates the
+                    // caller's value, so that value must be reachable through
+                    // a `mut` binding (§16.6).
+                    if sig.mut_receiver {
+                        self.require_mutable_place(r, "mutate")?;
+                    }
                 } else if let Ty::Union(ms) = &recv {
                     // A union member is available only if every member type
                     // provides it as the same member kind with a compatible
@@ -2437,6 +2592,11 @@ impl Checker {
                         }
                     }
                     self.reject_named_args(name, args, *span)?;
+                    // If every member declares `mut self`, the union call
+                    // mutates the receiver, so its binding must be `mut`.
+                    if first.is_some_and(|s| s.mut_receiver) {
+                        self.require_mutable_place(r, "mutate")?;
+                    }
                 } else if !crate::stdlib::signatures::method_exists_anywhere(name)
                     && !self.user_method_exists_anywhere(name)
                 {

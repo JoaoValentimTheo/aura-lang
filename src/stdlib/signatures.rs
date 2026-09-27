@@ -201,6 +201,10 @@ pub struct Signature {
     pub max_args: usize,
     /// The result type.
     pub returns: Returns,
+    /// The zero-based argument this callable mutates in place, if any. The
+    /// checker requires that argument to be reached through a `mut` binding
+    /// (`LANGUAGE_SPEC.md` §16.6). Most callables are pure.
+    pub mutates_arg: Option<usize>,
 }
 
 impl Signature {
@@ -249,6 +253,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 0,
                 max_args: usize::MAX,
                 returns: Returns::Ty(Ty::Unknown),
+                mutates_arg: None,
             },
             Signature {
                 name: "len",
@@ -261,6 +266,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Ty(Ty::Int),
+                mutates_arg: None,
             },
             Signature {
                 name: "to_string",
@@ -268,6 +274,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Ty(Ty::String),
+                mutates_arg: None,
             },
             Signature {
                 name: "to_int",
@@ -275,6 +282,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Ty(Ty::Int),
+                mutates_arg: None,
             },
             Signature {
                 name: "to_float",
@@ -282,6 +290,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Ty(Ty::Float),
+                mutates_arg: None,
             },
             Signature {
                 name: "range",
@@ -293,6 +302,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 1,
                 max_args: 2,
                 returns: Returns::Ty(Ty::Named("range".to_string())),
+                mutates_arg: None,
             },
             Signature {
                 name: "abs",
@@ -300,6 +310,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Dynamic,
+                mutates_arg: None,
             },
             Signature {
                 name: "min",
@@ -307,6 +318,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 2,
                 max_args: 2,
                 returns: Returns::Dynamic,
+                mutates_arg: None,
             },
             Signature {
                 name: "max",
@@ -314,6 +326,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 2,
                 max_args: 2,
                 returns: Returns::Dynamic,
+                mutates_arg: None,
             },
             Signature {
                 name: "push",
@@ -321,6 +334,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 2,
                 max_args: 2,
                 returns: Returns::Ty(Ty::Unknown),
+                mutates_arg: Some(0),
             },
             Signature {
                 name: "keys",
@@ -328,6 +342,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Ty(Ty::List(Box::new(Ty::String))),
+                mutates_arg: None,
             },
             Signature {
                 name: "values",
@@ -335,6 +350,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Ty(Ty::List(Box::new(Ty::Unknown))),
+                mutates_arg: None,
             },
             Signature {
                 name: "sort",
@@ -342,6 +358,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Dynamic,
+                mutates_arg: None,
             },
             Signature {
                 name: "reverse",
@@ -349,6 +366,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Dynamic,
+                mutates_arg: None,
             },
             Signature {
                 name: "map",
@@ -356,6 +374,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 2,
                 max_args: 2,
                 returns: Returns::Ty(Ty::List(Box::new(Ty::Unknown))),
+                mutates_arg: None,
             },
             Signature {
                 name: "filter",
@@ -363,6 +382,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 2,
                 max_args: 2,
                 returns: Returns::Ty(Ty::List(Box::new(Ty::Unknown))),
+                mutates_arg: None,
             },
             Signature {
                 name: "reduce",
@@ -374,6 +394,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 3,
                 max_args: 3,
                 returns: Returns::Dynamic,
+                mutates_arg: None,
             },
             Signature {
                 name: "sum",
@@ -381,6 +402,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Dynamic,
+                mutates_arg: None,
             },
             Signature {
                 name: "assert",
@@ -392,6 +414,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 1,
                 max_args: 2,
                 returns: Returns::Ty(Ty::Unknown),
+                mutates_arg: None,
             },
             Signature {
                 name: "enumerate",
@@ -399,6 +422,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Ty(Ty::List(Box::new(Ty::Unknown))),
+                mutates_arg: None,
             },
             Signature {
                 name: "zip",
@@ -406,6 +430,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 2,
                 max_args: 2,
                 returns: Returns::Ty(Ty::List(Box::new(Ty::Unknown))),
+                mutates_arg: None,
             },
             // ------------------------------------------------- scripting I/O
             Signature {
@@ -414,6 +439,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 0,
                 max_args: 0,
                 returns: Returns::Dynamic,
+                mutates_arg: None,
             },
             Signature {
                 name: "read_file",
@@ -421,6 +447,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Dynamic,
+                mutates_arg: None,
             },
             Signature {
                 name: "write_file",
@@ -428,6 +455,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 2,
                 max_args: 2,
                 returns: Returns::Ty(Ty::Unknown),
+                mutates_arg: None,
             },
             Signature {
                 name: "args",
@@ -435,6 +463,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 0,
                 max_args: 0,
                 returns: Returns::Ty(Ty::List(Box::new(Ty::String))),
+                mutates_arg: None,
             },
             // -------------------------------------------------- python bridge
             Signature {
@@ -443,6 +472,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Dynamic,
+                mutates_arg: None,
             },
             Signature {
                 name: "py_import",
@@ -450,6 +480,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Dynamic,
+                mutates_arg: None,
             },
             Signature {
                 name: "py_call",
@@ -457,6 +488,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 2,
                 max_args: usize::MAX,
                 returns: Returns::Dynamic,
+                mutates_arg: None,
             },
             Signature {
                 name: "py_version",
@@ -464,6 +496,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 0,
                 max_args: 0,
                 returns: Returns::Ty(Ty::String),
+                mutates_arg: None,
             },
             // ------------------------------------------------------ json
             #[cfg(feature = "json")]
@@ -473,6 +506,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Ty(Ty::String),
+                mutates_arg: None,
             },
             #[cfg(feature = "json")]
             Signature {
@@ -481,6 +515,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Dynamic,
+                mutates_arg: None,
             },
             // ----------------------------------------------------- regex
             #[cfg(feature = "regex")]
@@ -490,6 +525,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 2,
                 max_args: 2,
                 returns: Returns::Ty(Ty::Bool),
+                mutates_arg: None,
             },
             #[cfg(feature = "regex")]
             Signature {
@@ -498,6 +534,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 2,
                 max_args: 2,
                 returns: Returns::Dynamic,
+                mutates_arg: None,
             },
             #[cfg(feature = "regex")]
             Signature {
@@ -506,6 +543,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 2,
                 max_args: 2,
                 returns: Returns::Ty(Ty::List(Box::new(Ty::String))),
+                mutates_arg: None,
             },
             #[cfg(feature = "regex")]
             Signature {
@@ -518,6 +556,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 3,
                 max_args: 3,
                 returns: Returns::Ty(Ty::String),
+                mutates_arg: None,
             },
             // ------------------------------------------------------ time
             #[cfg(feature = "time")]
@@ -527,6 +566,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 0,
                 max_args: 0,
                 returns: Returns::Dynamic,
+                mutates_arg: None,
             },
             #[cfg(feature = "time")]
             Signature {
@@ -535,6 +575,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 0,
                 max_args: 0,
                 returns: Returns::Ty(Ty::Int),
+                mutates_arg: None,
             },
             #[cfg(feature = "time")]
             Signature {
@@ -543,6 +584,7 @@ pub fn builtins() -> &'static [Signature] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Ty(Ty::Unknown),
+                mutates_arg: None,
             },
         ]
     })
@@ -569,6 +611,10 @@ pub struct MethodSig {
     pub max_args: usize,
     /// Result type.
     pub returns: Returns,
+    /// Whether the method mutates its receiver in place. The checker requires
+    /// the receiver to be reached through a `mut` binding (`LANGUAGE_SPEC.md`
+    /// §16.6).
+    pub mutates_receiver: bool,
 }
 
 impl MethodSig {
@@ -598,6 +644,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 0,
                 max_args: 0,
                 returns: Returns::Ty(Ty::Int),
+                mutates_receiver: false,
             },
             MethodSig {
                 name: "upper",
@@ -606,6 +653,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 0,
                 max_args: 0,
                 returns: Returns::Ty(Ty::String),
+                mutates_receiver: false,
             },
             MethodSig {
                 name: "lower",
@@ -614,6 +662,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 0,
                 max_args: 0,
                 returns: Returns::Ty(Ty::String),
+                mutates_receiver: false,
             },
             MethodSig {
                 name: "trim",
@@ -622,6 +671,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 0,
                 max_args: 0,
                 returns: Returns::Ty(Ty::String),
+                mutates_receiver: false,
             },
             MethodSig {
                 name: "contains",
@@ -630,6 +680,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Ty(Ty::Bool),
+                mutates_receiver: false,
             },
             MethodSig {
                 name: "starts_with",
@@ -638,6 +689,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Ty(Ty::Bool),
+                mutates_receiver: false,
             },
             MethodSig {
                 name: "ends_with",
@@ -646,6 +698,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Ty(Ty::Bool),
+                mutates_receiver: false,
             },
             MethodSig {
                 name: "split",
@@ -654,6 +707,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Ty(Ty::List(Box::new(Ty::String))),
+                mutates_receiver: false,
             },
             MethodSig {
                 name: "replace",
@@ -662,6 +716,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 2,
                 max_args: 2,
                 returns: Returns::Ty(Ty::String),
+                mutates_receiver: false,
             },
             MethodSig {
                 name: "chars",
@@ -670,6 +725,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 0,
                 max_args: 0,
                 returns: Returns::Ty(Ty::List(Box::new(Ty::String))),
+                mutates_receiver: false,
             },
             // --------------------------------------------------- list
             MethodSig {
@@ -679,6 +735,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 0,
                 max_args: 0,
                 returns: Returns::Ty(Ty::Int),
+                mutates_receiver: false,
             },
             MethodSig {
                 name: "push",
@@ -687,6 +744,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Ty(Ty::Unknown),
+                mutates_receiver: true,
             },
             MethodSig {
                 name: "pop",
@@ -695,6 +753,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 0,
                 max_args: 0,
                 returns: Returns::Dynamic,
+                mutates_receiver: true,
             },
             MethodSig {
                 name: "first",
@@ -703,6 +762,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 0,
                 max_args: 0,
                 returns: Returns::Dynamic,
+                mutates_receiver: false,
             },
             MethodSig {
                 name: "last",
@@ -711,6 +771,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 0,
                 max_args: 0,
                 returns: Returns::Dynamic,
+                mutates_receiver: false,
             },
             MethodSig {
                 name: "join",
@@ -719,6 +780,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Ty(Ty::String),
+                mutates_receiver: false,
             },
             MethodSig {
                 name: "contains",
@@ -727,6 +789,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Ty(Ty::Bool),
+                mutates_receiver: false,
             },
             MethodSig {
                 name: "sort",
@@ -735,6 +798,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 0,
                 max_args: 0,
                 returns: Returns::Dynamic,
+                mutates_receiver: false,
             },
             MethodSig {
                 name: "reverse",
@@ -743,6 +807,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 0,
                 max_args: 0,
                 returns: Returns::Dynamic,
+                mutates_receiver: false,
             },
             MethodSig {
                 name: "map",
@@ -751,6 +816,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Ty(Ty::List(Box::new(Ty::Unknown))),
+                mutates_receiver: false,
             },
             MethodSig {
                 name: "filter",
@@ -759,6 +825,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Ty(Ty::List(Box::new(Ty::Unknown))),
+                mutates_receiver: false,
             },
             MethodSig {
                 name: "reduce",
@@ -767,6 +834,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 2,
                 max_args: 2,
                 returns: Returns::Dynamic,
+                mutates_receiver: false,
             },
             // ----------------------------------------------------- map
             MethodSig {
@@ -776,6 +844,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 0,
                 max_args: 0,
                 returns: Returns::Ty(Ty::Int),
+                mutates_receiver: false,
             },
             MethodSig {
                 name: "get",
@@ -784,6 +853,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Dynamic,
+                mutates_receiver: false,
             },
             MethodSig {
                 name: "has",
@@ -792,6 +862,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Ty(Ty::Bool),
+                mutates_receiver: false,
             },
             MethodSig {
                 name: "keys",
@@ -800,6 +871,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 0,
                 max_args: 0,
                 returns: Returns::Ty(Ty::List(Box::new(Ty::String))),
+                mutates_receiver: false,
             },
             MethodSig {
                 name: "values",
@@ -808,6 +880,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 0,
                 max_args: 0,
                 returns: Returns::Ty(Ty::List(Box::new(Ty::Unknown))),
+                mutates_receiver: false,
             },
             MethodSig {
                 name: "remove",
@@ -816,6 +889,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Dynamic,
+                mutates_receiver: true,
             },
             // ---------------------------------------------------- range
             MethodSig {
@@ -825,6 +899,7 @@ pub fn methods() -> &'static [MethodSig] {
                 min_args: 0,
                 max_args: 0,
                 returns: Returns::Ty(Ty::Int),
+                mutates_receiver: false,
             },
         ]
     })
