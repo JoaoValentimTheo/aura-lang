@@ -282,8 +282,54 @@ fn increment_operators_are_absent() {
     assert_eq!(code("fn main() { let mut x = 1\n ++x }"), codes::EXPECTED);
 }
 
-// ------------------------------------------------------------ trailing comma
+// --------------------------------------------------------- diagnostic spans
 
+/// A diagnostic about a pattern, field, variant, or alias names the real
+/// source location, not the start of the file (spec §30.3).
+#[test]
+fn pattern_and_declaration_diagnostics_carry_real_spans() {
+    // An unknown variant in a match arm on line 2.
+    let src = "fn main() {\n  match 1 { Nope -> print(1) }\n}\n";
+    let d = run_source(src, "f.aura").expect_err("unknown variant");
+    assert_eq!(d.code, codes::UNKNOWN_TYPE);
+    assert!(
+        d.span.start >= src.find("match").expect("match present"),
+        "span {:?} should point at the match arm's pattern",
+        d.span
+    );
+
+    // A duplicate field on line 2.
+    let src = "struct S { n: int }\nstruct T { a: int, a: int }\nfn main() {}\n";
+    let d = run_source(src, "f.aura").expect_err("duplicate field");
+    assert_eq!(d.code, codes::DUPLICATE_FIELD);
+    assert!(
+        d.span.start > 0,
+        "span should not be the file start: {:?}",
+        d.span
+    );
+
+    // A duplicate pattern binding on line 2.
+    let src = "fn main() {\n  let [a, a] = [1, 2]\n}\n";
+    let d = run_source(src, "f.aura").expect_err("duplicate binding");
+    assert_eq!(d.code, codes::DUPLICATE_BINDING);
+    assert!(
+        d.span.start > 0,
+        "span should not be the file start: {:?}",
+        d.span
+    );
+
+    // A recursive alias on line 2.
+    let src = "fn main() {}\ntype A = A\n";
+    let d = run_source(src, "f.aura").expect_err("recursive alias");
+    assert_eq!(d.code, codes::UNKNOWN_TYPE);
+    assert!(
+        d.span.start > 0,
+        "span should not be the file start: {:?}",
+        d.span
+    );
+}
+
+// ------------------------------------------------------------ trailing comma
 /// A trailing comma is accepted uniformly before every closing delimiter, so
 /// lists of any kind may be written and extended line by line.
 #[test]
@@ -309,7 +355,7 @@ fn trailing_comma_is_uniform() {
     );
 }
 
-/// Checker-level: `const` and top-level `let` occupy the same value namespace.
+/// A `const` and top-level `let` occupy the same value namespace.
 #[test]
 fn const_and_let_share_the_value_namespace() {
     let m = parse("const A = 1\nlet A = 2\nfn main() { print(A) }").expect("parse");
