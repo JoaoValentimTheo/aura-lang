@@ -478,6 +478,64 @@ const cases = [
     'module a { pub fn f() -> int { return 1 } }\nmodule b { pub fn f() -> int { return 2 } }\nfn main() { print(a::f() + b::f()) }',
   ],
   ['pub on impl rejected', 'struct S { x: int }\npub impl S { fn f(self) -> int { return 1 } }\nfn main() { print(1) }'],
+  // Generics (§36): static and erased, so the two substrates must agree on
+  // inference, explicit type arguments, bounds, and rejection alike.
+  [
+    'generic function infers',
+    'fn identity<T>(x: T) -> T { return x }\nfn main() {\n print(identity(1))\n print(identity("a"))\n}',
+  ],
+  [
+    'generic explicit argument',
+    'fn identity<T>(x: T) -> T { return x }\nfn main() { print(identity<int>(7)) }',
+  ],
+  [
+    'generic struct',
+    'struct Box<T> { value: T }\nfn main() {\n let b = Box { value: 9 }\n print(b.value)\n}',
+  ],
+  [
+    'generic method uses impl parameter',
+    'struct Box<T> { value: T }\nimpl<T> Box<T> { fn get(self) -> T { return self.value } }\nfn main() { print(Box { value: 3 }.get()) }',
+  ],
+  [
+    'generic trait over generic struct',
+    'trait Container<T> { fn get(self, i: int) -> T }\nstruct Stack<T> { items: [T] }\nimpl<T> Container<T> for Stack<T> { fn get(self, i: int) -> T { return self.items[i] } }\nfn main() { print(Stack { items: [4, 5, 6] }.get(1)) }',
+  ],
+  [
+    'generic bound is checked',
+    'trait Show { fn show(self) -> int }\nstruct A { n: int }\nimpl Show for A { fn show(self) -> int { return self.n } }\nfn run<T: Show>(x: T) -> int { return x.show() }\nfn main() { print(run(A { n: 7 })) }',
+  ],
+  [
+    'generic bound violation',
+    'trait Show { fn show(self) -> int }\nstruct B { n: int }\nfn run<T: Show>(x: T) -> int { return 1 }\nfn main() { run(B { n: 1 }) }',
+  ],
+  [
+    'generic compose with structural collections',
+    'fn first<T>(xs: [T]) -> T { return xs[0] }\nfn get<T>(m: {string: T}, k: string) -> T { return m[k] }\nfn main() {\n print(first([10, 20]))\n print(get({ "x": 5 }, "x"))\n}',
+  ],
+  [
+    'generic parameterised alias',
+    'type Pair<T> = [T]\nfn main() { let p: Pair<int> = [1, 2]\n print(p[1]) }',
+  ],
+  [
+    'generic alpha-equivalent redeclaration rejected',
+    'fn f<T>(x: T) -> T { return x }\nfn f<U>(x: U) -> U { return x }\nfn main() { }',
+  ],
+  [
+    'generic explicit wrong arity rejected',
+    'fn identity<T>(x: T) -> T { return x }\nfn main() { print(identity<int, string>(7)) }',
+  ],
+  [
+    'generic wrong field type rejected',
+    'struct Box<T> { value: T }\nfn main() { let b = Box<int> { value: "x" }\n print(b.value) }',
+  ],
+  [
+    'generic in module with visibility',
+    'module m {\n pub struct Secret<T> { pub value: T }\n pub fn make<T>(x: T) -> Secret<T> { return Secret { value: x } }\n}\nfn main() { print(m::make(5).value) }',
+  ],
+  [
+    'generic comparison operators unchanged',
+    'fn main() {\n print(1 < 2)\n print(1 << 2)\n}',
+  ],
 ];
 
 const options = { args: ["alpha", "beta"], stdin: "line one\nline two\n" };

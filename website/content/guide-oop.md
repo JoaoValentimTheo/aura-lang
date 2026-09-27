@@ -134,8 +134,11 @@ Aura exposes exactly two forms:
   **every** member provides it with a compatible signature; otherwise the call
   is rejected statically.
 
-Aura deliberately has **no subtype polymorphism and no dynamic dispatch**, and
-**no parametric polymorphism** yet — generics are the next phase.
+* **Parametric (generics).** A declaration may take static type parameters
+  (`fn identity<T>(x: T) -> T`), substituted before execution. See the
+  [Generics](/docs/guide-generics/) guide.
+
+Aura deliberately has **no subtype polymorphism and no dynamic dispatch**.
 
 ## Rules at a glance
 

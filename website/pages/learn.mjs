@@ -50,6 +50,12 @@ const STEPS = [
     cta: "Methods",
   },
   {
+    title: "Generics",
+    body: "Static, erased type parameters for functions, structs, methods, and traits.",
+    href: "docs/guide-generics/",
+    cta: "Generics",
+  },
+  {
     title: "Pattern matching",
     body: "Destructure values with match, guards, and let patterns.",
     href: "docs/guide-matching/",

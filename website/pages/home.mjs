@@ -232,7 +232,8 @@ fn main() {
           ["Traits, shadowing, foundation, overloading", "Delivered", "success"],
           ["OOP completion (four pillars, no inheritance)", "Delivered", "success"],
           ["In-source modules and visibility (pub/use)", "Delivered", "success"],
-          ["Generics, Python/PyO3", "Later", "planned"],
+          ["Generics and trait bounds", "Delivered", "success"],
+          ["Python/PyO3", "Later", "planned"],
         ])}
       </div>
       <div>
@@ -285,7 +286,7 @@ fn main() {
         ["Overloading", "Functions and methods by ordered input types", chip("Delivered", "success")],
         ["OOP completion", "Four pillars mapped to Aura; composition over inheritance", chip("Delivered", "success")],
         ["Hardening", "Conformance, differential testing, fuzzing", chip("Planned", "planned")],
-        ["Generics", "Abstraction and parameterisation", chip("Later", "planned")],
+        ["Generics", "Static, erased, nominal parametric polymorphism", chip("Delivered", "success")],
         ["Python / data", "PyO3 interop and the scientific ecosystem", chip("Long-term", "planned")],
       ],
     )}

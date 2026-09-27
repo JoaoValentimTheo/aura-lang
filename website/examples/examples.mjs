@@ -374,6 +374,43 @@ fn main() {
 }`,
     note: "This is the same program as `examples/tour.aura` in the repository.",
   },
+  {
+    id: "generics",
+    title: "Generics",
+    level: "advanced",
+    tags: ["generics", "traits", "types"],
+    summary: "Static, erased type parameters over functions, structs, and traits.",
+    output: "1\na\n5\n99\n3\n",
+    source: `struct Box<T> { value: T }
+
+trait Container<T> {
+    fn get(self) -> T
+}
+
+struct Slot<T> { value: T }
+impl<T> Container<T> for Slot<T> {
+    fn get(self) -> T { return self.value }
+}
+
+fn identity<T>(x: T) -> T { return x }
+
+fn first<T>(xs: [T]) -> T { return xs[0] }
+
+fn unbox<T: Container<T>>(b: T) -> T { return b.get() }
+
+fn main() {
+    print(identity(1))
+    print(identity("a"))
+
+    let b = Box { value: 5 }
+    print(b.value)
+
+    print(unbox(Slot { value: 99 }))
+
+    print(first([3, 4, 5]))
+}`,
+    note: "A type parameter is a compile-time placeholder: `identity(1)` and `identity(\"a\")` share one erased function. Generic arguments are inferred, or written explicitly as `identity<int>(1)`. Collections stay structural: `[T]` is a list of `T`.",
+  },
 ];
 
 export function exampleById(id) {

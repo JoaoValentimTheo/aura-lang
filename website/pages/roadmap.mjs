@@ -56,10 +56,16 @@ const PHASES = [
     body: "The object model is finalized and mapped to the four classical concepts: <strong>encapsulation</strong> as struct data, deterministic member lookup, the mutation-capability rule, and <strong>in-source modules with real <code>pub</code>/private visibility</strong>, <strong>abstraction</strong> through traits, <strong>reuse</strong> by composition plus traits rather than inheritance, and <strong>polymorphism</strong> as overloading and static union resolution. No classes, no inheritance, no dynamic dispatch.",
   },
   {
+    tag: "Delivered",
+    kind: "success",
+    title: "Generics and trait bounds",
+    body: "Static, erased, nominal parametric polymorphism over the OOP model: generic functions, structs, methods, traits, and aliases, with trait bounds and inference composed into the single overload resolver. Collections stay structural (<code>[T]</code>, <code>{string: T}</code>); a type parameter is a compile-time placeholder erased before execution.",
+  },
+  {
     tag: "Next",
     kind: "planned",
-    title: "Generics and trait bounds",
-    body: "Parameterisation builds on the current OOP model of nominal structs, methods, traits, and overloads. Inheritance is not the direction: reuse stays composition-first.",
+    title: "Filesystem module system",
+    body: "The next major phase: a project layout with <code>mod.aura</code> export surfaces, directories as module hierarchies, and <code>pub</code>/<code>use</code> over files, generalising the in-source module model.",
   },
   {
     tag: "Planned",
@@ -81,7 +87,7 @@ export const roadmapPage = {
   path: "roadmap/",
   activeKey: "roadmap",
   description:
-    "The Aura roadmap: delivered infrastructure, the 0.0.2 website and release, the delivered language foundation (OOP V1/V2, shadowing, stability), and the next features — method overloading, then generics.",
+    "The Aura roadmap: delivered infrastructure, the 0.0.2 website and release, the delivered language foundation (OOP V1/V2, shadowing, stability, overloading, generics), and the next phase — the filesystem module system.",
   async render(base) {
     const items = PHASES.map(
       (p) => `<div class="card card--elevated">
@@ -114,8 +120,8 @@ export const roadmapPage = {
       conformance testing — which is now complete. OOP V1 (struct methods) and
       OOP V2 (traits) are delivered, and the language foundation (bindings,
       scopes, mutation, operators, f-strings) is synchronized, stabilised, and
-      frozen. Function and method overloading is implemented; generics follow
-      later.</p>
+      frozen. Function and method overloading and generics are implemented;
+      the filesystem module system is the next phase.</p>
       <a class="eyebrow-link" href="${url("releases/", base)}">See releases →</a>
     </div>
   </div>

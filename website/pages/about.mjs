@@ -86,13 +86,16 @@ export const aboutPage = {
       struct with an <code>impl</code> block and an explicit <code>self</code>
       receiver, traits are static behavioral contracts via <code>impl Trait for
       Struct</code>, reuse is composition, and polymorphism is method/function
-      overloading plus static union resolution. Beyond that, to keep the project
+      overloading plus static union resolution, and generic type parameters are
+      static, erased, and nominal. Beyond that, to keep the project
       honest: Aura has no classes or inheritance, no dynamic dispatch, no
-      interfaces or trait objects, and no generics or trait bounds; modules are
+      interfaces or trait objects, and no higher-kinded or associated types;
+      modules are
       in-source (private by default, <code>pub</code> to export,
       <code>use</code> to import) rather than filesystem-backed, and there is
       no package manager; no LSP, debugger, or formatter; and no data-science
-      or AI ecosystem. Generics are the next direction, listed on the
+      or AI ecosystem. The filesystem module system is the next direction,
+      listed on the
       <a href="${url("roadmap/", base)}">roadmap</a>.</p>
     </div>
   </div>

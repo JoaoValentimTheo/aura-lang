@@ -34,6 +34,7 @@ export const docGroups = [
       { slug: "guide-collections", title: "Collections", file: "guide-collections.md" },
       { slug: "guide-data", title: "Structs and enums", file: "guide-data.md" },
       { slug: "guide-oop", title: "The object model", file: "guide-oop.md" },
+      { slug: "guide-generics", title: "Generics", file: "guide-generics.md" },
       { slug: "guide-modules", title: "Modules and visibility", file: "guide-modules.md" },
       { slug: "guide-matching", title: "Pattern matching", file: "guide-matching.md" },
       { slug: "guide-errors", title: "Errors", file: "guide-errors.md" },

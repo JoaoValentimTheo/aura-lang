@@ -217,7 +217,7 @@ fn main() {
       ["Function & method overloading", "Implemented", "success"],
       ["OOP model: encapsulation, traits, composition, overloading", "Implemented", "success"],
       ["Modules and visibility (in-source, private by default, pub/use)", "Implemented", "success"],
-      ["Generics and trait bounds", "Later", "planned"],
+      ["Generics and trait bounds (functions, structs, methods, traits)", "Implemented", "success"],
       ["Python / PyO3 interop", "Long-term", "planned"],
     ])}
     <div style="margin-top:var(--space-6)">

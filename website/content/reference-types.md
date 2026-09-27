@@ -22,10 +22,21 @@ is wrong. A value whose type cannot be determined has the checker type
 | `[T]` | list of `T` |
 | `{string: V}` | map with string keys and values of `V` |
 | `Named(name)` | a user struct or alias-resolved type |
+| `Name<T, ...>` | a generic type applied to type arguments |
 | `Enum(name)` | an enum type |
 | `Unknown` | not determined |
 
 A map annotation with a non-`string` key is rejected (`E3001`).
+
+## Generic types
+
+A declaration may take **type parameters** (`fn identity<T>(x: T) -> T`,
+`struct Box<T> { value: T }`). A type parameter is a static placeholder
+substituted before execution; it is never a runtime value. Type arguments are
+written `Name<T>` and inferred at construction or call sites when omitted. A
+parameter may carry a **bound** (`T: Trait`), which is a static contract
+checked where `T` is instantiated. See the [Generics](/docs/guide-generics/) guide
+and specification §36.
 
 ## Union types
 
