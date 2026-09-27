@@ -169,3 +169,20 @@ node playground/tests/node/run-all.mjs
 
 Browser and Worker suites require Playwright's Chromium; when it is not
 installed they report **skipped**, never a silent pass.
+
+## 7. Known NIT — no committed Node lockfile
+
+The Playground's browser/worker test dependency (`playwright`) is declared in
+`playground/package.json` but **no lockfile is committed** (`package-lock.json`
+is intentionally gitignored). The dependency is therefore not reproducibly
+pinned: `npm install` may resolve a newer patch/minor than a previous run.
+
+```text
+NIT — playground test dependencies lack a committed lockfile, reducing
+reproducibility.
+```
+
+This is a documentation/assurance NIT, not a defect or a security issue. The
+Rust-side toolchain is pinned (`rust-toolchain.toml`), and only the browser
+suites depend on this graph; a package-manager migration is deliberately out of
+scope for the current hardening round.

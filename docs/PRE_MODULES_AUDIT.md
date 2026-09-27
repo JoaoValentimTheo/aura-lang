@@ -176,10 +176,15 @@ removed after use.
 * **Resource limits.** Call frames: 510 ok / 511+ `E4011`, identical on both
   substrates. AST expression nesting via grouping: over-limit is `E1015` on
   both. Range iteration is lazy (`break` on a `10^12` range does not
-  materialize). Value display/JSON depth is bounded (512) with `…`/`null`, and
-  equality is coinductive over cycles. `list↔list`, `list↔map`,
-  `struct↔list`, `map↔struct`, `struct↔struct`, and enum-payload cycles all
-  terminate in display, equality, and JSON.
+  materialize). Value display/JSON depth is bounded (512) with `…`/`null`.
+  Equality is a cycle-safe iterative worklist with a visited-*pair* set and an
+  `Rc::ptr_eq` identity shortcut. `list↔list`, `list↔map`, `struct↔list`,
+  `map↔struct`, `struct↔struct`, and enum-payload *simple* cycles terminate in
+  display, equality, and JSON. **Correction (AUDIT-5):** this first-round
+  verification established simple-cycle termination only; it did **not**
+  establish safety against shared substructure with fan-out ≥ 2 and
+  combinatorial re-traversal, which AUDIT-4 later exposed in display/JSON and
+  AUDIT-5 in the Python bridge. See §8.2 and §8.6.
 * **Checker ↔ runtime registry.** Every registered builtin has a signature;
   every signature method resolves at runtime; method arity/type mismatches
   (`x.upper(1)`, `x.contains()`, `x.replace("a")`, …) produce the **same**
@@ -427,6 +432,82 @@ PR smoke (60 s/target, `ci.yml` `fuzz` job) and nightly 30 min/target
 ### 8.4 Property tests and permanent corpus
 
 `tests/property_hardening.rs` (five properties, `proptest` 1.5 — already a
-dev-dependency) and `tests/corpus/` (74 fixtures, executed by
-`tests/corpus.rs` with a bidirectional inventory). Both run in the existing
-`test` job.
+dev-dependency) and `tests/corpus/` (executed by `tests/corpus.rs` with a
+bidirectional inventory). Both run in the existing `test` job.
+
+### 8.5 AUDIT-5 — Python bridge fan-out/cycle blow-up (AUDIT round 5)
+
+**Class:** CONFIRMED. **Severity:** HIGH (host-level non-termination, native;
+default-on `py` feature). The surface is the native-only Python FFI, so it is
+not a cross-substrate divergence; on wasm the `py_*` calls are `E5002`.
+
+**Reproducers:**
+```aura
+fn main() { let c = py_eval("(lambda c: (c.append(c), c.append(c), c)[2])([])")
+ print(len(to_string(c))) }
+```
+and, in the other direction,
+```aura
+fn grow(xs, n) {
+ let mut cur = xs
+ let mut i = 0
+ while i < n { cur = [cur, cur]
+ i = i + 1 }
+ return cur
+}
+fn main() { print(len(py_call("builtins", "repr", grow([1], 40)))) }
+```
+`bridge::to_value_depth` (Python → Aura) and `to_py_depth` (Aura → Python)
+bounded only *depth* (`MAX_VALUE_DEPTH`), not total nodes; and neither tracked
+a container already on the current path. A Python object that references itself
+with fan-out ≥ 2, or an Aura value with shared subvalues, re-expands
+exponentially and never returns.
+
+**Fix:** both directions now also carry a total-node budget (`MAX_PY_NODES` /
+`MAX_PY_SOURCE_NODES`, 1,000,000) and a path-based identity set. A cycle is
+rejected with a structured `E5002`; a shared (DAG) value is converted again,
+bounded by the budget. No partial Python object is handed back.
+
+**Regression:** `tests/python.rs` (`python_cyclic_container_is_rejected_not_hung`,
+`aura_value_into_python_terminates`, `python_acyclic_values_still_round_trip`).
+
+**Artifact:** native-only source change; it does not alter any wasm build, so
+the development channel bytes are unchanged (see the round report).
+
+### 8.6 Corrections to the previous round (AUDIT-5 review)
+
+* **Cycle-safety claim was broader than the evidence.** §7.8 of the earlier
+  report summarized "cycle-safe display/equality/JSON/teardown across all
+  container combinations". That verification established *simple cycle
+  termination*, not safety against **shared substructure + fan-out ≥ 2 +
+  combinatorial re-traversal**. AUDIT-4 exposed exactly that missing
+  dimension. This is recorded as a correction to the scope of the original
+  claim, not as a new production bug in the simple-cycle cases (which were
+  and remain correct).
+* **Equality was safe, but under-tested.** `Value::equals` is a *separate*
+  algorithm from display/JSON: an iterative worklist with a visited-pair set
+  and an `Rc::ptr_eq` identity shortcut. The earlier property compared only
+  `c == c`, which takes the identity shortcut and never exercises the
+  visited-pair set. The property now compares a cyclic graph against an
+  independently constructed, structurally identical graph, so the dangerous
+  path is actually tested.
+* **Fuzz generator under-represented shared fan-out.** The runtime generator's
+  cycle branch produced mostly single self-cycles; simple-cycle coverage is not
+  combinatorial fan-out coverage. The generator now deliberately emits
+  `push(c, c)` twice, `[c, c]`, and repeated `x = [x, x]`, and those shapes are
+  pinned as committed corpus fixtures.
+* **"No-python Rust set: 604" was a test-count artifact.** Python/PyO3 is a
+  real, default-on feature (`py`), with a live bridge (`src/bridge/mod.rs`),
+  tests (`tests/python.rs`), and a CI job (`no-python`) that proves the pure
+  build links no CPython. The `604` figure was the count of executable Rust
+  `#[test]` functions with `py` **disabled** (610 with `py`, 6 of which require
+  it); it was never a statement that no Python support exists.
+* **LeakSanitizer incident.** The `crash-*`/`leak-*` filename that was
+  investigated embeds libFuzzer's SHA-1 of the crashing input; for the empty
+  input that is `da39a3ee…`. The diagnosis (exit-time LSan report for the
+  documented, memory-safe `Rc`-cycle non-reclamation, not a real crash) was
+  correct, but SHA-1 there is **libFuzzer's artifact-naming convention**, not
+  Aura's SHA-256 artifact-integrity hash. Sanitizer scope is now explicit:
+  LSan is enabled for `lexer`/`parser`/`checker` and scoped off only for
+  `runtime` (see `fuzz/README.md`).
+

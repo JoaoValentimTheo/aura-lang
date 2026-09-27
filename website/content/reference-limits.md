@@ -57,8 +57,18 @@ or more — a cycle reachable from more than one position, or a shared subvalue 
 would otherwise re-traverse exponentially and never terminate. Past either
 bound the remainder is elided.
 
+The node budget is scoped **per rendering operation** (one display or one
+`json_encode`), not per program: each render is guaranteed to terminate in
+bounded work, while a program that renders in a loop performs that bounded work
+per render. The Python bridge applies the same depth-and-nodes discipline when a
+value crosses the Aura/Python boundary, and rejects a reference cycle that Aura
+cannot represent with a structured diagnostic.
+
 ## Fuzzing and the permanent corpus
 
 The resource guarantees above are continuously checked by four libFuzzer
 targets (`fuzz/`) and by the permanent fixture corpus (`tests/corpus/`), which
-runs in CI.
+runs in CI. The sanitizer scope is explicit: LeakSanitizer runs on the lexer,
+parser, and checker targets, and is scoped off only for the runtime target,
+where Aura's documented, memory-safe `Rc` model legitimately does not reclaim a
+reference cycle.

@@ -9,11 +9,14 @@
 // Usage:
 //   node playground/tests/node/differential.test.mjs <runtime.wasm> <native-bin>
 
-import { readFileSync, writeFileSync, mkdtempSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, readdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { AuraRuntime } from "../../web/runtime.mjs";
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 const wasmPath = process.argv[2];
 const nativeBin = process.argv[3];
@@ -636,6 +639,68 @@ if (postError.text === norm({ status: "ok", stdout: "3\n", result: null, diagnos
 } else {
   failed += 1;
   console.error(`FAIL instance recovery after rejected deep input\n  wasm: ${postError.text}`);
+}
+
+// ---------------------------------------------------------------------------
+// Generated-program native/wasm parity (Property 4, permanent).
+//
+// The real cross-substrate property: take the *generated* checker-passing
+// programs (`tests/support/program_gen.rs`, snapshotted as the committed
+// `tests/corpus/ast/gen_*.aura` fixtures), run each through BOTH engines, and
+// require the observable results to be identical. The previous Rust-side
+// property only pinned the *native* output of each fixture; this block is the
+// actual native/wasm comparison, which needs both engines.
+//
+// Excluded: TypeExpr-heavy inputs (AUDIT-3 substrate divergence is
+// intentionally excluded pending the human decision). The generator emits no
+// TypeExpr-heavy program, so the exclusion is automatic here.
+//
+// A mismatch prints the minimal program and its fixed seed (fixture name), so
+// it is reproducible by running the single fixture through both engines.
+{
+  const genDir = resolve(here, "../../../tests/corpus/ast");
+  let genFiles = [];
+  try {
+    genFiles = readdirSync(genDir)
+      .filter((f) => /^gen_\d+\.aura$/.test(f))
+      .sort();
+  } catch (e) {
+    console.error(`FAIL generated-parity: cannot read ${genDir}: ${e.message}`);
+    failed += 1;
+  }
+  let genPassed = 0;
+  let genFailed = 0;
+  let genNonAccept = 0;
+  for (const f of genFiles) {
+    const src = readFileSync(join(genDir, f), "utf8");
+    const w = wasmResult(src);
+    const nfile = join(dir, `genparity_${f}`);
+    writeFileSync(nfile, src);
+    const n = norm(JSON.parse(execFileSync(nativeBin, [nfile, optionsFile], { encoding: "utf8" }).trim()));
+    // The generator's contract: the program is checker-accepted on BOTH
+    // substrates (status "ok"). A rejection here is a generator/parity defect,
+    // not ordinary fuzz noise.
+    if (!w.text.includes('"status":"ok"') || !n.includes('"status":"ok"')) {
+      genNonAccept += 1;
+      console.error(`FAIL generated-parity ${f}: not accepted on both substrates\n  wasm:   ${w.text}\n  native: ${n}`);
+      continue;
+    }
+    if (w.text === n) {
+      genPassed += 1;
+    } else {
+      genFailed += 1;
+      console.error(`FAIL generated-parity ${f}\n  wasm:   ${w.text}\n  native: ${n}`);
+    }
+  }
+  if (genFiles.length > 0 && genFailed === 0 && genNonAccept === 0) {
+    passed += 1;
+    console.log(`generated-parity: ${genPassed}/${genFiles.length} generated programs agree native/wasm`);
+  } else {
+    failed += 1;
+    console.error(
+      `FAIL generated-parity: ${genPassed} agreed, ${genFailed} mismatched, ${genNonAccept} not accepted, of ${genFiles.length}`,
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

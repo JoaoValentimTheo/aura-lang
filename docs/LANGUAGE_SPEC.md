@@ -2903,6 +2903,21 @@ terminate. The node budget makes every render terminate in bounded time; the
 bound is generous enough that any value a program can legitimately build and
 render here (deep chains, four-figure collections) is unaffected.
 
+**Normative rule.** The node budget is scoped **per rendering operation** (one
+`to_string`/display, one `json_encode`), not per program or per process. Each
+such operation is guaranteed to terminate in bounded work; a program that
+performs many renders performs a bounded amount of work *per render*. The total
+work of a program remains governed by the call-frame limit (`§31.3`) and the
+host environment's own execution limits. No global rate limiter is implied.
+
+**Normative rule.** The Python bridge (native `py` feature; see the host
+boundary in §1 and the builtin table in §24) applies the same discipline when a
+value crosses the Aura/Python boundary: the conversion is bounded in depth *and*
+total nodes and detects a reference cycle by identity, rejecting it with a
+structured `E5002` rather than following it. A reference cycle cannot be
+represented as an Aura `Rc` value, so it is not silently flattened or
+truncated.
+
 **Normative rule.** Beyond either bound:
 
 * the display form elides the remainder with `…` (U+2026);
