@@ -1,0 +1,5 @@
+fn main() { let mut c = []
+ let m = { "inner": 1 }
+ push(c, m)
+ push(c, c)
+ print(len(to_string(c))) }

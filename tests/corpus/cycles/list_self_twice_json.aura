@@ -1,0 +1,4 @@
+fn main() { let mut c = []
+ push(c, c)
+ push(c, c)
+ print(len(json_encode(c))) }

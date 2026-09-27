@@ -1,0 +1,3 @@
+fn g<T>(n: int, x: T) -> int { if n <= 0 { return 0 }
+ return 1 + g(n - 1, x) }
+fn main() { print(g(509, 1)) }

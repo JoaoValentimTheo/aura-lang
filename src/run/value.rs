@@ -13,6 +13,56 @@ use std::rc::Rc;
 /// constant.
 pub const MAX_VALUE_DEPTH: usize = 512;
 
+/// Maximum number of value nodes a single display or JSON render may visit.
+///
+/// The depth bound alone does not bound *work*: a value with reference
+/// fan-out of two or more — a cycle touched from more than one position, or a
+/// shared (aliased) subvalue — is re-traversed at every occurrence, so the
+/// render expands exponentially and does not terminate (`a.push(a)` twice, or
+/// `x = [x, x]` repeated, hangs both substrates). This budget bounds the total
+/// nodes visited, so any value renders in bounded time; once it is exhausted
+/// the remainder is elided with `…` (display) / `null` (JSON), exactly like the
+/// depth bound (`LANGUAGE_SPEC.md` §31.6).
+///
+/// The value is deliberately large enough that every value the language can
+/// legitimately build and render in the repository's tests and examples is
+/// unaffected (`40,000`-deep values, four-figure collections, and a
+/// ten-million-element list built linearly), while the worst-case render of an
+/// adversarial fan-out value stays bounded — the point of the guard is
+/// guaranteed termination, not throughput.
+pub const MAX_VALUE_NODES: usize = 1_000_000;
+
+/// A shared node budget for one render traversal.
+pub struct RenderBudget {
+    remaining: usize,
+}
+
+impl RenderBudget {
+    /// A fresh budget of [`MAX_VALUE_NODES`] nodes.
+    #[must_use]
+    pub fn new() -> Self {
+        RenderBudget {
+            remaining: MAX_VALUE_NODES,
+        }
+    }
+
+    /// Consume one node; returns `false` once the budget is exhausted.
+    pub fn take(&mut self) -> bool {
+        if self.remaining == 0 {
+            false
+        } else {
+            self.remaining -= 1;
+            true
+        }
+    }
+}
+
+impl Default for RenderBudget {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// A runtime value.
 #[derive(Clone)]
 pub enum Value {
@@ -304,20 +354,22 @@ impl Value {
     /// The display form (used by `print` and `to_string`).
     #[must_use]
     pub fn display(&self) -> String {
-        self.repr(true, 0)
+        self.repr(true, 0, &mut RenderBudget::new())
     }
 
     /// The debug form (quotes strings inside collections).
     #[must_use]
     pub fn debug_repr(&self) -> String {
-        self.repr(false, 0)
+        self.repr(false, 0, &mut RenderBudget::new())
     }
 
-    fn repr(&self, top: bool, depth: usize) -> String {
+    fn repr(&self, top: bool, depth: usize, budget: &mut RenderBudget) -> String {
         // A cyclic or very deep value is rendered truncated rather than
         // recursing until the native stack overflows (`LANGUAGE_SPEC.md`
-        // §31.5). `…` marks the elided remainder.
-        if depth >= MAX_VALUE_DEPTH {
+        // §31.5). `…` marks the elided remainder. The *total-node* budget
+        // additionally bounds a value whose reference fan-out is two or more,
+        // where the depth bound alone leaves exponential re-traversal.
+        if depth >= MAX_VALUE_DEPTH || !budget.take() {
             return "…".to_string();
         }
         match self {
@@ -336,7 +388,7 @@ impl Value {
                 let inner = l
                     .borrow()
                     .iter()
-                    .map(|v| v.repr(false, depth + 1))
+                    .map(|v| v.repr(false, depth + 1, budget))
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("[{inner}]")
@@ -345,7 +397,7 @@ impl Value {
                 let inner = m
                     .borrow()
                     .iter()
-                    .map(|(k, v)| format!("\"{k}\": {}", v.repr(false, depth + 1)))
+                    .map(|(k, v)| format!("\"{k}\": {}", v.repr(false, depth + 1, budget)))
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("{{{inner}}}")
@@ -355,7 +407,7 @@ impl Value {
                     .fields
                     .borrow()
                     .iter()
-                    .map(|(k, v)| format!("{k}: {}", v.repr(false, depth + 1)))
+                    .map(|(k, v)| format!("{k}: {}", v.repr(false, depth + 1, budget)))
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("{} {{ {fields} }}", i.ty)
@@ -367,7 +419,7 @@ impl Value {
                     let inner = v
                         .payload
                         .iter()
-                        .map(|x| x.repr(false, depth + 1))
+                        .map(|x| x.repr(false, depth + 1, budget))
                         .collect::<Vec<_>>()
                         .join(", ");
                     format!("{}({inner})", v.tag)

@@ -1,0 +1,4 @@
+trait Container<T> { fn get(self, i: int) -> T }
+struct Stack<T> { items: [T] }
+impl<T> Container<T> for Stack<T> { fn get(self, i: int) -> T { return self.items[i] } }
+fn main() { print(Stack { items: [4, 5, 6] }.get(1)) }

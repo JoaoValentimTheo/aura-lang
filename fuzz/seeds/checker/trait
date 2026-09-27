@@ -1,0 +1,4 @@
+trait T { fn m(self) -> int }
+struct S { n: int }
+impl T for S { fn m(self) -> int { return self.n } }
+fn main() { print(1) }

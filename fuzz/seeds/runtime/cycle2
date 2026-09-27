@@ -1,0 +1,4 @@
+fn main() { let mut c = []
+ push(c, c)
+ push(c, c)
+ print(len(to_string(c))) }

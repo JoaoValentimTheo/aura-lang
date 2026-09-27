@@ -1,0 +1,3 @@
+fn id<T>(x: T) -> T { return x }
+fn apply(f, v) { return f(v) }
+fn main() { print(apply(id, 5)) }

@@ -1,0 +1,4 @@
+fn id<T>(x: T) -> T { return x }
+fn g(x: int | none) -> int { return 0 }
+fn main() { print(id(1))
+ print(g(2)) }

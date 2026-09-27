@@ -1,0 +1,51 @@
+[package]
+name = "aura-lang-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+
+[dependencies.aura-lang]
+path = ".."
+# The fuzz targets exercise the language core only; the Python bridge is
+# irrelevant here and would add a heavyweight, non-deterministic dependency to
+# every run. `json` is required by the runtime-cycle target (`json_encode`).
+default-features = false
+features = ["json"]
+
+# Fuzz targets must be built with the sanitizer-friendly settings cargo-fuzz
+# applies; these are the idiomatic entries.
+
+[[bin]]
+name = "lexer"
+path = "fuzz_targets/lexer.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parser"
+path = "fuzz_targets/parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "checker"
+path = "fuzz_targets/checker.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "runtime"
+path = "fuzz_targets/runtime.rs"
+test = false
+doc = false
+bench = false

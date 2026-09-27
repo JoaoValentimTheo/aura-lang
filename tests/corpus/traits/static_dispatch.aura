@@ -1,0 +1,5 @@
+trait Show { fn show(self) -> int }
+struct A { n: int }
+impl Show for A { fn show(self) -> int { return self.n } }
+fn run<T: Show>(x: T) -> int { return x.show() }
+fn main() { print(run(A { n: 7 })) }

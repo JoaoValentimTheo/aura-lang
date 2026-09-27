@@ -360,3 +360,73 @@ exactly 2048 (native) and 768 (wasm); and the divergence shape is exactly
 reject/reject at ≥2048". No separate host-level finding was observed below the
 native stack limit.
 
+
+---
+
+## 8. Hardening round (permanent harness)
+
+### 8.1 Test-count reconciliation
+
+The "600" figure was the count of executable Rust `#[test]` cases reported by
+the canonical command `cargo test --locked --all-targets --all-features`
+(summed from each `test result:` line). The follow-up round's additions did not
+change it because they were **not new `#[test]` functions**:
+
+* `tests/grammar.rs`: the two `mut`-parameter cases were added to the existing
+  `GRAMMAR_SAMPLES` array inside `grammar_samples_parse_and_run`, which is one
+  `#[test]`; the file's `#[test]` count stayed 6.
+* `+3 browser`, `+4 differential`, `+27 integrity` are **Node/playground**
+  checks, not Rust tests, so they never were part of the Rust 600.
+
+The Node/playground totals are a separate addition. The combined number is
+defined explicitly in the round report.
+
+### 8.2 AUDIT-4 — display/JSON node-budget (HIGH)
+
+**Class:** CONFIRMED. **Severity:** HIGH (host-level non-termination, both
+substrates; no memory unsafety).
+
+**Reproducer:**
+```aura
+fn main() { let mut c = []
+ push(c, c)
+ push(c, c)
+ print(len(to_string(c))) }
+```
+`repr` and `to_json_depth` bounded recursion *depth* (`MAX_VALUE_DEPTH = 512`)
+but not total nodes. A value with reference fan-out ≥ 2 — a cycle reachable
+from more than one position, or a shared subvalue — is re-traversed at every
+occurrence, so the render expands exponentially and **never terminates** on
+either substrate (native spins; the wasm artifact spins too, so no trap, no
+diagnostic, no return). This violates §31.5 (no host failure) and §31.6
+(display/JSON terminate).
+
+**Fix:** a shared total-node render budget (`MAX_VALUE_NODES`, 1,000,000,
+`RenderBudget`) consumed once per visited node in `Value::repr` and
+`to_json_depth`, alongside the depth bound. Beyond it the remainder elides
+(`…` / `null`), exactly like the depth bound. A 5,000-element list and a
+40,000-deep value still render fully; the worst-case adversarial render is
+≈0.65 s.
+
+**Regression:** `tests/regressions.rs::audit4_*` (3 tests); corpus
+`tests/corpus/cycles/*` (9 fixtures); 4 differential cases; property
+`cyclic_graphs_render_and_compare_safely`.
+
+**Artifact:** the runtime change alters wasm bytes, so the dev channel advanced
+`0.0.2-dev.22` → `0.0.2-dev.23` (dev.22 preserved byte-for-byte).
+
+### 8.3 Permanent fuzz targets
+
+Four libFuzzer targets under `fuzz/fuzz_targets/` — `lexer` (arbitrary bytes),
+`parser` (arbitrary source bytes), `checker` (parser-accepted, resolver-walked
+modules), `runtime` (grammar-aware generated, checker-passing programs with a
+cycle/aliasing surface). Seed corpora under `fuzz/corpus/<target>/`. Bounded
+PR smoke (60 s/target, `ci.yml` `fuzz` job) and nightly 30 min/target
+(`fuzz-nightly.yml`). No crashes found in the smoke runs.
+
+### 8.4 Property tests and permanent corpus
+
+`tests/property_hardening.rs` (five properties, `proptest` 1.5 — already a
+dev-dependency) and `tests/corpus/` (74 fixtures, executed by
+`tests/corpus.rs` with a bidirectional inventory). Both run in the existing
+`test` job.

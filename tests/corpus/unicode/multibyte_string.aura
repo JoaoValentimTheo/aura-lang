@@ -1,0 +1,1 @@
+fn main() { print(len("héllo λ世界")) }

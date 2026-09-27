@@ -1,0 +1,70 @@
+name: Fuzz (nightly)
+
+# A longer libFuzzer run of the four hardening targets, scheduled nightly.
+# This extends the bounded PR smoke run in `ci.yml` (60 s/target) rather than
+# duplicating it. It is intentionally non-blocking for normal PR turnaround:
+# it only runs on a schedule (and on manual dispatch), never on a pull request.
+#
+# Supply chain: actions are pinned by major version (never `@main`/`@latest`),
+# matching the repository's existing policy; the workflow requests only
+# `contents: read`.
+
+on:
+  schedule:
+    # 03:17 UTC daily (off the hour, to avoid the busiest scheduler minute).
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fuzz-nightly:
+    name: nightly fuzz (30m/target)
+    runs-on: ubuntu-latest
+    # The scheduled run must not fail the repository's overall health status for
+    # an infrastructure hiccup; a crash still uploads artifacts and is visible.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "fuzz -> target"
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+      - name: Seed the working corpora from the committed seeds
+        run: |
+          set -euo pipefail
+          for t in lexer parser checker runtime; do
+            mkdir -p "fuzz/corpus/$t"
+            cp fuzz/seeds/$t/* "fuzz/corpus/$t/" 2>/dev/null || true
+          done
+      - name: Fuzz each target for 30 minutes
+        run: |
+          set -euo pipefail
+          for t in lexer parser checker runtime; do
+            echo "=== fuzzing $t for 1800s ==="
+            cargo fuzz run "$t" -- -max_total_time=1800 -rss_limit_mb=4096 -timeout=25
+          done
+      - name: Upload any crash artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: |
+            fuzz/artifacts/**
+            fuzz/corpus/**
+          if-no-files-found: ignore
+      - name: Fail if any crash artifact was produced
+        if: always()
+        run: |
+          if [ -d fuzz/artifacts ] && [ -n "$(find fuzz/artifacts -type f -print -quit)" ]; then
+            echo "fuzz produced crash artifacts:" >&2
+            find fuzz/artifacts -type f -print >&2
+            exit 1
+          fi
+          echo "no crash artifacts"

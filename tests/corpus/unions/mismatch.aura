@@ -1,0 +1,2 @@
+type Number = int | float
+fn main() { let x: Number = "s" }

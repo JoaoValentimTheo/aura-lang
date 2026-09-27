@@ -64,6 +64,17 @@ jobs:
         run: cargo test --locked --all-targets --all-features
       - name: Pure Rust, no Python
         run: cargo test --locked --all-targets --no-default-features --features cli,repl,json,regex,time
+      # The hardening property suite and the permanent resource corpus run in
+      # this job (they are part of `--all-targets`, but are named explicitly so
+      # their integration point is visible and they are never silently dropped).
+      # `test/corpus` executes every committed `tests/corpus` fixture; the
+      # inventory test fails if any fixture is missing from the table.
+      - name: Hardening property tests
+        if: runner.os == 'ubuntu-latest'
+        run: cargo test --locked --all-features --test property_hardening
+      - name: Permanent resource corpus
+        if: runner.os == 'ubuntu-latest'
+        run: cargo test --locked --all-features --test corpus
 
   # -------------------------------------------------------------- no-python
   no-python:
@@ -157,6 +168,47 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo install cargo-audit --locked || true
       - run: cargo audit
+
+  # ------------------------------------------------------------------ fuzz
+  # A bounded libFuzzer smoke run of the four hardening targets on every PR.
+  # Budget: 60 s per target (240 s worst case), which is small against the
+  # existing CI and catches crashes/aborts/timeouts early. The long run is the
+  # nightly `fuzz-nightly` workflow. Actions are pinned by version (never
+  # `@main`/`@latest`), matching the rest of the repository.
+  fuzz:
+    name: fuzz smoke (lexer/parser/checker/runtime)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "fuzz -> target"
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+      - name: Seed the working corpora from the committed seeds
+        run: |
+          set -euo pipefail
+          for t in lexer parser checker runtime; do
+            mkdir -p "fuzz/corpus/$t"
+            cp fuzz/seeds/$t/* "fuzz/corpus/$t/" 2>/dev/null || true
+          done
+      - name: Fuzz each target for 60 s
+        run: |
+          set -euo pipefail
+          for t in lexer parser checker runtime; do
+            echo "=== fuzzing $t for 60s ==="
+            cargo fuzz run "$t" -- -max_total_time=60 -rss_limit_mb=4096 -timeout=25
+          done
+      - name: Fail if any crash artifact was produced
+        if: always()
+        run: |
+          if [ -d fuzz/artifacts ] && [ -n "$(find fuzz/artifacts -type f -print -quit)" ]; then
+            echo "fuzz produced crash artifacts:" >&2
+            find fuzz/artifacts -type f -print >&2
+            exit 1
+          fi
+          echo "no crash artifacts"
 
   # --------------------------------------------------------------- playground
   # Builds the real Playground wasm runtime, verifies the versioned manifest is

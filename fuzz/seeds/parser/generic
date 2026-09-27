@@ -1,0 +1,2 @@
+struct Box<T> { value: T }
+fn f(x: Box<Box<int>>) -> int { return 1 }

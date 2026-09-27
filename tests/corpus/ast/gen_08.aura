@@ -1,0 +1,25 @@
+struct Point { x: int, y: int }
+impl Point { fn sum(self) -> int { return self.x + self.y } }
+enum Color { Red, Green, Blue }
+trait Show { fn show(self) -> int }
+struct Num { n: int }
+impl Show for Num { fn show(self) -> int { return self.n } }
+fn id<T>(x: T) -> T { return x }
+fn add(a: int, b: int) -> int { return a + b }
+fn describe(c: Color) -> int { return match c { Red() -> 0
+ Green() -> 1
+ Blue() -> 2 } }
+fn on_show<T: Show>(x: T) -> int { return x.show() }
+fn main() {
+    let s0 = ("abc".upper() + "z")
+    let mut i1 = on_show(Num { n: 4 })
+    let mut l2 = [5]
+    let k3 = Red()
+    let mut i4 = 17
+    let mut i5 = (to_int("7") * 1)
+    push(l2, 69)
+    print(len(l2))
+    print(to_int("7"))
+    let mut l6 = [49]
+    print(0)
+}

@@ -1,0 +1,3 @@
+fn f<T>(x: T) -> T { return x }
+fn f<U>(x: U) -> U { return x }
+fn main() {}

@@ -1433,3 +1433,68 @@ fn audit_deep_type_annotation_never_host_fails() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+//
+// AUDIT-4: the display and JSON encoders bounded recursion *depth* but not the
+// *total number of nodes visited*. A value with reference fan-out of two or
+// more — a cycle reachable from more than one position, or a shared subvalue —
+// is re-traversed at every occurrence, so the render expands exponentially and
+// does not terminate. `push(c, c)` twice on an empty list, or `x = [x, x]`
+// repeated, hangs BOTH substrates at the host level (no diagnostic, no trap,
+// no return), violating LANGUAGE_SPEC.md §31.5 (no host failure) and §31.6
+// (display/JSON terminate). Fixed with a shared total-node render budget
+// (`MAX_VALUE_NODES`) alongside the existing depth bound.
+// ---------------------------------------------------------------------------
+
+/// AUDIT-4: a list that contains itself twice must display and JSON-encode in
+/// bounded time, eliding the remainder exactly like the depth bound.
+#[test]
+fn audit4_multi_reference_cycle_terminates() {
+    // The minimal reproducer: one list, pushed onto itself twice.
+    let shown = out("fn main() { let mut c = []\n push(c, c)\n push(c, c)\n print(c) }");
+    assert!(shown.starts_with('['), "unexpected display: {shown}");
+    assert!(shown.contains('…'), "expected elision, got: {shown}");
+    // `to_string` takes the same path.
+    let s =
+        out("fn main() { let mut c = []\n push(c, c)\n push(c, c)\n print(len(to_string(c))) }");
+    assert!(
+        s.trim().parse::<usize>().is_ok(),
+        "expected a length, got: {s}"
+    );
+    // JSON encoding terminates too.
+    let json =
+        out("fn main() { let mut c = []\n push(c, c)\n push(c, c)\n print(len(json_encode(c))) }");
+    assert!(
+        json.trim().parse::<usize>().is_ok(),
+        "expected a json length, got: {json}"
+    );
+}
+
+/// AUDIT-4: a shared (DAG) value with exponential unfolding must render in
+/// bounded time even without a cycle.
+#[test]
+fn audit4_shared_subvalue_render_is_bounded() {
+    // `grow([1], n)` builds `[x, x]` n times; the display would be 2^n nodes if
+    // every occurrence were traversed. It must terminate with elision.
+    let src = "fn grow(xs, n) {\n let mut cur = xs\n let mut i = 0\n while i < n { cur = [cur, cur]\n i = i + 1 }\n return cur\n}\nfn main() { print(len(to_string(grow([1], 40)))) }";
+    let n = out(src);
+    assert!(
+        n.trim().parse::<usize>().is_ok(),
+        "expected a bounded length, got: {n}"
+    );
+}
+
+/// AUDIT-4: the node bound is a rendering guard only — shallow values keep
+/// their exact prior semantics.
+#[test]
+fn audit4_shallow_semantics_unchanged() {
+    assert_eq!(
+        out("fn main() { print([1, [2, 3], {\"k\": true}]) }"),
+        "[1, [2, 3], {\"k\": true}]\n"
+    );
+    assert_eq!(
+        out("fn main() { let mut a = []\n push(a, a)\n print(a == a) }"),
+        "true\n"
+    );
+}

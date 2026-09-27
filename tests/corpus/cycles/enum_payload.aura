@@ -1,0 +1,6 @@
+enum E { V([int]) }
+fn main() { let mut xs = []
+ push(xs, 1)
+ let e = V(xs)
+ push(xs, xs)
+ print(len(to_string(xs))) }

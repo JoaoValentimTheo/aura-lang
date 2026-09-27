@@ -1,0 +1,4 @@
+type ID = string | int
+type UserID = ID
+fn main() { let u: UserID = 5
+ print(u) }

@@ -1,0 +1,28 @@
+struct Point { x: int, y: int }
+impl Point { fn sum(self) -> int { return self.x + self.y } }
+enum Color { Red, Green, Blue }
+trait Show { fn show(self) -> int }
+struct Num { n: int }
+impl Show for Num { fn show(self) -> int { return self.n } }
+fn id<T>(x: T) -> T { return x }
+fn add(a: int, b: int) -> int { return a + b }
+fn describe(c: Color) -> int { return match c { Red() -> 0
+ Green() -> 1
+ Blue() -> 2 } }
+fn on_show<T: Show>(x: T) -> int { return x.show() }
+fn main() {
+    let p0 = Point { x: 44, y: 29 }
+    let b1 = (1 < 2 and true)
+    print(1)
+    let mut l2 = [29, 5]
+    let p3 = Point { x: 2, y: 46 }
+    let mut c4 = []
+    for x in l2 { print(x) }
+    push(c4, c4)
+    print(c4 == c4)
+    print(len(json_encode(c4)))
+    let mut c5 = []
+    push(c4, 2)
+    let mut i6 = (len(c5) / 3)
+    print(0)
+}

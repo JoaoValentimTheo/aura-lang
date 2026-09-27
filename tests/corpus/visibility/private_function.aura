@@ -1,0 +1,2 @@
+module m { fn hidden() -> int { return 1 } }
+fn main() { print(m::hidden()) }

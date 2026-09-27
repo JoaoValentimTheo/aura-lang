@@ -1,0 +1,3 @@
+struct Box<T> { value: T }
+fn unbox<T>(b: Box<T>) -> T { return b.value }
+fn main() { print(unbox(Box { value: 5 })) }

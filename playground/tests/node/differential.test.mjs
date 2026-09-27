@@ -392,6 +392,26 @@ const cases = [
   ['fstring width at bound', 'fn main() { print(len(f"{1:10000000}")) }'],
   ['fstring width over bound', 'fn main() { print(f"{1:10000001}") }'],
   ['fstring width far over', 'fn main() { print(f"{1:2000000000}") }'],
+  // AUDIT-4: a value with reference fan-out >= 2 (a cycle reached twice, or a
+  // shared DAG) used to expand exponentially in display/JSON and never
+  // terminate on EITHER substrate. The total-node render budget makes both
+  // substrates terminate with the same output.
+  [
+    'cycle fan-out 2 display',
+    'fn main() { let mut c = []\n push(c, c)\n push(c, c)\n print(len(to_string(c))) }',
+  ],
+  [
+    'cycle fan-out 2 json',
+    'fn main() { let mut c = []\n push(c, c)\n push(c, c)\n print(len(json_encode(c))) }',
+  ],
+  [
+    'cycle fan-out 4 display',
+    'fn main() { let mut c = []\n push(c, c)\n push(c, c)\n push(c, c)\n push(c, c)\n print(len(to_string(c))) }',
+  ],
+  [
+    'shared subvalue DAG display',
+    'fn grow(xs, n) {\n let mut cur = xs\n let mut i = 0\n while i < n { cur = [cur, cur]\n i = i + 1 }\n return cur\n}\nfn main() { print(len(to_string(grow([1], 40)))) }',
+  ],
   // Trailing comma uniformity.
   [
     'trailing comma everywhere',

@@ -1,0 +1,4 @@
+enum Opt<T> { Some(T), Nothing }
+fn unwrap<T>(o: Opt<T>) -> T { return match o { Some(v) -> v
+ Nothing -> none } }
+fn main() { print(unwrap(Some(3))) }

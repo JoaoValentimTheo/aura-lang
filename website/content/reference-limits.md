@@ -10,6 +10,7 @@ the runtime model.
 | Call-frame limit (recursion) | 512 | `E4011` |
 | Range materialization | 10,000,000 elements | `E4013` |
 | Runtime value display/JSON depth | 512 | truncated (display) / `null` (JSON) |
+| Runtime value display/JSON nodes | 1,000,000 | truncated (display) / `null` (JSON) |
 | Parser recursion backstop | substrate-calibrated | `E1015` |
 
 ## AST nesting (E1015)
@@ -49,4 +50,15 @@ accepted on every execution substrate.
 ## Value equality and cycles
 
 Equality and display detect reference cycles, so a self-referential list or map
-is handled safely rather than recursing forever.
+is handled safely rather than recursing forever. Display and JSON encoding are
+bounded by both a depth (512) and a total-node budget (1,000,000): the depth
+bound alone does not bound work, because a value whose reference fan-out is two
+or more — a cycle reachable from more than one position, or a shared subvalue —
+would otherwise re-traverse exponentially and never terminate. Past either
+bound the remainder is elided.
+
+## Fuzzing and the permanent corpus
+
+The resource guarantees above are continuously checked by four libFuzzer
+targets (`fuzz/`) and by the permanent fixture corpus (`tests/corpus/`), which
+runs in CI.

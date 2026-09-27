@@ -19,15 +19,20 @@ pub mod json {
     }
 
     fn to_json(v: &Value) -> serde_json::Value {
-        to_json_depth(v, 0)
+        let mut budget = crate::run::value::RenderBudget::new();
+        to_json_depth(v, 0, &mut budget)
     }
 
     /// Convert an Aura value to JSON, bounded by [`Value::MAX_VALUE_DEPTH`]-style
-    /// depth so a cyclic or pathologically deep value cannot overflow the
-    /// native stack. A value nested beyond the bound serializes as `null`
-    /// (`LANGUAGE_SPEC.md` §31.5).
-    fn to_json_depth(v: &Value, depth: usize) -> serde_json::Value {
-        if depth >= crate::run::value::MAX_VALUE_DEPTH {
+    /// depth *and* a total-node budget so a cyclic or pathologically deep value
+    /// cannot overflow the native stack or expand exponentially. A value nested
+    /// beyond either bound serializes as `null` (`LANGUAGE_SPEC.md` §31.5).
+    fn to_json_depth(
+        v: &Value,
+        depth: usize,
+        budget: &mut crate::run::value::RenderBudget,
+    ) -> serde_json::Value {
+        if depth >= crate::run::value::MAX_VALUE_DEPTH || !budget.take() {
             return serde_json::Value::Null;
         }
         match v {
@@ -40,20 +45,20 @@ pub mod json {
             Value::List(l) => serde_json::Value::Array(
                 l.borrow()
                     .iter()
-                    .map(|x| to_json_depth(x, depth + 1))
+                    .map(|x| to_json_depth(x, depth + 1, budget))
                     .collect(),
             ),
             Value::Map(m) => {
                 let mut obj = serde_json::Map::new();
                 for (k, v) in m.borrow().iter() {
-                    obj.insert(k.clone(), to_json_depth(v, depth + 1));
+                    obj.insert(k.clone(), to_json_depth(v, depth + 1, budget));
                 }
                 serde_json::Value::Object(obj)
             }
             Value::Instance(i) => {
                 let mut obj = serde_json::Map::new();
                 for (k, v) in i.fields.borrow().iter() {
-                    obj.insert(k.clone(), to_json_depth(v, depth + 1));
+                    obj.insert(k.clone(), to_json_depth(v, depth + 1, budget));
                 }
                 serde_json::Value::Object(obj)
             }
@@ -61,12 +66,12 @@ pub mod json {
                 if v.payload.is_empty() {
                     serde_json::Value::String(v.tag.clone())
                 } else if v.payload.len() == 1 {
-                    to_json_depth(&v.payload[0], depth + 1)
+                    to_json_depth(&v.payload[0], depth + 1, budget)
                 } else {
                     serde_json::Value::Array(
                         v.payload
                             .iter()
-                            .map(|x| to_json_depth(x, depth + 1))
+                            .map(|x| to_json_depth(x, depth + 1, budget))
                             .collect(),
                     )
                 }

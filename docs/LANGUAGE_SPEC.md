@@ -2894,7 +2894,16 @@ form and its JSON encoding — is bounded at **512 levels** of nesting
 guard: a cyclic value (for example `a.push(a)`) or a pathologically deep
 value MUST NOT cause a host stack overflow or abort the process (`§31.5`).
 
-**Normative rule.** Beyond the depth bound:
+**Normative rule.** Rendering is additionally bounded by a **total node
+budget** (`MAX_VALUE_NODES`, 1,000,000). The depth bound alone does not bound
+*work*: a value with reference fan-out of two or more — a cycle reachable from
+more than one position, or a shared (aliased) subvalue — is re-traversed at
+every occurrence, so rendering it would expand exponentially and not
+terminate. The node budget makes every render terminate in bounded time; the
+bound is generous enough that any value a program can legitimately build and
+render here (deep chains, four-figure collections) is unaffected.
+
+**Normative rule.** Beyond either bound:
 
 * the display form elides the remainder with `…` (U+2026);
 * JSON encoding represents the over-deep part as `null`.
@@ -2913,8 +2922,9 @@ from itself is not reclaimed; this is memory-safe and is not an error.
 These bounds concern *value* depth, not *AST* depth (`§31.1`). A shallow
 program may build an arbitrarily deep value at runtime, and vice versa.
 
-*Evidence:* `MAX_VALUE_DEPTH`, `Value::repr`, `Value::equals`,
-`Value::drop` (`src/run/value.rs`); `to_json`/`from_json`
+*Evidence:* `MAX_VALUE_DEPTH`, `MAX_VALUE_NODES`, `RenderBudget`,
+`Value::repr`, `Value::equals`, `Value::drop` (`src/run/value.rs`);
+`to_json`/`from_json`
 (`src/stdlib/ext.rs`); `tests/regressions.rs::bh1_*`.
 
 ### 31.7 Format-output bounds

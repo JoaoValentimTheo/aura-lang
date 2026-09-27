@@ -1,0 +1,5 @@
+type Number = int | float
+fn main() { let a: Number = 1
+ let b: Number = 2.5
+ print(a)
+ print(b) }
