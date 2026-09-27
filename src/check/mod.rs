@@ -246,9 +246,6 @@ pub struct Checker {
     /// collision (`LANGUAGE_SPEC.md` §17.6). Overload identity is the method
     /// name plus the ordered parameter types (the receiver included).
     struct_methods: HashMap<String, HashMap<String, Vec<FnSig>>>,
-    /// Structs that already have a behavior block. V1 permits one `impl`
-    /// block per struct.
-    impl_seen: HashMap<String, Span>,
     /// Declared traits, by name, each holding its method signatures in
     /// declaration order. A trait is a behavioral contract with no value
     /// representation (`LANGUAGE_SPEC.md` §17.7). Order is preserved so
@@ -310,7 +307,6 @@ impl Checker {
             struct_fields: HashMap::new(),
             struct_field_order: HashMap::new(),
             struct_methods: HashMap::new(),
-            impl_seen: HashMap::new(),
             traits: HashMap::new(),
             trait_impls: HashMap::new(),
             variants: HashMap::new(),
@@ -488,9 +484,7 @@ impl Checker {
                     for (name, sig) in restored {
                         table.entry(name).or_default().push(sig);
                     }
-                    if trait_name.is_none() {
-                        c.impl_seen.entry(target.clone()).or_default();
-                    } else if let Some(tname) = trait_name {
+                    if let Some(tname) = trait_name {
                         c.trait_impls
                             .insert((target.clone(), tname.clone()), Span::default());
                     }
@@ -728,7 +722,11 @@ impl Checker {
                     self.annotation(target, *span)?;
                 }
                 Item::Fn {
-                    name, params, ret, ..
+                    name,
+                    params,
+                    ret,
+                    ret_span,
+                    ..
                 } => {
                     let mut param_tys = Vec::with_capacity(params.len());
                     for p in params {
@@ -742,7 +740,7 @@ impl Checker {
                         });
                     }
                     let ret_ty = match ret {
-                        Some(rt) => Some(self.annotation(rt, Span::default())?),
+                        Some(rt) => Some(self.annotation(rt, ret_span.unwrap_or_default())?),
                         None => None,
                     };
                     // `hoist` pushed one signature per declaration in source
@@ -805,6 +803,7 @@ impl Checker {
                         name: mname,
                         params,
                         ret,
+                        ret_span,
                         span: mspan,
                         ..
                     } = m_item
@@ -844,7 +843,7 @@ impl Checker {
                         });
                     }
                     let ret_ty = match ret {
-                        Some(rt) => Some(self.annotation(rt, Span::default())?),
+                        Some(rt) => Some(self.annotation(rt, ret_span.unwrap_or_default())?),
                         None => None,
                     };
                     table.push((
@@ -892,9 +891,6 @@ impl Checker {
                 // method overloading (`LANGUAGE_SPEC.md` §15.7) lets a later
                 // block add an overload. A method with an identity already
                 // present is rejected below as a duplicate.
-                if trait_name.is_none() {
-                    self.impl_seen.entry(target.clone()).or_default();
-                }
                 // Validate the trait, when this is a trait implementation.
                 if let Some(tname) = trait_name {
                     let Some(trait_sig) = self.traits.get(tname).cloned() else {
@@ -925,6 +921,7 @@ impl Checker {
                             name: mname,
                             params,
                             ret,
+                            ret_span,
                             span: mspan,
                             ..
                         } = m_item
@@ -967,7 +964,7 @@ impl Checker {
                             });
                         }
                         let ret_ty = match ret {
-                            Some(rt) => Some(self.annotation(rt, Span::default())?),
+                            Some(rt) => Some(self.annotation(rt, ret_span.unwrap_or_default())?),
                             None => None,
                         };
                         let actual = FnSig {
@@ -1008,6 +1005,7 @@ impl Checker {
                         name,
                         params,
                         ret,
+                        ret_span,
                         span: mspan,
                         ..
                     } = m_item
@@ -1039,7 +1037,7 @@ impl Checker {
                         });
                     }
                     let ret_ty = match ret {
-                        Some(rt) => Some(self.annotation(rt, Span::default())?),
+                        Some(rt) => Some(self.annotation(rt, ret_span.unwrap_or_default())?),
                         None => None,
                     };
                     let mut_receiver = params.first().is_some_and(|p| p.mutable);
@@ -1538,6 +1536,7 @@ impl Checker {
                 name,
                 params,
                 ret,
+                ret_span,
                 body,
                 ..
             } => {
@@ -1572,7 +1571,7 @@ impl Checker {
                 let saved_underscore = std::mem::take(&mut self.underscore_params);
                 let saved_used = std::mem::take(&mut self.used_names);
                 self.return_type = match ret {
-                    Some(rt) => Some(self.annotation(rt, Span::default())?),
+                    Some(rt) => Some(self.annotation(rt, ret_span.unwrap_or_default())?),
                     None => None,
                 };
                 for p in params {
@@ -1663,13 +1662,21 @@ impl Checker {
                         name,
                         params,
                         ret,
+                        ret_span,
                         body,
                         ..
                     } = m_item
                     else {
                         continue;
                     };
-                    self.check_method_body(target, name, &recv_ty, params, ret.as_ref(), body)?;
+                    self.check_method_body(
+                        target,
+                        name,
+                        &recv_ty,
+                        params,
+                        ret.as_ref().map(|rt| (rt, ret_span.unwrap_or_default())),
+                        body,
+                    )?;
                 }
             }
         }
@@ -1686,7 +1693,7 @@ impl Checker {
         _name: &str,
         recv_ty: &Ty,
         params: &[Param],
-        ret: Option<&TypeExpr>,
+        ret: Option<(&TypeExpr, Span)>,
         body: &[Stmt],
     ) -> Result<()> {
         self.push();
@@ -1712,7 +1719,7 @@ impl Checker {
         let saved_underscore = std::mem::take(&mut self.underscore_params);
         let saved_used = std::mem::take(&mut self.used_names);
         self.return_type = match ret {
-            Some(rt) => Some(self.annotation(rt, Span::default())?),
+            Some((rt, span)) => Some(self.annotation(rt, span)?),
             None => None,
         };
         for p in params {

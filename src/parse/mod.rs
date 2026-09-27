@@ -562,16 +562,13 @@ impl Parser {
         let name = self.ident("function name")?;
         self.expect(&Tok::LParen)?;
         let params = self.params(false)?;
-        let ret = if self.eat(&Tok::Arrow) {
-            Some(self.ty()?)
-        } else {
-            None
-        };
+        let (ret, ret_span) = self.opt_return_ty()?;
         let body = self.block()?;
         Ok(Item::Fn {
             name,
             params,
             ret,
+            ret_span,
             body,
             public,
             span,
@@ -678,11 +675,7 @@ impl Parser {
                 span,
             ));
         }
-        let ret = if self.eat(&Tok::Arrow) {
-            Some(self.ty()?)
-        } else {
-            None
-        };
+        let (ret, ret_span) = self.opt_return_ty()?;
         // A trait method is a declaration: no body. A following `{` would be a
         // default body, which V1 does not support.
         if matches!(self.at(), Tok::LBrace) {
@@ -699,6 +692,7 @@ impl Parser {
             name,
             params,
             ret,
+            ret_span,
             body: Vec::new(),
             public,
             span,
@@ -720,20 +714,33 @@ impl Parser {
                 span,
             ));
         }
-        let ret = if self.eat(&Tok::Arrow) {
-            Some(self.ty()?)
-        } else {
-            None
-        };
+        let (ret, ret_span) = self.opt_return_ty()?;
         let body = self.block()?;
         Ok(Item::Fn {
             name,
             params,
             ret,
+            ret_span,
             body,
             public,
             span,
         })
+    }
+
+    /// Parse an optional `-> T` return annotation, returning the type and the
+    /// span of its source text. The span is recorded so an unknown return type
+    /// is diagnosed at the annotation rather than the enclosing item
+    /// (`LANGUAGE_SPEC.md` §17.6, §17.7).
+    fn opt_return_ty(&mut self) -> Result<(Option<TypeExpr>, Option<Span>)> {
+        if !self.eat(&Tok::Arrow) {
+            return Ok((None, None));
+        }
+        let start = self.span().start;
+        let ty = self.ty()?;
+        // The last consumed token ends the annotation; `pos` now points past
+        // it, so its span is at `pos - 1`.
+        let end = self.toks[self.pos.saturating_sub(1)].span.end;
+        Ok((Some(ty), Some(Span::new(start, end))))
     }
 
     /// Parse a parameter list. When `receiver` is true, the first parameter

@@ -463,6 +463,10 @@ pub enum Item {
         params: Vec<Param>,
         /// Return type.
         ret: Option<TypeExpr>,
+        /// Span of the return type annotation, when one is written. Used so an
+        /// unknown return type is reported at the annotation, not the item
+        /// (`LANGUAGE_SPEC.md` §17.6, §17.7).
+        ret_span: Option<Span>,
         /// Body.
         body: Vec<Stmt>,
         /// Public.
