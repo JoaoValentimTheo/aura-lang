@@ -227,6 +227,26 @@ fn duplicate_type_parameter_is_rejected() {
 
 // ----------------------------------------------------- existing programs
 
+/// A generic enum's variant payload is parameterised too.
+#[test]
+fn generic_enum_works() {
+    assert_eq!(
+        ok("enum Opt<T> { Some(T), Nothing }\nfn unwrap<T>(o: Opt<T>) -> T { return match o { Some(v) -> v\n Nothing -> none } }\nfn main() { print(unwrap(Some(3))) }"),
+        "3\n"
+    );
+}
+
+/// An over-deep generic type annotation is `E1015`, never a host-stack trap.
+#[test]
+fn over_deep_generic_type_is_bounded() {
+    let mut t = "int".to_string();
+    for _ in 0..4000 {
+        t = format!("Box<{t}>");
+    }
+    let src = format!("struct Box<T> {{ value: T }}\nfn main() {{ let x: {t} = 0 }}");
+    assert_eq!(code(&src), codes::NESTING);
+}
+
 /// Generics do not change the meaning of comparison or shift operators.
 #[test]
 fn comparison_operators_are_unaffected() {

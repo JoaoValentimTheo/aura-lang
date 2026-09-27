@@ -536,6 +536,10 @@ const cases = [
     'generic comparison operators unchanged',
     'fn main() {\n print(1 < 2)\n print(1 << 2)\n}',
   ],
+  [
+    'generic enum',
+    'enum Opt<T> { Some(T), Nothing }\nfn unwrap<T>(o: Opt<T>) -> T { return match o { Some(v) -> v\n Nothing -> none } }\nfn main() { print(unwrap(Some(3))) }',
+  ],
 ];
 
 const options = { args: ["alpha", "beta"], stdin: "line one\nline two\n" };
