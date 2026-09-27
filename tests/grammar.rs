@@ -61,7 +61,7 @@ const GRAMMAR_SAMPLES: &[&str] = &[
     "fn s6() { loop { continue } }",
     "fn s7(c) { while c { break } }",
     "fn s8(xs) { for x in xs { print(x) } }",
-    "fn s9() { try { throw 1 } catch e -> { print(e) } finally { print(\"f\") } }",
+    "fn s9() { try { throw 1 } catch e { print(e) } finally { print(\"f\") } }",
     // expressions
     "fn e1() { print(1 + 2 * 3 - 4 / 5 % 6) }",
     "fn e2() { print(2 ^ 3 ^ 2) }",

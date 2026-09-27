@@ -172,7 +172,7 @@ fn loop_and_catch_bindings_are_immutable() {
         codes::ASSIGN_IMMUTABLE
     );
     assert_eq!(
-        code("fn main() { try { throw 1 } catch e -> { e = 2 } }"),
+        code("fn main() { try { throw 1 } catch e { e = 2 } }"),
         codes::ASSIGN_IMMUTABLE
     );
 }

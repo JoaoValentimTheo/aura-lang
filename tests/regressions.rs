@@ -1039,22 +1039,22 @@ fn h2_01_return_in_initializer_propagates_from_the_function() {
 #[test]
 fn h2_02_throw_in_initializer_is_catchable() {
     assert_eq!(
-        out("fn main() { try { let v = if true { throw \"x\" } else { 0 }\n print(\"no\") } catch e -> { print(\"caught \" + e) } }"),
+        out("fn main() { try { let v = if true { throw \"x\" } else { 0 }\n print(\"no\") } catch e { print(\"caught \" + e) } }"),
         "caught x\n"
     );
     // A `throw` in a loop header (`while` condition / `for` iterable) is also
     // catchable.
     assert_eq!(
-        out("fn main() { try { while if true { throw \"w\" } else { false } {} } catch e -> { print(\"caught \" + e) } }"),
+        out("fn main() { try { while if true { throw \"w\" } else { false } {} } catch e { print(\"caught \" + e) } }"),
         "caught w\n"
     );
     assert_eq!(
-        out("fn main() { try { for x in if true { throw \"fo\" } else { [1] } {} } catch e -> { print(\"caught \" + e) } }"),
+        out("fn main() { try { for x in if true { throw \"fo\" } else { [1] } {} } catch e { print(\"caught \" + e) } }"),
         "caught fo\n"
     );
     // And in an assignment target's subexpressions.
     assert_eq!(
-        out("fn main() { let mut xs = [1, 2]\n try { xs[if true { throw \"i\" } else { 0 }] = 9 } catch e -> { print(\"caught \" + e) } }"),
+        out("fn main() { let mut xs = [1, 2]\n try { xs[if true { throw \"i\" } else { 0 }] = 9 } catch e { print(\"caught \" + e) } }"),
         "caught i\n"
     );
 }

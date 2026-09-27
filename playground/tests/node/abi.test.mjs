@@ -94,7 +94,7 @@ expectOk(
 );
 expectOk(
   "try/catch",
-  'fn main() {\n try { throw "boom" } catch e -> { print("caught " + e) }\n}',
+  'fn main() {\n try { throw "boom" } catch e { print("caught " + e) }\n}',
   "caught boom\n",
 );
 

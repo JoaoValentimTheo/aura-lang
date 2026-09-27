@@ -172,7 +172,7 @@ fn try_catch_finally() {
 fn main() {
     try {
         throw "boom"
-    } catch e -> {
+    } catch e {
         print(f"caught {e}")
     } finally {
         print("cleanup")
@@ -190,7 +190,7 @@ fn finally_control_flow_overrides_the_pending_outcome() {
 fn f() -> int {
     try {
         return 1
-    } catch e -> {
+    } catch e {
         return 0
     } finally {
         return 2
@@ -206,12 +206,12 @@ fn main() {
     try {
         try {
             throw "a"
-        } catch e -> {
+        } catch e {
             print("caught a")
         } finally {
             throw "b"
         }
-    } catch e -> {
+    } catch e {
         print(f"outer {e}")
     }
 }
@@ -520,7 +520,7 @@ fn else_if_return_propagates() {
 #[test]
 fn else_if_throw_propagates() {
     let src =
-        "fn main() { try { if false { } else if true { throw \"x\" } } catch e -> { print(e) } }";
+        "fn main() { try { if false { } else if true { throw \"x\" } } catch e { print(e) } }";
     assert_eq!(out(src), "x\n");
 }
 
@@ -535,7 +535,7 @@ fn else_if_break_and_continue() {
 /// `finally` runs on the exit path through an `else if` chain.
 #[test]
 fn else_if_try_finally_interaction() {
-    let src = "fn f() -> int { for i in range(0, 3) { try { if i == 1 { break } else if i == 0 { continue } } catch e -> { } finally { print(f\"f{i}\") } }\n return 7 }\nfn main() { print(f()) }";
+    let src = "fn f() -> int { for i in range(0, 3) { try { if i == 1 { break } else if i == 0 { continue } } catch e { } finally { print(f\"f{i}\") } }\n return 7 }\nfn main() { print(f()) }";
     // i=0: continue -> finally prints f0; i=1: break -> finally prints f1; returns 7.
     assert_eq!(out(src), "f0\nf1\n7\n");
 }
@@ -767,7 +767,7 @@ fn match_arm_bindings_do_not_leak() {
 /// static `E2003`.
 #[test]
 fn catch_binding_does_not_leak() {
-    let d = fails("fn main() { try { throw \"e\" } catch err -> { print(err) }\n print(err) }");
+    let d = fails("fn main() { try { throw \"e\" } catch err { print(err) }\n print(err) }");
     assert_eq!(d.code, codes::UNDEFINED);
 }
 

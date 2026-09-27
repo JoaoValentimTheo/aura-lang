@@ -45,7 +45,16 @@ const cases = [
   ['multiline comment', 'fn main() {\n <!-- a\n multi line\n comment --!>\n print(42)\n}'],
   ['multibyte comment', 'fn main() { <!-- λ🎉 世界 --!> print(1) }'],
   ['unterminated comment', 'fn main() { print(1) } <!-- nope'],
-  ['try/catch', 'fn main() {\n try { throw "x" } catch e -> { print("c " + e) }\n}'],
+  ['try/catch', 'fn main() {\n try { throw "x" } catch e { print("c " + e) }\n}'],
+  // Catch uses `catch e { ... }`; the old `catch e -> { ... }` is rejected.
+  [
+    'catch with finally',
+    'fn main() { try { throw 1 } catch e { print(e) } finally { print("done") } }',
+  ],
+  [
+    'catch rejects arrow',
+    'fn main() { try { throw 1 } catch e -> { print(e) } }',
+  ],
   ['args', 'fn main() { print(args()) }'],
   ['stdin', 'fn main() { print(read_line()) }'],
   ['uncaught throw', 'fn main() { throw "boom" }'],
