@@ -64,7 +64,7 @@ fn main() {
         print(x)
     }
 
-    let capitals = {"fr": "Paris", "jp": "Tokyo"}
+    let mut capitals = {"fr": "Paris", "jp": "Tokyo"}
     capitals["br"] = "Brasilia"
     print(len(capitals))
 }

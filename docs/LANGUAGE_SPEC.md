@@ -330,38 +330,62 @@ plain string and concatenate.
 *Non-normative example.* `f"a\tb"` prints `a\tb` (a backslash, `t`, `b`),
 while `"a\tb"` prints `a` followed by a tab and `b`.
 
-*Evidence:* `Lexer::ident` (f-prefix), `Parser::fstring`
-(`src/parse/mod.rs`).
+*Evidence:* `Lexer::ident` (f-prefix), `Parser::fstring`,
+`Parser::parse_format_spec` (`src/parse/mod.rs`); `Interp::format_value`
+(`src/run/mod.rs`).
 
-**Normative rule (no format specification).** Aura's f-string has exactly three
-features: `{ expr }` interpolation, `{{`, and `}}`. There is **no** format
-mini-language. In particular, Python's replacement-field machinery is absent:
-`{x=}` (self-documenting), `{x!s}`/`{x!r}`/`{x!a}` (conversions), and
-`{x:spec}` (fill, alignment, sign, `#`/`0`/`,`/`_` grouping, width, precision,
-and the `d`/`b`/`o`/`x`/`e`/`f`/`g`/`%` types), including dynamic width or
-precision, are **not** part of the language. `:`, `!`, and `=` after the
-interpolated expression are not recognized, so such a field fails to parse
-(`E1006`) or is reported by the ordinary expression rules; the f-string parser
-feeds the text between braces to the ordinary Aura expression parser and reuses
-the ordinary value/display system, so there is no second expression language
-(§24 rationale in `docs/FEATURE_ROADMAP.md`). To format a value, use an
-existing string method or build the string explicitly.
+**Normative rule (format specification).** After the interpolated expression,
+an optional `:` introduces a **format specification**. The mini-language is
+deliberately small and orthogonal:
 
-*Non-normative.* These are **rejected** (not deferred):
-
-```aura
-f"{x:.2f}"      # no format spec
-f"{x=}"         # no self-documenting form
-f"{x!r}"        # no conversion
+```text
+spec  = [ [fill] align ] [ sign ] [ width ] [ "." precision ] [ type ]
+align = "<" (left) | ">" (right) | "^" (center)
+sign  = "+" (always) | "-" (only negative) | " " (leading space for non-negative)
+type  = "d" | "b" | "o" | "x" | "X" | "f" | "F" | "e" | "E" | "%"
 ```
 
-and these are **supported**:
+* A leading `0` before the width digits is the zero-pad flag: it sets fill `0`
+  and right alignment (`f"{n:06d}"` → `000042`).
+* `width` is a minimum field width; shorter text is padded with `fill` (a
+  space by default) according to `align`. Numbers default to right alignment,
+  everything else to left.
+* `precision` is digits after the decimal point; for a float with no explicit
+  type it also applies.
+* `type`: `d`/`b`/`o`/`x`/`X` present an integer as decimal/binary/octal/hex;
+  `f`/`F` fixed-point, `e`/`E` scientific, `%` percentage present a number
+  (an `int` is converted to `float` for `f`/`e`/`%`).
+
+**Normative rule.** A format type applied to an incompatible value is
+`E3001`; an unknown type character, or trailing unparsed characters, is
+`E1006`. The `:` that begins a format spec is recognized only at the top level
+of the interpolation, so a `:` inside `a[1:2]` or `f(k: v)` is part of the
+expression.
+
+**Normative rule (deliberately absent).** Aura's format specification is the
+mini-language above and nothing more. Python's self-documenting `{x=}`,
+conversions `{x!s}`/`{x!r}`/`{x!a}`, the `#`/`,`/`_` grouping flags, and
+dynamic width/precision from nested fields are **not** part of Aura. Aura is
+thus *not* "Python-compatible"; it is a small, closed subset.
+
+*Non-normative.* Supported:
 
 ```aura
-f"{x}"          # interpolation
-f"{x + 1}"      # any expression
+f"{x}"            # interpolation
+f"{x + 1}"        # any expression
 f"{person.name}"
-f"{{literal}}"  # escaped braces
+f"{{literal}}"    # escaped braces
+f"{3.14159:.2f}"  # precision
+f"[{n:>6}]"       # width and alignment
+f"{255:x} {10:b}" # presentation types
+```
+
+Rejected:
+
+```aura
+f"{x=}"           # no self-documenting form
+f"{x!r}"          # no conversion
+f"{x:,}"          # no grouping flag
 ```
 
 An interpolation's diagnostics carry the **real source location** of the
@@ -546,13 +570,16 @@ Precedence, lowest binding first:
 | 3 | `and` | left |
 | 4 | `==` `!=` | left |
 | 5 | `<` `<=` `>` `>=` | left |
-| 5.5 | `..` range | right |
-| 6 | `+` `-` | left |
-| 7 | `*` `/` `%` | left |
-| 8 | `^` | **right** |
-| 9 | unary `-`, unary `not` | prefix (right) |
-| 10 | postfix: `f(x)`, `a.b`, `a.b(x)`, `a[i]` | left |
-| 11 | atoms: literals, names, groups, lists, maps, lambdas, `if`, `match`, blocks | — |
+| 6 | `\|` bitwise or | left |
+| 7 | `&` bitwise and | left |
+| 8 | `<<` `>>` shift | left |
+| 9 | `..` range | right |
+| 10 | `+` `-` | left |
+| 11 | `*` `/` `%` | left |
+| 12 | `^` | **right** |
+| 13 | unary `-`, unary `not`, unary `~` | prefix (right) |
+| 14 | postfix: `f(x)`, `a.b`, `a.b(x)`, `a[i]` | left |
+| 15 | atoms: literals, names, groups, lists, maps, lambdas, `if`, `match`, blocks | — |
 
 ```
 expr            = pipe ;
@@ -560,17 +587,20 @@ pipe            = logic_or { "|>" logic_or } ;
 logic_or        = logic_and { "or" logic_and } ;
 logic_and       = equality { "and" equality } ;
 equality        = comparison { ( "==" | "!=" ) comparison } ;
-comparison      = range { ( "<" | "<=" | ">" | ">=" ) range } ;
+comparison      = bit_or { ( "<" | "<=" | ">" | ">=" ) bit_or } ;
+bit_or          = bit_and { "|" bit_and } ;
+bit_and         = shift { "&" shift } ;
+shift           = range { ( "<<" | ">>" ) range } ;
 range           = additive [ ".." range ] ;
 additive        = multiplicative { ( "+" | "-" ) multiplicative } ;
 multiplicative  = power { ( "*" | "/" | "%" ) power } ;
 power           = unary [ "^" power ] ;
-unary           = ( "-" | "not" ) unary | postfix ;
+unary           = ( "-" | "not" | "~" ) unary | postfix ;
 postfix         = atom { call_or_member } ;
 call_or_member  = "(" [ call_args ] ")"
                 | "[" expr "]"
                 | "." IDENT [ "(" [ call_args ] ")" ] ;
-call_args       = arg { "," arg } ;           (* positional, then named *)
+call_args       = arg { "," arg } [ "," ] ;       (* positional, then named *)
 arg             = [ IDENT ":" ] expr ;
 atom            = INT | FLOAT | STRING | FSTRING
                 | "true" | "false" | "none"
@@ -586,7 +616,7 @@ list            = "[" [ expr { "," expr } [ "," ] ] "]" ;
 map             = "{" entry { "," entry } [ "," ] "}" | "{" ":" "}" ;
 entry           = expr ":" expr ;
 block_expr      = block ;
-ctor_args       = ctor_arg { "," ctor_arg } ;
+ctor_args       = ctor_arg { "," ctor_arg } [ "," ] ;
 ctor_arg        = [ IDENT ":" ] expr ;
 field_init      = IDENT ":" expr ;
 if_expr         = "if" expr block [ "else" expr ] ;
@@ -594,11 +624,29 @@ match_expr      = "match" expr "{" { match_arm } "}" ;
 match_arm       = pattern [ "if" expr ] "->" ( block | expr terminator ) ;
 ```
 
-**Normative rule.** `a..b` is a range expression (§22.1). It is parsed at the
-`range` level, between comparison and additive, so each bound is an additive
-expression: `1 + 2..n - 1` is `(1 + 2)..(n - 1)`. `..` is right-associative
-and not chainable with meaning: `a..b..c` parses as `a..(b..c)` and is a
-check-time/runtime type error because `b..c` is not an int.
+**Normative rule (trailing comma).** A trailing comma is accepted before every
+closing delimiter: `(...)`, `[...]`, `{...}`, and each delimiter-delimited list
+of items (call arguments, variant payloads, struct field initializers,
+function and method parameters, list/map/struct/enum element lists). This is
+one rule, so a list of items may be written and extended line by line in every
+construct.
+
+**Normative rule (bitwise and shift).** `&` (bitwise AND), `|` (bitwise OR),
+`~` (bitwise NOT), `<<` (shift left), and `>>` (shift right) operate on
+integers. Bitwise OR binds looser than AND, both bind looser than shift, and
+shift binds looser than the arithmetic operators; range binds tighter than
+shift and looser than additive. `|` is **contextual**: it is a type-union
+separator where a type is expected and bitwise OR in expression position
+(§). Aura has **no** XOR operator (`^` is exponentiation) and **no**
+`&`/`|` logical short-circuit form (`and`/`or` are the logical operators).
+`&&` and `||` are not operators: they lex as two tokens and fail to parse.
+
+**Normative rule (a..b binds).** `a..b` is a range expression (§22.1). It is
+parsed at the `range` level, so each bound is an additive expression and both
+bounds include bitwise and shift operators: `1 + 2..n - 1` is
+`(1 + 2)..(n - 1)`. `..` is right-associative and not chainable with meaning:
+`a..b..c` parses as `a..(b..c)` and is a check-time/runtime type error because
+`b..c` is not an int.
 
 **Normative rule.** A `..` MUST have an expression on both sides. A dangling
 `a..` or a leading `..b` is `E1006`. A single `.` remains field access/method
@@ -1014,6 +1062,10 @@ construct or it is not applicable.
 | `<` `<=` `>` `>=` | bool | bool | bool | bool (NaN→false) | bool | static `E3001` | `E3001` |
 | `and` | short-circuit truthiness → bool | | | | | | |
 | `or` | short-circuit truthiness → bool | | | | | | |
+| `&` | int (bitwise AND) | `E3001` | `E3001` | `E3001` | `E3001` | `E3001` | `E3001` |
+| `\|` | int (bitwise OR) | `E3001` | `E3001` | `E3001` | `E3001` | `E3001` | `E3001` |
+| `<<` | int (shift left; count `E4013` if <0 or ≥64) | `E3001` | `E3001` | `E3001` | `E3001` | `E3001` | `E3001` |
+| `>>` | int (shift right; count `E4013` if <0 or ≥64) | `E3001` | `E3001` | `E3001` | `E3001` | `E3001` | `E3001` |
 
 **Normative rule.** A mixed `int`/`float` arithmetic operand promotes to
 `float`.
@@ -1030,7 +1082,8 @@ checker can prove it).
 
 **Normative rule.** Unary `-` is defined for `int` (checked; negation of
 `i64::MIN` is `E4013`) and `float`. Unary `not` accepts any value and yields
-the boolean negation of its truthiness.
+the boolean negation of its truthiness. Unary `~` is bitwise NOT: it is
+defined only for `int` (`E3001` otherwise) and yields `int`.
 
 ### 9.3 Logical operators
 
@@ -1040,14 +1093,18 @@ the boolean negation of its truthiness.
 **not** evaluated. Otherwise the result is the truthiness of `b`. Both always
 yield a `bool`.
 
-**Normative rule.** There is no `&&`, `||`, or `!` operator; those are lexical
-errors.
+**Normative rule.** There is no `&&`, `||`, or `!` operator: `!` is a lexical
+error, and `&&`/`||` are two separate `&`/`|` tokens that fail to parse, so
+they never gain an accidental meaning.
 
 ### 9.4 Assignment operators
 
-**Normative rule.** `=`, `+=`, `-=`, `*=`, `/=`. A compound assignment reads
-the current target, applies the corresponding binary operator, and writes the
-result. There is no `%=` or `^=`.
+**Normative rule.** The assignment operators are `=` and the compound forms
+`+=`, `-=`, `*=`, `/=`, `%=`, `^=`, `&=`, `|=`, `<<=`, `>>=`. A compound
+assignment checks its target for mutation capability exactly like the plain
+assignment it abbreviates, then reads the current target, applies the
+corresponding binary operator, and writes the result. `%=` and `^=` use `%`
+(remainder) and `^` (exponentiation) respectively — `^=` is **not** XOR.
 
 ### 9.5 Indexing
 
@@ -1579,22 +1636,53 @@ the body; using it is `E2009`.
 `m[k] = v` (inserting the key if absent). These mutate in place and are
 visible through every alias of the value.
 
-### 16.6 Shared reference semantics
+### 16.6 Reference semantics and mutation capability
 
 **Normative rule.** Lists, maps, and struct instances have **reference
 semantics**. Binding or passing such a value aliases the same storage; a
 mutation through one alias is observable through all aliases.
 
-**Normative rule.** Mutability is a property of the *binding*, not of the
-value. `let` makes the binding immutable (it cannot be reassigned), but a
-list, map, or struct reached through an immutable binding can still be
-mutated in place through an index, field, or entry assignment (`a[0] = x`,
-`s.x = x`, `m[k] = v`) or a mutating method (`push`). `let mut` is required
-only to reassign the *binding* itself.
+**Normative rule (mutation capability).** Mutation is guarded by a capability
+carried by the **binding**, not by the value. `let` creates an immutable
+binding; `let mut` creates a mutable one. An operation that can mutate state
+reachable through a binding requires that binding to be reachable through a
+`mut` root. This is one general rule, not a list of forbidden operations:
 
-*Evidence:* `Value::List`/`Map`/`Instance` use `Rc<RefCell<…>>`
-(`src/run/value.rs`); `index_set`, `field_set`, `push` (`src/run/mod.rs`,
-`src/stdlib/mod.rs`).
+* **place write** — an index assignment (`xs[i] = v`, `m[k] = v`) or a field
+  assignment (`s.f = v`, `self.f = v`) requires the root binding of the place
+  to be `mut`; otherwise `E2001`. A place with **no** root binding (a
+  temporary, a call result, or a composite) is always mutable, since no
+  caller-visible binding protects it.
+* **compound assignment** (`+=`, `-=`, `*=`, `/=`, `%=`, `^=`, `&=`, `|=`,
+  `<<=`, `>>=`) follows the same rule as the plain assignment it abbreviates.
+* **mutating call** — a builtin or method that mutates an argument or its
+  receiver requires that argument/receiver to be reachable through a `mut`
+  binding; otherwise `E2001`. The registry marks which builtins mutate
+  (`push`, `pop`, `remove`) and a user method marks itself with `mut self`
+  (§17.6). Pure operations (`sort`, `reverse`, `map`, `filter`, `reduce`,
+  `sum`, `keys`, `values`, `get`, `has`, `len`, …) mutate nothing and need no
+  capability.
+* **capability is per binding.** A mutable binding and an immutable alias of
+  the same value are distinct: mutating through the mutable root is allowed,
+  mutating through the immutable alias is `E2001`. The rule is lexical and
+  local, so it is predictable without a whole-program analysis.
+* **unknown receivers stay conservative.** When the checker cannot determine a
+  receiver's type, it does not reject a mutating call (the existing
+  conservative rule, §2.3); the runtime remains authoritative.
+
+**Normative rule.** `const` (and a top-level `let`) is an immutable module
+constant, so mutating through a constant is `E2001`, exactly like an
+immutable `let`.
+
+**Normative rule.** `const` and `let` protect the **binding**, not interior
+mutability. A list, map, or struct instance reached through a `mut` binding
+can be mutated in place, and the same storage reached through an immutable
+alias reflects those mutations. There is no deep or recursive immutability.
+
+*Evidence:* `Checker::require_mutable_place`, `Place`-root resolution
+(`src/check/mod.rs`); `Signature::mutates_arg`, `MethodSig::mutates_receiver`
+(`src/stdlib/signatures.rs`); `FnSig::mut_receiver`; `Value::List`/`Map`/
+`Instance` use `Rc<RefCell<…>>` (`src/run/value.rs`); `tests/mutation.rs`.
 
 ---
 
@@ -1668,12 +1756,17 @@ contextual word, not a reserved one: it begins a behavior block only in item
 position when followed by a capitalized type name and `{` (§3.3).
 
 **Normative rule.** A method's first parameter MUST be `self`; it is an
-ordinary immutable binding in the method's scope (reassigning it is `E2001`;
-using `self` is never an `E2009` unused-parameter error). It may be captured by
-closures and passed as a value. No `mut self`, `&self`, or implicit receiver
-exists: Aura has reference semantics and no ownership model. `self` is a
-contextual word: it has receiver semantics only as a method's first parameter;
-everywhere else it is an ordinary identifier (§3.3).
+ordinary binding in the method's scope, immutable unless declared `mut self`.
+A method that mutates its receiver MUST declare `mut self`: `fn m(mut self)`
+grants the body mutable capability over the receiver, and marks the method as
+mutating so that a caller must reach the receiver through a `mut` binding
+(§16.6). A method that only reads declares `self`. Declaring `mut self` is
+required to assign `self`, a field of `self`, or to call another `mut self`
+method on `self`. `self` is a contextual word: it has receiver semantics only
+as a method's first parameter; everywhere else it is an ordinary identifier
+(§3.3). `self` is never an `E2009` unused-parameter error and may be captured
+by closures and passed as a value. There is no `&self` and no implicit
+receiver: Aura has reference semantics and no ownership model.
 
 **Normative rule.** `self.field` reads a declared field; `self.field = v`
 assigns one; `self.other(...)` calls another method of the same struct. The
@@ -1704,6 +1797,10 @@ resolve statically.
 function parameters: a wrong argument count or a provably wrong argument type
 is `E3001`; method returns are checked like function returns (`E3005`). Methods
 are positional; named arguments are not supported.
+
+**Normative rule.** A method whose receiver is `mut self` mutates the caller's
+value, so the call requires the receiver to be reachable through a `mut`
+binding (§16.6); otherwise the call is `E2001`.
 
 **Normative rule.** Method names are scoped to their nominal struct type, so
 two structs may each declare `fn area(self)`. Methods are not in the global
@@ -1764,9 +1861,11 @@ metadata on the nominal struct, never a distinct `Ty`.
 callable rules: it MUST declare `self` first (`E1006` otherwise), a parameter
 name MUST NOT be repeated in the same list (`E2007`, like a function or
 inherent method), and each annotation MUST name a known type (`E3002`
-otherwise). Completeness and signature diagnostics name the trait's **first
-declared** method that is affected, so reporting is deterministic and does not
-depend on hash order.
+otherwise). Receiver mutability is part of the contract: a trait method
+declared `mut self` MUST be implemented with `mut self`, and a method declared
+`self` MUST be implemented with `self` (`E3001` otherwise). Completeness and
+signature diagnostics name the trait's **first declared** method that is
+affected, so reporting is deterministic and does not depend on hash order.
 
 **Normative rule.** `trait` is a **contextual word**, not reserved: it begins a
 trait declaration only at item position when followed by a capitalized name and

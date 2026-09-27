@@ -86,6 +86,18 @@ use stdlib.math              # reserved; currently inert (see §10)
   `NAME` must begin with an uppercase letter. A top-level `let` is the same
   module constant; `let mut` is rejected there. Constants share the value
   namespace with bindings and functions.
+* **Mutation requires `mut`.** `let` is immutable, `let mut` is mutable. Any
+  operation that can mutate state reached through a binding — an index, entry,
+  or field assignment, a mutating builtin (`push`, `pop`, `remove`), or a
+  method declared `mut self` — requires the root binding to be `mut`
+  (`E2001` otherwise). Capability is per binding: a mutable binding may be
+  mutated even while an immutable alias of the same value exists, and the
+  alias itself needs its own `mut` to be mutated through. `const` is an
+  immutable binding for this purpose. Aura has no borrow checker: the rule is
+  a single lexical check on the place's root, not whole-program analysis.
+* **Method receivers declare mutability.** A method that mutates its receiver
+  is written `fn m(mut self) { ... }`; a reading method is `fn m(self)`. The
+  receiver's mutability is part of a trait method's contract.
 * A function is declared with `fn` and returns `none` unless annotated.
 * Redefining a name in the same scope is `E2007`.
 * Parameter names starting with `_` must be unused (`E2009`).
@@ -108,12 +120,16 @@ Precedence, lowest to highest:
 3  and
 4  == !=
 5  < <= > >=
-6  + -
-7  * / %
-8  ^                         right associative
-9  -x  not x                 unary
-10 a.b  a.b()  a[b]  f(x)    postfix
-11 literals, names, groups, lists, maps, lambdas
+6  |                         bitwise or (int)
+7  &                         bitwise and (int)
+8  << >>                     shift (int)
+9  a..b                      range (right)
+10 + -
+11 * / %
+12 ^                         right associative
+13 -x  not x  ~x              unary
+14 a.b  a.b()  a[b]  f(x)     postfix
+15 literals, names, groups, lists, maps, lambdas
 ```
 
 * Lambdas: `(x) -> x * x`, `(x, y) -> x + y`, or `fn x -> x * x`; every form
@@ -128,7 +144,10 @@ Precedence, lowest to highest:
   `x |> f` is `f(x)`, `x |> f(a)` is `f(x, a)`, and `x |> r.m(a)` is
   `r.m(x, a)`. A bare callable `x |> c` is `c(x)`.
 * `match` is an expression; every arm must yield when used as a value.
-* There is no ternary `? :`, no `&&`, no `||`, no `!` as `not`.
+* There is no ternary `? :`, no `&&`, no `||`, no `!` as `not`. Bitwise
+  operators `&`, `|`, `~`, `<<`, `>>` operate on `int`; there is no XOR (`^`
+  is exponentiation) and no `++`/`--`. `x = x + 1` or `x += 1` is the
+  increment spelling.
 * Map literals are string-keyed and ordered by key: `{"a": 1}`. `{:}` is the
   empty-map literal. `{}` is a **block**, not an empty map, and yields `none`;
   whitespace and newlines do not change this (`{ : }` is the same as `{:}`).

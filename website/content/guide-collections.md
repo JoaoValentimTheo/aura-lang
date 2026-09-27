@@ -6,7 +6,7 @@
 semantics.
 
 ```aura
-let xs = [1, 2, 3]
+let mut xs = [1, 2, 3]
 xs[0] = 10          # index assignment
 xs.push(4)          # append
 let last = xs.pop() # remove and return the last element
@@ -22,7 +22,7 @@ let last = xs.pop() # remove and return the last element
 `{k: v, ...}` constructs a string-keyed map, ordered by key.
 
 ```aura
-let m = {"a": 1, "b": 2}
+let mut m = {"a": 1, "b": 2}
 m["c"] = 3
 print(m.get("missing"))   # none
 print(m.has("a"))         # true
@@ -39,7 +39,7 @@ print(m.has("a"))         # true
 two are distinct.
 
 ```aura
-let empty = {:}
+let mut empty = {:}
 empty["k"] = 1
 ```
 

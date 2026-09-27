@@ -137,7 +137,9 @@ fn main() {
         <h3>Methods</h3>
         <p>A struct stays data; behavior is attached separately with an
         <code>impl</code> block whose methods take an explicit receiver
-        <code>self</code>. Structs compose, and a method reaches a nested
+        <code>self</code>. A method that mutates its receiver declares
+        <code>mut self</code>, and mutation through any binding requires
+        <code>let mut</code>. Structs compose, and a method reaches a nested
         struct’s method through <code>self.field.method()</code>. There are no
         classes, inheritance, or dynamic dispatch.</p>
         <h3>Tagged unions</h3>

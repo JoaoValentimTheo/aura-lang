@@ -26,14 +26,15 @@ param           = IDENT [ ":" type ] ;
    only in this position; both stay ordinary identifiers elsewhere. *)
 impl_decl       = "impl" IDENT [ "for" IDENT ] "{"
                   { NEWLINE | [ "pub" ] method_decl } "}" ;
-method_decl     = "fn" IDENT "(" "self" [ "," param { "," param } ] ")"
+method_decl     = "fn" IDENT "(" receiver [ "," param { "," param } [ "," ] ] ")"
                   [ "->" type ] block ;
+receiver        = [ "mut" ] "self" ;
 
 (* trait: a behavioral contract. Signatures only — no bodies, fields, or
    associated items. `trait` is contextual and stays an ordinary identifier
    outside this item form. *)
 trait_decl      = "trait" IDENT "{" { NEWLINE | [ "pub" ] trait_method } "}" ;
-trait_method    = "fn" IDENT "(" "self" [ "," param { "," param } ] ")"
+trait_method    = "fn" IDENT "(" receiver [ "," param { "," param } [ "," ] ] ")"
                   [ "->" type ] terminator ;
 
 struct_decl     = "struct" IDENT "{" [ field { "," field } [ "," ] ] "}" ;
@@ -72,7 +73,8 @@ let_pattern     = IDENT | let_list_pattern | let_variant_pattern ;
 let_list_pattern    = "[" [ let_pattern { "," let_pattern } [ "," ] ] "]" ;
 let_variant_pattern = IDENT [ "(" [ let_pattern { "," let_pattern } ] ")" ] ;
 assign_or_expr  = expr [ assign_op expr ] terminator ;
-assign_op       = "=" | "+=" | "-=" | "*=" | "/=" ;
+assign_op       = "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "^="
+                | "&=" | "|=" | "<<=" | ">>=" ;
 return_stmt     = "return" [ expr ] terminator ;
 throw_stmt      = "throw" expr terminator ;
 break_stmt      = "break" terminator ;
@@ -94,17 +96,20 @@ pipe            = logic_or { "|>" logic_or } ;
 logic_or        = logic_and { "or" logic_and } ;
 logic_and       = equality { "and" equality } ;
 equality        = comparison { ( "==" | "!=" ) comparison } ;
-comparison      = range { ( "<" | "<=" | ">" | ">=" ) range } ;
+comparison      = bit_or { ( "<" | "<=" | ">" | ">=" ) bit_or } ;
+bit_or          = bit_and { "|" bit_and } ;
+bit_and         = shift { "&" shift } ;
+shift           = range { ( "<<" | ">>" ) range } ;
 range           = additive [ ".." range ] ;       (* Rust-style range *)
 additive        = multiplicative { ( "+" | "-" ) multiplicative } ;
 multiplicative  = power { ( "*" | "/" | "%" ) power } ;
 power           = unary [ "^" power ] ;              (* right associative *)
-unary           = ( "-" | "not" ) unary | postfix ;
+unary           = ( "-" | "not" | "~" ) unary | postfix ;
 postfix         = atom { call_or_member } ;
 call_or_member  = "(" [ call_args ] ")"
                 | "[" expr "]"
                 | "." IDENT [ "(" [ call_args ] ")" ] ;
-call_args       = arg { "," arg } ;             (* positional, then named *)
+call_args       = arg { "," arg } [ "," ] ;      (* positional, then named *)
 arg             = [ IDENT ":" ] expr ;
 
 atom            = INT | FLOAT | STRING | FSTRING
@@ -118,13 +123,13 @@ atom            = INT | FLOAT | STRING | FSTRING
                 | list | map | block_expr
                 | if_expr | match_expr ;
 
-lambda          = [ "fn" ] "(" [ IDENT { "," IDENT } ] ")" "->" expr
+lambda          = [ "fn" ] "(" [ IDENT { "," IDENT } [ "," ] ] ")" "->" expr
                 | "fn" IDENT "->" expr ;
 list            = "[" [ expr { "," expr } [ "," ] ] "]" ;
 map             = "{" entry { "," entry } [ "," ] "}" | "{" ":" "}" ;
 entry           = expr ":" expr ;
 block_expr      = block ;
-ctor_args       = ctor_arg { "," ctor_arg } ;
+ctor_args       = ctor_arg { "," ctor_arg } [ "," ] ;
 ctor_arg        = [ IDENT ":" ] expr ;
 field_init      = IDENT ":" expr ;
 
@@ -141,7 +146,10 @@ list_pattern    = "[" [ pattern { "," pattern } [ "," ] ] "]" ;
 variant_pattern = IDENT [ "(" [ pattern { "," pattern } ] ")" ] ;
 
 (* ----------------------------------------------------------------- f-strings *)
-FSTRING         = 'f"' { fchar | "{{" | "}}" | "{" expr "}" } '"' ;
+FSTRING         = 'f"' { fchar | "{{" | "}}" | "{" expr [ ":" format_spec ] "}" } '"' ;
+format_spec     = [ [ fchar ] ( "<" | ">" | "^" ) ] [ "+" | "-" | " " ]
+                  [ digits ] [ "." digits ] [ type ] ;
+type            = "d" | "b" | "o" | "x" | "X" | "f" | "F" | "e" | "E" | "%" ;
 ```
 
 ## Notes
@@ -151,15 +159,19 @@ FSTRING         = 'f"' { fchar | "{{" | "}}" | "{" expr "}" } '"' ;
   expression, so the existing `if_expr` production already covers it.
 * `else`, `catch`, and `finally` must appear on the same line as the closing
   `}` of the block they follow; a newline before them is `E1006`.
-* `&&`, `||`, and `!` do not exist as operators (`E1001`).
-* There are no bitwise operators (`&`, `|`, `~`, `<<`, `>>`) and no pre/post
-  increment or decrement (`++`, `--`); `^` is exponentiation.
+* `&&` and `||` are not operators: they lex as two `&`/`|` tokens and fail to
+  parse (`E1006`); `!` is a lexical error (`E1001`).
+* Bitwise operators `&`, `|`, `~`, `<<`, `>>` exist and operate on `int`;
+  there is no `^` XOR (`^` is exponentiation) and no `++`/`--`.
 * A number may not be immediately followed by a name: `1abc` is `E1002`.
 * `let` requires an initializer (`E2005`). `const NAME = e` is the canonical
   module constant and its name is uppercase; a top-level `let` is the same
   module constant.
-* An f-string interpolates `{expr}` and escapes braces with `{{`/`}}`; it has
-  no format-specification mini-language (`{x:spec}`, `{x=}`, `{x!r}`).
+* An f-string interpolates `{expr}`, escapes braces with `{{`/`}}`, and accepts
+  a small format specification after `:` (`{x:.2f}`, `{n:>6}`, `{n:06d}`,
+  `{n:x}`). There is no `{x=}` and no `{x!r}`.
+* A trailing comma is accepted before every closing delimiter (call arguments,
+  parameters, list/map/struct/enum items, struct field initializers).
 * Patterns bind lowercase names; a capitalized name is a variant.
 * `use` and `pub` are **reserved and inert** in this version: they parse but
   have no effect (see `docs/contract.md` §10).
@@ -170,7 +182,7 @@ FSTRING         = 'f"' { fchar | "{{" | "}}" | "{" expr "}" } '"' ;
   normalized away; a union containing `none` is permissive.
 * `a..b` is a range literal, equivalent to `range(a, b)`; `..` is a distinct
   token, never part of a float. It binds looser than arithmetic and tighter
-  than comparison.
+  than shift.
 * `#` line comments and `<!-- ... --!>` multiline comments are discarded by
   the lexer; an unterminated multiline comment is `E1005`.
 * `(a, b)` creates a list of two elements; Aura has no distinct tuple value.

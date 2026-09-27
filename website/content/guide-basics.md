@@ -29,6 +29,26 @@ y = y + 1
 Assigning to an immutable binding is `E2001`. A `let` without an initializer is
 `E2005`. Redeclaring a name in the same scope is `E2007`.
 
+**Mutation requires `mut`.** Any operation that changes state reached through a
+binding needs that binding to be `mut`:
+
+```aura
+let xs = [1, 2]
+xs.push(3)         # E2001: xs is immutable
+xs[0] = 9          # E2001
+
+let mut ys = [1, 2]
+ys.push(3)         # ok
+ys[0] = 9          # ok
+```
+
+The same rule covers map entries (`m["k"] = v`), struct fields (`s.f = v`),
+the mutating builtins (`push`, `pop`, `remove`), and any method declared
+`mut self`. A pure operation (`sort`, `reverse`, `map`, `len`, …) needs no
+`mut`. Capability belongs to each binding: a mutable binding and an immutable
+alias of the same value are distinct, so mutating through the mutable one is
+allowed while the alias needs its own `mut`.
+
 A nested scope may **shadow** an outer binding; the outer binding is unchanged
 after the nested scope ends. A loop variable, match binding, and catch binding
 are scoped to their construct and never leak out.
@@ -43,9 +63,9 @@ const LIMIT: int = 100     # with a checked annotation
 A `const` name is uppercase; a lowercase name is `E1006`. A constant is
 immutable and is evaluated in source order after all declarations, so it may
 call a function or read an earlier constant but not a later one. A top-level
-`let` is the same kind of module constant. `const` protects the binding, not
-its interior: a list, map, or struct reached through a constant can still be
-mutated in place, but the binding cannot be reassigned.
+`let` is the same kind of module constant. Like any immutable binding, a
+constant cannot be mutated through: `push(CONST_LIST, x)` is `E2001`, while its
+interior is still shared with any mutable alias.
 
 ### Destructuring bindings
 

@@ -25,7 +25,7 @@ Every rejection carries a stable code. Codes are grouped by phase:
 
 | Code  | Meaning | Example trigger |
 |-------|---------|-----------------|
-| E2001 | Assign to immutable | `let x = 1; x = 2` |
+| E2001 | Assign to immutable | `let x = 1; x = 2`; mutating through an immutable binding (`let xs = [1]; xs.push(2)`, `xs[0] = 9`, `s.f = 1`); a `mut self` method called on an immutable receiver |
 | E2003 | Undefined name or function | `print(nope)`, `nope()` |
 | E2005 | `let` without initializer | `let x` |
 | E2007 | Redeclaration | `let x = 1; let x = 2`; two `main`s |
@@ -43,7 +43,7 @@ Every rejection carries a stable code. Codes are grouped by phase:
 
 | Code  | Meaning | Example trigger |
 |-------|---------|-----------------|
-| E3001 | Type mismatch | `let x: int = "a"`; `{int: string}` |
+| E3001 | Type mismatch | `let x: int = "a"`; `{int: string}`; bitwise/shift on a non-integer (`1.0 & 2`); a format type on an incompatible value (`f"{'s':d}"`) |
 | E3002 | Unknown type / constructor | `-> Widget`, `Ghost { }` |
 | E3005 | Return type mismatch | `-> int` returning a string |
 
@@ -53,7 +53,7 @@ Every rejection carries a stable code. Codes are grouped by phase:
 |-------|---------|-----------------|
 | E4007 | Division by zero | `1 / 0`, `1 % 0`, `1.0 / 0.0` |
 | E4011 | Call depth limit | more than 512 active calls |
-| E4013 | Integer overflow | `i64::MAX + 1`, `i64::MIN % -1`; a Python integer beyond `i64` via `py_eval` |
+| E4013 | Integer overflow | `i64::MAX + 1`, `i64::MIN % -1`; an out-of-range shift count (`1 << 64`, `1 << -1`); a Python integer beyond `i64` via `py_eval` |
 | E4018 | Value is not iterable | `for x in 1 {}` |
 | E4019 | Index out of range | `[1][5]`, a huge negative index |
 | E4020 | I/O operation failed | `read_file`/`write_file` failure, standard-input read failure |

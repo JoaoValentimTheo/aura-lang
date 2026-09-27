@@ -53,12 +53,12 @@ Aura today is a tree-walking interpreted language with a conservative checker.
 | Value model | `int`, `float`, `string`, `bool`, `none`, `list`, `map` (string-keyed, ordered), struct instance, enum variant, function, range |
 | Type model | Checker `Ty`: `Int`, `Float`, `Bool`, `String`, `List`, `Map`, `Named`, `Enum`, `Unknown` |
 | Unknown | Exact conservative boundary: the checker rejects only what it can prove |
-| Operators | `+ - * / % ^ == != < <= > >= and or`, unary `-`/`not`, pipeline `\|>`, assignment `= += -= *= /=` |
+| Operators | `+ - * / % ^ == != < <= > >= and or`, bitwise `& \| ~ << >>`, unary `-`/`not`/`~`, pipeline `\|>`, assignment `= += -= *= /= %= ^= &= \|= <<= >>=` |
 | Evaluation order | Strict left-to-right; `and`/`or` short-circuit; documented |
 | Control flow | `if`/`else if`/`else`, `while`, `loop`, `for`, `break`/`continue`, `return`, `throw`, `try`/`catch`/`finally` |
 | Functions | Top-level `fn` with hoisting and mutual recursion; positional and named calls; static argument checking |
 | Closures | Lambdas capture by reference; no ownership/lifetime model |
-| Mutability | Binding-level (`let`/`let mut`); value- and field-level mutation through shared references |
+| Mutability | Binding capability: `let` immutable, `let mut` mutable; place writes and mutating calls require a `mut` root; `mut self` marks a mutating method |
 | Structs | Nominal; named and positional construction; validated fields |
 | Enums | Global tags; positional payloads; named payload args rejected |
 | Match | Expression; literal/binding/list/variant patterns; guards; no exhaustiveness |
@@ -70,10 +70,13 @@ Aura today is a tree-walking interpreted language with a conservative checker.
 | Tuples | `(a, b)` is list sugar; no distinct tuple type |
 | Loops/ranges | `range(a, b)` and `a..b`, step 1, end-exclusive, lazy in `for` |
 | Pipeline | `x \|> f(a)` is `f(x, a)` |
-| Methods | Built-in receiver kinds (string/list/map/range) plus user methods on nominal structs via `impl` with an explicit `self` receiver (OOP V1); enum methods and bound-method values are not implemented |
+| Methods | Built-in receiver kinds (string/list/map/range) plus user methods on nominal structs via `impl` with an explicit receiver (`self`/`mut self`) (OOP V1); enum methods and bound-method values are not implemented |
+| Traits | Static behavioral contracts (`trait`/`impl Trait for Struct`), merged into the struct's method table; no defaults, objects, or dynamic dispatch (OOP V2) |
+| Constants | `const NAME = e` module constants; a top-level `let` is the same; source-ordered, immutable bindings |
+| f-strings | `{expr}` interpolation, `{{`/`}}` escapes, and a small format spec (`{x:.2f}`, `{n:>6}`, `{n:06d}`, `{n:x}`); no `{x=}`/`{x!r}` |
 | Built-ins | Core builtins (incl. `read_line`, `read_file`, `write_file`, `args`) + method entries in one shared registry |
 | Aliases | Transparent; chained; recursive aliases rejected (`E3002`) |
-| REPL | Persistent session; bindings/functions/structs/enums/aliases; line-oriented submissions |
+| REPL | Persistent session; bindings/functions/structs/enums/aliases/traits/constants; line-oriented submissions |
 | CLI/API | `run`, `check`, `eval`, `repl` over one `compile`+`execute` pipeline |
 | Python | Optional `py` bridge; lossless integer/dict-key rules |
 | Resource limits | 256 AST nodes (`E1015`), 512 call frames (`E4011`), 10M range cap |
@@ -100,6 +103,10 @@ Aura today is a tree-walking interpreted language with a conservative checker.
 * No block comments (only `#` line and `<!-- ... --!>` multiline comments).
 * No tuple type or lexicographic ordering for compound values.
 * No closure lifetime/ownership model (deliberate).
+* No bitwise XOR (`^` is exponentiation) and no `++`/`--` (increment is an
+  explicit assignment); `%=`/`^=`/`&=`/`|=`/`<<=`/`>>=` do exist.
+* f-strings have no self-documenting `{x=}`, conversions `{x!r}`, or grouping
+  flags (`{x:,}`); the format mini-language is the small subset in §3.6.4.
 
 ### Completed milestones
 
@@ -547,8 +554,11 @@ under "Release hardening" below.
 | 10 | Block comments | B | Lexical feature; needs a syntax decision |
 | 11 | User-defined methods | E/B | **done** (struct methods, §17.6; enum methods remain) |
 | 11b | Traits | E | **done** (static behavioral contracts, §17.7; no dynamic dispatch or bounds) |
+| 11c | Mutation capability | E | **done** (BFR-II: `let mut`/`mut self`, §16.6) |
+| 11d | Bitwise operators + compound assignments | C | **done** (BFR-II: `& \| ~ << >>`, `%= ^= &= \|= <<= >>=`) |
+| 11e | f-string format mini-language | C | **done** (BFR-II, §3.6.4) |
 | 12 | Modules | E | Separate design phase |
-| — | Generics / trait bounds / async / VM | E | Not planned |
+| — | Generics / trait bounds / async / VM / `++`/`--` | E | Not planned |
 
 ### Release hardening (0.0.1)
 
@@ -572,14 +582,38 @@ of the frozen `0.0.1` language:
 The release, language, and runtime versions are deliberately distinct:
 release `0.0.2`, language `0.0.1`, runtime `0.0.2`. OOP V1 (struct methods via
 `impl` with an explicit `self` receiver) is implemented and available in the
-development runtime. Traits (static behavioral contracts, §17.7) followed, and
-the core contract was then synchronized (LSCS): `const NAME = e` is the
-canonical module constant, `let`/`mut`/shadowing/scope have one explicit rule
-with a published scope matrix, and the operator and f-string contracts are
-closed (no bitwise, no `++`/`--`, no f-string format mini-language). Development
-continues with syntax refinement, semantic consistency, stdlib/API refinement,
-diagnostics, hardening, conformance, and syntax freeze before further OOP work
-(generics and trait bounds).
+development runtime. Traits (static behavioral contracts, §17.7) followed. The
+core contract was then synchronized (LSCS): `const NAME = e` is the canonical
+module constant, `let`/`mut`/shadowing/scope have one explicit rule with a
+published scope matrix, and the operator and f-string contracts were closed.
+The foundation revision (BFR-II) then added the mutation-capability model
+(`let mut` / `mut self`, §16.6), the bitwise operator family with compound
+assignments, a small f-string format mini-language, and uniform trailing
+commas. Development continues with syntax refinement, semantic consistency,
+stdlib/API refinement, diagnostics, hardening, conformance, and syntax freeze
+before further OOP work (generics and trait bounds).
+
+### Increment/decrement decision (`++` / `--`)
+
+Aura deliberately has **no** `++` or `--` operator. This is a design decision,
+not an omission:
+
+* **Mutation is explicit.** `x = x + 1` and `x += 1` already express increment,
+  and they read the same as every other mutation. A dedicated operator would be
+  a second spelling for one construct, against the one-spelling principle.
+* **Value semantics would be a trap.** Prefix vs postfix differ only in the
+  *value* of the expression, an easy source of off-by-one bugs; Aura's
+  expression-oriented design would have to define, teach, and test both forms.
+* **It composes badly with the capability model.** A postfix `x++` hides a
+  write inside an expression; the mutation-capability rule (§16.6) is easiest to
+  state and reason about when writes appear as assignments.
+* **No test showed a need.** No existing corpus is clearer with `++`.
+
+If it were ever admitted, the coherent form would be postfix-only or
+prefix-only (never both), statement-position-first, requiring a `mut` place,
+and defined as sugar for the corresponding assignment returning `none`; that is
+recorded here so a future proposal starts from a defined baseline rather than
+inventing two forms.
 
 ---
 

@@ -10,10 +10,14 @@ or
 and
 ==  !=
 <  <=  >  >=
+|             bitwise or (int)
+&             bitwise and (int)
+<<  >>        shift (int)
+..            range (right associative)
 +  -
 *  /  %
 ^             (right associative)
--  not        (prefix unary)
+-  not  ~     (prefix unary)
 ()  []  .     (postfix: calls, indexing, methods)
 ```
 
@@ -38,6 +42,22 @@ print(7 % 3)         # 1
 
 Division or remainder by zero is `E4007` for both integers and floats.
 
+## Bitwise and shift
+
+`&` (and), `|` (or), `~` (not), `<<`, and `>>` operate on `int`. `|` is
+contextual: a type-union separator where a type is expected, bitwise OR in
+expression position.
+
+```aura
+print(6 & 3)         # 2
+print(6 | 1)         # 7
+print(1 << 4)        # 16
+```
+
+A shift count that is negative or at least 64 is `E4013`. There is **no XOR**
+operator: `^` is exponentiation. `&&`/`||` are not operators (they lex as two
+`&`/`|` tokens and fail to parse).
+
 ## Comparison and equality
 
 `==` and `!=` compare any two values and yield a `bool`. Ordering (`<`, `<=`,
@@ -52,8 +72,9 @@ print("a" < "b")           # true
 
 ## Logic
 
-`and`, `or`, and `not` are the logic operators; `&&`, `||`, and `!` are lexical
-errors. `and` and `or` short-circuit and always yield a `bool`.
+`and`, `or`, and `not` are the logic operators; `!` is a lexical error and
+`&&`/`||` are not operators. `and` and `or` short-circuit and always yield a
+`bool`.
 
 ```aura
 print(true and false)      # false
@@ -66,22 +87,22 @@ print(not 0)               # true  (0 is falsy)
 | Operator | Meaning |
 |---|---|
 | `=` | assign |
-| `+=` `-=` `*=` `/=` | read, apply the binary operator, assign |
+| `+=` `-=` `*=` `/=` `%=` `^=` `&=` `\|=` `<<=` `>>=` | read, apply the binary operator, assign |
 
-There is no `%=` or `^=`.
+`^=` is exponentiation-assign, not XOR-assign. Every assignment operator
+checks the target for mutation capability: assigning to an immutable binding
+is `E2001`, and so is assigning through one (`xs[0] = v`, `s.f = v`).
 
 ## Operators Aura does not have
 
 These are intentionally absent, not merely unimplemented:
 
-* **No bitwise operators.** `&`, `|`, `~`, `<<`, and `>>` do not exist. `&`
-  and `~` are lexical errors, `|` is reserved for type unions, and a shift
-  fails to parse. `^` is exponentiation, not XOR.
+* **No XOR.** `^` is exponentiation; there is no bitwise XOR operator.
 * **No `++` / `--`.** There is no pre- or post-increment or decrement. Write
   the assignment explicitly: `x = x + 1` or `x += 1`.
-* **No f-string format mini-language.** An f-string interpolates `{expr}` and
-  escapes braces with `{{`/`}}`; Python's `{x:spec}`, `{x=}`, and `{x!r}` forms
-  are not part of Aura.
+* **No self-documenting or conversion f-string fields.** `{x=}`, `{x!r}`, and
+  grouping flags like `{x:,}` are not part of Aura. An f-string does support a
+  small format mini-language (`{x:.2f}`, `{n:>6}`, `{n:06d}`, `{n:x}`).
 
 ## Indexing and fields
 
