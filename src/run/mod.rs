@@ -24,6 +24,27 @@ pub const MAX_CALL_FRAMES: usize = 512;
 /// stack usage for deeply nested expressions.
 pub const MAX_AST_DEPTH: usize = 256;
 
+/// Maximum f-string format *precision* (digits after the decimal point).
+///
+/// Rust's `format!` rejects a width/precision above `u16::MAX` with a host
+/// panic ("Formatting argument out of range"); Aura MUST NOT let a program
+/// reach that panic (`LANGUAGE_SPEC.md` §31.5). This is the largest value the
+/// formatter accepts, kept as the language's own bound so the limit produces a
+/// stable `E4013` on every substrate rather than a panic (native) or a trap
+/// (WebAssembly).
+pub const MAX_FORMAT_PRECISION: usize = u16::MAX as usize;
+
+/// Maximum f-string format *width* (minimum field width, in characters).
+///
+/// A field width pads the output with `fill`; an enormous width would allocate
+/// an enormous string. Native would attempt the allocation (and eventually
+/// abort) while WebAssembly traps on memory exhaustion, so the two substrates
+/// would diverge. Bounding the width keeps the behavior identical on every
+/// substrate and a stable `E4013` beyond the bound (`LANGUAGE_SPEC.md` §31.5).
+/// The value matches the range-materialization cap (§31.4): a generous but
+/// bounded amount of materialized output.
+pub const MAX_FORMAT_WIDTH: usize = 10_000_000;
+
 /// A user-defined function.
 #[derive(Debug)]
 pub struct Closure {
@@ -1796,6 +1817,30 @@ impl Interp {
     /// alignment pad it.
     fn format_value(&mut self, v: &Value, spec: &FormatSpec) -> Result<String> {
         use crate::ast::{Align, FormatType, Sign};
+        // Bound the precision before it reaches Rust's formatter: a precision
+        // above `u16::MAX` is a host panic, and a precision above the language
+        // bound is a stable `E4013` on every substrate (`LANGUAGE_SPEC.md`
+        // §31.5). The bound also covers a float with no explicit format type.
+        if let Some(p) = spec.precision {
+            if p > MAX_FORMAT_PRECISION {
+                return Err(self.error(
+                    codes::OVERFLOW,
+                    format!("format precision {p} exceeds the {MAX_FORMAT_PRECISION} limit"),
+                    spec.span,
+                ));
+            }
+        }
+        // Bound the width before any padding allocation so native and
+        // WebAssembly behave identically (no native abort, no wasm trap).
+        if let Some(w) = spec.width {
+            if w > MAX_FORMAT_WIDTH {
+                return Err(self.error(
+                    codes::OVERFLOW,
+                    format!("format width {w} exceeds the {MAX_FORMAT_WIDTH} limit"),
+                    spec.span,
+                ));
+            }
+        }
         // 1. Produce the core text under the presentation type.
         let mut text = match (spec.ty, v) {
             (None, _) => v.display(),

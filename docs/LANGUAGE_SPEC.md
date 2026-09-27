@@ -2904,6 +2904,26 @@ program may build an arbitrarily deep value at runtime, and vice versa.
 `Value::drop` (`src/run/value.rs`); `to_json`/`from_json`
 (`src/stdlib/ext.rs`); `tests/regressions.rs::bh1_*`.
 
+### 31.7 Format-output bounds
+
+**Normative rule.** An f-string format **precision** (§3.6.4) MUST NOT exceed
+`65535`; a larger precision is `E4013`. (This is the largest precision the
+host formatter represents; leaving it unbounded would reach a host panic on
+native and a trap on WebAssembly.)
+
+**Normative rule.** An f-string format **width** (§3.6.4) MUST NOT exceed
+`10,000,000`; a larger width is `E4013`. (The width pads the output, so an
+unbounded width would allocate without bound on native and trap on
+WebAssembly — a substrate divergence this bound removes.)
+
+Both bounds are language rules applied identically on every substrate, so a
+program at or below the bound produces the same bytes everywhere and a program
+above it produces the same `E4013` everywhere.
+
+*Evidence:* `MAX_FORMAT_PRECISION`, `MAX_FORMAT_WIDTH`, `Interp::format_value`
+(`src/run/mod.rs`); `tests/regressions.rs::audit_*`; the native/WASM
+differential corpus (`playground/tests/node/differential.test.mjs`).
+
 ---
 
 ## 32. Python Boundary (feature `py`)

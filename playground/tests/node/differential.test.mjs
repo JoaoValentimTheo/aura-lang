@@ -380,6 +380,18 @@ const cases = [
   ['fstring type mismatch', "fn main() { print(f\"{'s':d}\") }"],
   ['fstring unknown type', 'fn main() { print(f"{5:z}") }'],
   ['fstring escapes still', 'fn main() { print(f"{{x}} {1 + 1}") }'],
+  // A format precision above `u16::MAX` used to reach Rust's formatter and
+  // panic on native (E4999) / trap on wasm. Bound is now the language's own,
+  // reported as E4013 on every substrate.
+  ['fstring precision at u16 max', 'fn main() { print(len(f"{1.5:.65535}")) }'],
+  ['fstring precision over u16 max', 'fn main() { print(f"{1.5:.65536}") }'],
+  ['fstring precision far over', 'fn main() { print(f"{1.5:.100000}") }'],
+  ['fstring precision far over typed', 'fn main() { print(f"{1:.70000e}") }'],
+  // An unbounded format width used to allocate without limit (native) or trap
+  // (wasm). The width is now bounded by the language.
+  ['fstring width at bound', 'fn main() { print(len(f"{1:10000000}")) }'],
+  ['fstring width over bound', 'fn main() { print(f"{1:10000001}") }'],
+  ['fstring width far over', 'fn main() { print(f"{1:2000000000}") }'],
   // Trailing comma uniformity.
   [
     'trailing comma everywhere',

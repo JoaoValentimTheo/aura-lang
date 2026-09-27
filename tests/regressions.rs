@@ -1326,3 +1326,110 @@ fn bh1_06_no_paren_member_on_known_enum_is_checked() {
         "1\n"
     );
 }
+
+// ---------------------------------------------------------------------------
+//
+// AUDIT-GEN-01: an f-string format precision above `u16::MAX` used to reach
+// Rust's `format!` and panic ("Formatting argument out of range") on native,
+// which became `E4999` (INTERNAL), and trap (`unreachable`) on WebAssembly.
+// `LANGUAGE_SPEC.md` §31.5 forbids a host panic on a valid program. The
+// precision is now bounded by the language and reported as a stable `E4013`.
+// ---------------------------------------------------------------------------
+
+/// A huge f-string precision is a stable `E4013` on every substrate, never a
+/// panic. `65535` (`u16::MAX`) is the largest the formatter accepts and must
+/// still succeed; `65536` and beyond must be rejected.
+#[test]
+fn audit_precision_above_u16_max_is_bounded() {
+    // At the boundary: accepted.
+    let ok = out("fn main() { print(len(f\"{1.5:.65535}\")) }");
+    assert_eq!(ok.trim(), "65537");
+    // Just past it: a diagnostic, not a panic.
+    assert_eq!(
+        fail("fn main() { print(f\"{1.5:.65536}\") }"),
+        codes::OVERFLOW
+    );
+    assert_eq!(
+        fail("fn main() { print(f\"{1.5:.100000}\") }"),
+        codes::OVERFLOW
+    );
+    // The bound applies to every float presentation type, not only the plain
+    // form.
+    assert_eq!(
+        fail("fn main() { print(f\"{1.5:.70000f}\") }"),
+        codes::OVERFLOW
+    );
+    assert_eq!(
+        fail("fn main() { print(f\"{1:.70000e}\") }"),
+        codes::OVERFLOW
+    );
+}
+
+// ---------------------------------------------------------------------------
+//
+// AUDIT-GEN-02: an f-string format *width* was unbounded. A very large width
+// padded with `fill`, so native attempted a multi-gigabyte allocation while
+// WebAssembly trapped on memory exhaustion — a native/WASM divergence on a
+// valid program. The width is now bounded by the language and reported as
+// `E4013` beyond the bound, matching the range-materialization cap.
+// ---------------------------------------------------------------------------
+
+/// A huge f-string width is a stable `E4013` rather than an allocation or a
+/// trap, and the bound still admits a large-but-bounded field.
+#[test]
+fn audit_huge_format_width_is_bounded() {
+    // At the bound: accepted.
+    let size = out("fn main() { print(len(f\"{1:10000000}\")) }");
+    assert_eq!(size.trim(), "10000000");
+    // Beyond it: a diagnostic.
+    assert_eq!(
+        fail("fn main() { print(f\"{1:10000001}\") }"),
+        codes::OVERFLOW
+    );
+    assert_eq!(
+        fail("fn main() { print(f\"{1:2000000000}\") }"),
+        codes::OVERFLOW
+    );
+}
+
+// ---------------------------------------------------------------------------
+//
+// AUDIT-GEN-03: a type annotation is NOT counted by the semantic AST-node
+// walker (`enforce_depth` descends expressions and statements only), so type
+// nesting is governed solely by the substrate-calibrated parser backstop
+// (§31.2). The invariant that MUST hold is §31.5: no depth causes a host
+// failure. The *acceptance threshold* is substrate-dependent (native ~2047,
+// WebAssembly ~767) and is recorded as a divergence finding for a spec
+// decision rather than silently changed here.
+// ---------------------------------------------------------------------------
+
+/// A type annotation nested past the semantic limit is either accepted or
+/// reported as `E1015`; it never panics, aborts, or overflows the host stack,
+/// at any depth. This is the §31.5 invariant that type nesting must satisfy.
+#[test]
+fn audit_deep_type_annotation_never_host_fails() {
+    fn nested(n: usize) -> String {
+        let mut t = "int".to_string();
+        for _ in 0..n {
+            t = format!("Box<{t}>");
+        }
+        t
+    }
+    for depth in [300usize, 1000, 2047, 2048, 5000, 20000] {
+        let src = format!(
+            "struct Box<T> {{ value: T }}\nfn f(x: {}) -> int {{ return 1 }}\nfn main() {{ print(1) }}",
+            nested(depth)
+        );
+        match run_source(&src, "<test>") {
+            // Accepted (below this substrate's backstop), or a deterministic
+            // nesting diagnostic. Either is safe; a panic would surface as
+            // `E4999` and is what this test forbids.
+            Ok(_) => {}
+            Err(d) => assert_eq!(
+                d.code,
+                codes::NESTING,
+                "deep type depth {depth} produced an unexpected code"
+            ),
+        }
+    }
+}

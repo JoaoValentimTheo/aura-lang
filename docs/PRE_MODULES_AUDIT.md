@@ -1,0 +1,255 @@
+# Pre-Modules Audit — Findings and Fixes
+
+**Scope.** A complete end-to-end audit of the Aura core before the
+filesystem-based module system (`mod.aura`). Method: source inspection plus
+adversarial execution on both substrates (native CLI and the committed
+WebAssembly artifact) and the native/WASM differential corpus.
+
+**Baseline.** `rewrite/v3-rust`, `HEAD` = `7260ce2` at audit start. 597 tests
+green, 13 CI jobs green, published runtime `0.0.2` and development runtime
+`0.0.2-dev.20` both with **zero imports**.
+
+**Evidence classes.** CONFIRMED = reproduced with an executable path;
+LIKELY = strong evidence, one condition unverified; HYPOTHESIS = flagged for
+investigation.
+
+**Instrumentation used.** Native CLI (`aura run/check/eval/repl`), the
+playground native harness (`aura-playground-native`), the loader path
+(`playground/web/runtime.mjs`), the committed wasm artifacts, a native/WASM
+differential sweep harness, format-spec and lexer/parser fuzzers, manifest
+hash verification, and manual source inspection. Scratch harnesses were
+removed after use.
+
+---
+
+## 1. Confirmed defects
+
+### AUDIT-1 — Host panic and WASM trap on a large f-string precision (CRITICAL)
+
+* **Class:** CONFIRMED. Reachable from a syntactically valid, checker-passing
+  program; produces a Rust panic (native) and a WASM trap.
+* **Reproducer:**
+  ```aura
+  fn main() { print(f"{1.5:.65536}") }
+  ```
+* **Observed (before fix):**
+  * native: `panicked at src/run/mod.rs:1845: Formatting argument out of range`,
+    surfaced as `E4999` (INTERNAL) — the process is reported as a bug in Aura;
+  * WebAssembly: `RuntimeError: unreachable` (a trap, not a diagnostic);
+  * the frozen `0.0.2` release is unaffected (it predates format specs and
+    returns `E1006`), so the exposure is the current development line.
+* **Root cause:** `Interp::format_value` passes a parser-controlled `usize`
+  precision directly to Rust's `format!("{f:.p$}")` / `format!("{:.*}", …)`.
+  The Rust formatter represents width and precision in a `u16`, and aborts the
+  formatting machinery above `u16::MAX` (`core::fmt::rt::Argument::from_usize`
+  panics). The Aura checker does not bound the precision (there is no rule),
+  so the value reaches the formatter. This violates `LANGUAGE_SPEC.md` §31.5
+  ("No syntactically valid, well-formed program may cause a host panic …") and
+  §31.2's "accepted identically on every substrate".
+* **Severity:** CRITICAL — host panic/trap from valid input, and a
+  native/WASM divergence (native `E4999` vs wasm trap).
+* **Fix:** introduced `MAX_FORMAT_PRECISION = u16::MAX` in `src/run/mod.rs` and
+  rejected a larger precision with a stable `E4013` in `format_value`, before
+  the value reaches the formatter. Applied to every float presentation type.
+* **Regression:** `tests/regressions.rs::audit_precision_above_u16_max_is_bounded`;
+  differential cases `fstring precision at u16 max / over u16 max / far over /
+  far over typed`.
+* **Validation:** native now returns `E4013`; wasm now returns diagnostic
+  `4013` (no trap); `65535` still formats; full suite green.
+
+### AUDIT-2 — Unbounded f-string width: memory amplification / WASM trap (HIGH)
+
+* **Class:** CONFIRMED. Same program class as AUDIT-1 (valid, checker-passing).
+* **Reproducer:**
+  ```aura
+  fn main() { print(len(f"{1:2000000000}")) }
+  ```
+* **Observed (before fix):**
+  * native: attempted the allocation (≈600 MB–1 GB RSS for the `1e9` case;
+    `2e9`+ risks abort/OOM);
+  * WebAssembly: `RuntimeError: unreachable` for width ≥ ~2e9 (memory
+    exhaustion trap).
+  * A width of `100000000` succeeded on both, i.e. a single expression can
+    force a ~100 MB materialized string — an uncontrolled amplification.
+* **Root cause:** `format_value` pads to `spec.width` with
+  `String::with_capacity(width)` and `repeat_n(fill, pad)` with no upper bound;
+  the parser accepts an arbitrary `usize`.
+* **Severity:** HIGH — resource-exhaustion / substrate divergence on valid
+  input; not memory-unsafe.
+* **Fix:** introduced `MAX_FORMAT_WIDTH = 10_000_000` (matching the §31.4
+  range-materialization cap) and rejected a larger width with `E4013` before
+  allocation.
+* **Regression:** `tests/regressions.rs::audit_huge_format_width_is_bounded`;
+  differential cases `fstring width at bound / over bound / far over`.
+* **Validation:** width `10_000_000` accepted, `10_000_001`+ is `E4013` on both
+  substrates.
+
+### AUDIT-3 — Type nesting escapes the semantic AST limit; native/WASM divergence (MEDIUM)
+
+* **Class:** CONFIRMED divergence; the "limit escape" is CONFIRMED by source
+  inspection.
+* **Reproducer** (deep generic type; declaration only, never called):
+  ```python
+  t = "int"
+  for _ in range(1000): t = f"Box<{t}>"
+  src = f"struct Box<T> {{ value: T }}\nfn f(x: {t}) -> int {{ return 1 }}\nfn main() {{ print(1) }}"
+  ```
+* **Observed:**
+  * native accepts type-annotation depth up to 2047 and reports `E1015` at
+    2048 (the native parser recursion backstop);
+  * WebAssembly reports `E1015` at 768 (the wasm parser recursion backstop);
+  * both are well past the semantic limit of 256 (§31.1), so the **same valid
+    program** is accepted natively but rejected on WebAssembly.
+* **Root cause:** the semantic depth enforcer `enforce_depth` /
+  `check_expr_depth` (`src/parse/mod.rs`) descends expressions and statements
+  only; it never visits `TypeExpr` nodes on annotations, fields, parameters,
+  return types, variant payloads, or type arguments. Type nesting is therefore
+  governed solely by the substrate-calibrated parser backstop (§31.2), which
+  the spec explicitly says must not make the semantic limit substrate-dependent
+  (§31.2/§31.5).
+* **Severity:** MEDIUM — a native/WASM acceptance divergence; no host failure
+  (depth is bounded before any stack trap), so it is not a crash.
+* **Status:** **reported, not changed.** Counting type nodes toward the
+  semantic budget, or counting them separately, is a *semantic* change
+  (it would reject programs the current frozen line accepts, on both
+  substrates). It requires an explicit spec decision, so it is left as a
+  finding with a `§31.5` safety regression
+  (`tests/regressions.rs::audit_deep_type_annotation_never_host_fails`) that
+  locks the no-host-failure invariant without asserting an acceptance
+  threshold.
+
+---
+
+## 2. Documentation divergences
+
+### DOC-1 — Mutable ordinary parameters are undocumented in the grammar and §16.4
+
+* **Class:** CONFIRMED divergence (implementation vs normative text).
+* The parser accepts `mut` on an ordinary parameter (`fn f(mut x: int)`) and
+  grants in-body mutation capability (`src/parse/mod.rs`, `Parser::params`).
+  It is an intentional, tested feature
+  (`tests/mutation.rs:163`, `tests/parser.rs:92`), and §15.4 and §16.6 refer to
+  "an ordinary `mut` parameter".
+* But `docs/grammar.md` declares `param = IDENT [ ":" type ]` (no `mut`) and
+  §16.4 says flatly "Parameters are immutable bindings in the function's
+  scope", with no mention of `mut`.
+* **Severity:** LOW (documentation). The implementation is the source of truth
+  per the audit protocol; the text is stale.
+* **Proposed fix:** add `param = [ "mut" ] IDENT [ ":" type ]` to `grammar.md`
+  and `LANGUAGE_SPEC.md` §16.4/§15.4, and state that `mut x` grants mutable
+  capability over `x` for the body (as §15.4 already says for lambdas).
+  Not applied in this pass to keep the change set to host-safety fixes;
+  flagged for a doc decision.
+
+### DOC-2 — `build.rs` comment names a stale parser budget
+
+* **Class:** CONFIRMED (comment only). `playground/runtime/build.rs` says the
+  backstop is "1024 frames on wasm", while `parse_recursion_budget` returns
+  **768** (the comment's own last paragraph was updated; its first line was
+  not). Cosmetic, but misleading. Proposed: correct `1024` → `768`.
+
+---
+
+## 3. Areas verified sound (no defect)
+
+* **Sandbox / zero-imports (CRITICAL property).** Both committed artifacts
+  (`0.0.2`, `0.0.2-dev.20`, and the new `0.0.2-dev.21`) declare **0 imports**,
+  verified by parsing the wasm import section. `Host` has no OS authority in
+  `LimitedHost`/`BrowserHost`; `StdHost` is `cfg`-gated to native; the stdlib
+  reaches the OS only through the `Host` trait. The loader
+  (`playground/web/runtime.mjs`) refuses artifacts with imports before
+  instantiation, and the published and dev manifests' SHA-256 and byte counts
+  match the artifacts on disk. No path (builtin, error, panic, FFI, build
+  script) was found that can add an import.
+* **Python boundary.** `py` is default-on natively but disabled for the wasm
+  crate (`default-features = false`); on wasm every `py_*` call is `E5002`.
+  Native exposes the intended Python escape hatch (a deliberate, documented
+  capability of the native host, not a cross-substrate leak).
+* **Host capability semantics.** Native: real filesystem/clock/sleep/args;
+  write→read round-trips; a nonexistent file is `none`. WASM:
+  `read_file`/`write_file`/`time_now`/`time_unix`/`sleep_ms`/`py_*` are all
+  `E5002`; `args` is `[]`; `read_line` is `none`. No `E4020`/`E5002`
+  confusion observed.
+* **Arithmetic (debug vs release).** All int operators use `checked_*`;
+  overflow, `i64::MIN / -1`, `%`, `^`, and shift-count bounds yield `E4013`
+  identically in debug and release (no `overflow-checks` divergence).
+* **Resource limits.** Call frames: 510 ok / 511+ `E4011`, identical on both
+  substrates. AST expression nesting via grouping: over-limit is `E1015` on
+  both. Range iteration is lazy (`break` on a `10^12` range does not
+  materialize). Value display/JSON depth is bounded (512) with `…`/`null`, and
+  equality is coinductive over cycles. `list↔list`, `list↔map`,
+  `struct↔list`, `map↔struct`, `struct↔struct`, and enum-payload cycles all
+  terminate in display, equality, and JSON.
+* **Checker ↔ runtime registry.** Every registered builtin has a signature;
+  every signature method resolves at runtime; method arity/type mismatches
+  (`x.upper(1)`, `x.contains()`, `x.replace("a")`, …) produce the **same**
+  code in `check` and `run`.
+* **Overload resolution.** Deterministic (scored, index-stable, no HashMap
+  order); ties are `Ambiguous` (`E3001`); concrete beats generic; a
+  same-parameter-type redeclaration is `E2007`; return type and `mut self` are
+  not identity dimensions; alpha-equivalent generics (`f<T>`/`f<U>`) are the
+  same overload.
+* **Mutability capability.** `push`/`pop`/`remove`/`mut self` on an immutable
+  binding are `E2001`; closures capture by reference and enforce capability;
+  union receivers are conservative; `const` and top-level `let` cannot be
+  shadowed (`E2007`); `let` shadowing takes the initializer from the previous
+  binding.
+* **Visibility.** Private fields/methods/structs are `E2018`/`E3002` across
+  module boundaries; overload visibility is per overload.
+* **Errors.** Only `throw` is catchable; `1/0`, index-out-of-range, and other
+  runtime diagnostics propagate fatally and are not caught; `finally` runs and
+  a control signal in `finally` overrides the pending outcome; nested
+  try/catch and cross-function `throw` behave per §14.
+* **Unicode / encoding.** Combining characters, emoji, 4-byte UTF-8, BOM,
+  CRLF, and isolated CR are handled without panic; `line_col` clamps and slices
+  on `char_indices` boundaries. Fuzzing (`~9,000` random token-soup and
+  valid-program inputs, plus format-spec and method fuzzers) produced **no**
+  panic other than AUDIT-1.
+
+---
+
+## 4. Confirmed-clean claims vs. prose
+
+* "The checker and runtime consult the same signature registry" — verified for
+  arity, types, method existence, and return types; no divergent table found.
+* "Zero-import wasm" — verified empirically on all committed artifacts.
+* "Immutable manifest with SHA-256" — verified: the manifest matches disk, and
+  `build.mjs --check` fails on drift (exercised in CI).
+* **Gap (LIKELY→CONFIRMED):** the loader does **not** verify the manifest's
+  SHA-256 at load time; it fetches `artifactUrl` and validates only the ABI
+  version. The hash protects *immutability at build time and in the repo*, not
+  *integrity at runtime*. For a same-origin static site this is a hardening
+  opportunity (the browser could recompute SHA-256 via `crypto.subtle.digest`
+  and compare to the manifest before instantiation), not an exploitable hole.
+  Classified LIKELY-hardening, explicitly **not** presented as a vulnerability.
+
+---
+
+## 5. Changes made in this pass
+
+Host-safety fixes only; no semantic change to the frozen language line.
+
+| File | Change |
+|---|---|
+| `src/run/mod.rs` | `MAX_FORMAT_PRECISION`, `MAX_FORMAT_WIDTH`; `format_value` rejects an over-limit precision/width with `E4013` before formatting or allocating |
+| `tests/regressions.rs` | `audit_precision_above_u16_max_is_bounded`, `audit_huge_format_width_is_bounded`, `audit_deep_type_annotation_never_host_fails` |
+| `playground/tests/node/differential.test.mjs` | 7 native/WASM parity cases for the format bounds |
+| `docs/LANGUAGE_SPEC.md` | new §31.7 (format-output bounds) |
+| `playground/runtime/Cargo.{toml,lock}`, `manifest.json`, `browser.test.mjs`, `website/pages/{playground,runtime}.mjs` | development runtime advanced `0.0.2-dev.20` → `0.0.2-dev.21` (immutable release `0.0.2` and all prior artifacts preserved) |
+
+**Results:** native suite 600 green (was 597), clippy clean, fmt clean, wasm
+runtime builds with 0 imports, manifest hash verified, playground suites
+manifest 26 / ABI 67 / differential 186 / browser 50 / worker 12 / cache 7 —
+all 0 failed.
+
+---
+
+## 6. Open items for a spec decision (not silently changed)
+
+1. **AUDIT-3** — count type nodes toward the semantic 256-node limit (or give
+   them their own substrate-independent bound) so the semantic limit is
+   substrate-independent, as §31.2/§31.5 require.
+2. **DOC-1** — document `mut` ordinary parameters in `grammar.md` and §16.4.
+3. **DOC-2** — correct the stale `build.rs` budget comment (1024 → 768).
+4. **Hash-at-load (hardening)** — optionally verify the artifact SHA-256 in the
+   loader before instantiation.
