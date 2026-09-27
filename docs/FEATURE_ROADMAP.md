@@ -557,8 +557,11 @@ under "Release hardening" below.
 | 11c | Mutation capability | E | **done** (BFR-II: `let mut`/`mut self`, §16.6) |
 | 11d | Bitwise operators + compound assignments | C | **done** (BFR-II: `& \| ~ << >>`, `%= ^= &= \|= <<= >>=`) |
 | 11e | f-string format mini-language | C | **done** (BFR-II, §3.6.4) |
-| 12 | Modules | E | Separate design phase |
-| — | Generics / trait bounds / async / VM / `++`/`--` | E | Not planned |
+| 11f | Variable shadowing | E | **done** (Shadowing: `let`/`let mut` shadow, `const` does not, §16.3) |
+| 11g | Foundation stability + CI/clean-room gate | E | **done** (Break-the-Aura II, PC ↔ Web symmetry, reproducibility) |
+| 12 | Method overloading | E | **next** feature after the frozen foundation |
+| 13 | Modules | E | Separate design phase |
+| — | Generics / trait bounds / async / VM / `++`/`--` | E | Not planned (generics later, after overloading) |
 
 ### Release hardening (0.0.1)
 
@@ -589,9 +592,12 @@ published scope matrix, and the operator and f-string contracts were closed.
 The foundation revision (BFR-II) then added the mutation-capability model
 (`let mut` / `mut self`, §16.6), the bitwise operator family with compound
 assignments, a small f-string format mini-language, and uniform trailing
-commas. Development continues with syntax refinement, semantic consistency,
-stdlib/API refinement, diagnostics, hardening, conformance, and syntax freeze
-before further OOP work (generics and trait bounds).
+commas. Variable shadowing followed (`let`/`let mut` shadow, `const` does not,
+§16.3), and a foundation-stability gate verified the core through adversarial
+destruction, a semantic-consistency audit, a Native/WASM differential, and a
+PC ↔ Web symmetry corpus. The language foundation is now **frozen** for feature
+development. The next feature is **method overloading**, built on the existing
+nominal `impl`/`trait` model; generics follow later.
 
 ### Increment/decrement decision (`++` / `--`)
 

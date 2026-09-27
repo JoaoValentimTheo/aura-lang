@@ -2575,7 +2575,7 @@ scope. Value and type namespaces are separate, so a session may hold `fn S` and
 | E2001 | assignment to an immutable binding |
 | E2003 | undefined name/function/field/key |
 | E2005 | `let` without initializer |
-| E2007 | redeclaration in the same scope |
+| E2007 | redeclaration in the same scope (a value name or member — not an ordinary `let`/`let mut`, which shadows) |
 | E2009 | `_`-prefixed parameter used |
 | E2010 | invalid assignment target |
 | E2011 | invalid `main` |
