@@ -123,7 +123,11 @@ fn fixtures_on_disk() -> Vec<String> {
                     .unwrap()
                     .to_string_lossy()
                     .into_owned();
-                out.push(rel);
+                // Normalize to `/` so the inventory is identical on every
+                // platform: Windows reports path components with `\`, while the
+                // table uses `/`. Without this the inventory test would fail on
+                // Windows with a false "not listed" mismatch.
+                out.push(rel.replace('\\', "/"));
             }
         }
     }

@@ -48,7 +48,11 @@ jobs:
           set -euo pipefail
           for t in lexer parser checker runtime; do
             echo "=== fuzzing $t for 1800s ==="
-            cargo fuzz run "$t" -- -max_total_time=1800 -rss_limit_mb=4096 -timeout=25
+            # Leak detection is OFF deliberately: a program may build a
+            # reference cycle, and Aura's documented, memory-safe value model
+            # does not reclaim an `Rc` cycle (LANGUAGE_SPEC.md §31.6). This is
+            # expected, not a leak bug; crashes/aborts/timeouts still fail.
+            cargo fuzz run "$t" -- -max_total_time=1800 -rss_limit_mb=4096 -timeout=25 -detect_leaks=0
           done
       - name: Upload any crash artifacts
         if: always()
