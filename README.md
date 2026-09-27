@@ -8,6 +8,9 @@ Rust runtime and optional Python interop through PyO3.
 One spelling per construct. Immutable by default. No `null` — only `none`.
 No Python required to run.
 
+> **Zen-to-win** — the language stays small; the compiler is allowed to be
+> rigorous. See [docs/ZEN.md](docs/ZEN.md) for the manifesto.
+
 </div>
 
 ---
