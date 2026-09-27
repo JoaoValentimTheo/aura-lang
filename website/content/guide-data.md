@@ -7,9 +7,13 @@ A `struct` declares a nominal record type with typed fields.
 ```aura
 struct Point { x: int, y: int }
 
-let origin = Point { x: 0, y: 0 }
-print(origin.x)
-origin.x = 1        # fields are mutable
+fn main() {
+    let p = Point { x: 0, y: 0 }
+    print(p.x)          # 0
+    let mut q = Point { x: 0, y: 0 }
+    q.x = 1             # fields are mutable through a `mut` binding
+    print(q.x)          # 1
+}
 ```
 
 Construction uses `Name { field: value }`. Fields may also be supplied by name
@@ -19,28 +23,33 @@ in any order. A missing field, an unknown field, or a wrongly typed field is
 ## Methods
 
 Behavior is attached to a struct with an `impl` block. A method's first
-parameter is the explicit receiver `self`; it is an ordinary immutable binding,
-and Aura's reference semantics let a method mutate `self.field` directly.
+parameter is the explicit receiver `self`; it is an ordinary binding, immutable
+unless declared `mut self`. A method that assigns `self` or a field of `self`
+MUST declare `mut self`, and the caller must reach the receiver through a `mut`
+binding — the same mutation-capability rule as everywhere else.
 
 ```aura
 struct Counter { n: int }
 
 impl Counter {
-    fn bump(self, by: int) {
+    fn bump(mut self, by: int) {
         self.n = self.n + by
     }
     fn get(self) -> int { return self.n }
 }
 
-let c = Counter { n: 0 }
-c.bump(3)
-print(c.get())      # 3
+fn main() {
+    let mut c = Counter { n: 0 }
+    c.bump(3)          # the receiver must be reachable through a `mut` binding
+    print(c.get())     # 3
+}
 ```
 
 Rules:
 
-* One `impl` block per struct; method names are scoped to the struct, so two
-  structs may each declare `fn get(self)`.
+* Method names are scoped to the struct, so two structs may each declare
+  `fn get(self)`. Multiple `impl` blocks for one struct merge into one method
+  surface and may add overloads.
 * `s.field` reads a field; `s.method(args)` calls a method. A method requires
   parentheses — `s.method` without them is not a bound method (`E2003`).
 * A field and a method of the same struct may not share a name (`E2016`).

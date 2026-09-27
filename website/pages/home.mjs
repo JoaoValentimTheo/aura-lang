@@ -230,6 +230,7 @@ fn main() {
           ["WebAssembly runtime + Playground", "Released", "success"],
           ["Struct methods (OOP V1)", "Delivered", "success"],
           ["Traits, shadowing, foundation, overloading", "Delivered", "success"],
+          ["OOP completion (four pillars, no inheritance)", "Delivered", "success"],
           ["Generics, modules, Python/PyO3", "Later", "planned"],
         ])}
       </div>
@@ -281,6 +282,7 @@ fn main() {
         ["OOP V1", "Struct methods: <code>impl</code>, <code>self</code>, composition", chip("Delivered", "success")],
         ["OOP V2 & foundation", "Traits, shadowing, mutation, operators, f-strings, stability", chip("Delivered", "success")],
         ["Overloading", "Functions and methods by ordered input types", chip("Delivered", "success")],
+        ["OOP completion", "Four pillars mapped to Aura; composition over inheritance", chip("Delivered", "success")],
         ["Hardening", "Conformance, differential testing, fuzzing", chip("Planned", "planned")],
         ["Generics", "Abstraction and parameterisation", chip("Later", "planned")],
         ["Python / data", "PyO3 interop and the scientific ecosystem", chip("Long-term", "planned")],

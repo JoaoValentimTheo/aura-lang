@@ -215,6 +215,7 @@ fn main() {
       ["Optional type annotations + conservative checker", "Implemented", "success"],
       ["Scripting I/O and arguments", "Implemented", "success"],
       ["Function & method overloading", "Implemented", "success"],
+      ["OOP model: encapsulation, traits, composition, overloading", "Implemented", "success"],
       ["Modules and visibility", "Reserved (inert syntax)", "planned"],
       ["Generics and trait bounds", "Later", "planned"],
       ["Python / PyO3 interop", "Long-term", "planned"],

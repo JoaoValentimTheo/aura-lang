@@ -82,15 +82,16 @@ export const aboutPage = {
       for a different meaning. New diagnostics get new numbers, and the test
       suite asserts that every documented code is reachable.</p>
       <h2>What Aura is not (yet)</h2>
-      <p>Aura has struct methods today — behavior is attached to a nominal
+      <p>Aura has a complete object model — behavior is attached to a nominal
       struct with an <code>impl</code> block and an explicit <code>self</code>
-      receiver — and static traits via <code>impl Trait for Struct</code>, with
-      reuse by composition. Beyond that, to keep the project honest: Aura has
-      no classes or inheritance, no dynamic dispatch, no interfaces or trait
-      objects, and no generics or trait bounds; no modules beyond inert
-      <code>use</code> and <code>pub</code>; no LSP, debugger, formatter, or
-      package manager; and no data-science or AI ecosystem. Method overloading
-      is next, and generics and the rest are future directions, listed on the
+      receiver, traits are static behavioral contracts via <code>impl Trait for
+      Struct</code>, reuse is composition, and polymorphism is method/function
+      overloading plus static union resolution. Beyond that, to keep the project
+      honest: Aura has no classes or inheritance, no dynamic dispatch, no
+      interfaces or trait objects, and no generics or trait bounds; no modules
+      beyond inert <code>use</code> and <code>pub</code>; no LSP, debugger,
+      formatter, or package manager; and no data-science or AI ecosystem.
+      Generics are the next direction, listed on the
       <a href="${url("roadmap/", base)}">roadmap</a>.</p>
     </div>
   </div>

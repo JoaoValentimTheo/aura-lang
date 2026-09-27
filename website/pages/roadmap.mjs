@@ -50,6 +50,12 @@ const PHASES = [
     body: "A function or method may have several definitions when their ordered input types differ. The return type does not distinguish overloads, and resolution is deterministic: the most specific match wins, and a tie is an error rather than a coin flip.",
   },
   {
+    tag: "Delivered",
+    kind: "success",
+    title: "OOP completion · the four pillars",
+    body: "The object model is finalized and mapped to the four classical concepts: <strong>encapsulation</strong> as struct data plus deterministic member lookup and the mutation-capability rule, <strong>abstraction</strong> through traits, <strong>reuse</strong> by composition plus traits rather than inheritance, and <strong>polymorphism</strong> as overloading and static union resolution. Modules and visibility (<code>pub</code>/<code>use</code>) remain deliberately deferred and inert. No classes, no inheritance, no dynamic dispatch.",
+  },
+  {
     tag: "Next",
     kind: "planned",
     title: "Generics and trait bounds",

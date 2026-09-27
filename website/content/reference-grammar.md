@@ -20,7 +20,8 @@ fn_decl         = "fn" IDENT "(" [ params ] ")" [ "->" type ] block ;
 params          = param { "," param } ;
 param           = IDENT [ ":" type ] ;
 
-(* behavior block: one per struct; methods take the receiver `self` as their
+(* behavior block: a struct may have several, which merge into one method
+   surface and may add overloads; methods take the receiver `self` as their
    first parameter. `impl` here is contextual — an `impl StructName {` item or
    an `impl TraitName for StructName {` item — and `self` has receiver meaning
    only in this position; both stay ordinary identifiers elsewhere. *)

@@ -167,7 +167,7 @@ const cases = [
   ],
   [
     'method mutates receiver',
-    'struct C { n: int }\nimpl C {\n fn bump(self, by: int) { self.n = self.n + by }\n}\nfn main() { let c = C { n: 0 }\n c.bump(5)\n print(c.n) }',
+    'struct C { n: int }\nimpl C {\n fn bump(mut self, by: int) { self.n = self.n + by }\n}\nfn main() { let mut c = C { n: 0 }\n c.bump(5)\n print(c.n) }',
   ],
   [
     'method calls method',
@@ -207,7 +207,7 @@ const cases = [
   ],
   [
     'mutation through shared reference',
-    'struct C { n: int }\nimpl C {\n fn set(self, v: int) { self.n = v }\n}\nfn main() { let a = C { n: 0 }\n let b = a\n a.set(9)\n print(b.n) }',
+    'struct C { n: int }\nimpl C {\n fn set(mut self, v: int) { self.n = v }\n}\nfn main() { let mut a = C { n: 0 }\n let b = a\n a.set(9)\n print(b.n) }',
   ],
   [
     'unknown impl target',
@@ -226,7 +226,7 @@ const cases = [
   ],
   [
     'trait method mutation',
-    'trait I { fn bump(self) }\nstruct C { n: int }\nimpl I for C { fn bump(self) { self.n = self.n + 1 } }\nfn main() { let c = C { n: 0 }\n c.bump()\n c.bump()\n print(c.n) }',
+    'trait I { fn bump(mut self) }\nstruct C { n: int }\nimpl I for C { fn bump(mut self) { self.n = self.n + 1 } }\nfn main() { let mut c = C { n: 0 }\n c.bump()\n c.bump()\n print(c.n) }',
   ],
   [
     'trait composition',
@@ -406,7 +406,7 @@ const cases = [
   // Unknown receiver may resolve a user struct method (C4).
   [
     'unknown receiver user method',
-    'struct P { x: int }\nimpl P { fn set(self, v: int) { self.x = v }\n fn get(self) { return self.x } }\nfn f(p) { p.set(7)\n print(p.get()) }\nfn main() { f(P { x: 0 }) }',
+    'struct P { x: int }\nimpl P { fn set(mut self, v: int) { self.x = v }\n fn get(self) { return self.x } }\nfn f(p) { p.set(7)\n print(p.get()) }\nfn main() { f(P { x: 0 }) }',
   ],
   // Union signature compatibility (C5): incompatible arity is rejected.
   [
