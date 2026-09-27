@@ -413,6 +413,71 @@ const cases = [
     'union incompatible method signatures',
     'struct A { x: int }\nstruct B { y: int }\nimpl A { fn m(self, n: int) { return n } }\nimpl B { fn m(self) { return self.y } }\ntype U = A | B\nfn main() { let u: U = A { x: 1 }\n print(u.m()) }',
   ],
+  // Modules and visibility (§27): a real boundary, identical on both
+  // substrates because it is in-source and needs no filesystem.
+  [
+    'module public function',
+    'module m { pub fn f() -> int { return 7 } }\nfn main() { print(m::f()) }',
+  ],
+  ['module private function', 'module m { fn f() -> int { return 7 } }\nfn main() { print(m::f()) }'],
+  [
+    'module nested path',
+    'module a { module b { pub fn f() -> int { return 42 } } }\nfn main() { print(a::b::f()) }',
+  ],
+  [
+    'module descendant reaches private',
+    'module a { fn hidden() -> int { return 5 }\n module b { pub fn f() -> int { return hidden() } } }\nfn main() { print(a::b::f()) }',
+  ],
+  [
+    'module use import',
+    'module m { pub fn f() -> int { return 2 } }\nuse m::f\nfn main() { print(f()) }',
+  ],
+  [
+    'module use alias',
+    'module m { pub fn f() -> int { return 2 } }\nuse m::f as g\nfn main() { print(g()) }',
+  ],
+  ['module unknown import', 'use nope\nfn main() { print(1) }'],
+  [
+    'module private field',
+    'module m { pub struct S { x: int } }\nfn main() { let s = m::S { x: 1 }\n print(s.x) }',
+  ],
+  [
+    'module public field',
+    'module m { pub struct S { pub x: int } }\nfn main() { let s = m::S { x: 1 }\n print(s.x) }',
+  ],
+  [
+    'module private method',
+    'module m { pub struct S { x: int }\n impl S { fn get(self) -> int { return self.x } } }\nfn main() { let s = m::S { x: 1 }\n print(s.get()) }',
+  ],
+  [
+    'module public method via factory',
+    'module m { pub struct S { x: int }\n pub fn make() -> S { return S { x: 9 } }\n impl S { pub fn get(self) -> int { return self.x } } }\nfn main() { print(m::make().get()) }',
+  ],
+  [
+    'module pub trait and method',
+    'module m { pub trait T { fn f(self) -> int }\n pub struct S { pub x: int }\n impl T for S { fn f(self) -> int { return 7 } } }\nfn main() { print(m::S { x: 1 }.f()) }',
+  ],
+  [
+    'module import collision',
+    'module a { pub fn f() -> int { return 1 } }\nmodule b { pub fn f() -> int { return 2 } }\nuse a::f\nuse b::f\nfn main() { print(f()) }',
+  ],
+  [
+    'module visibility does not grant mutation',
+    'module m { pub struct S { pub n: int }\n impl S { pub fn inc(mut self) { self.n = self.n + 1 } } }\nfn main() { let s = m::S { n: 0 }\n s.inc() }',
+  ],
+  [
+    'module mut binding cannot bypass private field',
+    'module m { pub struct S { n: int } }\nfn main() { let mut s = m::S { n: 0 }\n s.n = 1 }',
+  ],
+  [
+    'module closure keeps lexical access',
+    'module m { fn hidden() -> int { return 5 }\n pub fn run() -> int { let f = () -> hidden()\n return f() } }\nfn main() { print(m::run()) }',
+  ],
+  [
+    'sibling modules do not collide',
+    'module a { pub fn f() -> int { return 1 } }\nmodule b { pub fn f() -> int { return 2 } }\nfn main() { print(a::f() + b::f()) }',
+  ],
+  ['pub on impl rejected', 'struct S { x: int }\npub impl S { fn f(self) -> int { return 1 } }\nfn main() { print(1) }'],
 ];
 
 const options = { args: ["alpha", "beta"], stdin: "line one\nline two\n" };
