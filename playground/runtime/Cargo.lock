@@ -31,7 +31,7 @@ dependencies = [
 
 [[package]]
 name = "aura-playground-runtime"
-version = "0.0.2-dev.14"
+version = "0.0.2-dev.15"
 dependencies = [
  "aura-lang",
  "serde_json",
