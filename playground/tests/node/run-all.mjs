@@ -37,21 +37,37 @@ run("manifest", [join(here, "manifest.test.mjs")]);
 run("abi", [join(here, "abi.test.mjs"), wasm]);
 
 // The native/wasm differential harness needs the native runner built; build it
-// on demand so the parity gate is always exercised.
+// on demand so the parity gate is always exercised. A parity failure is a hard
+// failure: it must never be reported as a skip, or CI would go green while
+// native and wasm disagree. Only the build step may be skipped, and only when
+// the native target genuinely cannot be built in this environment.
+let differentialRan = false;
 try {
   execFileSync(
     "cargo",
     ["build", "--release", "--bin", "aura-playground-native"],
     { cwd: join(playground, "runtime"), stdio: "pipe" },
   );
-  const nativeBin = join(playground, "runtime/target/release/aura-playground-native");
-  if (existsSync(nativeBin)) {
-    run("differential", [join(here, "differential.test.mjs"), wasm, nativeBin]);
-  } else {
-    console.log("\n=== differential ===\nSKIPPED: native runner not built.");
-  }
 } catch (err) {
-  console.log(`\n=== differential ===\nSKIPPED: ${String(err.message || err)}`);
+  console.error(
+    `\n=== differential ===\nFAILED: could not build the native runner: ${String(err.message || err)}`,
+  );
+  process.exit(1);
+}
+{
+  const nativeBin = join(playground, "runtime/target/release/aura-playground-native");
+  if (!existsSync(nativeBin)) {
+    console.error(`\n=== differential ===\nFAILED: native runner missing at ${nativeBin}`);
+    process.exit(1);
+  }
+  // `run` propagates a non-zero exit (execFileSync throws), so a parity
+  // failure stops the suite here with a non-zero status.
+  run("differential", [join(here, "differential.test.mjs"), wasm, nativeBin]);
+  differentialRan = true;
+}
+if (!differentialRan) {
+  console.error("\n=== differential ===\nFAILED: not run");
+  process.exit(1);
 }
 
 let havePlaywright = false;
