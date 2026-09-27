@@ -644,20 +644,127 @@ if (postError.text === norm({ status: "ok", stdout: "3\n", result: null, diagnos
 // ---------------------------------------------------------------------------
 // Generated-program native/wasm parity (Property 4, permanent).
 //
-// The real cross-substrate property: take the *generated* checker-passing
-// programs (`tests/support/program_gen.rs`, snapshotted as the committed
-// `tests/corpus/ast/gen_*.aura` fixtures), run each through BOTH engines, and
-// require the observable results to be identical. The previous Rust-side
-// property only pinned the *native* output of each fixture; this block is the
-// actual native/wasm comparison, which needs both engines.
+// The real cross-substrate *property*: generate checker-valid programs
+// deterministically, run each through BOTH engines, and require the observable
+// results to be identical. Two sources feed it:
+//
+//   1. a fresh, deterministic generator evaluated *in this harness* (below),
+//      so the property genuinely generates cases at test time rather than only
+//      replaying a fixed list; and
+//   2. the committed generator snapshot (`tests/support/program_gen.rs` output,
+//      `tests/corpus/ast/gen_*.aura`) as a compatibility sweep, so the shared
+//      Rust/JS corpus is also compared on both engines.
 //
 // Excluded: TypeExpr-heavy inputs (AUDIT-3 substrate divergence is
-// intentionally excluded pending the human decision). The generator emits no
-// TypeExpr-heavy program, so the exclusion is automatic here.
+// intentionally excluded pending the human decision). Neither generator emits
+// a TypeExpr-heavy program, so the exclusion is automatic here.
 //
-// A mismatch prints the minimal program and its fixed seed (fixture name), so
-// it is reproducible by running the single fixture through both engines.
+// A mismatch prints the program and its deterministic seed, so it is
+// reproducible by running that single program through both engines.
 {
+  // -- Deterministic generator (splitmix64, same shape as the Rust generator).
+  const SM64 = (seed) => {
+    let state = (seed ^ 0x9e3779b97f4a7c15n) & 0xffffffffffffffffn;
+    return {
+      below(n) {
+        state = BigInt.asUintN(64, state + 0x9e3779b97f4a7c15n);
+        let z = state;
+        z = BigInt.asUintN(64, (z ^ (z >> 30n)) * 0xbf58476d1ce4e5b9n);
+        z = BigInt.asUintN(64, (z ^ (z >> 27n)) * 0x94d049bb133111ebn);
+        z = z ^ (z >> 31n);
+        return Number(z % BigInt(n));
+      },
+    };
+  };
+
+  // Only well-typed, checker-valid constructs. Int and string expressions are
+  // kept in separate namespaces so a generated program always checks, on both
+  // substrates. Deliberately no deeply nested TypeExpr.
+  const genProgram = (seed) => {
+    const rng = SM64(BigInt(seed));
+    const intVar = [];
+    const strVar = [];
+    const lines = [];
+    let fresh = 0;
+    const name = (p) => `${p}${fresh++}`;
+    const intExpr = () => {
+      const terms = [];
+      const k = 1 + rng.below(3);
+      for (let i = 0; i < k; i += 1) terms.push(String(rng.below(20)));
+      for (const v of intVar) if (rng.below(2) === 0) terms.push(v);
+      return terms.join(rng.below(2) === 0 ? " + " : " - ");
+    };
+    const stmts = 1 + rng.below(6);
+    for (let i = 0; i < stmts; i += 1) {
+      const kind = rng.below(9);
+      if (kind === 0) lines.push(`print(${intExpr()})`);
+      else if (kind === 1) {
+        const n = name("i");
+        lines.push(`let mut ${n} = ${intExpr()}`);
+        intVar.push(n);
+      } else if (kind === 2) lines.push(`print(len([1, 2, 3]))`);
+      else if (kind === 3) lines.push(`print(abs(0 - ${rng.below(9)}))`);
+      else if (kind === 4) lines.push(`for x in 0..${1 + rng.below(3)} { print(x) }`);
+      else if (kind === 5) {
+        const n = name("s");
+        lines.push(`let ${n} = "ab".upper()`);
+        strVar.push(n);
+        lines.push(`print(${n})`);
+      } else if (kind === 6) {
+        const a = 1 + rng.below(9);
+        const b = 1 + rng.below(9);
+        lines.push(`print(min(${a}, ${b}))`);
+      } else if (kind === 7) lines.push(`print(to_int("${rng.below(99)}"))`);
+      else lines.push(`if ${rng.below(2)} < 1 { print(${intExpr()}) } else { print(0) }`);
+    }
+    return `fn main() {\n    ${lines.join("\n    ")}\n}\n`;
+  };
+
+  const compareBoth = (label, src) => {
+    const w = wasmResult(src);
+    const nfile = join(dir, `genparity_${label}.aura`);
+    writeFileSync(nfile, src);
+    const n = norm(
+      JSON.parse(execFileSync(nativeBin, [nfile, optionsFile], { encoding: "utf8" }).trim()),
+    );
+    const accepted = w.text.includes('"status":"ok"') && n.includes('"status":"ok"');
+    if (!accepted) {
+      console.error(`FAIL generated-parity ${label}: not accepted on both substrates\n  wasm:   ${w.text}\n  native: ${n}\n  source: ${JSON.stringify(src)}`);
+      return "nonaccept";
+    }
+    if (w.text !== n) {
+      console.error(`FAIL generated-parity ${label}\n  wasm:   ${w.text}\n  native: ${n}\n  source: ${JSON.stringify(src)}`);
+      return "mismatch";
+    }
+    return "ok";
+  };
+
+  // 1. Freshly generated, deterministic property cases.
+  const GENERATED_CASES = 60;
+  let genPassed = 0;
+  let genFailed = 0;
+  let genNonAccept = 0;
+  const distinctSources = new Set();
+  for (let seed = 0; seed < GENERATED_CASES; seed += 1) {
+    const src = genProgram(seed);
+    distinctSources.add(src);
+    const r = compareBoth(`gen_seed_${seed}`, src);
+    if (r === "ok") genPassed += 1;
+    else if (r === "nonaccept") genNonAccept += 1;
+    else genFailed += 1;
+  }
+  // The cases must be *generated*, not a hardcoded list: require that seed
+  // variation actually produces many distinct programs (a fixed list would
+  // collapse to one distinct source; a handful would indicate a near-constant
+  // generator). Require at least three quarters to be distinct.
+  const requiredDistinct = Math.floor((GENERATED_CASES * 3) / 4);
+  if (distinctSources.size < requiredDistinct) {
+    genFailed += 1;
+    console.error(
+      `FAIL generated-parity: generator produced only ${distinctSources.size} distinct programs for ${GENERATED_CASES} seeds (need >= ${requiredDistinct})`,
+    );
+  }
+  // 2. The committed generator snapshot, as a compatibility sweep.
   const genDir = resolve(here, "../../../tests/corpus/ast");
   let genFiles = [];
   try {
@@ -668,37 +775,24 @@ if (postError.text === norm({ status: "ok", stdout: "3\n", result: null, diagnos
     console.error(`FAIL generated-parity: cannot read ${genDir}: ${e.message}`);
     failed += 1;
   }
-  let genPassed = 0;
-  let genFailed = 0;
-  let genNonAccept = 0;
+  let committedPassed = 0;
   for (const f of genFiles) {
-    const src = readFileSync(join(genDir, f), "utf8");
-    const w = wasmResult(src);
-    const nfile = join(dir, `genparity_${f}`);
-    writeFileSync(nfile, src);
-    const n = norm(JSON.parse(execFileSync(nativeBin, [nfile, optionsFile], { encoding: "utf8" }).trim()));
-    // The generator's contract: the program is checker-accepted on BOTH
-    // substrates (status "ok"). A rejection here is a generator/parity defect,
-    // not ordinary fuzz noise.
-    if (!w.text.includes('"status":"ok"') || !n.includes('"status":"ok"')) {
-      genNonAccept += 1;
-      console.error(`FAIL generated-parity ${f}: not accepted on both substrates\n  wasm:   ${w.text}\n  native: ${n}`);
-      continue;
-    }
-    if (w.text === n) {
-      genPassed += 1;
-    } else {
-      genFailed += 1;
-      console.error(`FAIL generated-parity ${f}\n  wasm:   ${w.text}\n  native: ${n}`);
-    }
+    const r = compareBoth(f, readFileSync(join(genDir, f), "utf8"));
+    if (r === "ok") committedPassed += 1;
+    else if (r === "nonaccept") genNonAccept += 1;
+    else genFailed += 1;
   }
-  if (genFiles.length > 0 && genFailed === 0 && genNonAccept === 0) {
+
+  const total = GENERATED_CASES + genFiles.length;
+  if (genFailed === 0 && genNonAccept === 0 && genPassed === GENERATED_CASES) {
     passed += 1;
-    console.log(`generated-parity: ${genPassed}/${genFiles.length} generated programs agree native/wasm`);
+    console.log(
+      `generated-parity: ${genPassed}/${GENERATED_CASES} freshly generated + ${committedPassed}/${genFiles.length} committed programs agree native/wasm`,
+    );
   } else {
     failed += 1;
     console.error(
-      `FAIL generated-parity: ${genPassed} agreed, ${genFailed} mismatched, ${genNonAccept} not accepted, of ${genFiles.length}`,
+      `FAIL generated-parity: generated ${genPassed}/${GENERATED_CASES} ok, committed ${committedPassed}/${genFiles.length} ok, ${genFailed} mismatched, ${genNonAccept} not accepted, of ${total}`,
     );
   }
 }
