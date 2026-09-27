@@ -2249,6 +2249,12 @@ the sequence.
 * `x |> r.m(a)` is `r.m(x, a)`;
 * `x |> c` where `c` is a non-call callable value is `c(x)`.
 
+**Normative rule.** A **bare name** on the right is desugared to a call
+(`f(lhs)`), not kept as a function value. This is what lets a piped value
+resolve an **overloaded** function by its type (§15.7): the argument type is
+available at the call site. (A non-name right-hand side remains a callable
+value.)
+
 **Normative rule.** The piped value becomes the **first positional argument**,
 so a parenthesized suffix MAY include named arguments after it:
 `x |> f(y: 1)` is `f(x, y: 1)`. A named argument naming the first parameter is

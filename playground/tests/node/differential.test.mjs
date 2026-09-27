@@ -77,6 +77,28 @@ const cases = [
     'lambda mut parameter',
     'fn main() { let f = (mut x) -> { x = x + 1\n return x }\n print(f(1)) }',
   ],
+  // Big Guard: a bare reference to an overloaded function is deferred and
+  // rejected; a piped value resolves an overload by type.
+  [
+    'overloaded function value rejected',
+    'fn f(x: int) { print(1) }\nfn f(x: string) { print(2) }\nfn main() { let g = f\n g(1) }',
+  ],
+  [
+    'single function value allowed',
+    'fn f(x: int) -> int { return x }\nfn main() { let g = f\n print(g(1)) }',
+  ],
+  [
+    'pipe resolves overload',
+    'fn f(x: int) { print("i") }\nfn f(x: string) { print("s") }\nfn main() { 1 |> f\n "a" |> f }',
+  ],
+  [
+    'mutation capability independent of overload',
+    'struct S { n: int }\nimpl S { fn u(self, x: int) { print("r") }\n fn u(mut self, x: string) { self.n = 1 } }\nfn main() { let s = S { n: 0 }\n s.u(1) }',
+  ],
+  [
+    'mut overload selected on immutable receiver',
+    'struct S { n: int }\nimpl S { fn u(self, x: int) { print("r") }\n fn u(mut self, x: string) { self.n = 1 } }\nfn main() { let s = S { n: 0 }\n s.u("a") }',
+  ],
   // Catch uses `catch e { ... }`; the old `catch e -> { ... }` is rejected.
   [
     'catch with finally',

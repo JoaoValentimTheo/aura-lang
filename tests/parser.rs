@@ -132,8 +132,19 @@ fn method_and_field() {
 }
 
 #[test]
-fn pipe() {
+fn pipe_desugars_a_bare_name_to_a_call() {
+    // `xs |> len` is `len(xs)`, desugared at parse time so the piped value can
+    // resolve an overloaded function by its type (`LANGUAGE_SPEC.md` §23).
     let e = parse_expr("xs |> len").expect("parse");
+    match e {
+        Expr::Call(callee, args, _) => {
+            assert!(matches!(*callee, Expr::Name(_, _)));
+            assert_eq!(args.len(), 1);
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+    // A non-name right-hand side stays a `Pipe` value (a callable value).
+    let e = parse_expr("xs |> (x) -> x").expect("parse");
     assert!(matches!(e, Expr::Pipe(_, _, _)));
 }
 

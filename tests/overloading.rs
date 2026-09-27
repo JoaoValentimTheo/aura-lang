@@ -266,3 +266,30 @@ fn lambda_captures_and_shadowing_are_preserved() {
         "10\n20\n"
     );
 }
+
+// ------------------------------------------- bare overloaded function value
+
+#[test]
+fn overloaded_function_cannot_be_used_as_a_value() {
+    // A bare reference carries no argument types, so there is no way to pick
+    // an overload; this is deferred and rejected deterministically rather than
+    // silently binding the first overload (`LANGUAGE_SPEC.md` §15.7).
+    assert_eq!(
+        code("fn f(x: int) { print(1) }\nfn f(x: string) { print(2) }\nfn main() { let g = f\n g(1) }"),
+        codes::TYPE_MISMATCH
+    );
+    // A single-overload function may still be used as a value.
+    assert_eq!(
+        ok("fn f(x: int) -> int { return x }\nfn main() { let g = f\n print(g(1)) }"),
+        "1\n"
+    );
+}
+
+#[test]
+fn piped_value_resolves_an_overload() {
+    // `x |> f` is `f(x)`, so the piped value resolves the overload by type.
+    assert_eq!(
+        ok("fn f(x: int) { print(\"i\") }\nfn f(x: string) { print(\"s\") }\nfn main() { 1 |> f\n \"a\" |> f }"),
+        "i\ns\n"
+    );
+}
