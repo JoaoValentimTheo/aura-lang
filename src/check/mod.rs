@@ -102,8 +102,10 @@ pub enum GlobalDecl {
     Struct {
         /// Name.
         name: String,
-        /// Field type annotations in declaration order.
-        fields: Vec<(String, TypeExpr)>,
+        /// Fields in declaration order, as `(name, type, public)`. `public`
+        /// records whether the field was declared `pub` (`LANGUAGE_SPEC.md`
+        /// §28).
+        fields: Vec<(String, TypeExpr, bool)>,
     },
     /// `enum Name { variants... }`
     Enum {
@@ -128,6 +130,8 @@ pub enum GlobalDecl {
         target: String,
         /// The trait being implemented, when this is `impl Trait for Struct`.
         trait_name: Option<String>,
+        /// The canonical module path the block was declared in.
+        owner: Vec<String>,
         /// Each method as `(name, return annotation, params)`.
         methods: Vec<MethodDecl>,
     },
@@ -174,6 +178,8 @@ pub struct MethodDecl {
     pub ret: Option<TypeExpr>,
     /// Parameters in declaration order (the first is the receiver).
     pub params: Vec<ParamDecl>,
+    /// Whether the method is exported (`pub`), for cross-module visibility.
+    pub public: bool,
 }
 
 /// A top-level function's signature as known to the checker.
@@ -194,6 +200,17 @@ struct FnSig {
     mut_receiver: bool,
     /// The declaration's source span, for overload diagnostics.
     span: Span,
+    /// For a method, the module path it was declared in (`[]` for the root)
+    /// and whether it is exported (`pub`). A method is reachable across a
+    /// module boundary only when it is `pub` or the caller is the owning
+    /// module or a descendant (`LANGUAGE_SPEC.md` §28).
+    owner: Vec<String>,
+    /// Whether the method is visible outside its module (`pub`).
+    ///
+    /// The flag is `true` for a plain function: a top-level function is
+    /// governed by the same rule, but its reachability is already resolved by
+    /// the resolver (a private one is never rewritten into a caller's scope).
+    public: bool,
 }
 
 /// A parameter's checker signature (name and declared type). Whether the
@@ -209,6 +226,20 @@ struct ParamSig {
 
 /// Resolve a carried-across parameter declaration list into checker signatures,
 /// expanding type aliases leniently (the same policy as hoisting).
+/// The module path encoded in a canonical name: every `::` segment but the
+/// last. A bare name (the root module) yields `[]`.
+fn canonical_module_of(canonical: &str) -> Vec<String> {
+    let mut segs: Vec<String> = canonical.split("::").map(str::to_string).collect();
+    segs.pop();
+    segs
+}
+
+/// Whether `current` is `owner` or a descendant of it. A caller inside a
+/// module (or a nested one) may reach that module's private items.
+fn is_descendant_module(current: &[String], owner: &[String]) -> bool {
+    current.len() >= owner.len() && current[..owner.len()] == owner[..]
+}
+
 fn params_of(params: &[ParamDecl], c: &Checker) -> Vec<ParamSig> {
     params
         .iter()
@@ -240,6 +271,11 @@ pub struct Checker {
     struct_fields: HashMap<String, HashMap<String, Ty>>,
     /// Struct field names in declaration order, for positional construction.
     struct_field_order: HashMap<String, Vec<String>>,
+    /// Whether each struct field is exported (`pub`), by struct name and field.
+    /// A field with no `pub` is private to the struct's module: it cannot be
+    /// named in a construction, read, or written from outside that module
+    /// (`LANGUAGE_SPEC.md` §28).
+    struct_public_fields: HashMap<String, HashMap<String, bool>>,
     /// Methods of each struct, by struct name, then by method name as an
     /// ordered overload set. The method table is keyed by the nominal struct
     /// type, so two structs may declare a method with the same name without
@@ -277,6 +313,15 @@ pub struct Checker {
     /// While checking a constant initializer, the order index of that
     /// constant; constants at or after it are not yet initialized.
     active_const: Option<usize>,
+    /// Whether each trait is exported (`pub`), by canonical name. A trait
+    /// method's reachability follows its trait: a `pub` trait's methods are
+    /// usable wherever the trait is, a private trait's only within its module.
+    trait_public: HashMap<String, bool>,
+    /// The declaring module of each trait, by canonical name.
+    trait_owner: HashMap<String, Vec<String>>,
+    /// The canonical module path of the item whose body is being checked.
+    /// Method-call visibility is relative to this (`LANGUAGE_SPEC.md` §28).
+    current_module: Vec<String>,
     /// Targets of `type Name = T` aliases, so a transparent alias resolves to
     /// the type it names.
     alias_targets: HashMap<String, TypeExpr>,
@@ -306,6 +351,7 @@ impl Checker {
             type_kinds: HashMap::new(),
             struct_fields: HashMap::new(),
             struct_field_order: HashMap::new(),
+            struct_public_fields: HashMap::new(),
             struct_methods: HashMap::new(),
             traits: HashMap::new(),
             trait_impls: HashMap::new(),
@@ -319,6 +365,9 @@ impl Checker {
             const_order: HashMap::new(),
             active_const: None,
             loop_depth: 0,
+            trait_public: HashMap::new(),
+            trait_owner: HashMap::new(),
+            current_module: Vec::new(),
             alias_targets: HashMap::new(),
             resolved_aliases: RefCell::new(HashMap::new()),
             session_value_names: HashMap::new(),
@@ -390,6 +439,8 @@ impl Checker {
                         ret: ret_ty,
                         params: param_tys,
                         mut_receiver: false,
+                        owner: Vec::new(),
+                        public: true,
                         span: Span::default(),
                     });
                 }
@@ -423,15 +474,18 @@ impl Checker {
                 GlobalDecl::Struct { name, fields } => {
                     let mut map = HashMap::new();
                     let mut order = Vec::new();
-                    for (f, t) in fields {
+                    let mut public = HashMap::new();
+                    for (f, t, is_pub) in fields {
                         map.insert(
                             f.clone(),
                             Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t)),
                         );
                         order.push(f.clone());
+                        public.insert(f.clone(), *is_pub);
                     }
                     c.struct_fields.insert(name.clone(), map);
                     c.struct_field_order.insert(name.clone(), order);
+                    c.struct_public_fields.insert(name.clone(), public);
                 }
                 GlobalDecl::Enum { variants, .. } => {
                     for (tag, payload) in variants {
@@ -455,6 +509,7 @@ impl Checker {
                 GlobalDecl::Impl {
                     target,
                     trait_name,
+                    owner,
                     methods,
                 } => {
                     // Restore the persisted method table so a method declared
@@ -476,6 +531,8 @@ impl Checker {
                                 ret: ret_ty,
                                 params: param_tys,
                                 mut_receiver: m.params.first().is_some_and(|p| p.mutable),
+                                owner: owner.clone(),
+                                public: m.public,
                                 span: Span::default(),
                             },
                         ));
@@ -506,6 +563,8 @@ impl Checker {
                                 ret: ret_ty,
                                 params: param_tys,
                                 mut_receiver: m.params.first().is_some_and(|p| p.mutable),
+                                owner: Vec::new(),
+                                public: true,
                                 span: Span::default(),
                             },
                         ));
@@ -566,6 +625,7 @@ impl Checker {
                     span,
                     ret,
                     params,
+                    public,
                     ..
                 } => {
                     // Overloading: several top-level functions may share a name
@@ -596,10 +656,19 @@ impl Checker {
                             ty: None,
                         })
                         .collect();
+                    // Record each overload's owning module and visibility. A
+                    // private function is unreachable from another module by
+                    // name (the resolver never rewrites it there), but an
+                    // **overload set** can mix visibilities: the public
+                    // overload is reachable, so resolution must consider only
+                    // the visible ones (`LANGUAGE_SPEC.md` §28).
+                    let owner = canonical_module_of(name);
                     self.functions.entry(name.clone()).or_default().push(FnSig {
                         ret: ret_ty,
                         params: param_sigs,
                         mut_receiver: false,
+                        owner,
+                        public: *public,
                         span: *span,
                     });
                     let base = self.functions.get(name).map_or(0, Vec::len) - 1;
@@ -640,6 +709,7 @@ impl Checker {
                     name,
                     variants,
                     span,
+                    ..
                 } => {
                     if self.types.insert(name.clone(), *span).is_some() {
                         return Err(Diag::new(
@@ -667,7 +737,12 @@ impl Checker {
                         self.variants.insert(variant.tag.clone(), name.clone());
                     }
                 }
-                Item::Alias { name, target, span } => {
+                Item::Alias {
+                    name,
+                    target,
+                    span,
+                    ..
+                } => {
                     if self.types.insert(name.clone(), *span).is_some() {
                         return Err(Diag::new(
                             codes::DUPLICATE_TYPE,
@@ -678,7 +753,11 @@ impl Checker {
                     self.type_kinds.insert(name.clone(), "alias".to_string());
                     self.alias_targets.insert(name.clone(), target.clone());
                 }
-                Item::Use { .. } | Item::Expr(..) | Item::Impl { .. } | Item::Trait { .. } => {}
+                Item::Use { .. }
+                | Item::Expr(..)
+                | Item::Impl { .. }
+                | Item::Trait { .. }
+                | Item::Module { .. } => {}
             }
         }
         // Validate every written type annotation now that all names are known.
@@ -691,6 +770,7 @@ impl Checker {
                 Item::Struct { name, fields, .. } => {
                     let mut map = HashMap::new();
                     let mut order = Vec::new();
+                    let mut public = HashMap::new();
                     for field in fields {
                         if map.contains_key(&field.name) {
                             return Err(Diag::new(
@@ -705,9 +785,11 @@ impl Checker {
                         let ty = self.annotation(&field.ty, field.span)?;
                         map.insert(field.name.clone(), ty);
                         order.push(field.name.clone());
+                        public.insert(field.name.clone(), field.public);
                     }
                     self.struct_fields.insert(name.clone(), map);
                     self.struct_field_order.insert(name.clone(), order);
+                    self.struct_public_fields.insert(name.clone(), public);
                 }
                 Item::Enum { variants, .. } => {
                     for variant in variants {
@@ -764,7 +846,20 @@ impl Checker {
         // duplicate declaration (`E2007`), never two overloads
         // (`LANGUAGE_SPEC.md` §15.7). The return type and `mut` are not part of
         // identity.
-        for (name, set) in &self.functions {
+        // Iterate in a deterministic order (by the earlier declaration's source
+        // position) so that when several names carry duplicates, the diagnostic
+        // is always the same. Iterating `self.functions` directly would depend
+        // on `HashMap` iteration order and make the reported error — and so the
+        // CLI exit code — nondeterministic.
+        let mut names: Vec<&String> = self.functions.keys().collect();
+        names.sort_by_key(|n| {
+            self.functions
+                .get(*n)
+                .and_then(|set| set.first())
+                .map_or((usize::MAX, usize::MAX), |s| (s.span.start, s.span.end))
+        });
+        for name in names {
+            let set = &self.functions[name];
             for i in 0..set.len() {
                 for j in (i + 1)..set.len() {
                     if Self::sig_identical(&set[i], &set[j]) {
@@ -787,9 +882,13 @@ impl Checker {
             if let Item::Trait {
                 name,
                 methods,
+                public,
+                owner,
                 span,
             } = item
             {
+                self.trait_public.insert(name.clone(), *public);
+                self.trait_owner.insert(name.clone(), owner.clone());
                 if self.traits.contains_key(name) {
                     return Err(Diag::new(
                         codes::REDECLARED,
@@ -852,6 +951,12 @@ impl Checker {
                             ret: ret_ty,
                             params: param_tys,
                             mut_receiver: params.first().is_some_and(|p| p.mutable),
+                            owner: owner.clone(),
+                            // A trait method's reachability follows its trait:
+                            // a `pub` trait's methods are usable wherever the
+                            // trait is, a private trait's only within its module
+                            // (`LANGUAGE_SPEC.md` §28).
+                            public: *public,
                             span: *mspan,
                         },
                     ));
@@ -865,6 +970,7 @@ impl Checker {
                 target,
                 trait_name,
                 methods,
+                owner,
                 span,
             } = item
             {
@@ -971,6 +1077,8 @@ impl Checker {
                             ret: ret_ty,
                             params: param_tys,
                             mut_receiver: params.first().is_some_and(|p| p.mutable),
+                            owner: owner.clone(),
+                            public: false,
                             span: *mspan,
                         };
                         if !self.method_sigs_compatible(expected, &actual) {
@@ -1000,12 +1108,23 @@ impl Checker {
                     }
                 }
                 // Merge the methods into the struct's single method surface.
+                // A trait method's reachability follows its trait: if this is a
+                // trait implementation, the method is visible exactly when the
+                // trait is, relative to the trait's module. An inherent method
+                // follows its own `pub` and the struct's module.
+                let trait_publicity = trait_name
+                    .as_ref()
+                    .and_then(|t| self.trait_public.get(t).copied());
+                let trait_module = trait_name
+                    .as_ref()
+                    .and_then(|t| self.trait_owner.get(t).cloned());
                 for m_item in methods {
                     let Item::Fn {
                         name,
                         params,
                         ret,
                         ret_span,
+                        public: public_flag,
                         span: mspan,
                         ..
                     } = m_item
@@ -1045,6 +1164,10 @@ impl Checker {
                         ret: ret_ty,
                         params: param_tys,
                         mut_receiver,
+                        // A trait-provided method's owner is the trait's module,
+                        // so its visibility is judged from there.
+                        owner: trait_module.clone().unwrap_or_else(|| owner.clone()),
+                        public: trait_publicity.unwrap_or(*public_flag),
                         span: *mspan,
                     };
                     // One member namespace: inherent and trait methods, and two
@@ -1112,8 +1235,10 @@ impl Checker {
                     ret: None,
                     params: Vec::new(),
                     mut_receiver: false,
-                    span: Span::default(),
-                });
+                        owner: Vec::new(),
+                        public: true,
+                        span: Span::default(),
+                    });
             }
         }
     }
@@ -1540,6 +1665,12 @@ impl Checker {
                 body,
                 ..
             } => {
+                // The canonical name encodes the declaring module, so a method
+                // call inside this body is visibility-checked relative to it.
+                let saved_module = std::mem::replace(
+                    &mut self.current_module,
+                    canonical_module_of(name),
+                );
                 if name == "main" {
                     if !params.is_empty() {
                         return Err(Diag::new(
@@ -1588,6 +1719,7 @@ impl Checker {
                         self.return_type = saved_return;
                         self.underscore_params = saved_underscore;
                         self.used_names = saved_used;
+                        self.current_module = saved_module;
                         self.pop();
                         return Err(Diag::new(
                             codes::UNUSED_PARAM,
@@ -1601,6 +1733,7 @@ impl Checker {
                 self.return_type = saved_return;
                 self.underscore_params = saved_underscore;
                 self.used_names = saved_used;
+                self.current_module = saved_module;
                 self.pop();
             }
             Item::Const {
@@ -1608,6 +1741,7 @@ impl Checker {
                 ann,
                 value,
                 span,
+                ..
             } => {
                 let saved = self.active_const;
                 self.active_const = self.const_order.get(name).copied();
@@ -1649,7 +1783,8 @@ impl Checker {
             | Item::Enum { .. }
             | Item::Alias { .. }
             | Item::Use { .. }
-            | Item::Trait { .. } => {}
+            | Item::Trait { .. }
+            | Item::Module { .. } => {}
             Item::Impl {
                 target, methods, ..
             } => {
@@ -1689,13 +1824,19 @@ impl Checker {
     /// no declaration in the global function namespace.
     fn check_method_body(
         &mut self,
-        _target: &str,
+        target: &str,
         _name: &str,
         recv_ty: &Ty,
         params: &[Param],
         ret: Option<(&TypeExpr, Span)>,
         body: &[Stmt],
     ) -> Result<()> {
+        // A method body is checked relative to the module the struct is
+        // declared in (its canonical name carries the path), so calling a
+        // private method of the same module is allowed and calling a foreign
+        // private one is not.
+        let saved_module =
+            std::mem::replace(&mut self.current_module, canonical_module_of(target));
         self.push();
         for (i, p) in params.iter().enumerate() {
             // The receiver's mutability comes from `mut self`; an ordinary
@@ -1740,6 +1881,7 @@ impl Checker {
                 self.return_type = saved_return;
                 self.underscore_params = saved_underscore;
                 self.used_names = saved_used;
+                self.current_module = saved_module;
                 self.pop();
                 return Err(Diag::new(
                     codes::UNUSED_PARAM,
@@ -1753,6 +1895,7 @@ impl Checker {
         self.return_type = saved_return;
         self.underscore_params = saved_underscore;
         self.used_names = saved_used;
+        self.current_module = saved_module;
         self.pop();
         Ok(())
     }
@@ -1871,8 +2014,13 @@ impl Checker {
             Expr::Call(f, args, _) => match f.as_ref() {
                 Expr::Name(name, _) => {
                     if let Some(set) = self.functions.get(name) {
-                        self.resolve_call_sig(set, args)
-                            .map_or(Ty::Unknown, |i| set[i].ret.clone().unwrap_or(Ty::Unknown))
+                        let visible: Vec<FnSig> = set
+                            .iter()
+                            .filter(|s| self.fn_visible(s))
+                            .cloned()
+                            .collect();
+                        self.resolve_call_sig(&visible, args)
+                            .map_or(Ty::Unknown, |i| visible[i].ret.clone().unwrap_or(Ty::Unknown))
                     } else if let Some(sig) = crate::stdlib::signatures::builtin(name) {
                         sig.returns.ty()
                     } else {
@@ -1884,8 +2032,13 @@ impl Checker {
             Expr::Method(recv, name, args, _) => {
                 if let Some(sname) = self.struct_name_of(&self.infer(recv)) {
                     if let Some(set) = self.method_set(&sname, name) {
-                        if let Some(i) = self.resolve_method_sig(set, args) {
-                            return set[i].ret.clone().unwrap_or(Ty::Unknown);
+                        let visible: Vec<FnSig> = set
+                            .iter()
+                            .filter(|s| self.method_visible(s))
+                            .cloned()
+                            .collect();
+                        if let Some(i) = self.resolve_method_sig(&visible, args) {
+                            return visible[i].ret.clone().unwrap_or(Ty::Unknown);
                         }
                     }
                     return Ty::Unknown;
@@ -1992,9 +2145,60 @@ impl Checker {
         self.struct_methods.get(struct_name)?.get(method)
     }
 
+    /// Whether a method is reachable from the current module: it is `pub`, or
+    /// the current module **is** the declaring module or a descendant
+    /// (`LANGUAGE_SPEC.md` §28). A private method of another module is not
+    /// nameable, exactly like a private free function.
+    fn method_visible(&self, sig: &FnSig) -> bool {
+        sig.public || is_descendant_module(&self.current_module, &sig.owner)
+    }
+
+    /// Whether a free function overload is reachable from the current module.
+    /// A root-level function has an empty owner, so it is always visible.
+    fn fn_visible(&self, sig: &FnSig) -> bool {
+        sig.owner.is_empty()
+            || sig.public
+            || is_descendant_module(&self.current_module, &sig.owner)
+    }
+
+    /// Whether a struct field is reachable from the current module. A field is
+    /// `pub`, or the current module **is** the struct's declaring module or a
+    /// descendant. A field of an unknown struct (the type is `Unknown` or a
+    /// built-in) is always treated as visible; this is about user structs.
+    fn field_visible(&self, struct_name: &str, field: &str) -> bool {
+        let owner = canonical_module_of(struct_name);
+        let Some(public) = self.struct_public_fields.get(struct_name) else {
+            return true;
+        };
+        // A field the struct does not declare at all is left to the ordinary
+        // missing-member handling, not reported as a visibility error.
+        let Some(is_pub) = public.get(field) else {
+            return true;
+        };
+        *is_pub || is_descendant_module(&self.current_module, &owner)
+    }
+
     /// Resolve a method overload by its non-receiver argument types. The
     /// receiver is not part of the argument list; candidates are compared on
     /// their parameters after the receiver.
+    /// Resolve a method overload among the **visible** ones. An inaccessible
+    /// overload is never a candidate, so it cannot be selected and cannot
+    /// perturb the resolution of an accessible one (`LANGUAGE_SPEC.md` §28).
+    fn resolve_visible_method_sig(&self, set: &[FnSig], args: &[Arg]) -> Option<usize> {
+        let visible: Vec<FnSig> = set
+            .iter()
+            .filter(|s| self.method_visible(s))
+            .cloned()
+            .collect();
+        self.resolve_method_sig(&visible, args)
+    }
+
+    /// Whether the method name exists on the struct but only in inaccessible
+    /// overloads — so a call is `E2018`, not `E2003`.
+    fn method_exists_but_private(&self, set: &[FnSig]) -> bool {
+        set.iter().any(|s| !self.method_visible(s))
+    }
+
     fn resolve_method_sig(&self, set: &[FnSig], args: &[Arg]) -> Option<usize> {
         let actual: Vec<Ty> = args.iter().map(|a| self.infer(&a.value)).collect();
         let candidates: Vec<crate::types::OverloadParams> = set
@@ -2322,6 +2526,36 @@ impl Checker {
                 span,
             ));
         }
+        // A private field cannot be named in a construction from outside the
+        // struct's module, in either form (`LANGUAGE_SPEC.md` §28).
+        for a in args {
+            if let Some(f) = &a.name {
+                if !self.field_visible(name, f) {
+                    return Err(Diag::new(
+                        codes::PRIVATE_ACCESS,
+                        format!("field `{f}` of `{name}` is private; it cannot be set from this module"),
+                        span,
+                    ));
+                }
+            }
+        }
+        if !named {
+            // Positional construction names every field in order, so any
+            // private field makes the whole construction inaccessible.
+            if let Some(order) = self.struct_field_order.get(name) {
+                for f in order {
+                    if !self.field_visible(name, f) {
+                        return Err(Diag::new(
+                            codes::PRIVATE_ACCESS,
+                            format!(
+                                "field `{f}` of `{name}` is private; it cannot be set from this module"
+                            ),
+                            span,
+                        ));
+                    }
+                }
+            }
+        }
         if named {
             let mut seen: Vec<&str> = Vec::new();
             for a in args {
@@ -2608,6 +2842,17 @@ impl Checker {
                     Expr::Field(base, fname, fspan) => {
                         self.expr(base)?;
                         self.require_mutable_place(base, "assign to a field of")?;
+                        // A private field cannot be written from another
+                        // module, even through a mutable binding.
+                        if let Ty::Named(sname) = self.infer(base) {
+                            if !self.field_visible(&sname, fname) {
+                                return Err(Diag::new(
+                                    codes::PRIVATE_ACCESS,
+                                    format!("field `{fname}` of `{sname}` is private; it cannot be assigned from this module"),
+                                    *fspan,
+                                ));
+                            }
+                        }
                         // If the base is a known struct, the assigned value
                         // must match the declared field type.
                         if op.is_none() {
@@ -2819,16 +3064,50 @@ impl Checker {
                         // forward references resolve.
                         if self.resolves_to_user_function(name) {
                             // A directly resolved top-level function: select the
-                            // overload by argument types and check the call
-                            // against that signature (§6.5, §15.7).
+                            // overload by argument types among the **visible**
+                            // overloads only, then check the call against that
+                            // signature (§6.5, §15.7, §28).
                             if let Some(set) = self.functions.get(name) {
-                                match self.resolve_call_sig(set, args) {
+                                let visible: Vec<FnSig> = set
+                                    .iter()
+                                    .filter(|s| self.fn_visible(s))
+                                    .cloned()
+                                    .collect();
+                                if visible.is_empty() {
+                                    return Err(Diag::new(
+                                        codes::PRIVATE_ACCESS,
+                                        format!(
+                                            "function `{name}` is private; it is not visible from this module"
+                                        ),
+                                        *span,
+                                    ));
+                                }
+                                match self.resolve_call_sig(&visible, args) {
                                     Some(i) => {
-                                        let sig = set[i].clone();
+                                        let sig = visible[i].clone();
                                         self.check_user_call(name, &sig, args, *span)?;
                                     }
                                     None => {
-                                        return Err(self.no_overload_diag(name, set, args, *span))
+                                        // A matching but private overload is a
+                                        // visibility problem, not an undefined
+                                        // one; report it as such.
+                                        let private_hits = set
+                                            .iter()
+                                            .filter(|s| !self.fn_visible(s))
+                                            .cloned()
+                                            .collect::<Vec<_>>();
+                                        if self.resolve_call_sig(&private_hits, args).is_some() {
+                                            return Err(Diag::new(
+                                                codes::PRIVATE_ACCESS,
+                                                format!(
+                                                    "function `{name}` is private; it is not visible from this module"
+                                                ),
+                                                *span,
+                                            ));
+                                        }
+                                        return Err(
+                                            self.no_overload_diag(name, &visible, args, *span)
+                                        );
                                     }
                                 }
                             }
@@ -2881,10 +3160,26 @@ impl Checker {
                         ));
                     };
                     self.reject_named_args(name, args, *span)?;
-                    let Some(i) = self.resolve_method_sig(set, args) else {
+                    let Some(i) = self.resolve_visible_method_sig(set, args) else {
+                        // The name may exist only in inaccessible overloads:
+                        // that is a visibility error, not an undefined one.
+                        if self.method_exists_but_private(set) {
+                            return Err(Diag::new(
+                                codes::PRIVATE_ACCESS,
+                                format!(
+                                    "method `{name}` of `{sname}` is private; it is not visible from this module"
+                                ),
+                                *span,
+                            ));
+                        }
                         return Err(self.no_method_overload_diag(&sname, name, set, args, *span));
                     };
-                    let sig = set[i].clone();
+                    let visible: Vec<FnSig> = set
+                        .iter()
+                        .filter(|s| self.method_visible(s))
+                        .cloned()
+                        .collect();
+                    let sig = visible[i].clone();
                     self.check_struct_method_args(&sname, name, &sig, args, *span)?;
                     // A method whose receiver is `mut self` mutates the
                     // caller's value, so that value must be reachable through
@@ -2898,7 +3193,7 @@ impl Checker {
                     // signature (`LANGUAGE_SPEC.md` §17.6). Comparing the
                     // signatures here keeps the checker from accepting a call
                     // that a concrete member would reject at runtime.
-                    let mut first: Option<&FnSig> = None;
+                    let mut first: Option<FnSig> = None;
                     for m in ms {
                         let Some(sname) = self.struct_name_of(m) else {
                             return Err(Diag::new(
@@ -2914,16 +3209,32 @@ impl Checker {
                                 *span,
                             ));
                         };
-                        let Some(i) = self.resolve_method_sig(set, args) else {
+                        if self.method_exists_but_private(set)
+                            && self.resolve_visible_method_sig(set, args).is_none()
+                        {
+                            return Err(Diag::new(
+                                codes::PRIVATE_ACCESS,
+                                format!(
+                                    "method `{name}` of `{sname}` is private; it is not visible from this module"
+                                ),
+                                *span,
+                            ));
+                        }
+                        let Some(i) = self.resolve_visible_method_sig(set, args) else {
                             return Err(
                                 self.no_method_overload_diag(&sname, name, set, args, *span)
                             );
                         };
-                        let sig = &set[i];
-                        match first {
+                        let visible: Vec<FnSig> = set
+                            .iter()
+                            .filter(|s| self.method_visible(s))
+                            .cloned()
+                            .collect();
+                        let sig = visible[i].clone();
+                        match &mut first {
                             None => first = Some(sig),
                             Some(prev) => {
-                                if !self.method_sigs_compatible(prev, sig) {
+                                if !self.method_sigs_compatible(prev, &sig) {
                                     return Err(Diag::new(
                                         codes::TYPE_MISMATCH,
                                         format!(
@@ -2976,6 +3287,14 @@ impl Checker {
                             format!(
                                 "struct `{sname}` has method `{name}`; call it as `{name}(...)`"
                             ),
+                            *span,
+                        ));
+                    }
+                    // A private field is not readable from another module.
+                    if !self.field_visible(&sname, name) {
+                        return Err(Diag::new(
+                            codes::PRIVATE_ACCESS,
+                            format!("field `{name}` of `{sname}` is private; it cannot be read from this module"),
                             *span,
                         ));
                     }

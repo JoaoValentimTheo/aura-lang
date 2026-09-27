@@ -19,6 +19,7 @@ pub mod lex;
 pub mod parse;
 #[cfg(feature = "repl")]
 pub mod repl;
+pub mod resolve;
 pub mod run;
 pub mod stdlib;
 pub mod types;
@@ -249,14 +250,14 @@ pub fn compile(src: &str, mode: &str) -> error::Result<ast::Module> {
 /// # Errors
 /// Returns the first lexer, parser, or checker diagnostic.
 pub fn compile_with_mode(src: &str, mode: CompileMode) -> error::Result<ast::Module> {
-    let module = parse::parse(src)?;
-    check_on_big_stack(module, mode)
-}
-
-/// Run the checker on the large execution stack, returning the module so the
-/// caller can still execute or inspect it.
-fn check_on_big_stack(module: ast::Module, mode: CompileMode) -> error::Result<ast::Module> {
+    // Parsing, module resolution, and checking all walk the AST recursively on
+    // the caller's stack, so the whole front end runs on the execution
+    // substrate: a program up to the language nesting limit (`E1015`) is a
+    // deterministic diagnostic, never a host stack overflow.
+    let src = src.to_string();
     on_execution_stack(move || {
+        let module = parse::parse(&src)?;
+        let module = resolve::resolve(module)?;
         check::Checker::module_in_mode(&module, mode)?;
         Ok(module)
     })

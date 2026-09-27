@@ -101,6 +101,8 @@ pub enum Tok {
     Semi,
     /// `:`
     Colon,
+    /// `::` (module path separator)
+    ColonColon,
     /// `.`
     Dot,
     /// `..` (range syntax)
@@ -233,6 +235,7 @@ impl std::fmt::Display for Tok {
             Tok::Comma => ",",
             Tok::Semi => ";",
             Tok::Colon => ":",
+            Tok::ColonColon => "::",
             Tok::Dot => ".",
             Tok::DotDot => "..",
             Tok::Arrow => "->",

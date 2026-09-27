@@ -11,9 +11,10 @@ use aura::run_source;
 
 /// Every documented grammar production, as a runnable snippet.
 const GRAMMAR_SAMPLES: &[&str] = &[
-    // use / declarations
-    "use stdlib",
-    "use stdlib.math",
+    // modules / imports / declarations
+    "module m { pub fn f() { } }",
+    "module m { pub fn f() { } }\nuse m::f\nfn main() { f() }",
+    "module a { pub struct S { x: int } }\nfn main() { print(1) }",
     "fn f() { }",
     "fn f(a) { }",
     "fn f(a: int, b: string) -> bool { return true }",
@@ -40,10 +41,10 @@ const GRAMMAR_SAMPLES: &[&str] = &[
     // comments
     "fn c1() { <!-- a comment --!> print(1) }",
     "fn c2() { print(1) <!-- multi\nline\ncomment --!> print(2) }",
-    // reserved syntax is accepted and inert
+    // `pub` and module-qualified access
     "pub fn g2() { }",
-    "use stdlib.math",
-    "use a.b.c",
+    "module m { pub fn g3() { } }\nfn main() { m::g3() }",
+    "pub const C: int = 3",
     // types
     "fn a() -> int { return 1 }",
     "fn b() -> float { return 1.0 }",
@@ -164,6 +165,14 @@ fn error_samples() -> Vec<(u16, String)> {
         (
             codes::TRAIT_INCOMPLETE,
             "trait T { fn a(self)\n fn b(self) }\nstruct S { x: int }\nimpl T for S { fn a(self) { print(self.x) } }".to_string(),
+        ),
+        (
+            codes::PRIVATE_ACCESS,
+            "module m { fn hidden() { } }\nfn main() { m::hidden() }".to_string(),
+        ),
+        (
+            codes::UNKNOWN_MODULE,
+            "use nope".to_string(),
         ),
         (
             codes::TYPE_MISMATCH,

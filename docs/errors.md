@@ -38,6 +38,8 @@ Every rejection carries a stable code. Codes are grouped by phase:
 | E2015 | `break`/`continue` outside a loop | `fn main() { break }` |
 | E2016 | Duplicate struct field | `struct S { x: int, x: string }` |
 | E2017 | Trait implementation missing a required method | `trait T { fn a(self); fn b(self) }` with `impl T for S` providing only `a` |
+| E2018 | Private item accessed across a module boundary | `module m { fn hidden() { } }` then `m::hidden()` |
+| E2019 | Unknown module, or unknown item in a `use` path | `use nope`; `use shapes::Missing` |
 
 ## Type-level (`E3xxx`, static)
 

@@ -380,7 +380,13 @@ impl Lexer<'_> {
             b'}' => one(self, Tok::RBrace),
             b',' => one(self, Tok::Comma),
             b';' => one(self, Tok::Semi),
-            b':' => one(self, Tok::Colon),
+            b':' => {
+                if self.peek2() == Some(b':') {
+                    two(self, Tok::ColonColon)
+                } else {
+                    one(self, Tok::Colon)
+                }
+            }
             b'.' => {
                 if self.peek2() == Some(b'.') {
                     two(self, Tok::DotDot)

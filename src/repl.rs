@@ -10,6 +10,7 @@ use std::io::{BufRead, Write};
 use crate::ast::{Item, Stmt};
 use crate::check::{GlobalDecl, MethodDecl, ParamDecl};
 use crate::error::Diag;
+use crate::resolve::{Session, resolve_stmt, resolve_with_session, session_items};
 use crate::run::{Ctl, Interp};
 
 /// Run an interactive session on stdin/stdout.
@@ -40,6 +41,7 @@ pub fn run() -> Result<(), Diag> {
 pub fn run_with<R: BufRead, W: Write>(mut reader: R, mut writer: W) -> Result<(), Diag> {
     let mut interp = Interp::new();
     let mut decls: Vec<GlobalDecl> = Vec::new();
+    let mut session = Session::default();
     let _ = writeln!(writer, "Aura {} REPL — :help for commands", crate::VERSION);
     let mut pending = String::new();
     loop {
@@ -75,7 +77,7 @@ pub fn run_with<R: BufRead, W: Write>(mut reader: R, mut writer: W) -> Result<()
             continue;
         }
         let source = std::mem::take(&mut pending);
-        eval_line(&mut interp, &mut decls, &source, &mut writer);
+        eval_line(&mut interp, &mut decls, &mut session, &source, &mut writer);
     }
 }
 
@@ -134,6 +136,7 @@ fn unbalanced(src: &str) -> bool {
 fn eval_line<W: Write>(
     interp: &mut Interp,
     decls: &mut Vec<GlobalDecl>,
+    session: &mut Session,
     source: &str,
     writer: &mut W,
 ) {
@@ -141,6 +144,16 @@ fn eval_line<W: Write>(
     // level of the REPL. Fall back to module items (fn/struct/enum/use) and
     // then to a bare expression.
     if let Ok(stmt) = crate::parse::parse_stmt(source) {
+        // Resolve free references against the session's modules, so a bare
+        // `shapes::area` or a `use`-imported name is canonicalized (and its
+        // visibility enforced) exactly as in a whole module.
+        let stmt = match resolve_stmt(stmt, session) {
+            Ok(s) => s,
+            Err(e) => {
+                let _ = writeln!(writer, "{e}");
+                return;
+            }
+        };
         let mut checker = crate::check::Checker::with_declarations(decls);
         if let Err(e) = checker.check_stmt(&stmt) {
             let _ = writeln!(writer, "{e}");
@@ -226,6 +239,16 @@ fn eval_line<W: Write>(
 
     match crate::parse::parse(source) {
         Ok(module) => {
+            // Modules are real boundaries, so resolve the submission against
+            // the session's modules before checking: a `pub` item becomes
+            // reachable by its canonical path, a private one is `E2018`.
+            let (module, additions) = match resolve_with_session(module, session) {
+                Ok(m) => m,
+                Err(e) => {
+                    let _ = writeln!(writer, "{e}");
+                    return;
+                }
+            };
             let mut checker = crate::check::Checker::with_declarations(decls);
             if let Err(e) = checker.check_mode(&module, crate::CompileMode::Module) {
                 let _ = writeln!(writer, "{e}");
@@ -256,6 +279,18 @@ fn eval_line<W: Write>(
                     if !decls.iter().any(|e| same_decl(e, &d)) {
                         decls.push(d);
                     }
+                }
+            }
+            // Persist the canonical declarations so later submissions resolve
+            // and visibility-check them against the same module tree.
+            for item in session_items(&module) {
+                if !session.items.contains(&item) {
+                    session.items.push(item);
+                }
+            }
+            for imp in additions.imports {
+                if !session.imports.contains(&imp) {
+                    session.imports.push(imp);
                 }
             }
         }
@@ -311,11 +346,13 @@ fn same_decl(a: &GlobalDecl, b: &GlobalDecl) -> bool {
             GlobalDecl::Impl {
                 target: at,
                 trait_name: an,
+                owner: ao,
                 methods: am,
             },
             GlobalDecl::Impl {
                 target: bt,
                 trait_name: bn,
+                owner: bo,
                 methods: bm,
             },
         ) => {
@@ -324,7 +361,7 @@ fn same_decl(a: &GlobalDecl, b: &GlobalDecl) -> bool {
             // overload (`LANGUAGE_SPEC.md` §15.7) is a distinct declaration
             // and must be persisted so the overload set grows across
             // submissions.
-            at == bt && an == bn && methods_identical(am, bm)
+            at == bt && an == bn && ao == bo && methods_identical(am, bm)
         }
         (GlobalDecl::Trait { name: an, .. }, GlobalDecl::Trait { name: bn, .. }) => an == bn,
         (GlobalDecl::Impl { .. }, _)
@@ -377,7 +414,7 @@ fn declarations_of(item: &Item) -> Vec<GlobalDecl> {
             name: name.clone(),
             fields: fields
                 .iter()
-                .map(|f| (f.name.clone(), f.ty.clone()))
+                .map(|f| (f.name.clone(), f.ty.clone(), f.public))
                 .collect(),
         }],
         Item::Enum { name, variants, .. } => vec![GlobalDecl::Enum {
@@ -396,15 +433,17 @@ fn declarations_of(item: &Item) -> Vec<GlobalDecl> {
             mutable: false,
             ty: None,
         }],
-        Item::Use { .. } | Item::Expr(..) => Vec::new(),
+        Item::Use { .. } | Item::Expr(..) | Item::Module { .. } => Vec::new(),
         Item::Impl {
             target,
             trait_name,
             methods,
+            owner,
             ..
         } => vec![GlobalDecl::Impl {
             target: target.clone(),
             trait_name: trait_name.clone(),
+            owner: owner.clone(),
             methods: method_decls(methods),
         }],
         Item::Trait { name, methods, .. } => vec![GlobalDecl::Trait {
@@ -421,11 +460,16 @@ fn method_decls(methods: &[Item]) -> Vec<MethodDecl> {
         .iter()
         .filter_map(|m| match m {
             Item::Fn {
-                name, ret, params, ..
+                name,
+                ret,
+                params,
+                public,
+                ..
             } => Some(MethodDecl {
                 name: name.clone(),
                 ret: ret.clone(),
                 params: params.iter().map(ParamDecl::from_param).collect(),
+                public: *public,
             }),
             _ => None,
         })

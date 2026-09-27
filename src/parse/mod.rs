@@ -427,32 +427,95 @@ impl Parser {
 
     fn item(&mut self) -> Result<Item> {
         let public = self.eat(&Tok::Pub);
-        // `impl` and `trait` are NOT reserved words: they stay ordinary
-        // identifiers everywhere. A behavior block or trait is recognized
-        // only in this item position (§17.6, §17.7, §3.3).
+        // `impl`, `trait`, and `module` are NOT reserved words: they stay
+        // ordinary identifiers everywhere. A behavior block, trait, or module
+        // is recognized only in this item position (§17.6, §17.7, §28, §3.3).
         if self.at_impl_block() {
+            if public {
+                return Err(Diag::new(
+                    codes::EXPECTED,
+                    "`pub` does not apply to an `impl` block; visibility names an item, and an `impl` block has no name of its own",
+                    self.span(),
+                ));
+            }
             return self.impl_item();
         }
         if self.at_trait_block() {
-            return self.trait_item();
+            return self.trait_item(public);
         }
         if self.at_const_decl() {
-            return self.const_decl_item();
+            return self.const_decl_item(public);
+        }
+        if self.at_module_block() {
+            return self.module_item(public);
         }
         match self.at().clone() {
             Tok::Fn => self.fn_item(public),
-            Tok::Struct => self.struct_item(),
-            Tok::Enum => self.enum_item(),
-            Tok::Type => self.alias_item(),
-            Tok::Use => self.use_item(),
-            Tok::Let => self.const_item(),
+            Tok::Struct => self.struct_item(public),
+            Tok::Enum => self.enum_item(public),
+            Tok::Type => self.alias_item(public),
+            Tok::Use => self.use_item(public),
+            Tok::Let => self.const_item(public),
             _ => {
+                if public {
+                    let found = self.at().describe();
+                    return Err(Diag::new(
+                        codes::EXPECTED,
+                        format!(
+                            "`pub` must precede a declaration (`fn`, `struct`, `enum`, `type`, `const`, `let`, `trait`, or `module`), found {found}"
+                        ),
+                        self.span(),
+                    ));
+                }
                 let e = self.expr()?;
                 let span = span_of(&e);
                 self.end_stmt();
                 Ok(Item::Expr(e, span))
             }
         }
+    }
+
+    /// Whether the tokens here begin a module declaration: `module` `Name` `{`.
+    /// Contextual like `impl`: `module` is an ordinary identifier everywhere
+    /// else, so `let module = 1` remains valid.
+    fn at_module_block(&self) -> bool {
+        if !matches!(self.at(), Tok::Ident(n) if n == "module") {
+            return false;
+        }
+        let Some(next) = self.toks.get(self.pos + 1) else {
+            return false;
+        };
+        let Some(after) = self.toks.get(self.pos + 2) else {
+            return false;
+        };
+        matches!(&next.tok, Tok::Ident(_)) && matches!(after.tok, Tok::LBrace)
+    }
+
+    /// `module Name { items }` — an in-source module (`LANGUAGE_SPEC.md` §28).
+    /// A module is a real visibility boundary; its items are private unless
+    /// marked `pub`. Modules nest.
+    fn module_item(&mut self, public: bool) -> Result<Item> {
+        let span = self.span();
+        self.bump();
+        let name = self.ident("module name")?;
+        self.expect(&Tok::LBrace)?;
+        let mut items = Vec::new();
+        loop {
+            self.skip_newlines();
+            if self.eat(&Tok::RBrace) {
+                break;
+            }
+            if matches!(self.at(), Tok::Eof) {
+                return Err(self.expected("`}` closing the `module` block"));
+            }
+            items.push(self.item()?);
+        }
+        Ok(Item::Module {
+            name,
+            items,
+            public,
+            span,
+        })
     }
 
     /// Whether the tokens here begin a behavior block or a trait
@@ -466,17 +529,40 @@ impl Parser {
         let Some(next) = self.toks.get(self.pos + 1) else {
             return false;
         };
-        let Some(after) = self.toks.get(self.pos + 2) else {
-            return false;
+        // The first segment is a type name (`impl Shape {`), or the leading
+        // segment of a module path (`impl shapes::Shape {`), which is lowercase
+        // by convention and followed by `::`.
+        let first_ok = match &next.tok {
+            Tok::Ident(name) if name.chars().next().is_some_and(char::is_uppercase) => true,
+            Tok::Ident(_) => {
+                matches!(self.toks.get(self.pos + 2).map(|t| &t.tok), Some(Tok::ColonColon))
+            }
+            _ => false,
         };
-        if !matches!(&next.tok, Tok::Ident(name) if name.chars().next().is_some_and(char::is_uppercase))
-        {
+        if !first_ok {
             return false;
         }
-        // `impl Trait for Struct`, `impl Struct {`, or a malformed header such
-        // as `impl A B {` (treated as a behavior block so the error is a parse
-        // diagnostic rather than falling through to expression parsing).
-        matches!(after.tok, Tok::LBrace | Tok::For | Tok::Ident(_))
+        // Walk a `::`-separated path, then require `{`, `for`, or a bare
+        // identifier (a malformed header such as `impl A B {`, treated as a
+        // behavior block so the error is a parse diagnostic rather than falling
+        // through to expression parsing).
+        let mut i = self.pos + 2;
+        loop {
+            match self.toks.get(i).map(|t| &t.tok) {
+                Some(Tok::ColonColon) => {
+                    if !matches!(self.toks.get(i + 1).map(|t| &t.tok), Some(Tok::Ident(_))) {
+                        return false;
+                    }
+                    i += 2;
+                }
+                Some(Tok::Ident(_)) => {
+                    // `impl A B {` malformed header.
+                    return matches!(self.toks.get(i + 1).map(|t| &t.tok), Some(Tok::LBrace));
+                }
+                Some(Tok::LBrace | Tok::For) => return true,
+                _ => return false,
+            }
+        }
     }
 
     /// Whether the tokens here begin a trait declaration: `trait` `Name` `{`.
@@ -523,7 +609,7 @@ impl Parser {
     /// `const NAME [: T] = expr` — the canonical module-level constant
     /// declaration (`LANGUAGE_SPEC.md` §4.2, §26). The name MUST be uppercase
     /// so a constant declaration reads differently from an ordinary binding.
-    fn const_decl_item(&mut self) -> Result<Item> {
+    fn const_decl_item(&mut self, public: bool) -> Result<Item> {
         let span = self.span();
         self.bump();
         let name = self.ident("constant name")?;
@@ -552,6 +638,7 @@ impl Parser {
             name,
             ann,
             value,
+            public,
             span,
         })
     }
@@ -583,13 +670,14 @@ impl Parser {
     fn impl_item(&mut self) -> Result<Item> {
         let span = self.span();
         self.bump();
-        let first = self.ident("struct or trait name after `impl`")?;
+        let (first, _) = self.path_segments()?;
+        let first = first.join("::");
         // `impl Trait for Struct` — `for` is a reserved token, used here as the
         // trait-implementation separator.
         let (trait_name, target) = if self.at() == &Tok::For {
             self.bump();
-            let target = self.ident("struct name after `for`")?;
-            (Some(first), target)
+            let (target, _) = self.path_segments()?;
+            (Some(first), target.join("::"))
         } else {
             (None, first)
         };
@@ -618,6 +706,7 @@ impl Parser {
             target,
             trait_name,
             methods,
+            owner: Vec::new(),
             span,
         })
     }
@@ -625,7 +714,7 @@ impl Parser {
     /// `trait Name { fn method(self, ...) -> T ... }` — a behavioral contract
     /// (`LANGUAGE_SPEC.md` §17.7). Declarations only: every member is a `fn`
     /// with a `self` receiver and no body.
-    fn trait_item(&mut self) -> Result<Item> {
+    fn trait_item(&mut self, public: bool) -> Result<Item> {
         let span = self.span();
         self.bump();
         let name = self.ident("trait name")?;
@@ -655,6 +744,8 @@ impl Parser {
         Ok(Item::Trait {
             name,
             methods,
+            public,
+            owner: Vec::new(),
             span,
         })
     }
@@ -801,7 +892,7 @@ impl Parser {
         }
     }
 
-    fn struct_item(&mut self) -> Result<Item> {
+    fn struct_item(&mut self, public: bool) -> Result<Item> {
         let span = self.span();
         self.bump();
         let name = self.ident("struct name")?;
@@ -813,12 +904,14 @@ impl Parser {
                 break;
             }
             let fspan = self.span();
+            let fpublic = self.eat(&Tok::Pub);
             let fname = self.ident("field name")?;
             self.expect(&Tok::Colon)?;
             let fty = self.ty()?;
             fields.push(FieldDecl {
                 name: fname,
                 ty: fty,
+                public: fpublic,
                 span: fspan,
             });
             self.skip_newlines();
@@ -828,10 +921,15 @@ impl Parser {
                 break;
             }
         }
-        Ok(Item::Struct { name, fields, span })
+        Ok(Item::Struct {
+            name,
+            fields,
+            public,
+            span,
+        })
     }
 
-    fn enum_item(&mut self) -> Result<Item> {
+    fn enum_item(&mut self, public: bool) -> Result<Item> {
         let span = self.span();
         self.bump();
         let name = self.ident("enum name")?;
@@ -871,32 +969,69 @@ impl Parser {
         Ok(Item::Enum {
             name,
             variants,
+            public,
             span,
         })
     }
 
-    fn alias_item(&mut self) -> Result<Item> {
+    fn alias_item(&mut self, public: bool) -> Result<Item> {
         let span = self.span();
         self.bump();
         let name = self.ident("type alias name")?;
         self.expect(&Tok::Assign)?;
         let target = self.ty()?;
         self.end_stmt();
-        Ok(Item::Alias { name, target, span })
+        Ok(Item::Alias {
+            name,
+            target,
+            public,
+            span,
+        })
     }
 
-    fn use_item(&mut self) -> Result<Item> {
+    fn use_item(&mut self, public: bool) -> Result<Item> {
         let span = self.span();
         self.bump();
-        let mut path = vec![self.ident("module name")?];
-        while self.eat(&Tok::Dot) {
-            path.push(self.ident("module path segment")?);
+        let mut path = vec![self.ident("module or item name")?];
+        // Both `use a::b::c` and the historical `use a.b.c` are accepted; the
+        // dotted form predates modules and remains valid syntax (§27).
+        loop {
+            if self.eat(&Tok::ColonColon) || self.eat(&Tok::Dot) {
+                path.push(self.ident("module path segment")?);
+            } else {
+                break;
+            }
         }
+        // `use path as Alias` binds the imported item under `Alias` instead of
+        // its own name. `as` is a reserved token.
+        let alias = if self.eat(&Tok::As) {
+            Some(self.ident("import alias")?)
+        } else {
+            None
+        };
         self.end_stmt();
-        Ok(Item::Use { path, span })
+        Ok(Item::Use {
+            path,
+            alias,
+            public,
+            span,
+        })
     }
 
-    fn const_item(&mut self) -> Result<Item> {
+    /// Parse a `::`-separated path beginning at the current identifier. The
+    /// first segment is assumed to be present. Returns the segments and the
+    /// span of the whole path.
+    fn path_segments(&mut self) -> Result<(Vec<String>, Span)> {
+        let start = self.span().start;
+        let mut segments = vec![self.ident("name")?];
+        while self.eat(&Tok::ColonColon) {
+            segments.push(self.ident("path segment")?);
+        }
+        let end = self.toks[self.pos.saturating_sub(1)].span.end;
+        Ok((segments, Span::new(start, end)))
+    }
+
+    fn const_item(&mut self, public: bool) -> Result<Item> {
         let span = self.span();
         self.bump();
         if self.eat(&Tok::Mut) {
@@ -919,6 +1054,7 @@ impl Parser {
             name,
             ann,
             value,
+            public,
             span,
         })
     }
@@ -965,13 +1101,21 @@ impl Parser {
     fn ty_member(&mut self) -> Result<TypeExpr> {
         Ok(match self.at().clone() {
             Tok::Ident(id) => {
-                self.bump();
-                match id.as_str() {
-                    "int" => TypeExpr::Int,
-                    "float" => TypeExpr::Float,
-                    "bool" => TypeExpr::Bool,
-                    "string" => TypeExpr::String,
-                    _ => TypeExpr::Named(id),
+                // A `::`-qualified path names an item in another module
+                // (`shapes::Point`). The canonical name is joined with `::`.
+                if matches!(self.toks.get(self.pos + 1).map(|t| &t.tok), Some(Tok::ColonColon))
+                {
+                    let (segments, _) = self.path_segments()?;
+                    TypeExpr::Named(segments.join("::"))
+                } else {
+                    self.bump();
+                    match id.as_str() {
+                        "int" => TypeExpr::Int,
+                        "float" => TypeExpr::Float,
+                        "bool" => TypeExpr::Bool,
+                        "string" => TypeExpr::String,
+                        _ => TypeExpr::Named(id),
+                    }
                 }
             }
             Tok::None => {
@@ -1294,6 +1438,21 @@ impl Parser {
         match self.at().clone() {
             Tok::Ident(n) => {
                 self.bump();
+                // A `::`-qualified pattern names a variant in another module
+                // (`shapes::Color::Red`); join the segments into one canonical
+                // name, exactly like a construct expression.
+                let n = if matches!(
+                    self.at(),
+                    Tok::ColonColon
+                ) {
+                    let mut segs = vec![n];
+                    while self.eat(&Tok::ColonColon) {
+                        segs.push(self.ident("path segment")?);
+                    }
+                    segs.join("::")
+                } else {
+                    n
+                };
                 if self.eat(&Tok::LParen) {
                     let mut ps = Vec::new();
                     if !self.eat(&Tok::RParen) {
@@ -1306,7 +1465,14 @@ impl Parser {
                         }
                     }
                     Ok(Pattern::Variant(n, ps, span))
-                } else if n.chars().next().is_some_and(char::is_uppercase) {
+                } else if n
+                    .rsplit("::")
+                    .next()
+                    .unwrap_or(&n)
+                    .chars()
+                    .next()
+                    .is_some_and(char::is_uppercase)
+                {
                     Ok(Pattern::Variant(n, Vec::new(), span))
                 } else {
                     Ok(Pattern::Bind(n, span))
@@ -1599,8 +1765,21 @@ impl Parser {
                 Expr::FStr(parts, span)
             }
             Tok::Ident(name) => {
-                self.bump();
-                let is_type_name = name.chars().next().is_some_and(char::is_uppercase);
+                // A `::`-qualified path names an item in another module. Join
+                // the segments into one canonical name so the checker and
+                // runtime resolve it exactly like a flat declaration.
+                let name = if matches!(
+                    self.toks.get(self.pos + 1).map(|t| &t.tok),
+                    Some(Tok::ColonColon)
+                ) {
+                    let (segments, _) = self.path_segments()?;
+                    segments.join("::")
+                } else {
+                    self.bump();
+                    name
+                };
+                let last = name.rsplit("::").next().unwrap_or(name.as_str());
+                let is_type_name = last.chars().next().is_some_and(char::is_uppercase);
                 if matches!(self.at(), Tok::LBrace) && is_type_name {
                     // struct literal `Point { x: 1 }`
                     self.bump();

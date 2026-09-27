@@ -148,6 +148,11 @@ pub struct FieldDecl {
     pub name: String,
     /// Field type.
     pub ty: TypeExpr,
+    /// Whether the field is visible outside its module (`pub`). A field with
+    /// no `pub` is private to its struct's module: it cannot be named in a
+    /// construction or read or written from outside that module
+    /// (`LANGUAGE_SPEC.md` §28).
+    pub public: bool,
     /// Source span of the field declaration.
     pub span: Span,
 }
@@ -480,6 +485,8 @@ pub enum Item {
         name: String,
         /// Fields, each with its source span.
         fields: Vec<FieldDecl>,
+        /// Whether the type is visible outside its module (`pub`).
+        public: bool,
         /// Span.
         span: Span,
     },
@@ -489,6 +496,8 @@ pub enum Item {
         name: String,
         /// Variants, each with its source span.
         variants: Vec<VariantDecl>,
+        /// Whether the type is visible outside its module (`pub`).
+        public: bool,
         /// Span.
         span: Span,
     },
@@ -498,13 +507,36 @@ pub enum Item {
         name: String,
         /// Target.
         target: TypeExpr,
+        /// Whether the type is visible outside its module (`pub`).
+        public: bool,
         /// Span.
         span: Span,
     },
-    /// `use path`.
+    /// `use path [as Alias]` — an import (`pub use` also re-exports the
+    /// imported name).
     Use {
         /// Path segments.
         path: Vec<String>,
+        /// Local name to bind the import to, when `as Alias` is written.
+        alias: Option<String>,
+        /// Whether the imported name is re-exported (`pub use`).
+        public: bool,
+        /// Span.
+        span: Span,
+    },
+    /// `module Name { items }` — an in-source module (`LANGUAGE_SPEC.md` §28).
+    /// A module is a real visibility boundary: its items are private by default
+    /// and reachable from outside only when marked `pub`. Modules nest, and
+    /// each has a canonical dotted path from the file root. The resolver
+    /// flattens a parsed module tree into top-level items with path-qualified
+    /// names before checking, so no `Item::Module` reaches the checker.
+    Module {
+        /// Module name (an ordinary identifier; capitalized by convention).
+        name: String,
+        /// Items declared inside the module.
+        items: Vec<Item>,
+        /// Whether the module is visible outside its parent (`pub module`).
+        public: bool,
         /// Span.
         span: Span,
     },
@@ -516,6 +548,8 @@ pub enum Item {
         ann: Option<TypeExpr>,
         /// Value.
         value: Expr,
+        /// Whether the constant is visible outside its module (`pub`).
+        public: bool,
         /// Span.
         span: Span,
     },
@@ -535,6 +569,10 @@ pub enum Item {
         trait_name: Option<String>,
         /// Methods, each an [`Item::Fn`] with `self` as its first parameter.
         methods: Vec<Item>,
+        /// The canonical module path the block was declared in, filled by the
+        /// resolver (empty until then). A method's visibility is relative to
+        /// this module (`LANGUAGE_SPEC.md` §28).
+        owner: Vec<String>,
         /// Span.
         span: Span,
     },
@@ -547,6 +585,11 @@ pub enum Item {
         name: String,
         /// Declared method signatures, each an [`Item::Fn`] with an empty body.
         methods: Vec<Item>,
+        /// Whether the trait is visible outside its module (`pub`).
+        public: bool,
+        /// The canonical module path the trait was declared in, filled by the
+        /// resolver (empty until then).
+        owner: Vec<String>,
         /// Span.
         span: Span,
     },

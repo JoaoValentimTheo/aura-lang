@@ -1,0 +1,1388 @@
+//! Module resolution and visibility (`LANGUAGE_SPEC.md` §28).
+//!
+//! Aura modules are **in-source**: `module Name { items }`, nestable, reached
+//! by `::`-separated paths and `use` imports. They are the only module model
+//! that preserves Native ↔ WASM parity, because the WebAssembly/Playground host
+//! has no filesystem: a real module boundary cannot depend on files the guest
+//! cannot see.
+//!
+//! This pass runs between parsing and checking. It flattens the module tree
+//! into a single item list in which every declared name is **canonical** — the
+//! item's name prefixed by its module path (`shapes::Point`) — and every
+//! reference in the program is rewritten to the canonical name it denotes. The
+//! checker and runtime therefore see a flat program keyed by canonical names
+//! and stay module-agnostic; because both consume the same resolved tree, they
+//! cannot disagree about which declaration a name reaches.
+//!
+//! Visibility is enforced here, at the boundary: an item declared without `pub`
+//! is reachable only from within its own module or a descendant. A private
+//! access is `E2018`; an unknown module or import is `E2019`.
+
+use std::collections::{HashMap, HashSet};
+
+use crate::ast::{
+    Arm, Expr, FieldDecl, FPart, Item, Module, Param, Pattern, Stmt, TypeExpr, VariantDecl,
+};
+use crate::error::{codes, Diag, Result, Span};
+
+/// The entry point: resolve `module` (the parsed file) into a flat module.
+///
+/// # Errors
+/// Returns `E2019` for an unknown module or import target, `E2018` for a
+/// private access across a module boundary, and `E2007` for a duplicate
+/// declaration in one module.
+pub fn resolve(module: Module) -> Result<Module> {
+    let mut r = Resolver::new();
+    r.collect_module(&module.items, &[])?;
+    r.flatten(&module.items, &[])
+}
+
+/// A declaration retained by the REPL session. The name is canonical (a module
+/// path prefix plus the local name); `module` is the owning module path; and
+/// `public` records whether the declaration is visible outside that module.
+///
+/// The REPL's current module is always the **root**, so a later submission may
+/// reach a session declaration only by its canonical path (or through `use`)
+/// and only when it is `public`. Seeding the resolver with private entries
+/// makes an access to them a real `E2018`, not an undefined name — no
+/// REPL-only visibility semantics.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionItem {
+    /// Canonical name.
+    pub name: String,
+    /// Owning module path.
+    pub module: Vec<String>,
+    /// Whether it is exported from that module.
+    pub public: bool,
+}
+
+/// A persistent import bound in the REPL's root module: `local` names
+/// `canonical`. `use path as local` records the alias; a plain `use path`
+/// records the target's own last segment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionImport {
+    /// The local name bound at the root.
+    pub local: String,
+    /// The canonical target the local name denotes.
+    pub canonical: String,
+}
+
+/// The declarations and imports the REPL carries across submissions, in one
+/// coherent session value. Nothing here is REPL-only: the resolver applies the
+/// same scope and visibility rules it applies within one module.
+#[derive(Debug, Clone, Default)]
+pub struct Session {
+    /// Retained declarations.
+    pub items: Vec<SessionItem>,
+    /// Retained root imports.
+    pub imports: Vec<SessionImport>,
+}
+
+/// Resolve `module` against `session`, returning the resolved module and the
+/// session additions it introduced (its own canonical declarations and root
+/// imports). The caller applies the additions only after the submission is
+/// accepted, so a failed submission cannot corrupt the session.
+///
+/// # Errors
+/// As [`resolve`].
+pub fn resolve_with_session(module: Module, session: &Session) -> Result<(Module, Session)> {
+    let mut r = Resolver::new();
+    r.seed_session(&session.items, &session.imports);
+    r.collect_module(&module.items, &[])?;
+    let imports = r.root_imports();
+    let resolved = r.flatten(&module.items, &[])?;
+    let additions = Session {
+        items: session_items(&resolved),
+        imports,
+    };
+    Ok((resolved, additions))
+}
+
+/// Resolve a single REPL statement (a `let`, an assignment, or an expression)
+/// against the carried `session`, returning the statement with every free
+/// reference rewritten to its canonical name and visibility enforced.
+///
+/// # Errors
+/// As [`resolve`].
+pub fn resolve_stmt(stmt: Stmt, session: &Session) -> Result<Stmt> {
+    let module = Module {
+        items: vec![Item::Fn {
+            name: "@repl-stmt".to_string(),
+            params: Vec::new(),
+            ret: None,
+            ret_span: None,
+            body: vec![stmt],
+            public: false,
+            span: Span::default(),
+        }],
+    };
+    let mut r = Resolver::new();
+    r.seed_session(&session.items, &session.imports);
+    r.collect_module(&module.items, &[])?;
+    let resolved = r.flatten(&module.items, &[])?;
+    let Item::Fn { body, .. } = resolved
+        .items
+        .into_iter()
+        .next()
+        .expect("one synthetic statement item")
+    else {
+        unreachable!("synthetic item is a function")
+    };
+    body.into_iter().next().ok_or_else(|| {
+        Diag::new(
+            codes::INTERNAL,
+            "statement resolution produced no statement",
+            Span::default(),
+        )
+    })
+}
+
+/// Extract the session-retained declarations from an already-resolved module.
+/// Each item's name is canonical, so its owning module is every `::` segment
+/// but the last.
+#[must_use]
+pub fn session_items(module: &Module) -> Vec<SessionItem> {
+    let mut out = Vec::new();
+    for item in &module.items {
+        let (name, public) = match item {
+            Item::Fn { name, public, .. }
+            | Item::Const { name, public, .. }
+            | Item::Struct { name, public, .. }
+            | Item::Enum { name, public, .. }
+            | Item::Alias { name, public, .. }
+            | Item::Trait { name, public, .. } => (name, *public),
+            _ => continue,
+        };
+        out.push(SessionItem {
+            name: name.clone(),
+            module: module_path_of(name),
+            public,
+        });
+        // A variant's canonical name is its enum's module path plus the tag.
+        if let Item::Enum { variants, .. } = item {
+            let owner = module_path_of(name);
+            for v in variants {
+                out.push(SessionItem {
+                    name: join(&owner, &v.tag),
+                    module: owner.clone(),
+                    public,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// The module path encoded in a canonical name: every `::` segment but the
+/// last.
+fn module_path_of(canonical: &str) -> Vec<String> {
+    let mut segs: Vec<String> = canonical.split("::").map(str::to_string).collect();
+    segs.pop();
+    segs
+}
+
+/// What kind of item a canonical name denotes. Namespaces are separate, as in
+/// Aura's flat model: a type and a value may share a name.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Namespace {
+    Type,
+    Value,
+    Variant,
+}
+
+struct ItemInfo {
+    /// The module path the item was declared in (empty for the root).
+    module: Vec<String>,
+    /// Whether the item is exported from its module.
+    public: bool,
+    /// The item's namespace.
+    namespace: Namespace,
+}
+
+struct Resolver {
+    /// Every declared item, keyed by canonical name.
+    items: HashMap<String, ItemInfo>,
+    /// Per module path, its direct child modules: local name → child path.
+    modules: HashMap<Vec<String>, HashMap<String, Vec<String>>>,
+    /// Per module path, the visible names it may refer to, by namespace:
+    /// local name → canonical name. Includes the module's own items and its
+    /// imports, resolved during collection.
+    type_scope: HashMap<Vec<String>, HashMap<String, String>>,
+    value_scope: HashMap<Vec<String>, HashMap<String, String>>,
+    variant_scope: HashMap<Vec<String>, HashMap<String, String>>,
+    /// Module paths that exist, for validation.
+    module_paths: HashSet<Vec<String>>,
+    /// Every import applied, as `(module, local, canonical)`. The REPL persists
+    /// the ones whose module is the root.
+    applied_imports: Vec<(Vec<String>, String, String)>,
+}
+
+impl Resolver {
+    fn new() -> Resolver {
+        Resolver {
+            items: HashMap::new(),
+            modules: HashMap::new(),
+            type_scope: HashMap::new(),
+            value_scope: HashMap::new(),
+            variant_scope: HashMap::new(),
+            module_paths: HashSet::new(),
+            applied_imports: Vec::new(),
+        }
+    }
+
+    /// The root-module imports this submission introduced, so the REPL can
+    /// retain them. Only imports visible at the root (the REPL's current
+    /// module) are persisted.
+    fn root_imports(&self) -> Vec<SessionImport> {
+        self.applied_imports
+            .iter()
+            .filter(|(module, _, _)| module.is_empty())
+            .map(|(_, local, canonical)| SessionImport {
+                local: local.clone(),
+                canonical: canonical.clone(),
+            })
+            .collect()
+    }
+
+    /// Seed the resolver with declarations and imports carried from earlier
+    /// REPL submissions, so a later submission resolves and visibility-checks
+    /// them exactly as within one module.
+    fn seed_session(&mut self, session: &[SessionItem], imports: &[SessionImport]) {
+        for item in session {
+            let local = item
+                .name
+                .rsplit("::")
+                .next()
+                .unwrap_or(&item.name)
+                .to_string();
+            // A module item and a type are recorded so both `path::name` and a
+            // bare type name resolve. The namespace is inferred: a capitalized
+            // local name that was declared via `struct`/`enum`/`alias`/`trait`
+            // is a type; otherwise it is a value. Both maps are populated, so
+            // either use resolves the same canonical name.
+            self.value_scope
+                .entry(item.module.clone())
+                .or_default()
+                .insert(local.clone(), item.name.clone());
+            self.type_scope
+                .entry(item.module.clone())
+                .or_default()
+                .insert(local, item.name.clone());
+            self.items.insert(
+                item.name.clone(),
+                ItemInfo {
+                    module: item.module.clone(),
+                    public: item.public,
+                    namespace: Namespace::Value,
+                },
+            );
+            // Record the module path itself so `path::name` resolves even when
+            // the intermediate module was introduced by an earlier submission.
+            for end in 1..=item.module.len() {
+                self.module_paths.insert(item.module[..end].to_vec());
+            }
+            // Seed the module hierarchy so a qualified path can be walked:
+            // level `end` maps parent `module[..end]` to child `module[..=end]`.
+            for end in 0..item.module.len() {
+                let parent = item.module[..end].to_vec();
+                let child = item.module[..=end].to_vec();
+                let child_name = item.module[end].clone();
+                self.modules
+                    .entry(parent)
+                    .or_default()
+                    .entry(child_name)
+                    .or_insert(child);
+            }
+        }
+        // Retained imports become root bindings, exactly as if the `use` that
+        // created them appeared at the root of this submission.
+        for imp in imports {
+            self.value_scope
+                .entry(Vec::new())
+                .or_default()
+                .insert(imp.local.clone(), imp.canonical.clone());
+            self.type_scope
+                .entry(Vec::new())
+                .or_default()
+                .insert(imp.local.clone(), imp.canonical.clone());
+        }
+    }
+
+    // ------------------------------------------------------------- collection
+
+    /// Record every declaration under `prefix`, building the per-module scope
+    /// maps. Two passes are needed because a module may refer to an item
+    /// declared later in the same module.
+    fn collect_module(&mut self, items: &[Item], prefix: &[String]) -> Result<()> {
+        self.declare_module(items, prefix)?;
+        // Apply imports only after **every** module and item in the file has
+        // been declared, so an import may name an item declared later or in a
+        // sibling module regardless of source order.
+        self.apply_imports(items, prefix)
+    }
+
+    /// Pass A: declare this module's direct items and recurse into children.
+    fn declare_module(&mut self, items: &[Item], prefix: &[String]) -> Result<()> {
+        self.module_paths.insert(prefix.to_vec());
+        for item in items {
+            match item {
+                Item::Fn { name, public, .. } => {
+                    self.declare(prefix, name, *public, Namespace::Value, item_span(item));
+                }
+                Item::Const {
+                    name,
+                    public,
+                    span,
+                    ..
+                } => {
+                    self.declare(prefix, name, *public, Namespace::Value, *span);
+                }
+                Item::Struct {
+                    name,
+                    public,
+                    span,
+                    ..
+                } => {
+                    self.declare(prefix, name, *public, Namespace::Type, *span);
+                }
+                Item::Enum {
+                    name,
+                    variants,
+                    public,
+                    span,
+                } => {
+                    self.declare(prefix, name, *public, Namespace::Type, *span);
+                    // Variant tags live in a per-module namespace; the checker
+                    // remains the single authority for duplicate detection.
+                    for v in variants {
+                        self.variant_scope
+                            .entry(prefix.to_vec())
+                            .or_default()
+                            .insert(v.tag.clone(), join(prefix, &v.tag));
+                        self.items
+                            .entry(join(prefix, &v.tag))
+                            .and_modify(|e| e.public |= *public)
+                            .or_insert(ItemInfo {
+                                module: prefix.to_vec(),
+                                public: *public,
+                                namespace: Namespace::Variant,
+                            });
+                    }
+                }
+                Item::Alias {
+                    name,
+                    public,
+                    span,
+                    ..
+                } => {
+                    self.declare(prefix, name, *public, Namespace::Type, *span);
+                }
+                Item::Trait {
+                    name,
+                    public,
+                    span,
+                    ..
+                } => {
+                    self.declare(prefix, name, *public, Namespace::Type, *span);
+                }
+                Item::Impl { .. } | Item::Expr(..) => {}
+                Item::Use { .. } => {}
+                Item::Module {
+                    name,
+                    items: inner,
+                    span,
+                    ..
+                } => {
+                    let mut child = prefix.to_vec();
+                    child.push(name.clone());
+                    if self
+                        .modules
+                        .entry(prefix.to_vec())
+                        .or_default()
+                        .insert(name.clone(), child.clone())
+                        .is_some()
+                    {
+                        return Err(Diag::new(
+                            codes::REDECLARED,
+                            format!("module `{name}` is declared more than once"),
+                            *span,
+                        ));
+                    }
+                    self.module_paths.insert(child.clone());
+                    self.declare_module(inner, &child)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Pass B: apply `use` imports from every module, now that the whole
+    /// program's declarations are known.
+    fn apply_imports(&mut self, items: &[Item], prefix: &[String]) -> Result<()> {
+        for item in items {
+            match item {
+                Item::Use {
+                    path,
+                    alias,
+                    span,
+                    ..
+                } => self.apply_use(path, alias, prefix, *span)?,
+                Item::Module { items: inner, name, .. } => {
+                    let mut child = prefix.to_vec();
+                    child.push(name.clone());
+                    self.apply_imports(inner, &child)?;
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn apply_use(
+        &mut self,
+        path: &[String],
+        alias: &Option<String>,
+        prefix: &[String],
+        span: Span,
+    ) -> Result<()> {
+        let canonical = self.resolve_use_path(prefix, path, span)?;
+        // `use a::b` may name a module; importing a module is allowed and
+        // makes its items reachable by path, but it binds no root name.
+        if !self.items.contains_key(&canonical) {
+            if self.module_paths.contains(&canonical_path_from(path))
+                || self
+                    .module_paths
+                    .iter()
+                    .any(|m| m.join("::") == canonical)
+            {
+                return Ok(());
+            }
+            return Err(Diag::new(
+                codes::UNKNOWN_MODULE,
+                format!(
+                    "`{}` is not a declared item or module; `use` must name an item or a module",
+                    path.join("::")
+                ),
+                span,
+            ));
+        }
+        let namespace = self.items.get(&canonical).map(|i| i.namespace);
+        let local = alias
+            .clone()
+            .unwrap_or_else(|| path.last().cloned().unwrap_or_default());
+        // Importing across a module boundary respects visibility: a private
+        // target is `E2018`, exactly as a direct path would be.
+        self.check_visible(&canonical, prefix, span)?;
+        // An import must not silently shadow a name already visible in this
+        // module (a local declaration or an earlier import): that is `E2007`.
+        if self.name_visible_locally(prefix, &local) {
+            return Err(Diag::new(
+                codes::REDECLARED,
+                format!("`{local}` is already declared in this module; rename the import with `as`"),
+                span,
+            ));
+        }
+        // An imported type is also usable as a value (a struct name in a
+        // constructor or a bare variant reference), so bind it in both
+        // namespaces when it is a type.
+        if namespace == Some(Namespace::Type) {
+            self.type_scope
+                .entry(prefix.to_vec())
+                .or_default()
+                .insert(local.clone(), canonical.clone());
+            self.value_scope
+                .entry(prefix.to_vec())
+                .or_default()
+                .insert(local.clone(), canonical.clone());
+        } else {
+            let scope = match namespace {
+                Some(Namespace::Variant) => self.variant_scope.entry(prefix.to_vec()).or_default(),
+                _ => self.value_scope.entry(prefix.to_vec()).or_default(),
+            };
+            scope.insert(local.clone(), canonical.clone());
+        }
+        self.applied_imports
+            .push((prefix.to_vec(), local, canonical));
+        Ok(())
+    }
+
+    /// Whether `local` is already declared (or imported) in this module,
+    /// excluding any name a parent module exposes.
+    fn name_visible_locally(&self, prefix: &[String], local: &str) -> bool {
+        let key = prefix.to_vec();
+        [
+            self.type_scope.get(&key),
+            self.value_scope.get(&key),
+            self.variant_scope.get(&key),
+        ]
+        .into_iter()
+        .flatten()
+        .any(|m| m.contains_key(local))
+            // A local declaration may share a name with a parent's item; only
+            // a genuine local collision (including the module's own name) is
+            // rejected, and the child-local maps above already cover that.
+            || false
+    }
+
+    /// Record a declaration in a module's scope. Duplicate detection is
+    /// deliberately **not** done here: the checker is the single authority for
+    /// `E2007`/`E2012`/`E2013`, and it must see overloaded functions and
+    /// methods as one name. The resolver only maps local names to canonical
+    /// names, so a repeated declaration overwrites the same canonical entry.
+    fn declare(
+        &mut self,
+        prefix: &[String],
+        name: &str,
+        public: bool,
+        namespace: Namespace,
+        _span: Span,
+    ) {
+        let canonical = join(prefix, name);
+        let scope = match namespace {
+            Namespace::Type => self.type_scope.entry(prefix.to_vec()).or_default(),
+            Namespace::Value => self.value_scope.entry(prefix.to_vec()).or_default(),
+            Namespace::Variant => self.variant_scope.entry(prefix.to_vec()).or_default(),
+        };
+        scope.insert(name.to_string(), canonical.clone());
+        // A name declared `pub` anywhere in a module is exported; keep the
+        // `public` flag true if any declaration of that name is public.
+        self.items
+            .entry(canonical)
+            .and_modify(|e| e.public |= public)
+            .or_insert(ItemInfo {
+                module: prefix.to_vec(),
+                public,
+                namespace,
+            });
+    }
+
+    /// Resolve a `use` path from `prefix`. The first segment is looked up in the
+    /// enclosing module scopes from the innermost outward; the remaining
+    /// segments navigate nested modules. Returns the canonical name of the
+    /// imported item.
+    fn resolve_use_path(&self, prefix: &[String], path: &[String], span: Span) -> Result<String> {
+        let Some((first, rest)) = path.split_first() else {
+            return Err(Diag::new(codes::UNKNOWN_MODULE, "empty `use` path", span));
+        };
+        // Walk outward from the current module to the root, looking for the
+        // first segment as a child module or a visible item.
+        let mut base: Option<Vec<String>> = None;
+        for end in (0..=prefix.len()).rev() {
+            let scope = prefix[..end].to_vec();
+            if let Some(child) = self
+                .modules
+                .get(&scope)
+                .and_then(|m| m.get(first))
+                .cloned()
+            {
+                base = Some(child);
+                break;
+            }
+            if rest.is_empty() {
+                for map in [
+                    self.type_scope.get(&scope),
+                    self.value_scope.get(&scope),
+                    self.variant_scope.get(&scope),
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    if let Some(c) = map.get(first) {
+                        return Ok(c.clone());
+                    }
+                }
+            }
+        }
+        let Some(mut base) = base else {
+            return Err(Diag::new(
+                codes::UNKNOWN_MODULE,
+                format!("unknown module `{first}` in `use`"),
+                span,
+            ));
+        };
+        if rest.is_empty() {
+            return Ok(base.join("::"));
+        }
+        // Navigate the remaining segments as modules, then the final item.
+        for (i, seg) in rest.iter().enumerate() {
+            let last = i == rest.len() - 1;
+            if last {
+                let canonical = join(&base, seg);
+                if self.items.contains_key(&canonical)
+                    || self.module_paths.contains(&canonical_path(&base, seg))
+                {
+                    return Ok(canonical);
+                }
+                return Err(Diag::new(
+                    codes::UNKNOWN_MODULE,
+                    format!("`{seg}` is not declared in module `{}`", base.join("::")),
+                    span,
+                ));
+            }
+            let Some(child) = self.modules.get(&base).and_then(|m| m.get(seg)).cloned() else {
+                return Err(Diag::new(
+                    codes::UNKNOWN_MODULE,
+                    format!("`{seg}` is not a module in `{}`", base.join("::")),
+                    span,
+                ));
+            };
+            base = child;
+        }
+        Ok(base.join("::"))
+    }
+
+    // ---------------------------------------------------------------- rewrite
+
+    /// Flatten the module tree: emit each item with its canonical target names,
+    /// dropping module wrappers and `use` imports (already applied).
+    fn flatten(&mut self, items: &[Item], prefix: &[String]) -> Result<Module> {
+        let mut out = Vec::new();
+        for item in items {
+            match item {
+                Item::Module { items: inner, .. } => {
+                    // The child module's canonical path must be reconstructed
+                    // from the item, since `prefix` here is the parent.
+                    let name = match item {
+                        Item::Module { name, .. } => name,
+                        _ => unreachable!(),
+                    };
+                    let mut child = prefix.to_vec();
+                    child.push(name.clone());
+                    let mut sub = self.flatten(inner, &child)?;
+                    out.append(&mut sub.items);
+                }
+                Item::Use { .. } => {}
+                other => out.push(self.rewrite_item(other, prefix)?),
+            }
+        }
+        Ok(Module { items: out })
+    }
+
+    fn rewrite_item(&self, item: &Item, prefix: &[String]) -> Result<Item> {
+        Ok(match item {
+            Item::Fn {
+                name,
+                params,
+                ret,
+                ret_span,
+                body,
+                public,
+                span,
+            } => {
+                let mut locals = Locals::default();
+                let params = self.rewrite_params(params, &mut locals, prefix)?;
+                let ret = ret
+                    .as_ref()
+                    .map(|t| self.rewrite_type(t, prefix))
+                    .transpose()?;
+                let mut body = body.clone();
+                self.rewrite_block(&mut body, &mut locals, prefix)?;
+                Item::Fn {
+                    name: join(prefix, name),
+                    params,
+                    ret,
+                    ret_span: *ret_span,
+                    body,
+                    public: *public,
+                    span: *span,
+                }
+            }
+            Item::Const {
+                name,
+                ann,
+                value,
+                public,
+                span,
+            } => {
+                let ann = ann
+                    .as_ref()
+                    .map(|t| self.rewrite_type(t, prefix))
+                    .transpose()?;
+                let value = self.rewrite_expr(value, &mut Locals::default(), prefix)?;
+                Item::Const {
+                    name: join(prefix, name),
+                    ann,
+                    value,
+                    public: *public,
+                    span: *span,
+                }
+            }
+            Item::Expr(e, span) => {
+                Item::Expr(self.rewrite_expr(e, &mut Locals::default(), prefix)?, *span)
+            }
+            Item::Struct {
+                name,
+                fields,
+                public,
+                span,
+            } => {
+                let fields = fields
+                    .iter()
+                    .map(|f| self.rewrite_field(f, prefix))
+                    .collect::<Result<Vec<_>>>()?;
+                Item::Struct {
+                    name: join(prefix, name),
+                    fields,
+                    public: *public,
+                    span: *span,
+                }
+            }
+            Item::Enum {
+                name,
+                variants,
+                public,
+                span,
+            } => {
+                let variants = variants
+                    .iter()
+                    .map(|v| self.rewrite_variant(v, prefix))
+                    .collect::<Result<Vec<_>>>()?;
+                Item::Enum {
+                    name: join(prefix, name),
+                    variants,
+                    public: *public,
+                    span: *span,
+                }
+            }
+            Item::Alias {
+                name,
+                target,
+                public,
+                span,
+            } => Item::Alias {
+                name: join(prefix, name),
+                target: self.rewrite_type(target, prefix)?,
+                public: *public,
+                span: *span,
+            },
+            Item::Trait {
+                name,
+                methods,
+                public,
+                span,
+                ..
+            } => {
+                let methods = methods
+                    .iter()
+                    .map(|m| self.rewrite_member(m, prefix))
+                    .collect::<Result<Vec<_>>>()?;
+                Item::Trait {
+                    name: join(prefix, name),
+                    methods,
+                    public: *public,
+                    owner: prefix.to_vec(),
+                    span: *span,
+                }
+            }
+            Item::Impl {
+                target,
+                trait_name,
+                methods,
+                span,
+                ..
+            } => {
+                let target = self.canonical_type(target, prefix, *span)?;
+                let trait_name = match trait_name {
+                    Some(t) => Some(self.canonical_type(t, prefix, *span)?),
+                    None => None,
+                };
+                let methods = methods
+                    .iter()
+                    .map(|m| self.rewrite_member(m, prefix))
+                    .collect::<Result<Vec<_>>>()?;
+                Item::Impl {
+                    target,
+                    trait_name,
+                    methods,
+                    owner: prefix.to_vec(),
+                    span: *span,
+                }
+            }
+            Item::Module { .. } | Item::Use { .. } => {
+                unreachable!("modules and imports are handled by flatten")
+            }
+        })
+    }
+
+    /// Rewrite a method inside an `impl` or `trait`. A method name is **not**
+    /// path-qualified: methods are keyed by their nominal struct and share no
+    /// global value namespace (`LANGUAGE_SPEC.md` §17.6). Only the parameter
+    /// and return type annotations and the body are rewritten.
+    fn rewrite_member(&self, item: &Item, prefix: &[String]) -> Result<Item> {
+        let Item::Fn {
+            name,
+            params,
+            ret,
+            ret_span,
+            body,
+            public,
+            span,
+        } = item
+        else {
+            return self.rewrite_item(item, prefix);
+        };
+        let mut locals = Locals::default();
+        let params = self.rewrite_params(params, &mut locals, prefix)?;
+        let ret = ret
+            .as_ref()
+            .map(|t| self.rewrite_type(t, prefix))
+            .transpose()?;
+        let mut body = body.clone();
+        self.rewrite_block(&mut body, &mut locals, prefix)?;
+        Ok(Item::Fn {
+            name: name.clone(),
+            params,
+            ret,
+            ret_span: *ret_span,
+            body,
+            public: *public,
+            span: *span,
+        })
+    }
+
+    fn rewrite_field(&self, f: &FieldDecl, prefix: &[String]) -> Result<FieldDecl> {
+        Ok(FieldDecl {
+            name: f.name.clone(),
+            ty: self.rewrite_type(&f.ty, prefix)?,
+            public: f.public,
+            span: f.span,
+        })
+    }
+
+    fn rewrite_variant(&self, v: &VariantDecl, prefix: &[String]) -> Result<VariantDecl> {
+        // Variant tags are canonicalized so two modules may each declare a
+        // variant with the same local name without collision (`E2013`).
+        Ok(VariantDecl {
+            tag: join(prefix, &v.tag),
+            payload: v
+                .payload
+                .iter()
+                .map(|t| self.rewrite_type(t, prefix))
+                .collect::<Result<Vec<_>>>()?,
+            span: v.span,
+        })
+    }
+
+    fn rewrite_type(&self, t: &TypeExpr, prefix: &[String]) -> Result<TypeExpr> {
+        Ok(match t {
+            TypeExpr::Named(n) => TypeExpr::Named(self.canonical_type(n, prefix, Span::default())?),
+            TypeExpr::List(i) => TypeExpr::List(Box::new(self.rewrite_type(i, prefix)?)),
+            TypeExpr::Map(k, v) => TypeExpr::Map(
+                Box::new(self.rewrite_type(k, prefix)?),
+                Box::new(self.rewrite_type(v, prefix)?),
+            ),
+            TypeExpr::Union(ms) => TypeExpr::Union(
+                ms.iter()
+                    .map(|m| self.rewrite_type(m, prefix))
+                    .collect::<Result<Vec<_>>>()?,
+            ),
+            other => other.clone(),
+        })
+    }
+
+    /// Canonicalize a type-like name (a struct, enum, alias, or trait) and
+    /// enforce visibility. A name that is not a known type is left as written
+    /// so the checker reports the unknown type with its own diagnostic.
+    fn canonical_type(&self, name: &str, prefix: &[String], span: Span) -> Result<String> {
+        if let Some(c) = self.lookup_path(name, prefix, Namespace::Type) {
+            self.check_visible(&c, prefix, span)?;
+            return Ok(c);
+        }
+        Ok(name.to_string())
+    }
+
+    /// Canonicalize a construct/variant name (a struct, or an enum variant).
+    ///
+    /// A struct is named by its path (`shapes::Point`). An enum variant is
+    /// named by its enum's path plus the tag (`shapes::Color::Red`), or by the
+    /// module path plus the tag (`shapes::Red`), both of which name the same
+    /// canonical variant `shapes::<tag>`.
+    fn canonical_construct(&self, name: &str, prefix: &[String], span: Span) -> Result<String> {
+        if let Some(c) = self.lookup_path(name, prefix, Namespace::Type) {
+            self.check_visible(&c, prefix, span)?;
+            return Ok(c);
+        }
+        if let Some(c) = self.lookup_path(name, prefix, Namespace::Variant) {
+            self.check_visible(&c, prefix, span)?;
+            return Ok(c);
+        }
+        // `a::b::Enum::Tag` — drop the enum segment; the variant's canonical
+        // name is the enum's module path plus the tag.
+        if name.contains("::") {
+            let segs: Vec<&str> = name.split("::").collect();
+            if segs.len() >= 3 {
+                let tag = segs[segs.len() - 1];
+                let parent = &segs[..segs.len() - 2];
+                let canonical = if parent.is_empty() {
+                    tag.to_string()
+                } else {
+                    format!("{}::{tag}", parent.join("::"))
+                };
+                if self
+                    .items
+                    .get(&canonical)
+                    .is_some_and(|i| i.namespace == Namespace::Variant)
+                {
+                    self.check_visible(&canonical, prefix, span)?;
+                    return Ok(canonical);
+                }
+            }
+        }
+        Ok(name.to_string())
+    }
+
+    /// Look up `name`, which may be a `::`-qualified path or a bare local name,
+    /// in the module scopes from the innermost outward.
+    fn lookup_path(&self, name: &str, prefix: &[String], ns: Namespace) -> Option<String> {
+        if name.contains("::") {
+            return self.lookup_qualified(name, prefix);
+        }
+        for end in (0..=prefix.len()).rev() {
+            let scope = &prefix[..end];
+            let map = match ns {
+                Namespace::Type => self.type_scope.get(scope),
+                Namespace::Value => self.value_scope.get(scope),
+                Namespace::Variant => self.variant_scope.get(scope),
+            };
+            if let Some(c) = map.and_then(|m| m.get(name)) {
+                return Some(c.clone());
+            }
+        }
+        None
+    }
+
+    /// Resolve a `::`-qualified path: the first segment names a child module,
+    /// the rest navigate to the item.
+    fn lookup_qualified(&self, name: &str, prefix: &[String]) -> Option<String> {
+        let segments: Vec<&str> = name.split("::").collect();
+        let (first, rest) = segments.split_first()?;
+        let mut base: Option<Vec<String>> = None;
+        for end in (0..=prefix.len()).rev() {
+            let scope = &prefix[..end];
+            if let Some(child) = self.modules.get(scope).and_then(|m| m.get(*first)).cloned() {
+                base = Some(child);
+                break;
+            }
+        }
+        let mut base = base?;
+        for (i, seg) in rest.iter().enumerate() {
+            if i == rest.len() - 1 {
+                // Require the item to exist: a path to nothing must fall
+                // through to the checker's `E2003`, never be rewritten to an
+                // unchecked name.
+                let canonical = join(&base, seg);
+                return self.items.contains_key(&canonical).then_some(canonical);
+            }
+            base = self.modules.get(&base).and_then(|m| m.get(*seg)).cloned()?;
+        }
+        None
+    }
+
+    /// A canonical item is visible from `prefix` when it is exported (`pub`) or
+    /// when the referring module is the defining module or a descendant.
+    fn check_visible(&self, canonical: &str, prefix: &[String], span: Span) -> Result<()> {
+        let Some(info) = self.items.get(canonical) else {
+            return Ok(());
+        };
+        if info.public || is_descendant(prefix, &info.module) {
+            return Ok(());
+        }
+        Err(Diag::new(
+            codes::PRIVATE_ACCESS,
+            format!(
+                "`{}` is private to module `{}`; mark it `pub` to use it here",
+                canonical.rsplit("::").next().unwrap_or(canonical),
+                if info.module.is_empty() {
+                    "the file root".to_string()
+                } else {
+                    info.module.join("::")
+                }
+            ),
+            span,
+        ))
+    }
+
+    // ------------------------------------------------------------ expressions
+
+    fn rewrite_block(
+        &self,
+        body: &mut Vec<Stmt>,
+        locals: &mut Locals,
+        prefix: &[String],
+    ) -> Result<()> {
+        locals.push();
+        for s in body.iter_mut() {
+            self.rewrite_stmt(s, locals, prefix)?;
+        }
+        locals.pop();
+        Ok(())
+    }
+
+    fn rewrite_stmt(&self, s: &mut Stmt, locals: &mut Locals, prefix: &[String]) -> Result<()> {
+        match s {
+            Stmt::Let {
+                name,
+                ann,
+                value,
+                ..
+            } => {
+                *value = self.rewrite_expr(value, locals, prefix)?.into();
+                if let Some(a) = ann {
+                    *a = self.rewrite_type(a, prefix)?;
+                }
+                locals.declare(name);
+            }
+            Stmt::LetPattern {
+                pattern, value, ..
+            } => {
+                *value = self.rewrite_expr(value, locals, prefix)?;
+                self.collect_pattern_bindings(pattern, locals);
+            }
+            Stmt::Assign { target, value, .. } => {
+                *target = self.rewrite_expr(target, locals, prefix)?;
+                *value = self.rewrite_expr(value, locals, prefix)?;
+            }
+            Stmt::Expr(e, _) => *e = self.rewrite_expr(e, locals, prefix)?,
+            Stmt::Return(Some(e), _) | Stmt::Throw(e, _) => {
+                *e = self.rewrite_expr(e, locals, prefix)?;
+            }
+            Stmt::Return(None, _)
+            | Stmt::Break(_)
+            | Stmt::Continue(_) => {}
+            Stmt::While(c, body, _) => {
+                *c = self.rewrite_expr(c, locals, prefix)?;
+                self.rewrite_block(body, locals, prefix)?;
+            }
+            Stmt::Loop(body, _) => self.rewrite_block(body, locals, prefix)?,
+            Stmt::For(pat, iter, body, _) => {
+                *iter = self.rewrite_expr(iter, locals, prefix)?;
+                locals.push();
+                self.collect_pattern_bindings(pat, locals);
+                for st in body.iter_mut() {
+                    self.rewrite_stmt(st, locals, prefix)?;
+                }
+                locals.pop();
+            }
+            Stmt::Try {
+                body,
+                catch,
+                catch_body,
+                finally,
+                ..
+            } => {
+                self.rewrite_block(body, locals, prefix)?;
+                locals.push();
+                locals.declare(catch);
+                for st in catch_body.iter_mut() {
+                    self.rewrite_stmt(st, locals, prefix)?;
+                }
+                locals.pop();
+                if let Some(f) = finally {
+                    self.rewrite_block(f, locals, prefix)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn collect_pattern_bindings(&self, p: &Pattern, locals: &mut Locals) {
+        match p {
+            Pattern::Bind(n, _) => locals.declare(n),
+            Pattern::List(ps, _) => {
+                for x in ps {
+                    self.collect_pattern_bindings(x, locals);
+                }
+            }
+            Pattern::Variant(_, ps, _) => {
+                for x in ps {
+                    self.collect_pattern_bindings(x, locals);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn rewrite_params(
+        &self,
+        params: &[Param],
+        locals: &mut Locals,
+        prefix: &[String],
+    ) -> Result<Vec<Param>> {
+        let mut out = Vec::with_capacity(params.len());
+        for p in params {
+            let ty = p
+                .ty
+                .as_ref()
+                .map(|t| self.rewrite_type(t, prefix))
+                .transpose()?;
+            locals.declare(&p.name);
+            out.push(Param {
+                name: p.name.clone(),
+                ty,
+                mutable: p.mutable,
+                span: p.span,
+            });
+        }
+        Ok(out)
+    }
+
+    fn rewrite_expr(
+        &self,
+        e: &Expr,
+        locals: &mut Locals,
+        prefix: &[String],
+    ) -> Result<Expr> {
+        Ok(match e {
+            Expr::Name(n, span) => {
+                if locals.contains(n) {
+                    Expr::Name(n.clone(), *span)
+                } else if let Some(c) = self.lookup_path(n, prefix, Namespace::Value) {
+                    self.check_visible(&c, prefix, *span)?;
+                    Expr::Name(c, *span)
+                } else {
+                    Expr::Name(n.clone(), *span)
+                }
+            }
+            Expr::Construct(n, args, span) => {
+                let canonical = self.canonical_construct(n, prefix, *span)?;
+                let args = args
+                    .iter()
+                    .map(|a| {
+                        Ok(crate::ast::Arg {
+                            name: a.name.clone(),
+                            value: self.rewrite_expr(&a.value, locals, prefix)?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                Expr::Construct(canonical, args, *span)
+            }
+            Expr::Unary(op, o, span) => {
+                Expr::Unary(*op, Box::new(self.rewrite_expr(o, locals, prefix)?), *span)
+            }
+            Expr::Binary(op, l, r, span) => Expr::Binary(
+                *op,
+                Box::new(self.rewrite_expr(l, locals, prefix)?),
+                Box::new(self.rewrite_expr(r, locals, prefix)?),
+                *span,
+            ),
+            Expr::Call(f, args, span) => Expr::Call(
+                Box::new(self.rewrite_expr(f, locals, prefix)?),
+                self.rewrite_args(args, locals, prefix)?,
+                *span,
+            ),
+            Expr::Method(r, name, args, span) => Expr::Method(
+                Box::new(self.rewrite_expr(r, locals, prefix)?),
+                name.clone(),
+                self.rewrite_args(args, locals, prefix)?,
+                *span,
+            ),
+            Expr::Field(r, name, span) => {
+                Expr::Field(Box::new(self.rewrite_expr(r, locals, prefix)?), name.clone(), *span)
+            }
+            Expr::Index(b, i, span) => Expr::Index(
+                Box::new(self.rewrite_expr(b, locals, prefix)?),
+                Box::new(self.rewrite_expr(i, locals, prefix)?),
+                *span,
+            ),
+            Expr::List(items, span) => Expr::List(
+                items
+                    .iter()
+                    .map(|x| self.rewrite_expr(x, locals, prefix))
+                    .collect::<Result<Vec<_>>>()?,
+                *span,
+            ),
+            Expr::Tuple(items, span) => Expr::Tuple(
+                items
+                    .iter()
+                    .map(|x| self.rewrite_expr(x, locals, prefix))
+                    .collect::<Result<Vec<_>>>()?,
+                *span,
+            ),
+            Expr::Map(entries, span) => Expr::Map(
+                entries
+                    .iter()
+                    .map(|(k, v)| {
+                        Ok((
+                            self.rewrite_expr(k, locals, prefix)?,
+                            self.rewrite_expr(v, locals, prefix)?,
+                        ))
+                    })
+                    .collect::<Result<Vec<_>>>()?,
+                *span,
+            ),
+            Expr::Lambda(params, body, span) => {
+                let mut inner = locals.clone();
+                inner.push();
+                let params = self.rewrite_params(params, &mut inner, prefix)?;
+                let body = self.rewrite_expr(body, &mut inner, prefix)?;
+                Expr::Lambda(params, Box::new(body), *span)
+            }
+            Expr::Pipe(l, r, span) => Expr::Pipe(
+                Box::new(self.rewrite_expr(l, locals, prefix)?),
+                Box::new(self.rewrite_expr(r, locals, prefix)?),
+                *span,
+            ),
+            Expr::Range(a, b, span) => Expr::Range(
+                Box::new(self.rewrite_expr(a, locals, prefix)?),
+                Box::new(self.rewrite_expr(b, locals, prefix)?),
+                *span,
+            ),
+            Expr::If(c, then, els, span) => {
+                let c = self.rewrite_expr(c, locals, prefix)?;
+                let mut t = then.clone();
+                self.rewrite_block(&mut t, locals, prefix)?;
+                let e = match els {
+                    Some(e) => Some(Box::new(self.rewrite_expr(e, locals, prefix)?)),
+                    None => None,
+                };
+                Expr::If(Box::new(c), t, e, *span)
+            }
+            Expr::Match(value, arms, span) => {
+                let value = self.rewrite_expr(value, locals, prefix)?;
+                let arms = arms
+                    .iter()
+                    .map(|a| self.rewrite_arm(a, locals, prefix))
+                    .collect::<Result<Vec<_>>>()?;
+                Expr::Match(Box::new(value), arms, *span)
+            }
+            Expr::Block(body, span) => {
+                let mut b = body.clone();
+                self.rewrite_block(&mut b, locals, prefix)?;
+                Expr::Block(b, *span)
+            }
+            Expr::FStr(parts, span) => {
+                let parts = parts
+                    .iter()
+                    .map(|p| match p {
+                        FPart::Lit(_) => Ok(p.clone()),
+                        FPart::Expr(e, spec) => Ok(FPart::Expr(
+                            self.rewrite_expr(e, locals, prefix)?,
+                            spec.clone(),
+                        )),
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                Expr::FStr(parts, *span)
+            }
+            other => other.clone(),
+        })
+    }
+
+    fn rewrite_args(
+        &self,
+        args: &[crate::ast::Arg],
+        locals: &mut Locals,
+        prefix: &[String],
+    ) -> Result<Vec<crate::ast::Arg>> {
+        args.iter()
+            .map(|a| {
+                Ok(crate::ast::Arg {
+                    name: a.name.clone(),
+                    value: self.rewrite_expr(&a.value, locals, prefix)?,
+                })
+            })
+            .collect()
+    }
+
+    fn rewrite_arm(&self, a: &Arm, locals: &mut Locals, prefix: &[String]) -> Result<Arm> {
+        locals.push();
+        self.collect_pattern_bindings(&a.pattern, locals);
+        let guard = a
+            .guard
+            .as_ref()
+            .map(|g| self.rewrite_expr(g, locals, prefix))
+            .transpose()?;
+        let pattern = self.rewrite_pattern(&a.pattern, prefix)?;
+        let mut body = a.body.clone();
+        for s in body.iter_mut() {
+            self.rewrite_stmt(s, locals, prefix)?;
+        }
+        locals.pop();
+        Ok(Arm {
+            pattern,
+            guard,
+            body,
+        })
+    }
+
+    fn rewrite_pattern(&self, p: &Pattern, prefix: &[String]) -> Result<Pattern> {
+        Ok(match p {
+            Pattern::Variant(tag, ps, span) => {
+                let canonical = self.canonical_construct(tag, prefix, *span)?;
+                let ps = ps
+                    .iter()
+                    .map(|x| self.rewrite_pattern(x, prefix))
+                    .collect::<Result<Vec<_>>>()?;
+                Pattern::Variant(canonical, ps, *span)
+            }
+            Pattern::List(ps, span) => Pattern::List(
+                ps.iter()
+                    .map(|x| self.rewrite_pattern(x, prefix))
+                    .collect::<Result<Vec<_>>>()?,
+                *span,
+            ),
+            other => other.clone(),
+        })
+    }
+}
+
+/// Lexical binding set used to keep a local name from being rewritten to a
+/// module item of the same name. A stack of frames, innermost last.
+#[derive(Default, Clone)]
+struct Locals {
+    frames: Vec<HashSet<String>>,
+}
+
+impl Locals {
+    fn push(&mut self) {
+        self.frames.push(HashSet::new());
+    }
+    fn pop(&mut self) {
+        self.frames.pop();
+    }
+    fn declare(&mut self, name: &str) {
+        if let Some(f) = self.frames.last_mut() {
+            f.insert(name.to_string());
+        }
+    }
+    fn contains(&self, name: &str) -> bool {
+        self.frames.iter().rev().any(|f| f.contains(name))
+    }
+}
+
+fn join(prefix: &[String], name: &str) -> String {
+    if prefix.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}::{name}", prefix.join("::"))
+    }
+}
+
+fn canonical_path(base: &[String], seg: &str) -> Vec<String> {
+    let mut v = base.to_vec();
+    v.push(seg.to_string());
+    v
+}
+
+fn canonical_path_from(path: &[String]) -> Vec<String> {
+    path.to_vec()
+}
+
+/// Whether `prefix` is `module` or a descendant of it.
+fn is_descendant(prefix: &[String], module: &[String]) -> bool {
+    prefix.len() >= module.len() && prefix[..module.len()] == module[..]
+}
+
+fn item_span(item: &Item) -> Span {
+    match item {
+        Item::Fn { span, .. }
+        | Item::Struct { span, .. }
+        | Item::Enum { span, .. }
+        | Item::Alias { span, .. }
+        | Item::Const { span, .. }
+        | Item::Trait { span, .. }
+        | Item::Impl { span, .. }
+        | Item::Use { span, .. }
+        | Item::Module { span, .. }
+        | Item::Expr(_, span) => *span,
+    }
+}

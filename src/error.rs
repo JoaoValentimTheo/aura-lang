@@ -128,6 +128,10 @@ pub mod codes {
     pub const DUPLICATE_FIELD: u16 = 2016;
     /// A trait implementation omits a method the trait requires.
     pub const TRAIT_INCOMPLETE: u16 = 2017;
+    /// A private item was accessed across a module boundary.
+    pub const PRIVATE_ACCESS: u16 = 2018;
+    /// An unknown module, or an unknown item in a `use` path.
+    pub const UNKNOWN_MODULE: u16 = 2019;
     /// Type mismatch.
     pub const TYPE_MISMATCH: u16 = 3001;
     /// Return type mismatch.

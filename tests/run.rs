@@ -220,12 +220,9 @@ fn main() {
 }
 
 #[test]
-fn pub_and_use_are_inert_but_parse() {
-    // F-08/F-13: `pub` on any item and `use` anywhere are accepted and have
-    // no effect.
+fn public_items_are_visible_and_private_ones_are_not() {
+    // A root-level `pub` is accepted and the item is usable as before.
     let src = r#"
-use stdlib
-use a.b.c
 pub fn helper() -> int { return 41 }
 pub struct S { x: int }
 pub enum E { A(int) }
@@ -240,6 +237,22 @@ fn main() {
 }
 "#;
     assert_eq!(out(src), "42\n1\n1\n");
+
+    // A `module` is a real boundary: a `pub` item is reachable by path, a
+    // private one is `E2018`.
+    let ok = r#"
+module shapes {
+    pub fn area() -> int { return 4 }
+}
+fn main() { print(shapes::area()) }
+"#;
+    assert_eq!(out(ok), "4\n");
+
+    let private = "module m { fn hidden() { } }\nfn main() { m::hidden() }";
+    assert_eq!(
+        aura::run_source(private, "<run>").map_or_else(|d| d.code, |_| 0),
+        aura::error::codes::PRIVATE_ACCESS
+    );
 }
 
 #[test]
