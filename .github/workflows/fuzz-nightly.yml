@@ -2,10 +2,13 @@ name: Fuzz (nightly)
 
 # A longer libFuzzer run of the four hardening targets, scheduled nightly.
 # This extends the bounded PR smoke run in `ci.yml` (60 s/target) rather than
-# duplicating it. It is intentionally non-blocking for normal PR turnaround:
-# it only runs on a schedule (and on manual dispatch), never on a pull request.
+# duplicating it. It only runs on a schedule (and on manual dispatch), never on
+# a pull request, so it is already decoupled from PR turnaround — and a real
+# crash MUST turn this run red rather than being hidden behind
+# `continue-on-error` (a nightly run that always looks green cannot signal a
+# regression). Crash artifacts are uploaded regardless of outcome.
 #
-# Supply chain: actions are pinned by major version (never `@main`/`@latest`),
+# Supply chain: actions are pinned by version (never `@main`/`@latest`),
 # matching the repository's existing policy; the workflow requests only
 # `contents: read`.
 
@@ -23,24 +26,25 @@ env:
 
 jobs:
   fuzz-nightly:
-    name: nightly fuzz (30m/target)
+    name: nightly fuzz (per-target budgets)
     runs-on: ubuntu-latest
-    # The scheduled run must not fail the repository's overall health status for
-    # an infrastructure hiccup; a crash still uploads artifacts and is visible.
-    continue-on-error: true
-    # LeakSanitizer is disabled for the whole job (see the note on the fuzz
-    # step): Aura's documented, memory-safe model does not reclaim an `Rc`
-    # cycle, so the runtime target legitimately retains cycle memory.
-    env:
-      ASAN_OPTIONS: detect_leaks=0
+    # LeakSanitizer is enabled for the front-end targets and scoped OFF only
+    # for `runtime` (see the per-target step): Aura's documented, memory-safe
+    # model does not reclaim an `Rc` cycle, so the runtime target legitimately
+    # retains cycle memory. Crashes, aborts, and timeouts still fail the job.
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "fuzz -> target"
-      - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked
+      - name: Install cargo-fuzz (pinned to the version in fuzz/README.md)
+        run: |
+          set -euo pipefail
+          if ! cargo fuzz --version 2>/dev/null | grep -q 'cargo-fuzz 0.13.2'; then
+            cargo install cargo-fuzz --version 0.13.2 --locked
+          fi
+          cargo fuzz --version
       - name: Seed the working corpora from the committed seeds
         run: |
           set -euo pipefail
@@ -48,26 +52,28 @@ jobs:
             mkdir -p "fuzz/corpus/$t"
             cp fuzz/seeds/$t/* "fuzz/corpus/$t/" 2>/dev/null || true
           done
-      - name: Fuzz each target (per-target budgets)
+      # Sanitizer scope: ASan always on. LSan on for lexer/parser/checker; off
+      # only for runtime, whose cycle retention is expected (§31.6).
+      #
+      # Per-target budgets: the `runtime` target generates programs that may
+      # build a reference cycle, and Aura's documented, memory-safe value model
+      # does not reclaim an `Rc` cycle, so each runtime iteration retains its
+      # cycle memory in-process. Its budget is therefore shorter, so RSS stays
+      # bounded well under the runner's memory; lexer/parser/checker have no
+      # such retention and run longer.
+      - name: Fuzz front-end targets (30m each, LSan on)
         run: |
           set -euo pipefail
-          # Per-target budgets. The `runtime` target generates programs that may
-          # build a reference cycle, and Aura's documented, memory-safe value
-          # model does not reclaim an `Rc` cycle (LANGUAGE_SPEC.md §31.6), so each
-          # runtime iteration retains its cycle memory in-process. Its budget is
-          # therefore shorter, so RSS stays bounded well under the runner's
-          # memory; lexer/parser/checker have no such retention and run longer.
-          # LeakSanitizer is disabled for the whole job (see `env`), because that
-          # retention is expected, not a leak bug.
-          run_target() {
-            local t="$1"; local secs="$2"
-            echo "=== fuzzing $t for ${secs}s ==="
-            cargo fuzz run "$t" -- -max_total_time="$secs" -rss_limit_mb=6144 -timeout=25
-          }
-          run_target lexer  1800
-          run_target parser 1800
-          run_target checker 1800
-          run_target runtime 300
+          for t in lexer parser checker; do
+            echo "=== fuzzing $t for 1800s (LSan on) ==="
+            cargo +nightly fuzz run "$t" -- -max_total_time=1800 -rss_limit_mb=6144 -timeout=25
+          done
+      - name: Fuzz the runtime target (5m, LSan scoped off)
+        run: |
+          set -euo pipefail
+          echo "=== fuzzing runtime for 300s (LSan scoped off: Rc-cycle retention) ==="
+          ASAN_OPTIONS=detect_leaks=0 \
+            cargo +nightly fuzz run runtime -- -max_total_time=300 -rss_limit_mb=6144 -timeout=25
       - name: Upload any crash artifacts
         if: always()
         uses: actions/upload-artifact@v4

@@ -1,0 +1,15 @@
+[toolchain]
+# The pinned build toolchain for the whole repository. This is the single,
+# repository-visible declaration of the Rust version CI and local builds use,
+# so a build is reproducible without relying on whatever "stable" resolves to
+# on a given day.
+channel = "1.98.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
+
+# NOTE: the fuzz targets additionally require a *nightly* toolchain (libFuzzer
+# and the sanitizer runtime). They are invoked explicitly as `cargo +nightly
+# fuzz ...`, which overrides this file; the nightly is supplied by CI's
+# `dtolnay/rust-toolchain@nightly` step. The MSRV job intentionally invokes
+# `cargo +1.83.0 ...` to test the declared `rust-version = "1.83"` rather than
+# this pin.

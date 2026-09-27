@@ -17,13 +17,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ---------------------------------------------------------------- format
+  # ------------------------------------------------------------------ fmt
   fmt:
     name: rustfmt
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # The channel comes from the repository-visible `rust-toolchain.toml`
+      # pin, so CI, local builds, and the released artifact use one version.
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           components: rustfmt
       - run: cargo fmt --all -- --check
@@ -34,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
@@ -52,7 +54,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
       - uses: Swatinem/rust-cache@v2
       - name: Install Python (for the py feature)
         if: runner.os != 'windows'
@@ -82,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release --locked --no-default-features --features cli,repl,json,regex,time
       - name: Verify pyo3 is absent from the dependency graph
@@ -101,7 +103,8 @@ jobs:
   # The declared `rust-version` must hold for the feature set that is actually
   # shipped, not just `cli`. `repl` pulls `rustyline`, whose transitive
   # `home`/`unicode-segmentation` had drifted past 1.83; the lockfile pins
-  # versions that keep the shipped binary buildable on the MSRV.
+  # versions that keep the shipped binary buildable on the MSRV. This job
+  # deliberately uses `+1.83.0`, overriding `rust-toolchain.toml`.
   msrv:
     name: minimum supported Rust (1.83)
     runs-on: ubuntu-latest
@@ -110,7 +113,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.83.0
       - uses: Swatinem/rust-cache@v2
       - name: Build the shipped pure-Rust feature set on the MSRV
-        run: cargo check --locked --no-default-features --features cli,repl,json,regex,time
+        run: cargo +1.83.0 check --locked --no-default-features --features cli,repl,json,regex,time
 
   # ---------------------------------------------------------------- proptest
   proptest:
@@ -118,7 +121,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
       - uses: Swatinem/rust-cache@v2
       - name: Run property suite with many cases
         env:
@@ -131,7 +134,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --locked --test contract --test examples
       - name: Version integrity (Cargo.toml == Cargo.lock == aura::VERSION)
@@ -155,7 +158,7 @@ jobs:
         with:
           components: miri
       - uses: Swatinem/rust-cache@v2
-      - run: cargo miri test --locked --lib --no-default-features --features cli
+      - run: cargo +nightly miri test --locked --lib --no-default-features --features cli
 
   # --------------------------------------------------------------- supply chain
   audit:
@@ -164,7 +167,7 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
       - uses: Swatinem/rust-cache@v2
       - run: cargo install cargo-audit --locked || true
       - run: cargo audit
@@ -173,25 +176,24 @@ jobs:
   # A bounded libFuzzer smoke run of the four hardening targets on every PR.
   # Budget: 60 s per target (240 s worst case), which is small against the
   # existing CI and catches crashes/aborts/timeouts early. The long run is the
-  # nightly `fuzz-nightly` workflow. Actions are pinned by version (never
-  # `@main`/`@latest`), matching the rest of the repository.
+  # nightly `fuzz-nightly` workflow. Fuzzing needs nightly; it is invoked as
+  # `cargo +nightly`, overriding `rust-toolchain.toml`.
   fuzz:
     name: fuzz smoke (lexer/parser/checker/runtime)
     runs-on: ubuntu-latest
-    # LeakSanitizer is disabled for the whole job (see the note on the fuzz
-    # step): Aura's documented, memory-safe model does not reclaim an `Rc`
-    # cycle, so the runtime target legitimately retains cycle memory. Crashes,
-    # aborts, and timeouts are still failures.
-    env:
-      ASAN_OPTIONS: detect_leaks=0
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "fuzz -> target"
-      - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked
+      - name: Install cargo-fuzz (pinned to the version in fuzz/README.md)
+        run: |
+          set -euo pipefail
+          if ! cargo fuzz --version 2>/dev/null | grep -q 'cargo-fuzz 0.13.2'; then
+            cargo install cargo-fuzz --version 0.13.2 --locked
+          fi
+          cargo fuzz --version
       - name: Seed the working corpora from the committed seeds
         run: |
           set -euo pipefail
@@ -199,13 +201,21 @@ jobs:
             mkdir -p "fuzz/corpus/$t"
             cp fuzz/seeds/$t/* "fuzz/corpus/$t/" 2>/dev/null || true
           done
+      # Sanitizer scope: ASan is always on. LeakSanitizer is enabled for the
+      # three front-end targets and scoped OFF only for `runtime`, where Aura's
+      # documented, memory-safe Rc model legitimately does not reclaim a
+      # reference cycle (LANGUAGE_SPEC.md §31.6) — a false positive, not a leak.
+      # Crashes, aborts, and timeouts remain hard failures on every target.
       - name: Fuzz each target for 60 s
         run: |
           set -euo pipefail
-          for t in lexer parser checker runtime; do
-            echo "=== fuzzing $t for 60s ==="
-            cargo fuzz run "$t" -- -max_total_time=60 -rss_limit_mb=6144 -timeout=25
+          for t in lexer parser checker; do
+            echo "=== fuzzing $t for 60s (LSan on) ==="
+            cargo +nightly fuzz run "$t" -- -max_total_time=60 -rss_limit_mb=6144 -timeout=25
           done
+          echo "=== fuzzing runtime for 60s (LSan scoped off: Rc-cycle retention) ==="
+          ASAN_OPTIONS=detect_leaks=0 \
+            cargo +nightly fuzz run runtime -- -max_total_time=60 -rss_limit_mb=6144 -timeout=25
       - name: Fail if any crash artifact was produced
         if: always()
         run: |
@@ -225,7 +235,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
@@ -254,7 +264,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
