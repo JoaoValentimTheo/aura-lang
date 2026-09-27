@@ -1015,7 +1015,12 @@ impl Parser {
 
     fn stmt(&mut self) -> Result<Stmt> {
         self.enter()?;
+        // Each statement gets its own AST-node budget; nested expressions
+        // within it accumulate (§31.1).
+        let saved_nodes = self.expr_nodes;
+        self.expr_nodes = 0;
         let r = self.stmt_inner();
+        self.expr_nodes = saved_nodes;
         self.leave();
         r
     }
@@ -1351,10 +1356,14 @@ impl Parser {
 
     fn expr(&mut self) -> Result<Expr> {
         self.enter()?;
-        let saved = self.expr_nodes;
-        self.expr_nodes = 0;
+        // The AST-node budget is per *statement*, not per nested expression.
+        // Resetting it here would give every nesting level its own 256-node
+        // allowance, so a chain of nested calls (`f(f(f(…)))`) could recurse
+        // far past the semantic limit and overflow the host stack before the
+        // post-parse depth check could report `E1015`. The counter is reset
+        // once per statement in `stmt_inner` (and per top-level item
+        // expression); sub-expressions accumulate into it.
         let r = self.expr_bp(0);
-        self.expr_nodes = saved;
         self.leave();
         r
     }
