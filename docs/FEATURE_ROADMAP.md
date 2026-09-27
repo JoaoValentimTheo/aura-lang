@@ -56,7 +56,8 @@ Aura today is a tree-walking interpreted language with a conservative checker.
 | Operators | `+ - * / % ^ == != < <= > >= and or`, bitwise `& \| ~ << >>`, unary `-`/`not`/`~`, pipeline `\|>`, assignment `= += -= *= /= %= ^= &= \|= <<= >>=` |
 | Evaluation order | Strict left-to-right; `and`/`or` short-circuit; documented |
 | Control flow | `if`/`else if`/`else`, `while`, `loop`, `for`, `break`/`continue`, `return`, `throw`, `try`/`catch`/`finally` |
-| Functions | Top-level `fn` with hoisting and mutual recursion; positional and named calls; static argument checking |
+| Functions | Top-level `fn` with hoisting and mutual recursion; positional and named calls; static argument checking; function/method **overloading** by ordered input types (return type does not distinguish overloads) |
+| Lambdas | `(x: int, mut y) -> …` — one parameter model shared with functions; the same signature/closure model |
 | Closures | Lambdas capture by reference; no ownership/lifetime model |
 | Mutability | Binding capability: `let` immutable, `let mut` mutable; place writes and mutating calls require a `mut` root; `mut self` marks a mutating method |
 | Structs | Nominal; named and positional construction; validated fields |
@@ -559,7 +560,7 @@ under "Release hardening" below.
 | 11e | f-string format mini-language | C | **done** (BFR-II, §3.6.4) |
 | 11f | Variable shadowing | E | **done** (Shadowing: `let`/`let mut` shadow, `const` does not, §16.3) |
 | 11g | Foundation stability + CI/clean-room gate | E | **done** (Break-the-Aura II, PC ↔ Web symmetry, reproducibility) |
-| 12 | Method overloading | E | **next** feature after the frozen foundation |
+| 12 | Method overloading | E | **done** (Function/method overloading by ordered input types, §15.7) |
 | 13 | Modules | E | Separate design phase |
 | — | Generics / trait bounds / async / VM / `++`/`--` | E | Not planned (generics later, after overloading) |
 
@@ -596,8 +597,10 @@ commas. Variable shadowing followed (`let`/`let mut` shadow, `const` does not,
 §16.3), and a foundation-stability gate verified the core through adversarial
 destruction, a semantic-consistency audit, a Native/WASM differential, and a
 PC ↔ Web symmetry corpus. The language foundation is now **frozen** for feature
-development. The next feature is **method overloading**, built on the existing
-nominal `impl`/`trait` model; generics follow later.
+development. **Function and method overloading** is implemented on top of the
+frozen foundation: a name may have several definitions when their ordered input
+types differ, the return type never distinguishes overloads, and resolution is
+deterministic (most specific wins; a tie is an error). Generics follow later.
 
 ### Increment/decrement decision (`++` / `--`)
 

@@ -44,22 +44,22 @@ const PHASES = [
     body: "A full validation, Break-the-Aura destruction pass, semantic-consistency audit, and PC ↔ Web symmetry gate, with CI, a clean-room build, and native/WASM differential all green. The foundation is frozen for feature development.",
   },
   {
+    tag: "Delivered",
+    kind: "success",
+    title: "Function & method overloading",
+    body: "A function or method may have several definitions when their ordered input types differ. The return type does not distinguish overloads, and resolution is deterministic: the most specific match wins, and a tie is an error rather than a coin flip.",
+  },
+  {
     tag: "Next",
     kind: "planned",
-    title: "Method overloading",
-    body: "The first feature built on the frozen foundation. Overloading is designed against the existing nominal <code>impl</code>/<code>trait</code> model; it does not change bindings, scopes, or the mutation model.",
+    title: "Generics and trait bounds",
+    body: "Parameterisation builds on the current OOP model of nominal structs, methods, traits, and overloads. Inheritance is not the direction: reuse stays composition-first.",
   },
   {
     tag: "Planned",
     kind: "planned",
     title: "Hardening and conformance",
     body: "Conformance suites, differential testing, and fuzzing. The goal is confidence that the language behaves identically across every substrate.",
-  },
-  {
-    tag: "Later",
-    kind: "planned",
-    title: "Generics and trait bounds",
-    body: "Parameterisation builds on the current OOP model of nominal structs, methods, and traits. Inheritance is not the direction: reuse stays composition-first.",
   },
   {
     tag: "Long-term",
@@ -108,7 +108,8 @@ export const roadmapPage = {
       conformance testing — which is now complete. OOP V1 (struct methods) and
       OOP V2 (traits) are delivered, and the language foundation (bindings,
       scopes, mutation, operators, f-strings) is synchronized, stabilised, and
-      frozen. The next feature is method overloading; generics follow later.</p>
+      frozen. Function and method overloading is implemented; generics follow
+      later.</p>
       <a class="eyebrow-link" href="${url("releases/", base)}">See releases →</a>
     </div>
   </div>

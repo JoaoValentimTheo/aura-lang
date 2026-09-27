@@ -56,10 +56,50 @@ let xs = [1, 2, 3, 4]
 let evens = xs.filter(is_even)
 ```
 
+## Overloading
+
+A function name may have several definitions when their ordered input types
+differ. The call picks the matching one:
+
+```aura
+fn show(x: int)    { print("int") }
+fn show(x: string) { print("string") }
+
+show(1)        # int
+show("a")      # string
+```
+
+The **return type never distinguishes overloads**: `fn f(x: int) -> int` and
+`fn f(x: int) -> string` are a duplicate, not two overloads. Resolution is by
+argument types only — the surrounding expression never chooses. Among viable
+overloads the most specific wins (an exact match beats a union or `Unknown`
+match, which beats an unannotated parameter), and a genuine tie is an error:
+
+```aura
+fn f(x: int | string) { print(1) }
+fn f(x: int | bool)   { print(2) }
+f(1)                   # error: ambiguous
+```
+
+The same mechanism applies to struct methods:
+
+```aura
+struct Point { x: int }
+impl Point {
+    fn move(self, by: int)    { print("by int") }
+    fn move(self, by: string) { print("by string") }
+}
+```
+
+`mut self` is not an overload dimension: a method is distinguished by its
+input types, not by whether it mutates the receiver.
+
 ## Lambdas and closures
 
-A lambda is `(x) -> e`, `(x, y) -> e`, `(x, y) -> { ... }`, or any of those
-prefixed with `fn` (`fn x -> e` is the single-parameter `fn` form). It captures its
+A lambda is `(x) -> e`, `(x: int) -> e`, `(x, y) -> { ... }`, or any of those
+prefixed with `fn` (`fn x -> e` is the single-parameter `fn` form). A lambda
+parameter takes the same name, annotation, and `mut` as a function parameter —
+`(mut n) -> { n = n + 1; return n }` is valid. It captures its
 defining environment **by reference**, not by value:
 
 ```aura

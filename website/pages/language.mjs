@@ -214,7 +214,7 @@ fn main() {
       ["Errors: throw / try / catch / finally", "Implemented", "success"],
       ["Optional type annotations + conservative checker", "Implemented", "success"],
       ["Scripting I/O and arguments", "Implemented", "success"],
-      ["Method overloading", "Next", "planned"],
+      ["Function & method overloading", "Implemented", "success"],
       ["Modules and visibility", "Reserved (inert syntax)", "planned"],
       ["Generics and trait bounds", "Later", "planned"],
       ["Python / PyO3 interop", "Long-term", "planned"],

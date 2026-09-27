@@ -99,6 +99,14 @@ use stdlib.math              # reserved; currently inert (see §10)
   is written `fn m(mut self) { ... }`; a reading method is `fn m(self)`. The
   receiver's mutability is part of a trait method's contract.
 * A function is declared with `fn` and returns `none` unless annotated.
+* A function or method name may have several definitions — **overloads** — when
+  their ordered input types differ. Overload identity is the name plus the
+  ordered input types; the return type never distinguishes overloads. A call
+  resolves by argument types, most specific first; a tie is `E3001`, and no
+  match is `E3001`. Annotated parameters are more specific than unannotated
+  ones.
+* A lambda parameter uses the same model as a function parameter: it may be
+  annotated and may be `mut` (`(x: int) -> x`, `(mut y) -> …`).
 * An ordinary `let`/`let mut` shadows: `let x = 1; let x = 2` is valid, and the initializer reads the previous binding. `const`, functions, parameters, and types do not shadow: a duplicate is `E2007`/`E2012`.
 * Parameter names starting with `_` must be unused (`E2009`).
 * A struct is built with named fields (`S { a: 1 }`) or positionally in
@@ -132,11 +140,12 @@ Precedence, lowest to highest:
 15 literals, names, groups, lists, maps, lambdas
 ```
 
-* Lambdas: `(x) -> x * x`, `(x, y) -> x + y`, or `fn x -> x * x`; every form
-  may be prefixed with `fn`. A block-bodied lambda
-  `(x) -> { ... }` uses the block as its body, so `return` works and the last
-  expression is the value. A bare `x -> x * x` is **not** a lambda (the
-  identifier-arrow form is reserved for `catch` and `match` arms).
+* Lambdas: `(x) -> x * x`, `(x: int) -> x + 1`, `(mut y) -> …`, or
+  `fn x -> x * x`; every form may be prefixed with `fn`. A lambda parameter
+  takes the same name, annotation, and `mut` as a function parameter. A
+  block-bodied lambda `(x) -> { ... }` uses the block as its body, so `return`
+  works and the last expression is the value. A bare `x -> x * x` is **not** a
+  lambda (the identifier-arrow form is reserved for `match` arms).
 * `if` is an expression. With an `else` branch it yields that branch's
   value; without `else` it yields `none` when the condition is false:
   `let m = if a > b { a } else { b }`.

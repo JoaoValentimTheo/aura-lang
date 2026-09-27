@@ -610,8 +610,9 @@ atom            = INT | FLOAT | STRING | FSTRING
                 | "(" expr "," [ expr { "," expr } [ "," ] ] ")"  (* list sugar *)
                 | lambda | list | map | block_expr
                 | if_expr | match_expr ;
-lambda          = [ "fn" ] "(" [ IDENT { "," IDENT } ] ")" "->" expr
-                | "fn" IDENT "->" expr ;
+lambda          = [ "fn" ] "(" [ lambda_param { "," lambda_param } [ "," ] ] ")" "->" expr
+                | "fn" [ "mut" ] IDENT "->" expr ;
+lambda_param    = [ "mut" ] IDENT [ ":" type ] ;
 list            = "[" [ expr { "," expr } [ "," ] ] "]" ;
 map             = "{" entry { "," entry } [ "," ] "}" | "{" ":" "}" ;
 entry           = expr ":" expr ;
@@ -1474,20 +1475,31 @@ identity (§11).
 
 ### 15.4 Lambdas
 
-**Normative rule.** A lambda is written `(x) -> e`, `(x, y) -> e`,
+**Normative rule.** A lambda is written `(x) -> e`, `(x: int) -> e`,
 `(x, y) -> { … }`, or any of those forms prefixed with `fn`. A single-
 parameter `fn` lambda may omit the parentheses: `fn x -> e`. A block-bodied
 lambda uses the block as its body, so `return` works and the last expression
 is the value. An expression-bodied lambda returns that expression.
 
+**Normative rule.** A lambda parameter uses the **same parameter model as a
+function parameter** (`Param`: name, optional type annotation, optional
+`mut`). A lambda parameter may therefore be annotated (`(x: int) -> x + 1`) and
+may be declared `mut` (`(mut x) -> { x = x + 1; return x }`), and the
+annotation is checked and recorded exactly as a function parameter's is.
+There is one signature model for functions, methods, and lambdas; a lambda is
+not a second, weaker model.
+
 A **bare** identifier followed by `->` (for example `x -> e`) is **not** a
 lambda. In expression position it is a syntax error (`E1006`), because an
 identifier followed by `->` is reserved for `match` arms (`pattern -> …`,
-`pattern if guard -> …`). `catch` no longer uses `->`: its binding is followed
+`pattern if guard -> …`). `catch` does not use `->`: its binding is followed
 directly by the block (`catch e { … }`, §14.5).
 
-**Normative rule.** Lambda parameters, like function parameters, are immutable
-bindings.
+**Normative rule.** A lambda parameter is a binding with the mutability it
+declares: `mut x` grants mutable capability over `x` inside the lambda body,
+exactly as an ordinary `mut` parameter does (§16.6). A lambda has no declared
+return type, so its `return` is not checked against the enclosing function's
+return annotation; `return` inside a lambda returns from the lambda.
 
 ### 15.5 Closures and capture
 
@@ -1519,7 +1531,70 @@ syntax.
 mutually recursive. Recursion is bounded by the call-frame limit (§31.3):
 exceeding 512 active calls is `E4011`.
 
-### 15.7 Arguments
+### 15.7 Overloading
+
+**Normative rule.** A top-level function name, or a struct method name in a
+given struct, MAY have several declarations — **overloads** — when their
+ordered input types differ. A call selects the one whose parameter types accept
+the argument types. Overloading is one mechanism, not separate mechanisms for
+functions and methods: it uses the same signature model everywhere.
+
+**Normative rule (identity).** The overload identity of a declaration is its
+**name plus its ordered input types** (for a method, the receiver's type is
+part of the enclosing method context, so identity is the method name plus the
+ordered parameter types after the receiver, within that struct). The return
+type is **not** part of identity, and neither is receiver mutability or
+parameter names. Consequences:
+
+* `fn foo(x: int) -> int` and `fn foo(x: string) -> string` are distinct
+  overloads;
+* `fn foo(x: int) -> int` and `fn foo(x: int) -> string` are **not** distinct —
+  they are a duplicate (`E2007`);
+* `fn foo(self, x: int)` and `fn foo(mut self, x: int)` in one `impl` are a
+  duplicate (`E2007`), not two overloads;
+* two declarations with the same name and the same parameter types are a
+  duplicate declaration (`E2007`), never a silent replacement.
+* an unannotated parameter is its own input type: `fn f(x)` and `fn f(x: int)`
+  are different overloads.
+
+**Normative rule (resolution).** Resolution is by argument types and is
+deterministic:
+
+1. A candidate is *viable* when its arity matches and every annotated
+   parameter is compatible with the corresponding argument type (`Unknown`
+   arguments are compatible with any annotated parameter, §6.4).
+2. Among viable candidates the **most specific** wins, by this ordering of
+   each parameter: an exact type match is more specific than a merely
+   compatible one (a union match, or an `Unknown` argument), which is more
+   specific than an unannotated parameter.
+3. A tie between equally specific viable candidates is **ambiguous** and is
+   `E3001`, reported deterministically; it is never resolved by declaration
+   order or hash order.
+4. No viable candidate is `E3001` ("no overload accepts").
+5. The **expected return type never selects an overload**: `foo(1)` is resolved
+   by `1`'s type alone, never by the surrounding expression expecting `int` or
+   `string`.
+
+There is no implicit conversion to make a candidate match: an overload matches
+by Aura's ordinary compatibility rules or not at all.
+
+**Normative rule.** A named-argument call resolves against each candidate as in
+§15.8; a candidate that cannot accept the given argument names is not viable.
+
+**Normative rule (trait interaction).** A trait method is a single signature,
+not an overload set: a trait implementation MUST implement exactly the trait's
+methods, once each, with a compatible signature. It may not add a second
+overload of a trait method (`E2007`) or an extra method (`E2003`). Inherent and
+trait methods share one member namespace (§17.7): an inherent overload may add
+a differently-typed method of the same name to the same struct, but two
+declarations with the same identity collide (`E2007`).
+
+**Normative rule.** A bare function reference (`let g = f`) carries no argument
+types, so it is well-defined only for a name with a single overload; a
+first-class reference to an overloaded name is deferred (not part of this
+version).
+
+### 15.8 Arguments
 
 **Normative rule.** A call to a **directly resolved top-level function** MAY
 supply arguments by position or by parameter name, using `name: value`. A
@@ -1560,7 +1635,7 @@ callable it remains a runtime error. Calling a non-function value is a runtime
 parameters in this version. A parameter that is not supplied is an error, not
 an omitted default.
 
-### 15.8 Nested functions
+### 15.9 Nested functions
 
 **Normative rule.** Functions are declared at the top level only. A named
 function cannot be declared inside another function's body. Nested functions

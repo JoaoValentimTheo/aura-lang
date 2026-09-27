@@ -229,8 +229,7 @@ fn main() {
           ["Cross-platform CI", "Implemented", "success"],
           ["WebAssembly runtime + Playground", "Released", "success"],
           ["Struct methods (OOP V1)", "Delivered", "success"],
-          ["Traits, shadowing, language foundation", "Delivered", "success"],
-          ["Method overloading", "Next", "planned"],
+          ["Traits, shadowing, foundation, overloading", "Delivered", "success"],
           ["Generics, modules, Python/PyO3", "Later", "planned"],
         ])}
       </div>
@@ -281,7 +280,7 @@ fn main() {
         ["0.0.2", "WebAssembly, host boundary, Playground, website", chip("Released", "success")],
         ["OOP V1", "Struct methods: <code>impl</code>, <code>self</code>, composition", chip("Delivered", "success")],
         ["OOP V2 & foundation", "Traits, shadowing, mutation, operators, f-strings, stability", chip("Delivered", "success")],
-        ["Method overloading", "Overloads on the existing <code>impl</code>/<code>trait</code> model", chip("Next", "planned")],
+        ["Overloading", "Functions and methods by ordered input types", chip("Delivered", "success")],
         ["Hardening", "Conformance, differential testing, fuzzing", chip("Planned", "planned")],
         ["Generics", "Abstraction and parameterisation", chip("Later", "planned")],
         ["Python / data", "PyO3 interop and the scientific ecosystem", chip("Long-term", "planned")],

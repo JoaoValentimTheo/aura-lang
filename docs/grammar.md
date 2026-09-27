@@ -123,8 +123,9 @@ atom            = INT | FLOAT | STRING | FSTRING
                 | list | map | block_expr
                 | if_expr | match_expr ;
 
-lambda          = [ "fn" ] "(" [ IDENT { "," IDENT } [ "," ] ] ")" "->" expr
-                | "fn" IDENT "->" expr ;
+lambda          = [ "fn" ] "(" [ lambda_param { "," lambda_param } [ "," ] ] ")" "->" expr
+                | "fn" [ "mut" ] IDENT "->" expr ;
+lambda_param    = [ "mut" ] IDENT [ ":" type ] ;
 list            = "[" [ expr { "," expr } [ "," ] ] "]" ;
 map             = "{" entry { "," entry } [ "," ] "}" | "{" ":" "}" ;
 entry           = expr ":" expr ;
