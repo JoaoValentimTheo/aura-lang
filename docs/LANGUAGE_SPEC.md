@@ -1869,8 +1869,11 @@ for field access.
 **Normative rule.** Behavior is attached to an already-declared nominal struct
 with an `impl` block: `impl Struct { fn name(self, p: T, ...) -> R { ... } ...
 }`. The target MUST be a declared struct (`E2003` if unknown, if an enum, or if
-a non-struct type). V1 permits **one** `impl` block per struct (`E2007` for a
-second) and **one** method of a given name per struct (`E2007` for a duplicate).
+a non-struct type). Multiple `impl` blocks for one struct are permitted: their
+methods merge into the struct's single method surface, and a later block may
+add an **overload** of an existing method name (different ordered parameter
+types, §15.7). A method whose identity — its name plus ordered parameter types
+after the receiver — is already present is `E2007`, never a silent replacement.
 There is no `class`, no inheritance, and no second object model. `impl` is a
 contextual word, not a reserved one: it begins a behavior block only in item
 position when followed by a capitalized type name and `{` (§3.3).
@@ -1958,11 +1961,15 @@ implemented at most once per struct (`E2007` otherwise), and a trait name may
 be declared at most once (`E2007` otherwise).
 
 **Normative rule.** Trait-provided methods and inherent methods share **one
-method namespace** per struct. A method name provided by both an inherent
-`impl` and a trait `impl`, or by two traits, is rejected (`E2007`); a method
-name that collides with a field is rejected (`E2016`). There is no
-qualification syntax (`Trait::method`). Trait methods are called exactly like
-inherent methods: `receiver.method(args)`.
+method namespace** per struct. Two methods with the **same overload identity** —
+the same name and the same ordered parameter types after the receiver — collide
+(`E2007`), whether they come from an inherent `impl`, from a trait `impl`, or
+from two traits. Two methods of the same name with **different** ordered
+parameter types are distinct overloads and may coexist (`LANGUAGE_SPEC.md`
+§15.7); a trait's own methods are single signatures and may not be overloaded
+within the trait. A method name that collides with a field is rejected
+(`E2016`). There is no qualification syntax (`Trait::method`). Trait methods
+are called exactly like inherent methods: `receiver.method(args)`.
 
 **Normative rule.** Method resolution is unchanged and static: a struct's
 method table contains its inherent and trait-provided methods, resolved by the

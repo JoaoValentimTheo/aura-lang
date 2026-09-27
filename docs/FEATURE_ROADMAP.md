@@ -270,13 +270,15 @@ effects; and whether it redesigns a frozen concept.
 
 * **User value.** Medium–high (ergonomics and composition).
 * **New semantics.** Struct methods via `impl`, with an explicit `self`
-  receiver (`LANGUAGE_SPEC.md` §17.6); one `impl` per struct; field/method
-  collisions rejected; static per-nominal-type lookup with no fallback.
+  receiver (`LANGUAGE_SPEC.md` §17.6); several `impl` blocks per struct merge
+  into one method surface; field/method collisions rejected; static
+  per-nominal-type lookup with no fallback.
 * **Disturbances.** A per-nominal-type method table now sits beside the
   built-in `TypeClass` registry; the lookup order is fixed (field read without
   parentheses, method with parentheses, no cross-category fallback).
-* **Remaining.** Enum methods, multiple `impl` blocks, and bound-method values
-  are not implemented.
+* **Remaining.** Enum methods, bound-method values, and modules/visibility
+  (encapsulation is structural; visibility is deferred, §27) are not
+  implemented. See `docs/OOP.md` for the finalized four-pillar model.
 
 ### 5. Modules / imports — **Class E**
 

@@ -220,14 +220,19 @@ involved:
   exists on that type (`E2003`); its argument count and argument types are
   checked (`E3001`). A struct's methods include both its inherent `impl`
   methods and the methods it provides through trait implementations; they share
-  one namespace (a duplicate name is `E2007`).
+  one namespace, so two methods with the same overload identity (name plus
+  ordered parameter types after the receiver) collide (`E2007`), while the same
+  name with different ordered parameter types are distinct overloads. A struct
+  may have several `impl` blocks; they merge into one method surface.
 * **Traits.** `trait Name { fn m(self) ... }` declares a behavioral contract of
   method signatures only — no bodies, fields, or associated items. `impl Trait
   for Struct { ... }` must provide exactly the declared methods (`E2017` if one
   is missing, `E3001` if a signature disagrees, and no extras). An unknown trait
   or struct is `E2003`; a trait declared twice or implemented twice for one
   struct is `E2007`. Traits add no value type and no dispatch: calls resolve
-  statically by the receiver's nominal type.
+  statically by the receiver's nominal type. Aura uses composition plus traits
+  instead of inheritance; there are no classes, no struct inheritance, no
+  implicit upcasting, and no dynamic dispatch (see `docs/OOP.md`).
 * **User-function calls.** A call the checker resolves to a specific top-level
   `fn` declaration is checked against its declared parameters (`E3001`): the
   argument count, and each argument's inferred type against the parameter's
