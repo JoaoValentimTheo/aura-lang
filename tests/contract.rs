@@ -111,7 +111,7 @@ fn r6_every_rejection_has_a_stable_code() {
         codes::INVALID_ESCAPE
     );
     assert_eq!(
-        code_of("fn main() { let x = 1\n let x = 2 }"),
+        code_of("const X = 1\nconst X = 2\nfn main() { print(X) }"),
         codes::REDECLARED
     );
     assert_eq!(code_of("fn main() { let = 1 }"), codes::EXPECTED);

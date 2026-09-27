@@ -189,11 +189,32 @@ fn destructuring_duplicate_binding_is_static() {
     );
 }
 
-/// Declaring a name that already exists in the same scope is `E2007`.
+/// An ordinary `let` may shadow an existing binding in the same scope
+/// (`LANGUAGE_SPEC.md` §16.3); it is not a redeclaration. `const` and
+/// parameters remain strict.
 #[test]
-fn destructuring_same_scope_redeclaration_is_static() {
+fn variable_shadowing_is_not_a_redeclaration() {
+    assert_eq!(check("fn main() { let x = 1\n let x = 2 }"), Ok(()));
+    assert_eq!(check("fn main() { let mut x = 1\n let x = 2 }"), Ok(()));
+    assert_eq!(check("fn main() { let mut x = 1\n let mut x = 2 }"), Ok(()));
+    // Destructuring `let` also shadows.
     assert_eq!(
         check("fn main() { let x = 1\n let [x, y] = [1, 2] }"),
+        Ok(())
+    );
+}
+
+/// A constant declaration does NOT shadow: a duplicate constant is `E2007`.
+#[test]
+fn const_redeclaration_is_still_rejected() {
+    assert_eq!(
+        check("const X = 1\nconst X = 2\nfn main() { print(X) }"),
+        Err(codes::REDECLARED)
+    );
+    // A constant and a top-level `let` share the value namespace, and neither
+    // shadows the other.
+    assert_eq!(
+        check("const A = 1\nlet A = 2\nfn main() { print(A) }"),
         Err(codes::REDECLARED)
     );
 }

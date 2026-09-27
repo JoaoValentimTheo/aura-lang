@@ -110,11 +110,15 @@ fn quit_command_exits() {
 
 #[test]
 fn shadowing_an_existing_binding() {
-    // Redefinition in the REPL follows file semantics and is rejected, but
-    // the original binding keeps working.
+    // An ordinary `let` shadows in the REPL, exactly as in a file, and the
+    // latest binding wins.
     let out = body("let x = 1\nlet x = 2\nx\n:quit\n");
-    assert!(out.contains("E2007"), "{out}");
-    assert!(out.contains('1'), "{out}");
+    assert!(!out.contains('E'), "unexpected diagnostic: {out}");
+    assert!(out.contains('2'), "{out}");
+    // The initializer of a shadowing `let` resolves the previous binding.
+    let out = body("let x = 1\nlet x = x + 10\nx\n:quit\n");
+    assert!(!out.contains('E'), "unexpected diagnostic: {out}");
+    assert!(out.contains("11"), "{out}");
 }
 
 #[cfg(not(feature = "py"))]

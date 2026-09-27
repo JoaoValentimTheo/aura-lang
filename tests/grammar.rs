@@ -140,7 +140,7 @@ fn error_samples() -> Vec<(u16, String)> {
         (codes::LET_NO_INIT, "fn main() { let x }".to_string()),
         (
             codes::REDECLARED,
-            "fn main() { let x = 1\n let x = 2 }".to_string(),
+            "const X = 1\nconst X = 2\nfn main() { print(X) }".to_string(),
         ),
         (codes::UNUSED_PARAM, "fn f(_x) { return _x }".to_string()),
         (codes::INVALID_ASSIGN, "fn main() { 1 = 2 }".to_string()),

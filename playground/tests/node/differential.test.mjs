@@ -250,6 +250,29 @@ const cases = [
     'value and type namespaces are separate',
     'fn S() { return 1 }\nstruct S { a: int }\nfn main() { print(S { a: 5 }.a) }',
   ],
+  // Shadowing: `let`/`let mut` create a new binding; `const` does not shadow.
+  ['shadow same scope', 'fn main() { let x = 1\n let x = 2\n print(x) }'],
+  [
+    'shadow initializer reads previous binding',
+    'fn main() { let x = 11\n let x = x + 10\n print(x) }',
+  ],
+  [
+    'mut shadowed by immutable then assign',
+    'fn main() { let mut x = 10\n let x = 20\n x = 30 }',
+  ],
+  [
+    'immutable shadowed by mutable then assign',
+    'fn main() { let x = 1\n let mut x = 2\n x = 3\n print(x) }',
+  ],
+  [
+    'nested shadow restores',
+    'fn main() { let x = 1\n { let x = 2\n print(x) }\n print(x) }',
+  ],
+  [
+    'closure keeps captured binding across shadow',
+    'fn main() { let x = 10\n let f = () -> x\n let x = 20\n print(f())\n print(x) }',
+  ],
+  ['const is not shadowable', 'const X = 1\nconst X = 2\nfn main() { print(X) }'],
   // LSCS: f-string interpolation diagnostics carry an absolute span.
   ['fstring undefined name', 'fn main() {\n print(f"value {nope} end")\n}'],
   ['fstring empty interpolation', 'fn main() {\n print(f"x{ }y")\n}'],

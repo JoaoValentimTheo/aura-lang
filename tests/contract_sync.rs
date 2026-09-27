@@ -391,7 +391,8 @@ fn trailing_comma_is_uniform() {
     );
 }
 
-/// A `const` and top-level `let` occupy the same value namespace.
+/// A `const` and top-level `let` occupy the same value namespace and neither
+/// shadows the other: declaring both forms for one name is `E2007`.
 #[test]
 fn const_and_let_share_the_value_namespace() {
     let m = parse("const A = 1\nlet A = 2\nfn main() { print(A) }").expect("parse");
