@@ -1,0 +1,18 @@
+# Force LF for Aura source files on every platform.
+#
+# The permanent corpus (`tests/corpus/`) requires deterministic file contents,
+# and the generator property test compares a committed fixture against the
+# generator's LF output byte for byte. Without this, a Windows checkout would
+# apply CRLF and the comparison would fail (and the corpus would not be
+# deterministic across platforms).
+*.aura text eol=lf
+
+# Diagnostic expectation files are compared as text.
+*.out text eol=lf
+
+# The line-ending fixtures must keep their exact bytes: `unicode/crlf.aura`
+# contains CRLF and `unicode/cr.aura` contains lone CR specifically to exercise
+# the lexer's handling of each. Marking them binary (`-text`) prevents git from
+# normalizing them on checkout on any platform.
+tests/corpus/unicode/crlf.aura -text
+tests/corpus/unicode/cr.aura -text

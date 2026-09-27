@@ -211,7 +211,16 @@ proptest! {
         let path = format!("tests/corpus/ast/gen_{seed:02}.aura");
         let committed = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("missing corpus fixture {path}: {e}"));
-        prop_assert_eq!(committed, generated, "corpus fixture {} drifted", path);
+        // Compare ignoring line-ending style: a Windows checkout may apply
+        // CRLF unless `.gitattributes` forces LF; the *content* is what the
+        // property pins, not the EOL bytes.
+        let norm = |s: &str| s.replace("\r\n", "\n");
+        prop_assert_eq!(
+            norm(&committed),
+            norm(&generated),
+            "corpus fixture {} drifted",
+            path
+        );
     }
 }
 
