@@ -525,3 +525,40 @@ fn multiline_comment_with_multibyte_chars_does_not_panic() {
     assert!(!out.contains("E4999"), "{out}");
     assert!(out.contains('1'), "{out}");
 }
+
+/// A function overload set grows across submissions, and a duplicate
+/// overload is rejected without corrupting the existing set.
+#[test]
+fn function_overloads_persist_across_submissions() {
+    let out = body(
+        "fn f(x: int) -> string { return \"i\" }\n\
+         fn f(x: string) -> string { return \"s\" }\n\
+         f(1)\nf(\"a\")\n:quit\n",
+    );
+    assert!(!out.contains('E'), "unexpected diagnostic: {out}");
+    assert!(out.contains('i') && out.contains('s'), "{out}");
+
+    // A duplicate overload (same parameter types) is rejected, and the
+    // existing overloads keep working.
+    let out = body(
+        "fn f(x: int) -> string { return \"i\" }\n\
+         fn f(x: string) -> string { return \"s\" }\n\
+         fn f(x: int) -> string { return \"dup\" }\n\
+         f(1)\nf(\"a\")\n:quit\n",
+    );
+    assert!(out.contains("E2007"), "{out}");
+    assert!(out.contains('i') && out.contains('s'), "{out}");
+}
+
+/// A method overload set grows across `impl` submissions.
+#[test]
+fn method_overloads_persist_across_submissions() {
+    let out = body(
+        "struct S { n: int }\n\
+         impl S { fn show(self, x: int) -> string { return \"i\" } }\n\
+         impl S { fn show(self, x: string) -> string { return \"s\" } }\n\
+         S { n: 0 }.show(1)\nS { n: 0 }.show(\"a\")\n:quit\n",
+    );
+    assert!(!out.contains('E'), "unexpected diagnostic: {out}");
+    assert!(out.contains('i') && out.contains('s'), "{out}");
+}

@@ -76,7 +76,29 @@ fn match_arms() {
 fn lambda_with_parens() {
     let e = parse_expr("(x, y) -> x + y").expect("parse");
     match e {
-        Expr::Lambda(ps, _, _) => assert_eq!(ps, vec!["x", "y"]),
+        Expr::Lambda(ps, _, _) => {
+            let names: Vec<_> = ps.iter().map(|p| p.name.clone()).collect();
+            assert_eq!(names, vec!["x", "y"]);
+            assert!(ps.iter().all(|p| p.ty.is_none() && !p.mutable));
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+#[test]
+fn lambda_parameters_share_the_function_model() {
+    // A lambda parameter accepts an annotation and `mut`, exactly like a
+    // function parameter (`LANGUAGE_SPEC.md` §15.4).
+    let e = parse_expr("(x: int, mut y) -> x + y").expect("parse");
+    match e {
+        Expr::Lambda(ps, _, _) => {
+            assert_eq!(ps.len(), 2);
+            assert_eq!(ps[0].name, "x");
+            assert!(ps[0].ty.is_some() && !ps[0].mutable);
+            assert_eq!(ps[1].name, "y");
+            assert!(ps[1].mutable);
+            assert!(ps[1].ty.is_none());
+        }
         other => panic!("unexpected {other:?}"),
     }
 }

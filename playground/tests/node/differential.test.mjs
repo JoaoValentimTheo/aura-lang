@@ -46,6 +46,37 @@ const cases = [
   ['multibyte comment', 'fn main() { <!-- λ🎉 世界 --!> print(1) }'],
   ['unterminated comment', 'fn main() { print(1) } <!-- nope'],
   ['try/catch', 'fn main() {\n try { throw "x" } catch e { print("c " + e) }\n}'],
+  // Function and method overloading: identity is name + ordered input types;
+  // the return type never distinguishes overloads.
+  [
+    'function overloads',
+    'fn f(x: int) { print("i") }\nfn f(x: string) { print("s") }\nfn main() { f(1)\n f("a") }',
+  ],
+  [
+    'overload annotated beats unannotated',
+    'fn f(x: int) { print("int") }\nfn f(x) { print("any") }\nfn main() { f(1)\n f(true) }',
+  ],
+  ['overload no match', 'fn f(x: int) { print(1) }\nfn main() { f("a") }'],
+  [
+    'overload return type not identity',
+    'fn f(x: int) -> int { return 1 }\nfn f(x: int) -> string { return "s" }\nfn main() { }',
+  ],
+  [
+    'method overloads',
+    'struct P { n: int }\nimpl P {\n fn greet(self, name: string) { print("hi " + name) }\n fn greet(self, times: int) { print(self.n * times) }\n}\nfn main() { let p = P { n: 3 }\n p.greet("Ada")\n p.greet(2) }',
+  ],
+  [
+    'method overload ambiguous',
+    'struct S { n: int }\nimpl S { fn f(self, x: int | string) { print(1) }\n fn f(self, x: int | bool) { print(2) } }\nfn main() { S { n: 0 }.f(1) }',
+  ],
+  [
+    'lambda annotated parameter',
+    'fn main() { let f = (x: int) -> x + 1\n print(f(1)) }',
+  ],
+  [
+    'lambda mut parameter',
+    'fn main() { let f = (mut x) -> { x = x + 1\n return x }\n print(f(1)) }',
+  ],
   // Catch uses `catch e { ... }`; the old `catch e -> { ... }` is rejected.
   [
     'catch with finally',

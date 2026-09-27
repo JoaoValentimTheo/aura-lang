@@ -260,7 +260,10 @@ impl P {
 }
 fn main() { print(1) }
 "#;
-    assert_eq!(check(two), Err(codes::REDECLARED));
+    // Multiple `impl` blocks for one struct merge into its single method
+    // surface, so distinct method names are accepted (`LANGUAGE_SPEC.md`
+    // §17.7).
+    assert_eq!(check(two), Ok(()));
     let dup = r#"
 struct P { x: int }
 impl P {
