@@ -99,7 +99,7 @@ use stdlib.math              # reserved; currently inert (see §10)
   is written `fn m(mut self) { ... }`; a reading method is `fn m(self)`. The
   receiver's mutability is part of a trait method's contract.
 * A function is declared with `fn` and returns `none` unless annotated.
-* Redefining a name in the same scope is `E2007`.
+* An ordinary `let`/`let mut` shadows: `let x = 1; let x = 2` is valid, and the initializer reads the previous binding. `const`, functions, parameters, and types do not shadow: a duplicate is `E2007`/`E2012`.
 * Parameter names starting with `_` must be unused (`E2009`).
 * A struct is built with named fields (`S { a: 1 }`) or positionally in
   declaration order (`S(1)`). Named construction must supply every declared
@@ -187,7 +187,7 @@ The checker runs before execution and rejects, at minimum:
 | E2001 | assignment to immutable binding |
 | E2003 | undefined name or function |
 | E2005 | `let` without initializer |
-| E2007 | redeclaration in the same scope |
+| E2007 | redeclaration in the same scope (not a variable `let`/`let mut` shadow) |
 | E2009 | `_param` was used |
 | E2010 | invalid assignment target |
 | E2011 | `main` with parameters |

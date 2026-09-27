@@ -720,10 +720,10 @@ destructuring `let` is immutable. `_` binds nothing.
 **Normative rule (scope).** The names bound by a destructuring `let` have the
 same scope and lifetime as an ordinary `let` in the same position (§16.3): they
 are visible from the statement to the end of the enclosing scope, including
-nested scopes, and they shadow outer bindings exactly as an ordinary `let`
-does. Declaring a name already declared in the same scope is `E2007`. All
-names become visible only after the initializer has been evaluated and the
-pattern has fully matched.
+nested scopes, and they shadow an existing binding of the same name exactly as
+an ordinary `let` does, including in the same scope (§16.3). All names become
+visible only after the initializer has been evaluated and the pattern has fully
+matched.
 
 **Normative rule (evaluation order).** The initializer expression is evaluated
 once, before any binding, under the strict left-to-right evaluation of §13.
@@ -744,7 +744,8 @@ pattern are each `E3001`.
 pattern with the same pattern validation used by `match` and `for` (§4.6): a
 variant pattern MUST name a declared variant (`E3002`), and a pattern MUST NOT
 bind the same name twice (`E2014`). Each bound name is declared in the current
-scope, so a same-scope redeclaration is `E2007`. The checker performs no type
+scope as an ordinary variable binding, so it shadows an existing binding
+(§16.3). The checker performs no type
 inference for destructured names: they have no static type and are treated as
 `Unknown` (§2.3). No annotation is checked for a destructuring `let`, because
 annotations are only legal on the single-`IDENT` form.
@@ -1570,7 +1571,9 @@ are expressed as lambdas bound to names.
 
 **Normative rule.** `let name = e` binds immutably; `let mut name = e` binds
 mutably. A plain reassignment to an immutable binding is `E2001` (checked when
-statically visible, and enforced by the runtime in all cases).
+statically visible, and enforced by the runtime in all cases). A later
+`let`/`let mut` of the same name shadows the earlier binding (§16.3), creating
+a new binding with its own mutability.
 
 **Normative rule.** Every binding requires an initializer (`E2005`). A
 destructuring `let` (§4.7) binds each name in its pattern immutably and also
@@ -1591,8 +1594,44 @@ end of its scope, including nested scopes.
 **Normative rule.** A loop variable, match binding, or catch binding is scoped
 to its construct and is not visible afterwards.
 
-**Normative rule.** Shadowing in a nested scope is permitted. Declaring the
-same name twice in the *same* scope is `E2007`.
+**Normative rule (variable shadowing).** An ordinary variable binding — a
+`let` or `let mut` — always creates a **new** binding, and may shadow a binding
+of the same name, **including in the same scope**. Shadowing and mutation are
+independent: shadowing installs a new binding, whereas `x = v` mutates an
+existing mutable one. The initializer of a shadowing declaration is evaluated
+using the bindings visible **before** the new declaration, so it reads the
+binding being shadowed, not itself:
+
+```aura
+let x = 11
+let x = x + 10     # initializer reads the first x → 21; new x is 21
+```
+
+`mut` belongs to the newly created binding, so each of these is valid and has
+the expected mutability:
+
+```aura
+let mut x = 11
+let x = x + 10     # new x is immutable; `x = ...` afterwards is E2001
+
+let mut x = 11
+let mut x = x + 10 # new x is mutable; `x = ...` afterwards is allowed
+```
+
+Shadowing changes **name resolution**, not binding identity: a closure that
+captured an earlier binding keeps seeing that binding even after the name is
+shadowed, and when a nested scope ends the outer binding becomes visible again.
+
+**Normative rule.** Shadowing applies to variable bindings. It does **not**
+apply to `const` (a module/session constant declaration), to functions, to
+types, or to other declarations: a duplicate of those is `E2007`/`E2012`.
+`const X = 1; const X = 2` remains `E2007`; so does a top-level `let X` when
+`const X` (or another top-level `let X`) already exists, since a top-level
+`let` is a module constant (§4.2), not a variable binding.
+
+**Normative rule.** Parameters are bindings, but a parameter list MUST NOT
+repeat a name (`E2007`, §16.4). A `let` in the function body may shadow a
+parameter (the ordinary variable rule above).
 
 **Scope matrix.** Every binding boundary follows the same one rule: a name is
 visible from its declaration to the end of its scope (including nested
@@ -1602,19 +1641,22 @@ binding are all immutable). A closure captures the defining environment by
 reference (§15.5), so it observes later mutations of a captured `let mut` and
 a per-iteration binding gets a fresh cell.
 
-| Boundary | Enters at | Leaves at | Shadow in nested | Capture | Mutation | Leaks out |
-|---|---|---|---|---|---|---|
-| top level | declaration | end of module | n/a | yes (closure) | no (module constant) | n/a |
-| block `{ }` | declaration | closing `}` | yes | yes | only `let mut` | no |
-| `if`/`else if`/`else` branch | first arm binding | closing `}` | yes | yes | only `let mut` | no |
-| `while` condition/body | body declaration | closing `}` | yes | yes | only `let mut` | no |
-| `loop` body | body declaration | closing `}` | yes | yes | only `let mut` | no |
-| `for` body | each iteration (per-iteration binding) | closing `}` | yes | yes (distinct per iteration) | no (loop var immutable) | no |
-| `match` arm | arm pattern match | end of arm body | yes | yes | only `let mut` | no |
-| `catch` binding | catch runs | end of catch body | yes | yes | no (immutable) | no |
-| function body | entry | `return`/end | yes | yes | only `let mut` | no |
-| lambda body | call | `return`/end | yes | yes | only captured `let mut` | no |
-| REPL submission | declaration | end of session | yes | yes | only `let mut` | persists (§29) |
+| Boundary | Enters at | Leaves at | Shadow in nested | Shadow same scope | Capture | Mutation | Leaks out |
+|---|---|---|---|---|---|---|---|
+| top level (`const`/top-level `let`) | declaration | end of module | n/a | no (`E2007`) | yes (closure) | no (module constant) | n/a |
+| block `{ }` | declaration | closing `}` | yes | yes (`let`/`let mut`) | yes | only `let mut` | no |
+| `if`/`else if`/`else` branch | first arm binding | closing `}` | yes | yes | yes | only `let mut` | no |
+| `while` condition/body | body declaration | closing `}` | yes | yes | yes | only `let mut` | no |
+| `loop` body | body declaration | closing `}` | yes | yes | yes | only `let mut` | no |
+| `for` body | each iteration (per-iteration binding) | closing `}` | yes | yes | yes (distinct per iteration) | no (loop var immutable) | no |
+| `match` arm | arm pattern match | end of arm body | yes | yes | yes | only `let mut` | no |
+| `catch` binding | catch runs | end of catch body | yes | yes | yes | no (immutable) | no |
+| function body | entry | `return`/end | yes | yes | yes | only `let mut` | no |
+| lambda body | call | `return`/end | yes | yes | yes | only captured `let mut` | no |
+| REPL submission | declaration | end of session | yes | yes (`let`/`let mut`) | yes | only `let mut` | persists (§29) |
+
+*Evidence:* `Checker::declare_shadowing`, `Env::define_shadowing`
+(`src/check/mod.rs`, `src/run/mod.rs`); `tests/shadowing.rs`.
 
 ### 16.4 Parameters
 
@@ -2353,9 +2395,11 @@ parameter annotations available before any body is checked, so calls to
 top-level functions are checked against the callee's signature regardless of
 declaration order, including mutually recursive calls (§6.5).
 
-**Normative rule.** Redeclaring a name in the same scope is `E2007`; declaring
-two user types with the same name is `E2012`; declaring two variants with the
-same tag anywhere is `E2013`.
+**Normative rule.** Declaring two user types with the same name is `E2012`;
+declaring two variants with the same tag anywhere is `E2013`. An ordinary
+variable binding (`let`/`let mut`) shadows rather than redeclares (§16.3), so
+a repeated value name is `E2007` only for declarations that are not variable
+bindings: a duplicate function, constant, parameter, or top-level `let`.
 
 **Normative rule.** Constants (`const NAME = e`, and the compatible top-level
 `let NAME = e`) and top-level expressions are evaluated in source order after
@@ -2366,9 +2410,11 @@ function, read an earlier constant, or construct any value; a cyclic
 `const A = B; const B = A` is `E2003` at the forward reference.
 
 **Normative rule.** Constants and top-level `let` bindings share the value
-namespace: a value name (binding, function, or constant) declared twice in the
-same scope is `E2007`. Types (`struct`/`enum`/`type`) live in the type
-namespace, so a value name and a type name may coincide (`fn S` and
+namespace: a value name (function, constant, or top-level `let`) declared
+twice in the same scope is `E2007`. Neither shadows the other: shadowing is a
+property of variable bindings only (§16.3), and a top-level `let` is a module
+constant, not a variable binding. Types (`struct`/`enum`/`type`) live in the
+type namespace, so a value name and a type name may coincide (`fn S` and
 `struct S` coexist), exactly as in a module.
 
 **Normative rule.** Newlines separate statements, so the keyword `as` is
@@ -2486,10 +2532,13 @@ help; EOF ends the session cleanly. Blank lines are ignored.
 mode applies to each submission.
 
 **Normative rule.** Redefinition of an existing session name follows module
-semantics (`E2007` for a value name — a binding, function, or constant; `E2012`
-for a type name). A re-submitted `fn`, `const`, or `let` for a name already in
-the session is therefore rejected, and the earlier declaration keeps working.
-Value and type namespaces are separate, so a session may hold `fn S` and
+semantics (`E2012` for a type name). A re-submitted `fn` or `const` for a name
+already in the session is rejected (`E2007`), and the earlier declaration keeps
+working. `const` is never shadowable. An ordinary `let`/`let mut`, however,
+follows the variable shadowing rule (§16.3): a later submission may shadow an
+earlier session binding, and the session then holds the *latest* declaration —
+its mutability and its inferred type — exactly as if both appeared in one
+scope. Value and type namespaces are separate, so a session may hold `fn S` and
 `struct S` together, and both persist.
 
 *Evidence:* `src/repl.rs`; `check::GlobalDecl`;

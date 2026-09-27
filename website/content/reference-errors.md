@@ -31,7 +31,7 @@ be produced by at least one program.
 | E2001 | Assign to immutable | `let x = 1` then `x = 2` |
 | E2003 | Undefined name or function | `print(nope)` |
 | E2005 | `let` without initializer | `let x` |
-| E2007 | Redeclaration | `let x = 1` twice |
+| E2007 | Redeclaration | `const X = 1` twice; a duplicate function/parameter/top-level `let` (`let`/`let mut` variables shadow instead) |
 | E2009 | `_param` was used | `fn f(_x) { return _x }` |
 | E2010 | Invalid assignment target | `1 = 2` |
 | E2011 | Invalid `main` | `fn main(x) { }` |

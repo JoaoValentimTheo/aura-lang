@@ -27,7 +27,7 @@ y = y + 1
 ```
 
 Assigning to an immutable binding is `E2001`. A `let` without an initializer is
-`E2005`. Redeclaring a name in the same scope is `E2007`.
+`E2005`. An ordinary `let`/`let mut` may shadow an existing binding (`let x = 1` then `let x = x + 1`); `const`, functions, parameters, and types do not shadow, and a duplicate is `E2007`.
 
 **Mutation requires `mut`.** Any operation that changes state reached through a
 binding needs that binding to be `mut`:
@@ -49,9 +49,39 @@ the mutating builtins (`push`, `pop`, `remove`), and any method declared
 alias of the same value are distinct, so mutating through the mutable one is
 allowed while the alias needs its own `mut`.
 
-A nested scope may **shadow** an outer binding; the outer binding is unchanged
-after the nested scope ends. A loop variable, match binding, and catch binding
-are scoped to their construct and never leak out.
+### Shadowing
+
+An ordinary `let`/`let mut` always creates a **new** binding, and may shadow an
+existing one — even in the same scope. The initializer is evaluated against the
+bindings visible before the declaration, so it reads the binding being
+shadowed:
+
+```aura
+let x = 11
+let x = x + 10     # the initializer reads the first x → x is now 21
+
+let mut y = 1
+let y = 20         # y is now an immutable binding
+```
+
+`mut` belongs to the new binding, so `let mut x = 1; let x = 2; x = 3` is
+`E2001`. Shadowing changes *names*, not *bindings*: a closure that captured an
+earlier binding keeps seeing it:
+
+```aura
+let x = 10
+let f = () -> x
+let x = 20
+f()                # 10
+x                  # 20
+```
+
+A nested scope may **shadow** an outer binding; the outer binding becomes
+visible again when the nested scope ends. A loop variable, match binding, and
+catch binding are scoped to their construct and never leak out.
+
+`const`, functions, parameters, and types are **not** shadowable: a duplicate
+is `E2007`/`E2012`. In particular `const X = 1; const X = 2` is `E2007`.
 
 ### Constants
 

@@ -28,7 +28,7 @@ Every rejection carries a stable code. Codes are grouped by phase:
 | E2001 | Assign to immutable | `let x = 1; x = 2`; mutating through an immutable binding (`let xs = [1]; xs.push(2)`, `xs[0] = 9`, `s.f = 1`); a `mut self` method called on an immutable receiver |
 | E2003 | Undefined name or function | `print(nope)`, `nope()` |
 | E2005 | `let` without initializer | `let x` |
-| E2007 | Redeclaration | `let x = 1; let x = 2`; two `main`s |
+| E2007 | Redeclaration | `const X = 1; const X = 2`; two `main`s; a duplicate function, parameter, or top-level `let` (an ordinary `let`/`let mut` shadows instead, §16.3) |
 | E2009 | `_param` was used | `fn f(_x) { return _x }` |
 | E2010 | Invalid assignment target | `1 = 2` |
 | E2011 | Invalid `main` | `fn main(x) { }` |
