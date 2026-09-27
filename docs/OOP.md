@@ -265,6 +265,35 @@ path for them:
 Nothing in the OOP model contradicts a future generic type model; no generic
 machinery is introduced early.
 
+### 7.1 Internal architecture (Rust core)
+
+The object model is expressed through a few explicit internal concepts, each
+tied to one semantic invariant:
+
+| Concept | Where | Invariant it makes explicit |
+|---|---|---|
+| `Resolver` + canonical names | `src/resolve.rs` | A name denotes exactly one declaration; visibility is checked at the boundary. |
+| `FnSig.owner` / `FnSig.public` | `src/check/mod.rs` | A function, method, or overload is reachable only where its module allows. |
+| `struct_public_fields` | `src/check/mod.rs` | Field privacy is a property of the struct's module, not of a call site. |
+| `trait_public` / `trait_owner` | `src/check/mod.rs` | A trait method's reachability follows its trait. |
+| `current_module` | `src/check/mod.rs` | A body's access rights are fixed by where it was declared, never by how it is called. |
+| `FnSig` overload sets | `src/check/mod.rs` | One method/function namespace, keyed by ordered parameter types. |
+| `GlobalDecl` session | `src/repl.rs` | REPL persistence carries the same declarations, not a parallel model. |
+
+These were added because each encodes a semantic invariant the checker and the
+resolver must both honour. No abstraction was added for its own sake: the
+runtime consumes the same flat, canonical tree and needs no visibility
+machinery.
+
+### 7.2 Why the resolution pass is not "a second namespace system"
+
+The resolver does **not** duplicate the checker's name resolution. It computes
+one thing the checker cannot: the **canonical name** of each reference, and
+whether it crosses a boundary. After that, every existing checker rule
+(overload identity, trait matching, member lookup, mutation capability) runs
+unchanged on the flat program. There is one overload resolver, one trait
+model, and one member table.
+
 ---
 
 ## 8. What Aura deliberately does not have
