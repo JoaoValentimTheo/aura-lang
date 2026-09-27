@@ -163,7 +163,7 @@ loop { break }
 for x in items { }
 return expr
 break / continue
-try { } catch e -> { } finally { }
+try { } catch e { } finally { }
 throw expr
 ```
 
@@ -279,8 +279,8 @@ The full, authoritative list lives in `docs/errors.md`, and
   `throw`, and a fatal runtime error) exactly once.
 * If `finally` itself raises a control-flow signal (`return`, `break`,
   `continue`, or `throw`), that signal **replaces** the pending outcome. For
-  example, `try { return 1 } catch e -> { } finally { return 2 }` evaluates to
-  `2`, and `try { throw "a" } catch e -> { } finally { throw "b" }` throws
+  example, `try { return 1 } catch e { } finally { return 2 }` evaluates to
+  `2`, and `try { throw "a" } catch e { } finally { throw "b" }` throws
   `"b"`. A `finally` block that runs to completion leaves the pending outcome
   untouched.
 * Expressions nest at most **256 AST levels**; deeper nesting is `E1015`,

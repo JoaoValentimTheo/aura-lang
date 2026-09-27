@@ -180,7 +180,7 @@ Using a reserved word where a name is required is a lexical/parse error
 **Normative rule (contextual words).** The words `impl`, `self`, and `trait`
 are **not** reserved. They remain ordinary identifiers everywhere
 (`let impl = 1`, `fn self(x)`, `let trait = 1`, a field named `impl`,
-`self: int`, `catch self -> …`, and so on). They take on Aura meaning only in
+`self: int`, `catch self { … }`, and so on). They take on Aura meaning only in
 their dedicated syntactic contexts (§17.6, §17.7):
 
 * `impl` is recognized as a behavior declaration or trait implementation only
@@ -410,7 +410,7 @@ them is a parse error (`E1006`).
 
 ```aura
 if c { a } else { b }        # accepted
-try { … } catch e -> { … }   # accepted
+try { … } catch e { … }      # accepted
 ```
 
 ```aura
@@ -531,7 +531,7 @@ continue_stmt = "continue" terminator ;
 while_stmt    = "while" expr block ;
 loop_stmt     = "loop" block ;
 for_stmt      = "for" pattern "in" expr block ;
-try_stmt      = "try" block "catch" IDENT "->" block [ "finally" block ] ;
+try_stmt      = "try" block "catch" IDENT block [ "finally" block ] ;
 ```
 
 **Normative rule.** `catch` is mandatory after `try`. There is no `try`
@@ -1386,8 +1386,10 @@ control-flow signal and, if it escapes the function, is `E4030`.
 ### 14.5 `throw` and `try`/`catch`/`finally`
 
 **Normative rule.** `throw e` raises the value of `e` as a *throwable*. A
-`try { … } catch x -> { … }` catches a throwable raised in its body (including
-one raised in a called function) and binds `x` to the thrown value.
+`try { … } catch x { … }` catches a throwable raised in its body (including
+one raised in a called function) and binds `x` to the thrown value. The catch
+binding is followed directly by its block; there is no `->` before it (a
+`catch e -> { … }` is a parse error, `E1006`).
 
 **Normative rule.** Only explicit `throw` is catchable. Runtime diagnostics
 (overflow, division by zero, index errors, and so on) are **not** values and
@@ -1414,7 +1416,7 @@ line as the preceding `}`, per §3.7.)
 fn f() -> int {
     try {
         return 1
-    } catch e -> {
+    } catch e {
         return 0
     } finally {
         return 2
@@ -1426,7 +1428,7 @@ fn f() -> int {
 ```aura
 try {
     throw "a"
-} catch e -> {
+} catch e {
     print("caught")
 } finally {
     throw "b"
@@ -1480,8 +1482,9 @@ is the value. An expression-bodied lambda returns that expression.
 
 A **bare** identifier followed by `->` (for example `x -> e`) is **not** a
 lambda. In expression position it is a syntax error (`E1006`), because an
-identifier followed by `->` is reserved for `catch` bindings (`catch e -> …`)
-and `match` arms (`pattern -> …`, `pattern if guard -> …`).
+identifier followed by `->` is reserved for `match` arms (`pattern -> …`,
+`pattern if guard -> …`). `catch` no longer uses `->`: its binding is followed
+directly by the block (`catch e { … }`, §14.5).
 
 **Normative rule.** Lambda parameters, like function parameters, are immutable
 bindings.

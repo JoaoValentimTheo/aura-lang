@@ -255,7 +255,7 @@ fn main() {
     try {
         print(safe_div(10, 2))
         print(safe_div(1, 0))
-    } catch e -> {
+    } catch e {
         print(f"caught: {e}")
     } finally {
         print("done")

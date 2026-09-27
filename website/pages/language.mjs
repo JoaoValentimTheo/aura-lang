@@ -180,7 +180,7 @@ fn main() {
 
     try {
         throw "boom"
-    } catch e -> {
+    } catch e {
         print(f"caught {e}")
     } finally {
         print("done")

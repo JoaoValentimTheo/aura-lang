@@ -109,7 +109,7 @@ zero are fatal and not catchable.
 fn main() {
     try {
         throw "something went wrong"
-    } catch e -> {
+    } catch e {
         print(f"caught: {e}")
     } finally {
         print("always runs")

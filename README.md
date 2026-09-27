@@ -178,7 +178,7 @@ fn safe_div(a, b) -> int {
 fn main() {
     try {
         print(safe_div(10, 2))
-    } catch e -> {
+    } catch e {
         print(f"error: {e}")
     } finally {
         print("done")

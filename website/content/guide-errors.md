@@ -25,7 +25,7 @@ fn main() {
     try {
         print(safe_div(10, 2))
         print(safe_div(1, 0))
-    } catch e -> {
+    } catch e {
         print(f"caught: {e}")
     } finally {
         print("done")
@@ -50,7 +50,7 @@ with `E4026` (uncaught thrown value).
 ```aura
 try {
     print(1 / 0)     # E4007 — not caught; the program terminates
-} catch e -> {
+} catch e {
     print("never reached")
 }
 ```
