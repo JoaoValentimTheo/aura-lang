@@ -57,3 +57,63 @@ fn non_string_python_dict_keys_are_rejected() {
     let out = run_source("fn main() { print(py_eval(\"{'a': 1}\")) }", "<py>").unwrap();
     assert_eq!(out, "{\"a\": 1}\n");
 }
+
+/// AUDIT-5: a Python container that references itself must not hang the
+/// boundary. Before the fix, `to_value_depth` bounded only depth, so a
+/// self-referential Python list with fan-out 2 re-expanded exponentially and
+/// the process never returned. The cycle is now rejected with a structured
+/// diagnostic instead of being followed.
+#[test]
+fn python_cyclic_container_is_rejected_not_hung() {
+    // One list, appended to itself twice: fan-out 2, a cycle.
+    let src = "fn main() { let c = py_eval(\"(lambda c: (c.append(c), c.append(c), c)[2])([])\")\n print(len(to_string(c))) }";
+    let err = run_source(src, "<py-cycle>").unwrap_err();
+    assert_eq!(err.code, aura::error::codes::PY_UNSUPPORTED);
+
+    // A dict that contains itself is the same hazard on the mapping path.
+    let dict = "fn main() { let c = py_eval(\"(lambda d: (d.__setitem__('self', d), d)[1])({})\")\n print(len(to_string(c))) }";
+    let err = run_source(dict, "<py-cycle-dict>").unwrap_err();
+    assert_eq!(err.code, aura::error::codes::PY_UNSUPPORTED);
+}
+
+/// AUDIT-5: an acyclic Python value still round-trips exactly (the cycle guard
+/// must not reject ordinary sharing or nesting).
+#[test]
+fn python_acyclic_values_still_round_trip() {
+    let out = run_source(
+        "fn main() { print(py_eval(\"[[1, 2], [3, [4, 5]]]\")) }",
+        "<py-nested>",
+    )
+    .unwrap();
+    assert_eq!(out, "[[1, 2], [3, [4, 5]]]\n");
+    // A shared (DAG) Python value duplicates by value semantics; it must
+    // terminate and be equal to the same structure built without sharing.
+    let shared = run_source(
+        "fn main() { let x = py_eval(\"(lambda s: [s, s])([1, 2])\")\n print(x) }",
+        "<py-shared>",
+    )
+    .unwrap();
+    assert_eq!(shared, "[[1, 2], [1, 2]]\n");
+}
+
+/// AUDIT-5: the reverse direction (an Aura cyclic/shared value crossing into
+/// Python) must also terminate. A cycle is rejected; an acyclic shared DAG is
+/// bounded by the node budget and either crosses or is rejected, never hangs.
+#[test]
+fn aura_value_into_python_terminates() {
+    // Aura cycle -> Python: rejected, not hung.
+    let cyc = "struct R { next: R }\nfn main() { let mut c = []\n push(c, c)\n print(len(py_call(\"builtins\", \"repr\", c))) }";
+    let err = run_source(cyc, "<aura-cycle>").unwrap_err();
+    assert_eq!(err.code, aura::error::codes::PY_UNSUPPORTED);
+
+    // Acyclic Aura value -> Python still works exactly.
+    let ok = run_source(
+        "fn main() { let c = [1, [2, 3]]\n print(len(py_call(\"builtins\", \"repr\", c))) }",
+        "<aura-ok>",
+    )
+    .unwrap();
+    assert!(
+        ok.trim().parse::<usize>().is_ok(),
+        "expected a length: {ok}"
+    );
+}

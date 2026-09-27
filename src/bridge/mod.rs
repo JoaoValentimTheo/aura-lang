@@ -52,9 +52,29 @@ mod py {
     use pyo3::prelude::*;
     use pyo3::types::{PyAnyMethods, PyDict, PyInt, PyList, PyModule, PyTuple};
     use std::cell::RefCell;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, HashSet};
     use std::rc::Rc;
     use std::sync::Once;
+
+    /// Maximum number of Python container/leaf nodes a single Aura value ->
+    /// Python conversion may visit.
+    ///
+    /// The depth bound alone does not bound *work*: a shared (aliased) Aura
+    /// subvalue, or a cyclic one built before it crosses, is re-expanded at
+    /// every occurrence, so the conversion grows exponentially and never
+    /// returns (AUDIT-4's mechanism, on the Python boundary). This budget
+    /// bounds the total nodes visited so the crossing is total; like the depth
+    /// bound it rejects rather than silently truncating, so no partial Python
+    /// object is ever handed back.
+    const MAX_PY_NODES: usize = 1_000_000;
+
+    /// Maximum number of Python nodes a single Python object -> Aura value
+    /// conversion may visit, for the same reason: a Python container that
+    /// aliases or cycles (`c.append(c)` twice) would otherwise re-expand
+    /// without bound. A Python object graph is *untracked* by Aura's `Rc`
+    /// value model, so identity here is the Python object's address
+    /// (`PyAny::as_ptr`), which is stable for the duration of the conversion.
+    const MAX_PY_SOURCE_NODES: usize = 1_000_000;
 
     fn err(msg: impl Into<String>, span: Span) -> Diag {
         Diag::new(codes::PY_ERROR, msg, span)
@@ -72,13 +92,35 @@ mod py {
 
     /// Python object -> Aura value.
     fn to_value(obj: &Bound<'_, PyAny>) -> Result<Value> {
-        to_value_depth(obj, 0)
+        let mut budget = MAX_PY_SOURCE_NODES;
+        // Python identity of every container already on the current descent
+        // path: a reference back to one of these is a cycle, and is rejected
+        // rather than followed (Aura has no way to represent it — `Rc` cannot
+        // be satisfied). A reference to a container *off* the path is ordinary
+        // sharing and is converted again (correct, and bounded by the node
+        // budget).
+        let mut path: Vec<usize> = Vec::new();
+        to_value_depth(obj, 0, &mut budget, &mut path)
     }
 
-    /// Bounded-depth conversion so a deeply nested Python object cannot
-    /// overflow the native stack. Beyond the bound, the object becomes its
-    /// `repr`.
-    fn to_value_depth(obj: &Bound<'_, PyAny>, depth: usize) -> Result<Value> {
+    /// Bounded-depth and bounded-node conversion so a deeply nested, aliased,
+    /// or cyclic Python object cannot overflow the native stack or expand
+    /// exponentially. Beyond depth the object becomes its `repr`; beyond the
+    /// node budget the conversion fails with a structured diagnostic.
+    fn to_value_depth(
+        obj: &Bound<'_, PyAny>,
+        depth: usize,
+        budget: &mut usize,
+        path: &mut Vec<usize>,
+    ) -> Result<Value> {
+        if *budget == 0 {
+            return Err(Diag::new(
+                codes::PY_UNSUPPORTED,
+                "Python object has too many nodes to cross into Aura",
+                Span::default(),
+            ));
+        }
+        *budget -= 1;
         if depth >= crate::run::value::MAX_VALUE_DEPTH {
             let repr = obj.repr().map_err(map_pyerr)?.to_string();
             return Ok(Value::str(repr));
@@ -110,13 +152,32 @@ mod py {
             return Ok(Value::str(s));
         }
         if let Ok(list) = obj.cast::<PyList>() {
-            let mut out = Vec::new();
-            for item in list.iter() {
-                out.push(to_value_depth(&item, depth + 1)?);
+            let id = obj.as_ptr() as usize;
+            if path.contains(&id) {
+                return Err(Diag::new(
+                    codes::PY_UNSUPPORTED,
+                    "Python object contains a reference cycle, which Aura cannot represent",
+                    Span::default(),
+                ));
             }
+            path.push(id);
+            let mut out = Vec::with_capacity(list.len());
+            for item in list.iter() {
+                out.push(to_value_depth(&item, depth + 1, budget, path)?);
+            }
+            path.pop();
             return Ok(Value::list(out));
         }
         if let Ok(dict) = obj.cast::<PyDict>() {
+            let id = obj.as_ptr() as usize;
+            if path.contains(&id) {
+                return Err(Diag::new(
+                    codes::PY_UNSUPPORTED,
+                    "Python object contains a reference cycle, which Aura cannot represent",
+                    Span::default(),
+                ));
+            }
+            path.push(id);
             let mut map = BTreeMap::new();
             for (k, v) in dict.iter() {
                 // Aura maps are string-keyed. Refuse to stringify arbitrary
@@ -132,8 +193,9 @@ mod py {
                         Span::default(),
                     ));
                 };
-                map.insert(key, to_value_depth(&v, depth + 1)?);
+                map.insert(key, to_value_depth(&v, depth + 1, budget, path)?);
             }
+            path.pop();
             return Ok(Value::Map(Rc::new(RefCell::new(map))));
         }
         // Fallback: render as a string, so opaque objects remain printable.
@@ -143,13 +205,34 @@ mod py {
 
     /// Aura value -> Python object.
     fn to_py<'py>(py: Python<'py>, v: &Value) -> Result<Bound<'py, PyAny>> {
-        to_py_depth(py, v, 0)
+        let mut budget = MAX_PY_NODES;
+        // Addresses of the Aura containers on the current descent path, so a
+        // cycle is detected by identity and rejected rather than re-expanded
+        // forever. Sharing (the same container reachable by two paths) is not
+        // a cycle and is converted again, bounded by the node budget.
+        let mut path: HashSet<usize> = HashSet::new();
+        to_py_depth(py, v, 0, &mut budget, &mut path)
     }
 
-    /// Bounded-depth conversion so a deeply nested Aura value cannot overflow
-    /// the native stack when crossing into Python. Beyond the bound, the
-    /// value is rejected rather than risk a host overflow.
-    fn to_py_depth<'py>(py: Python<'py>, v: &Value, depth: usize) -> Result<Bound<'py, PyAny>> {
+    /// Bounded-depth and bounded-node conversion so a deeply nested, aliased,
+    /// or cyclic Aura value cannot overflow the native stack or expand
+    /// exponentially when crossing into Python. Beyond either bound the value
+    /// is rejected rather than risk a host overflow (AUDIT-5).
+    fn to_py_depth<'py>(
+        py: Python<'py>,
+        v: &Value,
+        depth: usize,
+        budget: &mut usize,
+        path: &mut HashSet<usize>,
+    ) -> Result<Bound<'py, PyAny>> {
+        if *budget == 0 {
+            return Err(Diag::new(
+                codes::PY_UNSUPPORTED,
+                "value has too many nodes to cross into Python",
+                Span::default(),
+            ));
+        }
+        *budget -= 1;
         if depth >= crate::run::value::MAX_VALUE_DEPTH {
             return Err(Diag::new(
                 codes::PY_UNSUPPORTED,
@@ -172,19 +255,37 @@ mod py {
                 .map_err(map_conversion)?
                 .into_any(),
             Value::List(l) => {
+                let id = Rc::as_ptr(l) as usize;
+                if !path.insert(id) {
+                    return Err(Diag::new(
+                        codes::PY_UNSUPPORTED,
+                        "value contains a reference cycle, which cannot cross into Python",
+                        Span::default(),
+                    ));
+                }
                 let list = PyList::empty(py);
                 for item in l.borrow().iter() {
-                    list.append(to_py_depth(py, item, depth + 1)?)
+                    list.append(to_py_depth(py, item, depth + 1, budget, path)?)
                         .map_err(map_pyerr)?;
                 }
+                path.remove(&id);
                 list.into_any()
             }
             Value::Map(m) => {
+                let id = Rc::as_ptr(m) as usize;
+                if !path.insert(id) {
+                    return Err(Diag::new(
+                        codes::PY_UNSUPPORTED,
+                        "value contains a reference cycle, which cannot cross into Python",
+                        Span::default(),
+                    ));
+                }
                 let dict = PyDict::new(py);
                 for (k, val) in m.borrow().iter() {
-                    dict.set_item(k, to_py_depth(py, val, depth + 1)?)
+                    dict.set_item(k, to_py_depth(py, val, depth + 1, budget, path)?)
                         .map_err(map_pyerr)?;
                 }
+                path.remove(&id);
                 dict.into_any()
             }
             other => {
