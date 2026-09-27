@@ -1743,7 +1743,17 @@ a per-iteration binding gets a fresh cell.
 ### 16.4 Parameters
 
 **Normative rule.** Parameters are immutable bindings in the function's scope.
-Reassigning a parameter is `E2001`.
+Reassigning an ordinary parameter is `E2001`.
+
+**Normative rule (`mut` parameters).** A parameter may be declared `mut`
+(`fn f(mut x: int)`), which grants mutable capability over the bound name for
+the body: reassigning `x`, or mutating state reachable through `x`, is allowed
+exactly as if `x` were a `mut` binding. This is the same capability model as
+§16.6 and the same spelling a lambda parameter uses (§15.4). A `mut`
+parameter is a binding annotation, not a type: `mut x: int` and `x: int` have
+the same type and the same overload identity (§15.7). The receiver `self` is
+the one parameter whose `mut` additionally marks the method as mutating the
+caller's value (§16.6, §17.6).
 
 **Normative rule.** A parameter list MUST NOT declare the same name twice;
 each parameter is a binding in the function's scope, so a duplicate parameter
@@ -1752,6 +1762,9 @@ parameter list. This was formerly reported as `E1006` by the parser.
 
 **Normative rule.** A parameter whose name begins with `_` MUST NOT be used in
 the body; using it is `E2009`.
+
+*Evidence:* `Parser::params` (`src/parse/mod.rs`); `Param::mutable`
+(`src/ast/mod.rs`); `tests/parser.rs`, `tests/mutation.rs`.
 
 ### 16.5 Structure and collection mutation
 

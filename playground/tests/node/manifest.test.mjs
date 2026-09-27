@@ -55,7 +55,9 @@ for (const entry of manifest.versions) {
   check(`sha256 matches for ${entry.id}`, hash === entry.sha256, `${hash} != ${entry.sha256}`);
   check(`size matches for ${entry.id}`, bytes.byteLength === entry.bytes);
 
-  const runtime = await AuraRuntime.fromBytes(new Uint8Array(bytes), entry.id);
+  const runtime = await AuraRuntime.fromBytes(new Uint8Array(bytes), entry.id, {
+    expectedSha256: entry.sha256,
+  });
   check(
     `ABI matches for ${entry.id}`,
     runtime.abiVersion === entry.host_abi_version,

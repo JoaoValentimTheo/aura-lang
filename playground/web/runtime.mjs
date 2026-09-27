@@ -2,13 +2,125 @@
 // WebAssembly artifact.
 //
 // It knows nothing about Aura semantics. It only:
-//   1. compiles an immutable versioned `.wasm` artifact,
-//   2. checks the artifact's Host ABI version,
-//   3. feeds source + options byte by byte through the pointer-free ABI,
-//   4. reads back the structured JSON result.
+//   1. verifies the artifact bytes against the manifest's recorded SHA-256,
+//   2. compiles the immutable versioned `.wasm` artifact,
+//   3. checks the artifact's Host ABI version,
+//   4. feeds source + options byte by byte through the pointer-free ABI,
+//   5. reads back the structured JSON result.
 //
 // The same module is used by the Web Worker and by the Node test harness, so
 // the tested path is the production path.
+
+/**
+ * A structured integrity failure: the fetched artifact's SHA-256 did not match
+ * the hash the manifest records for that immutable version. Thrown before
+ * compilation/instantiation, so a mismatched artifact never executes.
+ */
+export class RuntimeIntegrityError extends Error {
+  constructor(message, { artifact = "(anonymous)", expected = null, actual = null } = {}) {
+    super(message);
+    this.name = "RuntimeIntegrityError";
+    this.code = "RUNTIME_INTEGRITY";
+    this.artifact = artifact;
+    this.expected = expected;
+    this.actual = actual;
+  }
+}
+
+/** Rotate a 32-bit word right by `n` bits. */
+function rotr(x, n) {
+  return (x >>> n) | (x << (32 - n));
+}
+
+// SHA-256 round constants: the first 32 bits of the fractional parts of the
+// cube roots of the first 64 primes.
+const SHA256_K = [
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+];
+
+/**
+ * A self-contained SHA-256 over a byte array, returning lowercase hex.
+ *
+ * Used only as a fallback when the platform has no `crypto.subtle` (a
+ * non-secure browser context). It is validated byte-for-byte against the
+ * platform digest by the integrity tests, so the two implementations cannot
+ * diverge unnoticed.
+ */
+function sha256HexPure(bytes) {
+  const h = [
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+  ];
+  const len = bytes.length;
+  const bitLenHi = Math.floor(len / 0x20000000);
+  const bitLenLo = (len << 3) >>> 0;
+  // Padded length: message + 0x80 + zeros + 8-byte big-endian bit length.
+  const withPad = ((len + 9 + 63) >> 6) << 6;
+  const buf = new Uint8Array(withPad);
+  buf.set(bytes);
+  buf[len] = 0x80;
+  const dv = new DataView(buf.buffer);
+  dv.setUint32(withPad - 8, bitLenHi);
+  dv.setUint32(withPad - 4, bitLenLo);
+
+  const w = new Uint32Array(64);
+  for (let off = 0; off < withPad; off += 64) {
+    for (let i = 0; i < 16; i += 1) w[i] = dv.getUint32(off + i * 4);
+    for (let i = 16; i < 64; i += 1) {
+      const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+      const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, hh] = h;
+    for (let i = 0; i < 64; i += 1) {
+      const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (hh + S1 + ch + SHA256_K[i] + w[i]) >>> 0;
+      const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const t2 = (S0 + maj) >>> 0;
+      hh = g;
+      g = f;
+      f = e;
+      e = (d + t1) >>> 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (t1 + t2) >>> 0;
+    }
+    h[0] = (h[0] + a) >>> 0;
+    h[1] = (h[1] + b) >>> 0;
+    h[2] = (h[2] + c) >>> 0;
+    h[3] = (h[3] + d) >>> 0;
+    h[4] = (h[4] + e) >>> 0;
+    h[5] = (h[5] + f) >>> 0;
+    h[6] = (h[6] + g) >>> 0;
+    h[7] = (h[7] + hh) >>> 0;
+  }
+  return h.map((x) => x.toString(16).padStart(8, "0")).join("");
+}
+
+/**
+ * SHA-256 of a byte array, lowercase hex.
+ *
+ * Prefers the platform `crypto.subtle` (available in browsers on a secure
+ * context and in Node); falls back to the vendored implementation above when
+ * it is unavailable, so verification is never silently skipped.
+ */
+export async function sha256Hex(bytes) {
+  const subtle = globalThis.crypto && globalThis.crypto.subtle;
+  if (subtle && typeof subtle.digest === "function") {
+    const digest = await subtle.digest("SHA-256", bytes);
+    return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  return sha256HexPure(bytes);
+}
 
 /** Verify the artifact exports the required ABI symbols. */
 function assertAbi(exports, name) {
@@ -76,6 +188,15 @@ function encodeOptions({ args = [], stdin = null } = {}) {
 }
 
 /**
+ * Verified artifacts, keyed by the expected SHA-256. A hit means the exact
+ * bytes for that immutable hash were already verified and compiled in this
+ * process, so a repeat load of the same version skips both the digest and the
+ * compile. The key is the *expected* hash (never a URL or a version label), so
+ * a cache hit can never mask a mismatched artifact.
+ */
+const verifiedHashes = new Map();
+
+/**
  * A loaded, immutable Aura runtime artifact.
  *
  * Constructing one compiles the bytes; the ABI version and language version
@@ -101,10 +222,37 @@ export class AuraRuntime {
   /**
    * Compile a runtime from raw bytes.
    *
+   * When `expectedSha256` is provided, the bytes' SHA-256 MUST match it or a
+   * {@link RuntimeIntegrityError} is thrown *before* compilation, so a
+   * corrupted or substituted artifact can never be instantiated. The Playground
+   * loader always supplies the manifest-declared hash; low-level callers may
+   * omit it (no verification) at their own risk.
+   *
+   * The digest is computed on **every** call with an expected hash — it is the
+   * security check and must see the actual bytes. Only the compiled runtime is
+   * cached, keyed by the verified hash, so a repeat load of the same immutable
+   * version skips compilation but can never skip verification.
+   *
    * The module has zero imports, so instantiation cannot grant it any host
    * authority; if the artifact ever gained an import, instantiation fails.
    */
-  static async fromBytes(bytes, name = "(anonymous)") {
+  static async fromBytes(bytes, name = "(anonymous)", { expectedSha256 = null } = {}) {
+    if (expectedSha256) {
+      const actual = await sha256Hex(bytes);
+      if (actual !== expectedSha256) {
+        throw new RuntimeIntegrityError(
+          `runtime artifact ${name} failed integrity verification: ` +
+            `expected sha256 ${expectedSha256}, computed ${actual}`,
+          { artifact: name, expected: expectedSha256, actual },
+        );
+      }
+      // Verified: a previously compiled instance for these exact bytes is
+      // safe to reuse (the hash is over the bytes we just hashed).
+      const cached = verifiedHashes.get(expectedSha256);
+      if (cached) {
+        return cached;
+      }
+    }
     const module = await WebAssembly.compile(bytes);
     const imports = WebAssembly.Module.imports(module);
     if (imports.length !== 0) {
@@ -113,7 +261,11 @@ export class AuraRuntime {
       );
     }
     const instance = await WebAssembly.instantiate(module, {});
-    return new AuraRuntime(instance, bytes, name);
+    const runtime = new AuraRuntime(instance, bytes, name);
+    if (expectedSha256) {
+      verifiedHashes.set(expectedSha256, runtime);
+    }
+    return runtime;
   }
 
   /** Execute `source`; returns the parsed structured result object. */

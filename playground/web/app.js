@@ -649,11 +649,20 @@ function run() {
       return;
     }
     if (msg.kind === "error") {
+      // An integrity failure is a *host/loader* condition, not an Aura
+      // diagnostic: the program never ran. It is surfaced under the documented
+      // internal-error code `E4999` (the same code the UI uses for any worker
+      // failure), with a message that names the integrity check explicitly. The
+      // structured `msg.code` (`RUNTIME_INTEGRITY`) remains available to
+      // programmatic consumers; the UI does not invent an undocumented code.
+      const integrity = msg.code === "RUNTIME_INTEGRITY";
       renderDiagnostics([
         {
           code: 4999,
           code_text: "E4999",
-          message: `worker ${msg.phase} error: ${msg.message}`,
+          message: integrity
+            ? `runtime integrity check failed: ${msg.message}`
+            : `worker ${msg.phase} error: ${msg.message}`,
           line: 1,
           column: 1,
         },
@@ -687,6 +696,10 @@ function run() {
     runId,
     artifactUrl,
     expectedAbi: entry.host_abi_version,
+    // The manifest-declared SHA-256 of the immutable artifact. The Worker
+    // verifies the fetched bytes against it before instantiation, so a
+    // substituted or corrupted artifact is refused rather than executed.
+    expectedSha256: entry.sha256,
     // Single authoritative source: Run executes exactly what the editor holds
     // right now. It never reconstructs a program from the default source or
     // from any consumed handoff state.

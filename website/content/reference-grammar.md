@@ -25,7 +25,7 @@ type_param      = IDENT [ ":" IDENT { "+" IDENT } ] ;
 
 fn_decl         = "fn" IDENT [ type_params ] "(" [ params ] ")" [ "->" type ] block ;
 params          = param { "," param } ;
-param           = IDENT [ ":" type ] ;
+param           = [ "mut" ] IDENT [ ":" type ] ;
 
 (* behavior block: a struct may have several, which merge into one method
    surface and may add overloads; methods take the receiver `self` as their

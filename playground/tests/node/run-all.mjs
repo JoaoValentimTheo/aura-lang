@@ -35,6 +35,9 @@ if (!existsSync(wasm)) {
 
 run("manifest", [join(here, "manifest.test.mjs")]);
 run("abi", [join(here, "abi.test.mjs"), wasm]);
+// Load-time SHA-256 verification of the fetched artifact bytes (the loader
+// must refuse a mismatched artifact before instantiation).
+run("integrity", [join(here, "integrity.test.mjs")]);
 
 // The native/wasm differential harness needs the native runner built; build it
 // on demand so the parity gate is always exercised. A parity failure is a hard

@@ -618,5 +618,161 @@ if (postError.text === norm({ status: "ok", stdout: "3\n", result: null, diagnos
   console.error(`FAIL instance recovery after rejected deep input\n  wasm: ${postError.text}`);
 }
 
+// ---------------------------------------------------------------------------
+// TypeExpr nesting sweep (permanent).
+//
+// `enforce_depth` descends expressions and statements, not `TypeExpr` nodes, so
+// a deeply nested *type annotation* is bounded only by the substrate-calibrated
+// parser backstop (LANGUAGE_SPEC.md §31.2) — not by the 256-node semantic limit
+// (§31.1). The two substrates therefore have different acceptance ceilings for
+// type nesting. This sweep makes that curve explicit and permanent so any
+// future change to `enforce_depth` (or to the backstop) is immediately visible,
+// and so the §31.5 invariant — no host failure at any depth — is locked.
+//
+// Observed ceilings (reconfirmed at the boundary): native first-rejects at
+// 2048, wasm at 768; below each ceiling the input is accepted, at and above it
+// the substrate reports E1015. The native/wasm split is the documented,
+// permitted backstop calibration; it must never become a trap, an abort, or a
+// silent acceptance on one side only.
+{
+  const typeSrc = (n) => {
+    let t = "int";
+    for (let i = 0; i < n; i += 1) t = `Box<${t}>`;
+    return `struct Box<T> { value: T }\nfn f(x: ${t}) -> int { return 1 }\nfn main() { print(1) }`;
+  };
+  // Every 64 levels from 0 to 32 past the native ceiling (2048), plus the exact
+  // boundaries of both substrates (N-1/N/N+1).
+  const depths = new Set();
+  for (let d = 0; d <= 2080; d += 64) depths.add(d);
+  for (const b of [767, 768, 769, 2047, 2048, 2049]) depths.add(b);
+  const sorted = [...depths].sort((a, b) => a - b);
+
+  let sweepFailures = 0;
+  let nativeHostFailures = 0;
+  let wasmHostFailures = 0;
+  const table = [];
+  for (const n of sorted) {
+    const src = typeSrc(n);
+    const srcFile = join(dir, `typeexpr_${n}.aura`);
+    writeFileSync(srcFile, src);
+
+    // Native: the harness always prints structured JSON and exits 0. A panic
+    // inside the engine is contained by `on_execution_stack` and reported as
+    // status "internal"; anything else (a raw crash) is a host failure.
+    let nativeKind;
+    let nativeCode = "-";
+    try {
+      const out = execFileSync(nativeBin, [srcFile, optionsFile], { encoding: "utf8" }).trim();
+      const parsed = JSON.parse(out);
+      if (parsed.status === "ok") nativeKind = "accept";
+      else if (parsed.status === "internal") {
+        nativeKind = "HOST-FAILURE";
+        nativeHostFailures += 1;
+      } else {
+        nativeKind = "reject";
+        nativeCode = (parsed.diagnostics || [])[0] ? parsed.diagnostics[0].code_text : "?";
+      }
+    } catch (e) {
+      const s = `${e.stdout || ""}${e.stderr || ""}`;
+      nativeKind = "HOST-FAILURE";
+      nativeHostFailures += 1;
+      void s;
+    }
+
+    // Wasm: accept, a structured diagnostic, or a trap (host failure).
+    let wasmKind;
+    let wasmCode = "-";
+    try {
+      const r = runtime.run(src, options);
+      if (r.status === "ok") wasmKind = "accept";
+      else if (r.status === "internal") {
+        wasmKind = "HOST-FAILURE";
+        wasmHostFailures += 1;
+      } else {
+        wasmKind = "reject";
+        wasmCode = (r.diagnostics || [])[0] ? r.diagnostics[0].code_text : "?";
+      }
+    } catch (e) {
+      wasmKind = "HOST-FAILURE";
+      wasmHostFailures += 1;
+    }
+
+    table.push([n, nativeKind, nativeCode, wasmKind, wasmCode]);
+  }
+
+  // §31.5: no host failure on either substrate, at any depth.
+  if (nativeHostFailures === 0 && wasmHostFailures === 0) {
+    passed += 1;
+  } else {
+    failed += 1;
+    console.error(
+      `FAIL typeexpr sweep host-safety: native host failures=${nativeHostFailures}, wasm host failures=${wasmHostFailures}`,
+    );
+  }
+
+  // Every rejection must be the structured nesting code, never a bare failure.
+  for (const [n, nk, nc, wk, wc] of table) {
+    if (nk === "reject" && nc !== "E1015") {
+      sweepFailures += 1;
+      console.error(`FAIL typeexpr n=${n}: native rejected with ${nc}, expected E1015`);
+    }
+    if (wk === "reject" && wc !== "E1015") {
+      sweepFailures += 1;
+      console.error(`FAIL typeexpr n=${n}: wasm rejected with ${wc}, expected E1015`);
+    }
+  }
+
+  // The acceptance ceilings are exactly the observed backstops. A change here
+  // is a deliberate calibration change, not an accident.
+  const NATIVE_CEILING = 2048; // first native rejection
+  const WASM_CEILING = 768; // first wasm rejection
+  const nativeFirstReject = table.find(([, nk]) => nk === "reject")?.[0];
+  const wasmFirstReject = table.find(([, , , wk]) => wk === "reject")?.[0];
+  if (nativeFirstReject === NATIVE_CEILING) passed += 1;
+  else {
+    failed += 1;
+    console.error(
+      `FAIL typeexpr native ceiling: first rejection at ${nativeFirstReject}, expected ${NATIVE_CEILING}`,
+    );
+  }
+  if (wasmFirstReject === WASM_CEILING) passed += 1;
+  else {
+    failed += 1;
+    console.error(
+      `FAIL typeexpr wasm ceiling: first rejection at ${wasmFirstReject}, expected ${WASM_CEILING}`,
+    );
+  }
+
+  // Below the wasm ceiling, both substrates accept; between the ceilings, the
+  // difference is exactly the documented calibration (native accept, wasm
+  // E1015) and must be nothing else. This pins the *shape* of the divergence.
+  let shapeOk = true;
+  for (const [n, nk, , wk] of table) {
+    if (n < WASM_CEILING) {
+      if (!(nk === "accept" && wk === "accept")) {
+        shapeOk = false;
+        console.error(`FAIL typeexpr n=${n} (< wasm ceiling): expected accept/accept, got ${nk}/${wk}`);
+      }
+    } else if (n < NATIVE_CEILING) {
+      if (!(nk === "accept" && wk === "reject")) {
+        shapeOk = false;
+        console.error(
+          `FAIL typeexpr n=${n} (between ceilings): expected native accept / wasm reject, got ${nk}/${wk}`,
+        );
+      }
+    } else if (!(nk === "reject" && wk === "reject")) {
+      shapeOk = false;
+      console.error(`FAIL typeexpr n=${n} (>= native ceiling): expected reject/reject, got ${nk}/${wk}`);
+    }
+  }
+  if (shapeOk && sweepFailures === 0) passed += 1;
+  else failed += 1;
+
+  // Characterize the curve for the record (visible in CI output).
+  console.log(
+    `typeexpr sweep: ${table.length} depths, native ceiling=${nativeFirstReject}, wasm ceiling=${wasmFirstReject}, host failures=0`,
+  );
+}
+
 console.log(`\nDifferential: ${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

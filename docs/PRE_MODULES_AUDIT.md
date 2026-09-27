@@ -253,3 +253,110 @@ all 0 failed.
 3. **DOC-2** — correct the stale `build.rs` budget comment (1024 → 768).
 4. **Hash-at-load (hardening)** — optionally verify the artifact SHA-256 in the
    loader before instantiation.
+
+---
+
+## 7. Follow-ups (reviewer-requested)
+
+> **Artifact note.** This follow-up pass edited comments in `src/parse/mod.rs`
+> and `playground/runtime/build.rs` (DOC-2), which shifts embedded panic
+> line-numbers and therefore the built wasm bytes. The development runtime was
+> advanced `0.0.2-dev.21` → **`0.0.2-dev.22`** (its bytes reproduce exactly
+> from the current source); `0.0.2-dev.21` and every earlier artifact remain on
+> disk, byte-identical. The frozen `0.0.2` release is unchanged (verified by
+> checksum).
+
+### 7.1 AUDIT-1 severity: reclassified to CONFIRMED HIGH
+
+The reviewer challenged CRITICAL unless (a) the native panic hard-aborts the
+host process with no diagnostic and cannot be contained by an embedding
+library, or (b) the WASM trap corrupts state that outlives the single run in
+the same Worker. Both were tested directly, on a scratch build of the *pre-fix*
+code (the fix was temporarily reverted in a throwaway copy) so the panic could
+actually be produced:
+
+* **(a) FALSE.** Native interpreter execution is wrapped in
+  `on_execution_stack` (`src/lib.rs`), which spawns a worker thread and
+  `join`s it. A panic therefore unwinds that thread and is converted to a
+  structured `E4999` diagnostic on **every** entry point — CLI `run`,
+  CLI `eval`, REPL, and the library. Crucially, an embedding host survives:
+  a test binary calling `aura::run_source` twice observed the first call
+  return `Err(E4999)` and the host process stay alive to run the second
+  successfully. There is no process abort and no lost diagnostic.
+* **(b) FALSE.** With the pre-fix artifact, a trap (`unreachable`) on the
+  same `AuraRuntime` instance left all subsequent runs on that instance
+  correct: stdout, diagnostic codes (`E4011`, `E4019`, `E4007`), and
+  resource counters were unchanged, across repeated precision traps and a
+  memory-exhaustion trap, and under a simulated Worker `postMessage`
+  protocol. No state leaked.
+
+Because neither condition holds, **AUDIT-1 is CONFIRMED HIGH**, not CRITICAL:
+a real host panic/trap from valid input and a native/WASM divergence, but
+contained to a single invocation with a structured diagnostic and no
+cross-invocation or host-process damage. The fix (the precision bound) stands
+unchanged; a `catch_unwind` boundary is **not** required, because
+`on_execution_stack` already provides exactly that containment on the native
+path.
+
+### 7.2 Load-time SHA-256 verification — implemented
+
+Previously the manifest hash was checked on disk (`manifest.test.mjs`) and at
+build time (`build.mjs --check`) but **not** by the loader before
+instantiation. Now `AuraRuntime.fromBytes(bytes, name, { expectedSha256 })`
+hashes the fetched bytes and throws a structured `RuntimeIntegrityError`
+(`code: "RUNTIME_INTEGRITY"`) on mismatch, *before* `WebAssembly.compile` /
+`instantiate`. The worker fetches the manifest hash transitively
+(`app.js` passes `entry.sha256` → `worker.js` → `fromBytes`), and the UI
+surfaces the failure under the documented `E4999` code with an explicit
+"integrity check failed" message rather than raw internals. (No undocumented
+code is invented; the structured `RUNTIME_INTEGRITY` code remains on the
+worker message for programmatic consumers.)
+
+Crypto: `crypto.subtle.digest("SHA-256", …)` where available, with a vendored
+pure-JS SHA-256 fallback for a non-secure context (both are tested to agree
+byte-for-byte). The digest is computed on **every** verified load; only the
+compiled instance is cached, keyed by the verified hash, so verification can
+never be skipped.
+
+Tests: `playground/tests/node/integrity.test.mjs` (27 checks — correct load,
+bit-flipped / truncated / empty / stale-hash / swapped-version rejection with
+structured codes, both channels, fallback-vs-platform digest equality) plus a
+browser end-to-end test that serves a corrupted artifact via request
+interception and requires the UI to refuse it before execution
+(`browser.test.mjs`, now 53). Performance: the dev artifact is ≈1.6 MB; a
+one-shot SHA-256 over that is sub-millisecond to low-single-digit ms in the
+browser, negligible against fetch + compile. The verified-instance cache means
+repeat runs in the same page reuse the compiled module without recompiling
+(the digest itself is always recomputed).
+
+### 7.3 AUDIT-3 decision package — see the follow-up response
+
+The type-nesting ceilings were reconfirmed at the boundary (native
+first-rejects at 2048, wasm at 768; both structured `E1015`, no host failure),
+the deepest type nesting in any real program was measured at **0** (Aura
+sources) / **3** (anywhere, in Rust type tables in prose), and the two options
+are presented for human decision. Not implemented.
+
+### 7.4 DOC-1 / DOC-2 — corrected
+
+* `docs/grammar.md` and `website/content/reference-grammar.md`:
+  `param = [ "mut" ] IDENT [ ":" type ]`.
+* `docs/LANGUAGE_SPEC.md` §16.4: new "`mut` parameters" normative rule.
+* `tests/grammar.rs`: two `mut`-parameter samples lock the documented
+  production against the parser.
+* `playground/runtime/build.rs`: comment now states the actual **768** budget
+  and describes the reserved stack accurately. A *second* stale comment was
+  found in `parse_recursion_budget` claiming the wasm stack "cannot be enlarged
+  by a linker flag" (it can, via `build.rs`); corrected.
+
+### 7.5 TypeExpr nesting differential sweep — permanent
+
+`differential.test.mjs` now runs a 37-depth TypeExpr sweep (every 64 levels
+from 0 to 2080, plus N-1/N/N+1 at both ceilings) as part of the standard
+differential job (`run-all.mjs`, exercised in CI). It asserts: no host failure
+at any depth on either substrate; every rejection is `E1015`; the ceilings are
+exactly 2048 (native) and 768 (wasm); and the divergence shape is exactly
+"accept/accept below 768, native-accept/wasm-reject in 768..2047,
+reject/reject at ≥2048". No separate host-level finding was observed below the
+native stack limit.
+

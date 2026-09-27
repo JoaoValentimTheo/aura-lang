@@ -131,14 +131,16 @@ pub const MAX_AST_DEPTH: usize = 256;
 ///
 /// * Native runs the parser on a dedicated 64 MiB stack, so the backstop is
 ///   far above anything the semantic limit can require.
-/// * WebAssembly runs the parser inline on the engine's own call stack, which
-///   cannot be enlarged by a linker flag. The most frame-expensive path
-///   (nested call arguments, `f(f(f(…)))`) traps the engine stack at roughly
-///   950 nesting levels. The budget must therefore be *below* that physical
-///   ceiling while still comfortably above what any AST-valid program needs.
-///   A program at the semantic AST limit (256 nodes) costs on the order of
-///   256–512 frames, so 768 is chosen: it accepts every AST-valid program with
-///   room for grouping, and fires `E1015` well before the engine stack is
+/// * WebAssembly runs the parser inline on the engine's call stack. The
+///   runtime crate reserves a larger linear stack for it
+///   (`playground/runtime/build.rs`), but the backstop is still calibrated
+///   against that stack's frame budget: the most frame-expensive path (nested
+///   call arguments, `f(f(f(…)))`) exhausted the default 1 MiB stack at
+///   roughly 907 nesting levels. The budget must therefore stay *below* the
+///   physical ceiling while still comfortably above what any AST-valid program
+///   needs. A program at the semantic AST limit (256 nodes) costs on the order
+///   of 256–512 frames, so 768 is chosen: it accepts every AST-valid program
+///   with room for grouping, and fires `E1015` well before the engine stack is
 ///   exhausted. (Native, on a dedicated 64 MiB stack, keeps a larger budget.)
 ///   This value is re-calibrated whenever parser frame sizes change; the
 ///   mutation-capability and f-string work enlarged those frames, so 1024 no

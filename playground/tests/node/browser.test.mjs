@@ -165,7 +165,7 @@ async function runAndWait(page, timeout = 15000) {
   check("release is labelled release", release && /release/i.test(release.text), release && release.text);
   // The development runtime is present, selectable, and labelled as a
   // development runtime rather than a release.
-  const dev = options.find((o) => o.value === "0.0.2-dev.21");
+  const dev = options.find((o) => o.value === "0.0.2-dev.22");
   check("development runtime selectable", dev && !dev.disabled, JSON.stringify(options));
   check("development runtime is labelled development", dev && /development/i.test(dev.text), dev && dev.text);
   check("development is distinguished from release", dev && release && dev.text !== release.text);
@@ -177,7 +177,7 @@ async function runAndWait(page, timeout = 15000) {
   check("0.0.2 release executes", r.stdout === "v2\n", JSON.stringify(r));
 
   // Run the evolved language against the development runtime.
-  await page.selectOption("#version", "0.0.2-dev.21");
+  await page.selectOption("#version", "0.0.2-dev.22");
   const note = await page.textContent("#runtime-note");
   check("development runtime explains itself", /development runtime/i.test(note), note);
   await setSource(
@@ -370,6 +370,41 @@ async function runAndWait(page, timeout = 15000) {
   await page.click('#examples .explorer__item[data-example="methods"]');
   const ex = await page.inputValue("#source");
   check("standalone explorer loads example", ex.includes("impl User"), ex.slice(0, 40));
+  await page.close();
+}
+
+// --- 8. load-time integrity: a corrupted artifact is refused --------------
+{
+  // Drive the real UI, but intercept the artifact fetch and flip a byte in the
+  // body before the Worker sees it. The loader must compute the SHA-256 over
+  // the served bytes, find it differs from the manifest, and refuse to
+  // instantiate — surfacing a structured integrity diagnostic instead of
+  // running the (now-untrusted) artifact.
+  const { page, errors } = await newPage();
+  await page.route("**/runtimes/**/*.wasm", async (route) => {
+    const response = await route.fetch();
+    const body = await response.body();
+    const corrupted = Buffer.from(body);
+    corrupted[Math.floor(corrupted.length / 2)] ^= 0xff;
+    await route.fulfill({
+      status: 200,
+      headers: { "content-type": "application/wasm" },
+      body: corrupted,
+    });
+  });
+  await setSource(page, 'fn main() { print("should not run") }');
+  const result = await runAndWait(page);
+  check(
+    "corrupted artifact is refused before execution",
+    result.status.includes("error") && !result.stdout.includes("should not run"),
+    JSON.stringify(result),
+  );
+  check(
+    "corrupted artifact surfaces a structured integrity diagnostic",
+    result.diagnostics.some((d) => /E4999/.test(d) && /integrity/i.test(d)),
+    JSON.stringify(result.diagnostics),
+  );
+  check("no raw JS internals leak to the page", errors.length === 0, errors.join("; "));
   await page.close();
 }
 

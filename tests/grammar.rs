@@ -18,6 +18,10 @@ const GRAMMAR_SAMPLES: &[&str] = &[
     "fn f() { }",
     "fn f(a) { }",
     "fn f(a: int, b: string) -> bool { return true }",
+    // `mut` on an ordinary parameter grants capability over the binding
+    // (docs/grammar.md `param`, LANGUAGE_SPEC.md §16.4).
+    "fn f(mut x: int) { x = x + 1 }",
+    "fn f(mut x) { x = x + 1 }",
     "pub fn g() { }",
     "struct S { }",
     "struct S { a: int, b: string }",
