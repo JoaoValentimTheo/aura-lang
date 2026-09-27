@@ -28,6 +28,11 @@ jobs:
     # The scheduled run must not fail the repository's overall health status for
     # an infrastructure hiccup; a crash still uploads artifacts and is visible.
     continue-on-error: true
+    # LeakSanitizer is disabled for the whole job (see the note on the fuzz
+    # step): Aura's documented, memory-safe model does not reclaim an `Rc`
+    # cycle, so the runtime target legitimately retains cycle memory.
+    env:
+      ASAN_OPTIONS: detect_leaks=0
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
@@ -43,17 +48,26 @@ jobs:
             mkdir -p "fuzz/corpus/$t"
             cp fuzz/seeds/$t/* "fuzz/corpus/$t/" 2>/dev/null || true
           done
-      - name: Fuzz each target for 30 minutes
+      - name: Fuzz each target (per-target budgets)
         run: |
           set -euo pipefail
-          for t in lexer parser checker runtime; do
-            echo "=== fuzzing $t for 1800s ==="
-            # Leak detection is OFF deliberately: a program may build a
-            # reference cycle, and Aura's documented, memory-safe value model
-            # does not reclaim an `Rc` cycle (LANGUAGE_SPEC.md §31.6). This is
-            # expected, not a leak bug; crashes/aborts/timeouts still fail.
-            cargo fuzz run "$t" -- -max_total_time=1800 -rss_limit_mb=4096 -timeout=25 -detect_leaks=0
-          done
+          # Per-target budgets. The `runtime` target generates programs that may
+          # build a reference cycle, and Aura's documented, memory-safe value
+          # model does not reclaim an `Rc` cycle (LANGUAGE_SPEC.md §31.6), so each
+          # runtime iteration retains its cycle memory in-process. Its budget is
+          # therefore shorter, so RSS stays bounded well under the runner's
+          # memory; lexer/parser/checker have no such retention and run longer.
+          # LeakSanitizer is disabled for the whole job (see `env`), because that
+          # retention is expected, not a leak bug.
+          run_target() {
+            local t="$1"; local secs="$2"
+            echo "=== fuzzing $t for ${secs}s ==="
+            cargo fuzz run "$t" -- -max_total_time="$secs" -rss_limit_mb=6144 -timeout=25
+          }
+          run_target lexer  1800
+          run_target parser 1800
+          run_target checker 1800
+          run_target runtime 300
       - name: Upload any crash artifacts
         if: always()
         uses: actions/upload-artifact@v4
