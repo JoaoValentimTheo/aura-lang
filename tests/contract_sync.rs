@@ -329,8 +329,44 @@ fn pattern_and_declaration_diagnostics_carry_real_spans() {
     );
 }
 
-// ------------------------------------------------------------ trailing comma
-/// A trailing comma is accepted uniformly before every closing delimiter, so
+/// The semantic AST-node limit (§31.1) is enforced *during* parsing, not only
+/// after it, and it is per statement rather than per nested sub-expression. A
+/// chain of nested calls deeper than the limit is `E1015` and must never
+/// recurse far enough to overflow the host stack (the pre-CI-gate bug: each
+/// nested call reset the counter, so deep chains trapped in wasm before the
+/// post-parse check ran).
+#[test]
+fn nested_call_depth_limit_is_enforced_during_parsing() {
+    let ok = "fn id(x) { return x }\nfn main() { print(".to_string()
+        + &"id(".repeat(200)
+        + "1"
+        + &")".repeat(200)
+        + ") }";
+    assert!(
+        run_source(&ok, "f.aura").is_ok(),
+        "200 nested calls must be valid"
+    );
+
+    let deep = "fn id(x) { return x }\nfn main() { print(".to_string()
+        + &"id(".repeat(400)
+        + "1"
+        + &")".repeat(400)
+        + ") }";
+    assert_eq!(
+        run_source(&deep, "f.aura").map_err(|d| d.code),
+        Err(codes::NESTING)
+    );
+
+    // The limit does not reject *wide* expressions: a flat list of many
+    // elements is one container, not deep nesting.
+    let wide = "fn main() { print([".to_string() + &vec!["1"; 300].join(", ") + "]) }";
+    assert!(
+        run_source(&wide, "f.aura").is_ok(),
+        "a wide flat list is valid"
+    );
+}
+
+// ------------------------------------------------------------ trailing comma/// A trailing comma is accepted uniformly before every closing delimiter, so
 /// lists of any kind may be written and extended line by line.
 #[test]
 fn trailing_comma_is_uniform() {

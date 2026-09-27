@@ -2595,6 +2595,17 @@ AST levels**. Deeper nesting is `E1015`, never a crash. The limit counts AST
 nodes (calls, operators, collections, blocks, and so on), starting at 1 for
 each top-level expression. Grouping parentheses add no AST depth.
 
+**Normative rule.** The AST-node budget is counted **per statement** (and per
+top-level item expression) and accumulates across every nested sub-expression.
+It is enforced *during* parsing, not only after it: a chain of nested calls
+deeper than the limit is rejected as it is built, before the parser can recurse
+far enough to exhaust the host stack. Resetting the count per nested expression
+would give each level its own allowance and let such a chain overflow the stack
+on a substrate whose engine stack is smaller than another's; that is forbidden
+by §31.5. A *wide* expression (many flat elements, arguments, or operands) is
+not deep nesting and is bounded by this same node budget, not by the recursion
+backstop.
+
 ### 31.2 Parser recursion backstop
 
 **Normative rule.** Independent of the semantic limit, the parser MUST NOT

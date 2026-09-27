@@ -71,12 +71,12 @@ const cases = [
     `fn main() { print(${"[".repeat(400)}1${"]".repeat(400)}) }`,
   ],
   // Nested call arguments are the most frame-expensive recursive parser path
-  // (expr -> unary -> postfix -> atom -> call_args -> cons_arg -> expr). On a
-  // default 1 MiB wasm linear stack it exhausted the stack at ~907 frames,
-  // below the 1024-frame wasm backstop, and trapped (`memory access out of
-  // bounds`) where native reported E1015. `playground/runtime/build.rs`
-  // reserves a 4 MiB wasm stack so every path reaches the backstop. These
-  // depths bracket the historical onset (905/907/1000/1200).
+  // (expr -> unary -> postfix -> atom -> call_args -> cons_arg -> expr). The
+  // semantic AST-node limit (§31.1) is enforced *during* parsing, so a chain
+  // deeper than the limit reports E1015 before the engine stack is reached on
+  // every substrate. These depths (all well past the limit) must yield E1015,
+  // never a trap, on native and wasm alike. They bracket and extend the
+  // historical onset depths.
   ...[905, 907, 1000, 1200].map((d) => [
     `nested len calls d=${d}`,
     `fn main() { print(${"len(".repeat(d)}[1]${")".repeat(d)}) }`,
