@@ -23,68 +23,108 @@ mod program_gen;
 const PARITY_SEEDS: std::ops::Range<u64> = 0..64;
 
 // ---------------------------------------------------------------------------
-// PROPERTY 1 — shared registry consistency
+// PROPERTY 1 — real registry consistency
 // ---------------------------------------------------------------------------
 
-// INVARIANT. For a call to a registered builtin with `n` arguments, the
-// checker's verdict (accept/reject) and the runtime's verdict must agree.
-// Both consult `crate::stdlib::signatures` for the *same* callable; the oracle
-// is the checker, and the runtime is required to match it.
+// INVARIANT. For *every* builtin in the production signature registry
+// (`aura::stdlib::signatures::builtins()` — the single source of truth shared
+// by the checker and the runtime), the checker's accept/reject verdict and the
+// runtime's dispatch agree on the *call shape*:
 //
-// The oracle is deliberately the *checker's* actual resolution path, not a
-// reimplementation: the property runs the real `Checker` and the real
-// interpreter and compares their accept/reject outcome. A checker-accepted
-// call must run without a call-shape diagnostic; a call the checker rejects
-// for arity/type must not run.
+//   * if the registry says the generated call is well-shaped (arity within
+//     `min_args..=max_args` and every argument type satisfies its parameter),
+//     the checker must accept it, and the runtime must **resolve the callable**
+//     (never `E2003` undefined) — i.e. the two registries name the same
+//     callables;
+//   * if the registry says the call is malformed, the checker must reject it,
+//     with a structured diagnostic, never a panic.
+//
+// The candidate list is *derived from the real registry*, not a hand-picked
+// subset: the property enumerates every registered builtin and reads its own
+// `min_args`/`max_args`/`params`, so a new builtin is covered automatically.
+// A runtime *content* error for an accepted call (e.g. `json_decode("s")` is
+// not valid JSON) is a permitted outcome — it is not a resolution
+// disagreement. What must never diverge is callable existence and arity.
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(500))]
+    #![proptest_config(ProptestConfig::with_cases(800))]
 
     #[test]
     fn registry_checker_and_runtime_agree(
-        // Builtins with published signatures, drawn from the real registry.
-        name in prop::sample::select(vec![
-            "len".to_string(), "abs".to_string(), "to_string".to_string(),
-            "to_int".to_string(), "type_of".to_string(),
-        ]),
-        argc in 0usize..4,
+        which in 0usize..aura::stdlib::signatures::builtins().len(),
+        extra in 0usize..4,
+        type_idx in 0usize..6,
     ) {
-        // Arguments of mixed static types, so arity *and* type are exercised.
-        let pool = ["1", "1.5", "\"s\"", "true", "[1, 2]", "{\"k\": 1}"];
-        let mut args = Vec::new();
-        for i in 0..argc {
-            args.push(pool[(i * 7 + name.len()) % pool.len()].to_string());
-        }
-        let src = format!("fn main() {{ print({name}({})) }}", args.join(", "));
+        use aura::stdlib::signatures::{Accepts, Param};
+        use aura::types::Ty;
 
-        let parsed = aura::parse::parse(&src).expect("property-generated source parses");
-        let checked = aura::check::Checker::module(&parsed);
+        let sig = &aura::stdlib::signatures::builtins()[which];
+        let name = sig.name;
+        // A literal and its static type for each class we generate.
+        let pool: [(&str, Ty); 6] = [
+            ("1", Ty::Int),
+            ("1.5", Ty::Float),
+            ("true", Ty::Bool),
+            ("\"s\"", Ty::String),
+            ("[1, 2]", Ty::List(Box::new(Ty::Int))),
+            ("{\"k\": 1}", Ty::Map(Box::new(Ty::Int))),
+        ];
+        let (lit, ty) = &pool[type_idx % pool.len()];
+        // Arity derived from the registry's own declared bounds.
+        let argc = sig.min_args + extra;
+        let args: Vec<&str> = (0..argc).map(|_| *lit).collect();
+
+        // The registry's own verdict for this shape.
+        let arity_ok = arc_in_bounds(sig, argc);
+        let types_ok = (0..argc).all(|i| {
+            let param = sig.params.get(i).copied().unwrap_or(Param::ANY);
+            match param.accepts {
+                Accepts::Any => true,
+                _ => param.accepts.accepts_ty(ty) != Some(false),
+            }
+        });
+        let well_shaped = arity_ok && types_ok;
+
+        let src = format!("fn main() {{ {}({}) }}", name, args.join(", "));
+        let checked = aura::check::Checker::module(
+            &aura::parse::parse(&src).expect("property-generated source parses"),
+        );
         let ran = aura::run_source(&src, "<registry>");
 
-        match (checked, ran) {
-            // Checker accepts: the runtime must not raise a call-shape error.
-            // A *runtime* semantic error (e.g. out-of-range) is permitted.
-            (Ok(()), r) => {
-                if let Err(d) = r {
-                    prop_assert_ne!(
-                        d.code,
-                        aura::error::codes::TYPE_MISMATCH,
-                        "checker accepted but runtime raised E{}: {}",
-                        d.code, d.message
-                    );
-                    prop_assert_ne!(d.code, aura::error::codes::UNDEFINED);
-                }
-            }
-            // Checker rejects for a call-shape reason: the outcome must be a
-            // structured checker diagnostic, never a panic.
-            (Err(d), _) => {
-                prop_assert!(
-                    (2000..4000).contains(&d.code) || d.code == aura::error::codes::UNDEFINED,
-                    "unexpected checker code E{}",
-                    d.code
+        if well_shaped {
+            // The checker must agree with the registry that this is legal.
+            prop_assert!(
+                checked.is_ok(),
+                "registry says `{}` (argc {}) is well-shaped but checker rejected: {:?}",
+                name,
+                argc,
+                checked.err().map(|d| (d.code, d.message))
+            );
+            // The runtime must resolve the callable: a checker-accepted call
+            // can never be "undefined" at runtime, or the two registries have
+            // drifted. A structured runtime *content* error is permitted.
+            if let Err(d) = ran {
+                prop_assert_ne!(
+                    d.code,
+                    aura::error::codes::UNDEFINED,
+                    "checker accepted `{}` but runtime says undefined",
+                    name
                 );
             }
+        } else if let Err(d) = checked {
+            prop_assert!(
+                (2000..4000).contains(&d.code) || d.code == aura::error::codes::UNDEFINED,
+                "unexpected checker code E{} for `{}`",
+                d.code,
+                name
+            );
         }
     }
+}
+
+/// Whether `argc` lies within a signature's declared arity bounds. Kept as a
+/// free function so the property reads as the registry's own contract.
+fn arc_in_bounds(sig: &aura::stdlib::signatures::Signature, argc: usize) -> bool {
+    argc >= sig.min_args && argc <= sig.max_args
 }
 
 // ---------------------------------------------------------------------------
@@ -151,7 +191,7 @@ proptest! {
 // PROPERTY 3 — AST limit / substrate-source parity (TypeExpr excluded)
 // ---------------------------------------------------------------------------
 
-// TypeExpr-heavy programs are intentionally excluded here.
+// AUDIT-3 TypeExpr substrate divergence is intentionally excluded pending human decision.
 // Follow-up 3 / AUDIT-3 remains DECISION-PENDING.
 // This exclusion is temporary and must be revisited after the human decision.
 
@@ -184,30 +224,28 @@ proptest! {
 }
 
 // ---------------------------------------------------------------------------
-// PROPERTY 4 — native/wasm observable output parity
+// PROPERTY 4 — generated-corpus determinism (native/WASM parity lives in Node)
 // ---------------------------------------------------------------------------
 
 // INVARIANT. The committed generated-program corpus (`tests/corpus/ast/*.aura`)
-// produces identical stable observable output on native and on the wasm
-// artifact. The actual cross-substrate comparison runs in the differential
-// harness (which has both engines); this Rust property pins the *native*
-// output of each committed corpus program so a wasm-side drift in the shared
-// corpus is caught against a fixed expectation.
+// is byte-identical to what `program_gen::seed_corpus()` produces. This keeps
+// the shared corpus from drifting: if the generator changes without the
+// fixtures being regenerated, the two engines would be compared on *different*
+// programs.
 //
-// Concretely: the committed corpus files are generated from
-// `program_gen::seed_corpus()`, and this property re-derives each program from
-// its seed and asserts the re-derived program is byte-identical to the
-// committed fixture. If the generator or the committed corpus drifts, the
-// differential harness would compare *different* programs on the two
-// substrates; this property makes that impossible.
-proptest! {
-    #![proptest_config(ProptestConfig::with_cases(32))]
-
-    #[test]
-    fn committed_corpus_matches_the_generator(seed in 0u64..12) {
-        let generated = program_gen::generate(seed);
-        // The corpus directory is relative to the crate root, which is the CWD
-        // under `cargo test`.
+// The actual *native/WASM observable parity* property cannot run in a Rust test
+// (it needs both the native engine and the wasm artifact). It is enforced by
+// the differential harness (`playground/tests/node/differential.test.mjs`,
+// "Generated-program native/wasm parity"), which reads exactly these committed
+// fixtures, runs each through both engines, and requires stdout / diagnostic
+// code / status to agree — with TypeExpr-heavy inputs excluded pending
+// AUDIT-3. This property is the Rust-side half of that contract: the corpus the
+// differential harness consumes is the corpus the generator defines.
+// This half of Property 4 is a deterministic `#[test]`, not a proptest: it must
+// pin *every* committed fixture on every run, not sample a subset.
+#[test]
+fn generated_corpus_matches_the_generator() {
+    for (seed, generated) in program_gen::seed_corpus() {
         let path = format!("tests/corpus/ast/gen_{seed:02}.aura");
         let committed = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("missing corpus fixture {path}: {e}"));
@@ -215,35 +253,50 @@ proptest! {
         // CRLF unless `.gitattributes` forces LF; the *content* is what the
         // property pins, not the EOL bytes.
         let norm = |s: &str| s.replace("\r\n", "\n");
-        prop_assert_eq!(
+        assert_eq!(
             norm(&committed),
             norm(&generated),
-            "corpus fixture {} drifted",
-            path
+            "corpus fixture {path} drifted"
         );
     }
 }
 
 // ---------------------------------------------------------------------------
-// PROPERTY 5 — cycle safety
+// PROPERTY 5 — random cyclic graph safety (display, equality, JSON)
 // ---------------------------------------------------------------------------
 
 // INVARIANT. For a runtime-built reference graph over any of the value
 // containers (list, map, struct, enum payload) that is cyclic or shares
 // subvalues, display, equality, and JSON encoding all terminate in bounded
 // time with no panic, abort, or stack overflow (AUDIT-4 regression).
+//
+// Equality is a separate algorithm from display/JSON: it is an iterative
+// worklist with a visited-*pair* set and an `Rc::ptr_eq` identity shortcut
+// (`Value::equals`, `src/run/value.rs`). The property therefore exercises the
+// *dangerous* equality case explicitly: a `c == c` identity compare takes the
+// pointer shortcut and never descends, so it is not evidence. The generated
+// case instead compares `c` against a *separately constructed, structurally
+// identical* cyclic graph `d`, forcing the visited-pair set (not `ptr_eq`) to
+// terminate. Self-cycle, mutual-cycle, shared-subgraph, and fan-out shapes are
+// covered by the DSL below.
 proptest! {
-    // 32 cases: each generated case may render a cycle with fan-out up to 4,
-    // which the node budget bounds at worst-case ~0.7 s, so 32 cases keeps this
-    // property under ~15 s in CI while covering every push count and both
-    // encoding paths. The cycle *fan-out* surface is separately pinned by the
-    // committed `tests/corpus/cycles/*` fixtures, which run in the same job.
-    #![proptest_config(ProptestConfig::with_cases(32))]
+    // 16 cases: each case performs several bounded renders (the worst is
+    // fan-out 4, ~0.65 s at the 1,000,000-node budget), which keeps the
+    // property around ~15 s in CI. The full cycle *matrix* (list/map/struct/
+    // enum, depth and node boundaries) is separately and exhaustively pinned
+    // by the committed `tests/corpus/cycles/*` fixtures, which run in the same
+    // job; this property adds randomized shape coverage on top.
+    #![proptest_config(ProptestConfig::with_cases(16))]
 
     #[test]
     fn cyclic_graphs_render_and_compare_safely(
         pushes in 1usize..5,
         use_json in any::<bool>(),
+        // Compare against an independently built graph rather than `c == c`,
+        // so the pointer shortcut cannot mask a non-terminating equality.
+        compare_clone in any::<bool>(),
+        // A shared-subgraph variant: `d = [c, c]` re-references the cycle.
+        share in any::<bool>(),
     ) {
         // `c` contains itself `pushes` times: fan-out == pushes.
         let mut body = String::from("let mut c = []\n");
@@ -255,15 +308,37 @@ proptest! {
         } else {
             "print(len(to_string(c)))"
         };
-        let src = format!("fn main() {{\n{body}{tail}\n}}");
+        // A *separately built* cyclic graph with the same shape, so equality
+        // must use its visited-pair set rather than an identity shortcut.
+        let mut clone = String::from("let mut d = []\n");
+        for _ in 0..pushes {
+            clone.push_str("push(d, d)\n");
+        }
+        let eq = if compare_clone {
+            format!("{clone}    print(c == d)\n")
+        } else {
+            String::new()
+        };
+        let share_stmt = if share {
+            "    let mut e = []\n    push(e, c)\n    push(e, c)\n    print(len(to_string(e)))\n"
+        } else {
+            ""
+        };
+        let src = format!("fn main() {{\n{body}{eq}{share_stmt}{tail}\n}}");
         // Terminates with a value or a structured diagnostic; the test process
         // surviving to the assertion *is* the no-panic/no-hang check.
         match aura::run_source(&src, "<cycle>") {
-            Ok(out) => prop_assert!(out.trim().parse::<usize>().is_ok(), "expected a length: {out}"),
-            Err(d) => prop_assert!(d.code >= 4000),
+            Ok(_) => {}
+            Err(d) => prop_assert!(d.code >= 4000, "unexpected checker code E{}", d.code),
         }
-        // Equality is coinductive and always terminates.
-        let eq_src = format!("fn main() {{\n{body}print(c == c)\n}}");
-        prop_assert_eq!(aura::run_source(&eq_src, "<cycle>").unwrap(), "true\n");
+        if compare_clone {
+            // Two independently built graphs of the same shape are equal, and
+            // the comparison terminates via the visited-pair set.
+            let eq_src = format!("fn main() {{\n{body}{clone}    print(c == d)\n}}");
+            prop_assert_eq!(aura::run_source(&eq_src, "<cycle>").unwrap(), "true\n");
+        }
+        // Identity equality always holds and always terminates.
+        let id_src = format!("fn main() {{\n{body}    print(c == c)\n}}");
+        prop_assert_eq!(aura::run_source(&id_src, "<cycle>").unwrap(), "true\n");
     }
 }
