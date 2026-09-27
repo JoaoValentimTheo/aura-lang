@@ -1102,9 +1102,29 @@ impl Checker {
     }
 
     fn declare(&mut self, name: &str, mutable: bool, span: Span) -> Result<()> {
-        if name.starts_with('_') {
-            // leading-underscore names are allowed but flagged if used
-        }
+        self.declare_inner(name, mutable, span, false)
+    }
+
+    /// Declare an ordinary `let`/`let mut` variable binding, which may shadow
+    /// an existing binding in the same scope (`LANGUAGE_SPEC.md` §16.3).
+    ///
+    /// Shadowing installs a *new* binding: this overwrites the current scope's
+    /// record so later name resolution sees the new mutability and type, while
+    /// the runtime gives it a new binding identity (existing closures keep the
+    /// old one). Parameters, pattern bindings, and constants use the strict
+    /// [`Checker::declare`], so a duplicate parameter or a duplicate constant
+    /// stays `E2007`.
+    fn declare_shadowing(&mut self, name: &str, mutable: bool, span: Span) -> Result<()> {
+        self.declare_inner(name, mutable, span, true)
+    }
+
+    fn declare_inner(
+        &mut self,
+        name: &str,
+        mutable: bool,
+        span: Span,
+        allow_shadow: bool,
+    ) -> Result<()> {
         if crate::lex::KEYWORDS.contains(&name) {
             return Err(Diag::new(
                 codes::RESERVED_NAME,
@@ -1115,13 +1135,15 @@ impl Checker {
         let Some(scope) = self.scopes.last_mut() else {
             return Ok(());
         };
-        if scope.declares.contains_key(name) {
+        if !allow_shadow && scope.declares.contains_key(name) {
             return Err(Diag::new(
                 codes::REDECLARED,
                 format!("`{name}` is already declared in this scope"),
                 span,
             ));
         }
+        // A shadow records the new declaration's span (the binding identity is
+        // the latest declaration); a fresh declaration records its own.
         scope.declares.insert(name.to_string(), span);
         scope.vars.insert(name.to_string(), mutable);
         Ok(())
@@ -2196,7 +2218,11 @@ impl Checker {
                 span,
             } => {
                 self.expr(value)?;
-                if let Some(ann) = ann {
+                // The new binding's recorded type replaces any type the
+                // shadowed binding had: a shadow is a *different* binding, so
+                // it must not inherit the previous one's type when its own
+                // type is unknown.
+                let new_ty = if let Some(ann) = ann {
                     let expected = self.annotation(ann, *span)?;
                     let actual = self.infer(value);
                     if !expected.compatible_with(&actual) {
@@ -2210,22 +2236,33 @@ impl Checker {
                             *span,
                         ));
                     }
-                    self.value_types
-                        .last_mut()
-                        .map(|m| m.insert(name.clone(), expected));
+                    Some(expected)
                 } else {
                     // Without an annotation, still remember any inferred type
                     // (a user struct for field checking, or a builtin type so
                     // method calls on it can be validated). `Unknown` is not
-                    // recorded.
-                    let inferred = self.infer(value);
-                    if !matches!(inferred, Ty::Unknown) {
-                        self.value_types
-                            .last_mut()
-                            .map(|m| m.insert(name.clone(), inferred));
+                    // recorded, and clears any prior recording for this name.
+                    match self.infer(value) {
+                        Ty::Unknown => None,
+                        t => Some(t),
+                    }
+                };
+                if let Some(map) = self.value_types.last_mut() {
+                    match new_ty {
+                        Some(t) => {
+                            map.insert(name.clone(), t);
+                        }
+                        None => {
+                            map.remove(name);
+                        }
                     }
                 }
-                self.declare(name, *mutable, *span)?;
+                // An ordinary `let`/`let mut` binding may shadow an existing
+                // binding of the same name in this scope (`LANGUAGE_SPEC.md`
+                // §16.3). The initializer above was checked before this call,
+                // so it resolves against the bindings visible *before* the new
+                // declaration.
+                self.declare_shadowing(name, *mutable, *span)?;
             }
             Stmt::LetPattern {
                 pattern,
@@ -2235,12 +2272,13 @@ impl Checker {
                 // A destructuring `let` (§4.7): validate the pattern with the
                 // same rules `match`/`for` use (duplicate binding `E2014`,
                 // unknown variant `E3002`), then declare every name immutably.
-                // No type inference is performed and no `value_types` entry is
-                // created, so destructured names stay `Ty::Unknown`.
+                // Like a simple `let`, each name may shadow an existing
+                // binding. No type inference is performed and no `value_types`
+                // entry is created, so destructured names stay `Ty::Unknown`.
                 self.expr(value)?;
                 self.check_pattern(pattern)?;
                 for name in pattern.bindings() {
-                    self.declare(&name, false, *span)?;
+                    self.declare_shadowing(&name, false, *span)?;
                 }
             }
             Stmt::Assign {

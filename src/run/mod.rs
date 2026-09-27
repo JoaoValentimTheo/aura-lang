@@ -75,6 +75,28 @@ impl Env {
             .insert(name.into(), (value, mutable));
     }
 
+    /// Define `name` as an ordinary `let`/`let mut` binding, shadowing any
+    /// binding of the same name already present in this frame.
+    ///
+    /// Returns the environment that subsequent statements must resolve names
+    /// against: `self` for a fresh name, or a new child frame when an existing
+    /// binding was shadowed. Creating a child frame, rather than overwriting
+    /// the slot in place, is what preserves binding identity: a closure that
+    /// already captured `self` keeps seeing the previous binding, while later
+    /// code resolves the shadowing one (`LANGUAGE_SPEC.md` §16.3).
+    #[must_use]
+    pub fn define_shadowing(&self, name: impl Into<String>, value: Value, mutable: bool) -> Env {
+        let name = name.into();
+        if self.0.borrow().vars.contains_key(&name) {
+            let child = self.child();
+            child.define(name, value, mutable);
+            child
+        } else {
+            self.define(name, value, mutable);
+            self.clone()
+        }
+    }
+
     /// Read a binding.
     #[must_use]
     pub fn get(&self, name: &str) -> Option<Value> {
@@ -463,10 +485,13 @@ impl Interp {
     }
 
     fn exec_block(&mut self, body: &[Stmt], env: &Env, scoped: bool) -> Result<Ctl> {
-        let local = if scoped { env.child() } else { env.clone() };
+        let mut local = if scoped { env.child() } else { env.clone() };
         let mut last = Value::None;
         for s in body {
-            match self.exec_stmt(s, &local)? {
+            // A shadowing `let` advances `local` to a new frame so later
+            // statements resolve the new binding while existing closures keep
+            // the old one (`LANGUAGE_SPEC.md` §16.3).
+            match self.exec_stmt(s, &mut local)? {
                 Ctl::Val(v) => last = v,
                 other => return Ok(other),
             }
@@ -474,7 +499,7 @@ impl Interp {
         Ok(Ctl::Val(last))
     }
 
-    fn exec_stmt(&mut self, s: &Stmt, env: &Env) -> Result<Ctl> {
+    fn exec_stmt(&mut self, s: &Stmt, env: &mut Env) -> Result<Ctl> {
         match s {
             Stmt::Let {
                 name,
@@ -489,7 +514,11 @@ impl Interp {
                     Ctl::Val(v) => v,
                     other => return Ok(other),
                 };
-                env.define(name.clone(), v, *mutable);
+                // An ordinary `let`/`let mut` binding shadows any existing
+                // binding of the same name in this scope by installing a new
+                // binding identity; later statements in the block resolve the
+                // new one (`LANGUAGE_SPEC.md` §16.3).
+                *env = env.define_shadowing(name.clone(), v, *mutable);
                 Ok(Ctl::Val(Value::None))
             }
             Stmt::LetPattern { pattern, value, .. } => {
@@ -505,7 +534,9 @@ impl Interp {
                 self.bind_pattern(pattern, &v, &tmp)?;
                 for name in pattern.bindings() {
                     if let Some(bound) = tmp.get(&name) {
-                        env.define(name, bound, false);
+                        // A destructuring `let` shadows like a simple one: a
+                        // new binding identity for each name.
+                        *env = env.define_shadowing(name, bound, false);
                     }
                 }
                 Ok(Ctl::Val(Value::None))
@@ -1381,8 +1412,12 @@ impl Interp {
 
     /// Execute a single statement in the global scope (used by the REPL).
     pub fn exec_stmt_globals(&mut self, s: &Stmt) -> Result<Ctl> {
-        let globals = self.globals.clone();
-        self.exec_stmt(s, &globals)
+        let mut globals = self.globals.clone();
+        let r = self.exec_stmt(s, &mut globals);
+        // A `let` at the REPL top level may have advanced to a shadowing
+        // frame; adopt it so the new binding persists for later submissions.
+        self.globals = globals;
+        r
     }
 
     /// Register or execute a single top-level item (used by the REPL).

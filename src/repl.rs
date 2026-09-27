@@ -179,27 +179,44 @@ fn eval_line<W: Write>(
             name, mutable, ann, ..
         } = &stmt
         {
-            if !decls.iter().any(|d| decl_name(d) == name) {
-                let ty = ann.clone().or(inferred_ty);
-                decls.push(GlobalDecl::Binding {
-                    name: name.clone(),
-                    mutable: *mutable,
-                    ty,
-                });
+            // An ordinary `let`/`let mut` may shadow an earlier session
+            // binding (`LANGUAGE_SPEC.md` §16.3). Persist the *latest*
+            // declaration so later submissions resolve the shadowing binding's
+            // mutability and type, not the binding it replaced.
+            let ty = ann.clone().or(inferred_ty);
+            let decl = GlobalDecl::Binding {
+                name: name.clone(),
+                mutable: *mutable,
+                ty,
+            };
+            if let Some(slot) = decls
+                .iter_mut()
+                .find(|d| matches!(d, GlobalDecl::Binding { name: n, .. } if n == name))
+            {
+                *slot = decl;
+            } else {
+                decls.push(decl);
             }
         }
         // A destructuring `let` persists each name it bound, but only when the
         // statement actually executed: a failed match must not alter the
-        // session (§4.7). Destructured names carry no annotation.
+        // session (§4.7). Destructured names carry no annotation, and each
+        // name may shadow an earlier binding like a simple `let`.
         if executed {
             if let Stmt::LetPattern { pattern, .. } = &stmt {
                 for name in pattern.bindings() {
-                    if !decls.iter().any(|d| decl_name(d) == name) {
-                        decls.push(GlobalDecl::Binding {
-                            name,
-                            mutable: false,
-                            ty: None,
-                        });
+                    let decl = GlobalDecl::Binding {
+                        name: name.clone(),
+                        mutable: false,
+                        ty: None,
+                    };
+                    if let Some(slot) = decls
+                        .iter_mut()
+                        .find(|d| matches!(d, GlobalDecl::Binding { name: n, .. } if n == &name))
+                    {
+                        *slot = decl;
+                    } else {
+                        decls.push(decl);
                     }
                 }
             }
@@ -293,21 +310,6 @@ fn same_decl(a: &GlobalDecl, b: &GlobalDecl) -> bool {
         (GlobalDecl::Enum { name: an, .. }, GlobalDecl::Enum { name: bn, .. }) => an == bn,
         (GlobalDecl::Alias { name: an, .. }, GlobalDecl::Alias { name: bn, .. }) => an == bn,
         _ => false,
-    }
-}
-
-/// The name a declaration introduces.
-fn decl_name(d: &GlobalDecl) -> &str {
-    match d {
-        GlobalDecl::Binding { name, .. }
-        | GlobalDecl::Function { name, .. }
-        | GlobalDecl::Struct { name, .. }
-        | GlobalDecl::Enum { name, .. }
-        | GlobalDecl::Alias { name, .. }
-        | GlobalDecl::Trait { name, .. } => name,
-        // An `impl` block introduces no new global name; it is identified by
-        // its target struct (and, for a trait impl, the trait).
-        GlobalDecl::Impl { target, .. } => target,
     }
 }
 
