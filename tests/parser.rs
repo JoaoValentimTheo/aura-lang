@@ -123,7 +123,7 @@ fn lists_maps_and_index() {
 fn method_and_field() {
     assert!(matches!(
         parse_expr("s.trim()").expect("parse"),
-        Expr::Method(_, _, _, _)
+        Expr::Method(_, _, _, _, _)
     ));
     assert!(matches!(
         parse_expr("p.x").expect("parse"),
@@ -137,7 +137,7 @@ fn pipe_desugars_a_bare_name_to_a_call() {
     // resolve an overloaded function by its type (`LANGUAGE_SPEC.md` §23).
     let e = parse_expr("xs |> len").expect("parse");
     match e {
-        Expr::Call(callee, args, _) => {
+        Expr::Call(callee, args, _, _) => {
             assert!(matches!(*callee, Expr::Name(_, _)));
             assert_eq!(args.len(), 1);
         }
@@ -175,7 +175,7 @@ fn fstring_interpolation_spans_are_absolute() {
     let Item::Fn { body, .. } = &m.items[0] else {
         panic!("expected fn");
     };
-    let Stmt::Expr(Expr::Call(_, args, _), _) = &body[0] else {
+    let Stmt::Expr(Expr::Call(_, args, _, _), _) = &body[0] else {
         panic!("expected call");
     };
     let Expr::FStr(parts, _) = &args[0].value else {

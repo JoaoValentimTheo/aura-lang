@@ -242,28 +242,27 @@ integrates with the OOP model as follows:
 
 ## 7. Generics readiness
 
-This phase does **not** implement generics. The finalized model leaves a clean
-path for them:
+Generics have since been implemented on this model; see
+[`GENERICS.md`](GENERICS.md). The finalized model left a clean path, which the
+implementation followed:
 
 * A **struct** is a nominal type constructor with ordered typed fields;
-  parameterisation can extend it without changing its identity rules.
-* A **trait** is already a named set of method signatures on `self`;
-  trait bounds (`fn f<T: Trait>(x: T)`) can be layered on without a second
-  contract mechanism.
+  parameterisation extended it without changing its identity rules.
+* A **trait** was already a named set of method signatures on `self`; trait
+  bounds (`fn f<T: Trait>(x: T)`) layered on without a second contract
+  mechanism.
 * **Overload resolution** is keyed on argument types through one shared
-  resolver (`types::resolve_overload`); generic instantiation can refine the
-  types it compares.
-* **Aliases** are transparent and context-free, so generic aliases are a
+  resolver (`types::resolve_overload`); generic instantiation refined the types
+  it compares, up to alpha-renaming.
+* **Aliases** are transparent and context-free, so generic aliases were a
   natural extension.
 * A **module** is a pure visibility boundary over a flat canonical namespace,
   so a generic declaration is exported, imported, and reached by the same
   rules as any other; visibility composes with type parameters without a new
   mechanism.
 * No **subtype** relation exists to reconcile, and no dynamic dispatch must be
-  preserved, so parametric polymorphism can be added statically.
-
-Nothing in the OOP model contradicts a future generic type model; no generic
-machinery is introduced early.
+  preserved, so parametric polymorphism was added statically and erased at
+  runtime.
 
 ### 7.1 Internal architecture (Rust core)
 

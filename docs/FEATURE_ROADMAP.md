@@ -176,8 +176,8 @@ Classification keys:
 | `E4099` | **D** | Internal signal |
 | `Expr::Tuple` lowering | **D** | Documented |
 | `Field`/`Unknown` architecture | **D** | Covered by the checker |
-| Modules / imports | **E** | Requires a package model, visibility, initialization order, and a REPL story |
-| Generics / trait bounds | **E** | Outside the current monomorphic `Ty`; a redesign (traits themselves exist, §17.7) |
+| Modules / imports | **E** | Filesystem/project module system; the next major phase after Generics |
+| Generics / trait bounds | **done** | Static, erased, nominal parametric polymorphism; `docs/GENERICS.md` |
 | Async / concurrency | **E** | Requires a different runtime |
 | Bytecode VM / codegen | **E** | Out of scope by design |
 
@@ -562,7 +562,8 @@ under "Release hardening" below.
 | 11g | Foundation stability + CI/clean-room gate | E | **done** (Break-the-Aura II, PC ↔ Web symmetry, reproducibility) |
 | 12 | Method overloading | E | **done** (Function/method overloading by ordered input types, §15.7) |
 | 13 | Modules | E | Separate design phase |
-| — | Generics / trait bounds / async / VM / `++`/`--` | E | Not planned (generics later, after overloading) |
+| — | Async / VM / `++`/`--` | E | Not planned |
+| 14 | Generics | E | **done** (Generic functions, structs, methods, traits, bounds, aliases; `docs/GENERICS.md`) |
 
 ### Release hardening (0.0.1)
 
@@ -600,7 +601,10 @@ PC ↔ Web symmetry corpus. The language foundation is now **frozen** for featur
 development. **Function and method overloading** is implemented on top of the
 frozen foundation: a name may have several definitions when their ordered input
 types differ, the return type never distinguishes overloads, and resolution is
-deterministic (most specific wins; a tie is an error). Generics follow later.
+deterministic (most specific wins; a tie is an error). **Generics** followed:
+static, erased, nominal type parameters on functions, structs, methods, traits,
+and aliases, with bounds and inference composed into the same overload resolver
+(`docs/GENERICS.md`). The filesystem module system is the next major phase.
 
 ### Increment/decrement decision (`++` / `--`)
 

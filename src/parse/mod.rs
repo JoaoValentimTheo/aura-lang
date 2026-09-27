@@ -193,13 +193,13 @@ fn check_expr_depth(root: &Expr, start: usize) -> Result<()> {
                 stack.push((l, d));
                 stack.push((r, d));
             }
-            Expr::Call(f, args, _) => {
+            Expr::Call(f, args, _, _) => {
                 stack.push((f, d));
                 for a in args {
                     stack.push((&a.value, d));
                 }
             }
-            Expr::Method(r, _, args, _) => {
+            Expr::Method(r, _, args, _, _) => {
                 stack.push((r, d));
                 for a in args {
                     stack.push((&a.value, d));
@@ -221,7 +221,7 @@ fn check_expr_depth(root: &Expr, start: usize) -> Result<()> {
                     stack.push((v, d));
                 }
             }
-            Expr::Construct(_, args, _) => {
+            Expr::Construct(_, args, _, _) => {
                 for a in args {
                     stack.push((&a.value, d));
                 }
@@ -529,27 +529,36 @@ impl Parser {
         let Some(next) = self.toks.get(self.pos + 1) else {
             return false;
         };
+        // `impl<T> ...` — a generic parameter list first.
+        let mut i = self.pos + 1;
+        if matches!(next.tok, Tok::Lt) {
+            let Some(after) = self.balanced_angles_from(i) else {
+                return false;
+            };
+            i = after;
+        }
+        let Some(head) = self.toks.get(i) else {
+            return false;
+        };
         // The first segment is a type name (`impl Shape {`), or the leading
         // segment of a module path (`impl shapes::Shape {`), which is lowercase
         // by convention and followed by `::`.
-        let first_ok = match &next.tok {
+        let first_ok = match &head.tok {
             Tok::Ident(name) if name.chars().next().is_some_and(char::is_uppercase) => true,
             Tok::Ident(_) => {
-                matches!(
-                    self.toks.get(self.pos + 2).map(|t| &t.tok),
-                    Some(Tok::ColonColon)
-                )
+                matches!(self.toks.get(i + 1).map(|t| &t.tok), Some(Tok::ColonColon))
             }
             _ => false,
         };
         if !first_ok {
             return false;
         }
-        // Walk a `::`-separated path, then require `{`, `for`, or a bare
-        // identifier (a malformed header such as `impl A B {`, treated as a
-        // behavior block so the error is a parse diagnostic rather than falling
-        // through to expression parsing).
-        let mut i = self.pos + 2;
+        // Walk the rest of the `::`-separated path starting *after* the first
+        // segment, then require `{`, `for`, `<`, or a bare identifier (a
+        // malformed header such as `impl A B {`, treated as a behavior block so
+        // the error is a parse diagnostic rather than falling through to
+        // expression parsing).
+        i += 1;
         loop {
             match self.toks.get(i).map(|t| &t.tok) {
                 Some(Tok::ColonColon) => {
@@ -561,6 +570,13 @@ impl Parser {
                 Some(Tok::Ident(_)) => {
                     // `impl A B {` malformed header.
                     return matches!(self.toks.get(i + 1).map(|t| &t.tok), Some(Tok::LBrace));
+                }
+                Some(Tok::Lt) => {
+                    // `impl shapes::Shape<int> {` — skip the argument list.
+                    match self.balanced_angles_from(i) {
+                        Some(after) => i = after,
+                        None => return false,
+                    }
                 }
                 Some(Tok::LBrace | Tok::For) => return true,
                 _ => return false,
@@ -575,14 +591,22 @@ impl Parser {
         if !matches!(self.at(), Tok::Ident(n) if n == "trait") {
             return false;
         }
-        let Some(next) = self.toks.get(self.pos + 1) else {
+        let Some(name) = self.toks.get(self.pos + 1) else {
             return false;
         };
-        let Some(after) = self.toks.get(self.pos + 2) else {
+        if !matches!(name.tok, Tok::Ident(ref n) if n.chars().next().is_some_and(char::is_uppercase))
+        {
             return false;
-        };
-        matches!(&next.tok, Tok::Ident(name) if name.chars().next().is_some_and(char::is_uppercase))
-            && matches!(after.tok, Tok::LBrace)
+        }
+        // `trait Name {` or `trait Name<T, U> {`.
+        let mut i = self.pos + 2;
+        if matches!(self.toks.get(i).map(|t| &t.tok), Some(Tok::Lt)) {
+            let Some(after) = self.balanced_angles_from(i) else {
+                return false;
+            };
+            i = after;
+        }
+        matches!(self.toks.get(i).map(|t| &t.tok), Some(Tok::LBrace))
     }
 
     /// Whether the tokens here begin a `const` declaration:
@@ -646,16 +670,195 @@ impl Parser {
         })
     }
 
+    // ------------------------------------------------------------- generics
+
+    /// Whether a `<` at the current position begins a generic type-parameter
+    /// *declaration* list (`fn f<T>(...)`, `struct S<T> {`) rather than a
+    /// comparison. It is a declaration list here only because the caller is in
+    /// a declaration position: after `fn Name`, `struct Name`, `trait Name`,
+    /// `type Name`, or `impl`, and before `(` / `{` / `for`.
+    ///
+    /// The decision is made by scanning the balanced `<...>` and checking that
+    /// the token after it is the declaration's own delimiter. Because the
+    /// caller controls the context, an angle bracket in this position is
+    /// unambiguously generic.
+    fn at_type_params(&self) -> bool {
+        if !matches!(self.at(), Tok::Lt) {
+            return false;
+        }
+        self.balanced_angles_from(self.pos).is_some()
+    }
+
+    /// Scan a balanced `<...>` starting at `start` (which must be `<`),
+    /// returning the index just past the matching `>` if the brackets nest to
+    /// exactly one level and per-level angle depth stays positive. A `<<` or
+    /// `>>` token is treated as one level of opening/closing respectively, so
+    /// `A<B<C>>` lexed as `>>` still balances. Returns `None` on imbalance or
+    /// newline/EOF before the close.
+    fn balanced_angles_from(&self, start: usize) -> Option<usize> {
+        let mut depth = 0usize;
+        let mut i = start;
+        while let Some(t) = self.toks.get(i).map(|t| &t.tok) {
+            match t {
+                Tok::Lt => depth += 1,
+                Tok::Shl => depth += 2,
+                Tok::Gt => {
+                    depth = depth.checked_sub(1)?;
+                    if depth == 0 {
+                        return Some(i + 1);
+                    }
+                }
+                Tok::Shr => {
+                    depth = depth.checked_sub(2)?;
+                    if depth == 0 {
+                        return Some(i + 1);
+                    }
+                }
+                Tok::Newline | Tok::Eof | Tok::Semi => return None,
+                _ => {}
+            }
+            i += 1;
+        }
+        None
+    }
+
+    /// Consume one closing `>`. When the lexer produced `>>` or `>>=` (a shift
+    /// token) as the two closing angles of nested generics, split it: consume
+    /// one `>` now and leave the remainder as a single `>` token in place. This
+    /// is the classic generic-versus-shift disambiguation, resolved in the
+    /// parser's generic positions only.
+    fn expect_close_angle(&mut self) -> Result<Span> {
+        match self.at().clone() {
+            Tok::Gt => Ok(self.bump().span),
+            Tok::Shr => {
+                let span = self.span();
+                if let Some(t) = self.toks.get_mut(self.pos) {
+                    t.tok = Tok::Gt;
+                }
+                Ok(span)
+            }
+            other => Err(Diag::new(
+                codes::EXPECTED,
+                format!("expected `>`, found {}", other.describe()),
+                self.span(),
+            )),
+        }
+    }
+
+    /// Parse a generic type-parameter declaration list `<T, U: Trait>` in a
+    /// declaration position, when one is present. Returns an empty list when
+    /// no `<` begins one.
+    fn opt_type_params(&mut self) -> Result<Vec<TypeParam>> {
+        if !self.at_type_params() {
+            return Ok(Vec::new());
+        }
+        self.bump(); // `<`
+        let mut params = Vec::new();
+        loop {
+            self.skip_newlines();
+            let span = self.span();
+            let name = self.ident("type parameter name")?;
+            let mut bounds = Vec::new();
+            if self.eat(&Tok::Colon) {
+                loop {
+                    let b = self.ident("trait name")?;
+                    // A bound may apply type arguments (`U: Container<T>`);
+                    // they are consumed here and the bound is recorded on the
+                    // trait's head, which is what bound satisfaction checks.
+                    let _ = self.decl_type_args()?;
+                    bounds.push(b);
+                    if !self.eat(&Tok::Plus) {
+                        break;
+                    }
+                }
+            }
+            params.push(TypeParam { name, bounds, span });
+            self.skip_newlines();
+            if self.eat(&Tok::Comma) {
+                self.skip_newlines();
+                if self.eat(&Tok::Gt) {
+                    break;
+                }
+                continue;
+            }
+            self.expect_close_angle()?;
+            break;
+        }
+        Ok(params)
+    }
+
+    /// Parse a generic type-argument list `<T, [U]>` in a type or expression
+    /// position, when one is present. Returns an empty list when no `<`
+    /// begins one. `AtTypeArgs` disambiguates from comparison by the trailing
+    /// `(`/`{`/`,`/`>` that a type-only list demands.
+    fn ty_args(&mut self) -> Result<Vec<TypeExpr>> {
+        if !self.at_type_args() {
+            return Ok(Vec::new());
+        }
+        self.bump(); // `<`
+        let mut args = Vec::new();
+        loop {
+            self.skip_newlines();
+            args.push(self.ty()?);
+            self.skip_newlines();
+            if self.eat(&Tok::Comma) {
+                self.skip_newlines();
+                if self.eat(&Tok::Gt) {
+                    break;
+                }
+                continue;
+            }
+            self.expect_close_angle()?;
+            break;
+        }
+        Ok(args)
+    }
+
+    /// Whether a `<` at the current position begins a generic type *argument*
+    /// list. In expression position this is ambiguous with `a < b`, so it is
+    /// recognized only under the tightest rule that keeps existing programs
+    /// unchanged:
+    ///
+    /// * the `<` must be **adjacent** to the preceding identifier (no space),
+    ///   so `a < b > (c)` is still two comparisons; and
+    /// * the balanced `<...>` must be immediately followed by `(`, `{`, or
+    ///   `::`, the only suffixes a parameterised call/type may take.
+    ///
+    /// `identity<int>(x)` and `Box<int> { ... }` qualify; `a < b` does not.
+    fn at_type_args(&self) -> bool {
+        if !matches!(self.at(), Tok::Lt) {
+            return false;
+        }
+        // Adjacency: the token before `<` must end exactly where `<` begins.
+        let adjacent = self
+            .pos
+            .checked_sub(1)
+            .and_then(|p| self.toks.get(p))
+            .is_some_and(|prev| prev.span.end == self.span().start);
+        if !adjacent {
+            return false;
+        }
+        let Some(after) = self.balanced_angles_from(self.pos) else {
+            return false;
+        };
+        matches!(
+            self.toks.get(after).map(|t| &t.tok),
+            Some(Tok::LParen | Tok::LBrace | Tok::ColonColon)
+        )
+    }
+
     fn fn_item(&mut self, public: bool) -> Result<Item> {
         let span = self.span();
         self.bump();
         let name = self.ident("function name")?;
+        let type_params = self.opt_type_params()?;
         self.expect(&Tok::LParen)?;
         let params = self.params(false)?;
         let (ret, ret_span) = self.opt_return_ty()?;
         let body = self.block()?;
         Ok(Item::Fn {
             name,
+            type_params,
             params,
             ret,
             ret_span,
@@ -673,16 +876,17 @@ impl Parser {
     fn impl_item(&mut self) -> Result<Item> {
         let span = self.span();
         self.bump();
-        let (first, _) = self.path_segments()?;
-        let first = first.join("::");
+        let type_params = self.opt_type_params()?;
+        // The head is either `Name` or `Name<Args>`.
+        let (first, first_args) = self.type_head()?;
         // `impl Trait for Struct` — `for` is a reserved token, used here as the
         // trait-implementation separator.
-        let (trait_name, target) = if self.at() == &Tok::For {
+        let (trait_name, trait_args, target, target_args) = if self.at() == &Tok::For {
             self.bump();
-            let (target, _) = self.path_segments()?;
-            (Some(first), target.join("::"))
+            let (target, target_args) = self.type_head()?;
+            (Some(first), first_args, target, target_args)
         } else {
-            (None, first)
+            (None, Vec::new(), first, first_args)
         };
         self.expect(&Tok::LBrace)?;
         let mut methods = Vec::new();
@@ -707,11 +911,54 @@ impl Parser {
         }
         Ok(Item::Impl {
             target,
+            target_args,
             trait_name,
+            trait_args,
+            type_params,
             methods,
             owner: Vec::new(),
             span,
         })
+    }
+
+    /// Parse a `::`-qualified type head with optional type arguments:
+    /// `Name`, `Name<T, U>`, `mod::Name<T>`. Returns the joined name and the
+    /// type arguments (empty when none are written).
+    ///
+    /// In a declaration head (`impl Trait<T> for Struct<T>`) a `<` is
+    /// unambiguous, so it is parsed unconditionally rather than through the
+    /// expression-oriented [`Parser::at_type_args`].
+    fn type_head(&mut self) -> Result<(String, Vec<TypeExpr>)> {
+        let (segments, _) = self.path_segments()?;
+        let name = segments.join("::");
+        let args = self.decl_type_args()?;
+        Ok((name, args))
+    }
+
+    /// Parse a type-argument list in a declaration head position, where a `<`
+    /// after the head name is always generic. Returns an empty list when the
+    /// next token is not `<`.
+    fn decl_type_args(&mut self) -> Result<Vec<TypeExpr>> {
+        if !matches!(self.at(), Tok::Lt) {
+            return Ok(Vec::new());
+        }
+        self.bump();
+        let mut args = Vec::new();
+        loop {
+            self.skip_newlines();
+            args.push(self.ty()?);
+            self.skip_newlines();
+            if self.eat(&Tok::Comma) {
+                self.skip_newlines();
+                if self.eat(&Tok::Gt) {
+                    break;
+                }
+                continue;
+            }
+            self.expect_close_angle()?;
+            break;
+        }
+        Ok(args)
     }
 
     /// `trait Name { fn method(self, ...) -> T ... }` — a behavioral contract
@@ -721,6 +968,7 @@ impl Parser {
         let span = self.span();
         self.bump();
         let name = self.ident("trait name")?;
+        let type_params = self.opt_type_params()?;
         self.expect(&Tok::LBrace)?;
         let mut methods = Vec::new();
         loop {
@@ -746,6 +994,7 @@ impl Parser {
         }
         Ok(Item::Trait {
             name,
+            type_params,
             methods,
             public,
             owner: Vec::new(),
@@ -758,6 +1007,7 @@ impl Parser {
         let span = self.span();
         self.bump();
         let name = self.ident("trait method name")?;
+        let type_params = self.opt_type_params()?;
         self.expect(&Tok::LParen)?;
         let params = self.params(true)?;
         if params.is_empty() {
@@ -784,6 +1034,7 @@ impl Parser {
         self.end_stmt();
         Ok(Item::Fn {
             name,
+            type_params,
             params,
             ret,
             ret_span,
@@ -799,6 +1050,7 @@ impl Parser {
         let span = self.span();
         self.bump();
         let name = self.ident("method name")?;
+        let type_params = self.opt_type_params()?;
         self.expect(&Tok::LParen)?;
         let params = self.params(true)?;
         if params.is_empty() {
@@ -812,6 +1064,7 @@ impl Parser {
         let body = self.block()?;
         Ok(Item::Fn {
             name,
+            type_params,
             params,
             ret,
             ret_span,
@@ -899,6 +1152,7 @@ impl Parser {
         let span = self.span();
         self.bump();
         let name = self.ident("struct name")?;
+        let type_params = self.opt_type_params()?;
         self.expect(&Tok::LBrace)?;
         let mut fields = Vec::new();
         loop {
@@ -926,6 +1180,7 @@ impl Parser {
         }
         Ok(Item::Struct {
             name,
+            type_params,
             fields,
             public,
             span,
@@ -936,6 +1191,7 @@ impl Parser {
         let span = self.span();
         self.bump();
         let name = self.ident("enum name")?;
+        let type_params = self.opt_type_params()?;
         self.expect(&Tok::LBrace)?;
         let mut variants = Vec::new();
         loop {
@@ -971,6 +1227,7 @@ impl Parser {
         }
         Ok(Item::Enum {
             name,
+            type_params,
             variants,
             public,
             span,
@@ -981,11 +1238,13 @@ impl Parser {
         let span = self.span();
         self.bump();
         let name = self.ident("type alias name")?;
+        let type_params = self.opt_type_params()?;
         self.expect(&Tok::Assign)?;
         let target = self.ty()?;
         self.end_stmt();
         Ok(Item::Alias {
             name,
+            type_params,
             target,
             public,
             span,
@@ -1086,6 +1345,18 @@ impl Parser {
     // ---------------------------------------------------------------- types
 
     fn ty(&mut self) -> Result<TypeExpr> {
+        // A generic application nests (`Box<Box<int>>`), so a type recurses
+        // through the same host-stack backstop as an expression. An over-deep
+        // annotation is `E1015`, never a host-stack trap. A *flat* union is a
+        // loop over members and stays at one level, so a long union is still
+        // accepted.
+        self.enter()?;
+        let r = self.ty_inner();
+        self.leave();
+        r
+    }
+
+    fn ty_inner(&mut self) -> Result<TypeExpr> {
         let first = self.ty_member()?;
         if !self.eat(&Tok::Bar) {
             return Ok(first);
@@ -1101,25 +1372,58 @@ impl Parser {
     }
 
     /// One member of a type expression (a union member).
+    ///
+    /// In a type position a `<` after a name is unambiguously a generic
+    /// application (there is no comparison operator in a type), so
+    /// `Name<T, U>` is parsed directly. `::`-qualified paths are joined.
     fn ty_member(&mut self) -> Result<TypeExpr> {
         Ok(match self.at().clone() {
             Tok::Ident(id) => {
                 // A `::`-qualified path names an item in another module
                 // (`shapes::Point`). The canonical name is joined with `::`.
-                if matches!(
+                let name = if matches!(
                     self.toks.get(self.pos + 1).map(|t| &t.tok),
                     Some(Tok::ColonColon)
                 ) {
                     let (segments, _) = self.path_segments()?;
-                    TypeExpr::Named(segments.join("::"))
+                    segments.join("::")
                 } else {
                     self.bump();
-                    match id.as_str() {
+                    id
+                };
+                // A primitive has no arguments; every other name may be
+                // applied. `int<...>` is left to the checker to reject.
+                if self.eat(&Tok::Lt) {
+                    let mut args = Vec::new();
+                    loop {
+                        self.skip_newlines();
+                        args.push(self.ty()?);
+                        self.skip_newlines();
+                        if self.eat(&Tok::Comma) {
+                            self.skip_newlines();
+                            if self.eat(&Tok::Gt) {
+                                break;
+                            }
+                            continue;
+                        }
+                        self.expect_close_angle()?;
+                        break;
+                    }
+                    if matches!(name.as_str(), "int" | "float" | "bool" | "string") {
+                        return Err(Diag::new(
+                            codes::EXPECTED,
+                            format!("`{name}` is not a generic type and takes no type arguments"),
+                            self.span(),
+                        ));
+                    }
+                    TypeExpr::App(name, args)
+                } else {
+                    match name.as_str() {
                         "int" => TypeExpr::Int,
                         "float" => TypeExpr::Float,
                         "bool" => TypeExpr::Bool,
                         "string" => TypeExpr::String,
-                        _ => TypeExpr::Named(id),
+                        _ => TypeExpr::Named(name),
                     }
                 }
             }
@@ -1642,7 +1946,7 @@ impl Parser {
                     self.count_node(span)?;
                     self.bump();
                     let args = self.call_args()?;
-                    e = Expr::Call(Box::new(e), args, span);
+                    e = Expr::Call(Box::new(e), args, Vec::new(), span);
                 }
                 Tok::LBracket => {
                     let span = self.span();
@@ -1657,10 +1961,19 @@ impl Parser {
                     self.count_node(span)?;
                     self.bump();
                     let name = self.ident("field or method name")?;
+                    let targs = self.ty_args()?;
                     if matches!(self.at(), Tok::LParen) {
                         self.bump();
                         let args = self.call_args()?;
-                        e = Expr::Method(Box::new(e), name, args, span);
+                        e = Expr::Method(Box::new(e), name, args, targs, span);
+                    } else if !targs.is_empty() {
+                        return Err(Diag::new(
+                            codes::EXPECTED,
+                            format!(
+                                "type arguments on `.{name}` require a call: `.{name}<...>(...)`"
+                            ),
+                            span,
+                        ));
                     } else {
                         e = Expr::Field(Box::new(e), name, span);
                     }
@@ -1669,6 +1982,63 @@ impl Parser {
             }
         }
         Ok(e)
+    }
+
+    /// Parse the `{ field: value, ... }` body of a struct literal, after the
+    /// opening brace has been consumed by the caller's position. Assumes the
+    /// current token is `{`.
+    fn construct_fields(&mut self, _name: String, _span: Span) -> Result<Vec<Arg>> {
+        self.expect(&Tok::LBrace)?;
+        let mut args = Vec::new();
+        self.skip_newlines();
+        if !self.eat(&Tok::RBrace) {
+            loop {
+                self.skip_newlines();
+                let fname = self.ident("field name")?;
+                self.expect(&Tok::Colon)?;
+                let value = self.expr()?;
+                args.push(Arg {
+                    name: Some(fname),
+                    value,
+                });
+                self.skip_newlines();
+                if !self.eat(&Tok::Comma) {
+                    self.expect(&Tok::RBrace)?;
+                    break;
+                }
+                // A trailing comma before `}` is allowed.
+                self.skip_newlines();
+                if self.eat(&Tok::RBrace) {
+                    break;
+                }
+            }
+        }
+        Ok(args)
+    }
+
+    /// Parse the `(v, ...)` body of a variant construction, after the opening
+    /// paren has been consumed by the caller.
+    fn construct_positional(&mut self, _span: Span) -> Result<Vec<Arg>> {
+        self.expect(&Tok::LParen)?;
+        let mut args = Vec::new();
+        self.skip_newlines();
+        if !self.eat(&Tok::RParen) {
+            loop {
+                self.skip_newlines();
+                args.push(self.cons_arg()?);
+                self.skip_newlines();
+                if !self.eat(&Tok::Comma) {
+                    self.expect(&Tok::RParen)?;
+                    break;
+                }
+                // A trailing comma before `)` is allowed.
+                self.skip_newlines();
+                if self.eat(&Tok::RParen) {
+                    break;
+                }
+            }
+        }
+        Ok(args)
     }
 
     /// Parse a parenthesized call argument list, up to and including `)`.
@@ -1782,57 +2152,30 @@ impl Parser {
                 };
                 let last = name.rsplit("::").next().unwrap_or(name.as_str());
                 let is_type_name = last.chars().next().is_some_and(char::is_uppercase);
+                // Explicit generic type arguments: `identity<int>(x)` or
+                // `Box<int> { value: 1 }`. A balanced `<...>` followed by `(`
+                // or `{` is a generic application; every other `<` stays a
+                // comparison (see `at_type_args`).
+                if self.at_type_args() {
+                    let targs = self.ty_args()?;
+                    if matches!(self.at(), Tok::LBrace) {
+                        let args = self.construct_fields(name.clone(), span)?;
+                        return Ok(Expr::Construct(name, args, targs, span));
+                    }
+                    // The only other suffix `at_type_args` accepts is `(`.
+                    self.expect(&Tok::LParen)?;
+                    let args = self.call_args()?;
+                    return Ok(Expr::Call(Box::new(Expr::Name(name, span)), args, targs, span));
+                }
                 if matches!(self.at(), Tok::LBrace) && is_type_name {
                     // struct literal `Point { x: 1 }`
-                    self.bump();
-                    let mut args = Vec::new();
-                    self.skip_newlines();
-                    if !self.eat(&Tok::RBrace) {
-                        loop {
-                            self.skip_newlines();
-                            let fname = self.ident("field name")?;
-                            self.expect(&Tok::Colon)?;
-                            let value = self.expr()?;
-                            args.push(Arg {
-                                name: Some(fname),
-                                value,
-                            });
-                            self.skip_newlines();
-                            if !self.eat(&Tok::Comma) {
-                                self.expect(&Tok::RBrace)?;
-                                break;
-                            }
-                            // A trailing comma before `}` is allowed.
-                            self.skip_newlines();
-                            if self.eat(&Tok::RBrace) {
-                                break;
-                            }
-                        }
-                    }
-                    return Ok(Expr::Construct(name, args, span));
+                    let args = self.construct_fields(name.clone(), span)?;
+                    return Ok(Expr::Construct(name, args, Vec::new(), span));
                 }
                 if matches!(self.at(), Tok::LParen) && is_type_name {
                     // variant constructor `Ok(x)`
-                    self.bump();
-                    let mut args = Vec::new();
-                    self.skip_newlines();
-                    if !self.eat(&Tok::RParen) {
-                        loop {
-                            self.skip_newlines();
-                            args.push(self.cons_arg()?);
-                            self.skip_newlines();
-                            if !self.eat(&Tok::Comma) {
-                                self.expect(&Tok::RParen)?;
-                                break;
-                            }
-                            // A trailing comma before `)` is allowed.
-                            self.skip_newlines();
-                            if self.eat(&Tok::RParen) {
-                                break;
-                            }
-                        }
-                    }
-                    return Ok(Expr::Construct(name, args, span));
+                    let args = self.construct_positional(span)?;
+                    return Ok(Expr::Construct(name, args, Vec::new(), span));
                 }
                 Expr::Name(name, span)
             }
@@ -2219,7 +2562,7 @@ impl Parser {
 /// right-hand side is a callable value, so it becomes `rhs(lhs)`.
 fn desugar_pipe(lhs: Expr, rhs: Expr, span: Span) -> Expr {
     match rhs {
-        Expr::Call(callee, mut args, cspan) => {
+        Expr::Call(callee, mut args, ty_args, cspan) => {
             // The piped value becomes the first *positional* argument; any
             // named arguments follow (§23).
             args.insert(
@@ -2229,9 +2572,9 @@ fn desugar_pipe(lhs: Expr, rhs: Expr, span: Span) -> Expr {
                     value: lhs,
                 },
             );
-            Expr::Call(callee, args, cspan)
+            Expr::Call(callee, args, ty_args, cspan)
         }
-        Expr::Method(recv, name, mut args, mspan) => {
+        Expr::Method(recv, name, mut args, ty_args, mspan) => {
             args.insert(
                 0,
                 Arg {
@@ -2239,7 +2582,7 @@ fn desugar_pipe(lhs: Expr, rhs: Expr, span: Span) -> Expr {
                     value: lhs,
                 },
             );
-            Expr::Method(recv, name, args, mspan)
+            Expr::Method(recv, name, args, ty_args, mspan)
         }
         Expr::Name(..) => Expr::Call(
             Box::new(rhs),
@@ -2247,6 +2590,7 @@ fn desugar_pipe(lhs: Expr, rhs: Expr, span: Span) -> Expr {
                 name: None,
                 value: lhs,
             }],
+            Vec::new(),
             span,
         ),
         other => Expr::Pipe(Box::new(lhs), Box::new(other), span),
@@ -2510,13 +2854,13 @@ fn span_of(e: &Expr) -> Span {
         | Expr::FStr(_, s)
         | Expr::Unary(_, _, s)
         | Expr::Binary(_, _, _, s)
-        | Expr::Call(_, _, s)
-        | Expr::Method(_, _, _, s)
+        | Expr::Call(_, _, _, s)
+        | Expr::Method(_, _, _, _, s)
         | Expr::Field(_, _, s)
         | Expr::Index(_, _, s)
         | Expr::List(_, s)
         | Expr::Map(_, s)
-        | Expr::Construct(_, _, s)
+        | Expr::Construct(_, _, _, s)
         | Expr::Tuple(_, s)
         | Expr::Lambda(_, _, s)
         | Expr::Pipe(_, _, s)

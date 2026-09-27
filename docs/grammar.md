@@ -16,7 +16,14 @@ item            = [ "pub" ] ( fn_decl | struct_decl | enum_decl
 use_decl        = "use" IDENT { "." IDENT } terminator ;
 
 (* ---------------------------------------------------------- declarations *)
-fn_decl         = "fn" IDENT "(" [ params ] ")" [ "->" type ] block ;
+(* A declaration may introduce ordered generic type parameters after its name:
+   `fn f<T>(...)`, `struct S<T> {`, `trait T<A> {`, `impl<A> S<A> {`,
+   `type A<T> = ...`. A bound is `T: Trait` or `T: A + B`. In these positions
+   `<` is a generic bracket; in expressions it stays comparison/shift. *)
+type_params     = "<" type_param { "," type_param } ">" ;
+type_param      = IDENT [ ":" IDENT { "+" IDENT } ] ;
+
+fn_decl         = "fn" IDENT [ type_params ] "(" [ params ] ")" [ "->" type ] block ;
 params          = param { "," param } ;
 param           = IDENT [ ":" type ] ;
 
@@ -25,26 +32,32 @@ param           = IDENT [ ":" type ] ;
    first parameter. `impl` here is contextual — an `impl StructName {` item or
    an `impl TraitName for StructName {` item — and `self` has receiver meaning
    only in this position; both stay ordinary identifiers elsewhere. *)
-impl_decl       = "impl" IDENT [ "for" IDENT ] "{"
+impl_decl       = "impl" [ type_params ] type_head [ "for" type_head ] "{"
                   { NEWLINE | [ "pub" ] method_decl } "}" ;
-method_decl     = "fn" IDENT "(" receiver [ "," param { "," param } [ "," ] ] ")"
+type_head       = IDENT { "::" IDENT } [ "<" type { "," type } ">" ] ;
+method_decl     = "fn" IDENT [ type_params ]
+                  "(" receiver [ "," param { "," param } [ "," ] ] ")"
                   [ "->" type ] block ;
 receiver        = [ "mut" ] "self" ;
 
 (* trait: a behavioral contract. Signatures only — no bodies, fields, or
    associated items. `trait` is contextual and stays an ordinary identifier
    outside this item form. *)
-trait_decl      = "trait" IDENT "{" { NEWLINE | [ "pub" ] trait_method } "}" ;
-trait_method    = "fn" IDENT "(" receiver [ "," param { "," param } [ "," ] ] ")"
+trait_decl      = "trait" IDENT [ type_params ] "{"
+                  { NEWLINE | [ "pub" ] trait_method } "}" ;
+trait_method    = "fn" IDENT [ type_params ]
+                  "(" receiver [ "," param { "," param } [ "," ] ] ")"
                   [ "->" type ] terminator ;
 
-struct_decl     = "struct" IDENT "{" [ field { "," field } [ "," ] ] "}" ;
+struct_decl     = "struct" IDENT [ type_params ] "{"
+                  [ field { "," field } [ "," ] ] "}" ;
 field           = IDENT ":" type ;
 
-enum_decl       = "enum" IDENT "{" [ variant { "," variant } [ "," ] ] "}" ;
+enum_decl       = "enum" IDENT [ type_params ] "{"
+                  [ variant { "," variant } [ "," ] ] "}" ;
 variant         = IDENT [ "(" [ type { "," type } ] ")" ] ;
 
-type_alias      = "type" IDENT "=" type terminator ;
+type_alias      = "type" IDENT [ type_params ] "=" type terminator ;
 
 const_decl      = "const" NAME [ ":" type ] "=" expr terminator
                 | "let" IDENT [ ":" type ] "=" expr terminator ;
@@ -59,7 +72,8 @@ type            = type_member { "|" type_member } ;
 type_member     = "int" | "float" | "bool" | "string" | "none"
                 | "[" type "]"
                 | "{" type ":" type "}"
-                | IDENT ;
+                | IDENT [ "<" type { "," type } ">" ]
+                | IDENT { "::" IDENT } [ "<" type { "," type } ">" ] ;
 
 (* ------------------------------------------------------------- statements *)
 block           = "{" { terminator | stmt } "}" ;
@@ -109,15 +123,15 @@ unary           = ( "-" | "not" | "~" ) unary | postfix ;
 postfix         = atom { call_or_member } ;
 call_or_member  = "(" [ call_args ] ")"
                 | "[" expr "]"
-                | "." IDENT [ "(" [ call_args ] ")" ] ;
+                | "." IDENT [ "<" type { "," type } ">" ] "(" [ call_args ] ")"
 call_args       = arg { "," arg } [ "," ] ;      (* positional, then named *)
 arg             = [ IDENT ":" ] expr ;
 
 atom            = INT | FLOAT | STRING | FSTRING
                 | "true" | "false" | "none"
-                | IDENT "(" [ call_args ] ")"          (* call *)
+                | IDENT [ "<" type { "," type } ">" ] "(" [ call_args ] ")"   (* call *)
                 | IDENT "(" [ ctor_args ] ")"          (* variant *)
-                | IDENT "{" [ field_init { "," field_init } ] "}"  (* struct *)
+                | IDENT [ "<" type { "," type } ">" ] "{" [ field_init { "," field_init } ] "}"  (* struct *)
                 | "(" expr ")"
                 | "(" expr "," [ expr { "," expr } [ "," ] ] ")"          (* list sugar *)
                 | lambda

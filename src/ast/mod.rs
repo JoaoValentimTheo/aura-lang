@@ -21,8 +21,13 @@ pub enum TypeExpr {
     Map(Box<TypeExpr>, Box<TypeExpr>),
     /// `T1 | T2 | ...` (two or more members; a single member is its own type)
     Union(Vec<TypeExpr>),
-    /// A named user type.
+    /// A named user type, possibly a generic type parameter. The checker
+    /// decides which by the parameters in scope; the parser cannot know.
     Named(String),
+    /// `Name<T1, T2, ...>` — a parameterised type application. The name is a
+    /// declared generic type (struct, enum, or alias); the arguments are the
+    /// type parameters of its declaration.
+    App(String, Vec<TypeExpr>),
 }
 
 impl TypeExpr {
@@ -43,7 +48,53 @@ impl TypeExpr {
                 .collect::<Vec<_>>()
                 .join(" | "),
             TypeExpr::Named(n) => n.clone(),
+            TypeExpr::App(n, args) => format!(
+                "{}<{}>",
+                n,
+                args.iter()
+                    .map(TypeExpr::name)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
         }
+    }
+}
+
+/// A generic type parameter declaration: `T` or `T: Trait` / `T: A + B`.
+///
+/// A type parameter is a compile-time placeholder in the type namespace. It is
+/// never a runtime value. The declaration order defines each parameter's
+/// identity, so `f<T>` and `f<U>` are the same signature (alpha-equivalence):
+/// the spelling is not part of the signature.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypeParam {
+    /// Parameter name.
+    pub name: String,
+    /// Trait bounds, in declaration order. An empty list means unbounded.
+    pub bounds: Vec<String>,
+    /// Source span of the parameter declaration.
+    pub span: Span,
+}
+
+/// A source span for a whole generic parameter list, used by diagnostics that
+/// name the list rather than one parameter.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct TypeParams {
+    /// The declared parameters, in order.
+    pub params: Vec<TypeParam>,
+}
+
+impl TypeParams {
+    /// Whether the list is empty (a non-generic declaration).
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.params.is_empty()
+    }
+
+    /// The parameter names, in declaration order.
+    #[must_use]
+    pub fn names(&self) -> Vec<String> {
+        self.params.iter().map(|p| p.name.clone()).collect()
     }
 }
 
@@ -244,9 +295,14 @@ pub enum Expr {
     /// `callee(args)`. Arguments may be positional (`Arg { name: None, .. }`)
     /// or named (`Arg { name: Some(..), .. }`); named arguments are supported
     /// only for directly resolved user functions.
-    Call(Box<Expr>, Vec<Arg>, Span),
-    /// `recv.method(args)`.
-    Method(Box<Expr>, String, Vec<Arg>, Span),
+    ///
+    /// `ty_args` holds explicit generic type arguments (`f<int>(x)`), empty
+    /// when none are written. They are checked against the callee's declared
+    /// parameters and seed inference before the argument types are matched.
+    Call(Box<Expr>, Vec<Arg>, Vec<TypeExpr>, Span),
+    /// `recv.method(args)`, with optional explicit type arguments
+    /// (`recv.map<int>(f)`).
+    Method(Box<Expr>, String, Vec<Arg>, Vec<TypeExpr>, Span),
     /// `recv.field`.
     Field(Box<Expr>, String, Span),
     /// `base[index]`.
@@ -256,8 +312,10 @@ pub enum Expr {
     /// `{k: v, ...}`.
     Map(Vec<(Expr, Expr)>, Span),
     /// `Variant(args)` or `Struct(field: value)`. Field names optional; the
-    /// parser records named arguments as `Arg`.
-    Construct(String, Vec<Arg>, Span),
+    /// parser records named arguments as `Arg`. `ty_args` holds explicit
+    /// generic type arguments on a parameterised construction
+    /// (`Box<int> { value: 1 }`), empty when none are written.
+    Construct(String, Vec<Arg>, Vec<TypeExpr>, Span),
     /// `(a, b)` tuple (kept minimal; single element is a group).
     Tuple(Vec<Expr>, Span),
     /// `(x: int, mut y) -> body` or `x -> body`. A lambda shares the function
@@ -464,6 +522,8 @@ pub enum Item {
     Fn {
         /// Name.
         name: String,
+        /// Generic type parameters, in declaration order (empty when none).
+        type_params: Vec<TypeParam>,
         /// Parameters.
         params: Vec<Param>,
         /// Return type.
@@ -483,6 +543,8 @@ pub enum Item {
     Struct {
         /// Name.
         name: String,
+        /// Generic type parameters, in declaration order (empty when none).
+        type_params: Vec<TypeParam>,
         /// Fields, each with its source span.
         fields: Vec<FieldDecl>,
         /// Whether the type is visible outside its module (`pub`).
@@ -494,6 +556,8 @@ pub enum Item {
     Enum {
         /// Name.
         name: String,
+        /// Generic type parameters, in declaration order (empty when none).
+        type_params: Vec<TypeParam>,
         /// Variants, each with its source span.
         variants: Vec<VariantDecl>,
         /// Whether the type is visible outside its module (`pub`).
@@ -505,6 +569,8 @@ pub enum Item {
     Alias {
         /// Name.
         name: String,
+        /// Generic type parameters, in declaration order (empty when none).
+        type_params: Vec<TypeParam>,
         /// Target.
         target: TypeExpr,
         /// Whether the type is visible outside its module (`pub`).
@@ -565,8 +631,17 @@ pub enum Item {
     Impl {
         /// The nominal struct this behavior block belongs to.
         target: String,
+        /// Type arguments applied to the target, when this is
+        /// `impl<T> Trait<T> for Name<T>`. Empty for a plain `impl Name`.
+        target_args: Vec<TypeExpr>,
         /// The trait being implemented, when this is `impl Trait for Target`.
         trait_name: Option<String>,
+        /// Type arguments applied to the trait, when this is
+        /// `impl<T> Container<T> for Stack<T>`. Empty otherwise.
+        trait_args: Vec<TypeExpr>,
+        /// Generic type parameters declared on the block (`impl<T> ...`),
+        /// in declaration order (empty when none).
+        type_params: Vec<TypeParam>,
         /// Methods, each an [`Item::Fn`] with `self` as its first parameter.
         methods: Vec<Item>,
         /// The canonical module path the block was declared in, filled by the
@@ -583,6 +658,8 @@ pub enum Item {
     Trait {
         /// Name.
         name: String,
+        /// Generic type parameters, in declaration order (empty when none).
+        type_params: Vec<TypeParam>,
         /// Declared method signatures, each an [`Item::Fn`] with an empty body.
         methods: Vec<Item>,
         /// Whether the trait is visible outside its module (`pub`).

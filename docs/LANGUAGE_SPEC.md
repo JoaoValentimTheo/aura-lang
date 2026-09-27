@@ -1938,10 +1938,10 @@ display, or reference semantics: construction (§17.2), equality (§17.4),
 display (§17.5), and `Rc`-based reference sharing are unchanged.
 
 **Normative rule.** Aura has no constructors, destructors, visibility,
-inheritance, generics, or operator overloading. Traits exist as static
-behavioral contracts (§17.7). (A future direction is Go-style
-visibility-by-naming once a module system exists; it is not implemented and
-adds no current rule.)
+inheritance, or operator overloading. Traits exist as static behavioral
+contracts (§17.7), and generic type parameters exist as static, erased
+placeholders (§31). (A future direction is Go-style visibility-by-naming once a
+module system exists; it is not implemented and adds no current rule.)
 
 *Evidence:* `Parser::impl_item`/`method_item` (`src/parse/mod.rs`);
 `Checker::struct_methods` (`src/check/mod.rs`); `Interp::methods`
@@ -3046,7 +3046,8 @@ features:
 
 * package managers, filesystem-backed modules, or cross-file imports
   (in-source modules with visibility exist, §27);
-* generics, interfaces, or trait bounds (traits exist as static contracts,
+* interfaces, subtyping, and higher-kinded or associated types (generic
+  parameters and trait bounds exist, §36; traits exist as static contracts,
   §17.7);
 * inheritance, subtyping, or dynamic dispatch;
 * async or concurrency;
@@ -3058,3 +3059,94 @@ features:
 
 These do not exist in Aura. This document defines the language as it is, not
 as it might become.
+
+## 36. Generics
+
+**Normative rule.** Aura's generic type system is **static, erased, and
+nominal**. A type parameter is a compile-time placeholder substituted before
+execution; it is never a runtime value. The full architecture is in
+[`GENERICS.md`](GENERICS.md).
+
+### 36.1 Syntax
+
+**Normative rule.** A declaration may introduce ordered type parameters in
+angle brackets directly after its name:
+
+```aura
+fn identity<T>(x: T) -> T { return x }
+struct Box<T> { value: T }
+trait Container<T> { fn get(self, i: int) -> T }
+impl<T> Container<T> for Stack<T> { fn get(self, i: int) -> T { return self.items[i] } }
+type Pair<T> = [T]
+```
+
+A bound is `T: Trait` or `T: A + B`. Type arguments are written `Name<t1, t2>`
+in a type position, and explicit call-site arguments are `f<int>(x)` and
+`Box<int> { value: 1 }`.
+
+**Normative rule.** `<` and `>` are not new tokens. In a type or declaration
+position they are parsed as generic brackets; in an expression position a `<`
+begins a type-argument list only when it is adjacent to the preceding name and
+the balanced `<...>` is followed by `(`, `{`, or `::`. Every other `<` remains
+comparison (`1 < 2`) or shift (`1 << 2`).
+
+### 36.2 Identity
+
+**Normative rule.** Type-parameter names are not part of signature identity.
+`f<T>(x: T)` and `f<U>(x: U)` are the same overload (`E2007` if both are
+declared). Identity is computed up to alpha-renaming.
+
+**Normative rule.** A type parameter may not shadow a declared type or an
+enclosing type parameter, and may not be declared twice in one list (`E2007`).
+
+### 36.3 Inference and substitution
+
+**Normative rule.** A call builds a substitution by structurally matching each
+argument's inferred type against the parameter's declared type. `T` binds to
+the actual type; `[T]` matches `[A]`; `{string: T}` matches `{string: A}`;
+`Name<T>` matches `Name<A>` by element. A concrete declared type requires
+compatibility. `Unknown` never forces a binding and never becomes a concrete
+type: an unbound parameter in a value position is `Unknown`.
+
+**Normative rule.** Explicit type arguments seed the substitution and are
+checked for arity and bounds. A wrong arity is `E3001`.
+
+### 36.4 Bounds
+
+**Normative rule.** A bound `T: Trait` requires that the type bound to `T` at
+an instantiation implements `Trait` (via an `impl Trait for Struct`, or via
+the parameter's own bounds). A bound is a static contract; it introduces no
+trait objects and no dynamic dispatch. A violation is `E3001`.
+
+### 36.5 Structures, methods, and traits
+
+**Normative rule.** A generic struct is nominal; `Box<int>` and `Box<string>`
+are the same `Box`. Construction infers the arguments from field values or
+takes them explicitly. A generic `impl<T> Box<T>` binds `T` for its method
+bodies; a method may add its own parameters. A parameterised alias expands by
+substituting its arguments into its target.
+
+### 36.6 Collections
+
+**Normative rule.** Generics compose with Aura's structural collections. `[T]`
+is a list of `T`; `{string: T}` is a string-keyed map of `T`. There is no
+`List<T>` or `Map<K, V>`.
+
+### 36.7 Runtime
+
+**Normative rule.** Type parameters are erased before execution. A generic
+function is an ordinary closure whose parameterised positions accept any value
+for overload selection; there is no monomorphization and no runtime dictionary.
+`Value` is unchanged, and the model remains Native/WASM compatible and
+resource-bounded.
+
+### 36.8 REPL
+
+**Normative rule.** A generic declaration is persisted with its parameters and
+bounds and rebuilt into later checkers, exactly as a non-generic one. A failed
+generic declaration does not mutate session state.
+
+*Evidence:* `Parser::opt_type_params`/`ty` (`src/parse/mod.rs`); `Ty::Param`,
+`Ty::App`, `Ty::substitute` (`src/types.rs`); `Checker::infer_substitution`,
+`sig_identical`, `check_user_call` (`src/check/mod.rs`); `tests/generics.rs`.
+

@@ -352,14 +352,22 @@ impl Interp {
     fn declare_item(&mut self, item: &Item) {
         match item {
             Item::Fn {
-                name, params, body, ..
+                name,
+                type_params,
+                params,
+                body,
+                ..
             } => {
+                let tparams: Vec<String> = type_params.iter().map(|p| p.name.clone()).collect();
                 let closure = Rc::new(Closure {
                     name: name.clone(),
                     params: params.iter().map(|p| (p.name.clone(), p.mutable)).collect(),
                     param_tys: params
                         .iter()
-                        .map(|p| p.ty.as_ref().map(crate::types::Ty::from_expr_lenient))
+                        .map(|p| {
+                            p.ty.as_ref()
+                                .map(|t| crate::types::Ty::from_expr_erased(t, &tparams))
+                        })
                         .collect(),
                     body: body.clone(),
                     env: self.globals.clone(),
@@ -370,23 +378,38 @@ impl Interp {
                     .push(closure);
             }
             Item::Impl {
-                target, methods, ..
+                target,
+                type_params,
+                methods,
+                ..
             } => {
                 // Methods are stored under `Struct.method`, keyed by the
                 // nominal type, so two structs may share a method name. Each
                 // method is an ordinary closure whose first parameter is the
-                // receiver (`LANGUAGE_SPEC.md` §17.6).
+                // receiver (`LANGUAGE_SPEC.md` §17.6). Generic parameters are
+                // erased for overload selection, exactly as for a function.
+                let impl_tparams: Vec<String> =
+                    type_params.iter().map(|p| p.name.clone()).collect();
                 for m in methods {
                     if let Item::Fn {
-                        name, params, body, ..
+                        name,
+                        type_params: mtype_params,
+                        params,
+                        body,
+                        ..
                     } = m
                     {
+                        let mut tparams = impl_tparams.clone();
+                        tparams.extend(mtype_params.iter().map(|p| p.name.clone()));
                         let closure = Rc::new(Closure {
                             name: format!("{target}.{name}"),
                             params: params.iter().map(|p| (p.name.clone(), p.mutable)).collect(),
                             param_tys: params
                                 .iter()
-                                .map(|p| p.ty.as_ref().map(crate::types::Ty::from_expr_lenient))
+                                .map(|p| {
+                                    p.ty.as_ref()
+                                        .map(|t| crate::types::Ty::from_expr_erased(t, &tparams))
+                                })
                                 .collect(),
                             body: body.clone(),
                             env: self.globals.clone(),
@@ -1159,8 +1182,8 @@ impl Interp {
                 let rv = val!(self.eval(r, env));
                 Ok(Ctl::Val(self.binary(*op, lv, rv, *span)?))
             }
-            Expr::Call(callee, args, span) => self.eval_call(callee, args, env, *span),
-            Expr::Method(recv, name, args, span) => {
+            Expr::Call(callee, args, _ty_args, span) => self.eval_call(callee, args, env, *span),
+            Expr::Method(recv, name, args, _ty_args, span) => {
                 let subject = val!(self.eval(recv, env));
                 let mut vals = Vec::with_capacity(args.len());
                 for a in args {
@@ -1241,7 +1264,7 @@ impl Interp {
                 }
                 Ok(Ctl::Val(Value::Map(Rc::new(RefCell::new(map)))))
             }
-            Expr::Construct(name, args, span) => self.construct(name, args, env, *span),
+            Expr::Construct(name, args, _ty_args, span) => self.construct(name, args, env, *span),
             Expr::Tuple(items, _) => {
                 let mut out = Vec::with_capacity(items.len());
                 for i in items {
@@ -2037,13 +2060,13 @@ fn span_of(e: &Expr) -> Span {
         | Expr::FStr(_, s)
         | Expr::Unary(_, _, s)
         | Expr::Binary(_, _, _, s)
-        | Expr::Call(_, _, s)
-        | Expr::Method(_, _, _, s)
+        | Expr::Call(_, _, _, s)
+        | Expr::Method(_, _, _, _, s)
         | Expr::Field(_, _, s)
         | Expr::Index(_, _, s)
         | Expr::List(_, s)
         | Expr::Map(_, s)
-        | Expr::Construct(_, _, s)
+        | Expr::Construct(_, _, _, s)
         | Expr::Tuple(_, s)
         | Expr::Lambda(_, _, s)
         | Expr::Pipe(_, _, s)

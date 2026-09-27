@@ -38,6 +38,17 @@ pub enum Ty {
     /// `none` (or any `Unknown` member) collapses to [`Ty::Unknown`], which is
     /// the documented permissive behavior of `T | none`.
     Union(Vec<Ty>),
+    /// A generic type parameter in scope, identified by name. Two parameters
+    /// with the same name in the same declaration are the same parameter. A
+    /// `Param` is only meaningful inside a generic declaration; substitution
+    /// replaces it with the bound concrete type before any comparison.
+    Param(String),
+    /// `Name<A1, A2, ...>` — a parameterised nominal type application. The
+    /// name is a declared generic struct, enum, or alias; the arguments are
+    /// the type arguments (which may themselves be `Param` or nested `App`).
+    /// `Named(n)` is the zero-argument form and the two are kept distinct only
+    /// where arity matters.
+    App(String, Vec<Ty>),
     /// Anything the checker does not know; compatible with all types.
     Unknown,
 }
@@ -56,7 +67,76 @@ impl Ty {
             Ty::Named(n) => n.clone(),
             Ty::Enum(n) => n.clone(),
             Ty::Union(ms) => ms.iter().map(Ty::name).collect::<Vec<_>>().join(" | "),
+            Ty::Param(n) => n.clone(),
+            Ty::App(n, args) => format!(
+                "{}<{}>",
+                n,
+                args.iter().map(Ty::name).collect::<Vec<_>>().join(", ")
+            ),
             Ty::Unknown => "unknown".into(),
+        }
+    }
+
+    /// The nominal head of this type: the declared name of a user type, with
+    /// any type arguments discarded. `Box<int>` and `Box<string>` share the
+    /// head `Box`; a primitive has no nominal head.
+    #[must_use]
+    pub fn nominal_head(&self) -> Option<String> {
+        match self {
+            Ty::Named(n) | Ty::Enum(n) => Some(n.clone()),
+            Ty::App(n, _) => Some(n.clone()),
+            _ => None,
+        }
+    }
+
+    /// Whether this type mentions a generic parameter anywhere.
+    #[must_use]
+    pub fn has_param(&self) -> bool {
+        match self {
+            Ty::Param(_) => true,
+            Ty::List(t) | Ty::Map(t) => t.has_param(),
+            Ty::Union(ms) => ms.iter().any(Ty::has_param),
+            Ty::App(_, args) => args.iter().any(Ty::has_param),
+            _ => false,
+        }
+    }
+
+    /// Substitute generic parameters by name, returning the type with every
+    /// [`Ty::Param`] replaced by its binding. A parameter with no binding is
+    /// left as-is; callers that must not retain a parameter (a value position)
+    /// map the residue to `Unknown` via [`Ty::erase_params`].
+    #[must_use]
+    pub fn substitute(&self, sigma: &std::collections::HashMap<String, Ty>) -> Ty {
+        match self {
+            Ty::Param(n) => sigma
+                .get(n)
+                .cloned()
+                .unwrap_or_else(|| Ty::Param(n.clone())),
+            Ty::List(t) => Ty::List(Box::new(t.substitute(sigma))),
+            Ty::Map(t) => Ty::Map(Box::new(t.substitute(sigma))),
+            Ty::Union(ms) => Ty::union(ms.iter().map(|m| m.substitute(sigma)).collect()),
+            Ty::App(n, args) => Ty::App(
+                n.clone(),
+                args.iter().map(|a| a.substitute(sigma)).collect(),
+            ),
+            other => other.clone(),
+        }
+    }
+
+    /// Replace every unbound generic parameter with `Unknown`, so a type that
+    /// reaches a value position never retains a parameter.
+    #[must_use]
+    pub fn erase_params(&self, sigma: &std::collections::HashMap<String, Ty>) -> Ty {
+        match self {
+            Ty::Param(n) => sigma.get(n).cloned().unwrap_or(Ty::Unknown),
+            Ty::List(t) => Ty::List(Box::new(t.erase_params(sigma))),
+            Ty::Map(t) => Ty::Map(Box::new(t.erase_params(sigma))),
+            Ty::Union(ms) => Ty::union(ms.iter().map(|m| m.erase_params(sigma)).collect()),
+            Ty::App(n, args) => Ty::App(
+                n.clone(),
+                args.iter().map(|a| a.erase_params(sigma)).collect(),
+            ),
+            other => other.clone(),
         }
     }
 
@@ -106,7 +186,9 @@ impl Ty {
             Ty::Map(_) => 5,
             Ty::Named(_) | Ty::Enum(_) => 6,
             Ty::Union(_) => 7,
-            Ty::Unknown => 8,
+            Ty::Param(_) => 8,
+            Ty::App(_, _) => 9,
+            Ty::Unknown => 10,
         }
     }
 
@@ -122,6 +204,15 @@ impl Ty {
         if matches!(self, Ty::Unknown) || matches!(other, Ty::Unknown) {
             return true;
         }
+        // A generic parameter is compatible with anything at the boundary where
+        // it appears as the *expected* type: the caller's actual type is what
+        // binds it. As the *actual* type it is likewise permissive, because the
+        // caller supplies its binding. Substitution has normally removed it
+        // before comparison; this keeps an unresolved parameter from making a
+        // sound `false` decision.
+        if matches!(self, Ty::Param(_)) || matches!(other, Ty::Param(_)) {
+            return true;
+        }
         match (self, other) {
             (Ty::Union(expected), Ty::Union(actual)) => actual
                 .iter()
@@ -130,6 +221,17 @@ impl Ty {
             (expected, Ty::Union(actual)) => actual.iter().all(|a| expected.compatible_with(a)),
             (Ty::List(a), Ty::List(b)) => a.compatible_with(b),
             (Ty::Map(a), Ty::Map(b)) => a.compatible_with(b),
+            // A generic application matches an application with the same
+            // nominal head and arity, element-wise. A bare `Named` matches an
+            // `App` of the same head only when the application has no
+            // arguments, so a wrong arity is not silently accepted here.
+            (Ty::App(a, xa), Ty::App(b, xb)) => {
+                a == b
+                    && xa.len() == xb.len()
+                    && xa.iter().zip(xb).all(|(x, y)| x.compatible_with(y))
+            }
+            (Ty::Named(a), Ty::App(b, xb)) => a == b && xb.is_empty(),
+            (Ty::App(a, xa), Ty::Named(b)) => a == b && xa.is_empty(),
             _ => self == other,
         }
     }
@@ -147,6 +249,7 @@ impl Ty {
             Ty::List(_) => TypeClass::List,
             Ty::Map(_) => TypeClass::Map,
             Ty::Named(_) | Ty::Enum(_) | Ty::Union(_) | Ty::Unknown => return None,
+            Ty::Param(_) | Ty::App(_, _) => return None,
         })
     }
 
@@ -158,8 +261,13 @@ impl Ty {
     /// or a union the checker cannot pin to one class.
     #[must_use]
     pub fn orderable_with(&self, other: &Ty) -> Option<bool> {
-        if matches!(self, Ty::Unknown | Ty::Union(_)) || matches!(other, Ty::Unknown | Ty::Union(_))
-        {
+        if matches!(
+            self,
+            Ty::Unknown | Ty::Union(_) | Ty::Param(_) | Ty::App(_, _)
+        ) || matches!(
+            other,
+            Ty::Unknown | Ty::Union(_) | Ty::Param(_) | Ty::App(_, _)
+        ) {
             return None;
         }
         Some(matches!(
@@ -223,7 +331,60 @@ impl Ty {
                     ))
                 }
             },
+            TypeExpr::App(n, args) => {
+                match types.get(n).map(String::as_str) {
+                    Some("enum") | Some("struct") | Some("alias") => {}
+                    // A generic application to a parameter name (`T<int>`) or
+                    // an unknown head is a type error here; the checker resolves
+                    // parameters and reports the precise diagnostic.
+                    Some(_) => {}
+                    None => {
+                        return Err(Diag::new(
+                            codes::UNKNOWN_TYPE,
+                            format!("unknown type `{n}`"),
+                            span,
+                        ))
+                    }
+                }
+                let mut tys = Vec::with_capacity(args.len());
+                for a in args {
+                    tys.push(Ty::from_expr(a, types, span)?);
+                }
+                Ty::App(n.clone(), tys)
+            }
         })
+    }
+
+    /// Build a runtime overload-selection type from a written annotation,
+    /// erasing generic type parameters to `Unknown`. The runtime carries no
+    /// static element type and a parameter is a compile-time placeholder, so a
+    /// parameter position accepts any runtime value (`LANGUAGE_SPEC.md` §36).
+    #[must_use]
+    pub fn from_expr_erased(t: &TypeExpr, params: &[String]) -> Ty {
+        let mut ty = Ty::from_expr_lenient(t);
+        ty.erase_named_params(params);
+        ty
+    }
+
+    /// Replace every named generic parameter (a bare `Named` whose spelling is
+    /// in `params`) with `Unknown`, recursively. The lenient conversion records
+    /// a parameter as a `Named`, so erasure works on that spelling.
+    fn erase_named_params(&mut self, params: &[String]) {
+        match self {
+            Ty::Named(n) if params.iter().any(|p| p == n) => *self = Ty::Unknown,
+            Ty::List(t) | Ty::Map(t) => t.erase_named_params(params),
+            Ty::Union(ms) => {
+                for m in ms.iter_mut() {
+                    m.erase_named_params(params);
+                }
+            }
+            Ty::App(_, args) => {
+                for a in args.iter_mut() {
+                    a.erase_named_params(params);
+                }
+            }
+            _ => {}
+        }
     }
 
     /// Convert a written type expression to a checker type *without*
@@ -247,6 +408,9 @@ impl Ty {
                 Ty::union(members.iter().map(Ty::from_expr_lenient).collect())
             }
             TypeExpr::Named(n) => Ty::Named(n.clone()),
+            TypeExpr::App(n, args) => {
+                Ty::App(n.clone(), args.iter().map(Ty::from_expr_lenient).collect())
+            }
         }
     }
 
@@ -266,6 +430,13 @@ impl Ty {
             Ty::Map(v) => TypeExpr::Map(Box::new(TypeExpr::String), Box::new(v.to_type_expr()?)),
             Ty::Named(n) => TypeExpr::Named(n.clone()),
             Ty::Enum(n) => TypeExpr::Named(n.clone()),
+            Ty::App(n, args) => {
+                let mut out = Vec::with_capacity(args.len());
+                for a in args {
+                    out.push(a.to_type_expr()?);
+                }
+                TypeExpr::App(n.clone(), out)
+            }
             Ty::Union(members) => {
                 let mut out = Vec::with_capacity(members.len());
                 for m in members {
@@ -273,6 +444,9 @@ impl Ty {
                 }
                 TypeExpr::Union(out)
             }
+            // A parameter has a source spelling (its name) only inside its
+            // declaration; outside, it cannot be persisted, so it is absent.
+            Ty::Param(n) => TypeExpr::Named(n.clone()),
             Ty::Unknown => return None,
         })
     }

@@ -97,11 +97,15 @@ pub enum GlobalDecl {
         ret: Option<TypeExpr>,
         /// Parameters in declaration order.
         params: Vec<ParamDecl>,
+        /// Generic type parameters `(name, bounds)` in declaration order.
+        type_params: Vec<(String, Vec<String>)>,
     },
     /// `struct Name { fields... }`
     Struct {
         /// Name.
         name: String,
+        /// Generic type parameters `(name, bounds)` in declaration order.
+        type_params: Vec<(String, Vec<String>)>,
         /// Fields in declaration order, as `(name, type, public)`. `public`
         /// records whether the field was declared `pub` (`LANGUAGE_SPEC.md`
         /// §28).
@@ -111,13 +115,15 @@ pub enum GlobalDecl {
     Enum {
         /// Name.
         name: String,
-        /// Variant tags with payload type annotations.
+        /// Variants, each with its payload type annotations.
         variants: Vec<(String, Vec<TypeExpr>)>,
     },
     /// `type Name = T`
     Alias {
         /// Name.
         name: String,
+        /// Generic type parameters `(name, bounds)` in declaration order.
+        type_params: Vec<(String, Vec<String>)>,
         /// The aliased type expression.
         target: TypeExpr,
     },
@@ -128,6 +134,8 @@ pub enum GlobalDecl {
     Impl {
         /// The nominal struct the methods belong to.
         target: String,
+        /// Generic type parameters `(name, bounds)` in declaration order.
+        type_params: Vec<(String, Vec<String>)>,
         /// The trait being implemented, when this is `impl Trait for Struct`.
         trait_name: Option<String>,
         /// The canonical module path the block was declared in.
@@ -141,6 +149,8 @@ pub enum GlobalDecl {
     Trait {
         /// The trait name.
         name: String,
+        /// Generic type parameters `(name, bounds)` in declaration order.
+        type_params: Vec<(String, Vec<String>)>,
         /// Declared methods as `(name, return annotation, params)`.
         methods: Vec<MethodDecl>,
     },
@@ -211,6 +221,11 @@ struct FnSig {
     /// governed by the same rule, but its reachability is already resolved by
     /// the resolver (a private one is never rewritten into a caller's scope).
     public: bool,
+    /// Generic type parameters in scope for this signature, in declaration
+    /// order, each with its trait bounds. A method carries the enclosing
+    /// `impl`'s parameters followed by its own. Identity is computed up to
+    /// alpha-renaming of these names.
+    type_params: Vec<(String, Vec<String>)>,
 }
 
 /// A parameter's checker signature (name and declared type). Whether the
@@ -222,6 +237,16 @@ struct ParamSig {
     name: String,
     /// Declared type, if annotated.
     ty: Option<Ty>,
+}
+
+/// The call-site context of a method invocation needed to instantiate a
+/// generic method: the receiver type (which binds the enclosing `impl`'s
+/// parameters) and any explicit type arguments written on the call.
+struct MethodSite<'a> {
+    /// The statically known receiver type.
+    recv: &'a Ty,
+    /// Explicit type arguments written at the call site.
+    ty_args: &'a [TypeExpr],
 }
 
 /// Resolve a carried-across parameter declaration list into checker signatures,
@@ -240,15 +265,12 @@ fn is_descendant_module(current: &[String], owner: &[String]) -> bool {
     current.len() >= owner.len() && current[..owner.len()] == owner[..]
 }
 
-fn params_of(params: &[ParamDecl], c: &Checker) -> Vec<ParamSig> {
+fn params_of(params: &[ParamDecl], c: &Checker, pnames: &[String]) -> Vec<ParamSig> {
     params
         .iter()
         .map(|p| ParamSig {
             name: p.name.clone(),
-            ty: p
-                .ty
-                .as_ref()
-                .map(|t| Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t))),
+            ty: p.ty.as_ref().map(|t| c.session_type(t, pnames)),
         })
         .collect()
 }
@@ -338,6 +360,23 @@ pub struct Checker {
     /// (`E2007`). Types live in their own namespace (`types`) and are checked
     /// there, so `struct S` and `fn S` may coexist exactly as in a module.
     session_value_names: HashMap<String, Span>,
+    /// Declared generic type parameters of each user type (struct, enum, or
+    /// alias), by canonical name, in declaration order. Empty for a
+    /// non-generic type. Enforces arity on every application.
+    type_type_params: HashMap<String, Vec<String>>,
+    /// Trait bounds declared on each type parameter of a user type, aligned
+    /// with [`Checker::type_type_params`]. Used when an `impl` binds the
+    /// parameter.
+    type_type_param_bounds: HashMap<String, Vec<Vec<String>>>,
+    /// Declared generic type parameters of each trait, by canonical name.
+    trait_type_params: HashMap<String, Vec<String>>,
+    /// The generic type parameters currently in scope while checking a body,
+    /// with trait bounds, innermost last. A name here is a `Ty::Param`.
+    current_type_params: Vec<Vec<(String, Vec<String>)>>,
+    /// Trait names seen in this module, collected in the first hoist pass so a
+    /// bound (`T: Trait`) can be validated before the trait table itself is
+    /// built (which happens after function signatures are annotated).
+    declared_traits: std::collections::HashSet<String>,
 }
 
 impl Checker {
@@ -371,6 +410,11 @@ impl Checker {
             alias_targets: HashMap::new(),
             resolved_aliases: RefCell::new(HashMap::new()),
             session_value_names: HashMap::new(),
+            type_type_params: HashMap::new(),
+            type_type_param_bounds: HashMap::new(),
+            trait_type_params: HashMap::new(),
+            current_type_params: Vec::new(),
+            declared_traits: std::collections::HashSet::new(),
         }
     }
 
@@ -387,6 +431,7 @@ impl Checker {
                         name: name.clone(),
                         ret: None,
                         params: Vec::new(),
+                        type_params: Vec::new(),
                     }
                 } else {
                     GlobalDecl::Binding {
@@ -420,19 +465,22 @@ impl Checker {
                     c.scopes[0].vars.insert(name.clone(), *mutable);
                     c.session_value_names.insert(name.clone(), Span::default());
                 }
-                GlobalDecl::Function { name, ret, params } => {
+                GlobalDecl::Function {
+                    name,
+                    ret,
+                    params,
+                    type_params,
+                } => {
                     c.scopes[0].declares.insert(name.clone(), Span::default());
                     c.scopes[0].vars.insert(name.clone(), false);
                     c.session_value_names.insert(name.clone(), Span::default());
-                    let ret_ty = ret.as_ref().map(Ty::from_expr_lenient);
+                    let pnames: Vec<String> = type_params.iter().map(|(n, _)| n.clone()).collect();
+                    let ret_ty = ret.as_ref().map(|t| c.session_type(t, &pnames));
                     let param_tys = params
                         .iter()
                         .map(|p| ParamSig {
                             name: p.name.clone(),
-                            ty: p
-                                .ty
-                                .as_ref()
-                                .map(|t| Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t))),
+                            ty: p.ty.as_ref().map(|t| c.session_type(t, &pnames)),
                         })
                         .collect();
                     c.functions.entry(name.clone()).or_default().push(FnSig {
@@ -442,13 +490,24 @@ impl Checker {
                         owner: Vec::new(),
                         public: true,
                         span: Span::default(),
+                        type_params: type_params.clone(),
                     });
                 }
-                GlobalDecl::Struct { name, .. } => {
+                GlobalDecl::Struct {
+                    name, type_params, ..
+                } => {
                     c.scopes[0].declares.insert(name.clone(), Span::default());
                     c.scopes[0].vars.insert(name.clone(), false);
                     c.types.insert(name.clone(), Span::default());
                     c.type_kinds.insert(name.clone(), "struct".to_string());
+                    c.type_type_params.insert(
+                        name.clone(),
+                        type_params.iter().map(|(n, _)| n.clone()).collect(),
+                    );
+                    c.type_type_param_bounds.insert(
+                        name.clone(),
+                        type_params.iter().map(|(_, b)| b.clone()).collect(),
+                    );
                 }
                 GlobalDecl::Enum { name, .. } => {
                     c.scopes[0].declares.insert(name.clone(), Span::default());
@@ -456,12 +515,24 @@ impl Checker {
                     c.types.insert(name.clone(), Span::default());
                     c.type_kinds.insert(name.clone(), "enum".to_string());
                 }
-                GlobalDecl::Alias { name, target } => {
+                GlobalDecl::Alias {
+                    name,
+                    type_params,
+                    target,
+                } => {
                     c.scopes[0].declares.insert(name.clone(), Span::default());
                     c.scopes[0].vars.insert(name.clone(), false);
                     c.types.insert(name.clone(), Span::default());
                     c.type_kinds.insert(name.clone(), "alias".to_string());
                     c.alias_targets.insert(name.clone(), target.clone());
+                    c.type_type_params.insert(
+                        name.clone(),
+                        type_params.iter().map(|(n, _)| n.clone()).collect(),
+                    );
+                    c.type_type_param_bounds.insert(
+                        name.clone(),
+                        type_params.iter().map(|(_, b)| b.clone()).collect(),
+                    );
                 }
                 GlobalDecl::Impl { .. } => {}
                 GlobalDecl::Trait { .. } => {}
@@ -471,15 +542,17 @@ impl Checker {
         // now that every alias target is known.
         for d in decls {
             match d {
-                GlobalDecl::Struct { name, fields } => {
+                GlobalDecl::Struct {
+                    name,
+                    type_params,
+                    fields,
+                } => {
+                    let pnames: Vec<String> = type_params.iter().map(|(n, _)| n.clone()).collect();
                     let mut map = HashMap::new();
                     let mut order = Vec::new();
                     let mut public = HashMap::new();
                     for (f, t, is_pub) in fields {
-                        map.insert(
-                            f.clone(),
-                            Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t)),
-                        );
+                        map.insert(f.clone(), c.session_type(t, &pnames));
                         order.push(f.clone());
                         public.insert(f.clone(), *is_pub);
                     }
@@ -508,6 +581,7 @@ impl Checker {
                 }
                 GlobalDecl::Impl {
                     target,
+                    type_params,
                     trait_name,
                     owner,
                     methods,
@@ -518,13 +592,11 @@ impl Checker {
                     // inherent and trait-provided methods share one namespace.
                     // Resolve signatures first (which borrows `c`) and merge
                     // afterwards so the table borrow does not overlap.
+                    let pnames: Vec<String> = type_params.iter().map(|(n, _)| n.clone()).collect();
                     let mut restored: Vec<(String, FnSig)> = Vec::new();
                     for m in methods {
-                        let ret_ty = m
-                            .ret
-                            .as_ref()
-                            .map(|t| Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t)));
-                        let param_tys = params_of(&m.params, &c);
+                        let ret_ty = m.ret.as_ref().map(|t| c.session_type(t, &pnames));
+                        let param_tys = params_of(&m.params, &c, &pnames);
                         restored.push((
                             m.name.clone(),
                             FnSig {
@@ -534,6 +606,7 @@ impl Checker {
                                 owner: owner.clone(),
                                 public: m.public,
                                 span: Span::default(),
+                                type_params: type_params.clone(),
                             },
                         ));
                     }
@@ -546,17 +619,19 @@ impl Checker {
                             .insert((target.clone(), tname.clone()), Span::default());
                     }
                 }
-                GlobalDecl::Trait { name, methods } => {
+                GlobalDecl::Trait {
+                    name,
+                    type_params,
+                    methods,
+                } => {
                     // Restore the persisted trait contract so a later
                     // submission can implement it. Method order is preserved
                     // so diagnostics name the first declared method.
+                    let pnames: Vec<String> = type_params.iter().map(|(n, _)| n.clone()).collect();
                     let mut table: Vec<(String, FnSig)> = Vec::with_capacity(methods.len());
                     for m in methods {
-                        let ret_ty = m
-                            .ret
-                            .as_ref()
-                            .map(|t| Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t)));
-                        let param_tys = params_of(&m.params, &c);
+                        let ret_ty = m.ret.as_ref().map(|t| c.session_type(t, &pnames));
+                        let param_tys = params_of(&m.params, &c, &pnames);
                         table.push((
                             m.name.clone(),
                             FnSig {
@@ -566,9 +641,14 @@ impl Checker {
                                 owner: Vec::new(),
                                 public: true,
                                 span: Span::default(),
+                                type_params: type_params.clone(),
                             },
                         ));
                     }
+                    c.trait_type_params.insert(
+                        name.clone(),
+                        type_params.iter().map(|(n, _)| n.clone()).collect(),
+                    );
                     c.traits.insert(name.clone(), table);
                 }
                 _ => {}
@@ -608,6 +688,14 @@ impl Checker {
     /// forward references between functions and constants resolve. This makes
     /// the checker agree with the runtime's declaration-then-initialize order.
     fn hoist(&mut self, m: &Module) -> Result<()> {
+        // Collect trait names first, so a generic bound (`T: Trait`) written on
+        // any declaration is validated against a known trait even though the
+        // full trait table is built later in this pass.
+        for item in &m.items {
+            if let Item::Trait { name, .. } = item {
+                self.declared_traits.insert(name.clone());
+            }
+        }
         let mut declared: HashMap<String, Span> = HashMap::new();
         // Whether the value name first declared here is a function, so a later
         // item may overload only another function, never a constant or binding
@@ -670,6 +758,7 @@ impl Checker {
                         owner,
                         public: *public,
                         span: *span,
+                        type_params: Vec::new(),
                     });
                     let base = self.functions.get(name).map_or(0, Vec::len) - 1;
                     new_fn_base.entry(name.clone()).or_insert(base);
@@ -695,7 +784,12 @@ impl Checker {
                     let ord = self.const_order.len();
                     self.const_order.insert(name.clone(), ord);
                 }
-                Item::Struct { name, span, .. } => {
+                Item::Struct {
+                    name,
+                    type_params,
+                    span,
+                    ..
+                } => {
                     if self.types.insert(name.clone(), *span).is_some() {
                         return Err(Diag::new(
                             codes::DUPLICATE_TYPE,
@@ -704,9 +798,18 @@ impl Checker {
                         ));
                     }
                     self.type_kinds.insert(name.clone(), "struct".to_string());
+                    self.type_type_params.insert(
+                        name.clone(),
+                        type_params.iter().map(|p| p.name.clone()).collect(),
+                    );
+                    self.type_type_param_bounds.insert(
+                        name.clone(),
+                        type_params.iter().map(|p| p.bounds.clone()).collect(),
+                    );
                 }
                 Item::Enum {
                     name,
+                    type_params,
                     variants,
                     span,
                     ..
@@ -719,6 +822,14 @@ impl Checker {
                         ));
                     }
                     self.type_kinds.insert(name.clone(), "enum".to_string());
+                    self.type_type_params.insert(
+                        name.clone(),
+                        type_params.iter().map(|p| p.name.clone()).collect(),
+                    );
+                    self.type_type_param_bounds.insert(
+                        name.clone(),
+                        type_params.iter().map(|p| p.bounds.clone()).collect(),
+                    );
                     for variant in variants {
                         if let Some(prev) = self.variants.get(&variant.tag) {
                             return Err(Diag::new(
@@ -738,7 +849,11 @@ impl Checker {
                     }
                 }
                 Item::Alias {
-                    name, target, span, ..
+                    name,
+                    type_params,
+                    target,
+                    span,
+                    ..
                 } => {
                     if self.types.insert(name.clone(), *span).is_some() {
                         return Err(Diag::new(
@@ -749,6 +864,14 @@ impl Checker {
                     }
                     self.type_kinds.insert(name.clone(), "alias".to_string());
                     self.alias_targets.insert(name.clone(), target.clone());
+                    self.type_type_params.insert(
+                        name.clone(),
+                        type_params.iter().map(|p| p.name.clone()).collect(),
+                    );
+                    self.type_type_param_bounds.insert(
+                        name.clone(),
+                        type_params.iter().map(|p| p.bounds.clone()).collect(),
+                    );
                 }
                 Item::Use { .. }
                 | Item::Expr(..)
@@ -764,7 +887,15 @@ impl Checker {
         let mut filled: HashMap<String, usize> = HashMap::new();
         for item in &m.items {
             match item {
-                Item::Struct { name, fields, .. } => {
+                Item::Struct {
+                    name,
+                    type_params,
+                    fields,
+                    ..
+                } => {
+                    self.check_type_params(type_params, Span::default())?;
+                    self.check_type_param_bounds(type_params)?;
+                    self.push_type_params(type_params);
                     let mut map = HashMap::new();
                     let mut order = Vec::new();
                     let mut public = HashMap::new();
@@ -787,8 +918,16 @@ impl Checker {
                     self.struct_fields.insert(name.clone(), map);
                     self.struct_field_order.insert(name.clone(), order);
                     self.struct_public_fields.insert(name.clone(), public);
+                    self.pop_type_params();
                 }
-                Item::Enum { variants, .. } => {
+                Item::Enum {
+                    type_params,
+                    variants,
+                    ..
+                } => {
+                    self.check_type_params(type_params, Span::default())?;
+                    self.check_type_param_bounds(type_params)?;
+                    self.push_type_params(type_params);
                     for variant in variants {
                         let mut tys = Vec::with_capacity(variant.payload.len());
                         for pty in &variant.payload {
@@ -796,17 +935,31 @@ impl Checker {
                         }
                         self.variant_payloads.insert(variant.tag.clone(), tys);
                     }
+                    self.pop_type_params();
                 }
-                Item::Alias { target, span, .. } => {
+                Item::Alias {
+                    type_params,
+                    target,
+                    span,
+                    ..
+                } => {
+                    self.check_type_params(type_params, Span::default())?;
+                    self.check_type_param_bounds(type_params)?;
+                    self.push_type_params(type_params);
                     self.annotation(target, *span)?;
+                    self.pop_type_params();
                 }
                 Item::Fn {
                     name,
+                    type_params,
                     params,
                     ret,
                     ret_span,
                     ..
                 } => {
+                    self.check_type_params(type_params, Span::default())?;
+                    self.check_type_param_bounds(type_params)?;
+                    self.push_type_params(type_params);
                     let mut param_tys = Vec::with_capacity(params.len());
                     for p in params {
                         let ty = match &p.ty {
@@ -831,9 +984,14 @@ impl Checker {
                         if let Some(sig) = set.get_mut(idx) {
                             sig.ret = ret_ty;
                             sig.params = param_tys;
+                            sig.type_params = type_params
+                                .iter()
+                                .map(|p| (p.name.clone(), p.bounds.clone()))
+                                .collect();
                         }
                         filled.insert(name.clone(), idx + 1);
                     }
+                    self.pop_type_params();
                 }
                 _ => {}
             }
@@ -878,6 +1036,7 @@ impl Checker {
         for item in &m.items {
             if let Item::Trait {
                 name,
+                type_params,
                 methods,
                 public,
                 owner,
@@ -893,10 +1052,18 @@ impl Checker {
                         *span,
                     ));
                 }
+                self.check_type_params(type_params, *span)?;
+                self.check_type_param_bounds(type_params)?;
+                self.trait_type_params.insert(
+                    name.clone(),
+                    type_params.iter().map(|p| p.name.clone()).collect(),
+                );
+                self.push_type_params(type_params);
                 let mut table: Vec<(String, FnSig)> = Vec::with_capacity(methods.len());
                 for m_item in methods {
                     let Item::Fn {
                         name: mname,
+                        type_params: mtype_params,
                         params,
                         ret,
                         ret_span,
@@ -915,6 +1082,7 @@ impl Checker {
                             *mspan,
                         ));
                     }
+                    self.push_type_params(mtype_params);
                     let mut param_tys: Vec<ParamSig> = Vec::with_capacity(params.len());
                     for p in params {
                         // A parameter name declared twice is a same-scope
@@ -942,12 +1110,19 @@ impl Checker {
                         Some(rt) => Some(self.annotation(rt, ret_span.unwrap_or_default())?),
                         None => None,
                     };
+                    self.pop_type_params();
+                    let mut method_p = type_params.clone();
+                    method_p.extend(mtype_params.clone());
                     table.push((
                         mname.clone(),
                         FnSig {
                             ret: ret_ty,
                             params: param_tys,
                             mut_receiver: params.first().is_some_and(|p| p.mutable),
+                            type_params: method_p
+                                .iter()
+                                .map(|p| (p.name.clone(), p.bounds.clone()))
+                                .collect(),
                             owner: owner.clone(),
                             // A trait method's reachability follows its trait:
                             // a `pub` trait's methods are usable wherever the
@@ -959,18 +1134,25 @@ impl Checker {
                     ));
                 }
                 self.traits.insert(name.clone(), table);
+                self.pop_type_params();
             }
         }
         // 2. Inherent and trait implementations, merged into one method surface.
         for item in &m.items {
             if let Item::Impl {
                 target,
+                target_args,
                 trait_name,
+                trait_args,
+                type_params,
                 methods,
                 owner,
                 span,
             } = item
             {
+                self.check_type_params(type_params, *span)?;
+                self.check_type_param_bounds(type_params)?;
+                self.push_type_params(type_params);
                 // The target MUST be an already-declared nominal struct.
                 match self.type_kinds.get(target) {
                     Some(kind) if kind == "struct" => {}
@@ -988,6 +1170,13 @@ impl Checker {
                             *span,
                         ));
                     }
+                }
+                // A generic `impl<T>` on a generic struct must apply the
+                // struct's parameters; its target arguments must have the
+                // struct's arity.
+                self.check_type_args_arity(target, target_args, *span)?;
+                if let Some(tname) = trait_name {
+                    self.check_type_args_arity(tname, trait_args, *span)?;
                 }
                 // Multiple `impl` blocks for one struct are allowed: their
                 // methods merge into the struct's single method surface, and
@@ -1077,6 +1266,7 @@ impl Checker {
                             owner: owner.clone(),
                             public: false,
                             span: *mspan,
+                            type_params: Vec::new(),
                         };
                         if !self.method_sigs_compatible(expected, &actual) {
                             return Err(Diag::new(
@@ -1118,6 +1308,7 @@ impl Checker {
                 for m_item in methods {
                     let Item::Fn {
                         name,
+                        type_params: method_type_params,
                         params,
                         ret,
                         ret_span,
@@ -1141,6 +1332,9 @@ impl Checker {
                             *mspan,
                         ));
                     }
+                    // A method's own type parameters extend the impl's for its
+                    // signature (`impl<T> Box<T> { fn map<U>... }`).
+                    self.push_type_params(method_type_params);
                     let mut param_tys = Vec::with_capacity(params.len());
                     for p in params {
                         let ty = match &p.ty {
@@ -1156,7 +1350,10 @@ impl Checker {
                         Some(rt) => Some(self.annotation(rt, ret_span.unwrap_or_default())?),
                         None => None,
                     };
+                    self.pop_type_params();
                     let mut_receiver = params.first().is_some_and(|p| p.mutable);
+                    let mut method_p = type_params.clone();
+                    method_p.extend(method_type_params.clone());
                     let sig = FnSig {
                         ret: ret_ty,
                         params: param_tys,
@@ -1166,6 +1363,10 @@ impl Checker {
                         owner: trait_module.clone().unwrap_or_else(|| owner.clone()),
                         public: trait_publicity.unwrap_or(*public_flag),
                         span: *mspan,
+                        type_params: method_p
+                            .iter()
+                            .map(|p| (p.name.clone(), p.bounds.clone()))
+                            .collect(),
                     };
                     // One member namespace: inherent and trait methods, and two
                     // traits, share it. Overloading is allowed when the ordered
@@ -1191,6 +1392,7 @@ impl Checker {
                         .or_default()
                         .push(sig);
                 }
+                self.pop_type_params();
             }
         }
         Ok(())
@@ -1235,6 +1437,7 @@ impl Checker {
                     owner: Vec::new(),
                     public: true,
                     span: Span::default(),
+                    type_params: Vec::new(),
                 });
             }
         }
@@ -1456,6 +1659,118 @@ impl Checker {
         }
     }
 
+    /// Build the substitution that binds a generic signature's parameters by
+    /// structurally matching each actual argument type against the parameter's
+    /// declared type. Returns `None` when a concrete constraint is violated (a
+    /// mismatch), and binds what it can otherwise. A parameter with no binding
+    /// is left unbound; the caller maps it to `Unknown` for value positions.
+    ///
+    /// Matching is one-way and deterministic: a bare parameter binds to the
+    /// actual type, a compound pattern matches the same compound shape, and a
+    /// concrete type requires compatibility.
+    fn infer_substitution(
+        &self,
+        params: &[ParamSig],
+        actual: &[Ty],
+        explicit: &HashMap<String, Ty>,
+    ) -> Option<HashMap<String, Ty>> {
+        let mut sigma: HashMap<String, Ty> = explicit.clone();
+        for (p, a) in params.iter().zip(actual) {
+            let Some(expected) = &p.ty else { continue };
+            if !self.unify_into(expected, a, &mut sigma) {
+                return None;
+            }
+        }
+        Some(sigma)
+    }
+
+    /// Structurally match `pattern` against `actual`, recording parameter
+    /// bindings in `sigma`. Returns `false` on a provable mismatch. Two
+    /// occurrences of one parameter must agree.
+    fn unify_into(&self, pattern: &Ty, actual: &Ty, sigma: &mut HashMap<String, Ty>) -> bool {
+        // `Unknown` never forces a binding and never fails.
+        if matches!(actual, Ty::Unknown) {
+            return true;
+        }
+        match pattern {
+            Ty::Param(name) => match sigma.get(name) {
+                Some(bound) => bound.compatible_with(actual) && actual.compatible_with(bound),
+                None => {
+                    sigma.insert(name.clone(), actual.clone());
+                    true
+                }
+            },
+            Ty::List(p) => match actual {
+                Ty::List(a) => self.unify_into(p, a, sigma),
+                // A runtime container carries `[Unknown]`; keep the parameter
+                // unbound rather than guessing (it stays `Unknown`).
+                _ => pattern.compatible_with(actual),
+            },
+            Ty::Map(p) => match actual {
+                Ty::Map(a) => self.unify_into(p, a, sigma),
+                _ => pattern.compatible_with(actual),
+            },
+            Ty::Union(members) => {
+                // A union pattern like `T | none` collapses to `Unknown` before
+                // it reaches here. For a genuine union, match when some member
+                // accepts the actual type.
+                members.iter().any(|m| self.unify_into(m, actual, sigma))
+            }
+            Ty::App(name, args) => match actual {
+                Ty::App(an, aargs) if an == name && aargs.len() == args.len() => args
+                    .iter()
+                    .zip(aargs)
+                    .all(|(p, a)| self.unify_into(p, a, sigma)),
+                _ => pattern.compatible_with(actual),
+            },
+            // A concrete pattern requires compatibility; a parameter nested in
+            // a union or container has already been handled above.
+            _ => pattern.compatible_with(actual),
+        }
+    }
+
+    /// Seed a substitution from explicit type arguments written at a call site.
+    /// Returns `E3001` for a wrong arity or an unknown parameter name.
+    fn explicit_substitution(
+        &self,
+        name: &str,
+        sig: &FnSig,
+        ty_args: &[TypeExpr],
+        span: Span,
+    ) -> Result<HashMap<String, Ty>> {
+        if ty_args.is_empty() {
+            return Ok(HashMap::new());
+        }
+        if ty_args.len() != sig.type_params.len() {
+            return Err(Diag::new(
+                codes::TYPE_MISMATCH,
+                format!(
+                    "`{name}` expects {} type argument(s), found {}",
+                    sig.type_params.len(),
+                    ty_args.len()
+                ),
+                span,
+            ));
+        }
+        let mut sigma = HashMap::new();
+        for ((pname, pbounds), t) in sig.type_params.iter().zip(ty_args) {
+            let ty = self.annotation(t, span)?;
+            if ty.has_param() {
+                return Err(Diag::new(
+                    codes::TYPE_MISMATCH,
+                    format!(
+                        "type argument for `{pname}` must be a concrete type, found `{}`",
+                        ty.name()
+                    ),
+                    span,
+                ));
+            }
+            self.satisfies_bounds(&ty, pbounds, span)?;
+            sigma.insert(pname.clone(), ty);
+        }
+        Ok(sigma)
+    }
+
     /// Map arguments to a candidate's parameters, returning the actual types in
     /// parameter order, or `None` when the names/arity do not fit.
     fn map_args_to_params(&self, params: &[ParamSig], args: &[Arg]) -> Option<Vec<Ty>> {
@@ -1551,7 +1866,14 @@ impl Checker {
         Diag::new(codes::TYPE_MISMATCH, message, span)
     }
 
-    fn check_user_call(&self, name: &str, sig: &FnSig, args: &[Arg], span: Span) -> Result<()> {
+    fn check_user_call(
+        &self,
+        name: &str,
+        sig: &FnSig,
+        args: &[Arg],
+        ty_args: &[TypeExpr],
+        span: Span,
+    ) -> Result<()> {
         // Map each declared parameter index to the argument index that fills
         // it, or `None` if it is missing.
         let mut filled: Vec<Option<usize>> = vec![None; sig.params.len()];
@@ -1631,6 +1953,36 @@ impl Checker {
                 ));
             }
         }
+        // Generic signature: build the substitution from the explicit type
+        // arguments (when written) and the argument types, then check every
+        // bound the parameters declare.
+        if !sig.type_params.is_empty() {
+            let explicit = self.explicit_substitution(name, sig, ty_args, span)?;
+            let actual: Vec<Ty> = sig
+                .params
+                .iter()
+                .zip(&filled)
+                .map(|(_, slot)| slot.map_or(Ty::Unknown, |ai| self.infer(&args[ai].value)))
+                .collect();
+            let Some(sigma) = self.infer_substitution(&sig.params, &actual, &explicit) else {
+                return Err(Diag::new(
+                    codes::TYPE_MISMATCH,
+                    format!("`{name}` cannot be instantiated with these argument types"),
+                    span,
+                ));
+            };
+            for (pname, pbounds) in &sig.type_params {
+                if let Some(ty) = sigma.get(pname) {
+                    self.satisfies_bounds(ty, pbounds, span)?;
+                }
+            }
+        } else if !ty_args.is_empty() {
+            return Err(Diag::new(
+                codes::TYPE_MISMATCH,
+                format!("`{name}` is not generic and takes no type arguments"),
+                span,
+            ));
+        }
         Ok(())
     }
 
@@ -1656,6 +2008,7 @@ impl Checker {
         match item {
             Item::Fn {
                 name,
+                type_params,
                 params,
                 ret,
                 ret_span,
@@ -1666,6 +2019,9 @@ impl Checker {
                 // call inside this body is visibility-checked relative to it.
                 let saved_module =
                     std::mem::replace(&mut self.current_module, canonical_module_of(name));
+                // Bind the declaration's generic parameters for the signature
+                // and body, so `T` is a placeholder throughout.
+                self.push_type_params(type_params);
                 if name == "main" {
                     if !params.is_empty() {
                         return Err(Diag::new(
@@ -1716,6 +2072,7 @@ impl Checker {
                         self.used_names = saved_used;
                         self.current_module = saved_module;
                         self.pop();
+                        self.pop_type_params();
                         return Err(Diag::new(
                             codes::UNUSED_PARAM,
                             format!(
@@ -1730,6 +2087,7 @@ impl Checker {
                 self.used_names = saved_used;
                 self.current_module = saved_module;
                 self.pop();
+                self.pop_type_params();
             }
             Item::Const {
                 name,
@@ -1781,15 +2139,37 @@ impl Checker {
             | Item::Trait { .. }
             | Item::Module { .. } => {}
             Item::Impl {
-                target, methods, ..
+                target,
+                target_args,
+                type_params,
+                methods,
+                ..
             } => {
                 // The method table was built in the hoist pass; here each
                 // method body is checked with `self` typed as the receiver's
-                // nominal struct, under the ordinary function rules.
-                let recv_ty = Ty::Named(target.clone());
+                // nominal struct, under the ordinary function rules. A generic
+                // `impl<T> Struct<T>` binds `T` for every method body, and the
+                // receiver type carries the parameters so `self.field` on a
+                // parameterised field substitutes correctly.
+                self.push_type_params(type_params);
+                let recv_ty = if target_args.is_empty() {
+                    Ty::Named(target.clone())
+                } else {
+                    let mut tys = Vec::with_capacity(target_args.len());
+                    for a in target_args {
+                        // An argument that names an impl parameter is a
+                        // `Ty::Param`; a concrete one resolves normally.
+                        tys.push(match a {
+                            TypeExpr::Named(n) if self.is_type_param(n) => Ty::Param(n.clone()),
+                            other => self.annotation(other, Span::default())?,
+                        });
+                    }
+                    Ty::App(target.clone(), tys)
+                };
                 for m_item in methods {
                     let Item::Fn {
                         name,
+                        type_params: method_type_params,
                         params,
                         ret,
                         ret_span,
@@ -1799,6 +2179,8 @@ impl Checker {
                     else {
                         continue;
                     };
+                    // A method may add its own parameters on top of the impl's.
+                    self.push_type_params(method_type_params);
                     self.check_method_body(
                         target,
                         name,
@@ -1807,7 +2189,9 @@ impl Checker {
                         ret.as_ref().map(|rt| (rt, ret_span.unwrap_or_default())),
                         body,
                     )?;
+                    self.pop_type_params();
                 }
+                self.pop_type_params();
             }
         }
         Ok(())
@@ -1975,9 +2359,17 @@ impl Checker {
                 }
                 Ty::Map(Box::new(val))
             }
-            Expr::Construct(name, _, _) => {
+            Expr::Construct(name, args, ty_args, _) => {
                 if self.variants.contains_key(name) {
                     Ty::Unknown
+                } else if self
+                    .type_type_params
+                    .get(name)
+                    .is_some_and(|p| !p.is_empty())
+                {
+                    // A generic struct: build the substitution from the explicit
+                    // arguments or the field values, and apply it to the type.
+                    self.construct_generic_ty(name, args, ty_args)
                 } else {
                     Ty::Named(name.clone())
                 }
@@ -2005,14 +2397,14 @@ impl Checker {
                 }
                 Ty::Unknown
             }
-            Expr::Call(f, args, _) => match f.as_ref() {
+            Expr::Call(f, args, ty_args, _) => match f.as_ref() {
                 Expr::Name(name, _) => {
                     if let Some(set) = self.functions.get(name) {
                         let visible: Vec<FnSig> =
                             set.iter().filter(|s| self.fn_visible(s)).cloned().collect();
                         self.resolve_call_sig(&visible, args)
                             .map_or(Ty::Unknown, |i| {
-                                visible[i].ret.clone().unwrap_or(Ty::Unknown)
+                                self.instantiate_return_ty(&visible[i], args, ty_args)
                             })
                     } else if let Some(sig) = crate::stdlib::signatures::builtin(name) {
                         sig.returns.ty()
@@ -2022,8 +2414,9 @@ impl Checker {
                 }
                 _ => Ty::Unknown,
             },
-            Expr::Method(recv, name, args, _) => {
-                if let Some(sname) = self.struct_name_of(&self.infer(recv)) {
+            Expr::Method(recv, name, args, ty_args, _) => {
+                let recv_ty = self.infer(recv);
+                if let Some(sname) = self.struct_name_of(&recv_ty) {
                     if let Some(set) = self.method_set(&sname, name) {
                         let visible: Vec<FnSig> = set
                             .iter()
@@ -2031,12 +2424,12 @@ impl Checker {
                             .cloned()
                             .collect();
                         if let Some(i) = self.resolve_method_sig(&visible, args) {
-                            return visible[i].ret.clone().unwrap_or(Ty::Unknown);
+                            return self.instantiate_return_ty(&visible[i], args, ty_args);
                         }
                     }
                     return Ty::Unknown;
                 }
-                if let Some(class) = self.infer(recv).type_class() {
+                if let Some(class) = recv_ty.type_class() {
                     if let Some(sig) = crate::stdlib::signatures::method(class, name) {
                         return sig.returns.ty();
                     }
@@ -2045,15 +2438,18 @@ impl Checker {
             }
             Expr::Field(recv, name, _) => {
                 // FEATURE_003: a field read on a statically known struct has
-                // that struct's declared field type. The field table stores
-                // alias-resolved types, so the propagated `Ty` is the
-                // semantically resolved one. Anything else (an `Unknown`
-                // receiver, a primitive, a list, a map, an enum, `range`, or a
-                // struct without that field) stays `Unknown` — the checker
-                // never speculates (`LANGUAGE_SPEC.md` §17.5).
-                if let Ty::Named(sname) = self.infer(recv) {
+                // that struct's declared field type, with the struct's generic
+                // substitution applied. The field table stores alias-resolved
+                // types, so the propagated `Ty` is the semantically resolved
+                // one. Anything else (an `Unknown` receiver, a primitive, a
+                // list, a map, an enum, `range`, or a struct without that
+                // field) stays `Unknown` — the checker never speculates
+                // (`LANGUAGE_SPEC.md` §17.5).
+                let recv_ty = self.infer(recv);
+                if let Some(sname) = self.struct_name_of(&recv_ty) {
                     if let Some(fty) = self.struct_fields.get(&sname).and_then(|m| m.get(name)) {
-                        return fty.clone();
+                        let sigma = self.receiver_substitution(&sname, &recv_ty);
+                        return fty.substitute(&sigma);
                     }
                 }
                 Ty::Unknown
@@ -2061,6 +2457,50 @@ impl Checker {
             Expr::Range(_, _, _) => Ty::Named("range".to_string()),
             Expr::Pipe(_, _, _) | Expr::Index(_, _, _) | Expr::Lambda(_, _, _) => Ty::Unknown,
         }
+    }
+
+    /// With explicit type arguments on a struct construction, check each field
+    /// value against the field type with the substitution applied, so
+    /// `Box<int> { value: "x" }` is rejected (`E3001`).
+    fn check_construct_field_types(
+        &self,
+        name: &str,
+        fields: &HashMap<String, Ty>,
+        args: &[Arg],
+        sigma: &HashMap<String, Ty>,
+        span: Span,
+    ) -> Result<()> {
+        let order = self
+            .struct_field_order
+            .get(name)
+            .cloned()
+            .unwrap_or_default();
+        for (i, arg) in args.iter().enumerate() {
+            let fname = match &arg.name {
+                Some(n) => n.clone(),
+                None => match order.get(i) {
+                    Some(n) => n.clone(),
+                    None => continue,
+                },
+            };
+            let Some(fty) = fields.get(&fname) else {
+                continue;
+            };
+            let expected = fty.substitute(sigma);
+            let actual = self.infer(&arg.value);
+            if !expected.compatible_with(&actual) {
+                return Err(Diag::new(
+                    codes::TYPE_MISMATCH,
+                    format!(
+                        "field `{fname}` of `{name}` expects `{}`, found `{}`",
+                        expected.name(),
+                        actual.name()
+                    ),
+                    span,
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// Validate a builtin call against its shared signature.
@@ -2129,8 +2569,122 @@ impl Checker {
     fn struct_name_of(&self, ty: &Ty) -> Option<String> {
         match ty {
             Ty::Named(n) if n != "range" => Some(n.clone()),
+            Ty::App(n, _) if n != "range" => Some(n.clone()),
             _ => None,
         }
+    }
+
+    /// The type arguments applied to a checker type, if any (`Box<int>` → the
+    /// vector `[int]`; a bare `Named` → empty).
+    fn ty_args_of(ty: &Ty) -> Vec<Ty> {
+        match ty {
+            Ty::App(_, args) => args.clone(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Compute the checker type of a generic struct construction, applying the
+    /// substitution inferred from the explicit type arguments or the field
+    /// values. An unbound parameter yields `Unknown` for that argument rather
+    /// than a guessed type.
+    fn construct_generic_ty(&self, name: &str, args: &[Arg], ty_args: &[TypeExpr]) -> Ty {
+        let declared = self.type_type_params.get(name).cloned().unwrap_or_default();
+        if declared.is_empty() {
+            return Ty::Named(name.to_string());
+        }
+        let mut sigma: HashMap<String, Ty> = HashMap::new();
+        if !ty_args.is_empty() {
+            // Arity is validated by the construction checker; bind what lines up.
+            for (p, t) in declared.iter().zip(ty_args) {
+                if let Ok(t) = self.annotation(t, Span::default()) {
+                    sigma.insert(p.clone(), t);
+                }
+            }
+        } else if let Some(fields) = self.struct_fields.get(name) {
+            // Infer from field values, positionally or by name.
+            let ordered: Vec<(String, Ty)> = self
+                .struct_field_order
+                .get(name)
+                .map(|order| {
+                    order
+                        .iter()
+                        .map(|f| {
+                            let ty = fields.get(f).cloned().unwrap_or(Ty::Unknown);
+                            (f.clone(), ty)
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            for (i, arg) in args.iter().enumerate() {
+                let fty = match &arg.name {
+                    Some(n) => ordered.iter().find(|(f, _)| f == n).map(|(_, t)| t.clone()),
+                    None => ordered.get(i).map(|(_, t)| t.clone()),
+                };
+                if let Some(fty) = fty {
+                    let actual = self.infer(&arg.value);
+                    let _ = self.unify_into(&fty, &actual, &mut sigma);
+                }
+            }
+        }
+        let applied: Vec<Ty> = declared
+            .iter()
+            .map(|p| sigma.get(p).cloned().unwrap_or(Ty::Unknown))
+            .collect();
+        Ty::App(name.to_string(), applied)
+    }
+
+    /// The substitution mapping a struct's declared parameters to the type
+    /// arguments of a receiver type. A bare `Named` receiver yields no
+    /// bindings (the fields are then used as written).
+    fn receiver_substitution(&self, struct_name: &str, recv: &Ty) -> HashMap<String, Ty> {
+        let params = self
+            .type_type_params
+            .get(struct_name)
+            .cloned()
+            .unwrap_or_default();
+        let args = Self::ty_args_of(recv);
+        let mut sigma = HashMap::new();
+        for (p, a) in params.iter().zip(args) {
+            sigma.insert(p.clone(), a);
+        }
+        sigma
+    }
+
+    /// Instantiate a signature's return type for a call: build the substitution
+    /// from the explicit type arguments or the argument types, then substitute
+    /// it into the declared return type. An unbound parameter in the return
+    /// becomes `Unknown`; it never becomes a guessed concrete type.
+    fn instantiate_return_ty(&self, sig: &FnSig, args: &[Arg], ty_args: &[TypeExpr]) -> Ty {
+        let Some(ret) = &sig.ret else {
+            return Ty::Unknown;
+        };
+        if !ret.has_param() {
+            return ret.clone();
+        }
+        let mut sigma: HashMap<String, Ty> = HashMap::new();
+        if !ty_args.is_empty() {
+            for ((p, _), t) in sig.type_params.iter().zip(ty_args) {
+                if let Ok(t) = self.annotation(t, Span::default()) {
+                    sigma.insert(p.clone(), t);
+                }
+            }
+        }
+        // Re-derive bindings from the (receiver-included) parameter/argument
+        // pairs, so a return-only parameter is bound by the arguments.
+        let actual: Vec<Ty> = args.iter().map(|a| self.infer(&a.value)).collect();
+        // The receiver is not among `args` for a method, so bind from the
+        // declared parameters offset appropriately: the trailing N parameters
+        // correspond to the args.
+        let n_params = sig.params.len();
+        let offset = n_params.saturating_sub(actual.len());
+        let mut pseudo: Vec<ParamSig> = Vec::new();
+        for (i, p) in sig.params.iter().enumerate().skip(offset) {
+            if i - offset < actual.len() {
+                pseudo.push(p.clone());
+            }
+        }
+        let _ = self.infer_substitution(&pseudo, &actual, &sigma);
+        ret.erase_params(&sigma)
     }
 
     /// The overload set of a method on a struct, if declared.
@@ -2276,24 +2830,55 @@ impl Checker {
     }
 
     /// Overload identity: two signatures are the same overload when they have
-    /// the same ordered parameter types. The return type, `mut self`, and
-    /// parameter names are NOT part of identity (`LANGUAGE_SPEC.md` §15.7).
+    /// the same ordered parameter types, **up to alpha-renaming of their
+    /// generic type parameters**. The return type, `mut self`, parameter names,
+    /// and type-parameter names are NOT part of identity (`LANGUAGE_SPEC.md`
+    /// §15.7). So `f<T>(x: T)` and `f<U>(x: U)` are the same overload, while
+    /// `f<T>(x: T)` and `f(x: int)` are different ones.
     fn sig_identical(a: &FnSig, b: &FnSig) -> bool {
         if a.params.len() != b.params.len() {
             return false;
         }
+        // Rename each side's parameters to positional placeholders so the
+        // spelling of `T` / `U` does not affect identity.
+        let a_map: HashMap<&str, String> = a
+            .type_params
+            .iter()
+            .enumerate()
+            .map(|(i, (n, _))| (n.as_str(), format!("${i}")))
+            .collect();
+        let b_map: HashMap<&str, String> = b
+            .type_params
+            .iter()
+            .enumerate()
+            .map(|(i, (n, _))| (n.as_str(), format!("${i}")))
+            .collect();
         a.params
             .iter()
             .zip(&b.params)
             .all(|(x, y)| match (&x.ty, &y.ty) {
-                // Two annotated parameters are the same identity only when
-                // they resolve to the same type.
-                (Some(t1), Some(t2)) => t1 == t2,
-                // Unannotated (any) is its own input type: `fn f(x)` and
-                // `fn f(x: int)` are different overloads, not duplicates.
+                (Some(t1), Some(t2)) => {
+                    Self::alpha_normalize(t1, &a_map) == Self::alpha_normalize(t2, &b_map)
+                }
                 (None, None) => true,
                 _ => false,
             })
+    }
+
+    /// Rename a type's parameters to positional placeholders, producing a
+    /// canonical form for alpha-equivalence comparison.
+    fn alpha_normalize(t: &Ty, map: &HashMap<&str, String>) -> Ty {
+        match t {
+            Ty::Param(n) => Ty::Param(map.get(n.as_str()).cloned().unwrap_or_else(|| n.clone())),
+            Ty::List(i) => Ty::List(Box::new(Self::alpha_normalize(i, map))),
+            Ty::Map(i) => Ty::Map(Box::new(Self::alpha_normalize(i, map))),
+            Ty::Union(ms) => Ty::union(ms.iter().map(|m| Self::alpha_normalize(m, map)).collect()),
+            Ty::App(n, args) => Ty::App(
+                n.clone(),
+                args.iter().map(|a| Self::alpha_normalize(a, map)).collect(),
+            ),
+            other => other.clone(),
+        }
     }
 
     /// Check a statically resolved struct method call. The receiver is the
@@ -2304,9 +2889,11 @@ impl Checker {
         struct_name: &str,
         name: &str,
         sig: &FnSig,
+        site: MethodSite<'_>,
         args: &[Arg],
         span: Span,
     ) -> Result<()> {
+        let MethodSite { recv, ty_args } = site;
         // `sig.params[0]` is the receiver; the call supplies the rest.
         let rest = &sig.params[1..];
         if args.len() != rest.len() {
@@ -2320,9 +2907,36 @@ impl Checker {
                 span,
             ));
         }
-        for (i, param) in rest.iter().enumerate() {
+        // A generic method's parameters (the impl's plus its own) are bound by
+        // the receiver's type arguments and the argument types.
+        let sigma = if sig.type_params.is_empty() {
+            HashMap::new()
+        } else {
+            let explicit = self.explicit_substitution(name, sig, ty_args, span)?;
+            let mut sigma = explicit;
+            // Bind the impl's parameters from the receiver type.
+            let recv_args = Self::ty_args_of(recv);
+            if let Some(recv_head) = recv.nominal_head() {
+                if let Some(declared) = self.type_type_params.get(&recv_head) {
+                    for (p, a) in declared.iter().zip(&recv_args) {
+                        sigma.insert(p.clone(), a.clone());
+                    }
+                }
+            }
+            let actual: Vec<Ty> = args.iter().map(|a| self.infer(&a.value)).collect();
+            let rest_params: Vec<ParamSig> = sig.params[1..].to_vec();
+            let Some(sigma) = self.infer_substitution(&rest_params, &actual, &sigma) else {
+                return Err(Diag::new(
+                    codes::TYPE_MISMATCH,
+                    format!("method `{struct_name}.{name}` cannot be instantiated with these argument types"),
+                    span,
+                ));
+            };
+            sigma
+        };
+        for (param_index, param) in rest.iter().enumerate() {
             let Some(expected) = &param.ty else { continue };
-            let arg = &args[i];
+            let arg = &args[param_index];
             if let Some(named) = &arg.name {
                 if named != &param.name {
                     return Err(Diag::new(
@@ -2333,17 +2947,22 @@ impl Checker {
                 }
             }
             let actual = self.infer(&arg.value);
-            if !expected.compatible_with(&actual) {
+            if !expected.substitute(&sigma).compatible_with(&actual) {
                 return Err(Diag::new(
                     codes::TYPE_MISMATCH,
                     format!(
                         "method `{struct_name}.{name}` parameter `{}` expects `{}`, found `{}`",
                         param.name,
-                        expected.name(),
+                        expected.substitute(&sigma).name(),
                         actual.name()
                     ),
                     span,
                 ));
+            }
+        }
+        for (pname, pbounds) in &sig.type_params {
+            if let Some(ty) = sigma.get(pname) {
+                self.satisfies_bounds(ty, pbounds, span)?;
             }
         }
         Ok(())
@@ -2391,7 +3010,302 @@ impl Checker {
     fn annotation(&self, t: &TypeExpr, span: Span) -> Result<Ty> {
         let mut visiting = Vec::new();
         let resolved = self.resolve_type_expr(t, span, &mut visiting)?;
-        Ty::from_expr(&resolved, &self.type_kinds, span)
+        self.ty_from_expr(&resolved, span)
+    }
+
+    /// Convert a resolved type expression to a checker type, treating a name in
+    /// scope as a generic parameter and enforcing generic arity on every
+    /// application. This is the checker's replacement for [`Ty::from_expr`],
+    /// which has no notion of parameters.
+    fn ty_from_expr(&self, t: &TypeExpr, span: Span) -> Result<Ty> {
+        Ok(match t {
+            TypeExpr::Named(n) => {
+                if self.is_type_param(n) {
+                    return Ok(Ty::Param(n.clone()));
+                }
+                // A generic type used without arguments is an arity error
+                // unless it declares no parameters.
+                if let Some(params) = self.type_type_params.get(n) {
+                    if !params.is_empty() {
+                        return Err(Diag::new(
+                            codes::UNKNOWN_TYPE,
+                            format!("`{n}` expects {} type argument(s), found 0", params.len()),
+                            span,
+                        ));
+                    }
+                }
+                Ty::from_expr(t, &self.type_kinds, span)?
+            }
+            TypeExpr::App(n, args) => {
+                if self.is_type_param(n) {
+                    return Err(Diag::new(
+                        codes::UNKNOWN_TYPE,
+                        format!("type parameter `{n}` is not a generic type and takes no type arguments"),
+                        span,
+                    ));
+                }
+                let Some(params) = self.type_type_params.get(n) else {
+                    // Either an unknown type or a non-generic declared type.
+                    return Err(Diag::new(
+                        codes::UNKNOWN_TYPE,
+                        format!("`{n}` is not a generic type and takes no type arguments"),
+                        span,
+                    ));
+                };
+                if args.len() != params.len() {
+                    return Err(Diag::new(
+                        codes::UNKNOWN_TYPE,
+                        format!(
+                            "`{n}` expects {} type argument(s), found {}",
+                            params.len(),
+                            args.len()
+                        ),
+                        span,
+                    ));
+                }
+                let mut tys = Vec::with_capacity(args.len());
+                for a in args {
+                    tys.push(self.ty_from_expr(a, span)?);
+                }
+                // An enum application is still an enum type; keep it
+                // distinguishable so variant checking keeps working.
+                if self.type_kinds.get(n).map(String::as_str) == Some("enum") {
+                    Ty::App(n.clone(), tys)
+                } else {
+                    Ty::App(n.clone(), tys)
+                }
+            }
+            TypeExpr::List(inner) => Ty::List(Box::new(self.ty_from_expr(inner, span)?)),
+            TypeExpr::Map(k, v) => {
+                let key = self.ty_from_expr(k, span)?;
+                if !matches!(key, Ty::String | Ty::Unknown) {
+                    return Err(Diag::new(
+                        codes::TYPE_MISMATCH,
+                        format!(
+                            "Aura maps are string-keyed in this version; `{}` is not a valid key type",
+                            key.name()
+                        ),
+                        span,
+                    ));
+                }
+                Ty::Map(Box::new(self.ty_from_expr(v, span)?))
+            }
+            TypeExpr::Union(members) => {
+                let mut tys = Vec::with_capacity(members.len());
+                for m in members {
+                    tys.push(self.ty_from_expr(m, span)?);
+                }
+                Ty::union(tys)
+            }
+            _ => Ty::from_expr(t, &self.type_kinds, span)?,
+        })
+    }
+
+    /// Convert a persisted REPL type annotation, treating any name in
+    /// `params` as a generic parameter (`Ty::Param`) rather than a declared
+    /// type. This is the session counterpart of [`Checker::annotation`], which
+    /// needs the parameter names because a restored declaration may reference
+    /// its own parameters before it has been re-added to the checker.
+    fn session_type(&self, t: &TypeExpr, params: &[String]) -> Ty {
+        let resolved = self.resolve_type_expr_lenient_with(t, params);
+        Self::session_conv(&resolved, params)
+    }
+
+    /// The structural conversion behind [`Checker::session_type`], as an
+    /// associated function so it does not capture `self`.
+    fn session_conv(t: &TypeExpr, params: &[String]) -> Ty {
+        match t {
+            TypeExpr::Named(n) if params.iter().any(|p| p == n) => Ty::Param(n.clone()),
+            TypeExpr::Named(n) => Ty::from_expr_lenient(&TypeExpr::Named(n.clone())),
+            TypeExpr::App(n, args) => Ty::App(
+                n.clone(),
+                args.iter().map(|a| Self::session_conv(a, params)).collect(),
+            ),
+            TypeExpr::List(i) => Ty::List(Box::new(Self::session_conv(i, params))),
+            TypeExpr::Map(_, v) => Ty::Map(Box::new(Self::session_conv(v, params))),
+            TypeExpr::Union(ms) => {
+                Ty::union(ms.iter().map(|m| Self::session_conv(m, params)).collect())
+            }
+            other => Ty::from_expr_lenient(other),
+        }
+    }
+
+    /// Alias resolution that leaves names in `params` untouched (they are
+    /// generic parameters, never alias targets).
+    fn resolve_type_expr_lenient_with(&self, t: &TypeExpr, params: &[String]) -> TypeExpr {
+        if let TypeExpr::Named(n) = t {
+            if params.iter().any(|p| p == n) {
+                return t.clone();
+            }
+        }
+        self.resolve_type_expr_lenient(t)
+    }
+
+    /// Whether `name` is a generic type parameter currently in scope.
+    /// Check that a written type-argument list on `name` has the declared
+    /// arity, and binds every argument to a known type. Used for `impl` heads.
+    fn check_type_args_arity(&self, name: &str, args: &[TypeExpr], span: Span) -> Result<()> {
+        let declared = self
+            .type_type_params
+            .get(name)
+            .or_else(|| self.trait_type_params.get(name));
+        match declared {
+            Some(params) => {
+                if args.len() != params.len() {
+                    return Err(Diag::new(
+                        codes::UNKNOWN_TYPE,
+                        format!(
+                            "`{name}` expects {} type argument(s), found {}",
+                            params.len(),
+                            args.len()
+                        ),
+                        span,
+                    ));
+                }
+            }
+            None if args.is_empty() => {}
+            None => {
+                return Err(Diag::new(
+                    codes::UNKNOWN_TYPE,
+                    format!("`{name}` is not a generic type and takes no type arguments"),
+                    span,
+                ));
+            }
+        }
+        for a in args {
+            // Resolve each argument so an unknown or parameter reference is
+            // reported at the `impl` head rather than silently accepted.
+            let mut visiting = Vec::new();
+            let r = self.resolve_type_expr(a, span, &mut visiting)?;
+            self.ty_from_expr(&r, span)?;
+        }
+        Ok(())
+    }
+
+    /// Whether a type parameter's bounds currently in scope permit using a
+    /// concrete type. A parameter satisfies a bound when the concrete type is
+    /// (a) itself a parameter whose own bounds include it, or (b) a struct with
+    /// a matching `impl Trait for Struct`.
+    fn satisfies_bounds(&self, ty: &Ty, bounds: &[String], span: Span) -> Result<()> {
+        for b in bounds {
+            let ok = match ty {
+                Ty::Param(p) => self.bounds_of_param(p).iter().any(|x| x == b),
+                _ => self.type_satisfies_trait(ty, b),
+            };
+            if !ok {
+                return Err(Diag::new(
+                    codes::TYPE_MISMATCH,
+                    format!("type `{}` does not implement trait `{b}`", ty.name()),
+                    span,
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether a concrete (or parameterised) type implements `trait_name`.
+    fn type_satisfies_trait(&self, ty: &Ty, trait_name: &str) -> bool {
+        let Some(head) = ty.nominal_head() else {
+            return false;
+        };
+        // A generic trait `C<T>`: the struct's `impl C<...> for S<...>` is
+        // recorded under the bare trait name and the bare struct name, so the
+        // head match is the check the contract needs (bounds are structural on
+        // the head, and the `impl` itself is arity-checked).
+        self.trait_impls
+            .contains_key(&(head, trait_name.to_string()))
+    }
+
+    fn is_type_param(&self, name: &str) -> bool {
+        self.current_type_params
+            .iter()
+            .rev()
+            .any(|scope| scope.iter().any(|(p, _)| p == name))
+    }
+
+    /// Push the type parameters of a declaration for the duration of checking
+    /// its signature and body.
+    fn push_type_params(&mut self, params: &[TypeParam]) {
+        self.current_type_params.push(
+            params
+                .iter()
+                .map(|p| (p.name.clone(), p.bounds.clone()))
+                .collect(),
+        );
+    }
+
+    fn pop_type_params(&mut self) {
+        self.current_type_params.pop();
+    }
+
+    /// The bounds declared on a type parameter in scope, if any.
+    fn bounds_of_param(&self, name: &str) -> Vec<String> {
+        for scope in self.current_type_params.iter().rev() {
+            for (p, bounds) in scope.iter().rev() {
+                if p == name {
+                    return bounds.clone();
+                }
+            }
+        }
+        Vec::new()
+    }
+
+    /// Check that every type parameter of a declaration is unique and does not
+    /// shadow a declared type or an enclosing parameter. Returns `E2007` for a
+    /// violation. Parameter identity is by position, so a duplicate name is the
+    /// only way two parameters can be confused.
+    fn check_type_params(&self, params: &[TypeParam], span: Span) -> Result<()> {
+        let mut seen: Vec<&str> = Vec::new();
+        for p in params {
+            if seen.contains(&p.name.as_str()) {
+                return Err(Diag::new(
+                    codes::REDECLARED,
+                    format!("type parameter `{}` is declared more than once", p.name),
+                    p.span,
+                ));
+            }
+            seen.push(&p.name);
+            if self.types.contains_key(&p.name) {
+                return Err(Diag::new(
+                    codes::REDECLARED,
+                    format!(
+                        "type parameter `{}` shadows the declared type `{}`",
+                        p.name, p.name
+                    ),
+                    p.span,
+                ));
+            }
+            // A parameter may not shadow one of an enclosing declaration; the
+            // enclosing parameter is reused instead (`LANGUAGE_SPEC.md`).
+            if self.is_type_param(&p.name) {
+                return Err(Diag::new(
+                    codes::REDECLARED,
+                    format!(
+                        "type parameter `{}` shadows an enclosing type parameter of the same name",
+                        p.name
+                    ),
+                    p.span,
+                ));
+            }
+        }
+        let _ = span;
+        Ok(())
+    }
+
+    /// Check that a generic type parameter's declared bounds name real traits.
+    fn check_type_param_bounds(&self, params: &[TypeParam]) -> Result<()> {
+        for p in params {
+            for b in &p.bounds {
+                if !self.traits.contains_key(b) && !self.declared_traits.contains(b) {
+                    return Err(Diag::new(
+                        codes::UNKNOWN_TYPE,
+                        format!("unknown trait `{b}` in the bound of `{}`", p.name),
+                        p.span,
+                    ));
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Substitute `type` aliases by their targets, recursively, so a
@@ -2407,31 +3321,53 @@ impl Checker {
         visiting: &mut Vec<String>,
     ) -> Result<TypeExpr> {
         Ok(match t {
-            TypeExpr::Named(n) => match self.alias_targets.get(n) {
-                Some(target) => {
-                    if visiting.iter().any(|v| v == n) {
-                        return Err(Diag::new(
-                            codes::UNKNOWN_TYPE,
-                            format!("recursive type alias `{n}` has no concrete target"),
-                            span,
-                        ));
-                    }
-                    // A successful resolution is context-free and reusable.
-                    // Serving it from cache collapses the exponential fan-out
-                    // of aliases that name another alias more than once.
-                    if let Some(cached) = self.resolved_aliases.borrow().get(n) {
-                        return Ok(cached.clone());
-                    }
-                    visiting.push(n.clone());
-                    let resolved = self.resolve_type_expr(target, span, visiting)?;
-                    visiting.pop();
-                    self.resolved_aliases
-                        .borrow_mut()
-                        .insert(n.clone(), resolved.clone());
-                    resolved
+            TypeExpr::Named(n) => {
+                // A bound generic parameter is a placeholder: it is left as
+                // written and never resolved to a declared type.
+                if self.is_type_param(n) {
+                    return Ok(t.clone());
                 }
-                None => t.clone(),
-            },
+                match self.alias_targets.get(n) {
+                    Some(target) => {
+                        if visiting.iter().any(|v| v == n) {
+                            return Err(Diag::new(
+                                codes::UNKNOWN_TYPE,
+                                format!("recursive type alias `{n}` has no concrete target"),
+                                span,
+                            ));
+                        }
+                        // A successful resolution is context-free and reusable.
+                        // Serving it from cache collapses the exponential fan-out
+                        // of aliases that name another alias more than once.
+                        if let Some(cached) = self.resolved_aliases.borrow().get(n) {
+                            return Ok(cached.clone());
+                        }
+                        visiting.push(n.clone());
+                        let resolved = self.resolve_type_expr(target, span, visiting)?;
+                        visiting.pop();
+                        self.resolved_aliases
+                            .borrow_mut()
+                            .insert(n.clone(), resolved.clone());
+                        resolved
+                    }
+                    None => t.clone(),
+                }
+            }
+            // A generic application: resolve the head's arguments, and expand a
+            // parameterised alias by substituting its arguments into its target.
+            TypeExpr::App(n, args) => {
+                let mut resolved_args = Vec::with_capacity(args.len());
+                for a in args {
+                    resolved_args.push(self.resolve_type_expr(a, span, visiting)?);
+                }
+                if self.is_type_param(n) {
+                    return Ok(TypeExpr::App(n.clone(), resolved_args));
+                }
+                if let Some(target) = self.alias_targets.get(n) {
+                    return self.substitute_alias(n, &resolved_args, target, span, visiting);
+                }
+                TypeExpr::App(n.clone(), resolved_args)
+            }
             TypeExpr::List(inner) => {
                 TypeExpr::List(Box::new(self.resolve_type_expr(inner, span, visiting)?))
             }
@@ -2448,6 +3384,77 @@ impl Checker {
             }
             _ => t.clone(),
         })
+    }
+
+    /// Expand a parameterised alias `Name<A...>` whose target mentions the
+    /// declaration's parameters, by substituting argument `i` for parameter
+    /// `i` in the target and resolving the result. Guards against a recursive
+    /// alias with the same `visiting` stack the unparameterised case uses.
+    fn substitute_alias(
+        &self,
+        name: &str,
+        args: &[TypeExpr],
+        target: &TypeExpr,
+        span: Span,
+        visiting: &mut Vec<String>,
+    ) -> Result<TypeExpr> {
+        let params = self.type_type_params.get(name).cloned().unwrap_or_default();
+        if args.len() != params.len() {
+            return Err(Diag::new(
+                codes::UNKNOWN_TYPE,
+                format!(
+                    "type alias `{name}` expects {} type argument(s), found {}",
+                    params.len(),
+                    args.len()
+                ),
+                span,
+            ));
+        }
+        if visiting.iter().any(|v| v == name) {
+            return Err(Diag::new(
+                codes::UNKNOWN_TYPE,
+                format!("recursive type alias `{name}` has no concrete target"),
+                span,
+            ));
+        }
+        let mut subst: HashMap<String, TypeExpr> = HashMap::new();
+        for (p, a) in params.iter().zip(args) {
+            subst.insert(p.clone(), a.clone());
+        }
+        let expanded = self.substitute_type_expr(target, &subst);
+        visiting.push(name.to_string());
+        let resolved = self.resolve_type_expr(&expanded, span, visiting);
+        visiting.pop();
+        resolved
+    }
+
+    /// Replace generic parameters by name in a type expression (used to expand
+    /// a parameterised alias). Structural, not memoized: alias memoisation
+    /// applies to the fully expanded result.
+    fn substitute_type_expr(&self, t: &TypeExpr, subst: &HashMap<String, TypeExpr>) -> TypeExpr {
+        match t {
+            TypeExpr::Named(n) => match subst.get(n) {
+                Some(replacement) => replacement.clone(),
+                None => t.clone(),
+            },
+            TypeExpr::App(n, args) => TypeExpr::App(
+                n.clone(),
+                args.iter()
+                    .map(|a| self.substitute_type_expr(a, subst))
+                    .collect(),
+            ),
+            TypeExpr::List(i) => TypeExpr::List(Box::new(self.substitute_type_expr(i, subst))),
+            TypeExpr::Map(k, v) => TypeExpr::Map(
+                Box::new(self.substitute_type_expr(k, subst)),
+                Box::new(self.substitute_type_expr(v, subst)),
+            ),
+            TypeExpr::Union(ms) => TypeExpr::Union(
+                ms.iter()
+                    .map(|m| self.substitute_type_expr(m, subst))
+                    .collect(),
+            ),
+            other => other.clone(),
+        }
     }
 
     /// Alias resolution that never fails, used when rebuilding a session from
@@ -3049,7 +4056,7 @@ impl Checker {
                     }
                 }
             }
-            Expr::Call(f, args, span) => {
+            Expr::Call(f, args, ty_args, span) => {
                 match f.as_ref() {
                     Expr::Name(name, nspan) => {
                         // A direct call must resolve to a function, a builtin,
@@ -3075,7 +4082,7 @@ impl Checker {
                                 match self.resolve_call_sig(&visible, args) {
                                     Some(i) => {
                                         let sig = visible[i].clone();
-                                        self.check_user_call(name, &sig, args, *span)?;
+                                        self.check_user_call(name, &sig, args, ty_args, *span)?;
                                     }
                                     None => {
                                         // A matching but private overload is a
@@ -3135,7 +4142,7 @@ impl Checker {
                     self.expr(&a.value)?;
                 }
             }
-            Expr::Method(r, name, args, span) => {
+            Expr::Method(r, name, args, ty_args, span) => {
                 self.expr(r)?;
                 let recv = self.infer(r);
                 // A statically known struct resolves against its nominal method
@@ -3170,7 +4177,17 @@ impl Checker {
                         .cloned()
                         .collect();
                     let sig = visible[i].clone();
-                    self.check_struct_method_args(&sname, name, &sig, args, *span)?;
+                    self.check_struct_method_args(
+                        &sname,
+                        name,
+                        &sig,
+                        MethodSite {
+                            recv: &recv,
+                            ty_args,
+                        },
+                        args,
+                        *span,
+                    )?;
                     // A method whose receiver is `mut self` mutates the
                     // caller's value, so that value must be reachable through
                     // a `mut` binding (§16.6).
@@ -3348,14 +4365,58 @@ impl Checker {
                     self.expr(v)?;
                 }
             }
-            Expr::Construct(name, args, span) => {
+            Expr::Construct(name, args, ty_args, span) => {
                 // Every argument expression is checked regardless of which
                 // construction rule applies.
                 for a in args {
                     self.expr(&a.value)?;
                 }
+                // Explicit type arguments on a construction are validated for
+                // arity and bounds, then used to check the field values against
+                // the substituted field types.
+                let explicit = if ty_args.is_empty() {
+                    HashMap::new()
+                } else {
+                    let Some(params) = self.type_type_params.get(name).cloned() else {
+                        return Err(Diag::new(
+                            codes::UNKNOWN_TYPE,
+                            format!("`{name}` is not a generic type and takes no type arguments"),
+                            *span,
+                        ));
+                    };
+                    if params.len() != ty_args.len() {
+                        return Err(Diag::new(
+                            codes::UNKNOWN_TYPE,
+                            format!(
+                                "`{name}` expects {} type argument(s), found {}",
+                                params.len(),
+                                ty_args.len()
+                            ),
+                            *span,
+                        ));
+                    }
+                    let bounds = self
+                        .type_type_param_bounds
+                        .get(name)
+                        .cloned()
+                        .unwrap_or_default();
+                    let mut sigma = HashMap::new();
+                    for (i, (p, t)) in params.iter().zip(ty_args).enumerate() {
+                        let ty = self.annotation(t, *span)?;
+                        if let Some(pb) = bounds.get(i) {
+                            self.satisfies_bounds(&ty, pb, *span)?;
+                        }
+                        sigma.insert(p.clone(), ty);
+                    }
+                    sigma
+                };
                 if let Some(fields) = self.struct_fields.get(name) {
                     self.check_struct_construction(name, fields, args, *span)?;
+                    // Field values are checked against the substituted field
+                    // types so `Box<int> { value: "x" }` is rejected.
+                    if !explicit.is_empty() {
+                        self.check_construct_field_types(name, fields, args, &explicit, *span)?;
+                    }
                 } else if self.variants.contains_key(name) {
                     self.check_variant_construction(name, args, *span)?;
                 } else {

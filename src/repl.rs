@@ -7,7 +7,7 @@
 
 use std::io::{BufRead, Write};
 
-use crate::ast::{Item, Stmt};
+use crate::ast::{Item, Stmt, TypeParam};
 use crate::check::{GlobalDecl, MethodDecl, ParamDecl};
 use crate::error::Diag;
 use crate::resolve::{resolve_stmt, resolve_with_session, session_items, Session};
@@ -348,12 +348,14 @@ fn same_decl(a: &GlobalDecl, b: &GlobalDecl) -> bool {
                 trait_name: an,
                 owner: ao,
                 methods: am,
+                ..
             },
             GlobalDecl::Impl {
                 target: bt,
                 trait_name: bn,
                 owner: bo,
                 methods: bm,
+                ..
             },
         ) => {
             // Two `impl` blocks are the same declaration only when they define
@@ -374,11 +376,13 @@ fn same_decl(a: &GlobalDecl, b: &GlobalDecl) -> bool {
                 name: an,
                 ret: ar,
                 params: ap,
+                ..
             },
             GlobalDecl::Function {
                 name: bn,
                 ret: br,
                 params: bp,
+                ..
             },
         ) => {
             // Two function declarations are the same only when they share a
@@ -402,16 +406,33 @@ fn same_decl(a: &GlobalDecl, b: &GlobalDecl) -> bool {
 
 /// The session declarations a top-level item introduces.
 fn declarations_of(item: &Item) -> Vec<GlobalDecl> {
+    fn tp(params: &[TypeParam]) -> Vec<(String, Vec<String>)> {
+        params
+            .iter()
+            .map(|p| (p.name.clone(), p.bounds.clone()))
+            .collect()
+    }
     match item {
         Item::Fn {
-            name, ret, params, ..
+            name,
+            type_params,
+            ret,
+            params,
+            ..
         } => vec![GlobalDecl::Function {
             name: name.clone(),
             ret: ret.clone(),
             params: params.iter().map(ParamDecl::from_param).collect(),
+            type_params: tp(type_params),
         }],
-        Item::Struct { name, fields, .. } => vec![GlobalDecl::Struct {
+        Item::Struct {
+            name,
+            type_params,
+            fields,
+            ..
+        } => vec![GlobalDecl::Struct {
             name: name.clone(),
+            type_params: tp(type_params),
             fields: fields
                 .iter()
                 .map(|f| (f.name.clone(), f.ty.clone(), f.public))
@@ -424,8 +445,14 @@ fn declarations_of(item: &Item) -> Vec<GlobalDecl> {
                 .map(|v| (v.tag.clone(), v.payload.clone()))
                 .collect(),
         }],
-        Item::Alias { name, target, .. } => vec![GlobalDecl::Alias {
+        Item::Alias {
+            name,
+            type_params,
+            target,
+            ..
+        } => vec![GlobalDecl::Alias {
             name: name.clone(),
+            type_params: tp(type_params),
             target: target.clone(),
         }],
         Item::Const { name, .. } => vec![GlobalDecl::Binding {
@@ -436,18 +463,26 @@ fn declarations_of(item: &Item) -> Vec<GlobalDecl> {
         Item::Use { .. } | Item::Expr(..) | Item::Module { .. } => Vec::new(),
         Item::Impl {
             target,
+            type_params,
             trait_name,
             methods,
             owner,
             ..
         } => vec![GlobalDecl::Impl {
             target: target.clone(),
+            type_params: tp(type_params),
             trait_name: trait_name.clone(),
             owner: owner.clone(),
             methods: method_decls(methods),
         }],
-        Item::Trait { name, methods, .. } => vec![GlobalDecl::Trait {
+        Item::Trait {
+            name,
+            type_params,
+            methods,
+            ..
+        } => vec![GlobalDecl::Trait {
             name: name.clone(),
+            type_params: tp(type_params),
             methods: method_decls(methods),
         }],
     }

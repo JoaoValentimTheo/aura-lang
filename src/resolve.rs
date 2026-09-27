@@ -21,7 +21,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
-    Arm, Expr, FPart, FieldDecl, Item, Module, Param, Pattern, Stmt, TypeExpr, VariantDecl,
+    Arm, Expr, FPart, FieldDecl, Item, Module, Param, Pattern, Stmt, TypeExpr, TypeParam,
+    VariantDecl,
 };
 use crate::error::{codes, Diag, Result, Span};
 
@@ -108,6 +109,7 @@ pub fn resolve_stmt(stmt: Stmt, session: &Session) -> Result<Stmt> {
     let module = Module {
         items: vec![Item::Fn {
             name: "@repl-stmt".to_string(),
+            type_params: Vec::new(),
             params: Vec::new(),
             ret: None,
             ret_span: None,
@@ -214,6 +216,11 @@ struct Resolver {
     /// Every import applied, as `(module, local, canonical)`. The REPL persists
     /// the ones whose module is the root.
     applied_imports: Vec<(Vec<String>, String, String)>,
+    /// The generic type parameters currently in scope, innermost last. A name
+    /// here is a compile-time placeholder and must NOT be canonicalized to a
+    /// declared type, even if one of the same name exists. Interior-mutable so
+    /// the `&self` rewriters can scope it without threading a parameter.
+    type_param_scope: std::cell::RefCell<Vec<HashSet<String>>>,
 }
 
 impl Resolver {
@@ -226,7 +233,31 @@ impl Resolver {
             variant_scope: HashMap::new(),
             module_paths: HashSet::new(),
             applied_imports: Vec::new(),
+            type_param_scope: std::cell::RefCell::new(Vec::new()),
         }
+    }
+
+    /// Whether `name` is a generic type parameter currently in scope.
+    fn is_type_param(&self, name: &str) -> bool {
+        self.type_param_scope
+            .borrow()
+            .iter()
+            .rev()
+            .any(|f| f.contains(name))
+    }
+
+    /// Push the type parameters a declaration introduces. Bound parameters
+    /// never canonicalize to a declared type.
+    fn push_type_params(&self, params: &[TypeParam]) {
+        let mut set: HashSet<String> = HashSet::new();
+        for p in params {
+            set.insert(p.name.clone());
+        }
+        self.type_param_scope.borrow_mut().push(set);
+    }
+
+    fn pop_type_params(&self) {
+        self.type_param_scope.borrow_mut().pop();
     }
 
     /// The root-module imports this submission introduced, so the REPL can
@@ -343,6 +374,7 @@ impl Resolver {
                     variants,
                     public,
                     span,
+                    ..
                 } => {
                     self.declare(prefix, name, *public, Namespace::Type, *span);
                     // Variant tags live in a per-module namespace; the checker
@@ -636,6 +668,7 @@ impl Resolver {
         Ok(match item {
             Item::Fn {
                 name,
+                type_params,
                 params,
                 ret,
                 ret_span,
@@ -643,6 +676,7 @@ impl Resolver {
                 public,
                 span,
             } => {
+                self.push_type_params(type_params);
                 let mut locals = Locals::default();
                 let params = self.rewrite_params(params, &mut locals, prefix)?;
                 let ret = ret
@@ -651,8 +685,10 @@ impl Resolver {
                     .transpose()?;
                 let mut body = body.clone();
                 self.rewrite_block(&mut body, &mut locals, prefix)?;
+                self.pop_type_params();
                 Item::Fn {
                     name: join(prefix, name),
+                    type_params: type_params.clone(),
                     params,
                     ret,
                     ret_span: *ret_span,
@@ -686,16 +722,20 @@ impl Resolver {
             }
             Item::Struct {
                 name,
+                type_params,
                 fields,
                 public,
                 span,
             } => {
+                self.push_type_params(type_params);
                 let fields = fields
                     .iter()
                     .map(|f| self.rewrite_field(f, prefix))
                     .collect::<Result<Vec<_>>>()?;
+                self.pop_type_params();
                 Item::Struct {
                     name: join(prefix, name),
+                    type_params: type_params.clone(),
                     fields,
                     public: *public,
                     span: *span,
@@ -703,16 +743,20 @@ impl Resolver {
             }
             Item::Enum {
                 name,
+                type_params,
                 variants,
                 public,
                 span,
             } => {
+                self.push_type_params(type_params);
                 let variants = variants
                     .iter()
                     .map(|v| self.rewrite_variant(v, prefix))
                     .collect::<Result<Vec<_>>>()?;
+                self.pop_type_params();
                 Item::Enum {
                     name: join(prefix, name),
+                    type_params: type_params.clone(),
                     variants,
                     public: *public,
                     span: *span,
@@ -720,28 +764,39 @@ impl Resolver {
             }
             Item::Alias {
                 name,
+                type_params,
                 target,
                 public,
                 span,
-            } => Item::Alias {
-                name: join(prefix, name),
-                target: self.rewrite_type(target, prefix)?,
-                public: *public,
-                span: *span,
-            },
+            } => {
+                self.push_type_params(type_params);
+                let target = self.rewrite_type(target, prefix)?;
+                self.pop_type_params();
+                Item::Alias {
+                    name: join(prefix, name),
+                    type_params: type_params.clone(),
+                    target,
+                    public: *public,
+                    span: *span,
+                }
+            }
             Item::Trait {
                 name,
+                type_params,
                 methods,
                 public,
                 span,
                 ..
             } => {
+                self.push_type_params(type_params);
                 let methods = methods
                     .iter()
                     .map(|m| self.rewrite_member(m, prefix))
                     .collect::<Result<Vec<_>>>()?;
+                self.pop_type_params();
                 Item::Trait {
                     name: join(prefix, name),
+                    type_params: type_params.clone(),
                     methods,
                     public: *public,
                     owner: prefix.to_vec(),
@@ -750,23 +805,39 @@ impl Resolver {
             }
             Item::Impl {
                 target,
+                target_args,
                 trait_name,
+                trait_args,
+                type_params,
                 methods,
                 span,
                 ..
             } => {
+                self.push_type_params(type_params);
                 let target = self.canonical_type(target, prefix, *span)?;
+                let target_args = target_args
+                    .iter()
+                    .map(|t| self.rewrite_type(t, prefix))
+                    .collect::<Result<Vec<_>>>()?;
                 let trait_name = match trait_name {
                     Some(t) => Some(self.canonical_type(t, prefix, *span)?),
                     None => None,
                 };
+                let trait_args = trait_args
+                    .iter()
+                    .map(|t| self.rewrite_type(t, prefix))
+                    .collect::<Result<Vec<_>>>()?;
                 let methods = methods
                     .iter()
                     .map(|m| self.rewrite_member(m, prefix))
                     .collect::<Result<Vec<_>>>()?;
+                self.pop_type_params();
                 Item::Impl {
                     target,
+                    target_args,
                     trait_name,
+                    trait_args,
+                    type_params: type_params.clone(),
                     methods,
                     owner: prefix.to_vec(),
                     span: *span,
@@ -785,6 +856,7 @@ impl Resolver {
     fn rewrite_member(&self, item: &Item, prefix: &[String]) -> Result<Item> {
         let Item::Fn {
             name,
+            type_params,
             params,
             ret,
             ret_span,
@@ -795,6 +867,7 @@ impl Resolver {
         else {
             return self.rewrite_item(item, prefix);
         };
+        self.push_type_params(type_params);
         let mut locals = Locals::default();
         let params = self.rewrite_params(params, &mut locals, prefix)?;
         let ret = ret
@@ -803,8 +876,10 @@ impl Resolver {
             .transpose()?;
         let mut body = body.clone();
         self.rewrite_block(&mut body, &mut locals, prefix)?;
+        self.pop_type_params();
         Ok(Item::Fn {
             name: name.clone(),
+            type_params: type_params.clone(),
             params,
             ret,
             ret_span: *ret_span,
@@ -840,7 +915,26 @@ impl Resolver {
     fn rewrite_type(&self, t: &TypeExpr, prefix: &[String]) -> Result<TypeExpr> {
         Ok(match t {
             TypeExpr::Named(n) => {
-                TypeExpr::Named(self.canonical_type(n, prefix, Span::default())?)
+                // A bound type parameter is a placeholder, never a declared
+                // type: leave it exactly as written.
+                if self.is_type_param(n) {
+                    TypeExpr::Named(n.clone())
+                } else {
+                    TypeExpr::Named(self.canonical_type(n, prefix, Span::default())?)
+                }
+            }
+            TypeExpr::App(n, args) => {
+                let head = if self.is_type_param(n) {
+                    n.clone()
+                } else {
+                    self.canonical_type(n, prefix, Span::default())?
+                };
+                TypeExpr::App(
+                    head,
+                    args.iter()
+                        .map(|a| self.rewrite_type(a, prefix))
+                        .collect::<Result<Vec<_>>>()?,
+                )
             }
             TypeExpr::List(i) => TypeExpr::List(Box::new(self.rewrite_type(i, prefix)?)),
             TypeExpr::Map(k, v) => TypeExpr::Map(
@@ -1071,6 +1165,12 @@ impl Resolver {
         }
     }
 
+    fn rewrite_type_args(&self, args: &[TypeExpr], prefix: &[String]) -> Result<Vec<TypeExpr>> {
+        args.iter()
+            .map(|t| self.rewrite_type(t, prefix))
+            .collect::<Result<Vec<_>>>()
+    }
+
     fn rewrite_params(
         &self,
         params: &[Param],
@@ -1106,7 +1206,7 @@ impl Resolver {
                     Expr::Name(n.clone(), *span)
                 }
             }
-            Expr::Construct(n, args, span) => {
+            Expr::Construct(n, args, ty_args, span) => {
                 let canonical = self.canonical_construct(n, prefix, *span)?;
                 let args = args
                     .iter()
@@ -1117,7 +1217,8 @@ impl Resolver {
                         })
                     })
                     .collect::<Result<Vec<_>>>()?;
-                Expr::Construct(canonical, args, *span)
+                let ty_args = self.rewrite_type_args(ty_args, prefix)?;
+                Expr::Construct(canonical, args, ty_args, *span)
             }
             Expr::Unary(op, o, span) => {
                 Expr::Unary(*op, Box::new(self.rewrite_expr(o, locals, prefix)?), *span)
@@ -1128,17 +1229,25 @@ impl Resolver {
                 Box::new(self.rewrite_expr(r, locals, prefix)?),
                 *span,
             ),
-            Expr::Call(f, args, span) => Expr::Call(
-                Box::new(self.rewrite_expr(f, locals, prefix)?),
-                self.rewrite_args(args, locals, prefix)?,
-                *span,
-            ),
-            Expr::Method(r, name, args, span) => Expr::Method(
-                Box::new(self.rewrite_expr(r, locals, prefix)?),
-                name.clone(),
-                self.rewrite_args(args, locals, prefix)?,
-                *span,
-            ),
+            Expr::Call(f, args, ty_args, span) => {
+                let ty_args = self.rewrite_type_args(ty_args, prefix)?;
+                Expr::Call(
+                    Box::new(self.rewrite_expr(f, locals, prefix)?),
+                    self.rewrite_args(args, locals, prefix)?,
+                    ty_args,
+                    *span,
+                )
+            }
+            Expr::Method(r, name, args, ty_args, span) => {
+                let ty_args = self.rewrite_type_args(ty_args, prefix)?;
+                Expr::Method(
+                    Box::new(self.rewrite_expr(r, locals, prefix)?),
+                    name.clone(),
+                    self.rewrite_args(args, locals, prefix)?,
+                    ty_args,
+                    *span,
+                )
+            }
             Expr::Field(r, name, span) => Expr::Field(
                 Box::new(self.rewrite_expr(r, locals, prefix)?),
                 name.clone(),
