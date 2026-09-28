@@ -2,10 +2,18 @@
 //! Structural checks for duplicated reference grammar and token inventory.
 use std::collections::BTreeSet;
 
+/// Normalize a checked-out document to LF so the checks are byte-identical on
+/// every platform. `include_str!` reads the working-tree file, and a Windows
+/// checkout with `core.autocrlf` may present CRLF, which would otherwise hide
+/// every `` ```ebnf `` fence. Mirrors the CRLF normalization in `tests/examples.rs`.
+fn lf(s: &str) -> String {
+    s.replace("\r\n", "\n")
+}
+
 #[test]
 fn website_and_spec_grammar_stay_synchronized() {
-    let grammar = include_str!("../docs/grammar.md");
-    let site = include_str!("../website/content/reference-grammar.md");
+    let grammar = lf(include_str!("../docs/grammar.md"));
+    let site = lf(include_str!("../website/content/reference-grammar.md"));
     assert_eq!(
         grammar.split_once('\n').unwrap().1,
         site.split_once('\n').unwrap().1
@@ -17,7 +25,7 @@ fn website_and_spec_grammar_stay_synchronized() {
         .split("```")
         .next()
         .unwrap();
-    let spec = include_str!("../docs/LANGUAGE_SPEC.md");
+    let spec = lf(include_str!("../docs/LANGUAGE_SPEC.md"));
     let mut count = 0;
     for section in spec.split("```ebnf\n").skip(1) {
         let block = section.split("```").next().unwrap().trim();
