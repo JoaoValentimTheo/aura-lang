@@ -146,3 +146,13 @@ stable E-codes without panicking or hanging.
 The front-end fuzz targets produced zero artifacts locally; corpus/property
 suites all pass. No permanent regression fixture was required because no crash
 was found.
+
+### CONF-RESOURCE-2 — nested-module host stack overflow (fixed)
+
+Final closure review found that nested in-source `module` blocks recursed
+through `item()` → `module_item()` → `item()` with **no** parser backstop.
+~20,000 nested modules aborted the process with a native stack overflow and no
+diagnostic, violating §31.5/§31.2. `module_item` now consumes the same guard as
+nested types and expressions and reports `E1015`; flat sibling modules and
+normal nesting are unaffected. Regression:
+`tests/boundaries.rs::nested_modules_are_bounded_not_a_stack_overflow`.
