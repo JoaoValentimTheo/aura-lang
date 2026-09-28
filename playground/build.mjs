@@ -68,6 +68,22 @@ const FROZEN_0_0_2 = {
   bytes: 1366621,
 };
 
+// The final development artifact of the pre-0.2.0 line. It is preserved and
+// addressable but is no longer the selector default: `0.2.0` is the current
+// public release. Its identity is pinned so the artifact can never drift.
+const HISTORICAL_DEV_0_0_2_DEV_30 = {
+  id: "0.0.2-dev.30",
+  release_version: "0.0.2",
+  language_version: "0.0.1",
+  runtime_version: "0.0.2-dev.30",
+  host_abi_version: 1,
+  available: true,
+  channel: "development",
+  artifact: "0.0.2-dev.30/aura_playground_runtime.wasm",
+  sha256: "916a8282f7afcf67b89662af89d2f69cf562d9dbe41fe88cab1764a3ef19c578",
+  bytes: 1654216,
+};
+
 function sha256(buf) {
   return createHash("sha256").update(buf).digest("hex");
 }
@@ -222,27 +238,36 @@ const abiMatch = runtimeSource.match(/ABI_VERSION:\s*u32\s*=\s*(\d+)/);
 if (!abiMatch) throw new Error("cannot read ABI_VERSION from runtime source");
 const abiVersion = Number(abiMatch[1]);
 
+// The built crate version is the *current* runtime. A version without a
+// pre-release suffix (`-dev`, `-rc`, …) is a published release; a version with
+// one is a development runtime on its release line. This keeps the channel
+// honest without hardcoding which version is current.
+const isRelease = !runtimeVersion.includes("-");
+const channel = isRelease ? "release" : "development";
+
 const manifest = {
   playground_api_version: PLAYGROUND_API_VERSION,
-  // The development runtime is the selector's default so the public Playground
-  // exercises the current language. The frozen release entries remain present,
-  // honest, and selectable, and are never substituted silently.
+  // The current release runtime is the selector's default. Historical entries
+  // remain present, honest, and selectable, and are never substituted
+  // silently.
   current: runtimeVersion,
   versions: [
     FROZEN_0_0_1,
     FROZEN_0_0_2,
+    HISTORICAL_DEV_0_0_2_DEV_30,
     {
       id: runtimeVersion,
-      // A development runtime is not a published release. It carries the
-      // release line it belongs to (`release_version`) while its own identity
-      // is the pre-release `runtime_version`. The channel makes the
-      // distinction explicit so the UI never presents it as a release.
-      release_version: releaseVersion,
+      // A release entry's runtime version equals its release version; a
+      // development runtime carries the release line it belongs to
+      // (`release_version`) while its own identity is the pre-release
+      // `runtime_version`. The channel makes the distinction explicit so the
+      // UI never presents a development build as a release.
+      release_version: isRelease ? runtimeVersion : releaseVersion,
       language_version: languageVersion,
       runtime_version: runtimeVersion,
       host_abi_version: abiVersion,
       available: true,
-      channel: "development",
+      channel,
       artifact: `${runtimeVersion}/${artifactName}`,
       sha256: hash,
       bytes: wasm.byteLength,

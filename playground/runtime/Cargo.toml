@@ -1,12 +1,10 @@
 [package]
 name = "aura-playground-runtime"
-# A *development* runtime version on the 0.0.2 line. The `-dev` pre-release
-# identifier keeps the versioned Playground model honest: this artifact is not
-# a published release and must never be confused with the frozen, immutable
-# published `0.0.2` runtime. Advancing the development runtime means bumping
-# this pre-release identifier (e.g. `0.0.2-dev.2`), never overwriting an
-# existing artifact.
-version = "0.0.2-dev.30"
+# The public `0.2.0` runtime. This is the current release artifact, distinct
+# from the frozen historical `0.0.2` and the development pre-release chain
+# (`0.0.2-dev.*`). A published release artifact is immutable: advancing to a
+# new release means adding a new version, never overwriting this one.
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.83"
 description = "The Aura Playground WebAssembly execution wrapper: a minimal, zero-import C ABI over the real aura runtime."

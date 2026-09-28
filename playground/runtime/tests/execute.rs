@@ -27,27 +27,23 @@ fn parse(json: &str) -> serde_json::Value {
 
 #[test]
 fn version_model_is_coherent() {
-    // The language semantics stay at 0.0.1; the runtime artifact is a
-    // development pre-release on the 0.0.2 line, never equal to the release.
-    assert_eq!(aura::LANGUAGE_VERSION, "0.0.1");
-    assert_eq!(aura::VERSION, "0.0.2");
+    // The current release is 0.2.0; it is a language release, so the language
+    // semantics version also moved to 0.2.0. The runtime artifact is the
+    // release itself (not a pre-release) and matches the crate version.
+    assert_eq!(aura::LANGUAGE_VERSION, "0.2.0");
+    assert_eq!(aura::VERSION, "0.2.0");
     assert_eq!(rt::RUNTIME_VERSION, env!("CARGO_PKG_VERSION"));
-    assert!(
-        rt::RUNTIME_VERSION.starts_with("0.0.2-"),
-        "development runtime must be a pre-release of its release line: {}",
-        rt::RUNTIME_VERSION
-    );
-    assert_ne!(rt::RUNTIME_VERSION, aura::VERSION);
+    assert_eq!(rt::RUNTIME_VERSION, "0.2.0");
     assert_eq!(rt::ABI_VERSION, 1);
     let (_json, _status, language_version) = rt::execute("fn main() {}", &[]);
-    assert_eq!(language_version, "0.0.1");
+    assert_eq!(language_version, "0.2.0");
 }
 
 #[test]
 fn ok_result_is_structured() {
     let (json, status, version) = rt::execute("fn main() { print(1 + 2) }", &[]);
     assert_eq!(status, rt::status::OK);
-    assert_eq!(version, "0.0.1");
+    assert_eq!(version, aura::LANGUAGE_VERSION);
     let v = parse(&json);
     assert_eq!(v["status"], "ok");
     assert_eq!(v["stdout"], "3\n");

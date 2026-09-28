@@ -22,7 +22,7 @@ dependencies = [
 
 [[package]]
 name = "aura-lang"
-version = "0.0.2"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "regex",
@@ -31,7 +31,7 @@ dependencies = [
 
 [[package]]
 name = "aura-playground-runtime"
-version = "0.0.2-dev.30"
+version = "0.2.0"
 dependencies = [
  "aura-lang",
  "serde_json",

@@ -59,11 +59,12 @@ pub const ABI_VERSION: u32 = 1;
 
 /// The runtime artifact version.
 ///
-/// This is the version of the *WebAssembly runtime build*, which is distinct
-/// from the Aura *language* version reported by `aura::LANGUAGE_VERSION`. The frozen
+/// This is the version of the *WebAssembly runtime build*, distinct from the
+/// Aura *language* version reported by `aura::LANGUAGE_VERSION`. The frozen
 /// `0.0.1` release predates the WebAssembly substrate (so it has no wasm
-/// runtime at all); the first wasm-executable runtime is the `0.0.2`
-/// development line. Both are exposed so a version entry is unambiguous.
+/// runtime at all); the first wasm-executable runtime was the historical
+/// `0.0.2`, and the current runtime is the public `0.2.0` release. Both
+/// identifiers are exposed so a version entry is unambiguous.
 pub const RUNTIME_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Status codes returned by [`execute`] and `aura_run`.

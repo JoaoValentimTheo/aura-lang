@@ -159,24 +159,50 @@ async function runAndWait(page, timeout = 15000) {
       text: o.textContent,
     })),
   );
-  check("0.0.2 release selectable", options.some((o) => o.value === "0.0.2" && !o.disabled), JSON.stringify(options));
+  // 0.2.0 is the current public release and the selector default.
+  const selected = await page.evaluate(() => document.getElementById("version").value);
+  check("0.2.0 is the default selection", selected === "0.2.0", selected);
+  check("0.2.0 release selectable", options.some((o) => o.value === "0.2.0" && !o.disabled), JSON.stringify(options));
+  check("historical 0.0.2 release selectable", options.some((o) => o.value === "0.0.2" && !o.disabled));
   check("0.0.1 present but unavailable", options.some((o) => o.value === "0.0.1" && o.disabled));
-  const release = options.find((o) => o.value === "0.0.2");
-  check("release is labelled release", release && /release/i.test(release.text), release && release.text);
-  // The development runtime is present, selectable, and labelled as a
+  const release = options.find((o) => o.value === "0.2.0");
+  check("0.2.0 is labelled release", release && /release/i.test(release.text), release && release.text);
+  // The final development runtime is present, selectable, and labelled as a
   // development runtime rather than a release.
   const dev = options.find((o) => o.value === "0.0.2-dev.30");
   check("development runtime selectable", dev && !dev.disabled, JSON.stringify(options));
   check("development runtime is labelled development", dev && /development/i.test(dev.text), dev && dev.text);
   check("development is distinguished from release", dev && release && dev.text !== release.text);
 
-  // Run against the published 0.0.2 release artifact: unchanged behavior.
+  // The default release executes with the completed Core language.
+  await setSource(page, "fn main() { print(\"v020\") }");
+  const r = await runAndWait(page);
+  check("0.2.0 release executes", r.stdout === "v020\n", JSON.stringify(r));
+
+  // Run against the historical 0.0.2 release artifact: unchanged behavior.
   await page.selectOption("#version", "0.0.2");
   await setSource(page, "fn main() { print(\"v2\") }");
-  const r = await runAndWait(page);
-  check("0.0.2 release executes", r.stdout === "v2\n", JSON.stringify(r));
+  const r2 = await runAndWait(page);
+  check("0.0.2 release executes", r2.stdout === "v2\n", JSON.stringify(r2));
 
-  // Run the evolved language against the development runtime.
+  // Run the completed Core language against 0.2.0: generic maps, items(), a
+  // comprehension, and a separator-rule program.
+  await page.selectOption("#version", "0.2.0");
+  await setSource(
+    page,
+    'fn main() {\n let m: {int: string} = {2: "b", 1: "a"}\n print(m.items())\n print([x * 2 for x in [1, 2, 3] if x > 1])\n}',
+  );
+  const ru = await runAndWait(page);
+  check(
+    "0.2.0 executes generic maps, items(), and a comprehension",
+    ru.stdout === "[[1, \"a\"], [2, \"b\"]]\n[4, 6]\n",
+    JSON.stringify(ru),
+  );
+  await setSource(page, "fn main() {\n let x = 1 let y = 2\n print(x)\n}");
+  const rs = await runAndWait(page);
+  check("0.2.0 enforces the separator rule", rs.status !== "ok", JSON.stringify(rs));
+
+  // The historical development runtime is still selectable and executes.
   await page.selectOption("#version", "0.0.2-dev.30");
   const note = await page.textContent("#runtime-note");
   check("development runtime explains itself", /development runtime/i.test(note), note);
@@ -184,14 +210,8 @@ async function runAndWait(page, timeout = 15000) {
     page,
     'type Number = int | float\nfn f(x: Number) { print(x) }\nfn main() {\n f(42)\n f(3.14)\n}',
   );
-  const ru = await runAndWait(page);
-  check("development runtime executes a union program", ru.stdout === "42\n3.14\n", JSON.stringify(ru));
-  await setSource(page, "fn main() {\n for i in 0..3 { print(i) }\n}");
-  const rr = await runAndWait(page);
-  check("development runtime executes a range literal", rr.stdout === "0\n1\n2\n", JSON.stringify(rr));
-  await setSource(page, "<!--\nthis should disappear\n--!>\nfn main() { print(42) }");
-  const rc = await runAndWait(page);
-  check("development runtime executes through a multiline comment", rc.stdout === "42\n", JSON.stringify(rc));
+  const rd = await runAndWait(page);
+  check("development runtime executes a union program", rd.stdout === "42\n3.14\n", JSON.stringify(rd));
 
   // The unavailable 0.0.1 option is disabled, so it cannot be selected by a
   // user; setting it programmatically still explains why it cannot run.
