@@ -2403,28 +2403,38 @@ impl Checker {
                 Ty::List(Box::new(elem))
             }
             Expr::Map(entries, _) => {
-                // Infer both dimensions from the entries. The first key or
-                // value whose type the checker can name fixes that dimension;
-                // an empty map stays `{Unknown: Unknown}`, which the `Unknown`
-                // boundary makes compatible with any map annotation. Keys that
-                // are statically known to be non-key-capable are rejected here,
-                // so an impossible map type does not reach a literal.
-                let mut key = Ty::Unknown;
-                let mut val = Ty::Unknown;
+                // Infer each dimension as the union of the entries' static
+                // types, using the language's existing union rule (§5.2). A
+                // first-entry-wins rule mis-typed a heterogeneous literal: it
+                // reported `{int: string}` for `{1: "a", "1": "b"}` while the
+                // value actually held a string key, and that wrong type then
+                // flowed into `keys()`/`values()`. `Unknown` members are
+                // skipped (they impose no constraint), so an empty map stays
+                // `{Unknown: Unknown}` and remains compatible with any map
+                // annotation. A non-key-capable key is rejected in `expr`, not
+                // here, where the span is available.
+                let mut keys = Vec::new();
+                let mut vals = Vec::new();
                 for (k, v) in entries {
-                    if matches!(key, Ty::Unknown) {
-                        let kt = self.infer(k);
-                        if kt.is_key_capable() && !matches!(kt, Ty::Unknown) {
-                            key = kt;
-                        }
+                    let kt = self.infer(k);
+                    if kt.is_key_capable() && !matches!(kt, Ty::Unknown) {
+                        keys.push(kt);
                     }
-                    if matches!(val, Ty::Unknown) {
-                        let vt = self.infer(v);
-                        if !matches!(vt, Ty::Unknown) {
-                            val = vt;
-                        }
+                    let vt = self.infer(v);
+                    if !matches!(vt, Ty::Unknown) {
+                        vals.push(vt);
                     }
                 }
+                let key = if keys.is_empty() {
+                    Ty::Unknown
+                } else {
+                    Ty::union(keys)
+                };
+                let val = if vals.is_empty() {
+                    Ty::Unknown
+                } else {
+                    Ty::union(vals)
+                };
                 Ty::Map(Box::new(key), Box::new(val))
             }
             Expr::Construct(name, args, ty_args, _) => {

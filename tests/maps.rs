@@ -157,6 +157,44 @@ fn integer_keyed_literal_infers_the_key_type() {
 }
 
 #[test]
+fn mixed_valid_key_literal_infers_a_union_key_type() {
+    // Two distinct valid key kinds in one literal infer the union key type, so
+    // the map's own type (and therefore `keys`) is honest. A first-entry-wins
+    // rule would have typed this `{int: string}` while it held a string key.
+    assert_eq!(
+        ok("fn main() { let m = {1: \"a\", \"1\": \"b\"}\n print(m)\n print(m.keys()) }"),
+        "{1: \"a\", \"1\": \"b\"}\n[1, \"1\"]\n"
+    );
+    assert_eq!(
+        ok("fn main() { let m = {true: 1, \"a\": 2}\n print(m.keys()) }"),
+        "[true, \"a\"]\n"
+    );
+}
+
+#[test]
+fn annotated_map_checks_every_literal_entry() {
+    // A later entry that disagrees with the annotation is rejected, not masked
+    // by the first entry's type.
+    assert_eq!(
+        code("fn main() { let m: {int: string} = {1: \"a\", true: \"b\"} }"),
+        codes::TYPE_MISMATCH
+    );
+    assert_eq!(
+        ok("fn main() { let m: {int | bool: string} = {1: \"a\", true: \"b\"}\n print(m) }"),
+        "{1: \"a\", true: \"b\"}\n"
+    );
+}
+
+#[test]
+fn heterogeneous_value_literal_infers_a_union_value_type() {
+    // The value dimension follows the same rule, so `values` is honest.
+    assert_eq!(
+        ok("fn main() { let m = {\"a\": 1, \"b\": \"x\"}\n print(m.values()) }"),
+        "[1, \"x\"]\n"
+    );
+}
+
+#[test]
 fn empty_map_stays_permissive_under_an_annotation() {
     assert_eq!(
         ok("fn main() { let m: {int: string} = {:}\n print(m) }"),

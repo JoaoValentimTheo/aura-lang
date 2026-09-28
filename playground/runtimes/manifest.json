@@ -36,8 +36,8 @@
       "available": true,
       "channel": "development",
       "artifact": "0.0.2-dev.30/aura_playground_runtime.wasm",
-      "sha256": "0ce2e9755c8c1a274f22e98fbce247558b29b24a44cff45883c8813de8bd48ef",
-      "bytes": 1619217
+      "sha256": "87a4ae642b9126d5a3da38dca32930ea7f5902203b6f33535044b895d6cda05c",
+      "bytes": 1619576
     }
   ]
 }

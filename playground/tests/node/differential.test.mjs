@@ -622,6 +622,14 @@ const cases = [
     'json rejects non-string keys',
     'fn main() { print(json_encode({1: "x"})) }',
   ],
+  [
+    'map mixed key literal infers a union',
+    'fn main() {\n let m = {1: "a", "1": "b"}\n print(m)\n print(m.keys())\n}',
+  ],
+  [
+    'map annotation checks every entry',
+    'fn main() { let m: {int: string} = {1: "a", true: "b"} }',
+  ],
 ];
 
 const options = { args: ["alpha", "beta"], stdin: "line one\nline two\n" };
