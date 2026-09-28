@@ -4,6 +4,7 @@
 //! * `aura run <file>`   — parse, check, execute
 //! * `aura check <file>` — parse and check only
 //! * `aura eval <code>`  — run a one-liner
+//! * `aura repl`         — interactive session (with the `repl` feature)
 //! * `aura version`      — print the version
 //!
 //! `aura run` reads `<file>`, or stdin when `<file>` is `-`.
@@ -43,7 +44,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Some(other) => {
-            eprintln!("unknown command `{other}`; try: run, check, eval, version");
+            eprintln!("unknown command `{other}`; try: run, check, eval, repl, version");
             ExitCode::from(2)
         }
     }

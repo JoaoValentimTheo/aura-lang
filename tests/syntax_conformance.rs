@@ -553,3 +553,36 @@ fn cli_rejects_invalid_utf8_in_file_and_stdin() {
     assert!(!out.status.success());
     assert!(String::from_utf8(out.stderr).unwrap().contains("E1001"));
 }
+
+#[cfg(feature = "cli")]
+#[test]
+fn cli_unknown_command_hint_lists_every_implemented_command() {
+    use std::process::Command;
+    // An unknown command must name every real subcommand, including `repl`.
+    let out = Command::new(env!("CARGO_BIN_EXE_aura"))
+        .arg("nope")
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    for command in ["run", "check", "eval", "repl", "version"] {
+        assert!(
+            stderr.contains(command),
+            "unknown-command hint omits `{command}`: {stderr}"
+        );
+    }
+    // `repl` must be dispatched, never reported as unknown. With stdin closed
+    // the session exits immediately; without the `repl` feature the build
+    // reports the missing feature, but it is still not an unknown command.
+    let out = Command::new(env!("CARGO_BIN_EXE_aura"))
+        .arg("repl")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        !String::from_utf8(out.stderr)
+            .unwrap()
+            .contains("unknown command"),
+        "`repl` was treated as an unknown command"
+    );
+}
