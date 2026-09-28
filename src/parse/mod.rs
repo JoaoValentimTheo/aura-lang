@@ -1951,17 +1951,31 @@ impl Parser {
                     self.bump();
                     return Ok(Expr::Lit(Lit::Int(i64::MIN), span));
                 }
+                // A chain of unary operators (`- - - x`, `not not x`,
+                // `~ ~ x`) recurses through `unary()` directly, so each
+                // operator must consume the same host-stack backstop as
+                // `atom()`/`ty()`. Without this guard a long chain exhausted
+                // the native stack before `enforce_depth` could run, aborting
+                // with no diagnostic (`LANGUAGE_SPEC.md` §31.5). Guarding only
+                // the recursive descent leaves non-unary operands, including
+                // grouping parentheses, at their documented budget.
+                self.enter()?;
                 let e = self.unary()?;
+                self.leave();
                 Ok(Expr::Unary(UnOp::Neg, Box::new(e), span))
             }
             Tok::Not => {
                 self.bump();
+                self.enter()?;
                 let e = self.unary()?;
+                self.leave();
                 Ok(Expr::Unary(UnOp::Not, Box::new(e), span))
             }
             Tok::Tilde => {
                 self.bump();
+                self.enter()?;
                 let e = self.unary()?;
+                self.leave();
                 Ok(Expr::Unary(UnOp::BitNot, Box::new(e), span))
             }
             _ => self.postfix(),

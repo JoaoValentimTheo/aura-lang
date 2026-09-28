@@ -21,6 +21,25 @@ pub use crate::types;
 /// Alias resolution can duplicate a union member subtree (`type T = A | A`),
 /// which would otherwise grow the resolved type exponentially with each
 /// additional alias level. Resolved unions therefore flatten nested unions and
+/// Return-position compatibility. A declared return type may be a generic
+/// parameter (`fn f<T>(x: T) -> T`). `Ty::compatible_with` treats a parameter
+/// on either side as universally permissive, which is correct when *binding* a
+/// parameter at a call site but wrong for checking a `return`: the body value
+/// must match the parameter the caller will substitute, so returning a
+/// concrete incompatible value (`return 5` in `-> T`) must be `E3005`
+/// (`LANGUAGE_SPEC.md` §15.2, `docs/GENERICS.md`). Here a declared parameter is
+/// matched only by the same parameter or by `Unknown` (the checker cannot see
+/// through an opaque value); a concrete declared type still accepts a parameter
+/// actual because substitution will supply it.
+fn return_compatible(expected: &Ty, actual: &Ty) -> bool {
+    match (expected, actual) {
+        (Ty::Unknown, _) | (_, Ty::Unknown) => true,
+        (Ty::Param(_), Ty::Param(_)) => expected == actual,
+        (Ty::Param(_), _) => false,
+        _ => expected.compatible_with(actual),
+    }
+}
+
 /// remove structurally-equal duplicate members, mirroring the normalization
 /// [`Ty::union`] already performs. Member order is not canonicalized here
 /// because it is not observable: the only consumer is `Ty::from_expr`, which
@@ -3946,7 +3965,7 @@ impl Checker {
                     self.expr(v)?;
                     if let Some(expected) = self.return_type.clone() {
                         let actual = self.infer(v);
-                        if !expected.compatible_with(&actual) {
+                        if !return_compatible(&expected, &actual) {
                             return Err(Diag::new(
                                 codes::RETURN_MISMATCH,
                                 format!(

@@ -1,0 +1,2 @@
+fn id<T>(x: T) -> T { return 5 }
+fn main() { print(id("ab")) }

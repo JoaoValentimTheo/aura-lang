@@ -289,3 +289,50 @@ fn type_parameter_cannot_shadow_any_visible_declared_type() {
         "1\n"
     );
 }
+
+// ---------------------------------------- generic return-position checking
+
+/// `LANGUAGE_SPEC.md` §15.2: every `return` in a function with a declared
+/// return type must be compatible with it. `Ty::compatible_with` treats a
+/// `Param` on either side as universally permissive, which is right when
+/// binding a parameter at a call site but wrong for a `return`: the body value
+/// must match the parameter the caller substitutes, so `fn f<T>(x: T) -> T {
+/// return 5 }` is `E3005`. Previously `check` accepted it and the runtime then
+/// failed with a checker-tier code at the call site (`CONF-GENERIC-1`).
+#[test]
+fn generic_return_must_match_the_declared_parameter() {
+    assert_eq!(
+        code("fn id<T>(x: T) -> T { return 5 }\nfn main() { print(id(\"ab\")) }"),
+        codes::RETURN_MISMATCH
+    );
+    assert_eq!(
+        code("fn id<T>(x: T) -> T { return \"s\" }\nfn main() { print(id(1)) }"),
+        codes::RETURN_MISMATCH
+    );
+    // Returning the parameter itself, or an opaque value, is accepted.
+    assert_eq!(
+        ok("fn id<T>(x: T) -> T { return x }\nfn main() { print(id(1)) }"),
+        "1\n"
+    );
+    // A concrete return type still accepts a parameter actual (substitution
+    // supplies it) and a wrong concrete value is still rejected.
+    assert_eq!(
+        ok("fn f<T>(v: T) -> T { return v }\nfn main() { print(f(\"a\")) }"),
+        "a\n"
+    );
+    assert_eq!(
+        code("fn f() -> int { return \"x\" }\nfn main() { }"),
+        codes::RETURN_MISMATCH
+    );
+}
+
+/// A generic function may return a value built from its parameters.
+#[test]
+fn generic_return_of_constructed_value_is_accepted() {
+    assert_eq!(
+        ok(
+            "struct Box<T> { value: T }\nfn make<T>(v: T) -> Box<T> { return Box<T> { value: v } }\nfn main() { print(make(1).value) }"
+        ),
+        "1\n"
+    );
+}

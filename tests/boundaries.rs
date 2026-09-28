@@ -368,3 +368,20 @@ fn semantic_ast_limit_is_unchanged_by_the_host_gate() {
     let over = format!("fn main() {{ print({}) }}", vec!["1"; 256].join("+"));
     assert_eq!(run(&over), Err(codes::NESTING));
 }
+
+/// A chain of unary operators recurses through `unary()` directly, so it must
+/// consume the parser's host-safety backstop exactly like grouping and types.
+/// Before `CONF-RESOURCE-1` a long chain (`-`/`not`/`~`) exhausted the native
+/// stack and aborted with no diagnostic; it now reports the stable `E1015` on
+/// every substrate (`LANGUAGE_SPEC.md` §31.5).
+#[test]
+fn unary_chains_are_bounded_not_a_stack_overflow() {
+    for op in ["-", "not ", "~"] {
+        let chain = |n: usize| format!("fn main() {{ print({}{}1) }}", op.repeat(n), "");
+        // A modest chain is a real expression.
+        let small = format!("fn main() {{ print({}{}1) }}", op.repeat(50), "");
+        assert!(run(&small).is_ok(), "{op}: 50 unary operators must parse");
+        // A clearly-over chain is the stable nesting diagnostic, never a trap.
+        assert_eq!(run(&chain(20_000)), Err(codes::NESTING), "{op}");
+    }
+}
