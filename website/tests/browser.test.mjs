@@ -30,6 +30,13 @@ try {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dist = join(here, "..", "dist");
+// The current development runtime identity is mutable metadata: derive it from
+// the manifest rather than hard-coding a version that advances on every
+// published runtime (the selector must show whatever the manifest declares).
+const manifest = JSON.parse(
+  readFileSync(join(here, "..", "..", "playground", "runtimes", "manifest.json"), "utf8"),
+);
+const devId = manifest.current;
 const { exampleById } = await import(join(here, "..", "examples", "examples.mjs"));
 // Serve under the same deployment base the site was built with (resolved from
 // `--base`/`AURA_SITE_BASE`, defaulting to the project-site base).
@@ -313,7 +320,7 @@ function check(name, cond, detail) {
   check("0.0.1 present but unavailable", options.some((o) => o.value === "0.0.1" && o.disabled));
   check(
     "development runtime selectable",
-    options.some((o) => o.value === "0.0.2-dev.19" && !o.disabled),
+    options.some((o) => o.value === devId && !o.disabled),
   );
 
   // --- redesigned IDE affordances -------------------------------------------
