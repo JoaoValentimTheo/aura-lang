@@ -29,8 +29,8 @@ mutate, so this is one rule rather than a per-function special case.
 | Function | Signature | Returns |
 |---|---|---|
 | `push` | `push(list, v)` | `none` |
-| `keys` | `keys(map)` | `[string]` |
-| `values` | `values(map)` | `[T]` |
+| `keys` | `keys(map)` | `[K]` (the map's key type) |
+| `values` | `values(map)` | `[V]` (the map's value type) |
 | `sort` | `sort(list)` | sorted list |
 | `reverse` | `reverse(string\|list)` | reversed |
 | `map` | `map(list, f)` | `[T]` |

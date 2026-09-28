@@ -75,7 +75,7 @@ fn main() {
     title: "Lists and maps",
     level: "basics",
     tags: ["collections", "iteration"],
-    summary: "Ordered lists, string-keyed maps, and iteration.",
+    summary: "Ordered lists, string-keyed maps, integer keys, and iteration.",
     output: "[1, 2, 3]\n3\nbr -> Brasilia\nfr -> Paris\njp -> Tokyo\n",
     source: `fn main() {
     let xs = [1, 2, 3]
@@ -88,7 +88,31 @@ fn main() {
         print(f"{k} -> {capitals[k]}")
     }
 }`,
-    note: "Maps are ordered by key. `for` over a map yields its keys in ascending order.",
+    note: "Maps are ordered by key and may be keyed by any key-capable scalar (`string`, `int`, `bool`). `for` over a map yields its keys in ascending order.",
+  },
+  {
+    id: "generic-maps",
+    title: "Generic map keys",
+    level: "intermediate",
+    tags: ["maps", "generics"],
+    summary:
+      "Maps keyed by any key-capable scalar, and a generic map alias over {K: V}.",
+    output: "9.5\n[1, 2]\n{1: 9.5, 2: 8.75}\n{1: \"one\", \"fr\": \"Paris\"}\n",
+    source: `type Map<K, V> = {K: V}
+
+fn main() {
+    let scores: Map<int, float> = {
+        1: 9.5,
+        2: 8.75
+    }
+    print(scores[1])
+    print(scores.keys())
+    print(scores)
+
+    let labels = {"fr": "Paris", 1: "one"}
+    print(labels)
+}`,
+    note: "A map key must be key-capable: `string`, `int`, or `bool` (or a union of these). `Map<K, V>` is an ordinary alias over the structural `{K: V}` type; the key parameter must be key-capable when instantiated.",
   },
   {
     id: "closures",

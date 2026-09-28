@@ -70,9 +70,9 @@ fn main() {
 }
 ```
 
-Lists are ordered and mutable; maps are string-keyed and ordered by key. `for`
-iterates a list's elements, a map's keys, a string's characters, or the integers
-of a range.
+Lists are ordered and mutable; maps are keyed by a key-capable scalar (`string`,
+`int`, or `bool`) and ordered by key. `for` iterates a list's elements, a map's
+keys, a string's characters, or the integers of a range.
 
 ## 5. Data and matching
 

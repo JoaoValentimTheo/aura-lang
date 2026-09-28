@@ -88,7 +88,7 @@ fn main() {
         ["<code>string</code>", "immutable UTF-8 text", "value"],
         ["<code>none</code>", "absence", "value"],
         ["<code>list</code>", "ordered, reference semantics", "shared"],
-        ["<code>map</code>", "string-keyed, ordered by key", "shared"],
+        ["<code>map</code>", "{K: V}; K is string, int, or bool; ordered by key", "shared"],
         ["<code>struct</code>", "named fields in declaration order", "shared fields"],
         ["<code>enum</code>", "tag + positional payload", "value"],
         ["<code>fn</code>", "closure or native", "value"],

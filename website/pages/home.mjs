@@ -154,7 +154,7 @@ fn main() {
       <div class="stack">
         <h3>Values</h3>
         <p><code>int</code>, <code>float</code>, <code>bool</code>, <code>string</code>,
-        <code>none</code>, lists, string-keyed maps, struct instances, enum variants,
+        <code>none</code>, lists, generic maps, struct instances, enum variants,
         functions, and ranges.</p>
         <h3>Patterns and matching</h3>
         <p><code>match</code> destructures list and variant patterns, with optional

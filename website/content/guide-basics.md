@@ -12,7 +12,7 @@ Aura's runtime values are exactly:
 | `string` | immutable UTF-8 text, indexed by Unicode scalar value |
 | `none` | absence — there is no `null` |
 | `list` | ordered, mutable, reference semantics |
-| `map` | string-keyed, ordered by key, mutable, reference semantics |
+| `map` | keyed by a key-capable scalar (`string`, `int`, `bool`), ordered by key, mutable, reference semantics |
 | `struct` | named fields in declaration order |
 | `enum` | a tag with a positional payload |
 | `fn` | a closure or native function |

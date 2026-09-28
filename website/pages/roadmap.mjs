@@ -59,7 +59,7 @@ const PHASES = [
     tag: "Delivered",
     kind: "success",
     title: "Generics and trait bounds",
-    body: "Static, erased, nominal parametric polymorphism over the OOP model: generic functions, structs, methods, traits, and aliases, with trait bounds and inference composed into the single overload resolver. Collections stay structural (<code>[T]</code>, <code>{string: T}</code>); a type parameter is a compile-time placeholder erased before execution.",
+    body: "Static, erased, nominal parametric polymorphism over the OOP model: generic functions, structs, methods, traits, and aliases, with trait bounds and inference composed into the single overload resolver. Collections stay structural (<code>[T]</code>, <code>{K: V}</code>, where a key must be key-capable); a type parameter is a compile-time placeholder erased before execution.",
   },
   {
     tag: "Next",

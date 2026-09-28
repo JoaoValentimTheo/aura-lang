@@ -36,20 +36,35 @@ let x = identity<int>(1)
 ## Collections stay structural
 
 Generic programming composes with Aura's existing collection syntax. There is
-no `List<T>` or `Map<K, V>`:
+no `List<T>` or `Map<K, V>` built-in spelling:
 
 ```aura
 fn first<T>(xs: [T]) -> T {
     return xs[0]
 }
 
-fn get<T>(m: {string: T}, key: string) -> T {
+fn get<K, V>(m: {K: V}, key: K) -> V {
     return m[key]
 }
+
+type Map<K, V> = {K: V}
 ```
 
-`[T]` is a list of `T`; `{string: T}` is a string-keyed map of `T`. The map key
-type is unchanged.
+`[T]` is a list of `T`; `{K: V}` is a map of `V` keyed by `K`. `Map<K, V>` is
+an ordinary alias over `{K: V}`, not new syntax.
+
+The key position is **constrained**, generic or not. A map key must be
+key-capable — `string`, `int`, or `bool`, or a union of these. A parameter used
+as a key is admissible in the declaration but must resolve to a key-capable
+type when instantiated:
+
+```aura
+let scores: Map<int, float> = {1: 9.5, 2: 8.75}   # ok
+# let bad: Map<float, int> = {}                    # E3001: float is not key-capable
+```
+
+There is no explicit `Hashable`-style bound syntax; the constraint is implicit
+in the map-key position (`LANGUAGE_SPEC.md` §5.2).
 
 ## Generic structs
 
@@ -149,6 +164,7 @@ behaviour identical and resource use bounded.
 * Inference structurally matches argument types; an unbound parameter stays
   `Unknown`, never an arbitrary concrete type.
 * A bound `T: Trait` is checked at the call site; there is no dynamic dispatch.
-* `[T]` and `{string: T}` are the collection forms — no nominal `List`/`Map`.
+* `[T]` and `{K: V}` are the collection forms — no nominal `List`/`Map`. A map
+  key must be key-capable (`string`, `int`, `bool`, or a union of these).
 * A type parameter may not shadow a declared type or an outer parameter
   (`E2007`).

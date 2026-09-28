@@ -20,13 +20,18 @@ is wrong. A value whose type cannot be determined has the checker type
 | Type | Description |
 |---|---|
 | `[T]` | list of `T` |
-| `{string: V}` | map with string keys and values of `V` |
+| `{K: V}` | map from key type `K` to value type `V` |
 | `Named(name)` | a user struct or alias-resolved type |
 | `Name<T, ...>` | a generic type applied to type arguments |
 | `Enum(name)` | an enum type |
 | `Unknown` | not determined |
 
-A map annotation with a non-`string` key is rejected (`E3001`).
+A map key must be **key-capable**: `string`, `int`, or `bool`, or a union every
+member of which is key-capable. A map annotation with any other key (for
+example `float`, `none`, `[int]`, or another map) is rejected (`E3001`). A
+generic parameter is a valid key in a declaration and must be key-capable when
+instantiated, so `type Map<K, V> = {K: V}` is well-formed while `Map<float,
+int>` is rejected.
 
 ## Generic types
 
@@ -60,8 +65,9 @@ as before.
 ## Compatibility
 
 "`A` is compatible with `B`" holds when either side is `Unknown`, both are the
-same primitive, both are lists/maps with compatible element types, both are the
-same nominal type, or a union member matches. `int` and `float` are **not**
+same primitive, both are lists with compatible element types, both are maps
+with compatible key **and** value types, both are the same nominal type, or a
+union member matches. `int` and `float` are **not**
 compatible in annotations — there is no implicit numeric coercion in
 annotations, even though mixed arithmetic promotes at runtime. (A union such as
 `int | float` accepts either, because each member is checked separately.)
@@ -73,7 +79,7 @@ annotations, even though mixed arithmetic promotes at runtime. (A union such as
 | `bool` | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ |
 | `string` | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ |
 | `[T]` | ✗ | ✗ | ✗ | ✗ | ✓* | ✗ | ✗ | ✗ | ✗ | ✓ |
-| `{string: V}` | ✗ | ✗ | ✗ | ✗ | ✗ | ✓* | ✗ | ✗ | ✗ | ✓ |
+| `{K: V}` | ✗ | ✗ | ✗ | ✗ | ✗ | ✓* | ✗ | ✗ | ✗ | ✓ |
 | `Named(n)` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓** | ✗ | ✗ | ✓ |
 | `Enum(n)` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓** | ✗ | ✓ |
 | `Union` | ✓‡ | ✓‡ | ✓‡ | ✓‡ | ✓‡ | ✓‡ | ✓‡ | ✓‡ | ✓‡ | ✓ |

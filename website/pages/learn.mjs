@@ -33,7 +33,7 @@ const STEPS = [
   },
   {
     title: "Collections",
-    body: "Lists, string-keyed maps, ranges, and higher-order methods.",
+    body: "Lists, generic maps keyed by string, int, or bool, ranges, and higher-order methods.",
     href: "docs/guide-collections/",
     cta: "Collections",
   },

@@ -28,19 +28,36 @@ ys.push(3)          # E2001: ys is immutable
 
 ## Maps
 
-`{k: v, ...}` constructs a string-keyed map, ordered by key.
+`{k: v, ...}` constructs a map, ordered by key. Keys must be key-capable:
+`string`, `int`, or `bool`, or a union of these.
 
 ```aura
 let mut m = {"a": 1, "b": 2}
 m["c"] = 3
 print(m.get("missing"))   # none
 print(m.has("a"))         # true
+
+let counts = {1: "one", 2: "two"}
+print(counts[2])          # two
 ```
 
 * `m[k]` is `E2003` when the key is absent; `m.get(k)` returns `none`.
 * `m[k] = v` inserts or replaces.
 * Iteration yields keys in ascending order.
-* Equality compares key sets and values.
+* Equality compares key sets and values. `1` and `"1"` are different keys.
+* A key type of `float`, `none`, a list, or a map is `E3001`.
+
+Generic maps use the same syntax with a type parameter for the key:
+
+```aura
+type Map<K, V> = {K: V}
+
+let scores: Map<int, float> = {1: 9.5, 2: 8.75}
+print(scores[1])          # 9.5
+```
+
+The key parameter must be key-capable when the alias is instantiated, so
+`Map<float, int>` is rejected.
 
 ## The empty map
 

@@ -107,7 +107,8 @@ These are intentionally absent, not merely unimplemented:
 ## Indexing and fields
 
 * `base[i]` — a list at an integer index (negative allowed), a string at an
-  integer character index, a map at a string key, a struct at a string field.
+  integer character index, a map at a key of its key type (`string`, `int`, or
+  `bool`), a struct at a string field.
 * `base[i] = v` — mutate a list element, map entry, or struct field.
 * `receiver.field` — a struct field, or a zero-argument method call on any other
   value.
