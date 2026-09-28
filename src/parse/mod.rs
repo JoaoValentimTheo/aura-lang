@@ -778,7 +778,8 @@ impl Parser {
             self.skip_newlines();
             if self.eat(&Tok::Comma) {
                 self.skip_newlines();
-                if self.eat(&Tok::Gt) {
+                if matches!(self.at(), Tok::Gt | Tok::Shr) {
+                    self.expect_close_angle()?;
                     break;
                 }
                 continue;
@@ -805,7 +806,8 @@ impl Parser {
             self.skip_newlines();
             if self.eat(&Tok::Comma) {
                 self.skip_newlines();
-                if self.eat(&Tok::Gt) {
+                if matches!(self.at(), Tok::Gt | Tok::Shr) {
+                    self.expect_close_angle()?;
                     break;
                 }
                 continue;
@@ -952,7 +954,8 @@ impl Parser {
             self.skip_newlines();
             if self.eat(&Tok::Comma) {
                 self.skip_newlines();
-                if self.eat(&Tok::Gt) {
+                if matches!(self.at(), Tok::Gt | Tok::Shr) {
+                    self.expect_close_angle()?;
                     break;
                 }
                 continue;
@@ -1099,6 +1102,7 @@ impl Parser {
     fn params(&mut self, receiver: bool) -> Result<Vec<Param>> {
         let mut out = Vec::new();
         let mut first = true;
+        self.skip_newlines();
         if self.eat(&Tok::RParen) {
             return Ok(out);
         }
@@ -1139,10 +1143,12 @@ impl Parser {
                 mutable,
                 span,
             });
+            self.skip_newlines();
             if !self.eat(&Tok::Comma) {
                 self.expect(&Tok::RParen)?;
                 return Ok(out);
             }
+            self.skip_newlines();
             // A trailing comma before the closing `)` is allowed.
             if self.eat(&Tok::RParen) {
                 return Ok(out);
@@ -1205,11 +1211,18 @@ impl Parser {
             let vname = self.ident("variant name")?;
             let mut payload = Vec::new();
             if self.eat(&Tok::LParen) {
+                self.skip_newlines();
                 if !self.eat(&Tok::RParen) {
                     loop {
+                        self.skip_newlines();
                         payload.push(self.ty()?);
+                        self.skip_newlines();
                         if !self.eat(&Tok::Comma) {
                             self.expect(&Tok::RParen)?;
+                            break;
+                        }
+                        self.skip_newlines();
+                        if self.eat(&Tok::RParen) {
                             break;
                         }
                     }
@@ -1403,7 +1416,8 @@ impl Parser {
                         self.skip_newlines();
                         if self.eat(&Tok::Comma) {
                             self.skip_newlines();
-                            if self.eat(&Tok::Gt) {
+                            if matches!(self.at(), Tok::Gt | Tok::Shr) {
+                                self.expect_close_angle()?;
                                 break;
                             }
                             continue;
@@ -1464,7 +1478,9 @@ impl Parser {
         self.expect(&Tok::LBrace)?;
         let mut stmts = Vec::new();
         loop {
-            self.skip_newlines();
+            while matches!(self.at(), Tok::Newline | Tok::Semi) {
+                self.bump();
+            }
             if matches!(self.at(), Tok::RBrace | Tok::Eof) {
                 break;
             }
@@ -1676,11 +1692,18 @@ impl Parser {
                 self.bump();
                 if self.eat(&Tok::LParen) {
                     let mut ps = Vec::new();
+                    self.skip_newlines();
                     if !self.eat(&Tok::RParen) {
                         loop {
+                            self.skip_newlines();
                             ps.push(self.let_pattern()?);
+                            self.skip_newlines();
                             if !self.eat(&Tok::Comma) {
                                 self.expect(&Tok::RParen)?;
+                                break;
+                            }
+                            self.skip_newlines();
+                            if self.eat(&Tok::RParen) {
                                 break;
                             }
                         }
@@ -1695,15 +1718,18 @@ impl Parser {
             Tok::LBracket => {
                 self.bump();
                 let mut parts = Vec::new();
+                self.skip_newlines();
                 if !self.eat(&Tok::RBracket) {
                     loop {
                         self.skip_newlines();
                         parts.push(self.let_pattern()?);
+                        self.skip_newlines();
                         if !self.eat(&Tok::Comma) {
                             self.skip_newlines();
                             self.expect(&Tok::RBracket)?;
                             break;
                         }
+                        self.skip_newlines();
                         // A trailing comma before `]` is allowed (§4.7).
                         if matches!(self.at(), Tok::RBracket) {
                             self.bump();
@@ -1763,11 +1789,18 @@ impl Parser {
                 };
                 if self.eat(&Tok::LParen) {
                     let mut ps = Vec::new();
+                    self.skip_newlines();
                     if !self.eat(&Tok::RParen) {
                         loop {
+                            self.skip_newlines();
                             ps.push(self.pattern()?);
+                            self.skip_newlines();
                             if !self.eat(&Tok::Comma) {
                                 self.expect(&Tok::RParen)?;
+                                break;
+                            }
+                            self.skip_newlines();
+                            if self.eat(&Tok::RParen) {
                                 break;
                             }
                         }
@@ -1809,15 +1842,18 @@ impl Parser {
             Tok::LBracket => {
                 self.bump();
                 let mut parts = Vec::new();
+                self.skip_newlines();
                 if !self.eat(&Tok::RBracket) {
                     loop {
                         self.skip_newlines();
                         parts.push(self.pattern()?);
+                        self.skip_newlines();
                         if !self.eat(&Tok::Comma) {
                             self.skip_newlines();
                             self.expect(&Tok::RBracket)?;
                             break;
                         }
+                        self.skip_newlines();
                         // A trailing comma before `]` is allowed (§4.6).
                         if matches!(self.at(), Tok::RBracket) {
                             self.bump();
@@ -1886,9 +1922,6 @@ impl Parser {
                 break;
             }
             self.bump();
-            if op.is_none() && matches!(self.at(), Tok::Eof | Tok::Newline) {
-                break;
-            }
             self.count_node(span)?;
             match op {
                 None => {
@@ -2191,6 +2224,7 @@ impl Parser {
                 let first = self.expr()?;
                 if self.eat(&Tok::Comma) {
                     let mut items = vec![first];
+                    self.skip_newlines();
                     // `(x,)` is a one-element list (§21); the grammar's
                     // optional tail after the comma may be empty.
                     if !matches!(self.at(), Tok::RParen) {
@@ -2201,6 +2235,7 @@ impl Parser {
                             if !self.eat(&Tok::Comma) {
                                 break;
                             }
+                            self.skip_newlines();
                             if matches!(self.at(), Tok::RParen) {
                                 break;
                             }
@@ -2226,6 +2261,7 @@ impl Parser {
                             self.expect(&Tok::RBracket)?;
                             break;
                         }
+                        self.skip_newlines();
                         // A trailing comma before `]` is allowed (§4.5).
                         if matches!(self.at(), Tok::RBracket) {
                             self.bump();
@@ -2373,6 +2409,7 @@ impl Parser {
     fn try_lambda_params(&mut self) -> Option<Vec<Param>> {
         let save = self.pos;
         let mut params = Vec::new();
+        self.skip_newlines();
         // A zero-parameter lambda `() -> body` is allowed.
         if self.eat(&Tok::RParen) {
             return if self.eat(&Tok::Arrow) {
@@ -2412,7 +2449,9 @@ impl Parser {
                 mutable,
                 span: pspan,
             });
+            self.skip_newlines();
             if self.eat(&Tok::Comma) {
+                self.skip_newlines();
                 // A trailing comma before `)` is allowed.
                 if self.eat(&Tok::RParen) {
                     break;
@@ -2449,6 +2488,20 @@ impl Parser {
                     i += 1;
                 }
                 Tok::Colon if depth == 0 => return true,
+                Tok::Let
+                | Tok::Return
+                | Tok::Throw
+                | Tok::Break
+                | Tok::Continue
+                | Tok::While
+                | Tok::Loop
+                | Tok::For
+                | Tok::Try
+                | Tok::Semi
+                    if depth == 0 =>
+                {
+                    return false
+                }
                 _ => i += 1,
             }
         }
@@ -2479,36 +2532,34 @@ impl Parser {
                         parts.push(FPart::Lit(std::mem::take(&mut lit)));
                     }
                     let inner_start = offset;
-                    let mut inner = String::new();
                     let mut depth = 1usize;
-                    loop {
-                        match chars.next() {
-                            Some('}') => {
-                                offset += 1;
+                    let mut closing = None;
+                    for (i, c) in expression_syntax(&raw[inner_start..]) {
+                        match c {
+                            '}' => {
                                 depth -= 1;
                                 if depth == 0 {
+                                    closing = Some(inner_start + i);
                                     break;
                                 }
-                                inner.push('}');
                             }
-                            Some('{') => {
-                                offset += 1;
-                                depth += 1;
-                                inner.push('{');
-                            }
-                            Some(c2) => {
-                                offset += c2.len_utf8();
-                                inner.push(c2);
-                            }
-                            None => {
-                                return Err(Diag::new(
-                                    codes::UNTERMINATED_STRING,
-                                    "unterminated `{` in f-string",
-                                    span,
-                                ))
-                            }
+                            '{' => depth += 1,
+                            _ => {}
                         }
                     }
+                    let Some(end) = closing else {
+                        return Err(Diag::new(
+                            codes::UNTERMINATED_STRING,
+                            "unterminated `{` in f-string",
+                            span,
+                        ));
+                    };
+                    let inner = &raw[inner_start..end];
+                    // The outer iterator resumes just after the closing brace.
+                    for _ in raw[inner_start..=end].chars() {
+                        chars.next();
+                    }
+                    offset = end + 1;
                     if inner.trim().is_empty() {
                         return Err(Diag::new(
                             codes::EXPECTED,
@@ -2519,14 +2570,8 @@ impl Parser {
                     // A top-level `:` separates the expression from its format
                     // specification. A `:` inside brackets/parens belongs to a
                     // slice or call, so split only at depth zero.
-                    let (expr_src, spec_src) = split_format_spec(&inner);
-                    let e = {
-                        // The lexer folds leading trivia into the first token's
-                        // span, so trim it and shift the base to keep the
-                        // expression's spans exactly on the source text.
-                        let lead = expr_src.len() - expr_src.trim_start().len();
-                        parse_expr_at(expr_src.trim_start(), base + inner_start + lead)?
-                    };
+                    let (expr_src, spec_src) = split_format_spec(inner);
+                    let e = parse_expr_at(expr_src, base + inner_start)?;
                     let spec = match spec_src {
                         Some((spec_text, spec_off)) => {
                             Some(parse_format_spec(spec_text, base + inner_start + spec_off)?)
@@ -2599,31 +2644,85 @@ fn desugar_pipe(lhs: Expr, rhs: Expr, span: Span) -> Expr {
     }
 }
 
-/// Infix binding powers: `(left, right, op)`. `None` op means pipeline.
-/// Split an f-string interpolation body into `(expression, format spec)` at the
-/// first top-level `:`. Returns `(whole, None)` when there is no format spec.
-/// Depth tracking keeps a `:` inside `a[1:2]` or `f(k: v)` part of the
-/// expression.
+/// Syntax characters outside strings and comments, with byte offsets.
+/// Shared by interpolation balancing and the format separator scanner.
+fn expression_syntax(s: &str) -> impl Iterator<Item = (usize, char)> + '_ {
+    let mut chars = s.char_indices();
+    let mut quote = None;
+    let mut escaped = false;
+    let mut line_comment = false;
+    let mut block_comment = false;
+    let mut depth = 0i32;
+    let mut format = false;
+    std::iter::from_fn(move || {
+        while let Some((i, c)) = chars.next() {
+            if format {
+                return Some((i, c));
+            }
+            if line_comment {
+                if c == '\n' {
+                    line_comment = false;
+                }
+                continue;
+            }
+            if block_comment {
+                if s[i..].starts_with("--!>") {
+                    for _ in 0..3 {
+                        chars.next();
+                    }
+                    block_comment = false;
+                }
+                continue;
+            }
+            if let Some(q) = quote {
+                if escaped {
+                    escaped = false;
+                } else if c == '\\' {
+                    escaped = true;
+                } else if c == q {
+                    quote = None;
+                }
+                continue;
+            }
+            if s[i..].starts_with("<!--") {
+                for _ in 0..3 {
+                    chars.next();
+                }
+                block_comment = true;
+            } else if c == '#' {
+                line_comment = true;
+            } else if c == '\'' || c == '"' {
+                quote = Some(c);
+            } else {
+                match c {
+                    '(' | '[' | '{' => depth += 1,
+                    ')' | ']' | '}' => depth -= 1,
+                    ':' if depth == 0
+                        && s.as_bytes().get(i.wrapping_sub(1)) != Some(&b':')
+                        && s.as_bytes().get(i + 1) != Some(&b':') =>
+                    {
+                        format = true;
+                    }
+                    _ => {}
+                }
+                return Some((i, c));
+            }
+        }
+        None
+    })
+}
+
+/// Split at a top-level format colon, preserving paths, strings and comments.
 fn split_format_spec(s: &str) -> (&str, Option<(&str, usize)>) {
     let mut depth = 0i32;
-    let mut in_str: Option<char> = None;
-    let mut escaped = false;
-    for (i, c) in s.char_indices() {
-        if let Some(q) = in_str {
-            if escaped {
-                escaped = false;
-            } else if c == '\\' {
-                escaped = true;
-            } else if c == q {
-                in_str = None;
-            }
-            continue;
-        }
+    for (i, c) in expression_syntax(s) {
         match c {
-            '"' | '\'' => in_str = Some(c),
             '(' | '[' | '{' => depth += 1,
             ')' | ']' | '}' => depth -= 1,
-            ':' if depth == 0 => {
+            ':' if depth == 0
+                && s.as_bytes().get(i.wrapping_sub(1)) != Some(&b':')
+                && s.as_bytes().get(i + 1) != Some(&b':') =>
+            {
                 let spec_start = i + 1;
                 return (&s[..i], Some((&s[spec_start..], spec_start)));
             }
@@ -2842,6 +2941,7 @@ fn starts_expr(t: &Tok) -> bool {
             | Tok::LBracket
             | Tok::LBrace
             | Tok::Minus
+            | Tok::Tilde
             | Tok::Not
             | Tok::If
             | Tok::Match
