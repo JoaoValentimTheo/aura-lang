@@ -2839,8 +2839,11 @@ session unchanged: it neither adds new declarations nor removes existing ones.
 form. A declaration submission (`let`, `fn`, `struct`, `enum`, `type`) is
 silent.
 
-**Normative rule.** `:quit`, `:q`, `:exit` end the session; `:help` prints
-help; EOF ends the session cleanly. Blank lines are ignored.
+**Normative rule.** `:quit` ends the session; `:help` prints help; EOF ends the
+session cleanly. Blank lines are ignored. `:q` and `:exit` are not commands;
+there is one obvious spelling. In an interactive terminal, Ctrl-C cancels the
+current pending submission without ending the session, and Ctrl-D at an empty
+prompt ends it. A failed submission leaves the session unchanged.
 
 **Normative rule.** There is no `main` requirement in the REPL; the module
 mode applies to each submission.

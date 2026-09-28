@@ -9,9 +9,92 @@ use std::io::{BufRead, Write};
 
 use crate::ast::{Item, Stmt, TypeParam};
 use crate::check::{GlobalDecl, MethodDecl, ParamDecl};
-use crate::error::Diag;
+use crate::error::{Diag, Span};
 use crate::resolve::{resolve_stmt, resolve_with_session, session_items, Session};
 use crate::run::{Ctl, Interp};
+
+/// The persistent state of one REPL session, independent of how lines are
+/// obtained. Both the buffered driver and the interactive (rustyline) driver
+/// share this, so they cannot drift.
+pub struct SessionEngine {
+    interp: Interp,
+    decls: Vec<GlobalDecl>,
+    session: Session,
+    /// The in-progress multi-line submission.
+    pub(crate) pending: String,
+}
+
+/// What to do after feeding a line.
+pub enum Step {
+    /// Keep reading (the submission is incomplete, or the line was a command).
+    Continue,
+    /// The session should end (`:quit` or `:help`? no — `:quit` only).
+    Quit,
+}
+
+impl SessionEngine {
+    /// Create a fresh session engine.
+    #[must_use]
+    pub fn new() -> SessionEngine {
+        SessionEngine {
+            interp: Interp::new(),
+            decls: Vec::new(),
+            session: Session::default(),
+            pending: String::new(),
+        }
+    }
+
+    /// The prompt for the next line: the continuation prompt while a
+    /// submission is pending, the primary prompt otherwise.
+    #[must_use]
+    pub fn prompt(&self) -> &'static str {
+        if self.pending.is_empty() {
+            "aura> "
+        } else {
+            "  ... "
+        }
+    }
+
+    /// Feed one line. Returns whether the session should continue or end, and
+    /// writes any output (echoed values, diagnostics, command help) to `out`.
+    pub fn feed_line<W: Write>(&mut self, line: &str, out: &mut W) -> Step {
+        // Commands are only recognized at the start of a fresh submission.
+        if self.pending.is_empty() {
+            match line.trim() {
+                "" => return Step::Continue,
+                ":quit" => return Step::Quit,
+                ":help" => {
+                    let _ = writeln!(out, ":help     show this help");
+                    let _ = writeln!(out, ":quit     exit");
+                    let _ = writeln!(out, "Otherwise type an expression or a declaration.");
+                    return Step::Continue;
+                }
+                _ => {}
+            }
+        }
+        self.pending.push_str(line);
+        self.pending.push('\n');
+        // Wait for balanced delimiters before parsing.
+        if unbalanced(&self.pending) {
+            return Step::Continue;
+        }
+        let source = std::mem::take(&mut self.pending);
+        eval_line(
+            &mut self.interp,
+            &mut self.decls,
+            &mut self.session,
+            &source,
+            out,
+        );
+        Step::Continue
+    }
+}
+
+impl Default for SessionEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Run an interactive session on stdin/stdout.
 ///
@@ -22,13 +105,61 @@ use crate::run::{Ctl, Interp};
 /// # Errors
 /// Returns a diagnostic only for unrecoverable I/O failures.
 pub fn run() -> Result<(), Diag> {
-    // Run the session on the large stack, with buffered owned handles so no
-    // borrowed lock crosses the thread boundary.
     crate::on_large_stack(|| {
+        // With a terminal, use rustyline for line editing and history. Without
+        // one (piped input, tests), fall back to the buffered reader so
+        // behavior is identical and testable.
+        #[cfg(feature = "repl")]
+        if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+            return run_interactive();
+        }
         let reader = std::io::BufReader::new(std::io::stdin());
         let writer = std::io::BufWriter::new(std::io::stdout());
         run_with(reader, writer)
     })
+}
+
+/// The rustyline-backed interactive driver: editable current line and Up/Down
+/// history, sharing [`SessionEngine`] with the buffered driver.
+#[cfg(feature = "repl")]
+fn run_interactive() -> Result<(), Diag> {
+    use rustyline::error::ReadlineError;
+    let mut engine = SessionEngine::new();
+    let mut rl = rustyline::DefaultEditor::new().map_err(|e| {
+        Diag::new(
+            crate::error::codes::EXPECTED,
+            e.to_string(),
+            Span::default(),
+        )
+    })?;
+    let mut out = std::io::stdout();
+    let _ = writeln!(out, "Aura {} REPL — :help for commands", crate::VERSION);
+    loop {
+        match rl.readline(engine.prompt()) {
+            Ok(line) => {
+                let _ = rl.add_history_entry(line.as_str());
+                let mut sink = std::io::stdout();
+                match engine.feed_line(&line, &mut sink) {
+                    Step::Continue => {}
+                    Step::Quit => return Ok(()),
+                }
+            }
+            // Ctrl-C cancels the current pending submission without killing the
+            // process; the include a newline so the next prompt starts clean.
+            Err(ReadlineError::Interrupted) => {
+                engine.pending.clear();
+                let _ = writeln!(out);
+            }
+            Err(ReadlineError::Eof) => return Ok(()),
+            Err(e) => {
+                return Err(Diag::new(
+                    crate::error::codes::EXPECTED,
+                    e.to_string(),
+                    Span::default(),
+                ))
+            }
+        }
+    }
 }
 
 /// Run a session reading from `reader` and writing to `writer`.
@@ -39,53 +170,36 @@ pub fn run() -> Result<(), Diag> {
 /// # Errors
 /// Returns a diagnostic only for unrecoverable I/O failures.
 pub fn run_with<R: BufRead, W: Write>(mut reader: R, mut writer: W) -> Result<(), Diag> {
-    let mut interp = Interp::new();
-    let mut decls: Vec<GlobalDecl> = Vec::new();
-    let mut session = Session::default();
+    let mut engine = SessionEngine::new();
     let _ = writeln!(writer, "Aura {} REPL — :help for commands", crate::VERSION);
-    let mut pending = String::new();
     loop {
-        let prompt = if pending.is_empty() {
-            "aura> "
-        } else {
-            "  ... "
-        };
-        let _ = write!(writer, "{prompt}");
+        let _ = write!(writer, "{}", engine.prompt());
         let _ = writer.flush();
         let mut line = String::new();
         if reader.read_line(&mut line).unwrap_or(0) == 0 {
             let _ = writeln!(writer);
             return Ok(());
         }
-        let trimmed = line.trim();
-        if pending.is_empty() {
-            match trimmed {
-                "" => continue,
-                ":quit" | ":q" | ":exit" => return Ok(()),
-                ":help" => {
-                    let _ = writeln!(writer, ":help     show this help");
-                    let _ = writeln!(writer, ":quit     exit");
-                    let _ = writeln!(writer, "Otherwise type an expression or a declaration.");
-                    continue;
-                }
-                _ => {}
-            }
+        match engine.feed_line(&line, &mut writer) {
+            Step::Continue => {}
+            Step::Quit => return Ok(()),
         }
-        pending.push_str(&line);
-        // Wait for balanced braces before parsing.
-        if unbalanced(&pending) {
-            continue;
-        }
-        let source = std::mem::take(&mut pending);
-        eval_line(&mut interp, &mut decls, &mut session, &source, &mut writer);
     }
 }
 
+/// Whether a submission is *incomplete* and the REPL should keep reading
+/// continuation lines.
+///
+/// A small lexical scan over the current buffer — not a second parser — tracks
+/// the delimiter stack (`()`, `[]`, `{}`), string/f-string body, line comments,
+/// and multiline comments. It reports incomplete when a delimiter is open, a
+/// multiline comment or string is unterminated, or a backslash continues a
+/// line. A submission that is *complete* but malformed is handled by the real
+/// parser, which reports its own diagnostic (`LANGUAGE_SPEC.md` §28.4).
 fn unbalanced(src: &str) -> bool {
-    let mut depth = 0i32;
+    let mut stack: Vec<char> = Vec::new();
     let mut in_str: Option<char> = None;
     let mut in_block_comment = false;
-    let mut prev = '\0';
     let bytes = src.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
@@ -101,20 +215,33 @@ fn unbalanced(src: &str) -> bool {
         }
         match in_str {
             Some(q) => {
-                if c == q && prev != '\\' {
+                if c == q {
                     in_str = None;
                 }
             }
             None => match c {
                 '"' | '\'' => in_str = Some(c),
-                '{' => depth += 1,
-                '}' => depth -= 1,
+                '(' | '[' | '{' => stack.push(c),
+                ')' => {
+                    if stack.last() == Some(&'(') {
+                        stack.pop();
+                    }
+                }
+                ']' => {
+                    if stack.last() == Some(&'[') {
+                        stack.pop();
+                    }
+                }
+                '}' => {
+                    if stack.last() == Some(&'{') {
+                        stack.pop();
+                    }
+                }
                 '#' => {
                     // line comment: skip to end of line
                     while i < bytes.len() && bytes[i] != b'\n' {
                         i += 1;
                     }
-                    prev = '\0';
                     continue;
                 }
                 '<' if bytes[i..].starts_with(b"<!--") => {
@@ -125,12 +252,14 @@ fn unbalanced(src: &str) -> bool {
                 _ => {}
             },
         }
-        prev = c;
         i += 1;
     }
-    // A submission is incomplete while braces are open or a multiline comment
-    // has not been closed yet, so the REPL keeps reading continuation lines.
-    depth > 0 || in_block_comment
+    // Incomplete while any delimiter is open or a multiline comment is still
+    // open. An unterminated string is *not* a continuation: Aura strings do
+    // not span lines, so a typo'd quote must reach the parser and produce its
+    // real `E1004` rather than hanging the prompt.
+
+    !stack.is_empty() || in_block_comment
 }
 
 fn eval_line<W: Write>(

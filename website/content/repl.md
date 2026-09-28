@@ -25,7 +25,7 @@ aura> :quit
 | Command | Effect |
 |---|---|
 | `:help` | Show the available commands |
-| `:quit`, `:q`, `:exit` | Leave the session |
+| `:quit` | Leave the session |
 
 ## Defaults
 

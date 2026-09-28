@@ -562,3 +562,63 @@ fn method_overloads_persist_across_submissions() {
     assert!(!out.contains('E'), "unexpected diagnostic: {out}");
     assert!(out.contains('i') && out.contains('s'), "{out}");
 }
+
+// --------------------------------------------- multi-line completeness
+
+#[test]
+fn waits_for_balanced_delimiters_across_kinds() {
+    // A `[` on one line keeps the continuation prompt until `]` arrives.
+    let out = body("let xs = [\n 1,\n 2,\n]\nxs\n:quit\n");
+    assert!(out.contains("[1, 2]"), "{out}");
+    // Parentheses too.
+    let out = body("let f = (a, b) -> a + b\nf(1,\n2)\n:quit\n");
+    assert!(out.contains('3'), "{out}");
+}
+
+#[test]
+fn a_lone_closing_delimiter_reaches_the_parser() {
+    // An unmatched `]` is complete input, so the parser reports it rather than
+    // the REPL hanging for a continuation.
+    let out = body("]\n:quit\n");
+    assert!(out.contains("E1"), "{out}");
+}
+
+#[test]
+fn an_unterminated_string_reaches_the_parser() {
+    // A typo'd quote must not hang the prompt waiting for a continuation.
+    let out = body("let s = \"abc\n:quit\n");
+    assert!(out.contains("E1004"), "{out}");
+}
+
+#[test]
+fn a_fstring_interpolation_does_not_confuse_delimiters() {
+    let out = body("let m = {\"a\": 1}\nprint(f\"{m[\"a\"]}\")\n:quit\n");
+    assert!(out.contains('1'), "{out}");
+}
+
+// ------------------------------------------------------- commands
+
+#[test]
+fn only_quit_and_help_are_commands() {
+    // `:q` is no longer a command: it is an unknown submission and is reported
+    // as such, session intact.
+    let out = body("let x = 1\n:q\nx\n:quit\n");
+    assert!(
+        out.contains('E'),
+        "`:q` should be an error, not a quit: {out}"
+    );
+    assert!(out.contains('1'), "session must survive `:q`: {out}");
+    let out = body(":help\n:quit\n");
+    assert!(out.contains(":quit"), "{out}");
+    assert!(out.contains(":help"), "{out}");
+}
+
+#[test]
+fn a_failed_submission_leaves_the_session_usable() {
+    let out = body("let x = 41\nlet y = undefined\nx + 1\n:quit\n");
+    assert!(out.contains("E2003"), "{out}");
+    assert!(
+        out.contains("42"),
+        "session must survive a failed submission: {out}"
+    );
+}
