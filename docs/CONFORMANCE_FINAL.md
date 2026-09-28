@@ -6,7 +6,7 @@ Phases 2 → 12 plus final adversarial closure. Phase 1 was closed at
 ## 1. Final Repository State
 
 * Branch: `rewrite/v3-rust`.
-* Final HEAD: `23d47de2ece1d3721aab226dd2ff53ccc3e98710`.
+* Final HEAD: `dc50ec95` (AI conformance closure).
 * Worktree: clean (no transient artifacts).
 * Commits added over Phase 1 (20):
   `8aa1c7f`, `5d54ab8`, `0f3555d`, `2462d3f`, `39f4005`, `73c7b63`, `43b7cef`,
@@ -185,12 +185,14 @@ property iterations and fuzz executions.
 
 ## 20. CI
 
-* Workflow: **CI**, run **36381952455**, commit **ab7c29c3**, 14 jobs, **all
+* Workflow: **CI**, run **36390038222**, commit **dc50ec95**, 14 jobs, **all
   success** (rustfmt, clippy, cargo audit, MSRV 1.83, miri, extended property
   tests, language contract, pure-Rust-no-CPython, tests on ubuntu/macos/windows,
   playground wasm runtime, website, fuzz smoke).
-* Deploy: **Deploy website (GitHub Pages)**, run **36381952414**, commit
-  **ab7c29c3**, success.
+* Deploy: **Deploy website (GitHub Pages)**, run **36390038165**, commit
+  **dc50ec95**, success.
+* An earlier run `36388842629` (commit `23d47de2`) failed only on the fuzz smoke
+  job's `runtime` `slow-unit` (CI-RELIABILITY-1) and passed on rerun.
 * The earlier run `36374660319` failed only on the fuzz smoke job
   (`runtime` `slow-unit`), classified CI-RELIABILITY-1; it passed on rerun, and
   all subsequent runs passed on the first attempt.
