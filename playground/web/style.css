@@ -28,6 +28,18 @@
   --md-code-bg: #f7f5fd;
   --md-code-border: #dddbe6;
 
+  /* Semantic syntax roles. Website code blocks and the Playground share this
+   * vocabulary, so a colour change happens in one place. */
+  --syntax-keyword: #7b3fb5;
+  --syntax-type: #0d7d80;
+  --syntax-function: #2a5bd7;
+  --syntax-builtin: #2a5bd7;
+  --syntax-string: #116a3f;
+  --syntax-number: #a15c00;
+  --syntax-comment: #6b6b78;
+  --syntax-operator: #55555f;
+  --syntax-punctuation: #55555f;
+
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
@@ -59,6 +71,16 @@
     --md-success: #8fd5a9;
     --md-code-bg: #17171d;
     --md-code-border: #2e2f38;
+
+    --syntax-keyword: #d0a9ff;
+    --syntax-type: #7fd4d6;
+    --syntax-function: #9db4ff;
+    --syntax-builtin: #9db4ff;
+    --syntax-string: #8fd5a9;
+    --syntax-number: #ffcf8f;
+    --syntax-comment: #8a8a99;
+    --syntax-operator: #b9b9c6;
+    --syntax-punctuation: #b9b9c6;
   }
 }
 
@@ -538,56 +560,39 @@ kbd {
   display: none;
 }
 
-/* ------------------------------------------------------- syntax token colours */
+/* ------------------------------------------- syntax token colours
+ *
+ * Each role consumes one semantic token; light/dark values live in the token
+ * block above, so there is no second hardcoded palette. */
 
 .tok-keyword {
-  color: #7b3fb5;
+  color: var(--syntax-keyword);
   font-weight: 600;
 }
 .tok-string {
-  color: #116a3f;
+  color: var(--syntax-string);
 }
 .tok-number {
-  color: #a15c00;
+  color: var(--syntax-number);
 }
 .tok-fn {
-  color: #2a5bd7;
+  color: var(--syntax-builtin);
 }
 .tok-type {
-  color: #0d7d80;
+  color: var(--syntax-type);
 }
 .tok-comment {
-  color: #6b6b78;
+  color: var(--syntax-comment);
   font-style: italic;
 }
-.tok-operator,
-.tok-punct {
-  color: #55555f;
+.tok-operator {
+  color: var(--syntax-operator);
 }
-
-@media (prefers-color-scheme: dark) {
-  .tok-keyword {
-    color: #d0a9ff;
-  }
-  .tok-string {
-    color: #8fd5a9;
-  }
-  .tok-number {
-    color: #ffcf8f;
-  }
-  .tok-fn {
-    color: #9db4ff;
-  }
-  .tok-type {
-    color: #7fd4d6;
-  }
-  .tok-comment {
-    color: #8a8a99;
-  }
-  .tok-operator,
-  .tok-punct {
-    color: #b9b9c6;
-  }
+.tok-punct {
+  color: var(--syntax-punctuation);
+}
+.tok-variable {
+  color: var(--md-on-surface);
 }
 
 /* ------------------------------------------------------------- responsive */
@@ -630,4 +635,94 @@ kbd {
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* ------------------------------------------------------------- find bar */
+
+.editor-pane__tools {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 8px 0;
+}
+
+.btn.ghost {
+  background: transparent;
+  color: var(--md-on-surface-variant);
+  border: 1px solid var(--md-outline-variant);
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--md-surface-container-low);
+  border-bottom: 1px solid var(--md-outline-variant);
+}
+
+.search__input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--md-outline-variant);
+  background: var(--md-surface);
+  color: var(--md-on-surface);
+}
+
+.search__count {
+  color: var(--md-on-surface-variant);
+  font-size: 12px;
+  min-width: 70px;
+  text-align: right;
+}
+
+.search__case {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--md-on-surface-variant);
+  font-size: 12px;
+}
+
+/* --------------------------------------------------- completion popup */
+
+.completion {
+  position: absolute;
+  z-index: 20;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  min-width: 200px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--md-surface-container-high);
+  border: 1px solid var(--md-outline-variant);
+  border-radius: var(--radius-md);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.25);
+}
+
+.completion__item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--md-on-surface);
+}
+
+.completion__item.is-active {
+  background: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+}
+
+.completion__kind {
+  color: var(--md-on-surface-variant);
+  font-size: 11px;
+}
+
+.completion__item.is-active .completion__kind {
+  color: inherit;
 }

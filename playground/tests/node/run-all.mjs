@@ -34,6 +34,8 @@ if (!existsSync(wasm)) {
 }
 
 run("manifest", [join(here, "manifest.test.mjs")]);
+// Presentational completion + shared language metadata (no runtime needed).
+run("completion", [join(here, "completion.test.mjs")]);
 run("abi", [join(here, "abi.test.mjs"), wasm]);
 // Load-time SHA-256 verification of the fetched artifact bytes (the loader
 // must refuse a mismatched artifact before instantiation).

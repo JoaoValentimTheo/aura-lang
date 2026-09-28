@@ -14,6 +14,7 @@
 // what the Worker fetches and executes.
 
 import { highlight } from "./highlight.js";
+import { candidates } from "./completion.js";
 
 const els = {
   version: document.getElementById("version"),
@@ -36,6 +37,15 @@ const els = {
   problemsPanel: document.getElementById("panel-problems"),
   examples: document.getElementById("examples"),
   editor: document.getElementById("editor"),
+  completion: document.getElementById("completion"),
+  searchBar: document.getElementById("search"),
+  searchToggle: document.getElementById("search-toggle"),
+  searchInput: document.getElementById("search-input"),
+  searchCount: document.getElementById("search-count"),
+  searchPrev: document.getElementById("search-prev"),
+  searchNext: document.getElementById("search-next"),
+  searchCase: document.getElementById("search-case"),
+  searchClose: document.getElementById("search-close"),
 };
 
 const DEFAULT_SOURCE = `fn main() {
@@ -365,10 +375,198 @@ function focusToolbar() {
   if (target) target.focus();
 }
 
+// ------------------------------------------------------------- completion
+//
+// A lightweight suggestion popup driven by the shared language metadata. It is
+// not a language server and never claims a suggestion is valid.
+
+const completion = {
+  items: [],
+  active: -1,
+};
+
+function completionOpen() {
+  return completion.items.length > 0 && !els.completion.hidden;
+}
+
+function closeCompletion() {
+  completion.items = [];
+  completion.active = -1;
+  if (els.completion) {
+    els.completion.hidden = true;
+    els.completion.innerHTML = "";
+  }
+  if (els.source) els.source.setAttribute("aria-expanded", "false");
+}
+
+function renderCompletion() {
+  if (!els.completion) return;
+  els.completion.innerHTML = "";
+  completion.items.forEach((item, i) => {
+    const li = document.createElement("li");
+    li.className = `completion__item${i === completion.active ? " is-active" : ""}`;
+    li.setAttribute("role", "option");
+    li.setAttribute("aria-selected", i === completion.active ? "true" : "false");
+    li.dataset.index = String(i);
+    li.innerHTML = `<span class="completion__label">${item.label}</span><span class="completion__kind">${item.kind}</span>`;
+    li.addEventListener("mousedown", (event) => {
+      // mousedown, not click, so the textarea keeps its selection.
+      event.preventDefault();
+      acceptCompletion(i);
+    });
+    li.addEventListener("mouseenter", () => {
+      completion.active = i;
+      renderCompletion();
+    });
+    els.completion.appendChild(li);
+  });
+  const active = els.completion.querySelector(".is-active");
+  if (active && active.scrollIntoView) active.scrollIntoView({ block: "nearest" });
+}
+
+function openCompletion() {
+  if (!els.completion || !els.source) return;
+  const pos = els.source.selectionStart;
+  if (pos !== els.source.selectionEnd) return closeCompletion();
+  const text = els.source.value;
+  const items = candidates(text, pos);
+  if (items.length === 0) return closeCompletion();
+  completion.items = items;
+  completion.active = 0;
+  els.completion.hidden = false;
+  els.source.setAttribute("aria-expanded", "true");
+  renderCompletion();
+}
+
+function acceptCompletion(index) {
+  const item = completion.items[index];
+  if (!item) return;
+  const ta = els.source;
+  const pos = ta.selectionStart;
+  const text = ta.value;
+  let start = pos;
+  while (start > 0 && /[A-Za-z0-9_]/.test(text[start - 1])) start -= 1;
+  if (item.insert) {
+    // A snippet: replace the fragment with the snippet body and place the
+    // caret at the `$0` marker.
+    const marker = item.insert.indexOf("$0");
+    const body = item.insert.replace("$0", "");
+    ta.setRangeText(body, start, pos, "end");
+    const caret = start + (marker === -1 ? body.length : marker);
+    ta.setSelectionRange(caret, caret);
+  } else {
+    ta.setRangeText(item.label, start, pos, "end");
+  }
+  closeCompletion();
+  sourceDirty = true;
+  refreshEditor();
+}
+
+// ---------------------------------------------------------------- search
+//
+// Single-buffer find. Matches are highlighted through the existing highlight
+// layer by marking the current match with a selection; Ctrl/Cmd+F focuses the
+// search box. This is deliberately not project-wide or filesystem search.
+
+const search = { matches: [], index: 0 };
+
+function searchVisible() {
+  return els.searchBar && !els.searchBar.hidden;
+}
+
+function openSearch() {
+  if (!els.searchBar) return;
+  els.searchBar.hidden = false;
+  els.searchInput.focus();
+  els.searchInput.select();
+  runSearch();
+}
+
+function closeSearch() {
+  if (!els.searchBar) return;
+  els.searchBar.hidden = true;
+  els.source.focus();
+}
+
+function runSearch() {
+  if (!searchVisible()) return;
+  const needle = els.searchInput.value;
+  const hay = els.source.value;
+  const caseSensitive = els.searchCase.checked;
+  search.matches = [];
+  if (needle) {
+    const a = caseSensitive ? hay : hay.toLowerCase();
+    const b = caseSensitive ? needle : needle.toLowerCase();
+    let from = 0;
+    for (;;) {
+      const at = a.indexOf(b, from);
+      if (at === -1) break;
+      search.matches.push(at);
+      from = at + b.length;
+    }
+  }
+  if (search.index >= search.matches.length) search.index = 0;
+  updateSearchCount();
+  highlightCurrentMatch();
+}
+
+function updateSearchCount() {
+  if (!els.searchCount) return;
+  const total = search.matches.length;
+  els.searchCount.textContent = total === 0 ? "no matches" : `${search.index + 1} / ${total}`;
+}
+
+function highlightCurrentMatch() {
+  if (search.matches.length === 0) return;
+  const at = search.matches[search.index];
+  const len = els.searchInput.value.length;
+  els.source.focus();
+  els.source.setSelectionRange(at, at + len);
+  // Bring it into view.
+  const lineHeight = parseFloat(getComputedStyle(els.source).lineHeight) || 0;
+  const line = els.source.value.slice(0, at).split("\n").length;
+  els.source.scrollTop = Math.max(0, (line - 3) * lineHeight);
+  paintCurrentLine();
+  syncEditorScroll();
+}
+
+function searchStep(delta) {
+  if (search.matches.length === 0) return;
+  search.index = (search.index + delta + search.matches.length) % search.matches.length;
+  updateSearchCount();
+  highlightCurrentMatch();
+}
+
+function installSearch() {
+  if (!els.searchBar) return;
+  els.searchToggle?.addEventListener("click", openSearch);
+  els.searchClose?.addEventListener("click", closeSearch);
+  els.searchNext?.addEventListener("click", () => searchStep(1));
+  els.searchPrev?.addEventListener("click", () => searchStep(-1));
+  els.searchInput?.addEventListener("input", () => {
+    search.index = 0;
+    runSearch();
+  });
+  els.searchCase?.addEventListener("change", () => {
+    search.index = 0;
+    runSearch();
+  });
+  els.searchInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      searchStep(event.shiftKey ? -1 : 1);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      closeSearch();
+    }
+  });
+}
+
 function installEditor() {
   els.source.addEventListener("input", () => {
     sourceDirty = true;
     refreshEditor();
+    openCompletion();
   });
   els.source.addEventListener("scroll", syncEditorScroll);
   els.source.addEventListener("keyup", () => {
@@ -378,7 +576,9 @@ function installEditor() {
   els.source.addEventListener("click", () => {
     paintCurrentLine();
     syncEditorScroll();
+    closeCompletion();
   });
+  els.source.addEventListener("blur", closeCompletion);
   els.source.addEventListener("keydown", (event) => {
     // Ctrl/Cmd + Enter runs.
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
@@ -386,10 +586,48 @@ function installEditor() {
       run();
       return;
     }
-    // Escape stops a running program, or — when idle — leaves the editor for
-    // the toolbar, so a keyboard user always has a predictable way out.
+    // Ctrl/Cmd + F opens find.
+    if ((event.metaKey || event.ctrlKey) && (event.key === "f" || event.key === "F")) {
+      event.preventDefault();
+      openSearch();
+      return;
+    }
+    // Completion popup navigation takes precedence while it is open.
+    if (completionOpen()) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        completion.active = (completion.active + 1) % completion.items.length;
+        renderCompletion();
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        completion.active =
+          (completion.active - 1 + completion.items.length) % completion.items.length;
+        renderCompletion();
+        return;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault();
+        acceptCompletion(completion.active);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeCompletion();
+        return;
+      }
+    }
+    // Escape precedence: completion, then search, then a running program, then
+    // the toolbar (LANGUAGE_SPEC §61).
     if (event.key === "Escape") {
-      if (currentRun) {
+      if (completionOpen()) {
+        event.preventDefault();
+        closeCompletion();
+      } else if (searchVisible()) {
+        event.preventDefault();
+        closeSearch();
+      } else if (currentRun) {
         event.preventDefault();
         stopCurrent("stopped");
       } else {
@@ -736,6 +974,7 @@ els.version.addEventListener("change", onVersionChange);
 els.source.value = DEFAULT_SOURCE;
 mountExamples();
 installEditor();
+installSearch();
 if (els.outputTab) els.outputTab.addEventListener("click", () => showTab("output"));
 if (els.problemsTab) els.problemsTab.addEventListener("click", () => showTab("problems"));
 showTab("output");

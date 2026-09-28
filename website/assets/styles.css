@@ -622,67 +622,37 @@ samp {
   font-size: inherit;
 }
 
-/* Aura syntax highlighting (roles mirror common editor themes). */
+/* Aura syntax highlighting. Each role consumes a semantic token defined in
+ * `tokens.css`, the same vocabulary the Playground editor uses, so the two
+ * stay visually consistent and there is no second hardcoded palette. */
 .tok-comment {
-  color: var(--md-on-surface-variant);
-  opacity: 0.8;
+  color: var(--syntax-comment);
   font-style: italic;
 }
 .tok-keyword {
-  color: #9b41a8;
+  color: var(--syntax-keyword);
   font-weight: 600;
 }
 .tok-string {
-  color: #2f7d4f;
+  color: var(--syntax-string);
 }
 .tok-number {
-  color: #b5510a;
+  color: var(--syntax-number);
 }
 .tok-fn {
-  color: #2b62c9;
+  color: var(--syntax-builtin);
 }
 .tok-type {
-  color: #8a5a00;
+  color: var(--syntax-type);
 }
 .tok-operator {
-  color: var(--md-on-surface-variant);
+  color: var(--syntax-operator);
 }
 .tok-punct {
-  color: var(--md-on-surface-variant);
+  color: var(--syntax-punctuation);
 }
-
-[data-theme="dark"] .tok-keyword {
-  color: #e39ff0;
-}
-[data-theme="dark"] .tok-string {
-  color: #86e0a5;
-}
-[data-theme="dark"] .tok-number {
-  color: #ffb877;
-}
-[data-theme="dark"] .tok-fn {
-  color: #8fb6ff;
-}
-[data-theme="dark"] .tok-type {
-  color: #f0cf87;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .tok-keyword {
-    color: #e39ff0;
-  }
-  :root:not([data-theme="light"]) .tok-string {
-    color: #86e0a5;
-  }
-  :root:not([data-theme="light"]) .tok-number {
-    color: #ffb877;
-  }
-  :root:not([data-theme="light"]) .tok-fn {
-    color: #8fb6ff;
-  }
-  :root:not([data-theme="light"]) .tok-type {
-    color: #f0cf87;
-  }
+.tok-variable {
+  color: inherit;
 }
 
 /* ---------------------------------------------------------------- docs */

@@ -39,6 +39,27 @@
         <div class="editor-pane__tabs">
           <span class="tab tab--active">main.aura</span>
         </div>
+        <div class="editor-pane__tools">
+          <button id="search-toggle" class="btn ghost" type="button" title="Find (Ctrl/Cmd + F)">
+            Find
+          </button>
+        </div>
+        <div id="search" class="search" role="search" hidden>
+          <input
+            id="search-input"
+            class="search__input"
+            type="search"
+            placeholder="Find in buffer"
+            aria-label="Find in buffer"
+          />
+          <span id="search-count" class="search__count" role="status" aria-live="polite"></span>
+          <button id="search-prev" class="btn ghost" type="button" aria-label="Previous match">Prev</button>
+          <button id="search-next" class="btn ghost" type="button" aria-label="Next match">Next</button>
+          <label class="search__case">
+            <input id="search-case" type="checkbox" /> Match case
+          </label>
+          <button id="search-close" class="btn ghost" type="button" aria-label="Close search">Close</button>
+        </div>
         <div id="editor" class="editor">
           <pre id="gutter" class="editor__gutter" aria-hidden="true"></pre>
           <div class="editor__scroll">
@@ -50,7 +71,17 @@
               autocomplete="off"
               autocapitalize="off"
               aria-label="Aura source"
+              aria-autocomplete="list"
+              aria-controls="completion"
+              aria-expanded="false"
             ></textarea>
+            <ul
+              id="completion"
+              class="completion"
+              role="listbox"
+              aria-label="Suggestions"
+              hidden
+            ></ul>
           </div>
         </div>
         <div class="editor-inputs">

@@ -373,6 +373,58 @@ async function runAndWait(page, timeout = 15000) {
   await page.close();
 }
 
+// --- 9b. Completion popup and find ----------------------------------------
+{
+  const { page } = await newPage();
+  await page.fill("#source", "pri");
+  await page.focus("#source");
+  await page.evaluate(() => {
+    const s = document.getElementById("source");
+    s.setSelectionRange(3, 3);
+  });
+  await page.evaluate(() => {
+    // Trigger the input event the popup listens for.
+    document.getElementById("source").dispatchEvent(new Event("input"));
+  });
+  await page.waitForSelector("#completion:not([hidden])", { timeout: 3000 });
+  const labels = await page.$$eval("#completion .completion__label", (els) =>
+    els.map((e) => e.textContent),
+  );
+  check("completion popup offers print", labels.includes("print"), JSON.stringify(labels));
+  // Enter accepts the active suggestion.
+  await page.keyboard.press("Enter");
+  const accepted = await page.inputValue("#source");
+  check("completion Enter accepts", accepted.startsWith("print"), accepted);
+  // Escape closes the popup without leaving the editor.
+  await page.fill("#source", "pr");
+  await page.focus("#source");
+  await page.evaluate(() => {
+    const s = document.getElementById("source");
+    s.setSelectionRange(2, 2);
+    s.dispatchEvent(new Event("input"));
+  });
+  await page.waitForSelector("#completion:not([hidden])", { timeout: 3000 });
+  await page.keyboard.press("Escape");
+  const hidden = await page.evaluate(() => document.getElementById("completion").hidden);
+  check("completion Escape closes the popup", hidden === true);
+
+  // Find: Ctrl/Cmd+F opens, reports matches, next/prev navigate.
+  await page.fill("#source", "alpha beta alpha");
+  await page.focus("#source");
+  await page.keyboard.press("ControlOrMeta+f");
+  await page.waitForSelector("#search:not([hidden])", { timeout: 3000 });
+  await page.fill("#search-input", "alpha");
+  const count = await page.textContent("#search-count");
+  check("find reports the match count", count === "1 / 2", count);
+  await page.click("#search-next");
+  const count2 = await page.textContent("#search-count");
+  check("find next advances", count2 === "2 / 2", count2);
+  await page.keyboard.press("Escape");
+  const searchHidden = await page.evaluate(() => document.getElementById("search").hidden);
+  check("find Escape closes the bar", searchHidden === true);
+  await page.close();
+}
+
 // --- 8. load-time integrity: a corrupted artifact is refused --------------
 {
   // Drive the real UI, but intercept the artifact fetch and flip a byte in the

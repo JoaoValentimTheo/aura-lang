@@ -126,6 +126,17 @@
   --md-code-bg: #f4f2fb;
   --md-code-border: #dddbe6;
   --md-scrim: rgb(0 0 0 / 0.32);
+
+  /* Semantic syntax roles, shared with the Playground editor. */
+  --syntax-keyword: #7b3fb5;
+  --syntax-type: #0d7d80;
+  --syntax-function: #2a5bd7;
+  --syntax-builtin: #2a5bd7;
+  --syntax-string: #116a3f;
+  --syntax-number: #a15c00;
+  --syntax-comment: #6b6b78;
+  --syntax-operator: #55555f;
+  --syntax-punctuation: #55555f;
 }
 
 /* ---- Dark colour roles --------------------------------------------------- */
@@ -180,6 +191,16 @@
   --md-code-bg: #191a20;
   --md-code-border: #2e2f38;
   --md-scrim: rgb(0 0 0 / 0.5);
+
+  --syntax-keyword: #d0a9ff;
+  --syntax-type: #7fd4d6;
+  --syntax-function: #9db4ff;
+  --syntax-builtin: #9db4ff;
+  --syntax-string: #8fd5a9;
+  --syntax-number: #ffcf8f;
+  --syntax-comment: #8a8a99;
+  --syntax-operator: #b9b9c6;
+  --syntax-punctuation: #b9b9c6;
 }
 
 /* When no explicit theme has been chosen, follow the OS preference. */
@@ -235,5 +256,15 @@
     --md-code-bg: #191a20;
     --md-code-border: #2e2f38;
     --md-scrim: rgb(0 0 0 / 0.5);
+
+    --syntax-keyword: #d0a9ff;
+    --syntax-type: #7fd4d6;
+    --syntax-function: #9db4ff;
+    --syntax-builtin: #9db4ff;
+    --syntax-string: #8fd5a9;
+    --syntax-number: #ffcf8f;
+    --syntax-comment: #8a8a99;
+    --syntax-operator: #b9b9c6;
+    --syntax-punctuation: #b9b9c6;
   }
 }

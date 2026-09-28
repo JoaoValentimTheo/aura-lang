@@ -1,31 +1,22 @@
 // Presentational Aura syntax highlighter for the Playground editor.
 //
 // This is a *presentational* tokenizer derived from the real lexical rules in
-// `docs/LANGUAGE_SPEC.md` §3 and `docs/grammar.md`, mirroring the website's
-// `website/lib/highlight.mjs`. It is not a parser and defines no semantics; if
-// it ever disagrees with the language, the language wins. Output is escaped
-// HTML, safe to assign to `innerHTML`.
+// `docs/LANGUAGE_SPEC.md` §3 and `docs/grammar.md`. It is not a parser and
+// defines no semantics; if it ever disagrees with the language, the language
+// wins. Output is escaped HTML, safe to assign to `innerHTML`.
+//
+// The keyword/builtin/method inventories come from the shared
+// `language.js`, which `tests/language_metadata.rs` keeps in sync with the
+// compiler, so highlighting cannot drift from the real language.
 
-const KEYWORDS = new Set([
-  "fn", "let", "mut", "if", "else", "match", "while", "loop", "for", "in",
-  "return", "throw", "break", "continue", "try", "catch", "finally", "struct",
-  "enum", "type", "use", "pub", "and", "or", "not", "impl", "self",
-]);
-
-const LITERALS = new Set(["true", "false", "none"]);
-
-const BUILTINS = new Set([
-  "print", "len", "to_string", "to_int", "to_float", "range", "abs", "min",
-  "max", "push", "pop", "keys", "values", "sort", "reverse", "map", "filter",
-  "reduce", "sum", "assert", "enumerate", "zip", "read_line", "read_file",
-  "write_file", "args", "py_eval", "py_import", "py_call", "py_version",
-  "json_encode", "json_decode", "regex_match", "regex_find", "regex_find_all",
-  "regex_replace", "time_now", "time_unix", "sleep_ms",
-  "upper", "lower", "trim", "contains", "starts_with", "ends_with", "split",
-  "replace", "chars", "first", "last", "join", "get", "has", "remove",
-]);
-
-const TYPES = new Set(["int", "float", "bool", "string"]);
+import {
+  KEYWORD_SET as KEYWORDS,
+  CONTEXTUAL_SET,
+  LITERAL_SET as LITERALS,
+  TYPE_SET as TYPES,
+  BUILTIN_SET as BUILTINS,
+  METHOD_SET as METHODS,
+} from "./language.js";
 
 function escapeHtml(s) {
   return s.replace(/[&<>"']/g, (c) => {
@@ -48,7 +39,8 @@ function classFor(word) {
   if (KEYWORDS.has(word)) return "tok-keyword";
   if (LITERALS.has(word)) return "tok-number";
   if (TYPES.has(word)) return "tok-type";
-  if (BUILTINS.has(word)) return "tok-fn";
+  if (CONTEXTUAL_SET.has(word)) return "tok-keyword";
+  if (BUILTINS.has(word) || METHODS.has(word)) return "tok-fn";
   return null;
 }
 
