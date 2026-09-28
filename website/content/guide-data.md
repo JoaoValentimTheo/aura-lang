@@ -55,7 +55,7 @@ Rules:
 * A field and a method of the same struct may not share a name (`E2016`).
 * An unknown member on a known struct is `E2003`; there is no fallback to a
   built-in method or another struct.
-* There is no inheritance, no constructor, and no visibility: reuse is
+* There is no inheritance, no user-defined constructor; visibility uses modules and `pub`: reuse is
   composition plus methods and free functions.
 * `impl` and `self` are **contextual**, not reserved: `impl Struct { … }` is a
   behavior block only at item position, and `self` is the receiver only as a
@@ -91,7 +91,7 @@ Rules:
 * A trait implementation must provide every declared method (`E2017` if one is
   missing) with a compatible signature (`E3001` if not), and no extras.
 * Traits add no dispatch: calls resolve statically by the receiver's nominal
-  type. There are no trait objects, vtables, or bounds.
+  type. There are no trait objects or vtables; static generic bounds are supported.
 * Trait and inherent methods share one namespace: a name provided twice is
   `E2007`.
 * `trait` is contextual (`let trait = 1` is valid), like `impl` and `self`.

@@ -1,103 +1,100 @@
 # Grammar
 
-This is the canonical Aura syntax, reproduced from the repository's
-`docs/grammar.md`. The parser implements exactly this grammar, and
-`tests/grammar.rs` parses every production below. When the parser and this
-grammar disagree, the parser is wrong.
+`LANGUAGE_SPEC.md` is the normative syntax and semantic contract. This file
+is its formal syntax representation; `contract.md` records compatibility
+promises. Guides and the website explain that contract. Historical reports and
+roadmaps do not override it. Changes to the language require the RFC process in
+`CONTRIBUTING.md`. A disagreement must be investigated against that hierarchy,
+not automatically resolved in favor of either the parser or this file.
+
+This grammar describes the current development language. The immutable 0.0.2
+runtime is historical. `tests/grammar.rs` and `tests/syntax_conformance.rs`
+exercise productions and negative cases; they are not a generated proof that
+an arbitrary EBNF and parser agree. The website copy's grammar body is
+checked line-for-line against this file (the page title differs by design).
+
+## Productions
+
+Spaces, tabs, CR, and comments are discarded. NEWLINE is LF, including the LF
+of CRLF. `nl` below means zero or more NEWLINE tokens. Literal punctuation is
+quoted; uppercase lexical names are defined in the lexical section.
 
 ```ebnf
-(* ---------------------------------------------------------------- file *)
-file            = { NEWLINE | item } EOF ;
-item            = [ "pub" ] ( fn_decl | struct_decl | enum_decl
-                            | type_alias | use_decl | const_decl
-                            | impl_decl | trait_decl )
-                | expr_stmt ;
-
-use_decl        = "use" IDENT { "." IDENT } terminator ;
-
-(* ---------------------------------------------------------- declarations *)
-(* A declaration may introduce ordered generic type parameters after its name:
-   `fn f<T>(...)`, `struct S<T> {`, `trait T<A> {`, `impl<A> S<A> {`,
-   `type A<T> = ...`. A bound is `T: Trait` or `T: A + B`. In these positions
-   `<` is a generic bracket; in expressions it stays comparison/shift. *)
-type_params     = "<" type_param { "," type_param } ">" ;
-type_param      = IDENT [ ":" IDENT { "+" IDENT } ] ;
-
-fn_decl         = "fn" IDENT [ type_params ] "(" [ params ] ")" [ "->" type ] block ;
-params          = param { "," param } ;
-param           = [ "mut" ] IDENT [ ":" type ] ;
-
-(* behavior block: a struct may have several, which merge into one method
-   surface and may add overloads; methods take the receiver `self` as their
-   first parameter. `impl` here is contextual — an `impl StructName {` item or
-   an `impl TraitName for StructName {` item — and `self` has receiver meaning
-   only in this position; both stay ordinary identifiers elsewhere. *)
-impl_decl       = "impl" [ type_params ] type_head [ "for" type_head ] "{"
-                  { NEWLINE | [ "pub" ] method_decl } "}" ;
-type_head       = IDENT { "::" IDENT } [ "<" type { "," type } ">" ] ;
-method_decl     = "fn" IDENT [ type_params ]
-                  "(" receiver [ "," param { "," param } [ "," ] ] ")"
-                  [ "->" type ] block ;
-receiver        = [ "mut" ] "self" ;
-
-(* trait: a behavioral contract. Signatures only — no bodies, fields, or
-   associated items. `trait` is contextual and stays an ordinary identifier
-   outside this item form. *)
-trait_decl      = "trait" IDENT [ type_params ] "{"
-                  { NEWLINE | [ "pub" ] trait_method } "}" ;
-trait_method    = "fn" IDENT [ type_params ]
-                  "(" receiver [ "," param { "," param } [ "," ] ] ")"
-                  [ "->" type ] terminator ;
-
-struct_decl     = "struct" IDENT [ type_params ] "{"
-                  [ field { "," field } [ "," ] ] "}" ;
-field           = IDENT ":" type ;
-
-enum_decl       = "enum" IDENT [ type_params ] "{"
-                  [ variant { "," variant } [ "," ] ] "}" ;
-variant         = IDENT [ "(" [ type { "," type } ] ")" ] ;
-
-type_alias      = "type" IDENT [ type_params ] "=" type terminator ;
-
-const_decl      = "const" NAME [ ":" type ] "=" expr terminator
-                | "let" IDENT [ ":" type ] "=" expr terminator ;
-NAME            = UPPER { LETTER | DIGIT | "_" } ;
-(* `const NAME = e` is the canonical module constant (NAME uppercase). A
-   top-level `let` is the same module constant, kept for compatibility. *)
-
-(* ----------------------------------------------------------------- types *)
-type            = type_member { "|" type_member } ;
-type_member     = "int" | "float" | "bool" | "string" | "none"
-                | "[" type "]"
-                | "{" type ":" type "}"
-                | IDENT [ "<" type { "," type } ">" ]
-                | IDENT { "::" IDENT } [ "<" type { "," type } ">" ] ;
-
-(* ------------------------------------------------------------- statements *)
-block           = "{" { terminator | stmt } "}" ;
+file            = nl { item nl } EOF ;
+item            = [ "pub" ] ( fn_decl | struct_decl | enum_decl | type_alias
+                            | module_decl | use_decl | const_decl | trait_decl )
+                | impl_decl | expr_stmt ;
+module_decl     = "module" IDENT "{" nl { item nl } "}" ;
+use_decl        = "use" IDENT { ( "::" | "." ) IDENT }
+                  [ "as" IDENT ] statement_end ;
+path            = IDENT { "::" IDENT } ;
+nl              = { NEWLINE } ;
 terminator      = NEWLINE | ";" ;
+statement_end   = terminator | END_BOUNDARY ;
+expr_stmt       = expr statement_end ;
 
+fn_decl         = "fn" IDENT [ type_params ] "(" params ")"
+                  [ "->" type ] block ;
+params          = nl [ param nl { "," nl param nl } [ "," nl ] ] ;
+param           = [ "mut" ] IDENT [ ":" type ] ;
+type_params     = "<" type_param { "," type_param } [ "," ] ">" ;
+type_param      = IDENT [ ":" bound { "+" bound } ] ;
+bound           = IDENT [ type_args ] ;
+type_args       = "<" nl type nl { "," nl type nl } [ "," nl ] ">" ;
+type_head       = path [ type_args ] ;
+
+impl_decl       = "impl" [ type_params ] type_head [ "for" type_head ]
+                  "{" nl { [ "pub" ] method_decl nl } "}" ;
+method_decl     = "fn" IDENT [ type_params ] "(" method_params ")"
+                  [ "->" type ] block ;
+method_params   = nl receiver nl { "," nl param nl } [ "," nl ] ;
+receiver        = [ "mut" ] "self" [ ":" type ] ;
+trait_decl      = "trait" IDENT [ type_params ]
+                  "{" nl { [ "pub" ] trait_method nl } "}" ;
+trait_method    = "fn" IDENT [ type_params ] "(" method_params ")"
+                  [ "->" type ] statement_end ;
+
+struct_decl     = "struct" IDENT [ type_params ] "{" nl
+                  [ field nl { "," nl field nl } [ "," nl ] ] "}" ;
+field           = [ "pub" ] IDENT ":" type ;
+enum_decl       = "enum" IDENT [ type_params ] "{" nl
+                  [ variant nl { "," nl variant nl } [ "," nl ] ] "}" ;
+variant         = IDENT [ "(" nl [ type nl { "," nl type nl }
+                  [ "," nl ] ] ")" ] ;
+type_alias      = "type" IDENT [ type_params ] "=" type statement_end ;
+const_decl      = "const" UPPER_NAME [ ":" type ] "=" expr statement_end
+                | "let" IDENT [ ":" type ] "=" expr statement_end ;
+
+type            = type_member { "|" type_member } ;
+type_member     = "none" | "[" type "]" | "{" type ":" type "}"
+                | path [ type_args ] ;
+
+block           = "{" { terminator | stmt } "}" ;
 stmt            = let_stmt | assign_or_expr | return_stmt | throw_stmt
                 | break_stmt | continue_stmt | while_stmt | loop_stmt
                 | for_stmt | try_stmt ;
-
-let_stmt        = "let" [ "mut" ] let_pattern [ ":" type ] "=" expr terminator ;
-let_pattern     = IDENT | let_list_pattern | let_variant_pattern ;
-let_list_pattern    = "[" [ let_pattern { "," let_pattern } [ "," ] ] "]" ;
-let_variant_pattern = IDENT [ "(" [ let_pattern { "," let_pattern } ] ")" ] ;
-assign_or_expr  = expr [ assign_op expr ] terminator ;
+let_stmt        = "let" [ "mut" ] BIND_NAME [ ":" type ] "=" expr statement_end
+                | "let" let_destructure "=" expr statement_end ;
+let_destructure = let_list_pattern | let_variant_pattern ;
+let_pattern     = BIND_NAME | let_destructure ;
+let_list_pattern = "[" nl [ let_pattern nl { "," nl let_pattern nl }
+                   [ "," nl ] ] "]" ;
+let_variant_pattern = UPPER_NAME
+                | IDENT "(" nl [ let_pattern nl { "," nl let_pattern nl }
+                  [ "," nl ] ] ")" ;
+assign_or_expr  = expr [ assign_op expr ] statement_end ;
 assign_op       = "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "^="
                 | "&=" | "|=" | "<<=" | ">>=" ;
-return_stmt     = "return" [ expr ] terminator ;
-throw_stmt      = "throw" expr terminator ;
-break_stmt      = "break" terminator ;
-continue_stmt   = "continue" terminator ;
+return_stmt     = "return" [ expr ] statement_end ;
+throw_stmt      = "throw" expr statement_end ;
+break_stmt      = "break" statement_end ;
+continue_stmt   = "continue" statement_end ;
 while_stmt      = "while" expr block ;
 loop_stmt       = "loop" block ;
 for_stmt        = "for" pattern "in" expr block ;
-try_stmt        = "try" block "catch" IDENT block [ "finally" block ] ;
+try_stmt        = "try" block "catch" IDENT block [ "finally" block ]
+                  [ terminator ] ;
 
-(* ------------------------------------------------------------ expressions *)
 expr            = pipe ;
 pipe            = logic_or { "|>" logic_or } ;
 logic_or        = logic_and { "or" logic_and } ;
@@ -112,65 +109,108 @@ additive        = multiplicative { ( "+" | "-" ) multiplicative } ;
 multiplicative  = power { ( "*" | "/" | "%" ) power } ;
 power           = unary [ "^" power ] ;
 unary           = ( "-" | "not" | "~" ) unary | postfix ;
-postfix         = atom { call_or_member } ;
-call_or_member  = "(" [ call_args ] ")"
-                | "[" expr "]"
-                | "." IDENT [ "<" type { "," type } ">" ] "(" [ call_args ] ")" ;
-call_args       = arg { "," arg } [ "," ] ;
+postfix         = atom { "(" call_args ")" | "[" expr "]"
+                | "." IDENT [ [ type_args ] "(" call_args ")" ] } ;
+call_args       = nl [ arg nl { "," nl arg nl } [ "," nl ] ] ;
 arg             = [ IDENT ":" ] expr ;
-
-atom            = INT | FLOAT | STRING | FSTRING
-                | "true" | "false" | "none"
-                | IDENT [ "<" type { "," type } ">" ] "(" [ call_args ] ")"
-                | IDENT "{" [ field_init { "," field_init } ] "}"
+atom            = INT | FLOAT | STRING | FSTRING | "true" | "false" | "none"
+                | path [ type_args ( "(" call_args ")" | struct_body ) ]
+                | UPPER_PATH ( "(" ctor_args ")" | struct_body )
                 | "(" expr ")"
-                | "(" expr "," [ expr { "," expr } [ "," ] ] ")"
-                | lambda
-                | list | map | block_expr
-                | if_expr | match_expr ;
-
-lambda          = [ "fn" ] "(" [ lambda_param { "," lambda_param } [ "," ] ] ")" "->" expr
-                | "fn" [ "mut" ] IDENT "->" expr ;
-lambda_param    = [ "mut" ] IDENT [ ":" type ] ;
-list            = "[" [ expr { "," expr } [ "," ] ] "]" ;
-map             = "{" entry { "," entry } [ "," ] "}" | "{" ":" "}" ;
-entry           = expr ":" expr ;
-block_expr      = block ;
+                | "(" expr "," nl [ expr nl { "," nl expr nl }
+                  [ "," nl ] ] ")"
+                | lambda | list | map | block | if_expr | match_expr ;
+ctor_args       = nl [ arg nl { "," nl arg nl } [ "," nl ] ] ;
+struct_body     = "{" nl [ field_init nl { "," nl field_init nl }
+                  [ "," nl ] ] "}" ;
 field_init      = IDENT ":" expr ;
-
+lambda          = [ "fn" ] "(" params ")" "->" expr
+                | "fn" [ "mut" ] IDENT "->" expr ;
+list            = "[" nl [ expr nl { "," nl expr nl } [ "," nl ] ] "]" ;
+map             = "{" nl ( ":" nl | entry nl { "," nl entry nl }
+                  [ "," nl ] ) "}" ;
+entry           = expr ":" expr ;
 if_expr         = "if" expr block [ "else" expr ] ;
-match_expr      = "match" expr "{" { match_arm } "}" ;
-match_arm       = pattern [ "if" expr ] "->" ( block | expr terminator ) ;
+match_expr      = "match" expr "{" nl { match_arm nl } "}" ;
+match_arm       = pattern [ "if" expr ] "->"
+                  ( block | expr [ terminator ] ) [ "," | ";" ] ;
 
-(* --------------------------------------------------------------- patterns *)
-pattern         = literal_pattern | bind_pattern | list_pattern
-                | variant_pattern ;
+pattern         = literal_pattern | BIND_PATH | UPPER_PATH | list_pattern
+                | path "(" nl [ pattern nl { "," nl pattern nl }
+                  [ "," nl ] ] ")" ;
 literal_pattern = INT | STRING | "true" | "false" | "none" ;
-bind_pattern    = IDENT | "_" ;
-list_pattern    = "[" [ pattern { "," pattern } [ "," ] ] "]" ;
-variant_pattern = IDENT [ "(" [ pattern { "," pattern } ] ")" ] ;
+list_pattern    = "[" nl [ pattern nl { "," nl pattern nl }
+                  [ "," nl ] ] "]" ;
 
-(* ----------------------------------------------------------------- f-strings *)
-FSTRING         = 'f"' { fchar | "{{" | "}}" | "{" expr [ ":" format_spec ] "}" } '"' ;
-format_spec     = [ [ fchar ] ( "<" | ">" | "^" ) ] [ "+" | "-" | " " ]
-                  [ digits ] [ "." digits ] [ type ] ;
-type            = "d" | "b" | "o" | "x" | "X" | "f" | "F" | "e" | "E" | "%" ;
+format_spec     = [ [ FILL ] ( "<" | ">" | "^" ) ] [ "+" | "-" | " " ]
+                  [ DIGITS ] [ "." DIGITS ] [ format_type ] ;
+format_type     = "d" | "b" | "o" | "x" | "X" | "f" | "F" | "e" | "E" | "%" ;
 ```
 
-## Notes
+## Lexical and contextual constraints
 
-* `else if` is the nested form `if A { X } else { if B { Y } else { Z } }`.
-* `else`, `catch`, and `finally` must be on the same line as the preceding `}`.
-* `&&`/`||` are not operators (they lex as two `&`/`|` tokens and fail to
-  parse); `!` is a lexical error.
-* Bitwise operators `&`, `|`, `~`, `<<`, `>>` exist on `int`; there is no XOR
-  (`^` is exponentiation) and no `++`/`--`.
-* A trailing comma is accepted before every closing delimiter.
-* A number may not be immediately followed by a name: `1abc` is `E1002`.
-* `let` requires an initializer (`E2005`); `const NAME = e` is the canonical
-  module constant and its name is uppercase.
-* An f-string interpolates `{expr}`, escapes braces with `{{`/`}}`, and accepts
-  a small format spec after `:` (`{x:.2f}`, `{n:>6}`, `{n:06d}`, `{n:x}`); it
-  has no `{x=}` or `{x!r}`.
-* `module Name { ... }` declares an in-source module; items are private by default and exported with `pub`; `use path [as Alias]` imports a name; `::` is the path separator.
-* A parenthesized comma list is list sugar; Aura has no distinct tuple value.
+* `IDENT` is `[A-Za-z_][A-Za-z_0-9]*`, excluding the 29 hard keywords in
+  specification §3.3. Identifiers are case-sensitive and ASCII only. `int`,
+  `float`, `bool`, and `string` are identifiers mapped to primitive types in
+  type positions and reject type arguments. `none` is a hard keyword.
+* `UPPER_NAME` begins with `[A-Z]`; the rest may contain lowercase letters.
+  `BIND_NAME` begins with lowercase ASCII or `_`. `UPPER_PATH` / `BIND_PATH`
+  are paths classified by their **last** segment. `_` is the wildcard binding.
+* `module`, `impl`, `trait`, and `const` are contextual identifiers at item
+  position; `self` is contextual as a method's first parameter. `where` is an
+  ordinary identifier and introduces no clause. `let` is always reserved.
+  `module IDENT {` needs no capitalization. `trait` requires an uppercase
+  name; `impl` requires an uppercase first head or a `::`-qualified head.
+  Context recognition requires the header tokens without intervening NEWLINE.
+* Generic declaration lists are nonempty and currently recognized by balanced
+  single-line lookahead. Type arguments in type positions can contain `nl`;
+  expression arguments require adjacent `<` and single-line balanced lookahead
+  followed by `(` or `{`. A `>>` token splits into two `>` tokens only in
+  generic positions; `>=` and `>>=` do not split. A generic head followed by
+  `::` is recognized by lookahead but has no implemented continuation; see
+  CONF-GRAM-4 in the conformance report. No `where` clause exists.
+* Explicitly parameterized uppercase calls produce `Expr::Call`; bare uppercase
+  calls produce `Expr::Construct`. Resolution is subsequent to parsing.
+* `INT` covers decimal and lowercase `0x`/`0b`/`0o` forms (§3.6.1). The special
+  decimal magnitude 9223372036854775808 is valid only directly after unary `-`.
+  It is not an accepted positive literal pattern. `FLOAT` requires an initial
+  digit and a fraction and/or exponent (§3.6.2). There is no unary `+`.
+* `STRING` uses either quote delimiter and the closed escape set in §3.6.3.
+  `FSTRING` uses `f` or `F` and either quote, with raw literal text, `{{`/`}}`,
+  and `{ expr [ ":" format_spec ] }`. Quotes matching the outer delimiter
+  end the lexical string unless escaped. An interpolation respects nested
+  delimiters, quoted text, comments and `::` paths. `FILL` is one character;
+  `DIGITS` is one or more ASCII digits. Formatting width/precision safety
+  bounds remain those already established in §31; this pass does not change them.
+* The outer f-string quote rule, a lone literal `}`, and numeric underscore
+  placement have incomplete normative definitions. Their observed behavior is
+  recorded as SPEC GAP in the conformance report, not promoted to new syntax.
+* Positional arguments precede named arguments in calls and method calls.
+  Constructor arguments are parsed separately; binding and eligibility of named
+  arguments belong to the checker. Named method arguments parse today but
+  are rejected semantically (`E3001`), so they are not a missing token form.
+* Bare names, grouping, indexing and fields are expressions. `()` alone is
+  invalid; `() -> e` is a lambda, `(x,)` is a one-element list. Assignment is
+  a statement, not an expression. No tuple type, function TypeExpr syntax,
+  struct pattern, negative/float pattern, rest pattern or inclusive range exists.
+* Lists match exact length. `let` destructuring forbids `mut`, annotations and
+  literals; unlike general patterns, it does not accept qualified variant paths.
+* Newlines are accepted only in the explicit `nl` positions above. `else`,
+  `catch`, and `finally` must directly follow the previous closing brace without
+  NEWLINE. Operators, including pipelines, need their next operand on the same
+  line. Multiline-comment internal newlines produce no NEWLINE token.
+* `END_BOUNDARY` is a zero-width end before `}` or EOF, as established by the
+  specification's inline examples. **Unresolved separator discrepancy:** the
+  parser's `end_stmt` additionally accepts absent separators between adjacent
+  items/statements (`1 2`, `let x = 1 let y = 2`). The specification does not
+  establish that general rule. CONF-PARSE-8 remains SPEC GAP; this grammar does
+  not silently grant those additional forms normative status.
+* `pub impl`, local item declarations, import lists, repeated modifiers, default
+  arguments, variadic parameters and method bodies inside traits are invalid.
+  `use` accepts mixed historical `.` and current `::` separators and `as` aliases.
+* `&&` and `||` lex as two bitwise tokens and fail to parse. `!` alone is E1001.
+  `^` is power, not XOR; `--x` consists of two unary minuses, not decrement.
+* `#` comments run through the byte before LF or EOF. `<!--` comments close at
+  the first `--!>`, do not nest and discard internal LF. Unterminated block
+  comments are E1005. EOF is a real token; errors are `Result::Err(Diag)`, never
+  an error token. See the conformance report for the complete token matrix.

@@ -33,7 +33,9 @@ rule changes, the RFC process in `CONTRIBUTING.md` applies.
 * Literals: decimal `123`, hex `0xff`, binary `0b1011`, float `1.5`, `1e9`;
   strings `"abc"` and `'abc'` (interchangeable); f-strings `f"x = {x}"`.
 * `1abc` is an error, never three tokens.
-* Reserved words may not be used as names.
+* Reserved words may not be used as names; the contextual words
+  (`module`, `const`, `impl`, `self`, `trait`) are not reserved and
+  remain ordinary identifiers outside their item forms (`LANGUAGE_SPEC.md` §3.3).
 
 ## 2. Types
 

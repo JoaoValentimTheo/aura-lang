@@ -35,8 +35,8 @@ without reconciling any of them against a second dispatch mechanism.
 Aura's collection types are:
 
 ```aura
-[T]              (* list  *)
-{string: T}      (* map   *)
+[T]              # list
+{string: T}      # map
 ```
 
 There is **no** `List<T>` or `Map<K, V>`. Generic programming composes with the
@@ -63,8 +63,9 @@ by generics.
 ### 2.1 Declarations
 
 ```text
-type_params     = "<" type_param { "," type_param } ">" ;
-type_param      = IDENT [ ":" IDENT { "+" IDENT } ] ;
+type_params     = "<" type_param { "," type_param } [ "," ] ">" ;
+type_param      = IDENT [ ":" bound { "+" bound } ] ;
+bound           = IDENT [ type_args ] ;
 
 fn_decl         = "fn" IDENT [ type_params ] "(" [ params ] ")" [ "->" type ] block ;
 struct_decl     = "struct" IDENT [ type_params ] "{" [ field { "," field } [ "," ] ] "}" ;
@@ -79,7 +80,7 @@ parameter to an intersection of static contracts). `fn identity<T>(x: T) -> T`
 is the canonical form.
 
 `<` and `>` are **not** new tokens: generic brackets are recognized
-**contextually** in declaration and type positions only, exactly as `impl`,
+**contextually** in declaration, type, and explicit call positions, exactly as `impl`,
 `trait`, `module`, and `const` are contextual. This preserves every existing
 program: `a < b` and `a << b` in expression position keep their meaning.
 
@@ -107,7 +108,10 @@ They are **inferred when omitted** and **optional** when inference succeeds.
 They are required only when nothing in the argument types determines the
 parameter (e.g. `empty<T>()`). The parser recognizes `IDENT "<" ... ">" "("`
 and `IDENT "<" ... ">" "{"` as a call/construct with explicit type arguments;
-every other use of `<` stays comparison.
+the `<` must be adjacent to the name, and this lookahead is single-line.
+Other uses of `<` stay comparisons. Qualified generic-head continuation with
+`::` has an unresolved grammar discrepancy (CONF-GRAM-4); use
+`module::function<T>(...)` for a qualified call.
 
 ### 2.4 Generic parameters are identified by position, not name
 
@@ -214,14 +218,18 @@ Methods reuse the existing method model. A method may declare its own
 parameters, or use the enclosing `impl`'s:
 
 ```aura
-impl Box {
-    fn map<U>(self, f: fn(T) -> U) -> Box<U> { ... }
+impl<T> Box<T> {
+    fn replace<U>(self, value: U) -> U { return value }
 }
 
 impl<T> Box<T> {
     fn get(self) -> T { return self.value }
 }
 ```
+
+Function-type annotations such as `fn(T) -> U` are not current TypeExpr
+syntax. A callable parameter can be left unannotated. See `grammar.md` for
+the complete productions, including trailing commas and layout.
 
 * A method's type parameters extend the enclosing `impl`'s (they may not
   redeclare them).

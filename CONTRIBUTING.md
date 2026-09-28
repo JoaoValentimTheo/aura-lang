@@ -5,10 +5,17 @@ language. Correctness and clarity matter more than feature count.
 
 ## The contract
 
-`docs/contract.md` is normative. It describes the language's promises, and
-`tests/contract.rs` asserts them. `docs/grammar.md` is the canonical EBNF and
-`tests/grammar.rs` parses every production. If you change behaviour, update
-the contract, the grammar, the docs, and the tests in the same pull request.
+`docs/LANGUAGE_SPEC.md` is authoritative for current syntax and semantics.
+`docs/grammar.md` is its canonical EBNF representation; `docs/contract.md`
+records compatibility guarantees and defers to the specification. Guides and
+website references explain the current contract. Roadmaps, design reports and
+past audits are evidence of history, not overrides. Accepted RFCs amend the
+current documents when implemented; proposals are not current syntax.
+
+When these sources disagree, reproduce and classify the discrepancy before
+changing behavior. Update the affected contract, grammar, guides and tests in
+the same change. `tests/grammar.rs` and `tests/syntax_conformance.rs` exercise
+the grammar; `tests/syntax_docs.rs` guards the duplicated grammar and inventory.
 
 ## Workflow
 

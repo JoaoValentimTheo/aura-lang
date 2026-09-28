@@ -1,7 +1,9 @@
 # Aura Post-Freeze Feature Roadmap
 
 This document plans the evolution of Aura after the semantic freeze. It is a
-**design** document, not a specification change and not an implementation.
+**roadmap and historical design** document, not a specification. Current
+status is summarized below; historical recommendations are retained with their
+original context and do not describe today's missing features.
 
 The semantic foundation is frozen at commit `3b83b2a`:
 
@@ -48,10 +50,10 @@ Aura today is a tree-walking interpreted language with a conservative checker.
 
 | Area | State |
 |---|---|
-| Lexing | ASCII identifiers; line comments; newline/semicolon statements; decimal/hex/binary/octal ints, floats, string/char quotes, f-strings |
+| Lexing | ASCII identifiers; line and multiline comments; newline/semicolon statements; decimal/hex/binary/octal ints, floats, string/char quotes, f-strings |
 | Grammar | Recursive-descent + Pratt; right-associative `^` and `..`; left-associative everything else; explicit precedence table |
 | Value model | `int`, `float`, `string`, `bool`, `none`, `list`, `map` (string-keyed, ordered), struct instance, enum variant, function, range |
-| Type model | Checker `Ty`: `Int`, `Float`, `Bool`, `String`, `List`, `Map`, `Named`, `Enum`, `Unknown` |
+| Type model | Primitives, structural collections, nominal types, unions and static generic parameters/applications |
 | Unknown | Exact conservative boundary: the checker rejects only what it can prove |
 | Operators | `+ - * / % ^ == != < <= > >= and or`, bitwise `& \| ~ << >>`, unary `-`/`not`/`~`, pipeline `\|>`, assignment `= += -= *= /= %= ^= &= \|= <<= >>=` |
 | Evaluation order | Strict left-to-right; `and`/`or` short-circuit; documented |
@@ -89,20 +91,20 @@ Aura today is a tree-walking interpreted language with a conservative checker.
   drift on the standard library.
 * A precise `Unknown` boundary with no false positives.
 * Deterministic left-to-right evaluation.
-* A complete, executable, machine-checked specification.
+* A specification backed by conformance tests; open syntax gaps are tracked in
+  `CONFORMANCE_PHASE1.md`.
 
 ### Current limitations (documented in `LANGUAGE_SPEC.md` §34)
 
 * `if`/`match`/block expressions and lambdas infer `Unknown`.
 * No default or variadic function arguments.
-* No tuple type (list sugar).
 * `try` requires `catch`.
 * `match` arm bodies that are bare control flow keywords need a block.
 * No nested named function declarations.
 * No range step or `for…else`.
 * No `a..=` inclusive range literal (the half-open `a..b` form exists).
-* No block comments (only `#` line and `<!-- ... --!>` multiline comments).
-* No tuple type or lexicographic ordering for compound values.
+* No nested block comments; `<!-- ... --!>` multiline comments are current.
+* No distinct tuple type (`(a, b)` is list sugar) or lexicographic ordering for compound values.
 * No closure lifetime/ownership model (deliberate).
 * No bitwise XOR (`^` is exponentiation) and no `++`/`--` (increment is an
   explicit assignment); `%=`/`^=`/`&=`/`|=`/`<<=`/`>>=` do exist.
@@ -128,7 +130,7 @@ is a prerequisite for the first feature.
 |---|---|---|
 | `json_*` bypass the shared `arity()` helper | internal inconsistency | **fixed (0.0.1 hardening)** — arity now enforced centrally at native dispatch, including first-class builtin values |
 | `stdlib::arity` retains a min/max fallback | duplicate logic | No |
-| `Tok::As` lexed but unconsumed | dead token | No |
+| `Tok::As` | delivered | Consumed by `use path as Alias`; no longer debt |
 | `E5003` defined but never produced | dead constant | No |
 | `E4099` internal throw signal in the public code space | naming | No |
 | `Expr::Tuple` lowers to a list | AST surface | No (documented) |
@@ -139,9 +141,26 @@ feature may be scheduled before or after them independently.
 
 ---
 
-## Current Limitations Classification
+## Historical freeze-era limitations classification
 
-Classification keys:
+This table records the original assessment at the freeze, before Features
+001–006, modules and generics. Rows worded “No …” below are historical, not
+current limitations. The current status ledger is authoritative within this
+roadmap:
+
+| State | Capability | Evidence |
+|---|---|---|
+| DELIVERED | Named function arguments; static call checks | Spec §15.7; tests/contract_sync.rs |
+| DELIVERED | Empty map `{:}`; destructuring `let`; `else if` | Spec §§4,20; tests/parser.rs |
+| DELIVERED | In-source modules, visibility, imports and aliases | Spec §§27–28; tests/modules.rs |
+| DELIVERED | Struct methods, traits, generics and bounds | Spec §§17,36; tests/generics.rs, tests/traits.rs |
+| DELIVERED | Half-open ranges; general unions; multiline comments | Spec §§3–4,22; tests/lexer.rs, tests/parser.rs |
+| CURRENT LIMITATION | Filesystem/cross-file modules; named method arguments; range step; rest patterns | Separate proposals required |
+| DELIBERATE DESIGN DECISION | No tuple value type, XOR or increment operator | Spec §§4,21 |
+| RFC CANDIDATE | Multiline pipelines, list-rest patterns, range step, named method arguments | CONFORMANCE_PHASE1.md |
+| DECISION-PENDING | TypeExpr nesting | Existing AUDIT3_TYPE_NESTING_DECISION.md only |
+
+Historical classification keys:
 
 * **A** — likely worth addressing soon
 * **B** — useful but not urgent
@@ -186,7 +205,7 @@ No class **E** item is proposed in this roadmap. They are recorded so that
 
 ---
 
-## Candidate Feature Families
+## Historical candidate feature families
 
 1. **Function ergonomics** — static argument checking; named arguments;
    default arguments; variadic arguments.
@@ -276,9 +295,8 @@ effects; and whether it redesigns a frozen concept.
 * **Disturbances.** A per-nominal-type method table now sits beside the
   built-in `TypeClass` registry; the lookup order is fixed (field read without
   parentheses, method with parentheses, no cross-category fallback).
-* **Remaining.** Enum methods, bound-method values, and modules/visibility
-  (encapsulation is structural; visibility is deferred, §27) are not
-  implemented. See `docs/OOP.md` for the finalized four-pillar model.
+* **Remaining.** Enum methods and bound-method values. In-source modules and
+  visibility have since shipped (§27). See `docs/OOP.md` for the finalized four-pillar model.
 
 ### 5. Modules / imports — **DELIVERED (in-source)**
 
@@ -325,7 +343,7 @@ effects; and whether it redesigns a frozen concept.
 
 ---
 
-## Implemented Language Evolution (0.0.2)
+## Implemented Language Evolution (development after frozen 0.0.2)
 
 The following were previously recorded here as *future design directions*. They
 are now **current, implemented, and tested** features; the boundary note that
@@ -373,19 +391,19 @@ Implementation: `Tok::DotDot` (lexer), `Expr::Range` (AST + parser precedence
 
 ### Multiline comments — DONE
 
-**Current (normative).** `<!-- ... -->` is discarded by the lexer, may span
+**Current (normative).** `<!-- ... --!>` is discarded by the lexer, may span
 lines, produces no token/AST/runtime effect, and does not act as a statement
 separator (`LANGUAGE_SPEC.md` §3.5). An unterminated comment is `E1005`.
 
 ```aura
 <!--
   a comment
--->
+--!>
 ```
 
 ---
 
-## Semantic Cost Analysis
+## Historical semantic cost analysis
 
 Cost per layer: **LOW / MEDIUM / HIGH**. No overall ranking is implied.
 
@@ -405,7 +423,7 @@ Cost per layer: **LOW / MEDIUM / HIGH**. No overall ranking is implied.
 
 ---
 
-## Compatibility Analysis
+## Historical compatibility analysis
 
 A feature that merely *adds* syntax has a different risk profile from one that
 changes the meaning of existing source.
@@ -428,7 +446,7 @@ program that ran *and was type-correct under its annotations* is unaffected.
 
 ---
 
-## Specification Impact
+## Historical specification impact
 
 A feature that does not add syntax can often be specified by tightening an
 existing normative rule:
@@ -446,7 +464,7 @@ observable behavior.
 
 ---
 
-## Recommended First Feature
+## Historical recommendation for Feature 001 (delivered)
 
 **Static user-function argument checking** (arity plus annotated argument
 types at call sites).
@@ -507,7 +525,7 @@ See `docs/FEATURE_001_DESIGN.md` for the full design.
 
 ---
 
-## First Feature Scope
+## Historical Feature 001 scope (delivered)
 
 ### IN SCOPE
 
@@ -535,7 +553,7 @@ See `docs/FEATURE_001_DESIGN.md` for the full design.
 
 ---
 
-## Future Feature Queue
+## Delivery ledger and future queue
 
 Ordered by a qualitative sense of value against risk, not by a score. Items
 marked **done** have shipped; the release-hardening surface (0.0.1) is listed
@@ -552,16 +570,16 @@ under "Release hardening" below.
 | 7 | Range step / helpers | B | Possibly stdlib-only |
 | 8 | Default arguments | B | Interacts with arity |
 | 9 | Branch-join inference | B | Larger checker change |
-| 10 | Block comments | B | Lexical feature; needs a syntax decision |
+| 10 | Multiline comments | B | **done** (`<!-- ... --!>`); nesting remains absent |
 | 11 | User-defined methods | E/B | **done** (struct methods, §17.6; enum methods remain) |
-| 11b | Traits | E | **done** (static behavioral contracts, §17.7; no dynamic dispatch or bounds) |
+| 11b | Traits | E | **done** (static behavioral contracts, §17.7; no dynamic dispatch; generic bounds have since shipped) |
 | 11c | Mutation capability | E | **done** (BFR-II: `let mut`/`mut self`, §16.6) |
 | 11d | Bitwise operators + compound assignments | C | **done** (BFR-II: `& \| ~ << >>`, `%= ^= &= \|= <<= >>=`) |
 | 11e | f-string format mini-language | C | **done** (BFR-II, §3.6.4) |
 | 11f | Variable shadowing | E | **done** (Shadowing: `let`/`let mut` shadow, `const` does not, §16.3) |
 | 11g | Foundation stability + CI/clean-room gate | E | **done** (Break-the-Aura II, PC ↔ Web symmetry, reproducibility) |
 | 12 | Method overloading | E | **done** (Function/method overloading by ordered input types, §15.7) |
-| 13 | Modules | E | Separate design phase |
+| 13 | Modules | E | **done** (in-source); cross-file modules remain future work |
 | — | Async / VM / `++`/`--` | E | Not planned |
 | 14 | Generics | E | **done** (Generic functions, structs, methods, traits, bounds, aliases; `docs/GENERICS.md`) |
 

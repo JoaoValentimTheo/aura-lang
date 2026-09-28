@@ -16,7 +16,7 @@ The **language version** above is the semantics this document defines. It is
 independent of the **release version** of the implementation. See
 `src/lib.rs` (`VERSION` vs `LANGUAGE_VERSION`).
 
-This document is the **normative semantic specification** of Aura. It defines
+This document is the **normative syntax and semantic specification** of Aura. It defines
 what Aura programs mean. When this document and any other document or the
 implementation disagree, this document is authoritative; where it disagrees
 with `docs/contract.md`, this document describes the language and
@@ -148,9 +148,23 @@ declared return types of top-level functions. Everything else is `Unknown`.
 **Normative rule.** Source MUST be UTF-8 text. A byte sequence that is not
 valid UTF-8 in a position where a character is required is a lexical error.
 
-*Implementation note.* The lexer walks bytes and decodes multi-byte characters
-inside strings and identifiers it encounters; invalid sequences fall back to
-`U+FFFD` in string bodies, but character-class decisions use ASCII.
+*Implementation note.* The lexer accepts Rust `&str`, so invalid UTF-8 cannot
+reach it. CLI file/stdin and the Playground byte ABI first use
+`lex::decode_source`; invalid UTF-8 is E1001 at the invalid byte sequence,
+including inside comments or quotes. The browser's JavaScript string input is
+encoded by `TextEncoder` before that boundary. No alternative encoding or BOM
+stripping is provided.
+
+*Source-text observations (not new syntax).* A UTF-8 BOM outside a string or
+comment is E1001, as are NBSP, zero-width characters, NUL, vertical tab, form
+feed and other unrecognized controls. Unicode is preserved in string/comment
+content; identifiers remain ASCII. CR is whitespace, LF is a token, and CRLF
+therefore has the same statement structure as LF. Lone CR does not end a line
+comment or statement. Empty, whitespace-only and comments-only files parse to
+empty modules; a final LF is unnecessary. Program-mode requirements such as
+`main` are later checks. Spans are byte offsets; displayed lines count LF and
+columns count Unicode scalar values. See the Phase-1 conformance report for
+exact examples and remaining lexical SPEC GAPs.
 
 ### 3.2 Identifiers
 
@@ -177,7 +191,7 @@ true false none
 Using a reserved word where a name is required is a lexical/parse error
 (`E1009`, or `E1006` in declaration positions).
 
-**Normative rule (contextual words).** The words `impl`, `self`, and `trait`
+**Normative rule (contextual words).** The words `module`, `const`, `impl`, `self`, and `trait`
 are **not** reserved. They remain ordinary identifiers everywhere
 (`let impl = 1`, `fn self(x)`, `let trait = 1`, a field named `impl`,
 `self: int`, `catch self { … }`, and so on). They take on Aura meaning only in
@@ -185,12 +199,17 @@ their dedicated syntactic contexts (§17.6, §17.7):
 
 * `impl` is recognized as a behavior declaration or trait implementation only
   at item position, when it is immediately followed by a capitalized type name
-  and `{` (`impl StructName { … }`) or by `for` (`impl Trait for Struct { … }`).
+  (or a qualified type path), optional generic lists, and `{`
+  (`impl StructName { … }`) or `for` (`impl Trait for Struct { … }`).
   Any other occurrence of `impl` is an ordinary identifier and cannot start a
   block.
 * `trait` is recognized as a trait declaration only at item position, when it
-  is immediately followed by a capitalized name and `{` (`trait Name { … }`).
+  is followed by a capitalized name, optional type parameters, and `{`
+  (`trait Name { … }`, `trait Name<T> { … }`).
   Any other occurrence of `trait` is an ordinary identifier.
+* `module IDENT { … }` is recognized only at item position (§28); module
+  names need not be capitalized. `const` is contextual as specified in §4.2.
+  `where` is an ordinary identifier, with no clause syntax.
 * `self` has receiver semantics only as the first parameter of a method inside
   such a block (`fn method(self, …)`). Elsewhere it is an ordinary identifier
   with its previous lexical meaning.
@@ -359,8 +378,8 @@ type  = "d" | "b" | "o" | "x" | "X" | "f" | "F" | "e" | "E" | "%"
 **Normative rule.** A format type applied to an incompatible value is
 `E3001`; an unknown type character, or trailing unparsed characters, is
 `E1006`. The `:` that begins a format spec is recognized only at the top level
-of the interpolation, so a `:` inside `a[1:2]` or `f(k: v)` is part of the
-expression.
+of the interpolation, so a `:` inside a map or `f(k: v)`, and either colon in a `::` path,
+is part of the expression. This does not introduce slice syntax.
 
 **Normative rule (deliberately absent).** Aura's format specification is the
 mini-language above and nothing more. Python's self-documenting `{x=}`,
@@ -401,8 +420,8 @@ absence value. There is no `null`, `nil`, or `undefined`.
 **Normative rule.** A statement is terminated by a newline or a semicolon.
 Trailing separators are permitted.
 
-**Normative rule.** A newline is significant and is not skipped in the middle
-of a construct. In particular, `else`, `catch`, and `finally` MUST appear on
+**Normative rule.** A newline is significant except at the delimiter-list
+layout positions explicitly marked `nl` in `docs/grammar.md`. In particular, `else`, `catch`, and `finally` MUST appear on
 the same line as the closing `}` of the block they follow; a newline between
 them is a parse error (`E1006`).
 
@@ -418,6 +437,14 @@ if c { a }
 else { b }        # E1006: a newline before `else` is not allowed
 ```
 
+*Conformance note (SPEC GAP, CONF-PARSE-8).* Inline examples throughout this
+specification permit an implicit end before `}` or EOF. The implementation
+also permits adjacent statements/items without any separator (`1 2`,
+`let x = 1 let y = 2`), which the normative separator rule does not establish.
+That broader policy requires a decision; this pass preserves it without
+changing the normative rule. Multiple semicolons in blocks are permitted by
+the block production.
+
 *Evidence:* `Parser::atom` (`if`/`match`), `Parser::stmt_inner` (`try`);
 `Parser::block` does not skip newlines before a following keyword.
 
@@ -426,18 +453,27 @@ else { b }        # E1006: a newline before `else` is not allowed
 ## 4. Grammar
 
 This section is normative for **syntax**. It corresponds to the executable
-parser in `src/parse/mod.rs`. The authoritative EBNF is also maintained in
-`docs/grammar.md`; the two MUST agree.
+parser in `src/parse/mod.rs`. The canonical EBNF and its lexical/contextual side conditions are maintained
+in `docs/grammar.md`; the two MUST agree. The `nl`, name classes, generic
+lookahead, and implicit `END_BOUNDARY` conventions there apply to the excerpts
+below. Open discrepancies are explicitly recorded in
+`docs/CONFORMANCE_PHASE1.md`; observations do not amend normative rules.
 
 ### 4.1 Program and items
 
-```
-file          = { NEWLINE | item } EOF ;
-item          = [ "pub" ] ( fn_decl | struct_decl | enum_decl
-                          | type_alias | module_decl | use_decl | const_decl )
-              | expr_stmt ;
-module_decl   = "module" IDENT "{" { item } "}" ;
-use_decl      = "use" IDENT { ( "::" | "." ) IDENT } [ "as" IDENT ] terminator ;
+```ebnf
+file            = nl { item nl } EOF ;
+item            = [ "pub" ] ( fn_decl | struct_decl | enum_decl | type_alias
+                            | module_decl | use_decl | const_decl | trait_decl )
+                | impl_decl | expr_stmt ;
+module_decl     = "module" IDENT "{" nl { item nl } "}" ;
+use_decl        = "use" IDENT { ( "::" | "." ) IDENT }
+                  [ "as" IDENT ] statement_end ;
+path            = IDENT { "::" IDENT } ;
+nl              = { NEWLINE } ;
+terminator      = NEWLINE | ";" ;
+statement_end   = terminator | END_BOUNDARY ;
+expr_stmt       = expr statement_end ;
 ```
 
 **Normative rule.** `pub` exports an item from its module and `use` imports a
@@ -448,18 +484,38 @@ since an `impl` block has no name.
 
 ### 4.2 Declarations
 
-```
-fn_decl       = "fn" IDENT "(" [ params ] ")" [ "->" type ] block ;
-params        = param { "," param } ;
-param         = IDENT [ ":" type ] ;
-struct_decl   = "struct" IDENT "{" [ field { "," field } [ "," ] ] "}" ;
-field         = IDENT ":" type ;
-enum_decl     = "enum" IDENT "{" [ variant { "," variant } [ "," ] ] "}" ;
-variant       = IDENT [ "(" [ type { "," type } ] ")" ] ;
-type_alias    = "type" IDENT "=" type terminator ;
-const_decl    = "const" NAME [ ":" type ] "=" expr terminator ;
-              | "let" IDENT [ ":" type ] "=" expr terminator ;
-NAME          = UPPER { LETTER | DIGIT | "_" } ;
+```ebnf
+fn_decl         = "fn" IDENT [ type_params ] "(" params ")"
+                  [ "->" type ] block ;
+params          = nl [ param nl { "," nl param nl } [ "," nl ] ] ;
+param           = [ "mut" ] IDENT [ ":" type ] ;
+type_params     = "<" type_param { "," type_param } [ "," ] ">" ;
+type_param      = IDENT [ ":" bound { "+" bound } ] ;
+bound           = IDENT [ type_args ] ;
+type_args       = "<" nl type nl { "," nl type nl } [ "," nl ] ">" ;
+type_head       = path [ type_args ] ;
+
+impl_decl       = "impl" [ type_params ] type_head [ "for" type_head ]
+                  "{" nl { [ "pub" ] method_decl nl } "}" ;
+method_decl     = "fn" IDENT [ type_params ] "(" method_params ")"
+                  [ "->" type ] block ;
+method_params   = nl receiver nl { "," nl param nl } [ "," nl ] ;
+receiver        = [ "mut" ] "self" [ ":" type ] ;
+trait_decl      = "trait" IDENT [ type_params ]
+                  "{" nl { [ "pub" ] trait_method nl } "}" ;
+trait_method    = "fn" IDENT [ type_params ] "(" method_params ")"
+                  [ "->" type ] statement_end ;
+
+struct_decl     = "struct" IDENT [ type_params ] "{" nl
+                  [ field nl { "," nl field nl } [ "," nl ] ] "}" ;
+field           = [ "pub" ] IDENT ":" type ;
+enum_decl       = "enum" IDENT [ type_params ] "{" nl
+                  [ variant nl { "," nl variant nl } [ "," nl ] ] "}" ;
+variant         = IDENT [ "(" nl [ type nl { "," nl type nl }
+                  [ "," nl ] ] ")" ] ;
+type_alias      = "type" IDENT [ type_params ] "=" type statement_end ;
+const_decl      = "const" UPPER_NAME [ ":" type ] "=" expr statement_end
+                | "let" IDENT [ ":" type ] "=" expr statement_end ;
 ```
 
 **Normative rule.** `const NAME = e` declares an immutable module constant and
@@ -485,12 +541,10 @@ be reassigned (`E2001`).
 
 ### 4.3 Types
 
-```
-type          = type_member { "|" type_member } ;
-type_member   = "int" | "float" | "bool" | "string" | "none"
-              | "[" type "]"
-              | "{" type ":" type "}"
-              | IDENT ;
+```ebnf
+type            = type_member { "|" type_member } ;
+type_member     = "none" | "[" type "]" | "{" type ":" type "}"
+                | path [ type_args ] ;
 ```
 
 **Normative rule.** A type expression is a `|`-separated union of one or
@@ -516,26 +570,32 @@ member, or a doubled `|` — is `E1006`.
 
 ### 4.4 Statements
 
-```
-block         = "{" { terminator | stmt } "}" ;
-terminator    = NEWLINE | ";" ;
-stmt          = let_stmt | assign_or_expr | return_stmt | throw_stmt
-              | break_stmt | continue_stmt | while_stmt | loop_stmt
-              | for_stmt | try_stmt ;
-let_stmt      = "let" [ "mut" ] let_pattern [ ":" type ] "=" expr terminator ;
-let_pattern   = IDENT | let_list_pattern | let_variant_pattern ;
-let_list_pattern    = "[" [ let_pattern { "," let_pattern } [ "," ] ] "]" ;
-let_variant_pattern = IDENT [ "(" [ let_pattern { "," let_pattern } ] ")" ] ;
-assign_or_expr= expr [ assign_op expr ] terminator ;
-assign_op     = "=" | "+=" | "-=" | "*=" | "/=" ;
-return_stmt   = "return" [ expr ] terminator ;
-throw_stmt    = "throw" expr terminator ;
-break_stmt    = "break" terminator ;
-continue_stmt = "continue" terminator ;
-while_stmt    = "while" expr block ;
-loop_stmt     = "loop" block ;
-for_stmt      = "for" pattern "in" expr block ;
-try_stmt      = "try" block "catch" IDENT block [ "finally" block ] ;
+```ebnf
+block           = "{" { terminator | stmt } "}" ;
+stmt            = let_stmt | assign_or_expr | return_stmt | throw_stmt
+                | break_stmt | continue_stmt | while_stmt | loop_stmt
+                | for_stmt | try_stmt ;
+let_stmt        = "let" [ "mut" ] BIND_NAME [ ":" type ] "=" expr statement_end
+                | "let" let_destructure "=" expr statement_end ;
+let_destructure = let_list_pattern | let_variant_pattern ;
+let_pattern     = BIND_NAME | let_destructure ;
+let_list_pattern = "[" nl [ let_pattern nl { "," nl let_pattern nl }
+                   [ "," nl ] ] "]" ;
+let_variant_pattern = UPPER_NAME
+                | IDENT "(" nl [ let_pattern nl { "," nl let_pattern nl }
+                  [ "," nl ] ] ")" ;
+assign_or_expr  = expr [ assign_op expr ] statement_end ;
+assign_op       = "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "^="
+                | "&=" | "|=" | "<<=" | ">>=" ;
+return_stmt     = "return" [ expr ] statement_end ;
+throw_stmt      = "throw" expr statement_end ;
+break_stmt      = "break" statement_end ;
+continue_stmt   = "continue" statement_end ;
+while_stmt      = "while" expr block ;
+loop_stmt       = "loop" block ;
+for_stmt        = "for" pattern "in" expr block ;
+try_stmt        = "try" block "catch" IDENT block [ "finally" block ]
+                  [ terminator ] ;
 ```
 
 **Normative rule.** `catch` is mandatory after `try`. There is no `try`
@@ -585,7 +645,7 @@ Precedence, lowest binding first:
 | 14 | postfix: `f(x)`, `a.b`, `a.b(x)`, `a[i]` | left |
 | 15 | atoms: literals, names, groups, lists, maps, lambdas, `if`, `match`, blocks | — |
 
-```
+```ebnf
 expr            = pipe ;
 pipe            = logic_or { "|>" logic_or } ;
 logic_or        = logic_and { "or" logic_and } ;
@@ -600,33 +660,31 @@ additive        = multiplicative { ( "+" | "-" ) multiplicative } ;
 multiplicative  = power { ( "*" | "/" | "%" ) power } ;
 power           = unary [ "^" power ] ;
 unary           = ( "-" | "not" | "~" ) unary | postfix ;
-postfix         = atom { call_or_member } ;
-call_or_member  = "(" [ call_args ] ")"
-                | "[" expr "]"
-                | "." IDENT [ "(" [ call_args ] ")" ] ;
-call_args       = arg { "," arg } [ "," ] ;       (* positional, then named *)
+postfix         = atom { "(" call_args ")" | "[" expr "]"
+                | "." IDENT [ [ type_args ] "(" call_args ")" ] } ;
+call_args       = nl [ arg nl { "," nl arg nl } [ "," nl ] ] ;
 arg             = [ IDENT ":" ] expr ;
-atom            = INT | FLOAT | STRING | FSTRING
-                | "true" | "false" | "none"
-                | IDENT "(" [ ctor_args ] ")"        (* call or variant *)
-                | IDENT "{" [ field_init { "," field_init } ] "}"  (* struct *)
+atom            = INT | FLOAT | STRING | FSTRING | "true" | "false" | "none"
+                | path [ type_args ( "(" call_args ")" | struct_body ) ]
+                | UPPER_PATH ( "(" ctor_args ")" | struct_body )
                 | "(" expr ")"
-                | "(" expr "," [ expr { "," expr } [ "," ] ] ")"  (* list sugar *)
-                | lambda | list | map | block_expr
-                | if_expr | match_expr ;
-lambda          = [ "fn" ] "(" [ lambda_param { "," lambda_param } [ "," ] ] ")" "->" expr
-                | "fn" [ "mut" ] IDENT "->" expr ;
-lambda_param    = [ "mut" ] IDENT [ ":" type ] ;
-list            = "[" [ expr { "," expr } [ "," ] ] "]" ;
-map             = "{" entry { "," entry } [ "," ] "}" | "{" ":" "}" ;
-entry           = expr ":" expr ;
-block_expr      = block ;
-ctor_args       = ctor_arg { "," ctor_arg } [ "," ] ;
-ctor_arg        = [ IDENT ":" ] expr ;
+                | "(" expr "," nl [ expr nl { "," nl expr nl }
+                  [ "," nl ] ] ")"
+                | lambda | list | map | block | if_expr | match_expr ;
+ctor_args       = nl [ arg nl { "," nl arg nl } [ "," nl ] ] ;
+struct_body     = "{" nl [ field_init nl { "," nl field_init nl }
+                  [ "," nl ] ] "}" ;
 field_init      = IDENT ":" expr ;
+lambda          = [ "fn" ] "(" params ")" "->" expr
+                | "fn" [ "mut" ] IDENT "->" expr ;
+list            = "[" nl [ expr nl { "," nl expr nl } [ "," nl ] ] "]" ;
+map             = "{" nl ( ":" nl | entry nl { "," nl entry nl }
+                  [ "," nl ] ) "}" ;
+entry           = expr ":" expr ;
 if_expr         = "if" expr block [ "else" expr ] ;
-match_expr      = "match" expr "{" { match_arm } "}" ;
-match_arm       = pattern [ "if" expr ] "->" ( block | expr terminator ) ;
+match_expr      = "match" expr "{" nl { match_arm nl } "}" ;
+match_arm       = pattern [ "if" expr ] "->"
+                  ( block | expr [ terminator ] ) [ "," | ";" ] ;
 ```
 
 **Normative rule (trailing comma).** A trailing comma is accepted before every
@@ -647,8 +705,7 @@ separator where a type is expected and bitwise OR in expression position
 `&&` and `||` are not operators: they lex as two tokens and fail to parse.
 
 **Normative rule (a..b binds).** `a..b` is a range expression (§22.1). It is
-parsed at the `range` level, so each bound is an additive expression and both
-bounds include bitwise and shift operators: `1 + 2..n - 1` is
+parsed at the `range` level, so each bound is an additive expression and bitwise and shift operators outside parentheses bind outside the range: `1 + 2..n - 1` is
 `(1 + 2)..(n - 1)`. `..` is right-associative and not chainable with meaning:
 `a..b..c` parses as `a..(b..c)` and is a check-time/runtime type error because
 `b..c` is not an int.
@@ -658,18 +715,13 @@ bounds include bitwise and shift operators: `1 + 2..n - 1` is
 call; `..` is a distinct token and never part of a float literal
 (§3.6.2).
 
-**Normative rule (operators deliberately absent).** Aura has **no** bitwise
-operators (`&`, `|`, `~`, `<<`, `>>`) and **no** pre/post increment or
-decrement operators (`++`, `--`). These are intentionally absent, not
-deferred: `^` is exponentiation (right-associative), `and`/`or`/`not` are the
-logical operators, and mutation is written as an explicit assignment
-(`x = x + 1`, `x += 1`). `&` and `~` are rejected at the lexer (`E1001`); `|`
-is reserved for type unions, and a shift such as `8 >> 1` fails to parse
-(`E1006`). The only compound assignments are `+=`, `-=`, `*=`, `/=`
-(§4.5, §24); there is no `%=` or `^=`.
+**Normative rule (operators deliberately absent).** Aura has no bitwise XOR
+(`^` is exponentiation) and no increment/decrement operators (`++`/`--`).
+Mutation is expressed by assignment. The bitwise family and all compound
+assignments listed above are current syntax; the former paragraph denying
+them was superseded by BFR-II.
 
-**Normative rule.** `a` value MUST have an expression on both sides of an
-operator. A dangling operator (`1 +`) is `E1006`.
+**Normative rule.** a binary operator MUST have an expression on both sides. A dangling operator (`1 +`) is `E1006`.
 
 **Normative rule.** `x |> f(a)` desugars, at parse time, to `f(x, a)`;
 `x |> r.m(a)` desugars to `r.m(x, a)`; `x |> f` desugars to `f(x)`. See §23.
@@ -701,13 +753,13 @@ before `else`, or between `else` and `if`, is `E1006`.
 
 ### 4.6 Patterns
 
-```
-pattern         = literal_pattern | bind_pattern | list_pattern
-                | variant_pattern ;
+```ebnf
+pattern         = literal_pattern | BIND_PATH | UPPER_PATH | list_pattern
+                | path "(" nl [ pattern nl { "," nl pattern nl }
+                  [ "," nl ] ] ")" ;
 literal_pattern = INT | STRING | "true" | "false" | "none" ;
-bind_pattern    = IDENT | "_" ;
-list_pattern    = "[" [ pattern { "," pattern } [ "," ] ] "]" ;
-variant_pattern = IDENT [ "(" [ pattern { "," pattern } ] ")" ] ;
+list_pattern    = "[" nl [ pattern nl { "," nl pattern nl }
+                  [ "," nl ] ] "]" ;
 ```
 
 **Normative rule.** A capitalized identifier in pattern position is a variant
@@ -1950,11 +2002,11 @@ function namespace and cannot be called as free functions.
 display, or reference semantics: construction (§17.2), equality (§17.4),
 display (§17.5), and `Rc`-based reference sharing are unchanged.
 
-**Normative rule.** Aura has no constructors, destructors, visibility,
-inheritance, or operator overloading. Traits exist as static behavioral
-contracts (§17.7), and generic type parameters exist as static, erased
-placeholders (§31). (A future direction is Go-style visibility-by-naming once a
-module system exists; it is not implemented and adds no current rule.)
+**Normative rule.** Aura has no user-defined constructors, destructors,
+inheritance, or operator overloading. Visibility is private-by-default with
+`pub` exports across in-source modules (§27). Traits are static behavioral
+contracts (§17.7); generic type parameters are static, erased placeholders
+with bounds (§36).
 
 *Evidence:* `Parser::impl_item`/`method_item` (`src/parse/mod.rs`);
 `Checker::struct_methods` (`src/check/mod.rs`); `Interp::methods`
@@ -3087,7 +3139,7 @@ implementers do not assume guarantees the language does not make.
 * **`E5003`** is defined but unused and is not part of the normative surface.
 * **`E4099`** is an internal signal, not a user-facing code. It is normalized
   to `E4026` on every path that reaches the user.
-* **`Tok::As`** is lexed but no construct consumes it.
+* **`Tok::As`** is consumed by import aliases (`use path as Name`, §27).
 * Runtime method aliases `up`/`down` were removed from the interpreter's
   dispatch table. They were never in the signature registry, and the checker
   validates both `receiver.name(...)` and no-parentheses `receiver.name`
@@ -3098,7 +3150,8 @@ implementers do not assume guarantees the language does not make.
 
 ## 35. Specification Completeness Notes
 
-Everything a user can write is described in this document. The following are
+Current productions are described here and in `grammar.md`. Confirmed gaps
+and unresolved contracts are recorded in `CONFORMANCE_PHASE1.md`. The following are
 explicitly **out of scope** for this specification and are not language
 features:
 
