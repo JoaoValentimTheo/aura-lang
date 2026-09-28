@@ -1,0 +1,4 @@
+module a { pub fn f() -> int { return 1 } }
+module b { pub use a::f }
+use a as alias
+fn main() { print(b::f()) print(alias::f()) }

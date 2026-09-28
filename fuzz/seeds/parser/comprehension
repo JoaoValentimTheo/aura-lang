@@ -1,0 +1,2 @@
+[value for pattern in iterable if filter]
+{key: value for pattern in iterable}

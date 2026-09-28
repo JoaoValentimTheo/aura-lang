@@ -219,10 +219,26 @@ jobs:
       - name: Fail if any crash artifact was produced
         if: always()
         run: |
-          if [ -d fuzz/artifacts ] && [ -n "$(find fuzz/artifacts -type f -print -quit)" ]; then
-            echo "fuzz produced crash artifacts:" >&2
-            find fuzz/artifacts -type f -print >&2
-            exit 1
+          set -euo pipefail
+          # A crash/abort/leak artifact is any file libFuzzer writes that is not
+          # a `slow-unit-*` file. A `slow-unit` is a *performance* signal (a
+          # generated unit that exceeded the per-unit timeout under ASan), not a
+          # crash: the runtime target can generate a genuinely slow but finite
+          # program. Treating it as a crash made the smoke job nondeterministic
+          # (CI-RELIABILITY-1). Crashes still fail the job on every target; the
+          # aggressive detection of slow units remains in the nightly workflow.
+          if [ -d fuzz/artifacts ]; then
+            crashes="$(find fuzz/artifacts -type f ! -name 'slow-unit-*' -print)"
+            if [ -n "$crashes" ]; then
+              echo "fuzz produced crash artifacts:" >&2
+              echo "$crashes" >&2
+              exit 1
+            fi
+            slow="$(find fuzz/artifacts -type f -name 'slow-unit-*' -print)"
+            if [ -n "$slow" ]; then
+              echo "note: fuzz produced slow-unit signals (performance, not crashes):" >&2
+              echo "$slow" >&2
+            fi
           fi
           echo "no crash artifacts"
 
