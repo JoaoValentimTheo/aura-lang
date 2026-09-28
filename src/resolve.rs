@@ -211,6 +211,11 @@ struct Resolver {
     type_scope: HashMap<Vec<String>, HashMap<String, String>>,
     value_scope: HashMap<Vec<String>, HashMap<String, String>>,
     variant_scope: HashMap<Vec<String>, HashMap<String, String>>,
+    /// Canonical enum type name → its canonical variant names. Lets
+    /// `Enum::Tag` select the variant of that exact enum, unambiguously and
+    /// independent of declaration order — the flat `items` table cannot hold
+    /// a type and a variant that share one canonical name at once.
+    enum_variants: HashMap<String, HashSet<String>>,
     /// Module paths that exist, for validation.
     module_paths: HashSet<Vec<String>>,
     /// Every import applied, as `(module, local, canonical)`. The REPL persists
@@ -231,6 +236,7 @@ impl Resolver {
             type_scope: HashMap::new(),
             value_scope: HashMap::new(),
             variant_scope: HashMap::new(),
+            enum_variants: HashMap::new(),
             module_paths: HashSet::new(),
             applied_imports: Vec::new(),
             type_param_scope: std::cell::RefCell::new(Vec::new()),
@@ -246,14 +252,36 @@ impl Resolver {
             .any(|f| f.contains(name))
     }
 
-    /// Push the type parameters a declaration introduces. Bound parameters
-    /// never canonicalize to a declared type.
-    fn push_type_params(&self, params: &[TypeParam]) {
+    /// Push the type parameters a declaration introduces, after rejecting a
+    /// parameter that shadows a declared type visible from `prefix`
+    /// (`LANGUAGE_SPEC.md` §36.2, `E2007`). Bound parameters never
+    /// canonicalize to a declared type.
+    ///
+    /// The checker's own shadow check only sees canonical root and
+    /// module-local type names, so an imported type (`use m::T`) or one from a
+    /// sibling/ancestor module would slip past it; the resolver has the full
+    /// visibility model and is therefore the authority for this rule. This is
+    /// the same rule the checker already enforces for a root type, extended to
+    /// every visible type.
+    fn push_type_params(&self, params: &[TypeParam], prefix: &[String]) -> Result<()> {
+        for p in params {
+            if self.lookup_path(&p.name, prefix, Namespace::Type).is_some() {
+                return Err(Diag::new(
+                    codes::REDECLARED,
+                    format!(
+                        "type parameter `{}` shadows the declared type `{}`",
+                        p.name, p.name
+                    ),
+                    p.span,
+                ));
+            }
+        }
         let mut set: HashSet<String> = HashSet::new();
         for p in params {
             set.insert(p.name.clone());
         }
         self.type_param_scope.borrow_mut().push(set);
+        Ok(())
     }
 
     fn pop_type_params(&self) {
@@ -379,13 +407,19 @@ impl Resolver {
                     self.declare(prefix, name, *public, Namespace::Type, *span);
                     // Variant tags live in a per-module namespace; the checker
                     // remains the single authority for duplicate detection.
+                    let enum_canonical = join(prefix, name);
                     for v in variants {
+                        let tag = join(prefix, &v.tag);
                         self.variant_scope
                             .entry(prefix.to_vec())
                             .or_default()
-                            .insert(v.tag.clone(), join(prefix, &v.tag));
+                            .insert(v.tag.clone(), tag.clone());
+                        self.enum_variants
+                            .entry(enum_canonical.clone())
+                            .or_default()
+                            .insert(tag.clone());
                         self.items
-                            .entry(join(prefix, &v.tag))
+                            .entry(tag)
                             .and_modify(|e| e.public |= *public)
                             .or_insert(ItemInfo {
                                 module: prefix.to_vec(),
@@ -575,6 +609,29 @@ impl Resolver {
         let Some((first, rest)) = path.split_first() else {
             return Err(Diag::new(codes::UNKNOWN_MODULE, "empty `use` path", span));
         };
+        // `use Enum::Variant` / `use module::Enum::Variant` — the documented
+        // enum-path spelling (§27). The segment before the tag names an enum
+        // type, not a module, so the module walk below cannot reach it; resolve
+        // it against the enum's own variant set, exactly like a construct
+        // reference.
+        if path.len() >= 2 {
+            let enum_path = path[..path.len() - 1].join("::");
+            let tag = path[path.len() - 1].as_str();
+            if let Some(enum_canonical) = self.lookup_path(&enum_path, prefix, Namespace::Type) {
+                let canonical = match enum_canonical.rsplit_once("::") {
+                    Some((module, _)) => format!("{module}::{tag}"),
+                    None => tag.to_string(),
+                };
+                if self
+                    .enum_variants
+                    .get(&enum_canonical)
+                    .is_some_and(|tags| tags.contains(&canonical))
+                {
+                    self.check_visible(&enum_canonical, prefix, span)?;
+                    return Ok(canonical);
+                }
+            }
+        }
         // Walk outward from the current module to the root, looking for the
         // first segment as a child module or a visible item.
         let mut base: Option<Vec<String>> = None;
@@ -676,12 +733,12 @@ impl Resolver {
                 public,
                 span,
             } => {
-                self.push_type_params(type_params);
+                self.push_type_params(type_params, prefix)?;
                 let mut locals = Locals::default();
                 let params = self.rewrite_params(params, &mut locals, prefix)?;
                 let ret = ret
                     .as_ref()
-                    .map(|t| self.rewrite_type(t, prefix))
+                    .map(|t| self.rewrite_type(t, prefix, ret_span.unwrap_or(*span)))
                     .transpose()?;
                 let mut body = body.clone();
                 self.rewrite_block(&mut body, &mut locals, prefix)?;
@@ -706,7 +763,7 @@ impl Resolver {
             } => {
                 let ann = ann
                     .as_ref()
-                    .map(|t| self.rewrite_type(t, prefix))
+                    .map(|t| self.rewrite_type(t, prefix, *span))
                     .transpose()?;
                 let value = self.rewrite_expr(value, &mut Locals::default(), prefix)?;
                 Item::Const {
@@ -727,7 +784,7 @@ impl Resolver {
                 public,
                 span,
             } => {
-                self.push_type_params(type_params);
+                self.push_type_params(type_params, prefix)?;
                 let fields = fields
                     .iter()
                     .map(|f| self.rewrite_field(f, prefix))
@@ -748,7 +805,7 @@ impl Resolver {
                 public,
                 span,
             } => {
-                self.push_type_params(type_params);
+                self.push_type_params(type_params, prefix)?;
                 let variants = variants
                     .iter()
                     .map(|v| self.rewrite_variant(v, prefix))
@@ -769,8 +826,8 @@ impl Resolver {
                 public,
                 span,
             } => {
-                self.push_type_params(type_params);
-                let target = self.rewrite_type(target, prefix)?;
+                self.push_type_params(type_params, prefix)?;
+                let target = self.rewrite_type(target, prefix, *span)?;
                 self.pop_type_params();
                 Item::Alias {
                     name: join(prefix, name),
@@ -788,7 +845,7 @@ impl Resolver {
                 span,
                 ..
             } => {
-                self.push_type_params(type_params);
+                self.push_type_params(type_params, prefix)?;
                 let methods = methods
                     .iter()
                     .map(|m| self.rewrite_member(m, prefix))
@@ -813,11 +870,11 @@ impl Resolver {
                 span,
                 ..
             } => {
-                self.push_type_params(type_params);
+                self.push_type_params(type_params, prefix)?;
                 let target = self.canonical_type(target, prefix, *span)?;
                 let target_args = target_args
                     .iter()
-                    .map(|t| self.rewrite_type(t, prefix))
+                    .map(|t| self.rewrite_type(t, prefix, *span))
                     .collect::<Result<Vec<_>>>()?;
                 let trait_name = match trait_name {
                     Some(t) => Some(self.canonical_type(t, prefix, *span)?),
@@ -825,7 +882,7 @@ impl Resolver {
                 };
                 let trait_args = trait_args
                     .iter()
-                    .map(|t| self.rewrite_type(t, prefix))
+                    .map(|t| self.rewrite_type(t, prefix, *span))
                     .collect::<Result<Vec<_>>>()?;
                 let methods = methods
                     .iter()
@@ -867,12 +924,12 @@ impl Resolver {
         else {
             return self.rewrite_item(item, prefix);
         };
-        self.push_type_params(type_params);
+        self.push_type_params(type_params, prefix)?;
         let mut locals = Locals::default();
         let params = self.rewrite_params(params, &mut locals, prefix)?;
         let ret = ret
             .as_ref()
-            .map(|t| self.rewrite_type(t, prefix))
+            .map(|t| self.rewrite_type(t, prefix, ret_span.unwrap_or(*span)))
             .transpose()?;
         let mut body = body.clone();
         self.rewrite_block(&mut body, &mut locals, prefix)?;
@@ -892,7 +949,7 @@ impl Resolver {
     fn rewrite_field(&self, f: &FieldDecl, prefix: &[String]) -> Result<FieldDecl> {
         Ok(FieldDecl {
             name: f.name.clone(),
-            ty: self.rewrite_type(&f.ty, prefix)?,
+            ty: self.rewrite_type(&f.ty, prefix, f.span)?,
             public: f.public,
             span: f.span,
         })
@@ -906,13 +963,18 @@ impl Resolver {
             payload: v
                 .payload
                 .iter()
-                .map(|t| self.rewrite_type(t, prefix))
+                .map(|t| self.rewrite_type(t, prefix, v.span))
                 .collect::<Result<Vec<_>>>()?,
             span: v.span,
         })
     }
 
-    fn rewrite_type(&self, t: &TypeExpr, prefix: &[String]) -> Result<TypeExpr> {
+    /// Rewrite a written type. `span` is the span of the enclosing
+    /// declaration syntax (a field, parameter, return annotation, alias target,
+    /// …); `TypeExpr` carries no spans of its own, so a diagnostic about a name
+    /// inside the type is reported at that enclosing span rather than at the
+    /// file start.
+    fn rewrite_type(&self, t: &TypeExpr, prefix: &[String], span: Span) -> Result<TypeExpr> {
         Ok(match t {
             TypeExpr::Named(n) => {
                 // A bound type parameter is a placeholder, never a declared
@@ -920,30 +982,30 @@ impl Resolver {
                 if self.is_type_param(n) {
                     TypeExpr::Named(n.clone())
                 } else {
-                    TypeExpr::Named(self.canonical_type(n, prefix, Span::default())?)
+                    TypeExpr::Named(self.canonical_type(n, prefix, span)?)
                 }
             }
             TypeExpr::App(n, args) => {
                 let head = if self.is_type_param(n) {
                     n.clone()
                 } else {
-                    self.canonical_type(n, prefix, Span::default())?
+                    self.canonical_type(n, prefix, span)?
                 };
                 TypeExpr::App(
                     head,
                     args.iter()
-                        .map(|a| self.rewrite_type(a, prefix))
+                        .map(|a| self.rewrite_type(a, prefix, span))
                         .collect::<Result<Vec<_>>>()?,
                 )
             }
-            TypeExpr::List(i) => TypeExpr::List(Box::new(self.rewrite_type(i, prefix)?)),
+            TypeExpr::List(i) => TypeExpr::List(Box::new(self.rewrite_type(i, prefix, span)?)),
             TypeExpr::Map(k, v) => TypeExpr::Map(
-                Box::new(self.rewrite_type(k, prefix)?),
-                Box::new(self.rewrite_type(v, prefix)?),
+                Box::new(self.rewrite_type(k, prefix, span)?),
+                Box::new(self.rewrite_type(v, prefix, span)?),
             ),
             TypeExpr::Union(ms) => TypeExpr::Union(
                 ms.iter()
-                    .map(|m| self.rewrite_type(m, prefix))
+                    .map(|m| self.rewrite_type(m, prefix, span))
                     .collect::<Result<Vec<_>>>()?,
             ),
             other => other.clone(),
@@ -968,6 +1030,31 @@ impl Resolver {
     /// module path plus the tag (`shapes::Red`), both of which name the same
     /// canonical variant `shapes::<tag>`.
     fn canonical_construct(&self, name: &str, prefix: &[String], span: Span) -> Result<String> {
+        // `Enum::Tag` or `a::b::Enum::Tag` — the segments before the tag name
+        // the enum type, bare, module-qualified, or imported (`use m::E`). A
+        // variant's canonical name is the enum's *module* path plus the tag
+        // (`LANGUAGE_SPEC.md` §27), so `E::A` at the root is `A` and
+        // `m::E::A` is `m::A`. This must be tried *before* the general path
+        // lookup: a struct may share the canonical name of the variant
+        // (`m::A`), and the enum-qualified spelling unambiguously denotes the
+        // variant. Membership is tested against the enum's own variant set, so
+        // the answer never depends on declaration order.
+        if let Some((enum_path, tag)) = name.rsplit_once("::") {
+            if let Some(enum_canonical) = self.lookup_path(enum_path, prefix, Namespace::Type) {
+                let canonical = match enum_canonical.rsplit_once("::") {
+                    Some((module, _)) => format!("{module}::{tag}"),
+                    None => tag.to_string(),
+                };
+                if self
+                    .enum_variants
+                    .get(&enum_canonical)
+                    .is_some_and(|tags| tags.contains(&canonical))
+                {
+                    self.check_visible(&enum_canonical, prefix, span)?;
+                    return Ok(canonical);
+                }
+            }
+        }
         if let Some(c) = self.lookup_path(name, prefix, Namespace::Type) {
             self.check_visible(&c, prefix, span)?;
             return Ok(c);
@@ -975,28 +1062,6 @@ impl Resolver {
         if let Some(c) = self.lookup_path(name, prefix, Namespace::Variant) {
             self.check_visible(&c, prefix, span)?;
             return Ok(c);
-        }
-        // `a::b::Enum::Tag` — drop the enum segment; the variant's canonical
-        // name is the enum's module path plus the tag.
-        if name.contains("::") {
-            let segs: Vec<&str> = name.split("::").collect();
-            if segs.len() >= 3 {
-                let tag = segs[segs.len() - 1];
-                let parent = &segs[..segs.len() - 2];
-                let canonical = if parent.is_empty() {
-                    tag.to_string()
-                } else {
-                    format!("{}::{tag}", parent.join("::"))
-                };
-                if self
-                    .items
-                    .get(&canonical)
-                    .is_some_and(|i| i.namespace == Namespace::Variant)
-                {
-                    self.check_visible(&canonical, prefix, span)?;
-                    return Ok(canonical);
-                }
-            }
         }
         Ok(name.to_string())
     }
@@ -1091,11 +1156,15 @@ impl Resolver {
     fn rewrite_stmt(&self, s: &mut Stmt, locals: &mut Locals, prefix: &[String]) -> Result<()> {
         match s {
             Stmt::Let {
-                name, ann, value, ..
+                name,
+                ann,
+                value,
+                span,
+                ..
             } => {
                 *value = self.rewrite_expr(value, locals, prefix)?;
                 if let Some(a) = ann {
-                    *a = self.rewrite_type(a, prefix)?;
+                    *a = self.rewrite_type(a, prefix, *span)?;
                 }
                 locals.declare(name);
             }
@@ -1165,9 +1234,14 @@ impl Resolver {
         }
     }
 
-    fn rewrite_type_args(&self, args: &[TypeExpr], prefix: &[String]) -> Result<Vec<TypeExpr>> {
+    fn rewrite_type_args(
+        &self,
+        args: &[TypeExpr],
+        prefix: &[String],
+        span: Span,
+    ) -> Result<Vec<TypeExpr>> {
         args.iter()
-            .map(|t| self.rewrite_type(t, prefix))
+            .map(|t| self.rewrite_type(t, prefix, span))
             .collect::<Result<Vec<_>>>()
     }
 
@@ -1181,7 +1255,7 @@ impl Resolver {
         for p in params {
             let ty =
                 p.ty.as_ref()
-                    .map(|t| self.rewrite_type(t, prefix))
+                    .map(|t| self.rewrite_type(t, prefix, p.span))
                     .transpose()?;
             locals.declare(&p.name);
             out.push(Param {
@@ -1217,7 +1291,7 @@ impl Resolver {
                         })
                     })
                     .collect::<Result<Vec<_>>>()?;
-                let ty_args = self.rewrite_type_args(ty_args, prefix)?;
+                let ty_args = self.rewrite_type_args(ty_args, prefix, *span)?;
                 Expr::Construct(canonical, args, ty_args, *span)
             }
             Expr::Unary(op, o, span) => {
@@ -1230,7 +1304,7 @@ impl Resolver {
                 *span,
             ),
             Expr::Call(f, args, ty_args, span) => {
-                let ty_args = self.rewrite_type_args(ty_args, prefix)?;
+                let ty_args = self.rewrite_type_args(ty_args, prefix, *span)?;
                 Expr::Call(
                     Box::new(self.rewrite_expr(f, locals, prefix)?),
                     self.rewrite_args(args, locals, prefix)?,
@@ -1239,7 +1313,7 @@ impl Resolver {
                 )
             }
             Expr::Method(r, name, args, ty_args, span) => {
-                let ty_args = self.rewrite_type_args(ty_args, prefix)?;
+                let ty_args = self.rewrite_type_args(ty_args, prefix, *span)?;
                 Expr::Method(
                     Box::new(self.rewrite_expr(r, locals, prefix)?),
                     name.clone(),

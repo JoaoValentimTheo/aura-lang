@@ -234,3 +234,127 @@ fn duplicate_diagnostics_are_deterministic() {
         assert_eq!(again.span, first.span, "duplicate diagnostic span drifted");
     }
 }
+
+// ------------------------------------------- qualified enum-variant paths
+
+/// An enum variant is named by its enum's path plus the tag
+/// (`shapes::Color::Red`) or by the module path plus the tag
+/// (`shapes::Red`) — both denote the same variant (`LANGUAGE_SPEC.md` §27).
+/// The enum-path form must resolve for a root enum (`E::A`), a module enum
+/// (`m::E::A`), a nested module enum, and an imported enum, in both
+/// expression construction and pattern position, including zero-payload
+/// variants. A 2-segment `Enum::Tag` path previously fell through to `E3002`.
+#[test]
+fn enum_path_variants_resolve_in_every_position() {
+    // Root enum: expression and pattern, payload and zero-payload.
+    assert_eq!(
+        ok("enum E { A(int) }\nfn main() { print(E::A(1)) }"),
+        "A(1)\n"
+    );
+    assert_eq!(
+        ok("enum E { Red, Green }\nfn main() { print(match E::Red() { E::Red -> 1\n E::Green -> 2 }) }"),
+        "1\n"
+    );
+    assert_eq!(
+        ok("enum E { A(int) }\nfn main() { print(match A(1) { E::A(x) -> x }) }"),
+        "1\n"
+    );
+    // Module enum: the enum path may be module-qualified or two segments.
+    assert_eq!(
+        ok("module m { pub enum E { A(int) } }\nfn main() { print(m::E::A(1)) }"),
+        "m::A(1)\n"
+    );
+    assert_eq!(
+        ok("module m { pub enum E { Red } }\nfn main() { print(match m::Red() { m::E::Red -> 1 }) }"),
+        "1\n"
+    );
+    // Nested module enum.
+    assert_eq!(
+        ok("module a { pub module b { pub enum E { A(int) } } }\nfn main() { print(a::b::E::A(1)) }"),
+        "a::b::A(1)\n"
+    );
+    // Imported enum: the enum's bare name names the type.
+    assert_eq!(
+        ok("module m { pub enum E { A(int) } }\nuse m::E\nfn main() { print(E::A(1)) }"),
+        "m::A(1)\n"
+    );
+    // An unknown enum path is still undefined, never silently accepted.
+    assert_eq!(code("fn main() { print(E::A(1)) }"), codes::UNKNOWN_TYPE);
+}
+
+/// `use Enum::Tag` imports the variant directly (`LANGUAGE_SPEC.md` §27 names
+/// the variant by its enum's path plus the tag). This is the same item as
+/// `use module::Tag`; importing a private enum is `E2018`.
+#[test]
+fn use_enum_variant_path_resolves() {
+    assert_eq!(
+        ok("module shapes { pub enum Color { Red(int) } }\nuse shapes::Color::Red\nfn main() { print(Red(1)) }"),
+        "shapes::Red(1)\n"
+    );
+    assert_eq!(
+        ok("module m { pub enum E { A(int) } }\nuse m::E::A\nfn main() { print(A(1)) }"),
+        "m::A(1)\n"
+    );
+    assert_eq!(
+        code("module m { enum E { A(int) } }\nuse m::E::A\nfn main() {}"),
+        codes::PRIVATE_ACCESS
+    );
+}
+
+/// A type and a variant may share a local name (they are separate
+/// namespaces, §26). Resolution must be **deterministic and order-
+/// independent**: previously `m::E::A(1)` built the struct `m::A` when the
+/// enum was declared first, but failed with `E3002` when the struct was
+/// declared first. Both orders now agree. (Which namespace an unqualified
+/// `m::A(1)` names when both exist is a separate SPEC GAP recorded in
+/// `docs/CONFORMANCE_PHASE2.md`; this test locks only the determinism.)
+#[test]
+fn struct_and_variant_same_name_resolve_deterministically() {
+    let enum_first =
+        "module m { pub enum E { A(int) }\n pub struct A { pub x: int } }\nfn main() { print(m::E::A(1)) }";
+    let struct_first =
+        "module m { pub struct A { pub x: int }\n pub enum E { A(int) } }\nfn main() { print(m::E::A(1)) }";
+    // Same result and same diagnostic absence in both declaration orders.
+    assert_eq!(ok(enum_first), ok(struct_first));
+    assert_eq!(ok(enum_first), "m::A { x: 1 }\n");
+    // Across repeated runs the result never drifts (no hash-order dependence).
+    for _ in 0..25 {
+        assert_eq!(ok(enum_first), ok(struct_first));
+    }
+    // A name that only a variant occupies is unaffected and always resolves.
+    assert_eq!(
+        ok("module m { pub enum E { A(int) } }\nfn main() { print(m::E::A(1)) }"),
+        "m::A(1)\n"
+    );
+}
+
+// --------------------------------------------------- diagnostics carry spans
+
+/// A private type named in a *type position* is reported at the declaration
+/// that mentions it, not at the file start. The resolver previously passed a
+/// default span for every `TypeExpr` (which carries no span of its own), so
+/// `fn g() -> a::S` reported `E2018` at `1:1` (`CONF-RESOLVE-4`).
+#[test]
+fn private_type_in_type_position_reports_its_own_span() {
+    let cases = [
+        "module a { struct S { pub x: int } }\nmodule b { fn g() -> a::S { return a::S { x: 1 } } }\nfn main() { }",
+        "module a { struct S { pub x: int } }\nmodule b { fn g(x: a::S) -> int { return 1 } }\nfn main() { }",
+        "module a { struct S { pub x: int } }\nmodule b { struct T { f: a::S } }\nfn main() { }",
+        "module a { struct S { pub x: int } }\nmodule b { pub fn g() -> int { let v: a::S = a::S { x: 1 }\n return 1 } }\nfn main() { }",
+    ];
+    for src in cases {
+        let d = run_source(src, "<modules>").expect_err("private type must be rejected");
+        assert_eq!(d.code, codes::PRIVATE_ACCESS, "{src}");
+        assert_ne!(
+            d.span,
+            aura::error::Span::default(),
+            "{src}: span fell back to the file start"
+        );
+        // The reported span is inside the source, never past its end.
+        assert!(
+            d.span.start < src.len(),
+            "{src}: span {:?} past EOF",
+            d.span
+        );
+    }
+}

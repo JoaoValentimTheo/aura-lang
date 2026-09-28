@@ -255,3 +255,37 @@ fn comparison_operators_are_unaffected() {
         "true\ntrue\n4\n"
     );
 }
+
+// ------------------------------------------ type-parameter shadowing (E2007)
+
+/// `LANGUAGE_SPEC.md` §36.2 / `docs/GENERICS.md`: a type parameter may not
+/// shadow a declared type. The rule is about **any** declared type the
+/// declaration can see — a root type, a module-local type, or an imported
+/// type — not only a root type whose bare name matches (`CONF-RESOLVE-5`).
+#[test]
+fn type_parameter_cannot_shadow_any_visible_declared_type() {
+    // Imported type: bare `T` in scope names `m::T`.
+    assert_eq!(
+        code("module m { pub struct T { pub x: int } }\nuse m::T\nfn f<T>(x: T) -> T { return x }\nfn main() { }"),
+        codes::REDECLARED
+    );
+    // Module-local type in the same module as the generic declaration.
+    assert_eq!(
+        code("module m { pub struct T { pub x: int }\n pub fn f<T>(x: T) -> T { return x } }\nfn main() { }"),
+        codes::REDECLARED
+    );
+    // A generic struct/enum/alias/trait declaration is checked too.
+    assert_eq!(
+        code("module m { pub struct T { pub x: int } }\nuse m::T\nstruct Box<T> { value: T }\nfn main() { }"),
+        codes::REDECLARED
+    );
+    // An unrelated parameter name is not affected.
+    assert_eq!(
+        run_source(
+            "module m { pub struct T { pub x: int } }\nfn f<U>(x: U) -> U { return x }\nfn main() { print(f(1)) }",
+            "<generics>"
+        )
+        .expect("not a shadow"),
+        "1\n"
+    );
+}
