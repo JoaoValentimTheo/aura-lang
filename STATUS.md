@@ -5,18 +5,19 @@ PROGRAM (Zen-to-Win Final Language Core Freeze).
 
 ## Result
 
-**AURA CORE IMPLEMENTATION COMPLETE — PUBLICATION PENDING.**
+**AURA CORE IMPLEMENTATION COMPLETE — PUBLICATION IN PROGRESS.**
 
-All Core milestones are complete, all nine Core SPEC GAPs are closed, local
-validation is green, artifacts are verified and reproducible. Push/CI/deploy
-were not authorized in this environment, so the final status is B, not A.
+All Core milestones are complete, all nine Core SPEC GAPs are closed, and
+CONF-PLAY-1 is closed. Local validation is green and artifacts are verified
+and reproducible. Publication (push, GitHub CI, deploy) is authorized and
+proceeding; this file records CI/deploy as UNVERIFIED until GitHub has run.
 
 ## Repository
 
 - Branch `rewrite/v3-rust`.
 - Program start HEAD: `05c1272`.
-- Current HEAD: `409e36b` (`fix(site): use WCAG-AA syntax colors shared by both
-  front ends`). 22 commits ahead of `origin/rewrite/v3-rust`.
+- Current HEAD: `296f66f` (`test(playground): restore separator in long-stdout
+  scroll fixtures`), 24 commits ahead of `origin/rewrite/v3-rust` before push.
 - Worktree: clean except a pre-existing stray 1-byte `s` (untouched).
 
 ## Commits added by this program (oldest first)
@@ -33,6 +34,8 @@ were not authorized in this environment, so the final status is B, not A.
 - `24ea7e1 chore(runtime): record the final Core development runtime`
 - `f0ab14b fix(core): resolve three adversarial findings`
 - `409e36b fix(site): use WCAG-AA syntax colors shared by both front ends`
+- `8bae490 docs(status): final Core completion checkpoint`
+- `296f66f test(playground): restore separator in long-stdout scroll fixtures`
 
 ## Resolved Core SPEC GAPs (all 9)
 
@@ -58,15 +61,18 @@ No exact approval token was supplied.
   cli,repl,json,regex,time`: **734 passed, 0 failed**.
 - `cargo +1.83.0 check --locked --all-features` (MSRV): pass.
 - Playground node: manifest 26, completion 7, ABI 67, integrity 27,
-  differential 214, syntax 43 — 0 failed; zero wasm imports.
+  differential 214, syntax 43, browser 59, worker 12, cache 7 — 0 failed.
 - `node playground/build.mjs --check`: manifest matches 3 versions.
-- Website: examples 22, links 2089 — 0 failed; a11y 70 passed, 0 failed.
+- Website: examples 22, links 2089, browser 343, a11y 70 — 0 failed.
 - WASM: clean-target build byte-identical to dev.30.
 - Python suite 10, property/hardening/corpus/boundaries all pass.
 
-Two pre-existing, environmental Playwright viewport failures remain and are
-NOT regressions: the Playground "long stdout scrolls" browser test (1) and the
-website browser scroll tests (3); both fail identically at baseline `05c1272`.
+CONF-PLAY-1 (TEST GAP) is CLOSED: three scroll fixtures still contained the
+separator-free `while i < 600 { print(i) i = i + 1 }`, which CONF-PARSE-8 now
+correctly rejects, so stdout was empty and the scroll assertions failed. The
+fixtures were rewritten with a newline-separated body; the separator rule and
+production parser are unchanged. The Playground browser suite is now 59/0 and
+the website browser suite 343/0. There are no remaining browser failures.
 
 ## Artifacts
 
