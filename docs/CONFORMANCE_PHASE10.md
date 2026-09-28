@@ -19,6 +19,25 @@ Production-path search across `src/`:
 | `unreachable!` | 2 (`src/resolve.rs:710, 904`) | true invariants guarded by the enclosing match: a `Module` arm re-matching `Item::Module`, and the `flatten` arm reached only for non-module/non-use items. Not reachable from user input. |
 | `todo!` / `unimplemented!` | 0 | none |
 
+### CONF-RESOURCE-1 — unary chain host stack overflow (fixed)
+
+A chain of unary operators (`-`, `not`, `~`) recursed through `parse::unary`
+without consuming the parser's host-safety backstop (`enter`/`leave`), which
+only guarded `atom()` and `ty()`. A source of ~24,085 unary operators made the
+parser recurse without bound and abort with `fatal runtime error: stack
+overflow` and **no diagnostic** on both `check` and `run` — a direct violation
+of `LANGUAGE_SPEC.md` §31.5 ("no syntactically valid, well-formed program may
+cause a host panic, stack overflow, or undefined behavior; exceeding a limit
+produces a stable `E####` diagnostic"). Each unary operator now consumes the
+same guard and reports `E1015`; grouping parentheses and other non-unary
+operands keep their documented 2048 native / 768 WASM budget. Regression:
+`tests/boundaries.rs::unary_chains_are_bounded_not_a_stack_overflow`; fuzz seed
+`fuzz/seeds/parser/conf-resource-1-unary`.
+
+This was the only construct that escaped the guard; every other probed nesting
+(parens, calls, `if`/`else`, `^`, `..`, list/map/pattern/type nesting, runtime
+recursion) already stopped at `E1015`/`E4011`.
+
 ## 3. Arithmetic Boundaries
 
 All operators were exercised at `i64::MIN`, `i64::MAX`, `-1`, `0`, `1`:
@@ -108,10 +127,16 @@ merely to hide the signal.
 
 ## 8. Findings
 
-**No implementation defects.** No production panic path, no arithmetic-boundary
-violation, no budget escape, and no fuzz crash. The only actionable item is the
-pre-existing CI reliability issue above, classified and documented rather than
-"fixed" by weakening a check.
+Two production defects were found by the final adversarial pass and fixed:
+
+* **CONF-RESOURCE-1** — unary-operator chain host stack overflow (no
+  diagnostic), fixed with a bounded `E1015`; see §2.
+* **CONF-GENERIC-1** — a generic `return` body was not checked against the
+  declared parameter, so `check` accepted a program the runtime then rejected
+  with a checker-tier code; see `docs/CONFORMANCE_PHASE3.md`.
+
+Both are covered by regressions and fuzz seeds. All other boundaries produced
+stable E-codes without panicking or hanging.
 
 ## 9. Tests
 
