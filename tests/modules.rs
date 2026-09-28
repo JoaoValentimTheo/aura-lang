@@ -366,3 +366,30 @@ fn private_type_in_type_position_reports_its_own_span() {
         );
     }
 }
+
+/// `use` must reject a canonical name that denotes both a declared type and an
+/// enum variant, exactly like a construct does. The enum-path `use m::E::A`
+/// (and the module-path `use m::A`) previously bypassed the ambiguity check and
+/// silently bound the struct (`CONF-RESOLVE-10`). Every spelling is rejected
+/// deterministically; a variant with no colliding type still imports.
+#[test]
+fn use_rejects_type_variant_canonical_collision() {
+    let collision = "module m { pub enum E { A(int) }\n pub struct A { pub x: int } }";
+    for use_path in ["m::E::A", "m::A"] {
+        let src = format!("{collision}\nuse {use_path}\nfn main() {{ print(A(7)) }}");
+        assert_eq!(code(&src), codes::UNKNOWN_TYPE, "{use_path}");
+        // Order-independent.
+        let reversed = "module m { pub struct A { pub x: int }\n pub enum E { A(int) } }";
+        let src2 = format!("{reversed}\nuse {use_path}\nfn main() {{ print(A(7)) }}");
+        assert_eq!(code(&src2), codes::UNKNOWN_TYPE, "{use_path} reversed");
+    }
+    // Without a colliding type the import still resolves to the variant.
+    assert_eq!(
+        ok("module m { pub enum E { A(int) } }\nuse m::A\nfn main() { print(A(1)) }"),
+        "m::A(1)\n"
+    );
+    assert_eq!(
+        ok("module m { pub enum E { A(int) } }\nuse m::E::A\nfn main() { print(A(1)) }"),
+        "m::A(1)\n"
+    );
+}

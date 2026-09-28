@@ -601,11 +601,43 @@ impl Resolver {
             });
     }
 
+    /// Resolve a `use` path from `prefix`, then reject a canonical name that
+    /// denotes both a declared type and an enum variant. Such a name cannot be
+    /// represented by the flat item table, so whichever spelling reaches it
+    /// (`use m::A`, `use m::E::A`), an import could otherwise silently bind the
+    /// struct where the source named the variant.
+    fn resolve_use_path(&self, prefix: &[String], path: &[String], span: Span) -> Result<String> {
+        let canonical = self.resolve_use_path_inner(prefix, path, span)?;
+        if self.is_declared_type(&canonical) && self.is_variant(&canonical) {
+            return Err(Diag::new(
+                codes::UNKNOWN_TYPE,
+                format!(
+                    "`{}` is ambiguous: the variant `{canonical}` shares its name with a declared type; rename one of them",
+                    path.join("::")
+                ),
+                span,
+            ));
+        }
+        Ok(canonical)
+    }
+
+    /// Whether `canonical` is a declared enum-variant tag.
+    fn is_variant(&self, canonical: &str) -> bool {
+        self.variant_scope
+            .values()
+            .any(|m| m.values().any(|c| c == canonical))
+    }
+
     /// Resolve a `use` path from `prefix`. The first segment is looked up in the
     /// enclosing module scopes from the innermost outward; the remaining
     /// segments navigate nested modules. Returns the canonical name of the
     /// imported item.
-    fn resolve_use_path(&self, prefix: &[String], path: &[String], span: Span) -> Result<String> {
+    fn resolve_use_path_inner(
+        &self,
+        prefix: &[String],
+        path: &[String],
+        span: Span,
+    ) -> Result<String> {
         let Some((first, rest)) = path.split_first() else {
             return Err(Diag::new(codes::UNKNOWN_MODULE, "empty `use` path", span));
         };
