@@ -156,9 +156,10 @@ Website examples (19) and links (2086) execute/pass.
 | dev.24 | `…/0.0.2-dev.24/…wasm` | 1,604,902 | `16882fe60d7fa52f9e204b3841cc59764c79f50c1068f33b7c3e3350f1adfd39` |
 | dev.25 | `…/0.0.2-dev.25/…wasm` | 1,612,018 | `a9462510c963beb3b721c9f1da680f39722bfce6906eb73ad9ba304fe344a406` |
 | dev.26 | `…/0.0.2-dev.26/…wasm` | 1,612,422 | `1e91a070bfd6762d1e2ec6fb504e1a362f2f64450b963adbaadd14731e316185` |
-| dev.27 (current) | `…/0.0.2-dev.27/…wasm` | 1,613,542 | `605d18927bcd8c2a77105975e62d916b64a9ca803ca1050dd9c6f4dd3c9b1451` |
+| dev.27 | `…/0.0.2-dev.27/…wasm` | 1,613,542 | `605d18927bcd8c2a77105975e62d916b64a9ca803ca1050dd9c6f4dd3c9b1451` |
+| dev.28 (current) | `…/0.0.2-dev.28/…wasm` | 1,614,143 | `b1cf4d6d1593f0079d0d3c97fcad091e07975421220537dfcfe83c6bfa401ed0` |
 
-dev.25, dev.26, and dev.27 were each advanced by real production changes; all
+dev.25–dev.28 were each advanced by real production changes; all
 earlier artifacts are byte-identical and untouched. Each new artifact is
 reproducible from source, import-free, and staged on the website. No
 release/tag created.
@@ -168,15 +169,15 @@ release/tag created.
 | Command | Result |
 |---|---|
 | `cargo fmt --all -- --check` | pass |
-| `cargo test --locked --all-targets --all-features` | **648 passed, 0 failed** |
+| `cargo test --locked --all-targets --all-features` | **649 passed, 0 failed** |
 | `cargo clippy --locked --all-targets --all-features -- -D warnings` | pass |
-| `cargo test --locked --all-targets --no-default-features --features cli,repl,json,regex,time` | **639 passed, 0 failed** |
+| `cargo test --locked --all-targets --no-default-features --features cli,repl,json,regex,time` | **640 passed, 0 failed** |
 | `node playground/tests/node/run-all.mjs` | manifest 26, ABI 67, integrity 27, differential 195, syntax 43, browser 53, worker 12, cache 7 — 0 failed |
 | `node playground/build.mjs --check` | pass (3 versions) |
 | WASM release build | reproducible; 0 imports |
 | `node website/tests/run-all.mjs` | examples 19, links 2086, a11y 70, browser 343 — 0 failed |
 
-Counts are per category and not summed: 650 Rust `#[test]` functions in the
+Counts are per category and not summed: 651 Rust `#[test]` functions in the
 tree, 79 token variants, 43 error codes, 38 builtin functions, 103 corpus
 fixtures (11 syntax), 195 differential + 43 syntax Node comparisons, plus
 property iterations and fuzz executions.

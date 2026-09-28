@@ -137,3 +137,20 @@ documented `Unknown` boundary, and whose only intended static/runtime split is
 the §9.1 arithmetic-vs-ordering one. No type-system decision is pending except
 the Phase-2 `CONF-RESOLVE-6/7/8/9/10` questions and the AUDIT-3 TypeExpr
 decision, which Phase 4 must not touch.
+
+### CONF-GENERIC-1 refinement
+
+The first return-compatibility fix over-rejected: `[]` and `{:}` infer as
+`[unknown]` / `{string: unknown}`, so `fn f<T>() -> [T] { return [] }` became a
+spurious `E3005`. Return assignability now descends through union, list, map,
+and application element types and keeps `Unknown` permissive at every position
+(`LANGUAGE_SPEC.md` §2.3), so empty collections are compatible with a
+parameterized return while a parameter nested against a concrete type remains
+`E3005`. Regression:
+`tests/generics.rs::empty_collections_are_compatible_with_parameterized_returns`.
+
+The reviewer's other "false negatives" (`return g(x)`, `return x + 1`,
+`return match {…}`, `return if …`) are **not** defects: `infer` returns
+`Unknown` for a generic-call result and for `match`/`if`/non-numeric-`+`
+expressions, and §2.3 normatively forbids rejecting on a type the checker
+cannot determine. Those remain runtime-checked by design.
