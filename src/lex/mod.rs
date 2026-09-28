@@ -239,9 +239,16 @@ impl Lexer<'_> {
             {
                 self.pos += 1;
             }
-            let text: String = std::str::from_utf8(&self.bytes[digits_start..self.pos])
+            let raw = std::str::from_utf8(&self.bytes[digits_start..self.pos])
                 .unwrap_or_default()
-                .replace('_', "");
+                .to_string();
+            // `_` may appear only between two valid digits of this radix.
+            Self::check_underscores(
+                &raw,
+                |c| c.is_digit(radix),
+                self.span(start, self.pos),
+            )?;
+            let text: String = raw.replace('_', "");
             self.boundary(start)?;
             let value = i64::from_str_radix(&text, radix).map_err(|_| {
                 Diag::new(
@@ -253,15 +260,28 @@ impl Lexer<'_> {
             return Ok(Tok::Int(value));
         }
         let mut is_float = false;
+        // Integer part.
+        let int_start = self.pos;
         while self.peek().is_some_and(|c| c.is_ascii_digit() || c == b'_') {
             self.pos += 1;
         }
+        Self::check_underscores(
+            std::str::from_utf8(&self.bytes[int_start..self.pos]).unwrap_or_default(),
+            |c| c.is_ascii_digit(),
+            self.span(start, self.pos),
+        )?;
         if self.peek() == Some(b'.') && self.peek2().is_some_and(|c| c.is_ascii_digit()) {
             is_float = true;
             self.pos += 1;
+            let frac_start = self.pos;
             while self.peek().is_some_and(|c| c.is_ascii_digit() || c == b'_') {
                 self.pos += 1;
             }
+            Self::check_underscores(
+                std::str::from_utf8(&self.bytes[frac_start..self.pos]).unwrap_or_default(),
+                |c| c.is_ascii_digit(),
+                self.span(start, self.pos),
+            )?;
         }
         let mut text: String = std::str::from_utf8(&self.bytes[start..self.pos])
             .unwrap_or_default()
@@ -274,10 +294,30 @@ impl Lexer<'_> {
                 text.push(self.bytes[self.pos] as char);
                 self.pos += 1;
             }
-            while self.peek().is_some_and(|c| c.is_ascii_digit()) {
-                text.push(self.bytes[self.pos] as char);
+            let exp_start = self.pos;
+            while self.peek().is_some_and(|c| c.is_ascii_digit() || c == b'_') {
                 self.pos += 1;
             }
+            // The exponent component must be non-empty and its underscores
+            // must sit between two digits (§3.6.2): `1e_10` and `1e10_` are
+            // rejected, while `1e1_0` is accepted.
+            if exp_start == self.pos {
+                return Err(Diag::new(
+                    codes::INVALID_NUMBER,
+                    "invalid float literal",
+                    self.span(start, self.pos),
+                ));
+            }
+            Self::check_underscores(
+                std::str::from_utf8(&self.bytes[exp_start..self.pos]).unwrap_or_default(),
+                |c| c.is_ascii_digit(),
+                self.span(start, self.pos),
+            )?;
+            text.push_str(
+                &std::str::from_utf8(&self.bytes[exp_start..self.pos])
+                    .unwrap_or_default()
+                    .replace('_', ""),
+            );
         }
         self.boundary(start)?;
         if is_float {
@@ -305,6 +345,29 @@ impl Lexer<'_> {
             };
             Ok(Tok::Int(v))
         }
+    }
+
+    /// Enforce the numeric-underscore rule (§3.6.1/§3.6.2): `_` may appear
+    /// only between two valid digits of the same component. A leading,
+    /// trailing, or doubled underscore, or one adjacent to the radix prefix or
+    /// the decimal point/exponent marker, is `E1002`.
+    fn check_underscores(raw: &str, is_digit: impl Fn(char) -> bool, span: Span) -> Result<()> {
+        let bytes: Vec<char> = raw.chars().collect();
+        for (i, c) in bytes.iter().enumerate() {
+            if *c != '_' {
+                continue;
+            }
+            let prev_ok = i > 0 && is_digit(bytes[i - 1]);
+            let next_ok = i + 1 < bytes.len() && is_digit(bytes[i + 1]);
+            if !prev_ok || !next_ok {
+                return Err(Diag::new(
+                    codes::INVALID_NUMBER,
+                    "`_` in a number must sit between two digits",
+                    span,
+                ));
+            }
+        }
+        Ok(())
     }
 
     fn boundary(&self, start: usize) -> Result<()> {

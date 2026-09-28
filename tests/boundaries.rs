@@ -422,21 +422,27 @@ fn unary_and_grouping_budgets_compose() {
 /// the stable `E1015` (`LANGUAGE_SPEC.md` §31.2, §31.5).
 #[test]
 fn nested_modules_are_bounded_not_a_stack_overflow() {
-    // A moderately nested module is accepted and resolves.
+    // A moderately nested module is accepted and resolves. Items are
+    // separated by newlines (CONF-PARSE-8): a real separator is required
+    // between items, so the block bodies carry newlines rather than relying
+    // on adjacency before `}`.
     let nested = format!(
-        "{}pub fn f() -> int {{ return 1 }}{}",
-        "module A { ".repeat(50),
-        "}".repeat(50)
+        "{}pub fn f() -> int {{\n return 1\n}}{}",
+        "module A {\n".repeat(50),
+        "\n}".repeat(50)
     );
     assert!(run(&nested).is_ok(), "50 nested modules must be accepted");
     // A deeply nested module chain is the stable nesting diagnostic.
-    let over = format!("{}{}", "module A { ".repeat(20_000), "}".repeat(20_000));
+    let over = format!("{}{}", "module A {\n".repeat(20_000), "\n}".repeat(20_000));
     assert_eq!(run(&over), Err(codes::NESTING));
     // A flat set of many sibling modules is accepted (no depth).
     let mut flat = String::new();
     for i in 0..2000 {
         use std::fmt::Write as _;
-        let _ = write!(flat, "module m{i} {{ pub fn f() -> int {{ return {i} }} }}");
+        let _ = write!(
+            flat,
+            "module m{i} {{\n pub fn f() -> int {{\n return {i}\n }}\n}}\n"
+        );
     }
     assert!(run(&format!("{flat}\nfn main() {{ print(m1999::f()) }}")).is_ok());
 }

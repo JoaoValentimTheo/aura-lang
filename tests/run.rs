@@ -663,7 +663,7 @@ fn range_literal_is_equivalent_to_the_builtin() {
 #[test]
 fn range_literal_control_flow_and_laziness() {
     assert_eq!(
-        out("fn main() { for i in 0..5 { if i == 2 { continue } print(i) } }"),
+        out("fn main() { for i in 0..5 { if i == 2 { continue }\n print(i) } }"),
         "0\n1\n3\n4\n"
     );
     assert_eq!(
@@ -696,18 +696,21 @@ fn range_literal_is_a_first_class_value() {
 /// no runtime effect (`LANGUAGE_SPEC.md` §3.5).
 #[test]
 fn multiline_comments_are_transparent() {
-    // Between statements.
-    assert_eq!(out("fn main() { print(1) <!-- c --!> print(2) }"), "1\n2\n");
+    // A comment is whitespace, not a statement separator (CONF-PARSE-8): it is
+    // transparent *within* a statement/expression, but two adjacent statements
+    // still need a newline or `;` around the comment.
+    assert_eq!(
+        out("fn main() { print(1) <!-- c --!>\n print(2) }"),
+        "1\n2\n"
+    );
     // Spanning lines.
     assert_eq!(
         out("fn main() {\n print(1) <!-- a\nb\nc --!>\n print(2)\n}"),
         "1\n2\n"
     );
-    // Between declarations.
+    // Between declarations (separated by newlines, comments between them).
     assert_eq!(
-        out(
-            "<!-- header --!> fn helper() { return 1 } <!-- mid --!> fn main() { print(helper()) }"
-        ),
+        out("<!-- header --!> fn helper() { return 1 }\n<!-- mid --!> fn main() { print(helper()) }"),
         "1\n"
     );
     // Around an expression inside a call.

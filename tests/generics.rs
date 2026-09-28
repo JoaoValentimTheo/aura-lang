@@ -104,7 +104,7 @@ fn generic_struct_infers_and_runs() {
 #[test]
 fn generic_struct_rejects_wrong_field_type() {
     assert_eq!(
-        code("struct Box<T> { value: T }\nfn main() { let b = Box<int> { value: \"x\" } print(b.value) }"),
+        code("struct Box<T> { value: T }\nfn main() { let b = Box<int> { value: \"x\" }\n print(b.value) }"),
         codes::TYPE_MISMATCH
     );
 }

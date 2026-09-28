@@ -58,11 +58,13 @@ fn source_text_and_identifiers() {
 
 #[test]
 fn numeric_edges() {
+    // `_` may appear only between two valid digits of the same component
+    // (§3.6.1/§3.6.2, decided numeric-underscore policy).
     for (src, value) in [
         ("0", 0),
         ("0001", 1),
-        ("1__0_", 10),
-        ("0x_f_f_", 255),
+        ("1_0", 10),
+        ("0xf_f", 255),
         ("0b10", 2),
         ("0o10", 8),
         ("9223372036854775807", i64::MAX),
@@ -76,13 +78,20 @@ fn numeric_edges() {
         "0Xff",
         "1e",
         "1e+",
-        "1e1_0",
         "9223372036854775809",
         "0x8000000000000000",
+        // Underscore placement is now strict.
+        "1__0",
+        "1_",
+        "0x_ff",
+        "0b_101",
+        "1_.0",
+        "1e_10",
+        "1e10_",
     ] {
         assert_eq!(lex(src).unwrap_err().code, codes::INVALID_NUMBER, "{src}");
     }
-    for src in ["1.0", "1_0.5_0", "1e2", "2E-2", "1e309"] {
+    for src in ["1.0", "1_0.5_0", "1e2", "2E-2", "1e309", "1e1_0", "1.5e1_0"] {
         assert!(matches!(lex(src).unwrap()[0].tok, Tok::Float(_)), "{src}");
     }
     assert_eq!(
@@ -251,7 +260,7 @@ fn grammar_family_matrix() {
     // Positive/negative pairs exercise syntax only; name resolution is Phase 2.
     for (family, good, bad) in [
         ("module", "pub module m { module n {} }", "module m {"),
-        ("use", "pub use a.b::c as d", "use a:: as d"),
+        ("use", "pub use a::b::c as d", "use a:: as d"),
         (
             "fn",
             "pub fn f<T: A + B>(mut x: T,) -> T { x }",
@@ -364,10 +373,14 @@ fn comments_and_newlines() {
     ] {
         assert!(parse_stmt(src).is_err());
     }
-    // CONF-PARSE-8: preserve observations while separator policy is unresolved.
-    assert!(parse("1 2").is_ok());
-    assert!(parse_stmt("{ let x = 1 let y = 2 }").is_ok());
+    // CONF-PARSE-8 is resolved: a real separator (newline or `;`) is required
+    // between statements/items, except for the zero-width boundary directly
+    // before `}` or EOF. Accidental adjacency is rejected.
+    assert!(parse("1 2").is_err());
+    assert!(parse_stmt("{ let x = 1 let y = 2 }").is_err());
     assert!(parse_stmt("{;;}").is_ok());
+    assert!(parse("fn a() {}\nfn b() {}").is_ok());
+    assert!(parse("fn a() {} fn b() {}").is_err());
 }
 
 fn shape(e: &Expr) -> String {

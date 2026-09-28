@@ -44,7 +44,7 @@ const GRAMMAR_SAMPLES: &[&str] = &[
     "fn rt() { print(range(0, 3) == 0..3) }",
     // comments
     "fn c1() { <!-- a comment --!> print(1) }",
-    "fn c2() { print(1) <!-- multi\nline\ncomment --!> print(2) }",
+    "fn c2() { print(1)\n<!-- multi\nline\ncomment --!>\nprint(2) }",
     // `pub` and module-qualified access
     "pub fn g2() { }",
     "module m { pub fn g3() { } }\nfn main() { m::g3() }",

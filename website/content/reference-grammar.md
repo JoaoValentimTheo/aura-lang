@@ -25,8 +25,7 @@ item            = [ "pub" ] ( fn_decl | struct_decl | enum_decl | type_alias
                             | module_decl | use_decl | const_decl | trait_decl )
                 | impl_decl | expr_stmt ;
 module_decl     = "module" IDENT "{" nl { item nl } "}" ;
-use_decl        = "use" IDENT { ( "::" | "." ) IDENT }
-                  [ "as" IDENT ] statement_end ;
+use_decl        = "use" path [ "as" IDENT ] statement_end ;
 path            = IDENT { "::" IDENT } ;
 nl              = { NEWLINE } ;
 terminator      = NEWLINE | ";" ;
@@ -170,8 +169,8 @@ format_type     = "d" | "b" | "o" | "x" | "X" | "f" | "F" | "e" | "E" | "%" ;
   expression arguments require adjacent `<` and single-line balanced lookahead
   followed by `(` or `{`. A `>>` token splits into two `>` tokens only in
   generic positions; `>=` and `>>=` do not split. A generic head followed by
-  `::` is recognized by lookahead but has no implemented continuation; see
-  CONF-GRAM-4 in the conformance report. No `where` clause exists.
+  `::` continues to a qualified variant (`Result<int, string>::Ok(1)`); the
+  type arguments bind to the enum head, not the tag. No `where` clause exists.
 * Explicitly parameterized uppercase calls produce `Expr::Call`; bare uppercase
   calls produce `Expr::Construct`. Resolution is subsequent to parsing.
 * `INT` covers decimal and lowercase `0x`/`0b`/`0o` forms (§3.6.1). The special
@@ -203,14 +202,15 @@ format_type     = "d" | "b" | "o" | "x" | "X" | "f" | "F" | "e" | "E" | "%" ;
   NEWLINE. Operators, including pipelines, need their next operand on the same
   line. Multiline-comment internal newlines produce no NEWLINE token.
 * `END_BOUNDARY` is a zero-width end before `}` or EOF, as established by the
-  specification's inline examples. **Unresolved separator discrepancy:** the
-  parser's `end_stmt` additionally accepts absent separators between adjacent
-  items/statements (`1 2`, `let x = 1 let y = 2`). The specification does not
-  establish that general rule. CONF-PARSE-8 remains SPEC GAP; this grammar does
-  not silently grant those additional forms normative status.
+  specification's inline examples. CONF-PARSE-8 is CLOSED: a real separator
+  (newline or `;`) is required between statements and items, and the parser
+  rejects absent separators between adjacent items/statements (`1 2`,
+  `let x = 1 let y = 2`). The only zero-width end is `END_BOUNDARY` before `}`
+  or EOF. A comment is whitespace, not a separator.
 * `pub impl`, local item declarations, import lists, repeated modifiers, default
   arguments, variadic parameters and method bodies inside traits are invalid.
-  `use` accepts mixed historical `.` and current `::` separators and `as` aliases.
+  The module path separator is `::`; the historical dotted `use a.b` spelling is
+  rejected. `use path as Alias` aliases an import.
 * `&&` and `||` lex as two bitwise tokens and fail to parse. `!` alone is E1001.
   `^` is power, not XOR; `--x` consists of two unary minuses, not decrement.
 * `#` comments run through the byte before LF or EOF. `<!--` comments close at

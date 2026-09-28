@@ -272,6 +272,13 @@ error (`E1002`), with one exception: the decimal magnitude
 `9223372036854775808` is tokenized specially and is valid **only** as the
 operand of a unary minus, where it denotes `i64::MIN` (§10.2).
 
+**Normative rule (underscore placement).** `_` may appear only *between two
+valid digits of the same numeric component*. A leading or trailing `_`, a
+doubled `__`, or a `_` adjacent to a radix prefix (`0x_ff`), the decimal point
+(`1_.0`, `1._0`), or the exponent marker (`1e_10`) is `E1002`. Valid:
+`1_000`, `0xff_ff`, `0b1010_0001`, `0o755_123`, `1_000.25`, `1.25_00`,
+`1e1_0`, `1.5e1_0`.
+
 **Normative rule.** A number MUST NOT be immediately followed by an
 identifier character; `1abc` is an error (`E1002`), never two tokens.
 
@@ -335,8 +342,10 @@ it an *f-string*. Inside an f-string:
 * `{{` produces a literal `{`;
 * `}}` produces a literal `}`.
 
-The expression between braces MUST be a well-formed expression. An empty `{}`
-is an error (`E1006`); an unterminated `{` is an error (`E1004`). Like a plain
+A **lone** `}` (not part of `}}`) is an error (`E1006`): the only way to write a
+literal `}` is the `}}` escape. The expression between braces MUST be a
+well-formed expression. An empty `{}` is an error (`E1006`); an unterminated
+`{` is an error (`E1004`). Like a plain
 string, an f-string whose body ends without its closing quote (at EOF or an
 unescaped newline) is an unterminated string literal (`E1004`).
 
@@ -419,7 +428,12 @@ absence value. There is no `null`, `nil`, or `undefined`.
 ### 3.7 Statement termination
 
 **Normative rule.** A statement is terminated by a newline or a semicolon.
-Trailing separators are permitted.
+Trailing separators are permitted. A real separator is *required* between
+statements and between items; the only exception is the zero-width
+`END_BOUNDARY` directly before `}` or EOF. Adjacent statements or items
+without a separator (`1 2`, `let x = 1 let y = 2`, `fn a() {} fn b() {}`) are
+a parse error (`E1006`). A comment is whitespace, not a separator, so two
+statements separated only by a comment still require a newline or `;`.
 
 **Normative rule.** A newline is significant except at the delimiter-list
 layout positions explicitly marked `nl` in `docs/grammar.md`. In particular, `else`, `catch`, and `finally` MUST appear on
@@ -438,13 +452,11 @@ if c { a }
 else { b }        # E1006: a newline before `else` is not allowed
 ```
 
-*Conformance note (SPEC GAP, CONF-PARSE-8).* Inline examples throughout this
-specification permit an implicit end before `}` or EOF. The implementation
-also permits adjacent statements/items without any separator (`1 2`,
-`let x = 1 let y = 2`), which the normative separator rule does not establish.
-That broader policy requires a decision; this pass preserves it without
-changing the normative rule. Multiple semicolons in blocks are permitted by
-the block production.
+*Conformance note (CONF-PARSE-8, CLOSED).* The general separator policy is
+decided: a real separator (newline or `;`) is required between statements and
+items, with only the zero-width `END_BOUNDARY` before `}` or EOF as an
+exception. The parser enforces this and rejects accidental adjacency. Multiple
+semicolons in blocks remain permitted by the block production.
 
 *Evidence:* `Parser::atom` (`if`/`match`), `Parser::stmt_inner` (`try`);
 `Parser::block` does not skip newlines before a following keyword.
@@ -468,8 +480,7 @@ item            = [ "pub" ] ( fn_decl | struct_decl | enum_decl | type_alias
                             | module_decl | use_decl | const_decl | trait_decl )
                 | impl_decl | expr_stmt ;
 module_decl     = "module" IDENT "{" nl { item nl } "}" ;
-use_decl        = "use" IDENT { ( "::" | "." ) IDENT }
-                  [ "as" IDENT ] statement_end ;
+use_decl        = "use" path [ "as" IDENT ] statement_end ;
 path            = IDENT { "::" IDENT } ;
 nl              = { NEWLINE } ;
 terminator      = NEWLINE | ";" ;
@@ -479,9 +490,10 @@ expr_stmt       = expr statement_end ;
 
 **Normative rule.** `pub` exports an item from its module and `use` imports a
 name into the current module (§27). Both are real semantics: a module is a
-visibility boundary, not inert syntax. `use` accepts `::` and the historical
-dotted `.` separator alike. `pub` on an `impl` block is rejected (`E1006`),
-since an `impl` block has no name.
+visibility boundary, not inert syntax. The module path separator is `::`
+(`use a::b::Thing`); the historical dotted `use a.b.Thing` spelling is
+rejected (`E1006`). `pub` on an `impl` block is rejected (`E1006`), since an
+`impl` block has no name.
 
 ### 4.2 Declarations
 
@@ -694,6 +706,14 @@ of items (call arguments, variant payloads, struct field initializers,
 function and method parameters, list/map/struct/enum element lists). This is
 one rule, so a list of items may be written and extended line by line in every
 construct.
+
+**Normative rule (generic-head `::`, CONF-GRAM-4 CLOSED).** A generic head may
+continue through `::` to a qualified variant: `Result<int, string>::Ok(1)`
+constructs the `Ok` variant of the parameterised `Result` enum. The explicit
+type arguments bind to the *enum head*, so arity and bounds are checked against
+it, and the trailing segment is the variant tag. This continues the existing
+qualified-path semantics; it does not introduce associated functions, static
+methods, associated constants, or associated types.
 
 **Normative rule (bitwise and shift).** `&` (bitwise AND), `|` (bitwise OR),
 `~` (bitwise NOT), `<<` (shift left), and `>>` (shift right) operate on

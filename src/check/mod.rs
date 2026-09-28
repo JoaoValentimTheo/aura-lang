@@ -4682,7 +4682,24 @@ impl Checker {
                 let explicit = if ty_args.is_empty() {
                     HashMap::new()
                 } else {
-                    let Some(params) = self.type_type_params.get(name).cloned() else {
+                    // Explicit type arguments on a qualified generic variant
+                    // (`Result<int, string>::Ok(1)`) belong to the *enum*, not
+                    // the variant tag (which canonicalizes to just its tag).
+                    // Resolve the declaring enum so arity and bounds are checked
+                    // against it rather than reported as a non-generic name.
+                    let generic_head = if self.type_type_params.contains_key(name) {
+                        Some(name.clone())
+                    } else {
+                        self.variants.get(name).cloned()
+                    };
+                    let Some(head) = generic_head else {
+                        return Err(Diag::new(
+                            codes::UNKNOWN_TYPE,
+                            format!("`{name}` is not a generic type and takes no type arguments"),
+                            *span,
+                        ));
+                    };
+                    let Some(params) = self.type_type_params.get(&head).cloned() else {
                         return Err(Diag::new(
                             codes::UNKNOWN_TYPE,
                             format!("`{name}` is not a generic type and takes no type arguments"),
@@ -4702,7 +4719,7 @@ impl Checker {
                     }
                     let bounds = self
                         .type_type_param_bounds
-                        .get(name)
+                        .get(&head)
                         .cloned()
                         .unwrap_or_default();
                     let mut sigma = HashMap::new();

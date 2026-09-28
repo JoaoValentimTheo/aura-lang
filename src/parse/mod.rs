@@ -393,9 +393,26 @@ impl Parser {
         }
     }
 
-    fn end_stmt(&mut self) {
-        if matches!(self.at(), Tok::Semi | Tok::Newline) {
-            self.bump();
+    /// Verify and consume the statement separator (§3.7, CONF-PARSE-8).
+    ///
+    /// A statement is terminated by a newline or `;`, or by the zero-width
+    /// boundary directly before `}` or EOF. Adjacent statements without a real
+    /// separator (`1 2`, `let x = 1 let y = 2`) are rejected rather than
+    /// accepted as a parser accident.
+    /// The separator token is left in place for the enclosing block/module
+    /// loop to consume, so an item parser and its loop never disagree about
+    /// which side owns it.
+    fn end_stmt(&mut self) -> Result<()> {
+        match self.at() {
+            Tok::RBrace | Tok::Eof | Tok::Semi | Tok::Newline => Ok(()),
+            other => Err(Diag::new(
+                codes::EXPECTED,
+                format!(
+                    "expected a newline or `;` between statements, found {}",
+                    other.describe()
+                ),
+                self.span(),
+            )),
         }
     }
 
@@ -449,6 +466,26 @@ impl Parser {
                 break;
             }
             items.push(self.item()?);
+            // Items are separated by a newline or `;` (CONF-PARSE-8); an item
+            // that does not end at a block boundary must be followed by a real
+            // separator, so `fn a() {} fn b() {}` on one line is rejected.
+            match self.at() {
+                Tok::Eof | Tok::Newline | Tok::Semi => {
+                    while matches!(self.at(), Tok::Newline | Tok::Semi) {
+                        self.bump();
+                    }
+                }
+                other => {
+                    return Err(Diag::new(
+                        codes::EXPECTED,
+                        format!(
+                            "expected a newline or `;` between items, found {}",
+                            other.describe()
+                        ),
+                        self.span(),
+                    ))
+                }
+            }
         }
         Ok(Module { items })
     }
@@ -497,7 +534,7 @@ impl Parser {
                 }
                 let e = self.expr()?;
                 let span = span_of(&e);
-                self.end_stmt();
+                self.end_stmt()?;
                 Ok(Item::Expr(e, span))
             }
         }
@@ -700,7 +737,7 @@ impl Parser {
             ));
         }
         let value = self.expr()?;
-        self.end_stmt();
+        self.end_stmt()?;
         Ok(Item::Const {
             name,
             ann,
@@ -1074,7 +1111,7 @@ impl Parser {
                 span,
             ));
         }
-        self.end_stmt();
+        self.end_stmt()?;
         Ok(Item::Fn {
             name,
             type_params,
@@ -1294,7 +1331,7 @@ impl Parser {
         let type_params = self.opt_type_params()?;
         self.expect(&Tok::Assign)?;
         let target = self.ty()?;
-        self.end_stmt();
+        self.end_stmt()?;
         Ok(Item::Alias {
             name,
             type_params,
@@ -1308,11 +1345,18 @@ impl Parser {
         let span = self.span();
         self.bump();
         let mut path = vec![self.ident("module or item name")?];
-        // Both `use a::b::c` and the historical `use a.b.c` are accepted; the
-        // dotted form predates modules and remains valid syntax (§27).
+        // The canonical module path separator is `::` (§27, §34). The historical
+        // dotted `use a.b.c` spelling is rejected rather than kept as a second
+        // spelling; ordinary field/method `.` is unaffected.
         loop {
-            if self.eat(&Tok::ColonColon) || self.eat(&Tok::Dot) {
+            if self.eat(&Tok::ColonColon) {
                 path.push(self.ident("module path segment")?);
+            } else if matches!(self.at(), Tok::Dot) {
+                return Err(Diag::new(
+                    codes::EXPECTED,
+                    "module paths use `::`, not `.`; write `use a::b` instead of `use a.b`",
+                    self.span(),
+                ));
             } else {
                 break;
             }
@@ -1324,7 +1368,7 @@ impl Parser {
         } else {
             None
         };
-        self.end_stmt();
+        self.end_stmt()?;
         Ok(Item::Use {
             path,
             alias,
@@ -1364,7 +1408,7 @@ impl Parser {
         };
         self.expect(&Tok::Assign)?;
         let value = self.expr()?;
-        self.end_stmt();
+        self.end_stmt()?;
         Ok(Item::Const {
             name,
             ann,
@@ -1568,7 +1612,7 @@ impl Parser {
                         ));
                     }
                     let value = self.expr()?;
-                    self.end_stmt();
+                    self.end_stmt()?;
                     return Ok(Stmt::Let {
                         mutable,
                         name,
@@ -1601,7 +1645,7 @@ impl Parser {
                     ));
                 }
                 let value = self.expr()?;
-                self.end_stmt();
+                self.end_stmt()?;
                 Ok(Stmt::LetPattern {
                     pattern,
                     value,
@@ -1615,23 +1659,23 @@ impl Parser {
                 } else {
                     None
                 };
-                self.end_stmt();
+                self.end_stmt()?;
                 Ok(Stmt::Return(value, span))
             }
             Tok::Throw => {
                 self.bump();
                 let value = self.expr()?;
-                self.end_stmt();
+                self.end_stmt()?;
                 Ok(Stmt::Throw(value, span))
             }
             Tok::Break => {
                 self.bump();
-                self.end_stmt();
+                self.end_stmt()?;
                 Ok(Stmt::Break(span))
             }
             Tok::Continue => {
                 self.bump();
-                self.end_stmt();
+                self.end_stmt()?;
                 Ok(Stmt::Continue(span))
             }
             Tok::While => {
@@ -1667,7 +1711,7 @@ impl Parser {
                 } else {
                     None
                 };
-                self.end_stmt();
+                self.end_stmt()?;
                 Ok(Stmt::Try {
                     body,
                     catch,
@@ -1696,7 +1740,7 @@ impl Parser {
                 if let Some(compound) = op {
                     self.bump();
                     let value = self.expr()?;
-                    self.end_stmt();
+                    self.end_stmt()?;
                     return Ok(Stmt::Assign {
                         target: expr,
                         value,
@@ -1704,7 +1748,7 @@ impl Parser {
                         span,
                     });
                 }
-                self.end_stmt();
+                self.end_stmt()?;
                 Ok(Stmt::Expr(expr, span))
             }
         }
@@ -2260,6 +2304,26 @@ impl Parser {
                 // comparison (see `at_type_args`).
                 if self.at_type_args() {
                     let targs = self.ty_args()?;
+                    // A generic head may continue through `::` to a qualified
+                    // variant: `Result<int, string>::Ok(1)` (§4.9,
+                    // CONF-GRAM-4). The type arguments stay with the head; the
+                    // trailing segment is the variant tag. This continues the
+                    // existing qualified-path semantics and does not introduce
+                    // associated functions or other associated items.
+                    let qualified_variant = if self.eat(&Tok::ColonColon) {
+                        Some(self.ident("variant name")?)
+                    } else {
+                        None
+                    };
+                    if let Some(variant) = qualified_variant {
+                        let full = format!("{name}::{variant}");
+                        if matches!(self.at(), Tok::LBrace) {
+                            let args = self.construct_fields(full.clone(), span)?;
+                            return Ok(Expr::Construct(full, args, targs, span));
+                        }
+                        let args = self.construct_positional(span)?;
+                        return Ok(Expr::Construct(full, args, targs, span));
+                    }
                     if matches!(self.at(), Tok::LBrace) {
                         let args = self.construct_fields(name.clone(), span)?;
                         return Ok(Expr::Construct(name, args, targs, span));
@@ -2452,7 +2516,23 @@ impl Parser {
                         self.block()?
                     } else {
                         let e = self.expr()?;
-                        self.end_stmt();
+                        // A match arm's expression body is terminated by `,`,
+                        // `;`, a newline, or the arm block's closing `}`
+                        // (CONF-PARSE-8; `,` separates arms and is not a
+                        // statement separator elsewhere).
+                        match self.at() {
+                            Tok::Comma | Tok::Semi | Tok::Newline | Tok::RBrace | Tok::Eof => {}
+                            other => {
+                                return Err(Diag::new(
+                                    codes::EXPECTED,
+                                    format!(
+                                        "expected `,`, `;`, or a newline between match arms, found {}",
+                                        other.describe()
+                                    ),
+                                    self.span(),
+                                ))
+                            }
+                        }
                         vec![Stmt::Expr(e, span)]
                     };
                     arms.push(Arm {
@@ -2695,8 +2775,16 @@ impl Parser {
                     if chars.peek() == Some(&'}') {
                         chars.next();
                         offset += 1;
+                        lit.push('}');
+                    } else {
+                        // A lone `}` is not silently accepted (§3.6.4): the only
+                        // way to write a literal `}` is the `}}` escape.
+                        return Err(Diag::new(
+                            codes::EXPECTED,
+                            "a lone `}` in an f-string is not allowed; write `}}` for a literal `}`",
+                            Span::new(base + offset - 1, base + offset),
+                        ));
                     }
-                    lit.push('}');
                 }
                 _ => lit.push(c),
             }

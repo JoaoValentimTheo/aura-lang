@@ -54,11 +54,14 @@ fn r2_none_is_the_only_absence() {
 
 #[test]
 fn r3_no_synonyms() {
-    // `def`, `function` are not declarations: they are ordinary names, so a
-    // program using them fails name resolution rather than parsing as a
-    // function. Either way, they do not declare anything.
-    assert_eq!(code_of("def f() { }"), codes::UNDEFINED);
-    assert_eq!(code_of("function f() { }"), codes::UNDEFINED);
+    // `def`, `function` are not declarations: they are ordinary names. With
+    // the separator rule (CONF-PARSE-8) an adjacent name is now a parse error
+    // (E1006); without adjacency the name is simply undefined. Either way they
+    // do not declare anything.
+    assert_eq!(code_of("def f() { }"), codes::EXPECTED);
+    assert_eq!(code_of("def"), codes::UNDEFINED);
+    assert_eq!(code_of("function f() { }"), codes::EXPECTED);
+    assert_eq!(code_of("function"), codes::UNDEFINED);
     // `!` is rejected at the lexer. `&&` and `||` have no operator meaning:
     // they lex as two `&`/`|` tokens and fail to parse, so they never gain an
     // accidental meaning.
