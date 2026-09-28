@@ -63,6 +63,83 @@ impl Default for RenderBudget {
     }
 }
 
+/// A map key.
+///
+/// Only *key-capable* scalar values become keys: `string`, `int`, and `bool`.
+/// The type is a closed enum (not `Value`) so that a `BTreeMap` key has a
+/// total `Ord` that agrees with `Eq` by construction, and so that a key can
+/// never be a mutable container whose later mutation would corrupt the tree's
+/// ordering. `float` is deliberately excluded: `NaN` has no total order and
+/// `0.0 == -0.0` holds while their bit patterns differ, and Aura's equality
+/// relates `1` and `1.0` across types, so a float key could not satisfy the
+/// "equal keys are the same key" invariant. Containers, structs, enums,
+/// ranges, and functions are excluded because they have no total structural
+/// order, may be mutable, and may be cyclic.
+///
+/// The variant order is the map's deterministic key order: `Int < Bool < Str`.
+/// A well-typed map has a single key kind, so this order is only observable
+/// when the checker could not prove the key type; it keeps iteration, display,
+/// and `keys`/`values` deterministic in every case.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum MapKey {
+    /// An `int` key.
+    Int(i64),
+    /// A `bool` key.
+    Bool(bool),
+    /// A `string` key.
+    Str(Rc<str>),
+}
+
+impl MapKey {
+    /// A string key from a `String`-like value.
+    #[must_use]
+    pub fn str(s: impl Into<String>) -> MapKey {
+        MapKey::Str(Rc::from(s.into().as_str()))
+    }
+
+    /// The key for a value when that value is key-capable, else `None`.
+    #[must_use]
+    pub fn from_value(v: &Value) -> Option<MapKey> {
+        match v {
+            Value::Int(i) => Some(MapKey::Int(*i)),
+            Value::Bool(b) => Some(MapKey::Bool(*b)),
+            Value::Str(s) => Some(MapKey::Str(s.clone())),
+            _ => None,
+        }
+    }
+
+    /// The value this key denotes.
+    #[must_use]
+    pub fn to_value(&self) -> Value {
+        match self {
+            MapKey::Int(i) => Value::Int(*i),
+            MapKey::Bool(b) => Value::Bool(*b),
+            MapKey::Str(s) => Value::Str(s.clone()),
+        }
+    }
+
+    /// The runtime type name of this key, for diagnostics.
+    #[must_use]
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            MapKey::Int(_) => "int",
+            MapKey::Bool(_) => "bool",
+            MapKey::Str(_) => "string",
+        }
+    }
+
+    /// The source spelling of this key as it appears in a map display: string
+    /// keys are quoted, integer and boolean keys are bare.
+    #[must_use]
+    pub fn repr(&self) -> String {
+        match self {
+            MapKey::Int(i) => i.to_string(),
+            MapKey::Bool(b) => if *b { "true" } else { "false" }.to_string(),
+            MapKey::Str(s) => format!("\"{s}\""),
+        }
+    }
+}
+
 /// A runtime value.
 #[derive(Clone)]
 pub enum Value {
@@ -78,8 +155,8 @@ pub enum Value {
     None,
     /// `[T]`
     List(Rc<RefCell<Vec<Value>>>),
-    /// `{K: V}`
-    Map(Rc<RefCell<BTreeMap<String, Value>>>),
+    /// `{K: V}` — keys are key-capable scalars ([`MapKey`]).
+    Map(Rc<RefCell<BTreeMap<MapKey, Value>>>),
     /// A struct instance.
     Instance(Rc<Instance>),
     /// An enum variant.
@@ -185,7 +262,7 @@ impl Value {
             Value::Bool(_) => Ty::Bool,
             Value::None => Ty::Unknown,
             Value::List(_) => Ty::List(Box::new(Ty::Unknown)),
-            Value::Map(_) => Ty::Map(Box::new(Ty::Unknown)),
+            Value::Map(_) => Ty::Map(Box::new(Ty::Unknown), Box::new(Ty::Unknown)),
             Value::Instance(i) => Ty::Named(i.ty.clone()),
             Value::Variant(v) => Ty::Enum(v.ty.clone()),
             Value::Closure(_) | Value::Native(_) => Ty::Unknown,
@@ -397,7 +474,7 @@ impl Value {
                 let inner = m
                     .borrow()
                     .iter()
-                    .map(|(k, v)| format!("\"{k}\": {}", v.repr(false, depth + 1, budget)))
+                    .map(|(k, v)| format!("{}: {}", k.repr(), v.repr(false, depth + 1, budget)))
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("{{{inner}}}")

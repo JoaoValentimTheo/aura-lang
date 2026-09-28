@@ -12,7 +12,7 @@ use std::rc::Rc;
 
 use crate::ast::*;
 use crate::error::{codes, Diag, Result, Span};
-use value::{Instance, Value, Variant};
+use value::{Instance, MapKey, Value, Variant};
 
 /// Maximum number of simultaneously active user call frames, including the
 /// entry call to `main`. Exceeding it is `E4011`. This is the single
@@ -837,7 +837,7 @@ impl Interp {
         match v {
             Value::List(l) => Ok(l.borrow().clone()),
             Value::Str(s) => Ok(s.chars().map(|c| Value::str(c.to_string())).collect()),
-            Value::Map(m) => Ok(m.borrow().keys().map(Value::str).collect()),
+            Value::Map(m) => Ok(m.borrow().keys().map(MapKey::to_value).collect()),
             Value::Range(r) => {
                 // Materializing a range is bounded so a pathological range
                 // cannot exhaust memory; the cap is part of the runtime model.
@@ -882,9 +882,20 @@ impl Interp {
                 })?;
                 Ok(Value::str(chars[n].to_string()))
             }
-            (Value::Map(m), Value::Str(k)) => m.borrow().get(&**k).cloned().ok_or_else(|| {
-                self.error(codes::UNDEFINED, format!("map has no key \"{k}\""), span)
-            }),
+            (Value::Map(m), key) => match MapKey::from_value(key) {
+                Some(k) => m.borrow().get(&k).cloned().ok_or_else(|| {
+                    self.error(
+                        codes::UNDEFINED,
+                        format!("map has no key {}", k.repr()),
+                        span,
+                    )
+                }),
+                None => Err(self.error(
+                    codes::TYPE_MISMATCH,
+                    format!("type `{}` cannot be used as a map key", key.type_name()),
+                    span,
+                )),
+            },
             (Value::Instance(i), Value::Str(k)) => i
                 .fields
                 .borrow()
@@ -916,10 +927,17 @@ impl Interp {
                 l[n] = value;
                 Ok(())
             }
-            (Value::Map(m), Value::Str(k)) => {
-                m.borrow_mut().insert((*k).to_string(), value);
-                Ok(())
-            }
+            (Value::Map(m), key) => match MapKey::from_value(key) {
+                Some(k) => {
+                    m.borrow_mut().insert(k, value);
+                    Ok(())
+                }
+                None => Err(self.error(
+                    codes::TYPE_MISMATCH,
+                    format!("type `{}` cannot be used as a map key", key.type_name()),
+                    span,
+                )),
+            },
             (Value::Instance(i), Value::Str(k)) => {
                 let mut fields = i.fields.borrow_mut();
                 match fields.iter_mut().find(|(name, _)| name == &**k) {
@@ -1270,15 +1288,15 @@ impl Interp {
                 let mut map = std::collections::BTreeMap::new();
                 for (k, v) in entries {
                     let kv = val!(self.eval(k, env));
-                    let key = match &kv {
-                        Value::Str(s) => s.to_string(),
-                        other => {
-                            return Err(self.error(
-                                codes::TYPE_MISMATCH,
-                                format!("map keys must be strings, found {}", other.type_name()),
-                                span_of(k),
-                            ))
-                        }
+                    let Some(key) = MapKey::from_value(&kv) else {
+                        return Err(self.error(
+                            codes::TYPE_MISMATCH,
+                            format!(
+                                "type `{}` cannot be used as a map key; map keys must be `string`, `int`, or `bool`",
+                                kv.type_name()
+                            ),
+                            span_of(k),
+                        ));
                     };
                     let vv = val!(self.eval(v, env));
                     map.insert(key, vv);

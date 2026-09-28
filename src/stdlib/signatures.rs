@@ -41,7 +41,7 @@ pub enum TypeClass {
     Str,
     /// `[T]`
     List,
-    /// `{string: V}`
+    /// `{K: V}`
     Map,
     /// A `range` value.
     Range,
@@ -71,7 +71,7 @@ impl TypeClass {
             (TypeClass::Bool, Ty::Bool) => true,
             (TypeClass::Str, Ty::String) => true,
             (TypeClass::List, Ty::List(_)) => true,
-            (TypeClass::Map, Ty::Map(_)) => true,
+            (TypeClass::Map, Ty::Map(_, _)) => true,
             (TypeClass::Range, Ty::Named(n)) if n == "range" => true,
             (TypeClass::None, _) => false,
             (TypeClass::Function, _) => false,
@@ -341,7 +341,10 @@ pub fn builtins() -> &'static [Signature] {
                 params: vec![Param::one(TypeClass::Map)],
                 min_args: 1,
                 max_args: 1,
-                returns: Returns::Ty(Ty::List(Box::new(Ty::String))),
+                // The key type is not knowable from the coarse registry alone;
+                // the checker narrows it from a statically known map receiver
+                // (`src/check/mod.rs`).
+                returns: Returns::Ty(Ty::List(Box::new(Ty::Unknown))),
                 mutates_arg: None,
             },
             Signature {
@@ -849,7 +852,10 @@ pub fn methods() -> &'static [MethodSig] {
             MethodSig {
                 name: "get",
                 receiver: TypeClass::Map,
-                params: vec![Param::one(TypeClass::Str)],
+                // The key is validated against the receiver's key type by the
+                // checker (`src/check/mod.rs`), which can name it; the coarse
+                // registry cannot, so it accepts any key-capable scalar here.
+                params: vec![Param::ANY],
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Dynamic,
@@ -858,7 +864,7 @@ pub fn methods() -> &'static [MethodSig] {
             MethodSig {
                 name: "has",
                 receiver: TypeClass::Map,
-                params: vec![Param::one(TypeClass::Str)],
+                params: vec![Param::ANY],
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Ty(Ty::Bool),
@@ -870,7 +876,8 @@ pub fn methods() -> &'static [MethodSig] {
                 params: vec![],
                 min_args: 0,
                 max_args: 0,
-                returns: Returns::Ty(Ty::List(Box::new(Ty::String))),
+                // Narrowed to `[K]` by the checker for a known map receiver.
+                returns: Returns::Ty(Ty::List(Box::new(Ty::Unknown))),
                 mutates_receiver: false,
             },
             MethodSig {
@@ -885,7 +892,7 @@ pub fn methods() -> &'static [MethodSig] {
             MethodSig {
                 name: "remove",
                 receiver: TypeClass::Map,
-                params: vec![Param::one(TypeClass::Str)],
+                params: vec![Param::ANY],
                 min_args: 1,
                 max_args: 1,
                 returns: Returns::Dynamic,

@@ -50,7 +50,7 @@ mod py {
     use crate::run::value::Value;
     use crate::run::Interp;
     use pyo3::prelude::*;
-    use pyo3::types::{PyAnyMethods, PyDict, PyInt, PyList, PyModule, PyTuple};
+    use pyo3::types::{PyAnyMethods, PyBool, PyDict, PyInt, PyList, PyModule, PyTuple};
     use std::cell::RefCell;
     use std::collections::{BTreeMap, HashSet};
     use std::rc::Rc;
@@ -180,15 +180,25 @@ mod py {
             path.push(id);
             let mut map = BTreeMap::new();
             for (k, v) in dict.iter() {
-                // Aura maps are string-keyed. Refuse to stringify arbitrary
-                // keys, which would collapse distinct keys (e.g. `1` and
+                // Aura map keys are the key-capable scalars `string`, `int`,
+                // and `bool`. Refuse to coerce any other key: stringifying an
+                // arbitrary key would collapse distinct keys (e.g. `1` and
                 // `"1"`) into one.
-                let Ok(key) = k.extract::<String>() else {
+                let key = if let Ok(s) = k.extract::<String>() {
+                    crate::run::value::MapKey::str(s)
+                } else if k.is_instance_of::<PyBool>() {
+                    // Checked before `i64`: a Python `bool` is an `int`
+                    // subclass, so an integer extraction would otherwise turn
+                    // `True` into `1` and lose the key's identity.
+                    crate::run::value::MapKey::Bool(k.extract::<bool>().map_err(map_pyerr)?)
+                } else if let Ok(i) = k.extract::<i64>() {
+                    crate::run::value::MapKey::Int(i)
+                } else {
                     let shown = k.str().map_err(map_pyerr)?.to_string();
                     return Err(Diag::new(
                         codes::PY_UNSUPPORTED,
                         format!(
-                            "Python dict key `{shown}` is not a string; Aura maps are string-keyed"
+                            "Python dict key `{shown}` cannot be an Aura map key; map keys must be `string`, `int`, or `bool`"
                         ),
                         Span::default(),
                     ));
@@ -282,7 +292,20 @@ mod py {
                 }
                 let dict = PyDict::new(py);
                 for (k, val) in m.borrow().iter() {
-                    dict.set_item(k, to_py_depth(py, val, depth + 1, budget, path)?)
+                    let key = match k {
+                        crate::run::value::MapKey::Str(s) => s
+                            .to_string()
+                            .into_pyobject(py)
+                            .map_err(map_conversion)?
+                            .into_any(),
+                        crate::run::value::MapKey::Int(i) => {
+                            i.into_pyobject(py).map_err(map_conversion)?.into_any()
+                        }
+                        crate::run::value::MapKey::Bool(b) => {
+                            PyBool::new(py, *b).to_owned().into_any()
+                        }
+                    };
+                    dict.set_item(key, to_py_depth(py, val, depth + 1, budget, path)?)
                         .map_err(map_pyerr)?;
                 }
                 path.remove(&id);
@@ -336,7 +359,7 @@ mod py {
                 for (k, _) in module.dict().iter() {
                     let key = k.str().map_err(map_pyerr)?.to_string();
                     if !key.starts_with('_') {
-                        map.insert(key, Value::str("<python>"));
+                        map.insert(crate::run::value::MapKey::str(key), Value::str("<python>"));
                     }
                 }
                 Ok(Value::Map(Rc::new(RefCell::new(map))))

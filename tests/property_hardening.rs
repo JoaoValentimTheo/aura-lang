@@ -66,7 +66,10 @@ proptest! {
             ("true", Ty::Bool),
             ("\"s\"", Ty::String),
             ("[1, 2]", Ty::List(Box::new(Ty::Int))),
-            ("{\"k\": 1}", Ty::Map(Box::new(Ty::Int))),
+            (
+                "{\"k\": 1}",
+                Ty::Map(Box::new(Ty::String), Box::new(Ty::Int)),
+            ),
         ];
         let (lit, ty) = &pool[type_idx % pool.len()];
         // Arity derived from the registry's own declared bounds.

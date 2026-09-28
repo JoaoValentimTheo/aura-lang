@@ -18,7 +18,7 @@ pub mod json {
         Diag::new(codes::TYPE_MISMATCH, msg, span)
     }
 
-    fn to_json(v: &Value) -> serde_json::Value {
+    fn to_json(v: &Value) -> Result<serde_json::Value, String> {
         let mut budget = crate::run::value::RenderBudget::new();
         to_json_depth(v, 0, &mut budget)
     }
@@ -27,38 +27,53 @@ pub mod json {
     /// depth *and* a total-node budget so a cyclic or pathologically deep value
     /// cannot overflow the native stack or expand exponentially. A value nested
     /// beyond either bound serializes as `null` (`LANGUAGE_SPEC.md` §31.5).
+    ///
+    /// A JSON object's keys are strings by the JSON standard. A string-keyed
+    /// Aura map encodes as a JSON object unchanged. A map with a non-string key
+    /// type (or any non-string key in an otherwise untyped map) is a
+    /// deterministic conversion error: stringifying the key would collapse
+    /// distinct keys (`1` and `"1"`) into one, which the language refuses to do
+    /// silently.
     fn to_json_depth(
         v: &Value,
         depth: usize,
         budget: &mut crate::run::value::RenderBudget,
-    ) -> serde_json::Value {
+    ) -> Result<serde_json::Value, String> {
+        use crate::run::value::MapKey;
         if depth >= crate::run::value::MAX_VALUE_DEPTH || !budget.take() {
-            return serde_json::Value::Null;
+            return Ok(serde_json::Value::Null);
         }
-        match v {
+        Ok(match v {
             Value::None => serde_json::Value::Null,
             Value::Bool(b) => serde_json::Value::Bool(*b),
             Value::Int(i) => serde_json::Value::Number((*i).into()),
             Value::Float(f) => serde_json::Number::from_f64(*f)
                 .map_or(serde_json::Value::Null, serde_json::Value::Number),
             Value::Str(s) => serde_json::Value::String(s.to_string()),
-            Value::List(l) => serde_json::Value::Array(
-                l.borrow()
-                    .iter()
-                    .map(|x| to_json_depth(x, depth + 1, budget))
-                    .collect(),
-            ),
+            Value::List(l) => {
+                let mut out = Vec::with_capacity(l.borrow().len());
+                for x in l.borrow().iter() {
+                    out.push(to_json_depth(x, depth + 1, budget)?);
+                }
+                serde_json::Value::Array(out)
+            }
             Value::Map(m) => {
                 let mut obj = serde_json::Map::new();
                 for (k, v) in m.borrow().iter() {
-                    obj.insert(k.clone(), to_json_depth(v, depth + 1, budget));
+                    let MapKey::Str(s) = k else {
+                        return Err(format!(
+                            "json_encode cannot represent a map with a `{}` key; JSON object keys are strings",
+                            k.type_name()
+                        ));
+                    };
+                    obj.insert(s.to_string(), to_json_depth(v, depth + 1, budget)?);
                 }
                 serde_json::Value::Object(obj)
             }
             Value::Instance(i) => {
                 let mut obj = serde_json::Map::new();
                 for (k, v) in i.fields.borrow().iter() {
-                    obj.insert(k.clone(), to_json_depth(v, depth + 1, budget));
+                    obj.insert(k.clone(), to_json_depth(v, depth + 1, budget)?);
                 }
                 serde_json::Value::Object(obj)
             }
@@ -66,18 +81,17 @@ pub mod json {
                 if v.payload.is_empty() {
                     serde_json::Value::String(v.tag.clone())
                 } else if v.payload.len() == 1 {
-                    to_json_depth(&v.payload[0], depth + 1, budget)
+                    to_json_depth(&v.payload[0], depth + 1, budget)?
                 } else {
-                    serde_json::Value::Array(
-                        v.payload
-                            .iter()
-                            .map(|x| to_json_depth(x, depth + 1, budget))
-                            .collect(),
-                    )
+                    let mut out = Vec::with_capacity(v.payload.len());
+                    for x in &v.payload {
+                        out.push(to_json_depth(x, depth + 1, budget)?);
+                    }
+                    serde_json::Value::Array(out)
                 }
             }
             _ => serde_json::Value::Null,
-        }
+        })
     }
 
     fn from_json(j: &serde_json::Value) -> Value {
@@ -104,7 +118,10 @@ pub mod json {
             serde_json::Value::Object(o) => {
                 let mut m = BTreeMap::new();
                 for (k, v) in o {
-                    m.insert(k.clone(), from_json_depth(v, depth + 1));
+                    m.insert(
+                        crate::run::value::MapKey::str(k),
+                        from_json_depth(v, depth + 1),
+                    );
                 }
                 Value::Map(Rc::new(RefCell::new(m)))
             }
@@ -117,8 +134,9 @@ pub mod json {
             let v = args
                 .first()
                 .ok_or_else(|| err("json_encode expects a value", span))?;
+            let json = to_json(v).map_err(|e| err(e, span))?;
             Ok(Value::str(
-                serde_json::to_string(&to_json(v)).map_err(|e| err(e.to_string(), span))?,
+                serde_json::to_string(&json).map_err(|e| err(e.to_string(), span))?,
             ))
         });
         it.native("json_decode", |_it, args, span| {
@@ -219,13 +237,14 @@ pub mod time {
         it.native("time_now", |it, _args, span| {
             let now = it.host().now_local().map_err(|e| e.into_diag(span))?;
             let mut m = BTreeMap::new();
-            m.insert("year".to_string(), Value::Int(i64::from(now.year)));
-            m.insert("month".to_string(), Value::Int(i64::from(now.month)));
-            m.insert("day".to_string(), Value::Int(i64::from(now.day)));
-            m.insert("hour".to_string(), Value::Int(i64::from(now.hour)));
-            m.insert("minute".to_string(), Value::Int(i64::from(now.minute)));
-            m.insert("second".to_string(), Value::Int(i64::from(now.second)));
-            m.insert("unix".to_string(), Value::Int(now.unix));
+            let k = crate::run::value::MapKey::str;
+            m.insert(k("year"), Value::Int(i64::from(now.year)));
+            m.insert(k("month"), Value::Int(i64::from(now.month)));
+            m.insert(k("day"), Value::Int(i64::from(now.day)));
+            m.insert(k("hour"), Value::Int(i64::from(now.hour)));
+            m.insert(k("minute"), Value::Int(i64::from(now.minute)));
+            m.insert(k("second"), Value::Int(i64::from(now.second)));
+            m.insert(k("unix"), Value::Int(now.unix));
             Ok(Value::Map(Rc::new(RefCell::new(m))))
         });
         it.native("time_unix", |it, _args, span| {

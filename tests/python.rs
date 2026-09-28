@@ -50,12 +50,33 @@ fn oversized_python_int_is_rejected_not_truncated() {
 }
 
 #[test]
-fn non_string_python_dict_keys_are_rejected() {
-    // Stringifying keys would collapse distinct keys (e.g. `1` and `"1"`).
-    let err = run_source("fn main() { py_eval(\"{1: 1, '1': 2}\") }", "<py>").unwrap_err();
+fn unsupported_python_dict_keys_are_rejected() {
+    // Aura map keys are `string`, `int`, or `bool`. A key of any other kind
+    // (here a tuple) must be refused rather than coerced, which would collapse
+    // distinct keys into one.
+    let err = run_source("fn main() { py_eval(\"{(1, 2): 'x'}\") }", "<py>").unwrap_err();
     assert_eq!(err.code, aura::error::codes::PY_UNSUPPORTED);
+    // String keys still round-trip unchanged.
     let out = run_source("fn main() { print(py_eval(\"{'a': 1}\")) }", "<py>").unwrap();
     assert_eq!(out, "{\"a\": 1}\n");
+}
+
+#[test]
+fn int_and_bool_python_dict_keys_round_trip() {
+    // Integer and boolean keys are key-capable and distinct from their string
+    // spellings, so `1` and `"1"` remain different keys.
+    let out = run_source(
+        "fn main() { print(py_eval(\"{1: 'a', '1': 'b'}\")) }",
+        "<py>",
+    )
+    .unwrap();
+    assert_eq!(out, "{1: \"a\", \"1\": \"b\"}\n");
+    let out = run_source(
+        "fn main() { print(py_eval(\"{True: 'y', False: 'n'}\")) }",
+        "<py>",
+    )
+    .unwrap();
+    assert_eq!(out, "{false: \"n\", true: \"y\"}\n");
 }
 
 /// AUDIT-5: a Python container that references itself must not hang the

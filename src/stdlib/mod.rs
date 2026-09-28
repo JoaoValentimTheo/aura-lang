@@ -9,7 +9,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::error::{codes, Diag, Result, Span};
-use crate::run::value::{RangeVal, Value};
+use crate::run::value::{MapKey, RangeVal, Value};
 use crate::run::Interp;
 
 /// The authoritative list of builtin function names available in this build.
@@ -245,7 +245,9 @@ pub fn install(it: &mut Interp) {
     it.native("keys", |_it, args, span| {
         arity(&args, 1, 1, "keys", span)?;
         match arg(&args, 0, "keys", span)? {
-            Value::Map(m) => Ok(Value::list(m.borrow().keys().map(Value::str).collect())),
+            Value::Map(m) => Ok(Value::list(
+                m.borrow().keys().map(MapKey::to_value).collect(),
+            )),
             other => Err(err(
                 codes::TYPE_MISMATCH,
                 format!("`keys` expects a map, found {}", other.type_name()),
@@ -459,16 +461,20 @@ fn string_arg(args: &[Value], i: usize, what: &str, span: Span) -> Result<String
     }
 }
 
-/// Extract a string map key or produce a diagnostic.
-fn map_key(args: &[Value], what: &str, span: Span) -> Result<String> {
-    match arg(args, 0, what, span)? {
-        Value::Str(s) => Ok(s.to_string()),
-        other => Err(err(
+/// Extract a map key or produce a diagnostic. A key must be a key-capable
+/// scalar (`string`, `int`, or `bool`).
+fn map_key(args: &[Value], what: &str, span: Span) -> Result<crate::run::value::MapKey> {
+    let v = arg(args, 0, what, span)?;
+    crate::run::value::MapKey::from_value(v).ok_or_else(|| {
+        err(
             codes::TYPE_MISMATCH,
-            format!("`{what}` expects a string key, found {}", other.type_name()),
+            format!(
+                "`{what}` expects a `string`, `int`, or `bool` key, found {}",
+                v.type_name()
+            ),
             span,
-        )),
-    }
+        )
+    })
 }
 
 /// Extract a list snapshot or produce a diagnostic.
@@ -691,7 +697,7 @@ fn list_method(
 
 fn map_method(
     _it: &mut Interp,
-    m: &Rc<RefCell<std::collections::BTreeMap<String, Value>>>,
+    m: &Rc<RefCell<std::collections::BTreeMap<crate::run::value::MapKey, Value>>>,
     name: &str,
     args: Vec<Value>,
     span: Span,
@@ -706,7 +712,12 @@ fn map_method(
             let k = map_key(&args, "has", span)?;
             Ok(Value::Bool(m.borrow().contains_key(&k)))
         }
-        "keys" => Ok(Value::list(m.borrow().keys().map(Value::str).collect())),
+        "keys" => Ok(Value::list(
+            m.borrow()
+                .keys()
+                .map(crate::run::value::MapKey::to_value)
+                .collect(),
+        )),
         "values" => Ok(Value::list(m.borrow().values().cloned().collect())),
         "remove" => {
             let k = map_key(&args, "remove", span)?;

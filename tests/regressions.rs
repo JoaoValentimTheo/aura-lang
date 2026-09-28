@@ -132,8 +132,11 @@ fn f06_function_equality_is_identity() {
 #[test]
 fn f10_python_boundary_rejects_lossy_values() {
     assert_eq!(fail("fn main() { py_eval(\"2**63\") }"), codes::OVERFLOW);
+    // A tuple key is not key-capable (`string`/`int`/`bool` are) and must be
+    // rejected rather than coerced. Since generic map keys, `1` and `"1"` are
+    // distinct keys and are both accepted, so they are no longer a lossy case.
     assert_eq!(
-        fail("fn main() { py_eval(\"{1: 1, '1': 2}\") }"),
+        fail("fn main() { py_eval(\"{(1, 2): 'x'}\") }"),
         codes::PY_UNSUPPORTED
     );
 }

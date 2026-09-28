@@ -27,8 +27,11 @@ pub enum Ty {
     String,
     /// `[T]`
     List(Box<Ty>),
-    /// `{string: V}` — v3 maps are string-keyed.
-    Map(Box<Ty>),
+    /// `{K: V}` — a map from key type `K` to value type `V`. `K` is a
+    /// key-capable scalar type (`string`, `int`, `bool`), a union of such
+    /// types, a generic parameter that must become key-capable when
+    /// instantiated, or `Unknown`.
+    Map(Box<Ty>, Box<Ty>),
     /// A named user type.
     Named(String),
     /// An enum value, by enum type name.
@@ -63,7 +66,7 @@ impl Ty {
             Ty::Bool => "bool".into(),
             Ty::String => "string".into(),
             Ty::List(t) => format!("[{}]", t.name()),
-            Ty::Map(v) => format!("{{string: {}}}", v.name()),
+            Ty::Map(k, v) => format!("{{{}: {}}}", k.name(), v.name()),
             Ty::Named(n) => n.clone(),
             Ty::Enum(n) => n.clone(),
             Ty::Union(ms) => ms.iter().map(Ty::name).collect::<Vec<_>>().join(" | "),
@@ -94,7 +97,8 @@ impl Ty {
     pub fn has_param(&self) -> bool {
         match self {
             Ty::Param(_) => true,
-            Ty::List(t) | Ty::Map(t) => t.has_param(),
+            Ty::List(t) => t.has_param(),
+            Ty::Map(k, v) => k.has_param() || v.has_param(),
             Ty::Union(ms) => ms.iter().any(Ty::has_param),
             Ty::App(_, args) => args.iter().any(Ty::has_param),
             _ => false,
@@ -113,7 +117,7 @@ impl Ty {
                 .cloned()
                 .unwrap_or_else(|| Ty::Param(n.clone())),
             Ty::List(t) => Ty::List(Box::new(t.substitute(sigma))),
-            Ty::Map(t) => Ty::Map(Box::new(t.substitute(sigma))),
+            Ty::Map(k, v) => Ty::Map(Box::new(k.substitute(sigma)), Box::new(v.substitute(sigma))),
             Ty::Union(ms) => Ty::union(ms.iter().map(|m| m.substitute(sigma)).collect()),
             Ty::App(n, args) => Ty::App(
                 n.clone(),
@@ -130,7 +134,10 @@ impl Ty {
         match self {
             Ty::Param(n) => sigma.get(n).cloned().unwrap_or(Ty::Unknown),
             Ty::List(t) => Ty::List(Box::new(t.erase_params(sigma))),
-            Ty::Map(t) => Ty::Map(Box::new(t.erase_params(sigma))),
+            Ty::Map(k, v) => Ty::Map(
+                Box::new(k.erase_params(sigma)),
+                Box::new(v.erase_params(sigma)),
+            ),
             Ty::Union(ms) => Ty::union(ms.iter().map(|m| m.erase_params(sigma)).collect()),
             Ty::App(n, args) => Ty::App(
                 n.clone(),
@@ -183,7 +190,7 @@ impl Ty {
             Ty::Bool => 2,
             Ty::String => 3,
             Ty::List(_) => 4,
-            Ty::Map(_) => 5,
+            Ty::Map(_, _) => 5,
             Ty::Named(_) | Ty::Enum(_) => 6,
             Ty::Union(_) => 7,
             Ty::Param(_) => 8,
@@ -220,7 +227,13 @@ impl Ty {
             (Ty::Union(expected), actual) => expected.iter().any(|e| e.compatible_with(actual)),
             (expected, Ty::Union(actual)) => actual.iter().all(|a| expected.compatible_with(a)),
             (Ty::List(a), Ty::List(b)) => a.compatible_with(b),
-            (Ty::Map(a), Ty::Map(b)) => a.compatible_with(b),
+            // Map key and value are both invariant under this conservative
+            // relation: a map is assignable only when its key type is
+            // compatible in both directions (equal up to `Unknown`) and its
+            // value type is compatible. Without key-level agreement a
+            // `{string: V}` value could be read as an `{int: V}` and indexed
+            // with the wrong key kind, so the key is checked, not ignored.
+            (Ty::Map(ek, ev), Ty::Map(ak, av)) => ek.compatible_with(ak) && ev.compatible_with(av),
             // A generic application matches an application with the same
             // nominal head and arity, element-wise. A bare `Named` matches an
             // `App` of the same head only when the application has no
@@ -236,6 +249,40 @@ impl Ty {
         }
     }
 
+    /// Whether this type may be used as a map key.
+    ///
+    /// A key must have deterministic, stable identity compatible with Aura's
+    /// equality: it must be a key-capable scalar (`string`, `int`, `bool`), a
+    /// union whose every member is key-capable, or a placeholder that the
+    /// checker cannot yet pin down (`Unknown`, or a generic `Param` that must
+    /// itself resolve to a key-capable type when instantiated). `float` is not
+    /// key-capable: `NaN` has no total order, `0.0 == -0.0` holds while their
+    /// bit patterns differ, and Aura's cross-type equality relates `1` and
+    /// `1.0`, so no float key can satisfy "equal keys are the same key".
+    /// Containers, structs, enums, and functions are not key-capable: they
+    /// have no total structural order, may be mutable, and may be cyclic.
+    #[must_use]
+    pub fn is_key_capable(&self) -> bool {
+        match self {
+            Ty::Int | Ty::Bool | Ty::String | Ty::Unknown | Ty::Param(_) => true,
+            Ty::Union(members) => members.iter().all(Ty::is_key_capable),
+            _ => false,
+        }
+    }
+
+    /// The diagnostic for a type that cannot be a map key.
+    #[must_use]
+    pub fn key_type_error(&self, span: Span) -> Diag {
+        Diag::new(
+            codes::TYPE_MISMATCH,
+            format!(
+                "type `{}` cannot be used as a map key; map keys must be `string`, `int`, or `bool`",
+                self.name()
+            ),
+            span,
+        )
+    }
+
     /// The coarse built-in type class of this type, or `None` when it is
     /// `Unknown`, a union, or a user type with no method table.
     #[must_use]
@@ -247,7 +294,7 @@ impl Ty {
             Ty::Bool => TypeClass::Bool,
             Ty::String => TypeClass::Str,
             Ty::List(_) => TypeClass::List,
-            Ty::Map(_) => TypeClass::Map,
+            Ty::Map(_, _) => TypeClass::Map,
             Ty::Named(_) | Ty::Enum(_) | Ty::Union(_) | Ty::Unknown => return None,
             Ty::Param(_) | Ty::App(_, _) => return None,
         })
@@ -301,17 +348,10 @@ impl Ty {
             TypeExpr::List(inner) => Ty::List(Box::new(Ty::from_expr(inner, types, span)?)),
             TypeExpr::Map(k, v) => {
                 let key = Ty::from_expr(k, types, span)?;
-                if !matches!(key, Ty::String | Ty::Unknown) {
-                    return Err(Diag::new(
-                        codes::TYPE_MISMATCH,
-                        format!(
-                            "Aura maps are string-keyed in this version; `{}` is not a valid key type",
-                            key.name()
-                        ),
-                        span,
-                    ));
+                if !key.is_key_capable() {
+                    return Err(key.key_type_error(span));
                 }
-                Ty::Map(Box::new(Ty::from_expr(v, types, span)?))
+                Ty::Map(Box::new(key), Box::new(Ty::from_expr(v, types, span)?))
             }
             TypeExpr::Union(members) => {
                 let mut tys = Vec::with_capacity(members.len());
@@ -372,7 +412,11 @@ impl Ty {
     fn erase_named_params(&mut self, params: &[String]) {
         match self {
             Ty::Named(n) if params.iter().any(|p| p == n) => *self = Ty::Unknown,
-            Ty::List(t) | Ty::Map(t) => t.erase_named_params(params),
+            Ty::List(t) => t.erase_named_params(params),
+            Ty::Map(k, v) => {
+                k.erase_named_params(params);
+                v.erase_named_params(params);
+            }
             Ty::Union(ms) => {
                 for m in ms.iter_mut() {
                     m.erase_named_params(params);
@@ -403,7 +447,10 @@ impl Ty {
             TypeExpr::String => Ty::String,
             TypeExpr::None => Ty::Unknown,
             TypeExpr::List(inner) => Ty::List(Box::new(Ty::from_expr_lenient(inner))),
-            TypeExpr::Map(_, v) => Ty::Map(Box::new(Ty::from_expr_lenient(v))),
+            TypeExpr::Map(k, v) => Ty::Map(
+                Box::new(Ty::from_expr_lenient(k)),
+                Box::new(Ty::from_expr_lenient(v)),
+            ),
             TypeExpr::Union(members) => {
                 Ty::union(members.iter().map(Ty::from_expr_lenient).collect())
             }
@@ -427,7 +474,9 @@ impl Ty {
             Ty::Bool => TypeExpr::Bool,
             Ty::String => TypeExpr::String,
             Ty::List(inner) => TypeExpr::List(Box::new(inner.to_type_expr()?)),
-            Ty::Map(v) => TypeExpr::Map(Box::new(TypeExpr::String), Box::new(v.to_type_expr()?)),
+            Ty::Map(k, v) => {
+                TypeExpr::Map(Box::new(k.to_type_expr()?), Box::new(v.to_type_expr()?))
+            }
             Ty::Named(n) => TypeExpr::Named(n.clone()),
             Ty::Enum(n) => TypeExpr::Named(n.clone()),
             Ty::App(n, args) => {

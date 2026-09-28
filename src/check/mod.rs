@@ -59,7 +59,10 @@ fn return_assignable(expected: &Ty, actual: &Ty) -> bool {
     match (expected, actual) {
         (Ty::Union(members), _) => members.iter().any(|m| return_assignable(m, actual)),
         (_, Ty::Union(members)) => members.iter().all(|m| return_assignable(expected, m)),
-        (Ty::List(a), Ty::List(b)) | (Ty::Map(a), Ty::Map(b)) => return_assignable(a, b),
+        (Ty::List(a), Ty::List(b)) => return_assignable(a, b),
+        (Ty::Map(ek, ev), Ty::Map(ak, av)) => {
+            return_assignable(ek, ak) && return_assignable(ev, av)
+        }
         (Ty::App(a, xa), Ty::App(b, xb)) => {
             a == b
                 && xa.len() == xb.len()
@@ -1757,8 +1760,8 @@ impl Checker {
                 // unbound rather than guessing (it stays `Unknown`).
                 _ => pattern.compatible_with(actual),
             },
-            Ty::Map(p) => match actual {
-                Ty::Map(a) => self.unify_into(p, a, sigma),
+            Ty::Map(pk, pv) => match actual {
+                Ty::Map(ak, av) => self.unify_into(pk, ak, sigma) && self.unify_into(pv, av, sigma),
                 _ => pattern.compatible_with(actual),
             },
             Ty::Union(members) => {
@@ -2400,15 +2403,29 @@ impl Checker {
                 Ty::List(Box::new(elem))
             }
             Expr::Map(entries, _) => {
+                // Infer both dimensions from the entries. The first key or
+                // value whose type the checker can name fixes that dimension;
+                // an empty map stays `{Unknown: Unknown}`, which the `Unknown`
+                // boundary makes compatible with any map annotation. Keys that
+                // are statically known to be non-key-capable are rejected here,
+                // so an impossible map type does not reach a literal.
+                let mut key = Ty::Unknown;
                 let mut val = Ty::Unknown;
-                for (_, v) in entries {
-                    let t = self.infer(v);
-                    if !matches!(t, Ty::Unknown) {
-                        val = t;
-                        break;
+                for (k, v) in entries {
+                    if matches!(key, Ty::Unknown) {
+                        let kt = self.infer(k);
+                        if kt.is_key_capable() && !matches!(kt, Ty::Unknown) {
+                            key = kt;
+                        }
+                    }
+                    if matches!(val, Ty::Unknown) {
+                        let vt = self.infer(v);
+                        if !matches!(vt, Ty::Unknown) {
+                            val = vt;
+                        }
                     }
                 }
-                Ty::Map(Box::new(val))
+                Ty::Map(Box::new(key), Box::new(val))
             }
             Expr::Construct(name, args, ty_args, _) => {
                 if self.variants.contains_key(name) {
@@ -2500,6 +2517,17 @@ impl Checker {
                 }
                 if let Some(class) = recv_ty.type_class() {
                     if let Some(sig) = crate::stdlib::signatures::method(class, name) {
+                        // For a statically known map receiver, `keys`/`values`/
+                        // `get`/`remove` carry the map's key and value types
+                        // rather than the registry's coarse `[string]`/dynamic.
+                        if let Ty::Map(k, v) = &recv_ty {
+                            match name.as_str() {
+                                "keys" => return Ty::List(k.clone()),
+                                "values" => return Ty::List(v.clone()),
+                                "get" | "remove" => return v.as_ref().clone(),
+                                _ => {}
+                            }
+                        }
                         return sig.returns.ty();
                     }
                 }
@@ -2968,7 +2996,10 @@ impl Checker {
         match t {
             Ty::Param(n) => Ty::Param(map.get(n.as_str()).cloned().unwrap_or_else(|| n.clone())),
             Ty::List(i) => Ty::List(Box::new(Self::alpha_normalize(i, map))),
-            Ty::Map(i) => Ty::Map(Box::new(Self::alpha_normalize(i, map))),
+            Ty::Map(k, v) => Ty::Map(
+                Box::new(Self::alpha_normalize(k, map)),
+                Box::new(Self::alpha_normalize(v, map)),
+            ),
             Ty::Union(ms) => Ty::union(ms.iter().map(|m| Self::alpha_normalize(m, map)).collect()),
             Ty::App(n, args) => Ty::App(
                 n.clone(),
@@ -3085,6 +3116,32 @@ impl Checker {
         if sig.mutates_receiver {
             self.require_mutable_place(recv, "mutate")?;
         }
+        // A map's key-taking methods (`get`, `has`, `remove`) are validated
+        // against the receiver's declared key type, which the coarse registry
+        // cannot name.
+        if class == crate::stdlib::signatures::TypeClass::Map
+            && matches!(name, "get" | "has" | "remove")
+        {
+            if let Some(arg) = args.first() {
+                let actual = self.infer(&arg.value);
+                if !actual.is_key_capable() {
+                    return Err(actual.key_type_error(span));
+                }
+                if let Ty::Map(k, _) = self.infer(recv) {
+                    if !k.compatible_with(&actual) {
+                        return Err(Diag::new(
+                            codes::TYPE_MISMATCH,
+                            format!(
+                                "map has key type `{}` but `{name}` received `{}`",
+                                k.name(),
+                                actual.name()
+                            ),
+                            span,
+                        ));
+                    }
+                }
+            }
+        }
         for (i, param) in sig.params.iter().enumerate() {
             let Some(arg) = args.get(i) else { break };
             let actual = self.infer(&arg.value);
@@ -3175,17 +3232,10 @@ impl Checker {
             TypeExpr::List(inner) => Ty::List(Box::new(self.ty_from_expr(inner, span)?)),
             TypeExpr::Map(k, v) => {
                 let key = self.ty_from_expr(k, span)?;
-                if !matches!(key, Ty::String | Ty::Unknown) {
-                    return Err(Diag::new(
-                        codes::TYPE_MISMATCH,
-                        format!(
-                            "Aura maps are string-keyed in this version; `{}` is not a valid key type",
-                            key.name()
-                        ),
-                        span,
-                    ));
+                if !key.is_key_capable() {
+                    return Err(key.key_type_error(span));
                 }
-                Ty::Map(Box::new(self.ty_from_expr(v, span)?))
+                Ty::Map(Box::new(key), Box::new(self.ty_from_expr(v, span)?))
             }
             TypeExpr::Union(members) => {
                 let mut tys = Vec::with_capacity(members.len());
@@ -3219,7 +3269,10 @@ impl Checker {
                 args.iter().map(|a| Self::session_conv(a, params)).collect(),
             ),
             TypeExpr::List(i) => Ty::List(Box::new(Self::session_conv(i, params))),
-            TypeExpr::Map(_, v) => Ty::Map(Box::new(Self::session_conv(v, params))),
+            TypeExpr::Map(k, v) => Ty::Map(
+                Box::new(Self::session_conv(k, params)),
+                Box::new(Self::session_conv(v, params)),
+            ),
             TypeExpr::Union(ms) => {
                 Ty::union(ms.iter().map(|m| Self::session_conv(m, params)).collect())
             }
@@ -3931,10 +3984,41 @@ impl Checker {
                             }
                         }
                     }
-                    Expr::Index(base, idx, _) => {
+                    Expr::Index(base, idx, span) => {
                         self.expr(base)?;
                         self.expr(idx)?;
                         self.require_mutable_place(base, "assign through")?;
+                        // Indexed assignment on a statically known map obeys the
+                        // same key/value contract as construction and lookup.
+                        if let Ty::Map(k, v) = self.infer(base) {
+                            let it = self.infer(idx);
+                            if !it.is_key_capable() {
+                                return Err(it.key_type_error(*span));
+                            }
+                            if !k.compatible_with(&it) {
+                                return Err(Diag::new(
+                                    codes::TYPE_MISMATCH,
+                                    format!(
+                                        "map has key type `{}` but the index is `{}`",
+                                        k.name(),
+                                        it.name()
+                                    ),
+                                    *span,
+                                ));
+                            }
+                            let actual = self.infer(value);
+                            if !matches!(actual, Ty::Unknown) && !v.compatible_with(&actual) {
+                                return Err(Diag::new(
+                                    codes::TYPE_MISMATCH,
+                                    format!(
+                                        "map has value type `{}` but the assigned value is `{}`",
+                                        v.name(),
+                                        actual.name()
+                                    ),
+                                    *span,
+                                ));
+                            }
+                        }
                     }
                     Expr::Field(base, fname, fspan) => {
                         self.expr(base)?;
@@ -4447,19 +4531,47 @@ impl Checker {
                     }
                 }
             }
-            Expr::Index(b, i, _) => {
+            Expr::Index(b, i, span) => {
                 self.expr(b)?;
                 self.expr(i)?;
+                // On a statically known map, the index must be compatible with
+                // the map's key type. A list/string index stays the runtime's
+                // decision, and an `Unknown` map imposes no constraint.
+                if let Ty::Map(k, _) = self.infer(b) {
+                    let it = self.infer(i);
+                    if !it.is_key_capable() {
+                        return Err(it.key_type_error(*span));
+                    }
+                    if !k.compatible_with(&it) {
+                        return Err(Diag::new(
+                            codes::TYPE_MISMATCH,
+                            format!(
+                                "map has key type `{}` but the index is `{}`",
+                                k.name(),
+                                it.name()
+                            ),
+                            *span,
+                        ));
+                    }
+                }
             }
             Expr::List(vs, _) | Expr::Tuple(vs, _) => {
                 for v in vs {
                     self.expr(v)?;
                 }
             }
-            Expr::Map(kvs, _) => {
+            Expr::Map(kvs, span) => {
                 for (k, v) in kvs {
                     self.expr(k)?;
                     self.expr(v)?;
+                    // A statically known non-key-capable key is rejected
+                    // before any literal is constructed. `infer` cannot fail,
+                    // so the diagnostic is raised here where the span is
+                    // available.
+                    let kt = self.infer(k);
+                    if !kt.is_key_capable() {
+                        return Err(kt.key_type_error(*span));
+                    }
                 }
             }
             Expr::Construct(name, args, ty_args, span) => {
