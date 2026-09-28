@@ -5,59 +5,45 @@ PROGRAM (Zen-to-Win Final Language Core Freeze).
 
 ## Result
 
-**AURA CORE PUBLISHED — CI AND DEPLOY GREEN; 0.2.0 RELEASE BLOCKED ON A
-VERSIONING CONTRADICTION.**
+**AURA 0.2.0 RELEASE IN PROGRESS — PUBLIC RELEASE `0.2.0`.**
 
-All Core milestones are complete, all nine Core SPEC GAPs are closed, and
-CONF-PLAY-1 is closed. Local validation is green; artifacts are verified and
-reproducible; the branch is pushed; GitHub CI is green on the exact pushed SHA;
-the website deployment is green.
-
-The requested public `0.2.0` release was NOT created: the repository's
-authoritative versioning contradicts it (see "Version target" below). No tag,
-release, or version bump was made, and no version-migration policy was
-invented.
+The human resolved the versioning blocker: the next public release is
+`0.2.0`. The version authority has been migrated from the `0.0.x` line to
+`0.2.0`, the `0.2.0` runtime artifact is built and verified, the Playground
+defaults to `0.2.0`, and the website presents `0.2.0` as the current stable
+release. Historical `0.0.1`/`0.0.2` releases and the `0.0.2-dev.*` chain are
+preserved and frozen.
 
 ## Repository
 
 - Branch `rewrite/v3-rust`.
-- Program start HEAD: `05c1272`.
-- Current HEAD: `7ef7d7a` (`fix(parse): bound container nesting during
-  parsing`), equal to `origin/rewrite/v3-rust`.
+- Current HEAD: the `0.2.0` migration commit(s) (see the git log).
 - Worktree: clean except a pre-existing stray 1-byte `s` (untouched).
-- Commits pushed this session: `e567c77`, `296f66f`, `7ef7d7a`.
 
-## CI / deploy (verified)
+## Version authority (migrated)
 
-- CI run `36494488581` on `7ef7d7a7` (7ef7d7a): 14/14 jobs success
-  (language contract, miri, pure-Rust-no-CPython, cargo audit, test
-  ubuntu/macos/windows, clippy, MSRV 1.83, rustfmt, extended property tests,
-  playground wasm runtime, fuzz smoke, website).
-- Deploy website run `36494488483` on `7ef7d7a`: build + deploy to GitHub
-  Pages success.
+- `Cargo.toml` `version = "0.2.0"`; `aura::VERSION` = `0.2.0`.
+- `LANGUAGE_VERSION = "0.2.0"` — this is a language release, so the release
+  and language versions coincide; they remain separate constants.
+- `tests/contract.rs` asserts the current `0.2.0` identity.
+- `playground/runtime/Cargo.toml` `version = "0.2.0"` (the current runtime).
+- `playground/build.mjs` derives the channel from the crate version
+  (`-dev` suffix ⇒ development, otherwise release) and pins historical
+  entries.
+- Website `site.config.mjs`: `releaseVersion`/`languageVersion`/
+  `runtimeVersion`/`currentRelease` = `0.2.0`, `previousRelease = 0.0.2`.
+- Tags `v0.0.1`, `v0.0.2` remain historical; `v0.2.0` is created after CI and
+  deploy are green on the exact release SHA.
 
-## Version target (0.2.0) — CONTRADICTION
+## Current runtime
 
-The repository's authoritative version sources fix the release line at
-`0.0.x`, not `0.2.0`:
+- `playground/runtimes/0.2.0/aura_playground_runtime.wasm` — 1,654,161 bytes,
+  SHA-256 `9937fd8094ef402b7a9233d02bd232405f75b9e70661404646fcda7cd295c5bc`,
+  reproduced across clean builds, zero imports. Playground API 1, Host ABI 1.
 
-- `Cargo.toml` `version = "0.0.2"`.
-- `src/lib.rs` `LANGUAGE_VERSION = "0.0.1"`.
-- `tests/contract.rs` hard-asserts `aura::VERSION == "0.0.2"` (a released
-  identity invariant).
-- Tags `v0.0.1`, `v0.0.2` exist; `v0.0.2` is frozen.
-- The release workflow requires the tag to equal the `Cargo.toml` version and
-  requires `playground/runtimes/<tag-version>/aura_playground_runtime.wasm`.
-- `docs/release-notes/v0.0.2.md` frames the line as "After 0.0.2 … a long
-  language-maturation cycle".
-- The only `0.2.0`-like string in the repository is the historical, unrelated
-  Python-transpiler tag `v0.2.0a8` (a different, older product line).
+## CI / deploy
 
-Making `0.2.0` real would require: editing the released-identity test,
-deciding a new release/language version model, adding `playground/runtimes/
-0.2.0/`, and possibly colliding with the legacy `v0.2.0a8` tag. No
-version-migration policy exists, so none was invented. Per the program's
-STEP 12 the contradiction is reported rather than resolved.
+See the final release report for the exact run IDs on the migration SHA.
 
 ## Commits added by this program (oldest first)
 
@@ -75,6 +61,8 @@ STEP 12 the contradiction is reported rather than resolved.
 - `409e36b fix(site): use WCAG-AA syntax colors shared by both front ends`
 - `8bae490 docs(status): final Core completion checkpoint`
 - `296f66f test(playground): restore separator in long-stdout scroll fixtures`
+- `7ef7d7a fix(parse): bound container nesting during parsing`
+- (this session) version migration to `0.2.0` and the `0.2.0` release commit(s)
 
 ## Resolved Core SPEC GAPs (all 9)
 
@@ -99,13 +87,14 @@ No exact approval token was supplied.
 - `cargo test --locked --all-targets --no-default-features --features
   cli,repl,json,regex,time`: **735 passed, 0 failed**.
 - `cargo +1.83.0 check --locked --all-features` (MSRV): pass.
-- Playground node (on Node 20, matching CI): manifest 26, completion 7, ABI 67,
-  integrity 27, differential 214, syntax 43, browser 59, worker 12, cache 7 —
+- Playground node (on Node 20, matching CI): manifest 34, completion 7, ABI 67,
+  integrity 29, differential 214, syntax 43, browser 62, worker 12, cache 7 —
   0 failed.
-- `node playground/build.mjs --check`: manifest matches 3 versions.
-- Website: examples 22, links 2089, browser 343, a11y 70 — 0 failed.
-- WASM: clean-target build byte-identical to dev.30.
-- Python suite 10, property/hardening/corpus/boundaries all pass.
+- `node playground/build.mjs --check`: manifest matches 4 versions.
+- Website: examples 22, links 2089, browser 344, a11y 70 — 0 failed.
+- WASM: clean-target build byte-identical to `0.2.0`.
+- Runtime crate tests: 10 passed. Python suite 10, property/hardening/corpus/
+  boundaries all pass.
 
 CONF-PLAY-1 (TEST GAP) is CLOSED: three scroll fixtures still contained the
 separator-free `while i < 600 { print(i) i = i + 1 }`, which CONF-PARSE-8 now
@@ -122,17 +111,17 @@ Historical `dev.23`: 1,604,958 /
 `71072150e67384120c63e22d6176f3683110735b84f74723bea315f79778a528`.
 Historical `dev.29`: 1,614,239 /
 `aa832ba72578897f6b99650574939011dda25e0d390fdb5efb6fae825816bdd3`.
-Current `dev.30`: 1,654,216 /
-`916a8282f7afcf67b89662af89d2f69cf562d9dbe41fe88cab1764a3ef19c578`
-(reproduced across clean builds; zero imports). Regenerated this session by the
-parser container-nesting fix.
+Historical `dev.30`: 1,654,216 /
+`916a8282f7afcf67b89662af89d2f69cf562d9dbe41fe88cab1764a3ef19c578`.
+Current `0.2.0`: 1,654,161 /
+`9937fd8094ef402b7a9233d02bd232405f75b9e70661404646fcda7cd295c5bc`
+(reproduced across clean builds; zero imports).
 
 ## CI / deploy
 
-VERIFIED: CI `36494488581` on `7ef7d7a` — 14/14 jobs green; Deploy website
-`36494488483` on `7ef7d7a` — build + GitHub Pages deploy green. (An earlier CI
-run `36490043812` on `e567c77` failed on the pre-existing over-limit grouping
-differential case; fixed in `7ef7d7a`.)
+See the final `0.2.0` release report for the exact run IDs on the migration
+SHA. Earlier verified: CI `36494488581` on `7ef7d7a` — 14/14 jobs green;
+Deploy website `36494488483` on `7ef7d7a` — build + GitHub Pages deploy green.
 
 ## Next phase
 

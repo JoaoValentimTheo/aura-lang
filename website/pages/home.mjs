@@ -215,10 +215,10 @@ fn main() {
           <span class="section__eyebrow">Current state</span>
           <h2>What exists today.</h2>
           <p class="section__lede">Aura ${site.releaseVersion} is the current public
-          release, implementing the frozen <strong>${site.languageVersion}</strong>
-          language. It adds the WebAssembly runtime, the host boundary, the
-          versioned Playground, and this website on top of the
-          ${site.previousRelease} language core.</p>
+          release, implementing the <strong>${site.languageVersion}</strong>
+          language. It completes the language core: generic maps and ordered keys,
+          <code>items()</code>, list and map comprehensions, the Core syntax rules,
+          and in-source module semantics.</p>
         </div>
         ${statusList([
           ["Lexer, parser, AST", "Implemented", "success"],
@@ -271,9 +271,9 @@ fn main() {
     <div class="section__head">
       <span class="section__eyebrow">Roadmap</span>
       <h2>Where Aura is going.</h2>
-      <p class="section__lede">With ${site.releaseVersion} released, development
-      slows to a deliberate language-maturity cycle before any new paradigm is
-      added.</p>
+      <p class="section__lede">With ${site.releaseVersion} released, the language
+      core is frozen. The next phase is the filesystem module system, built on
+      the same resolver.</p>
     </div>
     ${dataTable(
       ["Stage", "Focus", "Status"],
@@ -281,6 +281,7 @@ fn main() {
         ["Runtime, host, WASM, Playground", chip("Complete", "success")],
         ["0.0.1", "Scripting I/O, language core, native runtime", chip("Released", "success")],
         ["0.0.2", "WebAssembly, host boundary, Playground, website", chip("Released", "success")],
+        ["0.2.0", "Core completion: generic maps, items(), comprehensions, syntax, modules", chip("Released", "success")],
         ["OOP V1", "Struct methods: <code>impl</code>, <code>self</code>, composition", chip("Delivered", "success")],
         ["OOP V2 & foundation", "Traits, shadowing, mutation, operators, f-strings, stability", chip("Delivered", "success")],
         ["Overloading", "Functions and methods by ordered input types", chip("Delivered", "success")],

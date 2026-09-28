@@ -131,13 +131,17 @@ frozen source spawns OS threads for parsing and execution, which
 `wasm32-unknown-unknown` does not provide; building it for wasm yields a module
 that returns `E4026` for every program. It therefore has **no browser
 runtime**, and the manifest records it honestly as `available: false` with a
-reason. The first wasm-executable runtime is the **0.0.2** release
+reason. The first wasm-executable runtime was the historical **0.0.2** release
 (`runtimes/0.0.2/`). No historical artifact is fabricated or overwritten.
 
-Aura **0.0.2** is a release of the runtime and tooling, not a language change:
-it implements the frozen **0.0.1** language semantics. The manifest therefore
-records `release_version: "0.0.2"`, `runtime_version: "0.0.2"`, and
-`language_version: "0.0.1"`.
+**0.2.0** is the current public release. It is a *language* release (the
+completed Aura Core: generic maps, `items()`, comprehensions, the Core syntax
+rules, and module semantics), so its `release_version`, `runtime_version`, and
+`language_version` are all `0.2.0`; the current runtime artifact lives at
+`runtimes/0.2.0/` and is the selector default. The historical **0.0.2** entry
+shipped the frozen **0.0.1** language semantics (`language_version: "0.0.1"`),
+distinct from its release identity. The `0.0.2-dev.*` chain is preserved as
+development history and is never the current release.
 
 A version entry is *real*, not decorative: the selected entry's immutable
 artifact URL is exactly what the Worker fetches and executes, and the loader

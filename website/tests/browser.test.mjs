@@ -316,10 +316,11 @@ function check(name, cond, detail) {
       disabled: o.disabled,
     })),
   );
-  check("0.0.2 release selectable", options.some((o) => o.value === "0.0.2" && !o.disabled));
+  check("0.2.0 release selectable", options.some((o) => o.value === "0.2.0" && !o.disabled));
+  check("historical 0.0.2 release selectable", options.some((o) => o.value === "0.0.2" && !o.disabled));
   check("0.0.1 present but unavailable", options.some((o) => o.value === "0.0.1" && o.disabled));
   check(
-    "development runtime selectable",
+    `current runtime ${devId} selectable`,
     options.some((o) => o.value === devId && !o.disabled),
   );
 

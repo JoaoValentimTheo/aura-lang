@@ -76,13 +76,20 @@ Follow-up 3 / AUDIT-3 remains DECISION-PENDING; no code or doc changes beyond th
 
 ## Runtime artifact
 
-The current Core development runtime is `0.0.2-dev.30`:
+The completed Core is released as the public **`0.2.0`** release. The current
+runtime artifact is `0.2.0`:
 
-- path: `playground/runtimes/0.0.2-dev.30/aura_playground_runtime.wasm`
-- bytes: `1,654,216`
-- SHA-256: `916a8282f7afcf67b89662af89d2f69cf562d9dbe41fe88cab1764a3ef19c578`
+- path: `playground/runtimes/0.2.0/aura_playground_runtime.wasm`
+- bytes: `1,654,161`
+- SHA-256: `9937fd8094ef402b7a9233d02bd232405f75b9e70661404646fcda7cd295c5bc`
 - wasm imports: `0`
 - reproducibility: byte-identical across independent clean-target builds
+- source: the exact release source state; Playground API `1`, Host ABI `1`
+
+The final development runtime of the pre-release line, `0.0.2-dev.30`
+(`1,654,216` /
+`916a8282f7afcf67b89662af89d2f69cf562d9dbe41fe88cab1764a3ef19c578`), is
+preserved as development history and is never the current release.
 
 The frozen public `0.0.2` artifact
 (`1,366,621` / `5a4ad3f7e3f786164d65df437d607e7ddd5e25947ea2c8dd9b436a5490b334ed`)

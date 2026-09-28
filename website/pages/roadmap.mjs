@@ -11,7 +11,13 @@ const PHASES = [
     tag: "Released",
     kind: "success",
     title: "0.0.2 · WebAssembly, Playground, website",
-    body: "The WebAssembly runtime, the host boundary, the versioned Playground, the official website, GitHub Pages deployment, and cross-platform release infrastructure. The language semantics remain the frozen 0.0.1.",
+    body: "The WebAssembly runtime, the host boundary, the versioned Playground, the official website, GitHub Pages deployment, and cross-platform release infrastructure. The language semantics remained the frozen 0.0.1.",
+  },
+  {
+    tag: "Released",
+    kind: "success",
+    title: "0.2.0 · Core completion",
+    body: "The completed Aura Core: generic map keys and ordered keys, <code>map.items()</code>, list and map comprehensions, the Core separator/numeric/f-string rules, completed in-source module semantics (<code>pub</code>, <code>pub use</code>, aliases), collection type coherence, and CLI/REPL and Playground completion, with Native/WASM parity.",
   },
   {
     tag: "Delivered",
@@ -87,7 +93,7 @@ export const roadmapPage = {
   path: "roadmap/",
   activeKey: "roadmap",
   description:
-    "The Aura roadmap: delivered infrastructure, the 0.0.2 website and release, the delivered language foundation (OOP V1/V2, shadowing, stability, overloading, generics), and the next phase — the filesystem module system.",
+    "The Aura roadmap: delivered infrastructure (0.0.1, 0.0.2), the completed Aura Core (0.2.0: generic maps, items(), comprehensions, syntax rules, modules, generics), and the next phase — the filesystem module system.",
   async render(base) {
     const items = PHASES.map(
       (p) => `<div class="card card--elevated">
@@ -120,8 +126,10 @@ export const roadmapPage = {
       conformance testing — which is now complete. OOP V1 (struct methods) and
       OOP V2 (traits) are delivered, and the language foundation (bindings,
       scopes, mutation, operators, f-strings) is synchronized, stabilised, and
-      frozen. Function and method overloading and generics are implemented;
-      the filesystem module system is the next phase.</p>
+      frozen. Function and method overloading, generics, and the completed Core
+      collections (generic maps, <code>items()</code>, comprehensions) are
+      implemented and released as <strong>0.2.0</strong>. The filesystem module
+      system is the next phase.</p>
       <a class="eyebrow-link" href="${url("releases/", base)}">See releases →</a>
     </div>
   </div>

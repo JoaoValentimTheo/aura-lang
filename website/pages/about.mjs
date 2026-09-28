@@ -48,6 +48,7 @@ export const aboutPage = {
           <h3>The project</h3>
           <ul>
             <li><strong>License:</strong> ${site.license}</li>
+            <li><strong>Current release:</strong> ${site.releaseVersion}</li>
             <li><strong>Language version:</strong> ${site.languageVersion}</li>
             <li><strong>Repository:</strong> <a href="${site.repository}" target="_blank" rel="noopener">github.com/JoaoValentimTheo/aura-lang</a></li>
             <li><strong>Issues:</strong> <a href="${site.issues}" target="_blank" rel="noopener">issue tracker</a></li>

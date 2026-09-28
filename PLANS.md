@@ -1,15 +1,18 @@
 # Aura Plans
 
-## Completed phase — Aura Core completion and freeze
+## Completed phase — Aura Core completion, freeze, and 0.2.0 release
 
-Status: COMPLETE (local); publication/CI verification in progress.
+Status: COMPLETE. The Core is released as the public **0.2.0**.
 
 The Core completion program (see `STATUS.md` for the commit stack and evidence)
 closed every Core milestone: collection type coherence, `map.items()`, list and
 map comprehensions, the nine Core syntax/resolver SPEC GAPs, CLI/REPL
 completion, the Playground editor completion, documentation/website
 synchronization, CI-RELIABILITY-1, the final development runtime, adversarial
-remediation, and CONF-PLAY-1 (a stale browser scroll fixture).
+remediation, and CONF-PLAY-1 (a stale browser scroll fixture). The version
+authority was then migrated from the `0.0.x` line to the public `0.2.0`
+release, a new `0.2.0` runtime artifact was built and verified, and the
+Playground and website now present `0.2.0` as the current stable release.
 
 `docs/CORE_FREEZE.md` is the status/evidence record for the frozen Core;
 `docs/LANGUAGE_SPEC.md` remains the semantic authority.

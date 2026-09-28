@@ -7,12 +7,12 @@ export const releasesPage = {
   path: "releases/",
   activeKey: "releases",
   description:
-    "Aura releases: the published 0.0.2 and the historical 0.0.1.",
+    "Aura releases: the current 0.2.0 and the historical 0.0.2 and 0.0.1.",
   async render(base) {
     return `${pageHead({
       eyebrow: "Releases",
       title: "Aura releases",
-      lede: "Aura 0.0.2 is the current public release: it adds the WebAssembly runtime, the host boundary, the versioned Playground, and this website, while keeping the frozen 0.0.1 language semantics.",
+      lede: "Aura 0.2.0 is the current public release: it completes the language core with generic maps, map.items(), comprehensions, the Core syntax rules, and in-source module semantics.",
     })}
 
 <section class="section section--tight">
@@ -20,19 +20,22 @@ export const releasesPage = {
     <div class="card card--elevated">
       <div class="example-card__meta">
         ${chip("Published", "success")}
-        ${chip("0.0.2")}
+        ${chip("0.2.0")}
         ${chip("Latest")}
       </div>
-      <h2 style="margin-top:var(--space-3)">Aura 0.0.2</h2>
-      <p>The infrastructure release. It ships the same frozen language semantics
-      as 0.0.1 (<strong>language version 0.0.1</strong>) and adds portable
-      execution, a versioned Playground, and the official website.</p>
+      <h2 style="margin-top:var(--space-3)">Aura 0.2.0</h2>
+      <p>The Core-completion release. It ships the completed Aura Core language —
+      generic maps keyed by <code>string</code>, <code>int</code>, or
+      <code>bool</code>, <code>map.items()</code>, list and map comprehensions,
+      the decided separator/numeric/f-string rules, and real in-source module
+      visibility.</p>
       <ul>
-        <li>WebAssembly runtime built from the same interpreter</li>
-        <li>An explicit host boundary; native and browser hosts behind one contract</li>
-        <li>A versioned, immutable Playground with hashed runtime artifacts</li>
-        <li>The official website on <a href="${site.origin}">GitHub Pages</a></li>
-        <li>Cross-platform release infrastructure with checksummed artifacts</li>
+        <li>Generic map keys <code>{K: V}</code> with key-capability checking and ordered keys</li>
+        <li><code>map.items()</code> and honest collection type checking</li>
+        <li>List and map comprehensions with one generator and an optional filter</li>
+        <li>Core syntax rules: real statement separators, numeric underscores, f-string braces</li>
+        <li>Completed in-source modules: <code>pub</code>, <code>pub use</code>, aliases, per-module tags</li>
+        <li>CLI/REPL and Playground completion; Native/WASM parity</li>
       </ul>
       <div class="hero__actions">
         <a class="btn btn--filled" href="${site.releases}" target="_blank" rel="noopener">${icon("external")} Release downloads</a>
@@ -43,7 +46,26 @@ export const releasesPage = {
 
     <div class="card" style="margin-top:var(--space-6)">
       <div class="example-card__meta">
-        ${chip("Published", "success")}
+        ${chip("Historical")}
+        ${chip("0.0.2")}
+      </div>
+      <h2 style="margin-top:var(--space-3)">Aura 0.0.2</h2>
+      <p>The infrastructure release. It shipped the frozen 0.0.1 language
+      semantics (<strong>language version 0.0.1</strong>) and added portable
+      execution, a versioned Playground, and the official website. Its runtime
+      artifact is frozen and never overwritten.</p>
+      <ul>
+        <li>WebAssembly runtime built from the same interpreter</li>
+        <li>An explicit host boundary; native and browser hosts behind one contract</li>
+        <li>A versioned, immutable Playground with hashed runtime artifacts</li>
+        <li>The official website on <a href="${site.origin}">GitHub Pages</a></li>
+        <li>Cross-platform release infrastructure with checksummed artifacts</li>
+      </ul>
+    </div>
+
+    <div class="card" style="margin-top:var(--space-6)">
+      <div class="example-card__meta">
+        ${chip("Historical")}
         ${chip("0.0.1")}
       </div>
       <h2 style="margin-top:var(--space-3)">Aura 0.0.1</h2>
@@ -75,8 +97,9 @@ export const releasesPage = {
     ${dataTable(
       ["Release", "Language", "Browser runtime", "Status"],
       [
-        ["0.0.1", "0.0.1", "none", chip("Published (native only)", "success")],
-        ["0.0.2", "0.0.1", "WebAssembly, ABI 1", chip("Published", "success")],
+        ["0.0.1", "0.0.1", "none", chip("Historical (native only)")],
+        ["0.0.2", "0.0.1", "WebAssembly, ABI 1", chip("Historical")],
+        ["0.2.0", "0.2.0", "WebAssembly, ABI 1", chip("Current", "success")],
       ],
     )}
     <p class="muted">Immutable historical artifacts are never silently

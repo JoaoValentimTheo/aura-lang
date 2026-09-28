@@ -90,18 +90,22 @@ export const runtimePage = {
           source: `# The browser runtime is loaded from an immutable,
 # versioned artifact. Its manifest records, per entry:
 #
-#   id                 0.0.2            (published release)
+#   id                 0.2.0            (current release)
+#   channel            release
+#   language_version   0.2.0
+#   release_version    0.2.0
+#   host_abi_version   1
+#   artifact           0.2.0/aura_playground_runtime.wasm
+#   sha256             9937fd80…c5bc
+#
+#   id                 0.0.2            (historical release)
 #   channel            release
 #   language_version   0.0.1
-#   release_version    0.0.2
-#   host_abi_version   1
 #   artifact           0.0.2/aura_playground_runtime.wasm
-#   sha256             5a4ad3f7…34ed
 #
 #   id                 0.0.2-dev.30      (development runtime)
 #   channel            development
 #   release_version    0.0.2
-#   host_abi_version   1
 #
 # Published release artifacts are frozen: their hashes are
 # pinned and never rewritten. A newer runtime is added as a

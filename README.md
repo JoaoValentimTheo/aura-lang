@@ -20,18 +20,20 @@ No Python required to run.
 Aura v3 is a from-scratch Rust rewrite. The previous Python transpiler is
 gone; the last Python release is preserved as tag `v0.2.0a8`.
 
-Version **`0.0.2`** is the current public release. It ships the frozen
-**`0.0.1` language semantics** and adds portable execution and tooling: a
-WebAssembly runtime built from the same interpreter, an explicit host
-boundary, a versioned browser Playground with immutable runtime artifacts, the
-official website on [GitHub Pages](https://joaovalentimtheo.github.io/aura-lang/), and cross-platform
-release infrastructure. `0.0.1` was the first usable public release: the
-language core, the runtime, the standard library (including scripting I/O), the
-CLI, the REPL, and the Python bridge.
+Version **`0.2.0`** is the current public release. It completes the Aura Core
+language: generic maps keyed by `string`, `int`, or `bool` (or a union of
+these) with `type Map<K, V> = {K: V}`, `map.items()`, list and map
+comprehensions, the decided Core syntax rules (real statement separators,
+numeric underscore placement, f-string brace edges), and in-source module
+semantics (`pub`, `pub use`, aliases, per-module variant tags). It also ships
+the completed CLI/REPL, the Playground, and verified Native/WASM parity.
 
-Release, language, and runtime versions are deliberately distinct:
-`aura 0.0.2` implements language `0.0.1`, with runtime artifacts identified as
-`0.0.2`.
+This is a language release, so the release and language versions coincide at
+`0.2.0`. `0.0.2` (WebAssembly runtime, host boundary, Playground, website) and
+`0.0.1` (first usable release) are historical and remain available and frozen;
+`0.0.2-dev.*` are development pre-releases of that line. Release, language,
+and runtime versions remain distinct constants so a future runtime-only release
+can advance the release version without claiming a language change.
 
 | Area | State |
 |------|-------|
