@@ -6,7 +6,7 @@ Phases 2 → 12 plus final adversarial closure. Phase 1 was closed at
 ## 1. Final Repository State
 
 * Branch: `rewrite/v3-rust`.
-* Final HEAD: `ab7c29c3ffd64c0a746d3f412b098fd6fa0c123d`.
+* Final HEAD: `23d47de2ece1d3721aab226dd2ff53ccc3e98710`.
 * Worktree: clean (no transient artifacts).
 * Commits added over Phase 1 (20):
   `8aa1c7f`, `5d54ab8`, `0f3555d`, `2462d3f`, `39f4005`, `73c7b63`, `43b7cef`,
@@ -26,7 +26,7 @@ Phases 2 → 12 plus final adversarial closure. Phase 1 was closed at
 | 7 | Python bridge | none | VERIFIED |
 | 8 | native/WASM/browser | none | VERIFIED |
 | 9 | diagnostics | none (2 internal/unused codes, 1 shared code) | VERIFIED |
-| 10 | robustness/fuzz/CI reliability | 1 fix (CONF-RESOURCE-1) + CI-RELIABILITY-1 | VERIFIED |
+| 10 | robustness/fuzz/CI reliability | 2 fixes (CONF-RESOURCE-1/2) + CI-RELIABILITY-1 | VERIFIED |
 | 11 | documentation reconciliation | none new | VERIFIED |
 | 12 | build/artifacts/website/CI | dev.25 + dev.26 staged | VERIFIED |
 | Final | adversarial closure | 2 counterexamples, both fixed | CLOSED |
@@ -131,7 +131,7 @@ by two synonymous constants. Deterministic wording; in-source spans.
 No production `unsafe`, `unwrap`/`expect`/`panic!`; two guarded `unreachable!`.
 All arithmetic boundaries (`i64::MIN/MAX`, `/0`, `%0`, shift range, overflow,
 `abs`/`sum` overflow) yield stable `E4xxx`. Every nesting construct is bounded
-by `E1015`/`E4011` — including unary chains after `CONF-RESOURCE-1`.
+by `E1015`/`E4011` — including unary chains (`CONF-RESOURCE-1`) and nested modules (`CONF-RESOURCE-2`).
 
 ## 16. Property / Fuzz Result
 
