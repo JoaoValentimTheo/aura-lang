@@ -925,3 +925,38 @@ fn tuple_is_checked_like_a_list() {
     );
     assert_eq!(check("fn main() { let x: [int] = (1, 2) }"), Ok(()));
 }
+
+// ------------------------------------------ arithmetic result-type inference
+
+/// `LANGUAGE_SPEC.md` §9.1: mixed `int`/`float` arithmetic promotes to
+/// `float`, and `+` on two strings yields `string`. `infer` previously
+/// returned the *left operand's* type for every non-comparison operator, so
+/// `1 + 1.5` inferred `int`: `let x: int = 1 + 1.5` was accepted while
+/// `f(1 + 1.5)` for `f(float)` was wrongly rejected (`CONF-TYPE-1`).
+#[test]
+fn arithmetic_result_type_is_inferred_from_both_operands() {
+    // Mixed promotion infers float, so the float annotation is accepted and
+    // the int annotation is provably wrong.
+    assert_eq!(check("fn main() { let x: float = 1 + 1.5 }"), Ok(()));
+    assert_eq!(
+        check("fn main() { let x: int = 1 + 1.5 }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(check("fn main() { let x: float = 1.5 + 1 }"), Ok(()));
+    // A float parameter accepts a mixed-arithmetic argument.
+    assert_eq!(
+        check("fn f(x: float) -> float { return x }\nfn main() { f(1 + 1.5) }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("fn f() -> float { return 1 + 1.5 }\nfn main() { }"),
+        Ok(())
+    );
+    // Same-type results are unchanged.
+    assert_eq!(check("fn main() { let x: int = 1 + 2 }"), Ok(()));
+    assert_eq!(check("fn main() { let s: string = \"a\" + \"b\" }"), Ok(()));
+    assert_eq!(
+        check("fn main() { let n: int = \"a\" + \"b\" }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}

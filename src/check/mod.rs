@@ -2377,7 +2377,7 @@ impl Checker {
             Expr::Unary(UnOp::Not, _, _) => Ty::Bool,
             Expr::Unary(UnOp::Neg, inner, _) => self.infer(inner),
             Expr::Unary(UnOp::BitNot, inner, _) => self.infer(inner),
-            Expr::Binary(op, l, _, _) => match op {
+            Expr::Binary(op, l, r, _) => match op {
                 BinOp::Eq
                 | BinOp::Ne
                 | BinOp::Lt
@@ -2386,7 +2386,25 @@ impl Checker {
                 | BinOp::Ge
                 | BinOp::And
                 | BinOp::Or => Ty::Bool,
-                _ => self.infer(l),
+                // Arithmetic and bitwise results have their own result type,
+                // not the left operand's (LANGUAGE_SPEC.md §9.1). Returning
+                // `infer(l)` made `1 + 1.5` infer `int`, so
+                // `let x: int = 1 + 1.5` was accepted while `f(1 + 1.5)` for
+                // `f(float)` was wrongly rejected.
+                BinOp::Add => self.infer_add(l, r),
+                BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem | BinOp::Pow => {
+                    self.infer_numeric(l, r)
+                }
+                BinOp::BitAnd | BinOp::BitOr | BinOp::Shl | BinOp::Shr => {
+                    let lt = self.infer(l);
+                    let rt = self.infer(r);
+                    match (&lt, &rt) {
+                        (Ty::Int, Ty::Int) => Ty::Int,
+                        // Unknown is permissive; a provably non-int operand
+                        // stays Unknown here and is a runtime `E3001`.
+                        _ => Ty::Unknown,
+                    }
+                }
             },
             Expr::If(_, _, _, _) | Expr::Match(_, _, _) | Expr::Block(_, _) => Ty::Unknown,
             Expr::Name(name, _) => {
@@ -2456,6 +2474,34 @@ impl Checker {
             }
             Expr::Range(_, _, _) => Ty::Named("range".to_string()),
             Expr::Pipe(_, _, _) | Expr::Index(_, _, _) | Expr::Lambda(_, _, _) => Ty::Unknown,
+        }
+    }
+
+    /// Infer the result type of a numeric binary operator (`-`, `*`, `/`, `%`,
+    /// `^`), which §9.1 defines only for numbers. `int` with `int` is `int`;
+    /// any `float` operand makes the result `float`; anything else is
+    /// `Unknown` (the runtime reports the type error).
+    fn infer_numeric(&self, l: &Expr, r: &Expr) -> Ty {
+        match (self.infer(l), self.infer(r)) {
+            (Ty::Int, Ty::Int) => Ty::Int,
+            (Ty::Float, Ty::Float) | (Ty::Float, Ty::Int) | (Ty::Int, Ty::Float) => Ty::Float,
+            _ => Ty::Unknown,
+        }
+    }
+
+    /// Infer the result type of `+`, which §9.1 defines for `int`, `float`,
+    /// `string`, and `list`. Two equal list operands yield a list of the same
+    /// element type; a `string` with a `string` yields a `string`; numeric
+    /// operands promote like [`Self::infer_numeric`]. Anything else is
+    /// `Unknown`.
+    fn infer_add(&self, l: &Expr, r: &Expr) -> Ty {
+        let (lt, rt) = (self.infer(l), self.infer(r));
+        match (&lt, &rt) {
+            (Ty::Int, Ty::Int) => Ty::Int,
+            (Ty::Float, Ty::Float) | (Ty::Float, Ty::Int) | (Ty::Int, Ty::Float) => Ty::Float,
+            (Ty::String, Ty::String) => Ty::String,
+            (Ty::List(a), Ty::List(b)) if **a == **b => Ty::List(a.clone()),
+            _ => Ty::Unknown,
         }
     }
 
