@@ -90,3 +90,52 @@ Available list methods: `len`, `push`, `pop`, `first`, `last`, `join`,
 `contains`, `sort`, `reverse`, `map`, `filter`, `reduce`. Free functions `map`,
 `filter`, `reduce`, `sort`, `reverse`, `sum`, `enumerate`, and `zip` take the
 list as an argument, which is convenient in a pipeline.
+
+## Map entries
+
+`m.items()` yields the map's entries as two-element lists `[key, value]` in
+ascending key order. It is eager: the returned list is a snapshot, so mutating
+the map afterwards does not change it.
+
+```aura
+let users = {1: "Ada", 2: "Alan"}
+for [id, name] in users.items() {
+    print(id)
+    print(name)
+}
+```
+
+`for k in users` still iterates keys only — `items()` makes the pair explicit.
+
+## Comprehensions
+
+A comprehension builds a collection in one expression. There is exactly one
+generator clause and an optional filter:
+
+```aura
+let xs = [1, 2, 3, 4]
+
+let doubled = [x * 2 for x in xs]
+let evens = [x for x in xs if x % 2 == 0]
+let squares = {x: x * x for x in xs}
+```
+
+They are eager, the iterable is evaluated once, the pattern is assertive like
+`for`, and bindings do not leak. A comprehension is an expression, so it can be
+used anywhere a value is expected. It is not a replacement for statement
+loops: there is no `break`/`continue`, no `yield`, and no multiple generators.
+
+```aura
+let names = [
+    name
+    for [id, name] in users.items()
+    if id > 1
+]
+```
+
+## Literal types
+
+A literal infers a union of its parts: `[1, "x"]` is `[int | string]`, and
+`{1: "a", "1": "b"}` is `{int | string: string}`. When the expected type is
+known, every element is checked against it, so `let xs: [int] = [1, "x"]` is a
+type error rather than a silent surprise.

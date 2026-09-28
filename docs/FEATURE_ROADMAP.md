@@ -52,7 +52,7 @@ Aura today is a tree-walking interpreted language with a conservative checker.
 |---|---|
 | Lexing | ASCII identifiers; line and multiline comments; newline/semicolon statements; decimal/hex/binary/octal ints, floats, string/char quotes, f-strings |
 | Grammar | Recursive-descent + Pratt; right-associative `^` and `..`; left-associative everything else; explicit precedence table |
-| Value model | `int`, `float`, `string`, `bool`, `none`, `list`, `map` (string-keyed, ordered), struct instance, enum variant, function, range |
+| Value model | `int`, `float`, `string`, `bool`, `none`, `list`, `map` (keyed by a key-capable scalar, ordered), struct instance, enum variant, function, range |
 | Type model | Primitives, structural collections, nominal types, unions and static generic parameters/applications |
 | Unknown | Exact conservative boundary: the checker rejects only what it can prove |
 | Operators | `+ - * / % ^ == != < <= > >= and or`, bitwise `& \| ~ << >>`, unary `-`/`not`/`~`, pipeline `\|>`, assignment `= += -= *= /= %= ^= &= \|= <<= >>=` |
@@ -63,9 +63,9 @@ Aura today is a tree-walking interpreted language with a conservative checker.
 | Closures | Lambdas capture by reference; no ownership/lifetime model |
 | Mutability | Binding capability: `let` immutable, `let mut` mutable; place writes and mutating calls require a `mut` root; `mut self` marks a mutating method |
 | Structs | Nominal; named and positional construction; validated fields |
-| Enums | Global tags; positional payloads; named payload args rejected |
+| Enums | Tags unique per module; positional payloads; named payload args rejected |
 | Match | Expression; literal/binding/list/variant patterns; guards; no exhaustiveness |
-| Collections | Lists (index/mutate/iterate) and string-keyed ordered maps; empty map `{:}` |
+| Collections | Lists (index/mutate/iterate) and ordered maps keyed by `string`/`int`/`bool` (or a union); `map.items()`; list and map comprehensions; empty map `{:}` |
 | Destructuring | `let [a, b] = e` and `let Ok(x) = e`, reusing the pattern system |
 | Field types | A field read on a known struct infers the declared type (Feature 003) |
 | Scripting I/O | `read_line`, `read_file`, `write_file`, `args` (0.0.1) |

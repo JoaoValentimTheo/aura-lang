@@ -115,6 +115,40 @@ fn main() {
     note: "A map key must be key-capable: `string`, `int`, or `bool` (or a union of these). `Map<K, V>` is an ordinary alias over the structural `{K: V}` type; the key parameter must be key-capable when instantiated.",
   },
   {
+    id: "comprehensions",
+    title: "Comprehensions",
+    level: "intermediate",
+    tags: ["collections", "comprehensions"],
+    summary: "Build a list or map in one expression, with an optional filter.",
+    output: "[4, 16, 36]\n{1: 10, 2: 20, 3: 30}\n",
+    source: `fn main() {
+    let xs = [1, 2, 3, 4, 5, 6]
+    let squares_of_evens = [x * x for x in xs if x % 2 == 0]
+    print(squares_of_evens)
+
+    let label = {x: x * 10 for x in [1, 2, 3]}
+    print(label)
+}`,
+    note: "One generator clause and an optional filter; eager. `[value for pattern in iterable if cond]` and `{key: value for pattern in iterable}`. The iterable runs once and bindings do not leak.",
+  },
+  {
+    id: "map-items",
+    title: "Map entries",
+    level: "intermediate",
+    tags: ["maps", "collections"],
+    summary: "Iterate a map's key/value pairs with items().",
+    output: "[[1, \"Ada\"], [2, \"Alan\"]]\n1\nAda\n2\nAlan\n",
+    source: `fn main() {
+    let users = {1: "Ada", 2: "Alan"}
+    print(users.items())
+    for [id, name] in users.items() {
+        print(id)
+        print(name)
+    }
+}`,
+    note: "items() returns a fresh list of two-element `[key, value]` lists in ascending key order. `for k in users` still iterates keys only.",
+  },
+  {
     id: "closures",
     title: "Closures",
     level: "intermediate",

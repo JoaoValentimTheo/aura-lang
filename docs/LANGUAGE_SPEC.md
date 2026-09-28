@@ -690,9 +690,14 @@ struct_body     = "{" nl [ field_init nl { "," nl field_init nl }
 field_init      = IDENT ":" expr ;
 lambda          = [ "fn" ] "(" params ")" "->" expr
                 | "fn" [ "mut" ] IDENT "->" expr ;
-list            = "[" nl [ expr nl { "," nl expr nl } [ "," nl ] ] "]" ;
-map             = "{" nl ( ":" nl | entry nl { "," nl entry nl }
-                  [ "," nl ] ) "}" ;
+list            = "[" nl ( "]" | list_body ) ;
+list_body       = expr nl ( list_comp | list_rest ) ;
+list_comp       = "for" pattern "in" expr [ "if" expr ] "]" ;
+list_rest       = { "," nl expr nl } [ "," nl ] "]" ;
+map             = "{" nl ( ":" nl | map_body ) "}" ;
+map_body        = entry nl ( map_comp | map_rest ) ;
+map_comp        = "for" pattern "in" expr [ "if" expr ] "}" ;
+map_rest        = { "," nl entry nl } [ "," nl ] "}" ;
 entry           = expr ":" expr ;
 if_expr         = "if" expr block [ "else" expr ] ;
 match_expr      = "match" expr "{" nl { match_arm nl } "}" ;
@@ -2243,6 +2248,7 @@ runtime otherwise.
 * Display: `{k: v, ...}` in ascending key order; string keys are quoted, and
   `int`/`bool` keys are written bare.
 * Removal: `m.remove(k)` yields the removed value or `none`.
+* Entries: `m.items()` yields `[[k, v], ...]` in ascending key order (§21.2).
 
 ### 20.3 Empty-map literal
 
@@ -2297,6 +2303,110 @@ and has `.len()` = 2.
 > value") and the list-sugar grammar production. It is frozen as: a
 > parenthesized comma-list denotes a list. The AST retains an `Expr::Tuple`
 > node as an implementation detail; it carries no additional semantics.
+>
+> Consequently, the pairs produced by `enumerate`, `zip`, and `items()` are
+> **two-element lists**, not tuples. A pair's honest homogeneous element type is
+> the union of its two positions: `enumerate([T])` is `[[int | T]]`,
+> `zip([T], [U])` is `[[T | U]]`, and `{K: V}.items()` is `[[K | V]]`. Aura does
+> not invent a tuple type to make these prettier.
+
+### 21.1 Collection static precision
+
+**Normative rule (literal inference).** A list/tuple or map literal infers each
+dimension as the **union** of the statically known component types, using the
+existing union rule (§5.2). `[1, "x"]` is `[int | string]`; `{1: "a", "1":
+"b"}` is `{int | string: string}`. An `Unknown` component imposes no
+constraint, so a list of only `Unknown` stays `[Unknown]` and `{:}` stays
+`{Unknown: Unknown}`. Order does not affect the inferred union.
+
+**Normative rule (whole-literal checking).** When an expected type is known
+(an annotated `let`, assignment to a typed binding, a statically resolved
+function argument, a return expression, a struct field, or a nested literal),
+**every** statically known component is checked against it. A first-component
+rule must not decide acceptance of the whole literal, and an `Unknown`
+component must not hide a later known mismatch. An `Unknown` component is
+never a false rejection.
+
+**Normative rule (indexing result).** Indexing a known collection yields the
+component type: `[T][int]` is `T`, `string[int]` is `string`, and `{K: V}[K]`
+is `V`. This is the result of a *successful* index: a missing map key is the
+runtime error `E2003` and an out-of-range list index is `E4019`, not a `none`
+value.
+
+**Normative rule (typed mutation).** Mutation of a collection with a known
+component type obeys that type: `xs.push(v)`, the free `push(xs, v)`, and
+`xs[i] = v` on a known `[T]` reject a provable mismatch; map indexed assignment
+and the key-taking methods (`get`, `has`, `remove`) obey the map's `{K: V}`
+contract. Runtime validation remains in place regardless.
+
+**Normative rule (honest optional results).** A method that can return `none`
+must not statically claim a non-`none` type. `map.get`/`map.remove` are
+dynamic (`Unknown`), as are list `first`/`last`/`pop` and `reduce`. Aura has no
+static `none` type; pretending `V` would be a lie. `keys`/`values`/`items` on a
+known map are `[K]`/`[V]`/`[[K | V]]`, and list `sort`/`reverse` are `[T]`.
+
+### 21.2 `map.items()`
+
+**Normative rule.** `m.items()` is the canonical spelling for iterating map
+entries. It is eager, non-mutating, and returns a **new** list whose elements
+are two-element lists `[key, value]`, in canonical ascending key order matching
+map iteration. Mutating the map after `items()` returns does not change the
+result list. There are no synonyms (`entries`/`pairs`/...); `for k in m` remains
+key iteration.
+
+*Non-normative example.*
+```aura
+for [key, value] in users.items() {
+    print(key)
+    print(value)
+}
+```
+
+---
+
+## 21b. Comprehensions
+
+**Normative rule.** Aura has two simple comprehension forms:
+
+```
+[value for pattern in iterable]
+[value for pattern in iterable if filter]
+{key: value for pattern in iterable}
+{key: value for pattern in iterable if filter}
+```
+
+Each comprehension has **exactly one generator clause** and **zero or one
+filter clause**. A comprehension is an expression, so it may appear anywhere an
+expression may; a nested comprehension is therefore allowed, but each
+individual comprehension still has one generator.
+
+**Normative rule (semantics).** A comprehension is eager. The iterable is
+evaluated **exactly once** and iterated with ordinary Aura iterable semantics.
+The pattern uses ordinary `for` pattern semantics and is **assertive**: if the
+pattern does not match an element, that is `E3001`, exactly as an ordinary
+`for`. The filter uses ordinary truthiness. The result preserves iteration
+order. Errors and `throw`s propagate normally.
+
+**Normative rule (scope).** Pattern bindings live only inside the
+comprehension and do not leak after it. Each iteration receives the same
+fresh-binding semantics an ordinary `for` uses, so a closure created inside the
+comprehension captures that iteration's binding.
+
+**Normative rule (map comprehensions).** In a map comprehension the key
+expression is evaluated before the value expression; ordinary map-key
+admissibility applies (a generated non-key-capable key is `E3001`); and
+ordinary duplicate-key behavior applies. There is no comprehension-only key or
+duplicate policy.
+
+**Normative rule (non-features).** There is no grammar for multiple generators
+(`for x in a for y in b`), `async for`, `yield`, lazy comprehensions, or
+multiple filters. A comprehension does not establish a `break`/`continue`
+context.
+
+*Evidence:* `Expr::ListComp`/`Expr::MapComp` (`src/ast/mod.rs`); parser
+comprehension branches (`src/parse/mod.rs`); resolver comprehension scopes
+(`src/resolve.rs`); checker and runtime arms (`src/check/mod.rs`,
+`src/run/mod.rs`); `tests/comprehensions.rs`.
 
 ---
 
@@ -3207,18 +3317,30 @@ implementers do not assume guarantees the language does not make.
 
 ### 34.1 Language limitations
 
-* **No tuple type.** `(a, b)` is list sugar (§21).
-* **No `try` without `catch`** (§14.5).
-* **`match` arms cannot be bare control-flow keywords**; a block is required
-  (§19.4).
-* **No default or variadic function arguments** (§15.8).
-* **Named arguments are limited to directly resolved top-level functions**
-  (§15.8); built-ins, methods, and dynamic callables are positional.
-* **No nested named function declarations**; use lambdas (§15.9).
-* **No `for ... else`, no step on ranges** (§22.1).
-* **No lexicographic ordering for lists/maps/structs/enums/ranges** (§12).
-* **`a..b` has no inclusive (`..=`) form.** Ranges are always half-open
-  (§22.1).
+Each item is classified **DELIBERATELY ABSENT** (a permanent Core decision, not
+a gap) or **POST-CORE RFC** (a candidate for a later, separately designed
+feature). None of these blocks Core completion.
+
+* **DELIBERATELY ABSENT — No tuple type.** `(a, b)` is list sugar (§21).
+* **DELIBERATELY ABSENT — No `try` without `catch`** (§14.5).
+* **DELIBERATELY ABSENT — `match` arms cannot be bare control-flow keywords**;
+  a block is required (§19.4).
+* **DELIBERATELY ABSENT — No lexicographic ordering for
+  lists/maps/structs/enums/ranges** (§12).
+* **DELIBERATELY ABSENT — No default or variadic function arguments** (§15.8).
+* **DELIBERATELY ABSENT — Named arguments are limited to directly resolved
+  top-level functions** (§15.8); built-ins, methods, and dynamic callables are
+  positional.
+* **DELIBERATELY ABSENT — No nested named function declarations**; use lambdas
+  (§15.9).
+* **POST-CORE RFC — Named method arguments.** Extending named arguments to
+  methods is a candidate, not part of Core.
+* **POST-CORE RFC — List-rest patterns** (`[a, ..rest]`).
+* **POST-CORE RFC — Range step** and **inclusive range syntax** (`..=`). Both
+  `range(a, b)` and `a..b` are step-1, half-open (§22.1).
+* **POST-CORE RFC — `for ... else`.**
+* **POST-CORE RFC — Multiline pipeline continuation** (a pipeline must stay on
+  one line).
 
 ### 34.2 Static-checking limitations
 
@@ -3228,11 +3350,15 @@ implementers do not assume guarantees the language does not make.
   (§6.5). Directly resolved top-level calls **are** checked.
 * **Field reads infer a declared type only when the receiver's type is a
   known struct.** A field read on a value whose type the checker cannot
-  determine (for example a parameter without an annotation, an `if`
-  expression, a call whose return type is not declared, or an element of a
-  list) still infers `Unknown` (§17.5), as do indexed reads and map lookups.
+  determine (for example an unannotated parameter, an `if` expression, or a
+  call whose return type is not declared) still infers `Unknown` (§17.5).
+  Indexing a *known* `[T]`/`{K: V}`/`string` does infer the component type
+  (§21.1); only an `Unknown` receiver stays `Unknown`.
 * **`if`/`match`/block expressions and lambdas infer `Unknown`** (§2.3), so
   their results are not statically checked.
+* **Methods that can yield `none` stay dynamic.** `map.get`/`map.remove`,
+  list `first`/`last`/`pop`, and `reduce` infer `Unknown`, because Aura has no
+  static `none` type (§21.1).
 
 ### 34.3 Implementation limitations
 

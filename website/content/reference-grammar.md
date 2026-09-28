@@ -125,9 +125,14 @@ struct_body     = "{" nl [ field_init nl { "," nl field_init nl }
 field_init      = IDENT ":" expr ;
 lambda          = [ "fn" ] "(" params ")" "->" expr
                 | "fn" [ "mut" ] IDENT "->" expr ;
-list            = "[" nl [ expr nl { "," nl expr nl } [ "," nl ] ] "]" ;
-map             = "{" nl ( ":" nl | entry nl { "," nl entry nl }
-                  [ "," nl ] ) "}" ;
+list            = "[" nl ( "]" | list_body ) ;
+list_body       = expr nl ( list_comp | list_rest ) ;
+list_comp       = "for" pattern "in" expr [ "if" expr ] "]" ;
+list_rest       = { "," nl expr nl } [ "," nl ] "]" ;
+map             = "{" nl ( ":" nl | map_body ) "}" ;
+map_body        = entry nl ( map_comp | map_rest ) ;
+map_comp        = "for" pattern "in" expr [ "if" expr ] "}" ;
+map_rest        = { "," nl entry nl } [ "," nl ] "}" ;
 entry           = expr ":" expr ;
 if_expr         = "if" expr block [ "else" expr ] ;
 match_expr      = "match" expr "{" nl { match_arm nl } "}" ;

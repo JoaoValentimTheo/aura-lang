@@ -167,6 +167,18 @@ Precedence, lowest to highest:
   is rejected. `{:}` is the empty-map literal. `{}` is a **block**, not an
   empty map, and yields `none`; whitespace and newlines do not change this
   (`{ : }` is the same as `{:}`).
+* `m.items()` yields `[[k, v], ...]` in ascending key order (eager snapshot);
+  `for k in m` still iterates keys only.
+* **Comprehensions** are `[value for pattern in iterable]`,
+  `[value for pattern in iterable if filter]`, `{key: value for pattern in
+  iterable}`, and the same with a filter. One generator and at most one filter;
+  eager; the iterable runs once; the pattern is assertive like `for`; bindings
+  do not leak. No multiple generators, `yield`, or lazy forms.
+* **Literal inference and checking** use unions: `[1, "x"]` is `[int |
+  string]`; a whole literal is checked component-by-component against a known
+  type, and an `Unknown` component never hides a later known mismatch. Indexing
+  a known `[T]`/`{K: V}`/`string` yields `T`/`V`/`string`; `get`/`remove`/
+  `first`/`last`/`pop`/`reduce` stay dynamic because they can yield `none`.
 * `to_string`, `to_int`, `to_float` are conversions; there is no cast syntax.
 
 ## 5. Statements
