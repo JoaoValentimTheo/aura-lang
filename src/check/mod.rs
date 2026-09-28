@@ -42,20 +42,34 @@ fn return_compatible(expected: &Ty, actual: &Ty) -> bool {
     return_assignable(expected, actual)
 }
 
-/// The recursive core of [`return_compatible`]: exact equality, then a
-/// declared union matches if any member matches; any remaining unresolved
-/// parameter on either side is not soundly matched.
+/// The recursive core of [`return_compatible`]. Handles `Unknown` as
+/// permissive at **every** position (`LANGUAGE_SPEC.md` §2.3: a rule is not
+/// applied to a type the checker cannot determine — so `[T]` accepts `[]`,
+/// which infers `[unknown]`); a declared union accepts a member; lists, maps,
+/// and applications compare element-wise, so a parameter nested inside one is
+/// still checked. A remaining unresolved parameter against a concrete type is
+/// not soundly assignable in either direction.
 fn return_assignable(expected: &Ty, actual: &Ty) -> bool {
+    if matches!(expected, Ty::Unknown) || matches!(actual, Ty::Unknown) {
+        return true;
+    }
     if expected == actual {
         return true;
     }
-    if let Ty::Union(members) = expected {
-        return members.iter().any(|m| return_assignable(m, actual));
+    match (expected, actual) {
+        (Ty::Union(members), _) => members.iter().any(|m| return_assignable(m, actual)),
+        (_, Ty::Union(members)) => members.iter().all(|m| return_assignable(expected, m)),
+        (Ty::List(a), Ty::List(b)) | (Ty::Map(a), Ty::Map(b)) => return_assignable(a, b),
+        (Ty::App(a, xa), Ty::App(b, xb)) => {
+            a == b
+                && xa.len() == xb.len()
+                && xa.iter().zip(xb).all(|(x, y)| return_assignable(x, y))
+        }
+        (Ty::Named(a), Ty::App(b, xb)) => a == b && xb.is_empty(),
+        (Ty::App(a, xa), Ty::Named(b)) => a == b && xa.is_empty(),
+        _ if expected.has_param() || actual.has_param() => false,
+        _ => expected == actual,
     }
-    if expected.has_param() || actual.has_param() {
-        return false;
-    }
-    expected.compatible_with(actual)
 }
 
 /// remove structurally-equal duplicate members, mirroring the normalization

@@ -399,3 +399,29 @@ fn valid_parameter_returns_are_accepted() {
         "1\n"
     );
 }
+
+/// An empty collection literal is compatible with a parameterized return
+/// type: `[]` infers as `[unknown]` and `{:}` as `{string: unknown}`, and
+/// `LANGUAGE_SPEC.md` §2.3 forbids rejecting on a type the checker cannot
+/// determine. The non-empty analogue was already accepted. This locks the
+/// permissive boundary for nested positions too.
+#[test]
+fn empty_collections_are_compatible_with_parameterized_returns() {
+    assert_eq!(
+        ok("fn f<T>() -> [T] { return [] }\nfn main() { print(f()) }"),
+        "[]\n"
+    );
+    assert_eq!(
+        ok("fn f<T>() -> {string: T} { return {:} }\nfn main() { print(f()) }"),
+        "{}\n"
+    );
+    assert_eq!(
+        ok("struct Box<T> { value: T }\nfn f<T>() -> Box<[T]> { return Box { value: [] } }\nfn main() { print(f().value) }"),
+        "[]\n"
+    );
+    // A concrete empty collection still passes its concrete annotation.
+    assert_eq!(
+        ok("fn f() -> [int] { return [] }\nfn main() { print(f()) }"),
+        "[]\n"
+    );
+}
