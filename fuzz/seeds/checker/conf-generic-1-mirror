@@ -1,0 +1,2 @@
+fn f<T>(x: T) -> int { return x }
+fn main() { print(f("a")) }

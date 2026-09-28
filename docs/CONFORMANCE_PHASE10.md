@@ -22,16 +22,19 @@ Production-path search across `src/`:
 ### CONF-RESOURCE-1 — unary chain host stack overflow (fixed)
 
 A chain of unary operators (`-`, `not`, `~`) recursed through `parse::unary`
-without consuming the parser's host-safety backstop (`enter`/`leave`), which
-only guarded `atom()` and `ty()`. A source of ~24,085 unary operators made the
-parser recurse without bound and abort with `fatal runtime error: stack
-overflow` and **no diagnostic** on both `check` and `run` — a direct violation
-of `LANGUAGE_SPEC.md` §31.5 ("no syntactically valid, well-formed program may
+without any bound. A source of ~24,085 unary operators made the parser recurse
+without bound and abort with `fatal runtime error: stack overflow` and **no
+diagnostic** on both `check` and `run` — a direct violation of
+`LANGUAGE_SPEC.md` §31.5 ("no syntactically valid, well-formed program may
 cause a host panic, stack overflow, or undefined behavior; exceeding a limit
-produces a stable `E####` diagnostic"). Each unary operator now consumes the
-same guard and reports `E1015`; grouping parentheses and other non-unary
-operands keep their documented 2048 native / 768 WASM budget. Regression:
-`tests/boundaries.rs::unary_chains_are_bounded_not_a_stack_overflow`; fuzz seed
+produces a stable `E####` diagnostic"). Each unary operator is one AST level,
+so the chain is now bounded by the semantic AST counter and reports `E1015`;
+grouping parentheses and other non-unary operands keep their host-stack budget,
+so the two mechanisms compose and any AST-valid program including grouping is
+still accepted (§31.2). A related pre-existing leak (atom constructor/lambda/
+map early returns skipping the depth guard) was fixed at the same time.
+Regression: `tests/boundaries.rs::unary_chains_are_bounded_not_a_stack_overflow`,
+`unary_and_grouping_budgets_compose`; fuzz seed
 `fuzz/seeds/parser/conf-resource-1-unary`.
 
 This was the only construct that escaped the guard; every other probed nesting
