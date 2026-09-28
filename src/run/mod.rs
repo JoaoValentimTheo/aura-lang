@@ -1303,6 +1303,66 @@ impl Interp {
                 }
                 Ok(Ctl::Val(Value::Map(Rc::new(RefCell::new(map)))))
             }
+            Expr::ListComp {
+                value,
+                pattern,
+                iterable,
+                filter,
+                span,
+            } => {
+                // The iterable is evaluated exactly once (§24); each iteration
+                // gets a fresh scope, and the filter and value see the pattern
+                // bindings. Errors and `throw`s propagate normally.
+                let subject = val!(self.eval(iterable, env));
+                let mut out = Vec::new();
+                for item in self.iterate(&subject, *span)? {
+                    let scope = env.child();
+                    self.bind_pattern(pattern, &item, &scope)?;
+                    if let Some(f) = filter {
+                        if !val!(self.eval(f, &scope)).truthy() {
+                            continue;
+                        }
+                    }
+                    out.push(val!(self.eval(value, &scope)));
+                }
+                Ok(Ctl::Val(Value::list(out)))
+            }
+            Expr::MapComp {
+                key,
+                value,
+                pattern,
+                iterable,
+                filter,
+                span,
+            } => {
+                let subject = val!(self.eval(iterable, env));
+                let mut map = std::collections::BTreeMap::new();
+                for item in self.iterate(&subject, *span)? {
+                    let scope = env.child();
+                    self.bind_pattern(pattern, &item, &scope)?;
+                    if let Some(f) = filter {
+                        if !val!(self.eval(f, &scope)).truthy() {
+                            continue;
+                        }
+                    }
+                    // Key before value, ordinary map-key admissibility, and
+                    // ordinary duplicate-key behavior (§25).
+                    let kv = val!(self.eval(key, &scope));
+                    let Some(mk) = MapKey::from_value(&kv) else {
+                        return Err(self.error(
+                            codes::TYPE_MISMATCH,
+                            format!(
+                                "type `{}` cannot be used as a map key; map keys must be `string`, `int`, or `bool`",
+                                kv.type_name()
+                            ),
+                            span_of(key),
+                        ));
+                    };
+                    let vv = val!(self.eval(value, &scope));
+                    map.insert(mk, vv);
+                }
+                Ok(Ctl::Val(Value::Map(Rc::new(RefCell::new(map)))))
+            }
             Expr::Construct(name, args, _ty_args, span) => self.construct(name, args, env, *span),
             Expr::Tuple(items, _) => {
                 let mut out = Vec::with_capacity(items.len());
@@ -2137,6 +2197,7 @@ fn span_of(e: &Expr) -> Span {
         | Expr::If(_, _, _, s)
         | Expr::Match(_, _, s)
         | Expr::Block(_, s) => *s,
+        Expr::ListComp { span, .. } | Expr::MapComp { span, .. } => *span,
     }
 }
 

@@ -309,8 +309,46 @@ pub enum Expr {
     Index(Box<Expr>, Box<Expr>, Span),
     /// `[a, b, c]`.
     List(Vec<Expr>, Span),
+    /// `[value for pattern in iterable]` or
+    /// `[value for pattern in iterable if filter]`.
+    ///
+    /// One generator clause and at most one filter clause (§27). This is an
+    /// explicit node, not source rewriting, so spans, hygiene, and AST-depth
+    /// accounting stay exact.
+    ListComp {
+        /// The element expression, evaluated once per iteration.
+        value: Box<Expr>,
+        /// The iteration pattern, with ordinary `for` semantics.
+        pattern: Pattern,
+        /// The iterable, evaluated exactly once.
+        iterable: Box<Expr>,
+        /// An optional filter, using ordinary truthiness.
+        filter: Option<Box<Expr>>,
+        /// Span.
+        span: Span,
+    },
     /// `{k: v, ...}`.
     Map(Vec<(Expr, Expr)>, Span),
+    /// `{key: value for pattern in iterable}` or
+    /// `{key: value for pattern in iterable if filter}`.
+    ///
+    /// One generator clause and at most one filter clause (§27). The key is
+    /// evaluated before the value; ordinary map-key admissibility and
+    /// duplicate-key behavior apply.
+    MapComp {
+        /// The key expression.
+        key: Box<Expr>,
+        /// The value expression.
+        value: Box<Expr>,
+        /// The iteration pattern.
+        pattern: Pattern,
+        /// The iterable, evaluated exactly once.
+        iterable: Box<Expr>,
+        /// An optional filter.
+        filter: Option<Box<Expr>>,
+        /// Span.
+        span: Span,
+    },
     /// `Variant(args)` or `Struct(field: value)`. Field names optional; the
     /// parser records named arguments as `Arg`. `ty_args` holds explicit
     /// generic type arguments on a parameterised construction

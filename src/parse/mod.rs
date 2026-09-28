@@ -217,6 +217,32 @@ fn check_expr_depth(root: &Expr, start: usize) -> Result<()> {
                     stack.push((i, d));
                 }
             }
+            Expr::ListComp {
+                value,
+                iterable,
+                filter,
+                ..
+            } => {
+                stack.push((value, d));
+                stack.push((iterable, d));
+                if let Some(f) = filter {
+                    stack.push((f, d));
+                }
+            }
+            Expr::MapComp {
+                key,
+                value,
+                iterable,
+                filter,
+                ..
+            } => {
+                stack.push((key, d));
+                stack.push((value, d));
+                stack.push((iterable, d));
+                if let Some(f) = filter {
+                    stack.push((f, d));
+                }
+            }
             Expr::Map(entries, _) => {
                 for (k, v) in entries {
                     stack.push((k, d));
@@ -1782,6 +1808,18 @@ impl Parser {
         r
     }
 
+    /// The optional `if condition` clause of a comprehension. Returns `None`
+    /// when no `if` follows. Exactly one generator and zero or one filter are
+    /// supported (`LANGUAGE_SPEC.md` §24/§25); a second `for` or `if` is left
+    /// for the caller's terminator check to reject.
+    fn comprehension_filter(&mut self) -> Result<Option<Expr>> {
+        if self.eat(&Tok::If) {
+            Ok(Some(self.expr()?))
+        } else {
+            Ok(None)
+        }
+    }
+
     fn pattern_inner(&mut self) -> Result<Pattern> {
         let span = self.span();
         match self.at().clone() {
@@ -2279,24 +2317,48 @@ impl Parser {
             }
             Tok::LBracket => {
                 self.bump();
-                let mut items = Vec::new();
                 self.skip_newlines();
-                if !self.eat(&Tok::RBracket) {
-                    loop {
-                        self.skip_newlines();
-                        items.push(self.expr()?);
-                        self.skip_newlines();
-                        if !self.eat(&Tok::Comma) {
-                            self.expect(&Tok::RBracket)?;
-                            break;
-                        }
-                        self.skip_newlines();
-                        // A trailing comma before `]` is allowed (§4.5).
-                        if matches!(self.at(), Tok::RBracket) {
-                            self.bump();
-                            break;
-                        }
+                if self.eat(&Tok::RBracket) {
+                    return Ok(Expr::List(Vec::new(), span));
+                }
+                self.skip_newlines();
+                let first = self.expr()?;
+                // `[value for pattern in iterable (if filter)?]` — one
+                // generator clause and at most one filter (§24). The clauses
+                // may be split across lines inside the brackets, so a newline
+                // before `for`/`if` is insignificant here. `for` is a statement
+                // keyword and cannot begin an expression, so it is unambiguous.
+                self.skip_newlines();
+                if self.eat(&Tok::For) {
+                    let pattern = self.pattern()?;
+                    self.expect(&Tok::In)?;
+                    let iterable = self.expr()?;
+                    self.skip_newlines();
+                    let filter = self.comprehension_filter()?;
+                    self.skip_newlines();
+                    self.expect(&Tok::RBracket)?;
+                    return Ok(Expr::ListComp {
+                        value: Box::new(first),
+                        pattern,
+                        iterable: Box::new(iterable),
+                        filter: filter.map(Box::new),
+                        span,
+                    });
+                }
+                let mut items = vec![first];
+                loop {
+                    self.skip_newlines();
+                    if !self.eat(&Tok::Comma) {
+                        self.expect(&Tok::RBracket)?;
+                        break;
                     }
+                    self.skip_newlines();
+                    // A trailing comma before `]` is allowed (§4.5).
+                    if matches!(self.at(), Tok::RBracket) {
+                        self.bump();
+                        break;
+                    }
+                    items.push(self.expr()?);
                 }
                 Expr::List(items, span)
             }
@@ -2318,7 +2380,28 @@ impl Parser {
                     while !self.eat(&Tok::RBrace) {
                         let k = self.expr()?;
                         self.expect(&Tok::Colon)?;
+                        self.skip_newlines();
                         let v = self.expr()?;
+                        // `{key: value for pattern in iterable (if filter)?}`
+                        // — one generator clause and at most one filter (§25).
+                        self.skip_newlines();
+                        if entries.is_empty() && self.eat(&Tok::For) {
+                            let pattern = self.pattern()?;
+                            self.expect(&Tok::In)?;
+                            let iterable = self.expr()?;
+                            self.skip_newlines();
+                            let filter = self.comprehension_filter()?;
+                            self.skip_newlines();
+                            self.expect(&Tok::RBrace)?;
+                            return Ok(Expr::MapComp {
+                                key: Box::new(k),
+                                value: Box::new(v),
+                                pattern,
+                                iterable: Box::new(iterable),
+                                filter: filter.map(Box::new),
+                                span,
+                            });
+                        }
                         entries.push((k, v));
                         self.skip_newlines();
                         if !self.eat(&Tok::Comma) {
@@ -2998,5 +3081,6 @@ fn span_of(e: &Expr) -> Span {
         | Expr::If(_, _, _, s)
         | Expr::Match(_, _, s)
         | Expr::Block(_, s) => *s,
+        Expr::ListComp { span, .. } | Expr::MapComp { span, .. } => *span,
     }
 }

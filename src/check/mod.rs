@@ -2587,6 +2587,13 @@ impl Checker {
                 Ty::Unknown
             }
             Expr::Range(_, _, _) => Ty::Named("range".to_string()),
+            // A comprehension's value expression is typically `Unknown` (its
+            // pattern bindings have no static type), so inference is
+            // conservative and honest: `[Unknown]` and `{Unknown: Unknown}`.
+            Expr::ListComp { value, .. } => Ty::List(Box::new(self.infer(value))),
+            Expr::MapComp { key, value, .. } => {
+                Ty::Map(Box::new(self.infer(key)), Box::new(self.infer(value)))
+            }
             Expr::Index(base, _, _) => {
                 // The result of a *successful* indexing expression. A missing
                 // map key is the runtime error E2003 (not a `none` value), and
@@ -4801,6 +4808,66 @@ impl Checker {
                 }
             }
             Expr::Block(body, _) => self.block(body)?,
+            Expr::ListComp {
+                value,
+                pattern,
+                iterable,
+                filter,
+                span,
+            } => {
+                self.expr(iterable)?;
+                if matches!(self.infer(iterable), Ty::Int | Ty::Float | Ty::Bool) {
+                    return Err(Diag::new(
+                        codes::NOT_ITERABLE,
+                        format!("`{}` is not iterable", self.infer(iterable).name()),
+                        *span,
+                    ));
+                }
+                self.check_pattern(pattern)?;
+                self.push();
+                for b in pattern.bindings() {
+                    self.declare(&b, false, Span::default())?;
+                }
+                if let Some(f) = filter {
+                    self.expr(f)?;
+                }
+                self.expr(value)?;
+                self.pop();
+            }
+            Expr::MapComp {
+                key,
+                value,
+                pattern,
+                iterable,
+                filter,
+                span,
+            } => {
+                self.expr(iterable)?;
+                if matches!(self.infer(iterable), Ty::Int | Ty::Float | Ty::Bool) {
+                    return Err(Diag::new(
+                        codes::NOT_ITERABLE,
+                        format!("`{}` is not iterable", self.infer(iterable).name()),
+                        *span,
+                    ));
+                }
+                self.check_pattern(pattern)?;
+                self.push();
+                for b in pattern.bindings() {
+                    self.declare(&b, false, Span::default())?;
+                }
+                if let Some(f) = filter {
+                    self.expr(f)?;
+                }
+                self.expr(key)?;
+                self.expr(value)?;
+                // The generated key must be map-key-capable, exactly as an
+                // ordinary map-literal key (§25). The runtime enforces this too.
+                let kt = self.infer(key);
+                if !kt.is_key_capable() {
+                    return Err(kt.key_type_error(*span));
+                }
+                self.pop();
+            }
         }
         Ok(())
     }

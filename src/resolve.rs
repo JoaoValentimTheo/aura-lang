@@ -1447,6 +1447,65 @@ impl Resolver {
                     .collect::<Result<Vec<_>>>()?;
                 Expr::Match(Box::new(value), arms, *span)
             }
+            Expr::ListComp {
+                value,
+                pattern,
+                iterable,
+                filter,
+                span,
+            } => {
+                // The iterable is outside the pattern's scope; the value and
+                // filter see the pattern bindings (§24).
+                let iterable = self.rewrite_expr(iterable, locals, prefix)?;
+                let pattern = self.rewrite_pattern(pattern, prefix)?;
+                let mut inner = locals.clone();
+                inner.push();
+                for b in pattern.bindings() {
+                    inner.declare(&b);
+                }
+                let value = self.rewrite_expr(value, &mut inner, prefix)?;
+                let filter = match filter {
+                    Some(f) => Some(Box::new(self.rewrite_expr(f, &mut inner, prefix)?)),
+                    None => None,
+                };
+                Expr::ListComp {
+                    value: Box::new(value),
+                    pattern,
+                    iterable: Box::new(iterable),
+                    filter,
+                    span: *span,
+                }
+            }
+            Expr::MapComp {
+                key,
+                value,
+                pattern,
+                iterable,
+                filter,
+                span,
+            } => {
+                let iterable = self.rewrite_expr(iterable, locals, prefix)?;
+                let pattern = self.rewrite_pattern(pattern, prefix)?;
+                let mut inner = locals.clone();
+                inner.push();
+                for b in pattern.bindings() {
+                    inner.declare(&b);
+                }
+                let key = self.rewrite_expr(key, &mut inner, prefix)?;
+                let value = self.rewrite_expr(value, &mut inner, prefix)?;
+                let filter = match filter {
+                    Some(f) => Some(Box::new(self.rewrite_expr(f, &mut inner, prefix)?)),
+                    None => None,
+                };
+                Expr::MapComp {
+                    key: Box::new(key),
+                    value: Box::new(value),
+                    pattern,
+                    iterable: Box::new(iterable),
+                    filter,
+                    span: *span,
+                }
+            }
             Expr::Block(body, span) => {
                 let mut b = body.clone();
                 self.rewrite_block(&mut b, locals, prefix)?;

@@ -630,6 +630,30 @@ const cases = [
     'map annotation checks every entry',
     'fn main() { let m: {int: string} = {1: "a", true: "b"} }',
   ],
+  [
+    'list comprehension',
+    'fn main() {\n let xs = [1, 2, 3, 4]\n print([x * 2 for x in xs])\n print([x for x in xs if x > 2])\n}',
+  ],
+  [
+    'map comprehension',
+    'fn main() {\n print({x: x * x for x in range(1, 4)})\n let m = {1: 10, 2: 20}\n print({k: v * 2 for [k, v] in m.items()})\n}',
+  ],
+  [
+    'comprehension scope and errors',
+    'fn main() { let ys = [x for x in [1, 2]]\n print(ys)\n print(x) }',
+  ],
+  [
+    'map items',
+    'fn main() { let m: {int: string} = {2: "b", 1: "a"}\n print(m.items())\n for [k, v] in m.items() { print(k)\n print(v) } }',
+  ],
+  [
+    'list inference union',
+    'fn main() { print([1, "x"]) }',
+  ],
+  [
+    'list annotated mismatch',
+    'fn main() { let xs: [int] = [1, "x"] }',
+  ],
 ];
 
 const options = { args: ["alpha", "beta"], stdin: "line one\nline two\n" };
