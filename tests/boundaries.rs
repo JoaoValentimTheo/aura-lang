@@ -414,3 +414,29 @@ fn unary_and_grouping_budgets_compose() {
     let huge = format!("fn main() {{ print({}1) }}", "-".repeat(30_000));
     assert_eq!(run(&huge), Err(codes::NESTING));
 }
+
+/// Nested in-source `module` blocks recurse through the parser's `item()`, so
+/// the descent must consume the host-safety backstop exactly like nested types
+/// and expressions. Before `CONF-RESOURCE-2` ~20,000 nested modules aborted
+/// the process with a native stack overflow and no diagnostic; now they report
+/// the stable `E1015` (`LANGUAGE_SPEC.md` §31.2, §31.5).
+#[test]
+fn nested_modules_are_bounded_not_a_stack_overflow() {
+    // A moderately nested module is accepted and resolves.
+    let nested = format!(
+        "{}pub fn f() -> int {{ return 1 }}{}",
+        "module A { ".repeat(50),
+        "}".repeat(50)
+    );
+    assert!(run(&nested).is_ok(), "50 nested modules must be accepted");
+    // A deeply nested module chain is the stable nesting diagnostic.
+    let over = format!("{}{}", "module A { ".repeat(20_000), "}".repeat(20_000));
+    assert_eq!(run(&over), Err(codes::NESTING));
+    // A flat set of many sibling modules is accepted (no depth).
+    let mut flat = String::new();
+    for i in 0..2000 {
+        use std::fmt::Write as _;
+        let _ = write!(flat, "module m{i} {{ pub fn f() -> int {{ return {i} }} }}");
+    }
+    assert!(run(&format!("{flat}\nfn main() {{ print(m1999::f()) }}")).is_ok());
+}

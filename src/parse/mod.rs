@@ -497,6 +497,18 @@ impl Parser {
     /// A module is a real visibility boundary; its items are private unless
     /// marked `pub`. Modules nest.
     fn module_item(&mut self, public: bool) -> Result<Item> {
+        // Nested modules recurse through `item()`, so — like a nested type or
+        // expression — the descent must consume the parser's host-safety
+        // backstop. Without it a deeply nested module aborted the process with
+        // a native stack overflow instead of the stable `E1015`
+        // (`LANGUAGE_SPEC.md` §31.2, §31.5).
+        self.enter()?;
+        let r = self.module_item_inner(public);
+        self.leave();
+        r
+    }
+
+    fn module_item_inner(&mut self, public: bool) -> Result<Item> {
         let span = self.span();
         self.bump();
         let name = self.ident("module name")?;
