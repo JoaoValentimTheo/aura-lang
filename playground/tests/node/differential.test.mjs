@@ -575,6 +575,53 @@ const cases = [
     'generic enum',
     'enum Opt<T> { Some(T), Nothing }\nfn unwrap<T>(o: Opt<T>) -> T { return match o { Some(v) -> v\n Nothing -> none } }\nfn main() { print(unwrap(Some(3))) }',
   ],
+  // Generic map keys ({K: V}): both substrates share the same value model, so
+  // construction, indexing, mutation, equality, rendering, rejection, and the
+  // JSON distinction must agree exactly.
+  [
+    'map int keys',
+    'fn main() {\n let m: {int: string} = {1: "one", 2: "two"}\n print(m)\n print(m[2])\n print(m.keys())\n}',
+  ],
+  [
+    'map bool keys',
+    'fn main() {\n let m: {bool: int} = {true: 1, false: 0}\n print(m)\n print(m[false])\n}',
+  ],
+  [
+    'map string keys unchanged',
+    'fn main() { let m: {string: int} = {"a": 1, "b": 2}\n print(m)\n print(m["a"]) }',
+  ],
+  [
+    'map union keys',
+    'type Key = string | int\nfn main() {\n let m: {Key: bool} = {"a": true, 1: false}\n print(m)\n print(m[1])\n}',
+  ],
+  [
+    'generic map alias',
+    'type Map<K, V> = {K: V}\nfn main() {\n let values: Map<int, float> = {1: 1.2, 2: 3.3}\n print(values[2])\n}',
+  ],
+  [
+    'generic map function',
+    'fn get<K, V>(m: {K: V}, k: K) -> V { return m[k] }\nfn main() { print(get({1: "x", 2: "y"}, 2)) }',
+  ],
+  [
+    'map mutation',
+    'fn main() {\n let mut m: {int: string} = {:}\n m[1] = "one"\n m[1] = "ONE"\n print(m)\n print(m.remove(1))\n print(m)\n}',
+  ],
+  [
+    'map equality and rendering',
+    'fn main() {\n print({1: "a", 2: "b"} == {2: "b", 1: "a"})\n print({1: {2: 3}})\n print({2: "b", 1: "a"})\n}',
+  ],
+  [
+    'map bad key category',
+    'fn main() { let m: {float: int} = {1.0: 1} }',
+  ],
+  [
+    'map bad index key',
+    'fn main() { let m: {int: string} = {1: "one"}\n print(m["1"]) }',
+  ],
+  [
+    'json rejects non-string keys',
+    'fn main() { print(json_encode({1: "x"})) }',
+  ],
 ];
 
 const options = { args: ["alpha", "beta"], stdin: "line one\nline two\n" };
