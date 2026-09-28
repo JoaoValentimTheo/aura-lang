@@ -25,8 +25,7 @@ fn main() {
         Some(path) => std::fs::read(&path).expect("read options"),
         None => Vec::new(),
     };
-    let source = String::from_utf8_lossy(&source);
-    let (json, _status, _version) = aura_playground_runtime::execute(&source, &options);
+    let (json, _status, _version) = aura_playground_runtime::execute_bytes(&source, &options);
     println!("{json}");
     let _ = std::io::stdin().read(&mut [0u8; 0]);
 }

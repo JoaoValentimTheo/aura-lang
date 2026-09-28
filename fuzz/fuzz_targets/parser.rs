@@ -13,6 +13,7 @@
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
+    let _ = aura::lex::decode_source(data);
     let src = String::from_utf8_lossy(data);
     let _ = aura::parse::parse(&src);
 });

@@ -51,20 +51,25 @@ fn main() -> ExitCode {
 
 fn read_source(path: Option<&str>) -> Result<(String, String), ExitCode> {
     let path = path.unwrap_or("-");
-    if path == "-" {
-        let mut buf = String::new();
-        std::io::stdin()
-            .read_to_string(&mut buf)
-            .map_err(|_| ExitCode::FAILURE)?;
-        Ok((buf, "<stdin>".to_string()))
+    let file = if path == "-" { "<stdin>" } else { path };
+    let bytes = if path == "-" {
+        let mut buf = Vec::new();
+        std::io::stdin().read_to_end(&mut buf).map(|_| buf)
     } else {
-        std::fs::read_to_string(path)
-            .map(|s| (s, path.to_string()))
-            .map_err(|e| {
-                eprintln!("aura: cannot read {path}: {e}");
-                ExitCode::FAILURE
-            })
+        std::fs::read(path)
     }
+    .map_err(|e| {
+        eprintln!("aura: cannot read {file}: {e}");
+        ExitCode::FAILURE
+    })?;
+    let source = aura::lex::decode_source(&bytes).map_err(|d| {
+        eprintln!(
+            "{}",
+            render_with_source(file, &String::from_utf8_lossy(&bytes), &d)
+        );
+        ExitCode::FAILURE
+    })?;
+    Ok((source.to_string(), file.to_string()))
 }
 
 fn cmd_run(args: &[String]) -> ExitCode {

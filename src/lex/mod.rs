@@ -12,6 +12,21 @@ pub const KEYWORDS: &[&str] = &[
     "finally", "throw", "pub", "true", "false", "none",
 ];
 
+/// Decode source bytes without replacing invalid sequences. Hosts call this
+/// before lexing; the string-based lexer cannot receive malformed UTF-8.
+pub fn decode_source(bytes: &[u8]) -> Result<&str> {
+    std::str::from_utf8(bytes).map_err(|e| {
+        Diag::new(
+            codes::INVALID_CHAR,
+            "source is not valid UTF-8",
+            Span::new(
+                e.valid_up_to(),
+                e.valid_up_to() + e.error_len().unwrap_or(bytes.len() - e.valid_up_to()),
+            ),
+        )
+    })
+}
+
 /// Tokenize `src` into a stream ending in `Eof`.
 pub fn lex(src: &str) -> Result<Vec<Token>> {
     Lexer {
@@ -61,10 +76,9 @@ impl Lexer<'_> {
     fn run(mut self) -> Result<Vec<Token>> {
         let mut out = Vec::new();
         loop {
+            self.skip_trivia()?;
             let start = self.pos;
-            let Some(tok) = self.next_token()? else {
-                continue;
-            };
+            let tok = self.next_token()?;
             let is_eof = tok == Tok::Eof;
             out.push(Token {
                 tok,
@@ -80,8 +94,8 @@ impl Lexer<'_> {
         c.is_ascii_alphabetic() || c == b'_'
     }
 
-    fn next_token(&mut self) -> Result<Option<Tok>> {
-        // skip spaces, comments, and collect newline significance
+    fn skip_trivia(&mut self) -> Result<()> {
+        // LF remains a token; trivia is excluded from token spans.
         loop {
             match self.peek() {
                 Some(b' ') | Some(b'\t') | Some(b'\r') => self.pos += 1,
@@ -96,27 +110,31 @@ impl Lexer<'_> {
                 Some(b'<') if self.starts_multiline_comment() => {
                     self.multiline_comment()?;
                 }
-                Some(b'\n') => {
-                    self.pos += 1;
-                    return Ok(Some(Tok::Newline));
-                }
                 _ => break,
             }
         }
+        Ok(())
+    }
+
+    fn next_token(&mut self) -> Result<Tok> {
         let c = match self.peek() {
-            None => return Ok(Some(Tok::Eof)),
+            None => return Ok(Tok::Eof),
+            Some(b'\n') => {
+                self.pos += 1;
+                return Ok(Tok::Newline);
+            }
             Some(c) => c,
         };
         if Self::at_ident_start(c) {
-            return Ok(Some(self.ident()?));
+            return self.ident();
         }
         if c.is_ascii_digit() {
-            return self.number().map(Some);
+            return self.number();
         }
         if c == b'"' || c == b'\'' {
-            return self.string().map(Some);
+            return self.string();
         }
-        self.punct().map(Some)
+        self.punct()
     }
 
     /// Whether the bytes at the cursor begin a multiline comment (`<!--`).
@@ -124,7 +142,7 @@ impl Lexer<'_> {
         self.bytes[self.pos..].starts_with(b"<!--")
     }
 
-    /// Consume a `<!-- ... -->` comment, including both delimiters.
+    /// Consume a `<!-- ... --!>` comment, including both delimiters.
     ///
     /// A multiline comment is pure whitespace: it produces no token and its
     /// contents (including any newlines) are discarded, so it never acts as a
@@ -161,17 +179,7 @@ impl Lexer<'_> {
             let quote = self.bytes[self.pos];
             let start = self.pos;
             self.pos += 1;
-            let raw = self.raw_string_body(quote);
-            // Mirror the plain-string path: a body that did not end at the
-            // closing quote (EOF or an unescaped newline) is an unterminated
-            // string (`E1004`), not a downstream parse error in `E1006`.
-            if self.bytes.get(self.pos.wrapping_sub(1)) != Some(&quote) {
-                return Err(Diag::new(
-                    codes::UNTERMINATED_STRING,
-                    "unterminated string literal",
-                    self.span(start, self.pos),
-                ));
-            }
+            let raw = self.raw_string_body(quote, start)?;
             return Ok(Tok::FStr(raw));
         }
         while self
@@ -317,43 +325,44 @@ impl Lexer<'_> {
         let quote = self.bytes[self.pos];
         let start = self.pos;
         self.pos += 1;
-        let raw = self.raw_string_body(quote);
-        if self.bytes.get(self.pos.wrapping_sub(1)) != Some(&quote) {
-            return Err(Diag::new(
-                codes::UNTERMINATED_STRING,
-                "unterminated string literal",
-                self.span(start, self.pos),
-            ));
-        }
-        Ok(Tok::Str(unescape(&raw, self.pos)?))
+        let raw = self.raw_string_body(quote, start)?;
+        Ok(Tok::Str(unescape(&raw, self.base + start + 1)?))
     }
 
-    fn raw_string_body(&mut self, quote: u8) -> String {
-        let mut out = String::new();
+    fn raw_string_body(&mut self, quote: u8, start: usize) -> Result<String> {
+        let body_start = self.pos;
         loop {
             match self.peek() {
-                None | Some(b'\n') => break,
+                None | Some(b'\n') => {
+                    return Err(Diag::new(
+                        codes::UNTERMINATED_STRING,
+                        "unterminated string literal",
+                        self.span(start, self.pos),
+                    ));
+                }
                 Some(c) if c == quote => {
+                    let raw = std::str::from_utf8(&self.bytes[body_start..self.pos])
+                        .unwrap_or_default()
+                        .to_string();
                     self.pos += 1;
-                    break;
+                    return Ok(raw);
                 }
                 Some(b'\\') => {
-                    out.push('\\');
                     self.pos += 1;
-                    if let Some(c) = self.peek() {
-                        out.push(c as char);
-                        self.pos += 1;
+                    // Keep raw bytes verbatim, including a complete Unicode
+                    // scalar after a backslash. Only the matching quote is
+                    // escaped for delimiter scanning; unescape validates later.
+                    if self.peek().is_some() {
+                        let rest = std::str::from_utf8(&self.bytes[self.pos..]).unwrap_or_default();
+                        self.pos += rest.chars().next().map_or(0, char::len_utf8);
                     }
                 }
                 Some(_) => {
-                    let rest = std::str::from_utf8(&self.bytes[self.pos..]).unwrap_or("");
-                    let ch = rest.chars().next().unwrap_or('\u{fffd}');
-                    out.push(ch);
-                    self.pos += ch.len_utf8();
+                    let rest = std::str::from_utf8(&self.bytes[self.pos..]).unwrap_or_default();
+                    self.pos += rest.chars().next().map_or(0, char::len_utf8);
                 }
             }
         }
-        out
     }
 
     fn punct(&mut self) -> Result<Tok> {
@@ -516,19 +525,19 @@ impl Lexer<'_> {
     }
 }
 
-fn unescape(raw: &str, pos: usize) -> Result<String> {
+fn unescape(raw: &str, base: usize) -> Result<String> {
     let mut out = String::with_capacity(raw.len());
-    let mut chars = raw.chars();
-    while let Some(c) = chars.next() {
+    let mut chars = raw.char_indices();
+    while let Some((offset, c)) = chars.next() {
         if c != '\\' {
             out.push(c);
             continue;
         }
-        let Some(e) = chars.next() else {
+        let Some((_, e)) = chars.next() else {
             return Err(Diag::new(
                 codes::UNTERMINATED_STRING,
                 "string ends with a lone backslash",
-                Span::new(pos.saturating_sub(1), pos),
+                Span::new(base + offset, base + raw.len()),
             ));
         };
         let decoded = match e {
@@ -545,7 +554,7 @@ fn unescape(raw: &str, pos: usize) -> Result<String> {
                 return Err(Diag::new(
                     codes::INVALID_ESCAPE,
                     format!("unknown escape sequence `\\{other}`"),
-                    Span::new(pos, pos + 1),
+                    Span::new(base + offset, base + offset + 1 + other.len_utf8()),
                 ));
             }
         };

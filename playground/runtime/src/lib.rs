@@ -214,6 +214,19 @@ fn diagnostic_result(d: &Diag, source: &str, stdout: &str) -> (String, u32) {
     }
 }
 
+/// Decode the byte-oriented host input strictly before executing source text.
+/// Shared by the WASM ABI and native differential harness.
+#[must_use]
+pub fn execute_bytes(source: &[u8], options_raw: &[u8]) -> (String, u32, &'static str) {
+    match aura::lex::decode_source(source) {
+        Ok(source) => execute(source, options_raw),
+        Err(d) => {
+            let (json, code) = diagnostic_result(&d, &String::from_utf8_lossy(source), "");
+            (json, code, aura::LANGUAGE_VERSION)
+        }
+    }
+}
+
 /// Execute `source` against a fresh [`BrowserHost`], returning the JSON result
 /// document, the status code, and the module's intrinsic language version.
 ///
@@ -483,15 +496,12 @@ fn push_word(dest: &LazyLock<Mutex<Vec<u8>>>, word: u32, nbytes: u32) {
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn aura_run() -> u32 {
-    let source = PENDING_SOURCE
-        .lock()
-        .map(|s| String::from_utf8_lossy(&s).into_owned())
-        .unwrap_or_default();
+    let source = PENDING_SOURCE.lock().map(|s| s.clone()).unwrap_or_default();
     let options = PENDING_OPTIONS
         .lock()
         .map(|s| s.clone())
         .unwrap_or_default();
-    let (json, status, _version) = execute(&source, &options);
+    let (json, status, _version) = execute_bytes(&source, &options);
     set_result(json);
     status
 }
