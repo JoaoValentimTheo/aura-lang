@@ -1,0 +1,30 @@
+# Generic maps: `{K: V}` where `K` is a key-capable scalar.
+#
+# A map key must have deterministic, stable identity compatible with Aura
+# equality, so `string`, `int`, and `bool` are key-capable while `float` and
+# every container/struct/enum/function type are not.
+
+type Map<K, V> = {K: V}
+
+fn get<V>(m: {int: V}, k: int) -> V {
+    return m[k]
+}
+
+fn main() {
+    # A concrete integer-keyed map, rendered in ascending key order.
+    let mut scores: Map<int, float> = {2: 8.75, 1: 9.5}
+    print(scores)
+    print(scores[1])
+
+    # Integer keys are distinct from their string spellings.
+    let labels: {string | int: string} = {"fr": "Paris", 1: "one"}
+    print(labels)
+    print(get({9: "nine"}, 9))
+
+    # Mutation obeys the same key and value contract as construction.
+    scores[3] = 7.0
+    print(scores.keys())
+    print(scores.has(3))
+    print(scores.remove(3))
+    print(scores)
+}

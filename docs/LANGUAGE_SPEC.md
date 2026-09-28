@@ -64,15 +64,16 @@ The language model:
   enforced where the checker can prove a mismatch (§6).
 * **Primitive types.** `int` (64-bit signed), `float` (IEEE-754 binary64),
   `bool`, `string` (UTF-8, indexed by Unicode scalar value), and `none`.
-* **Compound values.** Lists, maps (string-keyed), struct instances, enum
-  variants, first-class functions, and ranges.
+* **Compound values.** Lists, maps (keyed by a key-capable scalar), struct
+  instances, enum variants, first-class functions, and ranges.
 * **Functions and closures.** Functions are first-class values. Lambdas close
   over their defining environment.
 * **Control flow.** `if`/`else`, `match`, `while`, `loop`, `for`,
   `break`/`continue`, `return`, `throw`, and `try`/`catch`/`finally`.
 * **Structural declarations.** `struct` and `enum` declare nominal types;
   `type` declares a transparent alias.
-* **Collections.** `[T]` lists and `{string: V}` maps.
+* **Collections.** `[T]` lists and `{K: V}` maps, where `K` is a key-capable
+  scalar type (`string`, `int`, or `bool`) or a union of such types.
 * **REPL.** An interactive session with persistence across submissions.
 * **CLI.** `aura run`, `aura check`, `aura eval`, `aura repl`, `aura version`.
 * **Host boundary.** An optional Python bridge (`py_eval`, `py_import`,
@@ -840,7 +841,7 @@ REPL persistence. No previously valid program changes meaning.
 | boolean | `true`/`false` | `bool` |
 | absence | `none` | `none` |
 | list | ordered, mutable, reference | `list` |
-| map | string-keyed, ordered by key, mutable, reference | `map` |
+| map | keyed by a key-capable scalar, ordered by key, mutable, reference | `map` |
 | struct instance | named fields in declaration order, reference | `struct` |
 | enum variant | tag + positional payload, reference | `enum` |
 | function | closure or native | `fn` |
@@ -853,14 +854,31 @@ REPL persistence. No previously valid program changes meaning.
 **Normative rule.** The checker's type domain is:
 
 ```
-int, float, bool, string, [T], {string: V}, Named(name), Enum(name),
-Union(T1 | T2 | ...), Unknown
+int, float, bool, string, [T], {K: V}, Named(name), Enum(name),
+Union(T1 | T2 | ...), Param(name), App(name, ...), Unknown
 ```
 
-**Normative rule.** `[T]` is a list type, `{string: V}` a map type with a
-string key, `Named(n)` a user struct or alias-resolved type, `Enum(n)` an enum
-type, `Union(...)` a union of two or more distinct member types, and
-`Unknown` the "not determined" type.
+**Normative rule.** `[T]` is a list type; `{K: V}` a map type with key type
+`K` and value type `V`; `Named(n)` a user struct or alias-resolved type;
+`Enum(n)` an enum type; `Union(...)` a union of two or more distinct member
+types; and `Unknown` the "not determined" type.
+
+**Normative rule (map keys).** `K` MUST be a **key-capable** type. A type is
+key-capable when it is `string`, `int`, or `bool`, or a union every member of
+which is key-capable. `float` is not key-capable: `NaN` is unordered,
+`0.0 == -0.0` holds while their bit patterns differ, and numeric equality
+relates `1` and `1.0` across types, so no float key could satisfy the
+requirement that equal keys are the same key. `none`, lists, maps, structs,
+enums, ranges, and functions are not key-capable: they have no total, stable
+structural order, they may be mutable, and they may be cyclic. A map
+annotation with a non-key-capable key is rejected (`E3001`).
+
+**Normative rule (generic keys).** A generic parameter used as a map key is
+admissible in the declaration and must resolve to a key-capable type when the
+generic is instantiated. `type Map<K, V> = {K: V}` is well-formed; `Map<int,
+float>` is accepted; `Map<[int], int>` and `Map<float, int>` are rejected
+(`E3001`) at the instantiation. `Unknown` is permissive: a key the checker
+cannot type imposes no constraint (§2.3).
 
 **Normative rule.** A union type never contains `Unknown` as a member: because
 `none` has no static type, any union containing `none` (or an unresolved name
@@ -868,9 +886,6 @@ that resolves to `Unknown`, such as `none`) collapses to `Unknown` at
 construction. Thus `T | none` and `int | float | none` are both `Unknown` to
 the checker, which is the historical, permissive behavior of `T | none`
 generalized. The members of a stored `Union` are always concrete.
-
-**Normative rule.** A `map` annotation with a non-`string` key is rejected
-(`E3001`); maps are string-keyed in this version.
 
 **Normative rule.** There is no static `none` type; `none` infers `Unknown`.
 
@@ -888,7 +903,7 @@ Two unions that differ only in member order or duplicates are the *same* type.
 |---|---|---|---|---|---|---|---|---|---|---|
 | Equality | numeric | numeric | value | value | structural | structural | nominal + structural | tag + payload | identity | start/end |
 | Ordering | yes | yes (NaN unordered) | yes | yes | no | no | no | no | no | no |
-| Indexing | no | no | no | `[i]` by character | `[i]` | `[k]` (string) | `["k"]` / `.k` | no | no | no |
+| Indexing | no | no | no | `[i]` by character | `[i]` | `[k]` (key-capable) | `["k"]` / `.k` | no | no | no |
 | Iterable | no | no | no | yes (characters) | yes (elements) | yes (keys) | no | no | no | yes (ints) |
 | Callable | no | no | no | no | no | no | no | no | yes | no |
 | Mutable | value | value | value | value | **shared** | **shared** | **shared fields** | value | value | value |
@@ -1170,7 +1185,7 @@ corresponding binary operator, and writes the result. `%=` and `^=` use `%`
 
 * a list at an integer index;
 * a string at an integer index, yielding the character (Unicode scalar);
-* a map at a string key;
+* a map at a key of its key type (a key-capable scalar);
 * a struct at a string field name.
 
 Negative indices count from the end. An out-of-range index is `E4019`; a map
@@ -2188,25 +2203,34 @@ semantics and is mutable in place.
 
 ### 20.2 Maps
 
-**Normative rule.** `{k: v, ...}` constructs a map. Keys MUST be `string`;
-a non-string key in a literal is `E3001` at runtime (and in an annotation).
+**Normative rule.** `{k: v, ...}` constructs a map. Each key MUST be
+key-capable: `string`, `int`, or `bool` (§5.2). A non-key-capable key in a
+literal is `E3001`, raised during checking when the key's type is known and at
+runtime otherwise.
 
-* Lookup: `m[k]` (string key) is `E2003` if absent; `m.get(k)` yields `none`
-  if absent.
-* Insertion/update: `m[k] = v` inserts or replaces.
-* Equality: key set and key-wise value equality.
+* Lookup: `m[k]` is `E2003` if absent; `m.get(k)` yields `none` if absent. The
+  index must be compatible with the map's key type, else `E3001`.
+* Insertion/update: `m[k] = v` inserts or replaces, obeying the same key and
+  value contract.
+* Equality: key set and key-wise value equality. Keys of different kinds are
+  never equal (`1 != "1"`).
 * Ordering: not defined.
 * Iteration: `for k in m` yields keys in ascending key order (maps are ordered
-  by key).
-* Display: `{"k": v, ...}` in ascending key order.
+  by key). The total order is `int < bool < string`; a well-typed map has a
+  single key kind, so this order is only observable when the key type could
+  not be proven.
+* Display: `{k: v, ...}` in ascending key order; string keys are quoted, and
+  `int`/`bool` keys are written bare.
 * Removal: `m.remove(k)` yields the removed value or `none`.
 
 ### 20.3 Empty-map literal
 
 **Normative rule.** `{:}` is the empty-map literal and constructs an empty
-string-keyed ordered map. It is the existing map literal syntax with zero
-entries and uses the same map value representation as `{k: v, ...}`; no
-distinct empty-map value exists.
+ordered map. Its key type is not fixed by the literal; it is `Unknown`, which
+is compatible with any key-capable map annotation (including a generic
+parameter). It is the existing map literal syntax with zero entries and uses
+the same map value representation as `{k: v, ...}`; no distinct empty-map value
+exists.
 
 **Normative rule.** `{}` remains an empty *block*, not an empty map; an empty
 block yields `none`. `{:}` and `{}` are distinct constructs.
@@ -2217,10 +2241,11 @@ disambiguation skips newlines, so `{:}`, `{ : }`, and a multi-line `{`, `:`,
 newlines do not change the meaning.
 
 **Normative rule.** The type of `{:}` follows the existing map inference rule:
-it is `{string: Unknown}` (`Ty::Map(Unknown)`), because no value type can be
-inferred from an empty entry list. It acquires no special typing. Under the
-existing `Unknown` boundary it is compatible with any map annotation, so
-`let m: {string: int} = {:}` is accepted.
+it is `{Unknown: Unknown}` (`Ty::Map(Unknown, Unknown)`), because neither a key
+nor a value type can be inferred from an empty entry list. It acquires no
+special typing. Under the existing `Unknown` boundary it is compatible with any
+map annotation, so `let m: {string: int} = {:}` and
+`let m: {int: string} = {:}` are both accepted.
 
 **Normative rule.** `{:}` introduces no new runtime semantics and no new
 error code. It supports the existing map operations (`len`, `get`, `has`,
@@ -2426,11 +2451,15 @@ return types below are the checker's declared returns.
 | Method | Args | Returns |
 |---|---|---|
 | `len` | 0 | `int` |
-| `get` | 1 string | dynamic |
-| `has` | 1 string | `bool` |
-| `keys` | 0 | `[string]` |
-| `values` | 0 | `[T]` |
-| `remove` | 1 string | dynamic |
+| `get` | 1 key | dynamic |
+| `has` | 1 key | `bool` |
+| `keys` | 0 | `[K]` |
+| `values` | 0 | `[V]` |
+| `remove` | 1 key | dynamic |
+
+"key" means a value of the receiver's key type; "`[K]`"/"`[V]`" are the map's
+own key and value types (both `Unknown` when the receiver's type is not
+statically known).
 
 **range**: `len` (0 args) → `int`.
 
@@ -2457,7 +2486,7 @@ argument classes are normative. Return types marked `dynamic` are
 | `min` | 2 | any, any | one of them | unordered ⇒ source order |
 | `max` | 2 | any, any | one of them | unordered ⇒ source order |
 | `push` | 2 | list, any | `none` | mutates the list |
-| `keys` | 1 | map | `[string]` | ascending order |
+| `keys` | 1 | map | `[K]` | ascending order |
 | `values` | 1 | map | `[T]` | ascending key order |
 | `sort` | 1 | list | `[T]` | stable; unordered ⇒ source order |
 | `reverse` | 1 | string/list | same | reversed copy |
@@ -2523,6 +2552,13 @@ returns `[]`. Filesystem access is available in every execution mode.
 * `json_encode(value) -> string`, `json_decode(string) -> value` (feature `json`);
 * `regex_match`, `regex_find`, `regex_find_all`, `regex_replace` (feature `regex`);
 * `time_now`, `time_unix`, `sleep_ms` (feature `time`).
+
+**Normative rule (JSON keys are strings).** A JSON object's keys are strings by
+the JSON standard, so JSON is not Aura's generic-map model. `json_decode`
+always produces a `string`-keyed Aura map. `json_encode` encodes a
+`string`-keyed Aura map as a JSON object unchanged, but a map with any
+non-string key is a deterministic `E3001`: the key is never stringified, which
+would collapse distinct keys such as `1` and `"1"`.
 
 **Normative rule.** A call to a builtin with the wrong argument count or a
 provably wrong argument type is `E3001` before execution, and is also enforced
@@ -3038,9 +3074,10 @@ does not convert; passing one is `E5002`.
 `float` → `float` (including `nan`/`inf`); `str` → `string`; `list` → `list`
 (recursively); `dict` → `map` (recursively) with the restriction below.
 
-**Normative rule.** A Python `dict` key that is not a `str` is `E5002`; keys
-are never stringified. This prevents distinct keys such as `1` and `"1"` from
-colliding.
+**Normative rule.** A Python `dict` key converts when it is `str` (→ `string`),
+`int` (→ `int`, checked after `bool` so `True` does not become `1`), or `bool`
+(→ `bool`). Any other key is `E5002`; keys are never stringified. This keeps
+distinct keys such as `1` and `"1"` distinct, exactly as Aura map keys are.
 
 **Normative rule.** Any other Python object converts to its `repr` string
 (documented as opaque).
@@ -3048,8 +3085,8 @@ colliding.
 ### 32.3 Data integrity
 
 **Normative rule.** The boundary MUST NOT silently lose representable data:
-out-of-range integers are rejected (`E4013`), and non-string dict keys are
-rejected (`E5002`).
+out-of-range integers are rejected (`E4013`), and dict keys that are not
+`string`/`int`/`bool` are rejected (`E5002`).
 
 *Evidence:* `to_value`/`to_py` (`src/bridge/mod.rs`); `tests/python.rs`;
 `tests/regressions.rs::f10_*`.
@@ -3089,7 +3126,9 @@ and are hereby frozen. Future changes require the RFC process.
 14. **Enum tags are globally unique.**
 15. **No-paren member access on a non-struct receiver is a zero-argument
     method call.**
-16. **Maps are string-keyed and ordered by key.**
+16. **Maps are keyed by a key-capable scalar (`string`, `int`, `bool`) and
+    ordered by key.** (Extended from string-only by the approved generic-map
+    feature; see §5.2 and §20.2.)
 17. **Lists, maps, and structs have reference semantics.**
 18. **Named arguments** are supported for directly resolved top-level
     functions only. Positional arguments precede named arguments; a parameter
@@ -3244,8 +3283,10 @@ substituting its arguments into its target.
 ### 36.6 Collections
 
 **Normative rule.** Generics compose with Aura's structural collections. `[T]`
-is a list of `T`; `{string: T}` is a string-keyed map of `T`. There is no
-`List<T>` or `Map<K, V>`.
+is a list of `T`; `{K: V}` is a map of `V` keyed by `K`, where `K` is a
+key-capable type or a generic parameter that becomes key-capable when
+instantiated (§5.2). There is no `List<T>` or `Map<K, V>` built-in spelling;
+`type Map<K, V> = {K: V}` is an ordinary parameterised alias, not new syntax.
 
 ### 36.7 Runtime
 

@@ -36,25 +36,41 @@ Aura's collection types are:
 
 ```aura
 [T]              # list
-{string: T}      # map
+{K: V}           # map
 ```
 
-There is **no** `List<T>` or `Map<K, V>`. Generic programming composes with the
-existing structural collection syntax:
+There is **no** `List<T>` or `Map<K, V>` built-in spelling. Generic programming
+composes with the existing structural collection syntax:
 
 ```aura
 fn first<T>(xs: [T]) -> T {
     return xs[0]
 }
 
-fn get<T>(m: {string: T}, key: string) -> T {
+fn get<K, V>(m: {K: V}, key: K) -> V {
     return m[key]
 }
+
+type Map<K, V> = {K: V}
 ```
 
-The map key stays `string`, exactly as the non-generic model already requires.
-A future `{K: V}` map is a separate language decision and is *not* introduced
-by generics.
+`Map<K, V>` above is an ordinary parameterised alias over the structural
+`{K: V}` type, not new grammar.
+
+**Map keys are constrained, generic or not.** The key position `K` is not
+unrestricted: it must be **key-capable**. A type is key-capable when it is
+`string`, `int`, or `bool`, or a union every member of which is key-capable
+(`LANGUAGE_SPEC.md` §5.2). `float`, `none`, and every container/struct/enum/
+function type are not key-capable. There is no explicit `Hashable`-style bound
+syntax; the constraint is implicit in the map-key position and enforced by the
+checker:
+
+* a declaration may use a parameter as a key (`type Map<K, V> = {K: V}`);
+* the parameter must resolve to a key-capable type at each instantiation
+  (`Map<int, float>` is accepted; `Map<float, int>` and `Map<[int], int>` are
+  `E3001`);
+* `Unknown` is permissive, so an incompletely inferred key imposes no
+  constraint (`LANGUAGE_SPEC.md` §2.3).
 
 ---
 
@@ -92,7 +108,7 @@ type_member     = ... | IDENT [ "<" type { "," type } ">" ] ;
 
 A parameterised type is written `Name<T1, T2>`. In a type position, `<` after a
 capitalized (or `::`-qualified) name is a generic application. `[T]` and
-`{string: T}` take the inner type as before.
+`{K: V}` take their inner types as before.
 
 ### 2.3 Explicit type arguments
 
@@ -157,8 +173,8 @@ Matching is one-way (declared pattern against actual type) and deterministic:
 
 * `T` matches any actual type, binding `σ(T)` to it; a second occurrence must
   bind it to a compatible type or the call is rejected.
-* `[T]` matches `[A]` by matching `T` against `A`; `{string: T}` matches
-  `{string: A}` likewise.
+* `[T]` matches `[A]` by matching `T` against `A`; `{K: V}` matches `{K': V'}`
+  by matching `K` against `K'` and `V` against `V'` likewise.
 * `Name<T>` matches `Name<A>` (same nominal name, same arity) by matching
   element-wise.
 * A concrete declared type matches only a compatible actual type.

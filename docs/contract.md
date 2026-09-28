@@ -45,7 +45,7 @@ The composite types are:
 | Syntax          | Meaning                                  |
 |-----------------|------------------------------------------|
 | `[T]`           | list of `T`                              |
-| `{K: V}`        | map from `K` to `V`                      |
+| `{K: V}`        | map from `K` to `V`; `K` must be key-capable |
 | `Name`          | user type declared with `struct`/`enum`  |
 | `T1 \| T2`      | union; `T \| none` is the common case    |
 
@@ -159,9 +159,14 @@ Precedence, lowest to highest:
   operators `&`, `|`, `~`, `<<`, `>>` operate on `int`; there is no XOR (`^`
   is exponentiation) and no `++`/`--`. `x = x + 1` or `x += 1` is the
   increment spelling.
-* Map literals are string-keyed and ordered by key: `{"a": 1}`. `{:}` is the
-  empty-map literal. `{}` is a **block**, not an empty map, and yields `none`;
-  whitespace and newlines do not change this (`{ : }` is the same as `{:}`).
+* Map literals are keyed by a **key-capable** scalar — `string`, `int`, or
+  `bool`, or a union of these — and ordered by key: `{"a": 1}`, `{1: "a"}`.
+  `float`, `none`, and container/struct/enum/function keys are `E3001`. A
+  generic parameter is a valid key in a declaration and must be key-capable
+  when instantiated: `type Map<K, V> = {K: V}` is well-formed; `Map<float, int>`
+  is rejected. `{:}` is the empty-map literal. `{}` is a **block**, not an
+  empty map, and yields `none`; whitespace and newlines do not change this
+  (`{ : }` is the same as `{:}`).
 * `to_string`, `to_int`, `to_float` are conversions; there is no cast syntax.
 
 ## 5. Statements

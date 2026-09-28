@@ -153,6 +153,9 @@ format_type     = "d" | "b" | "o" | "x" | "X" | "f" | "F" | "e" | "E" | "%" ;
   specification §3.3. Identifiers are case-sensitive and ASCII only. `int`,
   `float`, `bool`, and `string` are identifiers mapped to primitive types in
   type positions and reject type arguments. `none` is a hard keyword.
+  A map type `{K: V}` is syntactically unconstrained in the key position; the
+  semantic requirement that `K` be key-capable (`string`, `int`, `bool`, or a
+  union of these) is enforced by the checker (specification §5.2).
 * `UPPER_NAME` begins with `[A-Z]`; the rest may contain lowercase letters.
   `BIND_NAME` begins with lowercase ASCII or `_`. `UPPER_PATH` / `BIND_PATH`
   are paths classified by their **last** segment. `_` is the wildcard binding.

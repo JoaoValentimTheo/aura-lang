@@ -127,7 +127,7 @@ fn main() {
 ```aura
 int          float        bool         string
 [T]          list of T
-{string: V}  map (keys are strings)
+{K: V}       map (K is string, int, or bool)
 T | none     optional
 ```
 
