@@ -76,11 +76,18 @@ Follow-up 3 / AUDIT-3 remains DECISION-PENDING; no code or doc changes beyond th
 
 ## Runtime artifact
 
-The current development runtime is recorded in `playground/runtimes/`
-and in the final report for the Core-completion program; the manifest
-(`playground/runtimes/manifest.json`) names the current version. The frozen
-public `0.0.2` artifact and historical `dev.*` artifacts are immutable and are
-preserved unchanged.
+The current Core development runtime is `0.0.2-dev.30`:
+
+- path: `playground/runtimes/0.0.2-dev.30/aura_playground_runtime.wasm`
+- bytes: `1,652,786`
+- SHA-256: `f4e887770d94662544fe339e0d340a68ea4d16cc37f05d73fd46b588a7896387`
+- wasm imports: `0`
+- reproducibility: byte-identical across independent clean-target builds
+
+The frozen public `0.0.2` artifact
+(`1,366,621` / `5a4ad3f7e3f786164d65df437d607e7ddd5e25947ea2c8dd9b436a5490b334ed`)
+and the historical `dev.23`–`dev.29` artifacts are immutable and are preserved
+unchanged.
 
 ## Validation categories
 
