@@ -1335,8 +1335,9 @@ relation, negated. It is:
 * `map` compares by key set and key-wise value equality.
 * struct compares by nominal type name, field order, field count, and
   field-wise equality.
-* enum compares by tag, payload length, and payload-wise equality. (Tags are
-  globally unique, so the enum type name need not be compared.)
+* enum compares by tag, payload length, and payload-wise equality. (Variant
+  tags are unique **per module**, and the canonical tag is the module path plus
+  the tag, so the enum type name itself need not be compared.)
 * range compares by `start` and `end`.
 * function compares by **identity**: a closure equals only itself; two native
   functions are equal when they name the same builtin. Distinct functions are
@@ -2703,7 +2704,36 @@ plus the tag (`shapes::Color::Red`) or by the module path plus the tag
 in the current module; `use path as Alias` binds it under `Alias`. An import
 may not silently shadow a name already declared in that module
 (`E2007`); rename it with `as`. `use` of a private item is `E2018`. `use` of a
-module itself is allowed and binds no local name.
+module itself binds a **module alias** in the current module: the alias is
+lexical and resolution-only (not a runtime value), is collision-checked like
+any import, and permits `Alias::item`. There is no separate module-alias
+syntax; `as` is the only spelling (CONF-RESOLVE-9).
+
+**Normative rule (`pub use`, CONF-RESOLVE-8).** `pub use path::Item` (and
+`pub use path::Item as Alias`) makes the imported name an *exported* name of
+the current module, reachable as `current_module::Item`. The import must
+resolve and respect visibility, and a private declaration cannot be published
+through a public re-export (`E2018`) — a `pub use` grants no privilege
+escalation. A re-export chain resolves transitively and terminates
+deterministically; the flat resolved program has no cyclic-import form.
+`use *`, `pub use *`, and import lists (`use {A, B}`) do not exist.
+
+**Normative rule (module visibility, CONF-RESOLVE-7).** Every module is a real
+visibility boundary. A module is private by default. A module declared directly
+in parent `P` is nameable by `P` and by any descendant of `P` (so siblings
+inside `P` may traverse it); a more distant ancestor does not name it without
+`pub`. A descendant module may access an ancestor's private items, but an
+ancestor gains no access to a descendant's private items. There is exactly
+`private` and `pub`; `pub(crate)`, `pub(super)`, and `pub(in ...)` do not
+exist.
+
+**Normative rule (variant scope, CONF-RESOLVE-6).** Variant tags are unique
+**per module**. Two modules may each declare an `Ok`. Within one module,
+conflicting tags remain invalid. The canonical variant identity is the module
+path plus the tag. A type and a variant that would collapse to the same
+canonical name (`module::Name`) cannot both be represented by the flat resolved
+program; whichever spelling reaches it, a construction would build the wrong
+value, so the collision is rejected deterministically (CONF-RESOLVE-10).
 
 **Normative rule (mutation separation).** Visibility never grants mutation
 capability and a mutable binding never bypasses visibility: a `pub` mutating
@@ -3140,10 +3170,14 @@ and are hereby frozen. Future changes require the RFC process.
 10. **Parenthesized comma-lists are lists; there is no tuple type.**
 11. **`{}` is a block, not an empty map; `{:}` is the empty-map literal.**
 12. **Modules are in-source; visibility is real.** `module Name { ... }`
-    declares a boundary; items are private unless `pub`; `use` imports a
-    name; qualified access uses `::` (§27).
+    declares a boundary; items are private unless `pub`; `pub module` exports
+    a nested module across its parent boundary; `use path [as Alias]` imports a
+    name or binds a module alias; `pub use` re-exports; qualified access uses
+    `::` (§27).
 13. **`try` requires `catch`.**
-14. **Enum tags are globally unique.**
+14. **Enum variant tags are unique per module**, not globally. The canonical
+    variant identity is the module path plus the tag, so two modules may each
+    declare an `Ok`.
 15. **No-paren member access on a non-struct receiver is a zero-argument
     method call.**
 16. **Maps are keyed by a key-capable scalar (`string`, `int`, `bool`) and

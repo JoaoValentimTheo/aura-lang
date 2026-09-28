@@ -243,11 +243,7 @@ impl Lexer<'_> {
                 .unwrap_or_default()
                 .to_string();
             // `_` may appear only between two valid digits of this radix.
-            Self::check_underscores(
-                &raw,
-                |c| c.is_digit(radix),
-                self.span(start, self.pos),
-            )?;
+            Self::check_underscores(&raw, |c| c.is_digit(radix), self.span(start, self.pos))?;
             let text: String = raw.replace('_', "");
             self.boundary(start)?;
             let value = i64::from_str_radix(&text, radix).map_err(|_| {

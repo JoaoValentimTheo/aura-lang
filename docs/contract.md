@@ -382,8 +382,18 @@ could not keep Native and WebAssembly semantics identical.
   visibility.
 * Overload visibility is per overload: an inaccessible overload is never a
   candidate. A call whose only matching overload is private is `E2018`.
-* `use` binds a name in the current module and may not silently shadow a local
-  declaration (`E2007`); rename it with `as`.
+* `use path` binds a name in the current module and may not silently shadow a
+  local declaration (`E2007`); rename it with `as`. `use path::to::module as A`
+  binds a lexical **module alias** (resolution-only, collision-checked).
+* `pub use path::Item` re-exports: the current module gains the name as an
+  export. A private declaration cannot be published through a `pub use`
+  (`E2018`); re-export chains resolve transitively.
+* `pub module` exports a nested module across its parent boundary: a module is
+  nameable by its declaring parent and that parent's descendants, but a more
+  distant ancestor needs `pub` (CONF-RESOLVE-7).
+* Enum variant tags are unique **per module**; two modules may each declare an
+  `Ok`. A type and a variant that collapse to one canonical name are rejected
+  (CONF-RESOLVE-6, CONF-RESOLVE-10).
 * Visibility is independent of mutation: `pub` never grants mutable
   capability, and a `mut` binding never bypasses visibility.
 

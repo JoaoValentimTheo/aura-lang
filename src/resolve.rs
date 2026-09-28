@@ -191,6 +191,7 @@ enum Namespace {
     Variant,
 }
 
+#[derive(Clone)]
 struct ItemInfo {
     /// The module path the item was declared in (empty for the root).
     module: Vec<String>,
@@ -218,6 +219,17 @@ struct Resolver {
     enum_variants: HashMap<String, HashSet<String>>,
     /// Module paths that exist, for validation.
     module_paths: HashSet<Vec<String>>,
+    /// Per module path, `use path::to::module as Alias` bindings: alias → the
+    /// aliased module's canonical path (§27). Lets `Alias::item` resolve.
+    module_aliases: HashMap<Vec<String>, HashMap<String, Vec<String>>>,
+    /// Public re-exports (`pub use path::Item`): the re-exporting module's
+    /// canonical name → the real canonical target. Lets another module reach
+    /// the item through the re-exporting module without privilege escalation.
+    reexports: HashMap<String, String>,
+    /// Canonical names of types that have their own value constructor (structs
+    /// and aliases). A variant whose canonical name matches one of these is an
+    /// unrepresentable collision (§39, CONF-RESOLVE-10); an enum's own name is
+    /// not constructible, so `enum E { E }` stays legal.
     /// Every import applied, as `(module, local, canonical)`. The REPL persists
     /// the ones whose module is the root.
     applied_imports: Vec<(Vec<String>, String, String)>,
@@ -238,6 +250,8 @@ impl Resolver {
             variant_scope: HashMap::new(),
             enum_variants: HashMap::new(),
             module_paths: HashSet::new(),
+            module_aliases: HashMap::new(),
+            reexports: HashMap::new(),
             applied_imports: Vec::new(),
             type_param_scope: std::cell::RefCell::new(Vec::new()),
         }
@@ -444,10 +458,22 @@ impl Resolver {
                     name,
                     items: inner,
                     span,
-                    ..
+                    public,
                 } => {
                     let mut child = prefix.to_vec();
                     child.push(name.clone());
+                    // Record the module itself so `pub module` is a real
+                    // visibility boundary (§27, CONF-RESOLVE-7): reaching a
+                    // nested module's items from outside its parent requires
+                    // the crossed module to be `pub`.
+                    self.items
+                        .entry(child.join("::"))
+                        .and_modify(|e| e.public |= *public)
+                        .or_insert(ItemInfo {
+                            module: prefix.to_vec(),
+                            public: *public,
+                            namespace: Namespace::Type,
+                        });
                     if self
                         .modules
                         .entry(prefix.to_vec())
@@ -475,8 +501,11 @@ impl Resolver {
         for item in items {
             match item {
                 Item::Use {
-                    path, alias, span, ..
-                } => self.apply_use(path, alias.as_deref(), prefix, *span)?,
+                    path,
+                    alias,
+                    public,
+                    span,
+                } => self.apply_use(path, alias.as_deref(), *public, prefix, *span)?,
                 Item::Module {
                     items: inner, name, ..
                 } => {
@@ -494,18 +523,35 @@ impl Resolver {
         &mut self,
         path: &[String],
         alias: Option<&str>,
+        public: bool,
         prefix: &[String],
         span: Span,
     ) -> Result<()> {
-        let canonical = self.resolve_use_path(prefix, path, span)?;
-        // `use a::b` may name a module; importing a module is allowed and
-        // makes its items reachable by path, but it binds no root name.
-        if !self.items.contains_key(&canonical) {
-            if self.module_paths.contains(&canonical_path_from(path))
-                || self.module_paths.iter().any(|m| m.join("::") == canonical)
-            {
-                return Ok(());
+        // `use path::to::module` (optionally `as Alias`) binds a module alias
+        // (§27, CONF-RESOLVE-9). The alias is lexical and resolution-only: it
+        // is not a runtime value, and it is collision-checked like any import.
+        let module_target = self.resolve_module_path(prefix, path);
+        if let Some(target) = module_target {
+            let local =
+                alias.map_or_else(|| path.last().cloned().unwrap_or_default(), str::to_string);
+            self.check_module_visible(&target, prefix, span)?;
+            if self.name_visible_locally(prefix, &local) {
+                return Err(Diag::new(
+                    codes::REDECLARED,
+                    format!(
+                        "`{local}` is already declared in this module; rename the import with `as`"
+                    ),
+                    span,
+                ));
             }
+            self.module_aliases
+                .entry(prefix.to_vec())
+                .or_default()
+                .insert(local, target);
+            return Ok(());
+        }
+        let canonical = self.resolve_use_path(prefix, path, span)?;
+        if !self.items.contains_key(&canonical) {
             return Err(Diag::new(
                 codes::UNKNOWN_MODULE,
                 format!(
@@ -551,8 +597,113 @@ impl Resolver {
             scope.insert(local.clone(), canonical.clone());
         }
         self.applied_imports
-            .push((prefix.to_vec(), local, canonical));
+            .push((prefix.to_vec(), local.clone(), canonical.clone()));
+        // `pub use path::Item` re-exports: the re-exporting module gains an
+        // exported name `prefix::local` that denotes `canonical` (§27,
+        // CONF-RESOLVE-8). No privilege escalation: the target must itself be
+        // visible here (checked above), and a private declaration cannot be
+        // published through a public re-export.
+        if public {
+            if !self.is_publicly_visible(&canonical) {
+                return Err(Diag::new(
+                    codes::PRIVATE_ACCESS,
+                    format!(
+                        "`{}` is private where it is declared; a `pub use` cannot re-export it",
+                        path.join("::")
+                    ),
+                    span,
+                ));
+            }
+            self.reexports
+                .insert(join(prefix, &local), canonical.clone());
+            // Mark the re-exported public name as an exported item.
+            if let Some(info) = self.items.get(&canonical).cloned() {
+                self.items.insert(
+                    join(prefix, &local),
+                    ItemInfo {
+                        module: prefix.to_vec(),
+                        public: true,
+                        namespace: info.namespace,
+                    },
+                );
+            }
+        }
         Ok(())
+    }
+
+    /// Whether `canonical` is exported (`pub`) from its own declaring module.
+    fn is_publicly_visible(&self, canonical: &str) -> bool {
+        self.items.get(canonical).is_some_and(|i| i.public)
+    }
+
+    /// Resolve a `use` path that names a *module*, returning its canonical path
+    /// segments. Returns `None` when the path names an item instead.
+    fn resolve_module_path(&self, prefix: &[String], path: &[String]) -> Option<Vec<String>> {
+        let (first, rest) = path.split_first()?;
+        // A module alias in scope may head the path.
+        let mut base = self
+            .lookup_module_alias(prefix, first)
+            .or_else(|| self.lookup_child_module(prefix, first))?;
+        for seg in rest {
+            base = self.modules.get(&base)?.get(seg).cloned()?;
+        }
+        Some(base)
+    }
+
+    /// The child module named `first` visible from `prefix`, from the innermost
+    /// scope outward.
+    fn lookup_child_module(&self, prefix: &[String], first: &str) -> Option<Vec<String>> {
+        for end in (0..=prefix.len()).rev() {
+            if let Some(child) = self
+                .modules
+                .get(&prefix[..end])
+                .and_then(|m| m.get(first))
+                .cloned()
+            {
+                return Some(child);
+            }
+        }
+        None
+    }
+
+    /// The module path an alias in scope denotes, from the innermost scope out.
+    fn lookup_module_alias(&self, prefix: &[String], alias: &str) -> Option<Vec<String>> {
+        for end in (0..=prefix.len()).rev() {
+            if let Some(target) = self
+                .module_aliases
+                .get(&prefix[..end])
+                .and_then(|m| m.get(alias))
+                .cloned()
+            {
+                return Some(target);
+            }
+        }
+        None
+    }
+
+    /// A module is visible from `prefix` when it is a descendant of the
+    /// referring module, when its parent is visible, or when it was explicitly
+    /// reachable. Aura has only `private` and `pub` (§27), so a module reached
+    /// across a boundary must be `pub`.
+    fn check_module_visible(&self, target: &[String], prefix: &[String], span: Span) -> Result<()> {
+        let Some(info) = self.items.get(&target.join("::")) else {
+            // A module with no recorded item: fall back to the item walk.
+            return Ok(());
+        };
+        // The parent that declares the module, and any descendant of that
+        // parent, may name it without `pub`; a more distant ancestor must not,
+        // so `pub module` is meaningful (CONF-RESOLVE-7).
+        if info.public || is_descendant(prefix, &info.module) {
+            return Ok(());
+        }
+        Err(Diag::new(
+            codes::PRIVATE_ACCESS,
+            format!(
+                "module `{}` is private; declare it `pub` to reach it from here",
+                target.join("::")
+            ),
+            span,
+        ))
     }
 
     /// Whether `local` is already declared (or imported) in this module,
@@ -567,6 +718,10 @@ impl Resolver {
         .into_iter()
         .flatten()
         .any(|m| m.contains_key(local))
+            || self
+                .module_aliases
+                .get(&key)
+                .is_some_and(|m| m.contains_key(local))
     }
 
     /// Record a declaration in a module's scope. Duplicate detection is
@@ -621,6 +776,20 @@ impl Resolver {
         Ok(canonical)
     }
 
+    /// Follow a public re-export chain to the real canonical target, with a
+    /// bounded walk so a cycle is a deterministic failure rather than
+    /// unbounded recursion (§27, CONF-RESOLVE-8).
+    fn follow_reexport(&self, canonical: &str) -> String {
+        let mut current = canonical.to_string();
+        for _ in 0..self.reexports.len().saturating_add(1) {
+            match self.reexports.get(&current) {
+                Some(next) if *next != current => current = next.clone(),
+                _ => break,
+            }
+        }
+        current
+    }
+
     /// Whether `canonical` is a declared enum-variant tag.
     fn is_variant(&self, canonical: &str) -> bool {
         self.variant_scope
@@ -665,13 +834,15 @@ impl Resolver {
             }
         }
         // Walk outward from the current module to the root, looking for the
-        // first segment as a child module or a visible item.
-        let mut base: Option<Vec<String>> = None;
+        // first segment as a module alias, a child module, or a visible item.
+        let mut base: Option<Vec<String>> = self.lookup_module_alias(prefix, first);
         for end in (0..=prefix.len()).rev() {
             let scope = prefix[..end].to_vec();
-            if let Some(child) = self.modules.get(&scope).and_then(|m| m.get(first)).cloned() {
-                base = Some(child);
-                break;
+            if base.is_none() {
+                if let Some(child) = self.modules.get(&scope).and_then(|m| m.get(first)).cloned() {
+                    base = Some(child);
+                    break;
+                }
             }
             if rest.is_empty() {
                 for map in [
@@ -683,7 +854,7 @@ impl Resolver {
                 .flatten()
                 {
                     if let Some(c) = map.get(first) {
-                        return Ok(c.clone());
+                        return Ok(self.follow_reexport(c));
                     }
                 }
             }
@@ -1145,22 +1316,21 @@ impl Resolver {
     fn lookup_qualified(&self, name: &str, prefix: &[String]) -> Option<String> {
         let segments: Vec<&str> = name.split("::").collect();
         let (first, rest) = segments.split_first()?;
-        let mut base: Option<Vec<String>> = None;
-        for end in (0..=prefix.len()).rev() {
-            let scope = &prefix[..end];
-            if let Some(child) = self.modules.get(scope).and_then(|m| m.get(*first)).cloned() {
-                base = Some(child);
-                break;
-            }
-        }
-        let mut base = base?;
+        // The first segment may name a module alias in scope (§27), a child
+        // module, or a re-exported type whose own members are then navigated.
+        let mut base = self
+            .lookup_module_alias(prefix, first)
+            .or_else(|| self.lookup_child_module(prefix, first))?;
         for (i, seg) in rest.iter().enumerate() {
             if i == rest.len() - 1 {
                 // Require the item to exist: a path to nothing must fall
                 // through to the checker's `E2003`, never be rewritten to an
-                // unchecked name.
+                // unchecked name. Follow a public re-export to its target.
                 let canonical = join(&base, seg);
-                return self.items.contains_key(&canonical).then_some(canonical);
+                if self.items.contains_key(&canonical) {
+                    return Some(self.follow_reexport(&canonical));
+                }
+                return None;
             }
             base = self.modules.get(&base).and_then(|m| m.get(*seg)).cloned()?;
         }
@@ -1170,6 +1340,41 @@ impl Resolver {
     /// A canonical item is visible from `prefix` when it is exported (`pub`) or
     /// when the referring module is the defining module or a descendant.
     fn check_visible(&self, canonical: &str, prefix: &[String], span: Span) -> Result<()> {
+        // Every module boundary crossed by the path must permit traversal
+        // (§27, CONF-RESOLVE-7). A crossing is allowed when the referring
+        // module is inside the module's declaring scope, or when the module is
+        // `pub`.
+        let segments: Vec<&str> = canonical.split("::").collect();
+        for end in 1..segments.len() {
+            let module = &segments[..end];
+            let module_name = module.join("::");
+            let Some(minfo) = self.items.get(&module_name) else {
+                continue;
+            };
+            // Only module entries carry a nested path; a same-named type has no
+            // children, so skip it (it is not a boundary here).
+            let module_path: Vec<String> = module.iter().map(ToString::to_string).collect();
+            if !self.module_paths.contains(&module_path) {
+                continue;
+            }
+            // A module `M` declared directly in parent `P` is nameable by `P`
+            // and by any descendant of `P` (so siblings inside the same parent
+            // may traverse, exactly as in the existing model), while `M`'s own
+            // items still obey their own `pub` rule. A more distant ancestor
+            // (`P`'s ancestor) gets no such access, so `pub module` is
+            // meaningful and an ancestor gains no access to a descendant's
+            // private items (§27, CONF-RESOLVE-7).
+            if minfo.public || is_descendant(prefix, &minfo.module) {
+                continue;
+            }
+            return Err(Diag::new(
+                codes::PRIVATE_ACCESS,
+                format!(
+                    "module `{module_name}` is private; declare it `pub` to reach it from here"
+                ),
+                span,
+            ));
+        }
         let Some(info) = self.items.get(canonical) else {
             return Ok(());
         };
@@ -1623,10 +1828,6 @@ fn canonical_path(base: &[String], seg: &str) -> Vec<String> {
     let mut v = base.to_vec();
     v.push(seg.to_string());
     v
-}
-
-fn canonical_path_from(path: &[String]) -> Vec<String> {
-    path.to_vec()
 }
 
 /// Whether `prefix` is `module` or a descendant of it.

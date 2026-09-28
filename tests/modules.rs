@@ -38,19 +38,39 @@ fn module_is_a_real_visibility_boundary() {
         ok("module m { fn g() -> int { return 9 }\n pub fn f() -> int { return g() } }\nfn main() { print(m::f()) }"),
         "9\n"
     );
-    // ... and from a descendant module.
+    // ... and from a descendant module. The nested module is `pub` because the
+    // path into it is crossed from outside its parent (CONF-RESOLVE-7).
     assert_eq!(
-        ok("module a { fn hidden() -> int { return 5 }\n module b { pub fn f() -> int { return hidden() } } }\nfn main() { print(a::b::f()) }"),
+        ok("module a { fn hidden() -> int { return 5 }\n pub module b { pub fn f() -> int { return hidden() } } }\nfn main() { print(a::b::f()) }"),
         "5\n"
+    );
+    // A private nested module is not reachable from an ancestor: an ancestor
+    // gains no access to a descendant's private items.
+    assert_eq!(
+        code("module a { module b { pub fn f() -> int { return 5 } } }\nfn main() { print(a::b::f()) }"),
+        codes::PRIVATE_ACCESS
+    );
+    // A descendant may still reach an ancestor's private item without `pub`.
+    assert_eq!(
+        ok("module a { fn hidden() -> int { return 3 }\n pub module b { pub fn f() -> int { return a::hidden() } } }\nfn main() { print(a::b::f()) }"),
+        "3\n"
     );
 }
 
 /// A module may be nested; a path walks the hierarchy.
 #[test]
 fn modules_nest() {
+    // Each crossed module must be `pub` to be reached from outside its parent
+    // (CONF-RESOLVE-7).
     assert_eq!(
-        ok("module a { module b { module c { pub fn f() -> int { return 42 } } } }\nfn main() { print(a::b::c::f()) }"),
+        ok("module a { pub module b { pub module c { pub fn f() -> int { return 42 } } } }\nfn main() { print(a::b::c::f()) }"),
         "42\n"
+    );
+    // From inside `a`, `b` is reachable without being `pub`; from inside `b`,
+    // `c` is reachable without being `pub`.
+    assert_eq!(
+        ok("module a { module b { module c { pub fn f() -> int { return 1 } }\n pub fn g() -> int { return c::f() } }\n pub fn h() -> int { return b::g() } }\nfn main() { print(a::h()) }"),
+        "1\n"
     );
 }
 
@@ -391,5 +411,70 @@ fn use_rejects_type_variant_canonical_collision() {
     assert_eq!(
         ok("module m { pub enum E { A(int) } }\nuse m::E::A\nfn main() { print(A(1)) }"),
         "m::A(1)\n"
+    );
+}
+
+// ------------------------------------------- in-source module completion
+//
+// CONF-RESOLVE-7 (nested visibility), CONF-RESOLVE-8 (`pub use` re-exports),
+// and CONF-RESOLVE-9 (module aliases).
+
+#[test]
+fn pub_module_is_a_real_boundary() {
+    // A nested module is reachable from its parent and the parent's
+    // descendants, but not from a more distant ancestor unless it is `pub`.
+    assert_eq!(
+        ok("module a { pub module b { pub fn f() -> int { return 1 } } }\nfn main() { print(a::b::f()) }"),
+        "1\n"
+    );
+    assert_eq!(
+        code("module a { module b { pub fn f() -> int { return 1 } } }\nfn main() { print(a::b::f()) }"),
+        codes::PRIVATE_ACCESS
+    );
+    // A descendant reaches an ancestor's private item without `pub`.
+    assert_eq!(
+        ok("module a { fn s() -> int { return 2 }\n pub module b { pub fn f() -> int { return a::s() } } }\nfn main() { print(a::b::f()) }"),
+        "2\n"
+    );
+}
+
+#[test]
+fn pub_use_re_exports_an_item() {
+    assert_eq!(
+        ok("module a { pub fn f() -> int { return 3 } }\nmodule b { pub use a::f }\nfn main() { print(b::f()) }"),
+        "3\n"
+    );
+    // A re-export chain terminates and resolves.
+    assert_eq!(
+        ok("module a { pub fn f() -> int { return 4 } }\nmodule b { pub use a::f }\nmodule c { pub use b::f }\nfn main() { print(c::f()) }"),
+        "4\n"
+    );
+    // A public re-export cannot publish a private declaration.
+    assert_eq!(
+        code("module a { fn g() -> int { return 5 } }\nmodule b { pub use a::g }\nfn main() { }"),
+        codes::PRIVATE_ACCESS
+    );
+    // A re-exported name collision is rejected.
+    assert_eq!(
+        code("module a { pub fn f() -> int { return 1 } }\nmodule b { pub fn f() -> int { return 2 }\n pub use a::f }\nfn main() { }"),
+        codes::REDECLARED
+    );
+}
+
+#[test]
+fn module_alias_binds_a_lexical_path() {
+    assert_eq!(
+        ok("module a { pub fn f() -> int { return 6 } }\nuse a as m\nfn main() { print(m::f()) }"),
+        "6\n"
+    );
+    // An alias to a nested module, then a member.
+    assert_eq!(
+        ok("module very { pub module long { pub fn f() -> int { return 7 } } }\nuse very::long as v\nfn main() { print(v::f()) }"),
+        "7\n"
+    );
+    // A duplicate alias is a collision.
+    assert_eq!(
+        code("module a { pub fn f() { } }\nmodule b { pub fn f() { } }\nuse a as x\nuse b as x\nfn main() { }"),
+        codes::REDECLARED
     );
 }
