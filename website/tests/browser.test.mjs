@@ -658,7 +658,8 @@ function check(name, cond, detail) {
     );
   }
 
-  const longStdout = "fn main() {\n let mut i = 0\n while i < 600 { print(i) i = i + 1 }\n}";
+  const longStdout =
+    "fn main() {\n let mut i = 0\n while i < 600 {\n  print(i)\n  i = i + 1\n }\n}";
   await longRun(longStdout);
   let metrics = await page.evaluate(() => {
     const o = document.getElementById("stdout");
@@ -721,7 +722,10 @@ function check(name, cond, detail) {
   await page.waitForFunction(() => document.querySelectorAll("#version option").length > 0, {
     timeout: 15000,
   });
-  await page.fill("#source", "fn main() {\n let mut i = 0\n while i < 400 { print(i) i = i + 1 }\n}");
+  await page.fill(
+    "#source",
+    "fn main() {\n let mut i = 0\n while i < 400 {\n  print(i)\n  i = i + 1\n }\n}",
+  );
   await page.click("#run");
   await page.waitForFunction(
     () => {

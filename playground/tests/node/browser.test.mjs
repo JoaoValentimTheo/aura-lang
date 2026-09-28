@@ -288,7 +288,10 @@ async function runAndWait(page, timeout = 15000) {
 // --- 8. long output scrolls inside its own container ------------------------
 {
   const { page } = await newPage();
-  await setSource(page, "fn main() {\n let mut i = 0\n while i < 600 { print(i) i = i + 1 }\n}");
+  await setSource(
+    page,
+    "fn main() {\n let mut i = 0\n while i < 600 {\n  print(i)\n  i = i + 1\n }\n}",
+  );
   await runAndWait(page);
   const metrics = await page.evaluate(() => {
     const o = document.getElementById("stdout");
