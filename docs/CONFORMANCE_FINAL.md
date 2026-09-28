@@ -6,8 +6,7 @@ Phases 2 → 12 plus final adversarial closure. Phase 1 was closed at
 ## 1. Final Repository State
 
 * Branch: `rewrite/v3-rust`.
-* Final HEAD: `fbaa713189dc79117076916d85671d46cb6b9a94` (before the final
-  closure re-verification; see §20 for the CI commit).
+* Final HEAD: `5e44be91a0afc570d3b9ca50ca58ec9777b5162a`.
 * Worktree: clean (no transient artifacts).
 * Commits added over Phase 1 (16):
   `8aa1c7f`, `5d54ab8`, `0f3555d`, `2462d3f`, `39f4005`, `73c7b63`, `43b7cef`,
@@ -169,30 +168,30 @@ release/tag created.
 | Command | Result |
 |---|---|
 | `cargo fmt --all -- --check` | pass |
-| `cargo test --locked --all-targets --all-features` | **645 passed, 0 failed** |
+| `cargo test --locked --all-targets --all-features` | **648 passed, 0 failed** |
 | `cargo clippy --locked --all-targets --all-features -- -D warnings` | pass |
-| `cargo test --locked --all-targets --no-default-features --features cli,repl,json,regex,time` | **636 passed, 0 failed** |
+| `cargo test --locked --all-targets --no-default-features --features cli,repl,json,regex,time` | **639 passed, 0 failed** |
 | `node playground/tests/node/run-all.mjs` | manifest 26, ABI 67, integrity 27, differential 195, syntax 43, browser 53, worker 12, cache 7 — 0 failed |
 | `node playground/build.mjs --check` | pass (3 versions) |
 | WASM release build | reproducible; 0 imports |
 | `node website/tests/run-all.mjs` | examples 19, links 2086, a11y 70, browser 343 — 0 failed |
 
-Counts are per category and not summed: 647 Rust `#[test]` functions in the
+Counts are per category and not summed: 650 Rust `#[test]` functions in the
 tree, 79 token variants, 43 error codes, 38 builtin functions, 103 corpus
 fixtures (11 syntax), 195 differential + 43 syntax Node comparisons, plus
 property iterations and fuzz executions.
 
 ## 20. CI
 
-* Workflow: **CI**, run **36377575121**, commit **fbaa7131**, 14 jobs, **all
+* Workflow: **CI**, run **36380252926**, commit **5e44be91**, 14 jobs, **all
   success** (rustfmt, clippy, cargo audit, MSRV 1.83, miri, extended property
   tests, language contract, pure-Rust-no-CPython, tests on ubuntu/macos/windows,
   playground wasm runtime, website, fuzz smoke).
-* Deploy: **Deploy website (GitHub Pages)**, run **36377574880**, commit
-  **fbaa7131**, success.
+* Deploy: **Deploy website (GitHub Pages)**, run **36380252886**, commit
+  **5e44be91**, success.
 * The earlier run `36374660319` failed only on the fuzz smoke job
-  (`runtime` `slow-unit`), classified CI-RELIABILITY-1; it passed on rerun and
-  passed on the first attempt in the final run.
+  (`runtime` `slow-unit`), classified CI-RELIABILITY-1; it passed on rerun, and
+  all subsequent runs passed on the first attempt.
 
 ## 21. Remaining SPEC GAPs
 
