@@ -79,8 +79,8 @@ Follow-up 3 / AUDIT-3 remains DECISION-PENDING; no code or doc changes beyond th
 The current Core development runtime is `0.0.2-dev.30`:
 
 - path: `playground/runtimes/0.0.2-dev.30/aura_playground_runtime.wasm`
-- bytes: `1,653,116`
-- SHA-256: `d1f95f22dbb14c65f3059d7e32274a8b18d72dce403ffadd8c5d8db247182fea`
+- bytes: `1,654,216`
+- SHA-256: `916a8282f7afcf67b89662af89d2f69cf562d9dbe41fe88cab1764a3ef19c578`
 - wasm imports: `0`
 - reproducibility: byte-identical across independent clean-target builds
 

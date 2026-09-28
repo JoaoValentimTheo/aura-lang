@@ -53,6 +53,7 @@ fn parse_inner(src: &str) -> Result<Module> {
         pos: 0,
         depth: 0,
         expr_nodes: 0,
+        atom_depth: 0,
     };
     let module = p.module()?;
     // Reject trees deeper than the language limit here, before any later
@@ -69,6 +70,7 @@ fn parse_expr_inner(src: &str) -> Result<Expr> {
         pos: 0,
         depth: 0,
         expr_nodes: 0,
+        atom_depth: 0,
     };
     p.skip_newlines();
     let e = p.expr()?;
@@ -91,6 +93,7 @@ fn parse_expr_at(src: &str, base: usize) -> Result<Expr> {
         pos: 0,
         depth: 0,
         expr_nodes: 0,
+        atom_depth: 0,
     };
     p.skip_newlines();
     let e = p.expr()?;
@@ -107,6 +110,7 @@ fn parse_stmt_inner(src: &str) -> Result<Stmt> {
         pos: 0,
         depth: 0,
         expr_nodes: 0,
+        atom_depth: 0,
     };
     p.skip_newlines();
     let s = p.stmt()?;
@@ -359,6 +363,13 @@ struct Parser {
     /// Number of infix/postfix wraps applied to the expression currently
     /// being built. Bounds the depth of a flat chain without recursing.
     expr_nodes: usize,
+    /// Current nesting depth of `atom()` wrappers (groups, lists, maps). This
+    /// is at most the final AST depth, so checking it against
+    /// [`MAX_AST_DEPTH`] *during* parsing rejects over-deep input with the same
+    /// `E1015` the post-parse walk would produce, but before the recursive
+    /// descent can exhaust the host stack on a substrate whose physical
+    /// ceiling is below the recursion budget (`LANGUAGE_SPEC.md` §31.2/§31.5).
+    atom_depth: usize,
 }
 
 impl Parser {
@@ -2250,6 +2261,74 @@ impl Parser {
         r
     }
 
+    /// Consume one level of *container* atom nesting (`[...]`, `{...}`, and a
+    /// parenthesized comma-list). Pure grouping parentheses create no AST node,
+    /// so they are not counted — exactly as [`check_expr_depth`] does not count
+    /// them. Counting here means over-deep nested literals report the same
+    /// `E1015` the post-parse walk would, but *during* parsing, before the
+    /// recursive descent can exhaust a substrate whose physical stack ceiling
+    /// is below the recursion budget (§31.2/§31.5).
+    fn enter_container(&mut self) -> Result<()> {
+        self.atom_depth += 1;
+        if self.atom_depth > MAX_AST_DEPTH {
+            self.atom_depth -= 1;
+            return Err(Diag::new(
+                codes::NESTING,
+                "expression nests too deeply",
+                self.span(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn leave_container(&mut self) {
+        self.atom_depth -= 1;
+    }
+
+    /// Finish the `[value for pattern in iterable (if filter)?]` form once the
+    /// leading `for` has been consumed. Kept out of `atom_inner` and
+    /// `#[inline(never)]` so the grouping recursion path's frame stays small
+    /// (see the call site).
+    #[inline(never)]
+    fn finish_list_comprehension(&mut self, value: Expr, span: Span) -> Result<Expr> {
+        let pattern = self.pattern()?;
+        self.expect(&Tok::In)?;
+        let iterable = self.expr()?;
+        self.skip_newlines();
+        let filter = self.comprehension_filter()?;
+        self.skip_newlines();
+        self.expect(&Tok::RBracket)?;
+        Ok(Expr::ListComp {
+            value: Box::new(value),
+            pattern,
+            iterable: Box::new(iterable),
+            filter: filter.map(Box::new),
+            span,
+        })
+    }
+
+    /// Finish the `{key: value for pattern in iterable (if filter)?}` form once
+    /// the leading `for` has been consumed. Kept out of `atom_inner` and
+    /// `#[inline(never)]` for the same reason as [`Self::finish_list_comprehension`].
+    #[inline(never)]
+    fn finish_map_comprehension(&mut self, key: Expr, value: Expr, span: Span) -> Result<Expr> {
+        let pattern = self.pattern()?;
+        self.expect(&Tok::In)?;
+        let iterable = self.expr()?;
+        self.skip_newlines();
+        let filter = self.comprehension_filter()?;
+        self.skip_newlines();
+        self.expect(&Tok::RBrace)?;
+        Ok(Expr::MapComp {
+            key: Box::new(key),
+            value: Box::new(value),
+            pattern,
+            iterable: Box::new(iterable),
+            filter: filter.map(Box::new),
+            span,
+        })
+    }
+
     fn atom_inner(&mut self) -> Result<Expr> {
         let span = self.span();
         let e = match self.at().clone() {
@@ -2361,6 +2440,11 @@ impl Parser {
                 }
                 let first = self.expr()?;
                 if self.eat(&Tok::Comma) {
+                    // A parenthesized comma-list is list sugar and one AST
+                    // level; bound its nesting during parsing. Pure grouping
+                    // parentheses (no comma) are not counted, matching
+                    // `check_expr_depth` (see `enter_container`).
+                    self.enter_container()?;
                     let mut items = vec![first];
                     self.skip_newlines();
                     // `(x,)` is a one-element list (§21); the grammar's
@@ -2380,6 +2464,7 @@ impl Parser {
                         }
                     }
                     self.expect(&Tok::RParen)?;
+                    self.leave_container();
                     Expr::Tuple(items, span)
                 } else {
                     self.expect(&Tok::RParen)?;
@@ -2387,9 +2472,13 @@ impl Parser {
                 }
             }
             Tok::LBracket => {
+                // A list literal is one AST level; bound its nesting during
+                // parsing (see `enter_container`).
+                self.enter_container()?;
                 self.bump();
                 self.skip_newlines();
                 if self.eat(&Tok::RBracket) {
+                    self.leave_container();
                     return Ok(Expr::List(Vec::new(), span));
                 }
                 self.skip_newlines();
@@ -2399,42 +2488,42 @@ impl Parser {
                 // may be split across lines inside the brackets, so a newline
                 // before `for`/`if` is insignificant here. `for` is a statement
                 // keyword and cannot begin an expression, so it is unambiguous.
+                //
+                // The comprehension body is parsed in a non-inlined helper:
+                // `atom_inner` is on the grouping recursion path
+                // (`[` → expr → unary → postfix → atom → expr), and keeping its
+                // frame small preserves the substrate stack margin that lets
+                // over-limit grouping report `E1015` instead of trapping on
+                // wasm (§31.2, §31.5).
                 self.skip_newlines();
-                if self.eat(&Tok::For) {
-                    let pattern = self.pattern()?;
-                    self.expect(&Tok::In)?;
-                    let iterable = self.expr()?;
-                    self.skip_newlines();
-                    let filter = self.comprehension_filter()?;
-                    self.skip_newlines();
-                    self.expect(&Tok::RBracket)?;
-                    return Ok(Expr::ListComp {
-                        value: Box::new(first),
-                        pattern,
-                        iterable: Box::new(iterable),
-                        filter: filter.map(Box::new),
-                        span,
-                    });
-                }
-                let mut items = vec![first];
-                loop {
-                    self.skip_newlines();
-                    if !self.eat(&Tok::Comma) {
-                        self.expect(&Tok::RBracket)?;
-                        break;
+                let result = if self.eat(&Tok::For) {
+                    self.finish_list_comprehension(first, span)
+                } else {
+                    let mut items = vec![first];
+                    loop {
+                        self.skip_newlines();
+                        if !self.eat(&Tok::Comma) {
+                            self.expect(&Tok::RBracket)?;
+                            break;
+                        }
+                        self.skip_newlines();
+                        // A trailing comma before `]` is allowed (§4.5).
+                        if matches!(self.at(), Tok::RBracket) {
+                            self.bump();
+                            break;
+                        }
+                        items.push(self.expr()?);
                     }
-                    self.skip_newlines();
-                    // A trailing comma before `]` is allowed (§4.5).
-                    if matches!(self.at(), Tok::RBracket) {
-                        self.bump();
-                        break;
-                    }
-                    items.push(self.expr()?);
-                }
-                Expr::List(items, span)
+                    Ok(Expr::List(items, span))
+                };
+                self.leave_container();
+                result?
             }
             Tok::LBrace => {
                 if self.map_ahead() {
+                    // A map literal is one AST level; bound its nesting during
+                    // parsing (see `enter_container`).
+                    self.enter_container()?;
                     self.bump();
                     let mut entries = Vec::new();
                     self.skip_newlines();
@@ -2443,46 +2532,40 @@ impl Parser {
                     // skipped by the lexer and `skip_newlines`, so `{ : }`
                     // and the multi-line form are identical. `{}` never
                     // reaches this branch (`map_ahead` routes it to a block).
-                    if self.eat(&Tok::Colon) {
+                    let result = if self.eat(&Tok::Colon) {
                         self.skip_newlines();
                         self.expect(&Tok::RBrace)?;
-                        return Ok(Expr::Map(entries, span));
-                    }
-                    while !self.eat(&Tok::RBrace) {
-                        let k = self.expr()?;
-                        self.expect(&Tok::Colon)?;
-                        self.skip_newlines();
-                        let v = self.expr()?;
-                        // `{key: value for pattern in iterable (if filter)?}`
-                        // — one generator clause and at most one filter (§25).
-                        self.skip_newlines();
-                        if entries.is_empty() && self.eat(&Tok::For) {
-                            let pattern = self.pattern()?;
-                            self.expect(&Tok::In)?;
-                            let iterable = self.expr()?;
+                        Ok(Expr::Map(entries, span))
+                    } else {
+                        loop {
+                            if self.eat(&Tok::RBrace) {
+                                break Ok(Expr::Map(entries, span));
+                            }
+                            let k = self.expr()?;
+                            self.expect(&Tok::Colon)?;
                             self.skip_newlines();
-                            let filter = self.comprehension_filter()?;
+                            let v = self.expr()?;
+                            // `{key: value for pattern in iterable (if filter)?}`
+                            // — one generator clause and at most one filter
+                            // (§25). Parsed in a non-inlined helper so
+                            // `atom_inner`'s frame stays small on the grouping
+                            // recursion path.
                             self.skip_newlines();
-                            self.expect(&Tok::RBrace)?;
-                            return Ok(Expr::MapComp {
-                                key: Box::new(k),
-                                value: Box::new(v),
-                                pattern,
-                                iterable: Box::new(iterable),
-                                filter: filter.map(Box::new),
-                                span,
-                            });
+                            if entries.is_empty() && self.eat(&Tok::For) {
+                                break self.finish_map_comprehension(k, v, span);
+                            }
+                            entries.push((k, v));
+                            self.skip_newlines();
+                            if !self.eat(&Tok::Comma) {
+                                self.skip_newlines();
+                                self.expect(&Tok::RBrace)?;
+                                break Ok(Expr::Map(entries, span));
+                            }
+                            self.skip_newlines();
                         }
-                        entries.push((k, v));
-                        self.skip_newlines();
-                        if !self.eat(&Tok::Comma) {
-                            self.skip_newlines();
-                            self.expect(&Tok::RBrace)?;
-                            break;
-                        }
-                        self.skip_newlines();
-                    }
-                    Expr::Map(entries, span)
+                    };
+                    self.leave_container();
+                    result?
                 } else {
                     let body = self.block()?;
                     Expr::Block(body, span)

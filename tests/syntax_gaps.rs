@@ -135,3 +135,26 @@ fn module_paths_use_double_colon_only() {
         .expect("canonical `::` import parses");
     assert!(!module.items.is_empty());
 }
+
+// --------------------------------------------- container nesting is bounded
+
+#[test]
+fn nested_containers_report_e1015_before_the_host_stack() {
+    // Container nesting is counted *during* parsing, so over-deep input reports
+    // the semantic E1015 rather than exhausting the substrate stack (which
+    // traps on wasm). The accepted/rejected boundary matches the post-parse
+    // AST-depth rule.
+    let deep = |d: usize| format!("fn main() {{ print({}1{}) }}", "[".repeat(d), "]".repeat(d));
+    assert!(run_source(&deep(252), "<n>").is_ok());
+    assert!(run_source(&deep(253), "<n>").is_ok());
+    assert_eq!(code(&deep(254)), codes::NESTING);
+    assert_eq!(code(&deep(400)), codes::NESTING);
+    // Pure grouping parentheses add no AST level, so many are fine; only
+    // container literals are bounded.
+    let parens = format!(
+        "fn main() {{ print({}1{}) }}",
+        "(".repeat(300),
+        ")".repeat(300)
+    );
+    assert!(run_source(&parens, "<n>").is_ok());
+}
