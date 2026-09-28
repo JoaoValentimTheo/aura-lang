@@ -85,7 +85,20 @@ proptest! {
                 _ => param.accepts.accepts_ty(ty) != Some(false),
             }
         });
-        let well_shaped = arity_ok && types_ok;
+        // The checker is intentionally stricter than the coarse registry for
+        // container-element mutations: `push(list, v)` accepts only a `v`
+        // compatible with the list's element type, and `v`'s type is not
+        // expressible in the registry. Model that extra constraint so the
+        // property still asserts agreement rather than exact registry shape.
+        let container_ok = if name == "push" && argc == 2 {
+            match ty {
+                Ty::List(elem) => elem.compatible_with(ty),
+                _ => true,
+            }
+        } else {
+            true
+        };
+        let well_shaped = arity_ok && types_ok && container_ok;
 
         let src = format!("fn main() {{ {}({}) }}", name, args.join(", "));
         let checked = aura::check::Checker::module(

@@ -2392,14 +2392,23 @@ impl Checker {
             // `(1, 2)` pass an annotation that `[1, 2]` would be rejected
             // for, contradicting the "indistinguishable" rule.)
             Expr::List(items, _) | Expr::Tuple(items, _) => {
-                let mut elem = Ty::Unknown;
-                for item in items {
-                    let t = self.infer(item);
-                    if !matches!(t, Ty::Unknown) {
-                        elem = t;
-                        break;
-                    }
-                }
+                // Infer the element type as the union of every statically known
+                // element, using the language's existing union rule (§5.2). A
+                // first-known-element rule hid provable mismatches: `[1, "x"]`
+                // inferred `[int]`, so `let xs: [int] = [1, "x"]` was accepted.
+                // `Unknown` elements impose no constraint, so a list of only
+                // `Unknown` stays `[Unknown]`. A parenthesized comma-list is
+                // list sugar and infers identically.
+                let elems: Vec<Ty> = items
+                    .iter()
+                    .map(|item| self.infer(item))
+                    .filter(|t| !matches!(t, Ty::Unknown))
+                    .collect();
+                let elem = if elems.is_empty() {
+                    Ty::Unknown
+                } else {
+                    Ty::union(elems)
+                };
                 Ty::List(Box::new(elem))
             }
             Expr::Map(entries, _) => {
@@ -2527,15 +2536,24 @@ impl Checker {
                 }
                 if let Some(class) = recv_ty.type_class() {
                     if let Some(sig) = crate::stdlib::signatures::method(class, name) {
-                        // For a statically known map receiver, `keys`/`values`/
-                        // `get`/`remove` carry the map's key and value types
-                        // rather than the registry's coarse `[string]`/dynamic.
+                        // For a statically known map receiver, `keys`/`values`
+                        // carry the map's key and value types rather than the
+                        // registry's coarse `[string]`. `get`/`remove` stay
+                        // dynamic: they return `none` for a missing key, and
+                        // Aura has no static `none` type, so claiming `V` would
+                        // be a lie (LANGUAGE_SPEC §18).
                         if let Ty::Map(k, v) = &recv_ty {
                             match name.as_str() {
                                 "keys" => return Ty::List(k.clone()),
                                 "values" => return Ty::List(v.clone()),
-                                "get" | "remove" => return v.as_ref().clone(),
                                 _ => {}
+                            }
+                        }
+                        // `sort`/`reverse` on a known list return a list of the
+                        // same element type; the registry cannot express that.
+                        if let Ty::List(elem) = &recv_ty {
+                            if matches!(name.as_str(), "sort" | "reverse") {
+                                return Ty::List(elem.clone());
                             }
                         }
                         return sig.returns.ty();
@@ -2562,7 +2580,20 @@ impl Checker {
                 Ty::Unknown
             }
             Expr::Range(_, _, _) => Ty::Named("range".to_string()),
-            Expr::Pipe(_, _, _) | Expr::Index(_, _, _) | Expr::Lambda(_, _, _) => Ty::Unknown,
+            Expr::Index(base, _, _) => {
+                // The result of a *successful* indexing expression. A missing
+                // map key is the runtime error E2003 (not a `none` value), and
+                // an out-of-range list index is E4019, so returning the element
+                // type is honest for the value the expression yields when it
+                // does not raise.
+                match self.infer(base) {
+                    Ty::List(elem) => elem.as_ref().clone(),
+                    Ty::Map(_, v) => v.as_ref().clone(),
+                    Ty::String => Ty::String,
+                    _ => Ty::Unknown,
+                }
+            }
+            Expr::Pipe(_, _, _) | Expr::Lambda(_, _, _) => Ty::Unknown,
         }
     }
 
@@ -2639,6 +2670,25 @@ impl Checker {
     }
 
     /// Validate a builtin call against its shared signature.
+    /// The message for a value that cannot be stored in a container whose
+    /// element type the checker can name. Used by list `push` and indexed
+    /// assignment so a provable mismatch is rejected rather than hidden by the
+    /// coarse registry.
+    fn check_element_assignable(&self, expected: &Ty, actual: &Ty, span: Span) -> Result<()> {
+        if !matches!(actual, Ty::Unknown) && !expected.compatible_with(actual) {
+            return Err(Diag::new(
+                codes::TYPE_MISMATCH,
+                format!(
+                    "list has element type `{}` but the value is `{}`",
+                    expected.name(),
+                    actual.name()
+                ),
+                span,
+            ));
+        }
+        Ok(())
+    }
+
     fn check_builtin_call(
         &self,
         sig: &crate::stdlib::signatures::Signature,
@@ -2647,6 +2697,15 @@ impl Checker {
     ) -> Result<()> {
         if let Some(message) = sig.check_arity(args.len()) {
             return Err(Diag::new(codes::TYPE_MISMATCH, message, span));
+        }
+        // The free `push(list, v)` builtin carries the same element contract as
+        // the method form; the coarse registry cannot name the element type.
+        if sig.name == "push" {
+            if let (Some(list), Some(value)) = (args.first(), args.get(1)) {
+                if let Ty::List(elem) = self.infer(&list.value) {
+                    self.check_element_assignable(&elem, &self.infer(&value.value), span)?;
+                }
+            }
         }
         for (i, param) in sig.params.iter().enumerate() {
             let Some(arg) = args.get(i) else { break };
@@ -3150,6 +3209,14 @@ impl Checker {
                         ));
                     }
                 }
+            }
+        }
+        // `list.push(v)` on a statically known `[T]` receiver must accept only
+        // `T`. The coarse registry cannot name `T`, so the element contract is
+        // checked here.
+        if class == crate::stdlib::signatures::TypeClass::List && name == "push" {
+            if let (Ty::List(elem), Some(arg)) = (self.infer(recv), args.first()) {
+                self.check_element_assignable(&elem, &self.infer(&arg.value), span)?;
             }
         }
         for (i, param) in sig.params.iter().enumerate() {
@@ -4028,6 +4095,11 @@ impl Checker {
                                     *span,
                                 ));
                             }
+                        } else if let Ty::List(elem) = self.infer(base) {
+                            // Indexed assignment on a statically known list obeys
+                            // the element contract. An `int` index is the only
+                            // valid list index.
+                            self.check_element_assignable(&elem, &self.infer(value), *span)?;
                         }
                     }
                     Expr::Field(base, fname, fspan) => {

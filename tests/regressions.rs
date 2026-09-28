@@ -882,9 +882,11 @@ fn field_read_flows_into_return_construction_and_ordering() {
     );
 }
 
-/// Field inference is strictly conservative: a receiver the checker cannot
-/// prove to be a struct keeps its field read `Unknown`, so no speculative
-/// rejection happens. The runtime remains authoritative.
+/// Field inference stays conservative for genuinely unproven receivers, while
+/// a proven collection element type is now propagated (LANGUAGE_SPEC §17): an
+/// `Unknown` receiver keeps its field read `Unknown` (no speculative
+/// rejection), but a known `[P]`/`{K: P}` element is `P`, so a provable field
+/// mismatch is rejected. The runtime remains authoritative.
 #[test]
 fn field_read_is_conservative_for_unproven_receivers() {
     // An unannotated parameter is `Unknown`; `u.x` stays `Unknown`,
@@ -893,15 +895,17 @@ fn field_read_is_conservative_for_unproven_receivers() {
         check("struct P { x: int }\nfn g(u) { let y: string = u.x }"),
         Ok(())
     );
-    // A list element read infers `Unknown`.
+    // A list element read of a known element type now infers that type
+    // (LANGUAGE_SPEC §17), so a provable mismatch is rejected rather than
+    // hidden. `[P { x: 1 }][0]` is `P`, whose field `x` is `int`.
     assert_eq!(
         check("struct P { x: int }\nfn main() { let y: string = [P { x: 1 }][0].x }"),
-        Ok(())
+        Err(codes::TYPE_MISMATCH)
     );
-    // A map lookup infers `Unknown`.
+    // A map lookup of a known value type infers that type likewise.
     assert_eq!(
         check("struct P { x: int }\nfn main() { let m = {\"k\": P { x: 1 }}\n let y: string = m[\"k\"].x }"),
-        Ok(())
+        Err(codes::TYPE_MISMATCH)
     );
     // A branch result infers `Unknown`.
     assert_eq!(
