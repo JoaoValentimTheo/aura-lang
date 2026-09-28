@@ -361,4 +361,19 @@ fn items_pairs_have_the_union_element_type() {
         ok("fn main() { let m: {int: string} = {1: \"a\"}\n for p in m.items() { print(p) } }"),
         "[1, \"a\"]\n"
     );
+    // The static type is a list *of* pairs: `[[K | V]]`, not `[K | V]`.
+    assert_eq!(
+        ok("fn main() { let m: {int: string} = {1: \"a\"}\n let x: [[int | string]] = m.items()\n print(x) }"),
+        "[[1, \"a\"]]\n"
+    );
+    // Indexing the result once yields the pair, twice yields a component.
+    assert_eq!(
+        ok("fn main() { let m: {int: int} = {1: 2}\n let x: [int] = m.items()[0]\n print(x) }"),
+        "[1, 2]\n"
+    );
+    // Annotating a pair as a scalar is a provable mismatch, not silent.
+    assert_eq!(
+        code("fn main() { let m: {int: int} = {1: 2}\n let x: int = m.items()[0] }"),
+        codes::TYPE_MISMATCH
+    );
 }

@@ -83,3 +83,35 @@ fn methods_match_the_signature_registry() {
     expected.dedup();
     assert_eq!(entries(&metadata(), "METHODS"), expected);
 }
+
+#[test]
+fn primitive_types_are_exactly_the_type_system_primitives() {
+    // The four primitive type names the front end colours. These are not
+    // lexer keywords (they are contextual), so they are guarded here.
+    let mut expected: Vec<String> = ["bool", "float", "int", "string"]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+    expected.sort_unstable();
+    assert_eq!(entries(&metadata(), "TYPES"), expected);
+}
+
+#[test]
+fn contextual_words_match_the_grammar() {
+    // Words that are meaningful in the grammar but not hard keywords. Keep this
+    // in step with `docs/grammar.md` (module_decl, impl_decl, trait_decl,
+    // const_decl, receiver).
+    let mut expected: Vec<String> = ["const", "impl", "module", "self", "trait"]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+    expected.sort_unstable();
+    assert_eq!(entries(&metadata(), "CONTEXTUAL"), expected);
+    // A contextual word is not a hard keyword (it may still be an identifier).
+    for word in &expected {
+        assert!(
+            !aura::lex::KEYWORDS.contains(&word.as_str()),
+            "`{word}` is a hard keyword, so it must not be in CONTEXTUAL"
+        );
+    }
+}

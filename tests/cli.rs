@@ -91,6 +91,28 @@ fn check_requires_a_source_argument() {
 }
 
 #[test]
+fn check_rejects_extra_arguments() {
+    let path = tmp("check-extra.aura", "fn main() { print(1) }");
+    let (code, _, stderr) = run(&["check", path.to_str().unwrap(), "bogus"]);
+    std::fs::remove_file(&path).ok();
+    assert_eq!(code, 2);
+    assert!(stderr.contains("takes exactly one"));
+}
+
+#[test]
+fn run_passes_a_help_like_program_argument_through() {
+    // `--help` after the source path belongs to the program, not the CLI.
+    let path = tmp(
+        "args-help.aura",
+        "fn main() { for a in args() { print(a) } }",
+    );
+    let (code, stdout, stderr) = run(&["run", path.to_str().unwrap(), "--help"]);
+    std::fs::remove_file(&path).ok();
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(stdout, "--help\n");
+}
+
+#[test]
 fn eval_requires_exactly_one_argument() {
     let (code, _, stderr) = run(&["eval"]);
     assert_eq!(code, 2);

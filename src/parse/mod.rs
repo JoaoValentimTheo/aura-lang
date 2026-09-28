@@ -393,6 +393,29 @@ impl Parser {
         }
     }
 
+    /// Verify and consume the separator between items in an item list (a
+    /// module body, an `impl` body, or the file root): a newline or `;`, or the
+    /// zero-width boundary before `}`/EOF (CONF-PARSE-8). `fn a() {} fn b() {}`
+    /// on one line is rejected in every item-list body.
+    fn item_separator(&mut self) -> Result<()> {
+        match self.at() {
+            Tok::Eof | Tok::RBrace | Tok::Newline | Tok::Semi => {
+                while matches!(self.at(), Tok::Newline | Tok::Semi) {
+                    self.bump();
+                }
+                Ok(())
+            }
+            other => Err(Diag::new(
+                codes::EXPECTED,
+                format!(
+                    "expected a newline or `;` between items, found {}",
+                    other.describe()
+                ),
+                self.span(),
+            )),
+        }
+    }
+
     /// Verify and consume the statement separator (§3.7, CONF-PARSE-8).
     ///
     /// A statement is terminated by a newline or `;`, or by the zero-width
@@ -466,26 +489,7 @@ impl Parser {
                 break;
             }
             items.push(self.item()?);
-            // Items are separated by a newline or `;` (CONF-PARSE-8); an item
-            // that does not end at a block boundary must be followed by a real
-            // separator, so `fn a() {} fn b() {}` on one line is rejected.
-            match self.at() {
-                Tok::Eof | Tok::Newline | Tok::Semi => {
-                    while matches!(self.at(), Tok::Newline | Tok::Semi) {
-                        self.bump();
-                    }
-                }
-                other => {
-                    return Err(Diag::new(
-                        codes::EXPECTED,
-                        format!(
-                            "expected a newline or `;` between items, found {}",
-                            other.describe()
-                        ),
-                        self.span(),
-                    ))
-                }
-            }
+            self.item_separator()?;
         }
         Ok(Module { items })
     }
@@ -586,6 +590,7 @@ impl Parser {
                 return Err(self.expected("`}` closing the `module` block"));
             }
             items.push(self.item()?);
+            self.item_separator()?;
         }
         Ok(Item::Module {
             name,
@@ -987,6 +992,7 @@ impl Parser {
                 ));
             }
             methods.push(self.method_item(public)?);
+            self.item_separator()?;
         }
         Ok(Item::Impl {
             target,
@@ -1071,6 +1077,7 @@ impl Parser {
                 ));
             }
             methods.push(self.trait_method_decl(public)?);
+            self.item_separator()?;
         }
         Ok(Item::Trait {
             name,

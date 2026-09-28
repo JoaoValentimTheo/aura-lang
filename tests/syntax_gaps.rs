@@ -39,9 +39,26 @@ fn statements_require_a_real_separator() {
         "3\n"
     );
     assert_eq!(ok("fn main() { print(1) }"), "1\n");
-    // Items too: `fn a() {} fn b() {}` on one line is rejected.
+    // Items too: `fn a() {} fn b() {}` on one line is rejected, in every
+    // item-list body (file root, module, impl, trait).
     assert_eq!(code("fn a() {} fn b() {}"), codes::EXPECTED);
     assert_eq!(ok("fn a() { }\nfn b() { }\nfn main() { print(1) }"), "1\n");
+    assert_eq!(
+        code("module M { fn a() { } fn b() { } }\nfn main() { print(1) }"),
+        codes::EXPECTED
+    );
+    assert_eq!(
+        ok("module M {\n fn a() { }\n fn b() { }\n}\nfn main() { print(1) }"),
+        "1\n"
+    );
+    assert_eq!(
+        code("struct S { x: int }\nimpl S { fn f(self) -> int { return 1 } fn g(self) -> int { return 2 } }\nfn main() { }"),
+        codes::EXPECTED
+    );
+    assert_eq!(
+        code("trait T { fn f(self) fn g(self) }\nfn main() { }"),
+        codes::EXPECTED
+    );
 }
 
 // ------------------------------------------------- numeric underscores

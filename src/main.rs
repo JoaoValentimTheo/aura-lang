@@ -82,9 +82,12 @@ fn command_list() -> String {
         .join(", ")
 }
 
-/// Whether `args` contains the `--help` flag at the start of the tail.
+/// Whether the tail begins with the `--help` flag. `--help` is only a request
+/// for help in the first position after the command, so program arguments
+/// (`aura run app.aura --help`) are passed through to the program rather than
+/// intercepted.
 fn help_requested(args: &[String]) -> bool {
-    args.iter().any(|a| a == "--help")
+    args.first().is_some_and(|a| a == "--help")
 }
 
 fn cmd_repl() -> ExitCode {
@@ -212,6 +215,10 @@ fn cmd_check(args: &[String]) -> ExitCode {
         eprintln!("usage: aura check <file|->");
         return ExitCode::from(2);
     };
+    if args.len() > 2 {
+        eprintln!("aura check takes exactly one source argument");
+        return ExitCode::from(2);
+    }
     let (src, file) = match read_source(Some(path)) {
         Ok(v) => v,
         Err(c) => return c,

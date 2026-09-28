@@ -2546,12 +2546,12 @@ impl Checker {
                             match name.as_str() {
                                 "keys" => return Ty::List(k.clone()),
                                 "values" => return Ty::List(v.clone()),
-                                // `items()` yields two-element lists
-                                // `[K | V]` (no tuple type).
+                                // `items()` yields a list of two-element lists:
+                                // `[[K | V]]` (no tuple type).
                                 "items" => {
                                     let pair =
                                         Ty::union(vec![k.as_ref().clone(), v.as_ref().clone()]);
-                                    return Ty::List(Box::new(pair));
+                                    return Ty::List(Box::new(Ty::List(Box::new(pair))));
                                 }
                                 _ => {}
                             }
