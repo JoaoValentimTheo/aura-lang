@@ -66,6 +66,7 @@ try {
   // `run` propagates a non-zero exit (execFileSync throws), so a parity
   // failure stops the suite here with a non-zero status.
   run("differential", [join(here, "differential.test.mjs"), wasm, nativeBin]);
+  run("syntax conformance", [join(here, "syntax.test.mjs"), wasm, nativeBin]);
   differentialRan = true;
 }
 if (!differentialRan) {

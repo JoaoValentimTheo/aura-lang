@@ -1,0 +1,86 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+//! Structural checks for duplicated reference grammar and token inventory.
+use std::collections::BTreeSet;
+
+#[test]
+fn website_and_spec_grammar_stay_synchronized() {
+    let grammar = include_str!("../docs/grammar.md");
+    let site = include_str!("../website/content/reference-grammar.md");
+    assert_eq!(
+        grammar.split_once('\n').unwrap().1,
+        site.split_once('\n').unwrap().1
+    );
+    let ebnf = grammar
+        .split("```ebnf\n")
+        .nth(1)
+        .unwrap()
+        .split("```")
+        .next()
+        .unwrap();
+    let spec = include_str!("../docs/LANGUAGE_SPEC.md");
+    let mut count = 0;
+    for section in spec.split("```ebnf\n").skip(1) {
+        let block = section.split("```").next().unwrap().trim();
+        assert!(ebnf.contains(block), "normative grammar drift: {block}");
+        count += 1;
+    }
+    assert_eq!(count, 6);
+    let mut productions = BTreeSet::new();
+    for line in ebnf.lines() {
+        if let Some((lhs, _)) = line.split_once('=') {
+            let name = lhs.trim();
+            if name.chars().all(|c| c.is_ascii_lowercase() || c == '_') {
+                assert!(productions.insert(name), "duplicate production {name}");
+            }
+        }
+    }
+    for required in [
+        "module_decl",
+        "use_decl",
+        "type_params",
+        "bound",
+        "trait_decl",
+        "method_decl",
+        "receiver",
+        "expr_stmt",
+        "path",
+        "format_type",
+    ] {
+        assert!(productions.contains(required), "missing {required}");
+    }
+}
+
+#[test]
+fn every_token_variant_has_a_lexical_case() {
+    let mut seen = BTreeSet::new();
+    for line in include_str!("syntax_tokens.tsv")
+        .lines()
+        .filter(|l| !l.starts_with('#'))
+    {
+        let (variant, spelling) = line.split_once('\t').unwrap();
+        let spelling = spelling.replace("\\n", "\n");
+        let tokens = aura::lex::lex(&spelling).unwrap();
+        assert_eq!(tokens.len(), if variant == "Eof" { 1 } else { 2 });
+        let actual = format!("{:?}", tokens[0].tok);
+        assert_eq!(actual.split('(').next().unwrap(), variant, "{spelling}");
+        assert!(seen.insert(variant));
+    }
+    let source = include_str!("../src/lex/token.rs");
+    let body = source
+        .split("pub enum Tok {")
+        .nth(1)
+        .unwrap()
+        .split("\n}")
+        .next()
+        .unwrap();
+    let variants: BTreeSet<_> = body
+        .lines()
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && !s.starts_with('/'))
+        .map(|s| s.split(['(', ',']).next().unwrap())
+        .collect();
+    assert_eq!(
+        seen, variants,
+        "update the token inventory when adding a variant"
+    );
+}

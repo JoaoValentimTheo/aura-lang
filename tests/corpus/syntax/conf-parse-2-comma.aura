@@ -1,0 +1,4 @@
+enum E { A(int,), }
+fn main() { let A(x,) = A(3,)
+ print([x,
+]) }

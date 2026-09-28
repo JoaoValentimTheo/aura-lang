@@ -31,6 +31,17 @@ enum Expected {
 /// must appear here, and nothing here may be missing on disk.
 fn table() -> BTreeMap<&'static str, Expected> {
     let rows: Vec<(&'static str, Expected)> = vec![
+        ("syntax/conf-lex-1-quote.aura", Expected::Err("E1004")),
+        ("syntax/conf-lex-2-escape.aura", Expected::Err("E1003")),
+        ("syntax/conf-lex-3-fspan.aura", Expected::Err("E2003")),
+        ("syntax/conf-parse-1-pipe.aura", Expected::Err("E1006")),
+        ("syntax/conf-parse-2-comma.aura", Expected::Ok("[3]\n")),
+        ("syntax/conf-parse-3-braces.aura", Expected::Ok("{\n")),
+        ("syntax/conf-parse-4-path.aura", Expected::Ok("4\n")),
+        ("syntax/conf-parse-5-adjacency.aura", Expected::Ok("true\n")),
+        ("syntax/conf-parse-6-return.aura", Expected::Ok("-1\n")),
+        ("syntax/conf-parse-7-block.aura", Expected::Ok("1\n")),
+        ("syntax/conf-parse-9-semi.aura", Expected::Ok("1\n")),
         ("aliases/parameterised.aura", Expected::Ok("2\n")),
         ("aliases/transparent_chain.aura", Expected::Ok("5\n")),
         ("ast/gen_00.aura", Expected::Ok("2\n0\n")),

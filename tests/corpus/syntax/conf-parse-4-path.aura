@@ -1,0 +1,2 @@
+module m { pub const N = 4 }
+fn main() { print(f"{m::N}") }
