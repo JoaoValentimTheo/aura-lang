@@ -73,7 +73,7 @@ fn add(a: int, b: int) -> int { return a + b }
 struct Point { x: float, y: float }
 enum Result { Ok(string), Err(string) }
 type UserId = int
-use stdlib.math              # reserved; currently inert (see §10)
+use geometry::Point          # import a name from an in-source module (see §10)
 ```
 
 * Every binding requires an initializer. `let x` alone is `E2005`.
@@ -206,6 +206,10 @@ The checker runs before execution and rejects, at minimum:
 | E2013 | duplicate enum variant tag across the program |
 | E2014 | a pattern binds the same name twice |
 | E2015 | `break`/`continue` outside a loop |
+| E2016 | duplicate struct field |
+| E2017 | trait implementation missing a required method |
+| E2018 | private item accessed across a module boundary |
+| E2019 | unknown module, or unknown item in a `use` path |
 | E3001 | type mismatch (annotations are checked) |
 | E3002 | unknown type or constructor |
 | E3005 | return type mismatch |

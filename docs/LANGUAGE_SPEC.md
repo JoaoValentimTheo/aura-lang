@@ -736,7 +736,7 @@ distinct value.
 
 **Normative rule.** In a call argument list, every positional argument MUST
 precede every named argument; a positional argument after a named one is a
-syntax error. A named argument is written `name: value` (§15.7).
+syntax error. A named argument is written `name: value` (§15.8).
 
 **Normative rule.** An `if` expression MAY be followed by one or more
 `else if` clauses and an optional final `else`. `else if` is not a separate
@@ -1379,7 +1379,7 @@ call with named arguments, the argument expressions are still evaluated
 left-to-right in source order, exactly once; mapping them to parameters
 afterwards MUST NOT reorder or repeat evaluation. For
 `f(b: e1(), a: e2())`, `e1()` is evaluated before `e2()`, and the resulting
-values are then bound to `b` and `a` respectively (§15.7).
+values are then bound to `b` and `a` respectively (§15.8).
 
 **Normative rule.** A compound assignment `target op= e` evaluates `e` once,
 then evaluates the target's subexpressions to read its current value, then
@@ -2334,7 +2334,7 @@ value.)
 **Normative rule.** The piped value becomes the **first positional argument**,
 so a parenthesized suffix MAY include named arguments after it:
 `x |> f(y: 1)` is `f(x, y: 1)`. A named argument naming the first parameter is
-a duplicate assignment (§15.7). No pipeline-specific argument binding exists;
+a duplicate assignment (§15.8). No pipeline-specific argument binding exists;
 the desugared call uses ordinary call semantics.
 
 **Normative rule.** The desugaring is applied at parse time. Beyond a call,
@@ -2577,8 +2577,9 @@ constant, not a variable binding. Types (`struct`/`enum`/`type`) live in the
 type namespace, so a value name and a type name may coincide (`fn S` and
 `struct S` coexist), exactly as in a module.
 
-**Normative rule.** Newlines separate statements, so the keyword `as` is
-reserved but no construct consumes it; `use a as b` is a parse error.
+**Normative rule.** The keyword `as` is consumed only by an import alias
+(`use path as Alias`, §27); it has no other use and is a syntax error
+anywhere else.
 
 *Evidence:* `Checker::hoist`, `active_const`/`const_order` (`src/check/mod.rs`);
 `Interp::run` passes 1 and 2 (`src/run/mod.rs`); `tests/adversarial.rs::
@@ -2743,7 +2744,7 @@ top-level `let`/`let mut`), a set of items, or a bare expression.
 submissions. A later submission MAY reference an earlier binding, function,
 struct, enum, or alias. A function's parameter **names** and annotations are
 part of its persisted session signature, so a named call in a later submission
-resolves against them (§15.7).
+resolves against them (§15.8).
 
 **Normative rule.** A failed submission reports its diagnostic and leaves the
 session unchanged: it neither adds new declarations nor removes existing ones.
@@ -2811,6 +2812,9 @@ scope. Value and type namespaces are separate, so a session may hold `fn S` and
 | E2014 | duplicate pattern binding |
 | E2015 | `break`/`continue` outside a loop |
 | E2016 | duplicate struct field |
+| E2017 | trait implementation missing a required method |
+| E2018 | private item accessed across a module boundary |
+| E2019 | unknown module, or unknown item in a `use` path |
 | E3001 | type mismatch |
 | E3002 | unknown type or constructor |
 | E3005 | return type mismatch |
@@ -3111,10 +3115,10 @@ implementers do not assume guarantees the language does not make.
 * **No `try` without `catch`** (§14.5).
 * **`match` arms cannot be bare control-flow keywords**; a block is required
   (§19.4).
-* **No default or variadic function arguments** (§15.7).
+* **No default or variadic function arguments** (§15.8).
 * **Named arguments are limited to directly resolved top-level functions**
-  (§15.7); built-ins, methods, and dynamic callables are positional.
-* **No nested named function declarations**; use lambdas (§15.8).
+  (§15.8); built-ins, methods, and dynamic callables are positional.
+* **No nested named function declarations**; use lambdas (§15.9).
 * **No `for ... else`, no step on ranges** (§22.1).
 * **No lexicographic ordering for lists/maps/structs/enums/ranges** (§12).
 * **`a..b` has no inclusive (`..=`) form.** Ranges are always half-open

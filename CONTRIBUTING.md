@@ -50,12 +50,28 @@ Accepted RFCs are recorded in `docs/rfcs/`.
 
 * `tests/lexer.rs`, `tests/parser.rs` — front-end unit tests.
 * `tests/run.rs` — end-to-end execution.
-* `tests/contract.rs` — the normative promises.
-* `tests/grammar.rs` — docs-as-tests for grammar and errors.
-* `tests/property.rs` — fuzzing and invariants (Proptest).
+* `tests/checker.rs` — static checks and type rules.
+* `tests/contract.rs`, `tests/contract_sync.rs` — the normative promises.
+* `tests/grammar.rs`, `tests/catch_syntax.rs`, `tests/syntax_conformance.rs`,
+  `tests/syntax_docs.rs` — docs-as-tests for grammar, syntax, and errors.
+* `tests/corpus.rs` — the `tests/corpus/` fixture set (never silently skipped).
+* `tests/modules.rs`, `tests/oop.rs`, `tests/methods.rs`, `tests/traits.rs`,
+  `tests/generics.rs`, `tests/overloading.rs` — the module, OOP, and generics
+  surfaces.
+* `tests/mutation.rs`, `tests/shadowing.rs` — mutability and scoping.
+* `tests/host.rs`, `tests/io.rs` — the host boundary and scripting I/O.
+* `tests/boundaries.rs` — integer and parser boundary invariants (no panic or
+  silent wrap).
+* `tests/property.rs`, `tests/property_hardening.rs` — invariants and fuzzing
+  (Proptest).
+* `tests/regressions.rs`, `tests/adversarial.rs` — regression and adversarial
+  coverage.
+* `tests/repl.rs` — persistent REPL session behavior.
 * `tests/examples.rs` — every `examples/*.aura` must run; `.out` files, when
   present, are compared byte-for-byte.
 * `tests/python.rs` — the PyO3 bridge, only with `--features py`.
+
+The list above is not exhaustive; `tests/` is the authoritative inventory.
 
 ## Style
 

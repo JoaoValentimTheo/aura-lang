@@ -118,8 +118,9 @@ fn main() {
   top-level functions (`f(x: 1)`); positional arguments come first. Named
   arguments are for `struct` construction too; enum variant payloads are
   positional.
-* `use` and `pub` are reserved and inert in this version (see
-  [docs/contract.md](docs/contract.md) §10).
+* `module` declares an in-source module, `pub` exports an item from it, and
+  `use path [as Alias]` imports a name; modules are real visibility boundaries
+  (see [docs/contract.md](docs/contract.md) §10).
 
 ### Values and types
 

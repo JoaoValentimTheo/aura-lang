@@ -20,6 +20,7 @@ be produced by at least one program.
 | E1002 | Malformed number | `1abc`, `0xZZ` |
 | E1003 | Invalid escape | `"\q"` |
 | E1004 | Unterminated string | `"abc` |
+| E1005 | Unterminated multiline comment | `<!-- never closed` |
 | E1006 | Expected token | `let = 1`, `fn ()` |
 | E1009 | Reserved word as name | `let if = 1` |
 | E1015 | Expression/statement nests too deeply | a 5000-term expression |
@@ -40,6 +41,9 @@ be produced by at least one program.
 | E2014 | Duplicate pattern binding | `match xs { [a, a] -> ... }` |
 | E2015 | `break`/`continue` outside a loop | `fn main() { break }` |
 | E2016 | Duplicate struct field | `struct S { x: int, x: string }` |
+| E2017 | Trait implementation missing a required method | `trait T { fn a(self); fn b(self) }` with `impl T for S` providing only `a` |
+| E2018 | Private item accessed across a module boundary | `module m { fn hidden() { } }` then `m::hidden()` |
+| E2019 | Unknown module, or unknown item in a `use` path | `use nope`; `use shapes::Missing` |
 
 ## Type-level
 
