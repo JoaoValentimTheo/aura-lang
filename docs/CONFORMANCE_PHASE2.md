@@ -138,7 +138,7 @@ leak across sibling declarations.
 |---|---|---|---|---|
 | CONF-RESOLVE-1 | IMPLEMENTATION BUG | `E::A(1)`, `E::Red()`, `use m::E` then `E::A(1)` and the pattern `E::A(x)` failed with `E3002`: `canonical_construct` only rewrote 3+ segment enum paths, and `resolve_use_path` could not pass an enum segment as a module. §27 names a variant by "its enum's path plus the tag". | Enum-path resolution against the enum's own variant set, in both construct and pattern positions and in `use`. | `tests/modules.rs::enum_path_variants_resolve_in_every_position`, `use_enum_variant_path_resolves` |
 | CONF-RESOLVE-2 | IMPLEMENTATION BUG | Same root cause in `use`: `use shapes::Color::Red` reported `E2019: Color is not a module`. | `resolve_use_path` resolves the enum path before the module walk. | `use_enum_variant_path_resolves` |
-| CONF-RESOLVE-3 | IMPLEMENTATION BUG | With both a struct `A` and a variant `E::A` sharing the canonical name `m::A`, `m::E::A(1)` built the struct when the enum was declared first and failed `E3002` when the struct was declared first — order-dependent and silently wrong. | The enum-path branch is tried first, membership-tested against the enum's variant set, so the result is identical in both orders. (Which namespace an *ambiguous* unqualified `m::A` names remains open — §10.) | `struct_and_variant_same_name_resolve_deterministically` |
+| CONF-RESOLVE-3 | IMPLEMENTATION BUG | With both a struct `A` and a variant `E::A` sharing the canonical name `m::A`, `m::E::A(1)` built the struct when the enum was declared first and failed `E3002` when the struct was declared first — order-dependent and silently wrong. | The enum-path branch is tried first and membership-tested against the enum's variant set, so resolution is order-independent. A type/variant **canonical-name collision** (`m::A` denoting both) is now rejected with one clear `E3002` rather than resolved to the wrong value, because the flat item table and the runtime both key constructs by the canonical name; the ambiguous namespace question itself remains open (see §10). Adversarial review of the first fix caught a silent wrong construction and locked the corrected rejection. | `struct_and_variant_same_name_resolve_deterministically` |
 | CONF-RESOLVE-4 | IMPLEMENTATION BUG (wrong span) | `fn g() -> a::S` for a private `a::S` reported `E2018` at `1:1`: `rewrite_type` passed `Span::default()` because `TypeExpr` carries no span. | The enclosing declaration's span is threaded through `rewrite_type`/`rewrite_type_args` (return, parameter, field, alias, annotation, type argument). | `private_type_in_type_position_reports_its_own_span` |
 | CONF-RESOLVE-5 | IMPLEMENTATION BUG | A type parameter could shadow an **imported** or **module-local** declared type with no diagnostic: `check_type_params` tested only canonical root names. §36.2 forbids shadowing any declared type (`E2007`). | The resolver, which has the full module/import visibility model, rejects a type parameter that shadows any visible declared type. | `tests/generics.rs::type_parameter_cannot_shadow_any_visible_declared_type` |
 | CONF-RESOLVE-6 | SPEC GAP | `module a { enum E { A } } module b { enum F { A } }` is accepted, but §18.1 says variant tags are unique **across the whole program**. §27's canonical per-module tags make them coexist. | Not changed. Contradiction recorded for a human decision. | — |
@@ -158,6 +158,15 @@ found beyond the items above.
 - `CONF-RESOLVE-8` — `pub use` re-exports: unsupported, unspecified.
 - `CONF-RESOLVE-9` — module aliases: accepted but inert. Either implement or
   reject.
+- `CONF-RESOLVE-10` — a struct and an enum variant may share a canonical name
+  (`struct A` + `enum E { A }`, both `module::A`). The three declarations
+  coexist, but construction and `use` cannot name both through one canonical
+  key, so `E::A(1)` is rejected as ambiguous and `use m::A` binds whichever
+  the resolver saw, order-dependently. Resolution must be order-independent;
+  whether Aura should (a) forbid the collision, (b) keep variants in a
+  separate runtime namespace, or (c) always prefer one namespace is a
+  decision. §26 says the namespaces are separate; the flat canonical item
+  table does not yet realise that for overlapping spellings.
 
 ## 11. Tests Added
 
