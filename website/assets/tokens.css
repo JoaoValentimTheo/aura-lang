@@ -127,16 +127,17 @@
   --md-code-border: #dddbe6;
   --md-scrim: rgb(0 0 0 / 0.32);
 
-  /* Semantic syntax roles, shared with the Playground editor. */
-  --syntax-keyword: #7b3fb5;
-  --syntax-type: #0d7d80;
-  --syntax-function: #2a5bd7;
-  --syntax-builtin: #2a5bd7;
-  --syntax-string: #116a3f;
-  --syntax-number: #a15c00;
-  --syntax-comment: #6b6b78;
-  --syntax-operator: #55555f;
-  --syntax-punctuation: #55555f;
+  /* Semantic syntax roles, shared with the Playground editor. Values are
+   * chosen to meet WCAG AA contrast on both light code backgrounds. */
+  --syntax-keyword: #9b41a8;
+  --syntax-type: #8a5a00;
+  --syntax-function: #2b62c9;
+  --syntax-builtin: #2b62c9;
+  --syntax-string: #2f7d4f;
+  --syntax-number: #b5510a;
+  --syntax-comment: #5b5b66;
+  --syntax-operator: #4a4a54;
+  --syntax-punctuation: #4a4a54;
 }
 
 /* ---- Dark colour roles --------------------------------------------------- */
