@@ -336,3 +336,66 @@ fn generic_return_of_constructed_value_is_accepted() {
         "1\n"
     );
 }
+
+/// The mirror direction of `CONF-GENERIC-1`: a concrete declared return type
+/// must not be satisfied by a universally-quantified parameter actual, because
+/// the caller may substitute any type. `fn f<T>(x: T) -> int { return x }`
+/// must be `E3005` (it previously passed checking and then failed at the call
+/// site with a checker-tier code, or silently took a wrong branch).
+#[test]
+fn concrete_return_is_not_satisfied_by_a_parameter_actual() {
+    assert_eq!(
+        code("fn f<T>(x: T) -> int { return x }\nfn main() { print(f(\"a\")) }"),
+        codes::RETURN_MISMATCH
+    );
+    assert_eq!(
+        code("fn f<T>(x: T) -> bool { return x }\nfn main() { }"),
+        codes::RETURN_MISMATCH
+    );
+    // Nested: a parameter inside a compound actual is still not a concrete
+    // return.
+    assert_eq!(
+        code("fn f<T>(x: T) -> [int] { return [x] }\nfn main() { }"),
+        codes::RETURN_MISMATCH
+    );
+    assert_eq!(
+        code("struct Box<T> { value: T }\nfn f<T>(x: T) -> Box<int> { return Box { value: x } }\nfn main() { }"),
+        codes::RETURN_MISMATCH
+    );
+    // Methods route through the same check.
+    assert_eq!(
+        code("struct S { n: int }\nimpl S { pub fn f<T>(self, y: T) -> int { return y } }\nfn main() { }"),
+        codes::RETURN_MISMATCH
+    );
+}
+
+/// Legitimate generic returns must still be accepted: the parameter itself, a
+/// constructed generic value, a union containing the parameter, and a
+/// higher-order pass-through.
+#[test]
+fn valid_parameter_returns_are_accepted() {
+    assert_eq!(
+        ok("fn f<T>(x: T) -> T { return x }\nfn main() { print(f(1)) }"),
+        "1\n"
+    );
+    assert_eq!(
+        ok("struct Box<T> { value: T }\nfn make<T>(v: T) -> Box<T> { return Box<T> { value: v } }\nfn main() { print(make(7).value) }"),
+        "7\n"
+    );
+    assert_eq!(
+        ok("fn f<T>(x: T) -> T | int { return x }\nfn main() { print(f(1)) }"),
+        "1\n"
+    );
+    assert_eq!(
+        ok("fn wrap<T>(x: T) -> [T] { return [x] }\nfn main() { print(wrap(1)) }"),
+        "[1]\n"
+    );
+    assert_eq!(
+        ok("fn g<U>(y: U) -> U { return y }\nfn f<T>(x: T) -> T { return g(x) }\nfn main() { print(f(2)) }"),
+        "2\n"
+    );
+    assert_eq!(
+        ok("fn h() -> int { return 1 }\nfn f() -> int { return h() }\nfn main() { print(f()) }"),
+        "1\n"
+    );
+}

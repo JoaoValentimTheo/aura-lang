@@ -1952,30 +1952,27 @@ impl Parser {
                     return Ok(Expr::Lit(Lit::Int(i64::MIN), span));
                 }
                 // A chain of unary operators (`- - - x`, `not not x`,
-                // `~ ~ x`) recurses through `unary()` directly, so each
-                // operator must consume the same host-stack backstop as
-                // `atom()`/`ty()`. Without this guard a long chain exhausted
-                // the native stack before `enforce_depth` could run, aborting
-                // with no diagnostic (`LANGUAGE_SPEC.md` §31.5). Guarding only
-                // the recursive descent leaves non-unary operands, including
-                // grouping parentheses, at their documented budget.
-                self.enter()?;
+                // `~ ~ x`) recurses through `unary()` directly. It must be
+                // bounded so a long chain cannot exhaust the native stack
+                // (`LANGUAGE_SPEC.md` §31.5). It is bounded by the *AST-level*
+                // counter, not the host-stack `depth`: each unary operator is
+                // one AST level, so `MAX_AST_DEPTH` is the exact limit and the
+                // bound composes with grouping (`enter`/`leave`), which must
+                // stay free to accept any AST-valid program (§31.2).
+                self.count_node(span)?;
                 let e = self.unary()?;
-                self.leave();
                 Ok(Expr::Unary(UnOp::Neg, Box::new(e), span))
             }
             Tok::Not => {
                 self.bump();
-                self.enter()?;
+                self.count_node(span)?;
                 let e = self.unary()?;
-                self.leave();
                 Ok(Expr::Unary(UnOp::Not, Box::new(e), span))
             }
             Tok::Tilde => {
                 self.bump();
-                self.enter()?;
+                self.count_node(span)?;
                 let e = self.unary()?;
-                self.leave();
                 Ok(Expr::Unary(UnOp::BitNot, Box::new(e), span))
             }
             _ => self.postfix(),
@@ -2147,6 +2144,12 @@ impl Parser {
 
     fn atom(&mut self) -> Result<Expr> {
         self.enter()?;
+        let r = self.atom_inner();
+        self.leave();
+        r
+    }
+
+    fn atom_inner(&mut self) -> Result<Expr> {
         let span = self.span();
         let e = match self.at().clone() {
             Tok::Int(v) => {
@@ -2395,7 +2398,6 @@ impl Parser {
                 ))
             }
         };
-        self.leave();
         Ok(e)
     }
 

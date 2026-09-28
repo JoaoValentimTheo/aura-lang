@@ -385,3 +385,32 @@ fn unary_chains_are_bounded_not_a_stack_overflow() {
         assert_eq!(run(&chain(20_000)), Err(codes::NESTING), "{op}");
     }
 }
+
+/// `LANGUAGE_SPEC.md` §31.2: the parser backstop must accept any AST-valid
+/// program *including grouping*. A unary chain is one AST level per operator,
+/// so it is bounded by the semantic AST counter, not by the host-stack budget
+/// that grouping also consumes. A valid program that mixes deep grouping with
+/// a unary chain well within the AST limit must be accepted; the two
+/// mechanisms must compose without shrinking each other's allowance
+/// (`CONF-RESOURCE-1` refinement).
+#[test]
+fn unary_and_grouping_budgets_compose() {
+    // 1000 grouping parentheses (well within the host backstop) plus a unary
+    // chain under `MAX_AST_DEPTH` is AST-valid and must parse.
+    let ok = format!(
+        "fn main() {{ print({}{}1{}) }}",
+        "(".repeat(1000),
+        "-".repeat(253),
+        ")".repeat(1000)
+    );
+    assert!(
+        run(&ok).is_ok(),
+        "grouping + sub-limit unary must be accepted"
+    );
+    // A unary chain past the AST limit is the stable nesting diagnostic.
+    let over = format!("fn main() {{ print({}1) }}", "-".repeat(400));
+    assert_eq!(run(&over), Err(codes::NESTING));
+    // A very long chain is still bounded, never a host abort.
+    let huge = format!("fn main() {{ print({}1) }}", "-".repeat(30_000));
+    assert_eq!(run(&huge), Err(codes::NESTING));
+}

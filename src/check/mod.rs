@@ -21,23 +21,41 @@ pub use crate::types;
 /// Alias resolution can duplicate a union member subtree (`type T = A | A`),
 /// which would otherwise grow the resolved type exponentially with each
 /// additional alias level. Resolved unions therefore flatten nested unions and
-/// Return-position compatibility. A declared return type may be a generic
-/// parameter (`fn f<T>(x: T) -> T`). `Ty::compatible_with` treats a parameter
-/// on either side as universally permissive, which is correct when *binding* a
-/// parameter at a call site but wrong for checking a `return`: the body value
-/// must match the parameter the caller will substitute, so returning a
-/// concrete incompatible value (`return 5` in `-> T`) must be `E3005`
-/// (`LANGUAGE_SPEC.md` §15.2, `docs/GENERICS.md`). Here a declared parameter is
-/// matched only by the same parameter or by `Unknown` (the checker cannot see
-/// through an opaque value); a concrete declared type still accepts a parameter
-/// actual because substitution will supply it.
+/// Return-position compatibility. A declared return type may mention a generic
+/// parameter (`fn f<T>(x: T) -> T`, `-> Box<T>`, `-> T | int`). The body must
+/// be sound for **every** substitution the caller will apply, so a parameter
+/// is not universally permissive here the way [`Ty::compatible_with`] treats it
+/// when binding an argument:
+///
+/// * the declared type matches an actual that is identical, or an actual that
+///   matches one member of a declared union (`T | int` accepts a `T`);
+/// * a declared parameter is not satisfied by a concrete incompatible value
+///   (`fn f<T>(x: T) -> T { return 5 }` is `E3005`);
+/// * a concrete declared type is not satisfied by a universally-quantified
+///   actual (`fn f<T>(x: T) -> int { return x }` is `E3005`, because `T` may be
+///   any type);
+/// * `Unknown` remains permissive (`LANGUAGE_SPEC.md` §2.3).
 fn return_compatible(expected: &Ty, actual: &Ty) -> bool {
-    match (expected, actual) {
-        (Ty::Unknown, _) | (_, Ty::Unknown) => true,
-        (Ty::Param(_), Ty::Param(_)) => expected == actual,
-        (Ty::Param(_), _) => false,
-        _ => expected.compatible_with(actual),
+    if matches!(expected, Ty::Unknown) || matches!(actual, Ty::Unknown) {
+        return true;
     }
+    return_assignable(expected, actual)
+}
+
+/// The recursive core of [`return_compatible`]: exact equality, then a
+/// declared union matches if any member matches; any remaining unresolved
+/// parameter on either side is not soundly matched.
+fn return_assignable(expected: &Ty, actual: &Ty) -> bool {
+    if expected == actual {
+        return true;
+    }
+    if let Ty::Union(members) = expected {
+        return members.iter().any(|m| return_assignable(m, actual));
+    }
+    if expected.has_param() || actual.has_param() {
+        return false;
+    }
+    expected.compatible_with(actual)
 }
 
 /// remove structurally-equal duplicate members, mirroring the normalization
