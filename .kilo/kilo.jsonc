@@ -1,0 +1,206 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+
+  // ==========================================================================
+  // AURA — KILO MULTI-AGENT CONFIGURATION
+  // ==========================================================================
+  //
+  // Mirrors the proven Aura agent roles/permissions/gates from the OpenCode
+  // configuration, adapted to Kilo. Project scope: this directory only.
+  //
+  // Model strategy: FREE-FIRST. Every agent pins a `kilo/...:free` model.
+  // Paid models are a manual, human-chosen fallback and are deliberately NOT
+  // configured here. Never place provider API keys in this file.
+  //
+  // Permission rule order: Kilo evaluates with last-match-wins. Rules are
+  // written broad-first, then specific, so the specific rule below always
+  // overrides the catch-all.
+  // ==========================================================================
+
+  "default_agent": "aura-orchestrator",
+
+  "model": "kilo/nvidia/nemotron-3-ultra-550b-a55b:free",
+  "small_model": "kilo/liquid/lfm-2.5-2.6b:free",
+
+  "compaction": {
+    "auto": true,
+    "prune": true
+  },
+
+  // Keep noisy generated trees out of the file watcher. This does NOT prevent
+  // explicit reads/builds/tests of these paths.
+  "watcher": {
+    "ignore": [
+      ".git/**",
+      "target/**",
+      "**/target/**",
+      "node_modules/**",
+      "**/node_modules/**",
+      "website/dist/**",
+      "fuzz/artifacts/**",
+      "fuzz/corpus/**/.cache/**"
+    ]
+  },
+
+  // ==========================================================================
+  // GLOBAL PERMISSIONS
+  // ==========================================================================
+  "permission": {
+    // Catch-all first; specific overrides follow and win (last match wins).
+    "*": "allow",
+
+    // Protect local secrets from accidental model reads.
+    "read": {
+      "*": "allow",
+      ".env": "deny",
+      ".env.*": "deny",
+      "*.pem": "deny",
+      "*.key": "deny",
+      ".env.example": "allow"
+    },
+
+    // Normal project edits are allowed for editing agents, but these paths are
+    // protected regardless of agent intent.
+    "edit": {
+      "*": "allow",
+
+      // Human decision package: immutable until the exact approval token exists.
+      "docs/AUDIT3_TYPE_NESTING_DECISION.md": "deny",
+
+      // Frozen release and every historical development artifact. New dev
+      // versions are created by playground/build.mjs (a bash-driven build),
+      // not by editing these paths, so denying edits here cannot block
+      // legitimate version advancement while preventing in-place mutation.
+      "playground/runtimes/**": "deny",
+
+      // Agent/config files may not be silently loosened by an agent.
+      ".kilo/**": "ask"
+    },
+
+    // Only known Aura subagents may be launched autonomously.
+    "task": {
+      "*": "deny",
+      "aura-scout": "allow",
+      "aura-deep-auditor": "allow",
+      "aura-spec-auditor": "allow",
+      "aura-adversarial-reviewer": "allow",
+      "aura-artifact-verifier": "allow",
+      "aura-implementer": "allow"
+    },
+
+    // External paths and network access require human approval.
+    "external_directory": "ask",
+    "webfetch": "ask",
+    "websearch": "ask",
+    "doom_loop": "ask",
+
+    "bash": {
+      // Unknown shell commands require human approval.
+      "*": "ask",
+
+      // ----------------------------------------------------------------------
+      // Safe repository inspection
+      // ----------------------------------------------------------------------
+      "pwd": "allow",
+      "pwd *": "allow",
+      "ls": "allow",
+      "ls *": "allow",
+      "cat *": "allow",
+      "head *": "allow",
+      "tail *": "allow",
+      "sed *": "allow",
+      "rg *": "allow",
+      "grep *": "allow",
+      "wc *": "allow",
+      "file *": "allow",
+      "diff *": "allow",
+      "cmp *": "allow",
+      "shasum *": "allow",
+
+      // ----------------------------------------------------------------------
+      // Safe Git inspection
+      // ----------------------------------------------------------------------
+      "git status": "allow",
+      "git status *": "allow",
+      "git diff": "allow",
+      "git diff *": "allow",
+      "git log": "allow",
+      "git log *": "allow",
+      "git show": "allow",
+      "git show *": "allow",
+      "git rev-parse *": "allow",
+      "git branch --show-current": "allow",
+      "git branch --show-current *": "allow",
+      "git ls-files": "allow",
+      "git ls-files *": "allow",
+      "git grep *": "allow",
+
+      // Local staging/commits are allowed; history rewriting is not.
+      "git add *": "allow",
+      "git commit *": "allow",
+
+      // ----------------------------------------------------------------------
+      // Aura build/test/validation commands
+      // ----------------------------------------------------------------------
+      "cargo fmt *": "allow",
+      "cargo test *": "allow",
+      "cargo check *": "allow",
+      "cargo clippy *": "allow",
+      "cargo build *": "allow",
+      "cargo metadata *": "allow",
+      "cargo tree *": "allow",
+      "cargo audit *": "allow",
+      "cargo fuzz *": "allow",
+      "rustc *": "allow",
+      "rustup show *": "allow",
+      "node *": "allow",
+      "npm test *": "allow",
+      "npm run test*": "allow",
+      "npm run build*": "allow",
+
+      // Read-only GitHub CI inspection.
+      "gh auth status*": "allow",
+      "gh run list*": "allow",
+      "gh run view*": "allow",
+      "gh workflow view*": "allow",
+
+      // ----------------------------------------------------------------------
+      // Explicitly blocked publication/history/destructive operations
+      // ----------------------------------------------------------------------
+      "git push*": "deny",
+      "git tag*": "deny",
+      "git reset*": "deny",
+      "git restore*": "deny",
+      "git checkout*": "deny",
+      "git switch*": "deny",
+      "git rebase*": "deny",
+      "git merge*": "deny",
+      "git cherry-pick*": "deny",
+      "git pull*": "deny",
+      "git commit --amend*": "deny",
+      "git remote set-url*": "deny",
+      "git remote remove*": "deny",
+
+      "gh release*": "deny",
+      "gh api*": "deny",
+      "gh workflow run*": "deny",
+
+      "rm *": "deny",
+      "rmdir *": "deny",
+      "unlink *": "deny",
+      "truncate *": "deny",
+      "dd *": "deny",
+      "mkfs*": "deny",
+      "chmod -R *": "deny",
+      "chown *": "deny",
+
+      "curl *": "ask",
+      "wget *": "ask",
+      "ssh *": "deny",
+      "scp *": "deny",
+      "rsync *": "ask"
+    }
+  },
+
+  "mcp": {}
+}

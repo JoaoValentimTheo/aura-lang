@@ -1,0 +1,20 @@
+#:schema https://developers.openai.com/codex/config-schema.json
+
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+project_doc_max_bytes = 18000
+tool_output_token_limit = 6000
+
+[history]
+persistence = "save-all"
+
+[models.new_thread]
+model = "gpt-5.6-terra"
+model_reasoning_effort = "low"
+
+[agents]
+enabled = true
+default_subagent_model = "gpt-5.6-luna"
+default_subagent_reasoning_effort = "low"
+max_concurrent_threads_per_session = 2
+interrupt_message = true
