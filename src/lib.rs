@@ -38,13 +38,16 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 ///
 /// The language specification (`docs/LANGUAGE_SPEC.md`) is normative at this
 /// identifier. It changes only through the RFC process, independently of the
-/// release version. Aura `0.0.2` now ships the evolved language: general union
-/// types, transparent union composition through aliases, the Rust-style
-/// `a..b` range literal, and `<!-- ... --!>` multiline comments. The numeric
-/// identifier is retained because it is a release-boundary identity asserted
-/// by `tests/contract.rs`; the semantics it denotes are those of the current
-/// `docs/LANGUAGE_SPEC.md`.
-pub const LANGUAGE_VERSION: &str = "0.0.1";
+/// release version.
+///
+/// The two identities coincide at `0.2.0` because this *is* a language
+/// release: the Core-completion line changed the language — generic map keys
+/// and ordered keys, `map.items()`, list and map comprehensions, the Core
+/// separator/numeric/f-string rules, and completed in-source module
+/// semantics. When a future release ships only runtime or tooling work, the
+/// language version may again advance more slowly than the release version;
+/// the two are kept as separate constants precisely so that stays possible.
+pub const LANGUAGE_VERSION: &str = "0.2.0";
 
 /// Stack size for the interpreter thread. Recursive Aura programs recurse
 /// through several Rust frames per call, so a generous but bounded stack

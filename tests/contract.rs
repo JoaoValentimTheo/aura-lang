@@ -179,21 +179,24 @@ fn r10_defined_errors_documented() {
     assert_eq!(sorted.len(), all.len());
 }
 
-/// The release identity is `0.0.2`, derived from the package version (not a
-/// hardcoded duplicate). This keeps the crate version, the exported
-/// `aura::VERSION`, and `aura version` in agreement.
+/// The current release identity is `0.2.0`, derived from the package version
+/// (not a hardcoded duplicate). This keeps the crate version, the exported
+/// `aura::VERSION`, and `aura version` in agreement. `0.0.1` and `0.0.2`
+/// remain historical releases, not the current one.
 #[test]
-fn release_version_is_zero_zero_two() {
-    assert_eq!(aura::VERSION, "0.0.2");
+fn release_version_is_zero_two_zero() {
+    assert_eq!(aura::VERSION, "0.2.0");
     assert_eq!(aura::VERSION, env!("CARGO_PKG_VERSION"));
 }
 
-/// The *language semantics* remain at the frozen `0.0.1` specification while
-/// the 0.0.2 release ships runtime, host, Playground, and website work. The
-/// two identities are deliberately distinct (see `src/lib.rs`), and the
-/// language version must never silently track the release version.
+/// The language semantics version tracks the current public language contract.
+/// `0.2.0` is a language release (Core completion), so the two identities
+/// coincide here. They remain separate constants so a future runtime-only
+/// release can advance the release version without silently advancing the
+/// language (see `src/lib.rs`), and both are asserted so the identities can
+/// never be conflated accidentally.
 #[test]
-fn language_version_is_frozen_at_zero_zero_one() {
-    assert_eq!(aura::LANGUAGE_VERSION, "0.0.1");
-    assert_ne!(aura::LANGUAGE_VERSION, aura::VERSION);
+fn language_version_matches_the_current_language_contract() {
+    assert_eq!(aura::LANGUAGE_VERSION, "0.2.0");
+    assert_eq!(aura::LANGUAGE_VERSION, aura::VERSION);
 }
