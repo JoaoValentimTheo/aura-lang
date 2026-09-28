@@ -9,9 +9,10 @@ Phases 2 → 12 plus final adversarial closure. Phase 1 was closed at
 * Final HEAD: `fbaa713189dc79117076916d85671d46cb6b9a94` (before the final
   closure re-verification; see §20 for the CI commit).
 * Worktree: clean (no transient artifacts).
-* Commits added over Phase 1 (13):
+* Commits added over Phase 1 (16):
   `8aa1c7f`, `5d54ab8`, `0f3555d`, `2462d3f`, `39f4005`, `73c7b63`, `43b7cef`,
-  `3812f1e`, `04621a2`, `965d188`, `b45b8bd`, `acf5535`, `fbaa713`.
+  `3812f1e`, `04621a2`, `965d188`, `b45b8bd`, `acf5535`, `fbaa713`, `226b889`,
+  `6dfc8da`, `f066da4`.
 
 ## 2. Phase Summary
 
@@ -155,11 +156,13 @@ Website examples (19) and links (2086) execute/pass.
 | dev.23 | `…/0.0.2-dev.23/…wasm` | 1,604,958 | `71072150e67384120c63e22d6176f3683110735b84f74723bea315f79778a528` |
 | dev.24 | `…/0.0.2-dev.24/…wasm` | 1,604,902 | `16882fe60d7fa52f9e204b3841cc59764c79f50c1068f33b7c3e3350f1adfd39` |
 | dev.25 | `…/0.0.2-dev.25/…wasm` | 1,612,018 | `a9462510c963beb3b721c9f1da680f39722bfce6906eb73ad9ba304fe344a406` |
-| dev.26 (current) | `…/0.0.2-dev.26/…wasm` | 1,612,422 | `1e91a070bfd6762d1e2ec6fb504e1a362f2f64450b963adbaadd14731e316185` |
+| dev.26 | `…/0.0.2-dev.26/…wasm` | 1,612,422 | `1e91a070bfd6762d1e2ec6fb504e1a362f2f64450b963adbaadd14731e316185` |
+| dev.27 (current) | `…/0.0.2-dev.27/…wasm` | 1,613,542 | `605d18927bcd8c2a77105975e62d916b64a9ca803ca1050dd9c6f4dd3c9b1451` |
 
-dev.25 and dev.26 were each advanced by real production changes; all earlier
-artifacts are byte-identical and untouched. Both new artifacts are reproducible
-from source, import-free, and staged on the website. No release/tag created.
+dev.25, dev.26, and dev.27 were each advanced by real production changes; all
+earlier artifacts are byte-identical and untouched. Each new artifact is
+reproducible from source, import-free, and staged on the website. No
+release/tag created.
 
 ## 19. Validation
 
