@@ -1034,11 +1034,8 @@ impl Resolver {
         // the enum type, bare, module-qualified, or imported (`use m::E`). A
         // variant's canonical name is the enum's *module* path plus the tag
         // (`LANGUAGE_SPEC.md` §27), so `E::A` at the root is `A` and
-        // `m::E::A` is `m::A`. This must be tried *before* the general path
-        // lookup: a struct may share the canonical name of the variant
-        // (`m::A`), and the enum-qualified spelling unambiguously denotes the
-        // variant. Membership is tested against the enum's own variant set, so
-        // the answer never depends on declaration order.
+        // `m::E::A` is `m::A`. Membership is tested against the enum's own
+        // variant set, so the answer never depends on declaration order.
         if let Some((enum_path, tag)) = name.rsplit_once("::") {
             if let Some(enum_canonical) = self.lookup_path(enum_path, prefix, Namespace::Type) {
                 let canonical = match enum_canonical.rsplit_once("::") {
@@ -1051,6 +1048,22 @@ impl Resolver {
                     .is_some_and(|tags| tags.contains(&canonical))
                 {
                     self.check_visible(&enum_canonical, prefix, span)?;
+                    // A variant and a struct may share a canonical name
+                    // (`module::tag`). The flat item table and the runtime both
+                    // key by that name, so a construction cannot be
+                    // disambiguated downstream — it would silently build the
+                    // struct. Reject rather than resolve to the wrong value.
+                    // (The genuinely ambiguous namespace question is recorded
+                    // as a SPEC GAP in `docs/CONFORMANCE_PHASE2.md`.)
+                    if self.is_declared_type(&canonical) {
+                        return Err(Diag::new(
+                            codes::UNKNOWN_TYPE,
+                            format!(
+                                "`{name}` is ambiguous: the variant `{canonical}` shares its name with a declared type; rename one of them"
+                            ),
+                            span,
+                        ));
+                    }
                     return Ok(canonical);
                 }
             }
@@ -1064,6 +1077,15 @@ impl Resolver {
             return Ok(c);
         }
         Ok(name.to_string())
+    }
+
+    /// Whether `canonical` names a declared type (struct, enum, alias, or
+    /// trait) in any module scope. Used to detect a type/variant canonical-name
+    /// collision that the flat item table cannot represent.
+    fn is_declared_type(&self, canonical: &str) -> bool {
+        self.type_scope
+            .values()
+            .any(|m| m.values().any(|c| c == canonical))
     }
 
     /// Look up `name`, which may be a `::`-qualified path or a bare local name,

@@ -305,26 +305,34 @@ fn use_enum_variant_path_resolves() {
 /// namespaces, §26). Resolution must be **deterministic and order-
 /// independent**: previously `m::E::A(1)` built the struct `m::A` when the
 /// enum was declared first, but failed with `E3002` when the struct was
-/// declared first. Both orders now agree. (Which namespace an unqualified
-/// `m::A(1)` names when both exist is a separate SPEC GAP recorded in
-/// `docs/CONFORMANCE_PHASE2.md`; this test locks only the determinism.)
+/// declared first. Now the collision is rejected identically in both orders,
+/// because the flat canonical name `m::A` cannot denote both a struct and a
+/// variant downstream. (The namespace question itself is a SPEC GAP recorded
+/// in `docs/CONFORMANCE_PHASE2.md`; this test locks only the determinism and
+/// the absence of a silent wrong construction.)
 #[test]
 fn struct_and_variant_same_name_resolve_deterministically() {
     let enum_first =
         "module m { pub enum E { A(int) }\n pub struct A { pub x: int } }\nfn main() { print(m::E::A(1)) }";
     let struct_first =
         "module m { pub struct A { pub x: int }\n pub enum E { A(int) } }\nfn main() { print(m::E::A(1)) }";
-    // Same result and same diagnostic absence in both declaration orders.
-    assert_eq!(ok(enum_first), ok(struct_first));
-    assert_eq!(ok(enum_first), "m::A { x: 1 }\n");
-    // Across repeated runs the result never drifts (no hash-order dependence).
+    // Both orders are rejected with the same code, never a silent struct.
+    assert_eq!(code(enum_first), codes::UNKNOWN_TYPE);
+    assert_eq!(code(struct_first), codes::UNKNOWN_TYPE);
     for _ in 0..25 {
-        assert_eq!(ok(enum_first), ok(struct_first));
+        assert_eq!(code(enum_first), code(struct_first));
     }
-    // A name that only a variant occupies is unaffected and always resolves.
+    // With no collision the enum-path variant resolves in expression and
+    // pattern position.
     assert_eq!(
         ok("module m { pub enum E { A(int) } }\nfn main() { print(m::E::A(1)) }"),
         "m::A(1)\n"
+    );
+    // The unqualified module-path spelling names the type, so with a struct of
+    // that name it constructs the struct — order-independent, as before.
+    assert_eq!(
+        ok("module m { pub enum E { A(int) }\n pub struct A { pub x: int } }\nfn main() { print(m::A(1)) }"),
+        "m::A { x: 1 }\n"
     );
 }
 
