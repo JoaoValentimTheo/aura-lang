@@ -890,6 +890,18 @@ pub fn methods() -> &'static [MethodSig] {
                 mutates_receiver: false,
             },
             MethodSig {
+                name: "items",
+                receiver: TypeClass::Map,
+                params: vec![],
+                min_args: 0,
+                max_args: 0,
+                // Narrowed to `[[K | V]]` by the checker for a known map
+                // receiver: Aura has no tuple type, so a pair is a two-element
+                // list and its honest homogeneous element type is `K | V`.
+                returns: Returns::Ty(Ty::List(Box::new(Ty::Unknown))),
+                mutates_receiver: false,
+            },
+            MethodSig {
                 name: "remove",
                 receiver: TypeClass::Map,
                 params: vec![Param::ANY],

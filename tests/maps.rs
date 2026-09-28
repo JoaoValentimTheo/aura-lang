@@ -332,3 +332,33 @@ fn iteration_yields_keys_in_ascending_order() {
         "1\n2\n"
     );
 }
+
+// ------------------------------------------------------- items()
+
+#[test]
+fn items_returns_eager_pair_lists_in_key_order() {
+    assert_eq!(
+        ok("fn main() { let m: {int: string} = {2: \"b\", 1: \"a\"}\n print(m.items()) }"),
+        "[[1, \"a\"], [2, \"b\"]]\n"
+    );
+    // Destructuring works because each pair is a two-element list.
+    assert_eq!(
+        ok("fn main() { let m: {int: string} = {1: \"a\", 2: \"b\"}\n for [k, v] in m.items() { print(k)\n print(v) } }"),
+        "1\na\n2\nb\n"
+    );
+    // The result is a snapshot: later map mutation does not change it.
+    assert_eq!(
+        ok("fn main() { let mut m: {int: string} = {1: \"a\"}\n let snap = m.items()\n m[2] = \"b\"\n print(snap)\n print(m.items()) }"),
+        "[[1, \"a\"]]\n[[1, \"a\"], [2, \"b\"]]\n"
+    );
+}
+
+#[test]
+fn items_pairs_have_the_union_element_type() {
+    // A pair is a homogeneous `[K | V]` list (no tuple type). Iterating and
+    // printing each pair renders the two-element list.
+    assert_eq!(
+        ok("fn main() { let m: {int: string} = {1: \"a\"}\n for p in m.items() { print(p) } }"),
+        "[1, \"a\"]\n"
+    );
+}

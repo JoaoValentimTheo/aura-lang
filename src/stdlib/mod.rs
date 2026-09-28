@@ -719,6 +719,18 @@ fn map_method(
                 .collect(),
         )),
         "values" => Ok(Value::list(m.borrow().values().cloned().collect())),
+        "items" => {
+            // Eager, non-mutating snapshot: each entry is a two-element list
+            // `[key, value]` (Aura has no tuple type), in canonical ascending
+            // key order, matching map iteration. The result is a fresh list of
+            // fresh pair lists, so later mutation of the map does not affect it.
+            let pairs = m
+                .borrow()
+                .iter()
+                .map(|(k, v)| Value::list(vec![k.to_value(), v.clone()]))
+                .collect();
+            Ok(Value::list(pairs))
+        }
         "remove" => {
             let k = map_key(&args, "remove", span)?;
             Ok(m.borrow_mut().remove(&k).unwrap_or(Value::None))
