@@ -541,6 +541,9 @@ fn reject_symlink_components(path: &Path, context: &str) -> Result<(), ProviderE
 }
 
 fn allowed_platform_root_alias(path: &Path) -> bool {
+    #[cfg(not(target_os = "macos"))]
+    let _ = path;
+
     #[cfg(target_os = "macos")]
     {
         if path.parent() == Some(Path::new("/")) {
