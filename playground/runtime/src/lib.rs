@@ -142,6 +142,28 @@ struct VirtualChildRequest {
     key: String,
 }
 
+#[derive(Debug)]
+struct VirtualProjectError {
+    code: u16,
+    message: String,
+}
+
+impl VirtualProjectError {
+    fn host(message: impl Into<String>) -> VirtualProjectError {
+        VirtualProjectError {
+            code: codes::IO,
+            message: message.into(),
+        }
+    }
+
+    fn module_source(message: impl Into<String>) -> VirtualProjectError {
+        VirtualProjectError {
+            code: codes::MODULE_SOURCE_PATH,
+            message: message.into(),
+        }
+    }
+}
+
 fn parse_options(raw: &[u8]) -> Result<Options, String> {
     let mut args = Vec::new();
     let mut pos = 0usize;
@@ -204,24 +226,29 @@ fn valid_source_name(name: &str) -> bool {
         && !name.chars().any(char::is_control)
 }
 
-fn build_virtual_provider(raw: &[u8]) -> Result<(InMemorySourceProvider, bool), String> {
+fn build_virtual_provider(
+    raw: &[u8],
+) -> Result<(InMemorySourceProvider, bool), VirtualProjectError> {
     if raw.len() > limits::MAX_PROJECT_BYTES {
-        return Err(format!(
+        return Err(VirtualProjectError::host(format!(
             "virtual project exceeds the {} byte limit",
             limits::MAX_PROJECT_BYTES
-        ));
+        )));
     }
 
     let mut project: VirtualProjectRequest = serde_json::from_slice(raw)
-        .map_err(|error| format!("invalid virtual project JSON: {error}"))?;
+        .map_err(|error| VirtualProjectError::host(format!("invalid virtual project JSON: {error}")))?;
     if project.sources.len() > limits::MAX_PROJECT_SOURCES {
-        return Err(format!(
+        return Err(VirtualProjectError::host(format!(
             "virtual project has too many sources (limit {})",
             limits::MAX_PROJECT_SOURCES
-        ));
+        )));
     }
     if !valid_virtual_key(&project.entry) {
-        return Err(format!("invalid virtual entry key `{}`", project.entry));
+        return Err(VirtualProjectError::module_source(format!(
+            "invalid virtual entry key `{}`",
+            project.entry
+        )));
     }
 
     project
@@ -232,39 +259,42 @@ fn build_virtual_provider(raw: &[u8]) -> Result<(InMemorySourceProvider, bool), 
     let mut source_names = BTreeSet::new();
     for source in &project.sources {
         if !valid_virtual_key(&source.key) {
-            return Err(format!("invalid virtual source key `{}`", source.key));
+            return Err(VirtualProjectError::module_source(format!(
+                "invalid virtual source key `{}`",
+                source.key
+            )));
         }
         if !keys.insert(source.key.clone()) {
-            return Err(format!(
+            return Err(VirtualProjectError::host(format!(
                 "virtual source key `{}` is registered more than once",
                 source.key
-            ));
+            )));
         }
         if !valid_source_name(&source.name) {
-            return Err(format!(
+            return Err(VirtualProjectError::host(format!(
                 "invalid virtual source name for key `{}`",
                 source.key
-            ));
+            )));
         }
         if !source_names.insert(source.name.clone()) {
-            return Err(format!(
+            return Err(VirtualProjectError::host(format!(
                 "virtual source name `{}` is registered more than once",
                 source.name
-            ));
+            )));
         }
         if source.text.len() > limits::MAX_SOURCE_BYTES {
-            return Err(format!(
+            return Err(VirtualProjectError::host(format!(
                 "virtual source `{}` exceeds the {} byte limit",
                 source.name,
                 limits::MAX_SOURCE_BYTES
-            ));
+            )));
         }
     }
     if !keys.contains(&project.entry) {
-        return Err(format!(
+        return Err(VirtualProjectError::module_source(format!(
             "virtual project entry key `{}` is not registered",
             project.entry
-        ));
+        )));
     }
 
     let is_single_source = project.sources.len() == 1 && project.sources[0].children.is_empty();
@@ -278,7 +308,7 @@ fn build_virtual_provider(raw: &[u8]) -> Result<(InMemorySourceProvider, bool), 
                 source.name.clone(),
                 source.text.clone(),
             )
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| VirtualProjectError::module_source(error.to_string()))?;
     }
 
     for source in &mut project.sources {
@@ -291,17 +321,20 @@ fn build_virtual_provider(raw: &[u8]) -> Result<(InMemorySourceProvider, bool), 
         let parent = SourceKey::new(source.key.clone());
         for child in &source.children {
             if !valid_virtual_key(&child.key) {
-                return Err(format!("invalid virtual child key `{}`", child.key));
+                return Err(VirtualProjectError::module_source(format!(
+                    "invalid virtual child key `{}`",
+                    child.key
+                )));
             }
             if !keys.contains(&child.key) {
-                return Err(format!(
+                return Err(VirtualProjectError::module_source(format!(
                     "virtual child `{}` of source `{}` references unknown key `{}`",
                     child.name, source.key, child.key
-                ));
+                )));
             }
             provider
                 .add_child(&parent, child.name.clone(), &SourceKey::new(child.key.clone()))
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| VirtualProjectError::module_source(error.to_string()))?;
         }
     }
 
@@ -422,8 +455,8 @@ fn report_diagnostic_result(report: &DiagnosticReport, stdout: &str) -> (String,
     }
 }
 
-fn virtual_input_error(message: impl Into<String>) -> (String, u32) {
-    let diagnostic = Diag::new(codes::IO, message, Span::default());
+fn virtual_input_error(code: u16, message: impl Into<String>) -> (String, u32) {
+    let diagnostic = Diag::new(code, message, Span::default());
     let mut first = true;
     let diags = sourced_diag_json(&diagnostic, "", None, &mut first);
     (
@@ -459,7 +492,7 @@ pub fn execute_project_bytes(
     options_raw: &[u8],
 ) -> (String, u32, &'static str) {
     if project_raw.len() > limits::MAX_PROJECT_BYTES {
-        let (json, code) = virtual_input_error(format!(
+        let (json, code) = virtual_input_error(codes::IO, format!(
             "virtual project exceeds the {} byte limit",
             limits::MAX_PROJECT_BYTES
         ));
@@ -468,14 +501,14 @@ pub fn execute_project_bytes(
     let opts = match parse_options(options_raw) {
         Ok(options) => options,
         Err(message) => {
-            let (json, code) = virtual_input_error(message);
+            let (json, code) = virtual_input_error(codes::IO, message);
             return (json, code, aura::LANGUAGE_VERSION);
         }
     };
     let (provider, is_single_source) = match build_virtual_provider(project_raw) {
         Ok(provider) => provider,
-        Err(message) => {
-            let (json, code) = virtual_input_error(message);
+        Err(error) => {
+            let (json, code) = virtual_input_error(error.code, error.message);
             return (json, code, aura::LANGUAGE_VERSION);
         }
     };

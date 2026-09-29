@@ -226,11 +226,14 @@ fn equal_local_spans_in_distinct_virtual_sources_keep_distinct_names() {
 }
 
 #[test]
-fn malformed_project_and_virtual_path_tricks_are_transport_errors() {
+fn malformed_project_json_is_a_transport_error() {
     let malformed = run(br#"{"entry":"root","sources":[}"#);
     assert_eq!(code(&malformed), u64::from(codes::IO));
     assert!(source_name(&malformed).is_none());
+}
 
+#[test]
+fn invalid_virtual_provider_keys_are_module_source_path_errors() {
     for key in [
         "",
         ".",
@@ -248,9 +251,39 @@ fn malformed_project_and_virtual_path_tricks_are_transport_errors() {
             vec![source(key, "main.aura", "fn main() {}", vec![])],
         );
         let result = run(&raw);
-        assert_eq!(code(&result), u64::from(codes::IO), "{key:?}");
+        assert_eq!(
+            code(&result),
+            u64::from(codes::MODULE_SOURCE_PATH),
+            "{key:?}"
+        );
         assert!(source_name(&result).is_none(), "{key:?}");
     }
+
+    let invalid_source = project(
+        "root",
+        vec![
+            source("root", "main.aura", "fn main() {}", vec![]),
+            source("a/b", "child.aura", "", vec![]),
+        ],
+    );
+    assert_eq!(
+        code(&run(&invalid_source)),
+        u64::from(codes::MODULE_SOURCE_PATH)
+    );
+
+    let invalid_child = project(
+        "root",
+        vec![source(
+            "root",
+            "main.aura",
+            "fn main() {}",
+            vec![child("child", "a/b")],
+        )],
+    );
+    assert_eq!(
+        code(&run(&invalid_child)),
+        u64::from(codes::MODULE_SOURCE_PATH)
+    );
 }
 
 #[test]
@@ -268,7 +301,10 @@ fn duplicate_missing_and_unknown_virtual_keys_are_rejected() {
         "missing",
         vec![source("root", "main.aura", "fn main() {}", vec![])],
     );
-    assert_eq!(code(&run(&missing_entry)), u64::from(codes::IO));
+    assert_eq!(
+        code(&run(&missing_entry)),
+        u64::from(codes::MODULE_SOURCE_PATH)
+    );
 
     let unknown_child = project(
         "root",
@@ -279,7 +315,10 @@ fn duplicate_missing_and_unknown_virtual_keys_are_rejected() {
             vec![child("child", "missing")],
         )],
     );
-    assert_eq!(code(&run(&unknown_child)), u64::from(codes::IO));
+    assert_eq!(
+        code(&run(&unknown_child)),
+        u64::from(codes::MODULE_SOURCE_PATH)
+    );
 }
 
 #[test]

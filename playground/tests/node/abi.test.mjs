@@ -239,8 +239,8 @@ if (supportsVirtualProjects) {
     entry: "..",
     sources: [{ key: "..", name: "main.aura", text: "fn main() {}", children: [] }],
   });
-  check("malformed VFS request is a diagnostic", bad.status === "diagnostic", JSON.stringify(bad));
-  check("malformed VFS request is host-level E4020", bad.diagnostics[0]?.code === 4020, JSON.stringify(bad));
+  check("invalid VFS provider key is a diagnostic", bad.status === "diagnostic", JSON.stringify(bad));
+  check("invalid VFS provider key is E2022", bad.diagnostics[0]?.code === 2022, JSON.stringify(bad));
 
   const duplicateSourceNames = runProject({
     entry: "root",
