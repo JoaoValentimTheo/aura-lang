@@ -41,9 +41,18 @@ preserved and frozen.
   SHA-256 `9937fd8094ef402b7a9233d02bd232405f75b9e70661404646fcda7cd295c5bc`,
   reproduced across clean builds, zero imports. Playground API 1, Host ABI 1.
 
-## CI / deploy
+## CI / deploy / release (verified)
 
-See the final release report for the exact run IDs on the migration SHA.
+- CI run `36499955242` on `668722f`: 14/14 jobs success.
+- Deploy website run `36499955213` on `668722f`: build + GitHub Pages deploy
+  success. The deployed manifest serves `current: "0.2.0"` and the deployed
+  `0.2.0` artifact hash equals the canonical
+  `9937fd80…c5bc`.
+- Release run `36500653554` on tag `v0.2.0` (commit `668722f`): 5/5 jobs
+  success. GitHub release published at
+  <https://github.com/JoaoValentimTheo/aura-lang/releases/tag/v0.2.0>; its
+  `aura-playground-runtime-0.2.0.wasm` asset matches the canonical artifact
+  byte-for-byte (1,654,161 bytes, `9937fd80…c5bc`).
 
 ## Commits added by this program (oldest first)
 
