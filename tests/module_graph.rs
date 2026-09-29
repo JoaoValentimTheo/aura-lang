@@ -716,6 +716,66 @@ fn case_only_virtual_children_are_rejected_portably() {
     assert!(error.diagnostic().message.contains("foo"));
 }
 
+#[test]
+fn case_only_collision_order_matches_sorted_pairwise_precedence() {
+    fn diagnostic(reverse: bool) -> String {
+        let (mut provider, root) = provider("");
+        let claims = [
+            ("A", "upper-a"),
+            ("B", "upper-b"),
+            ("a", "lower-a"),
+            ("b", "lower-b"),
+        ];
+        for (_, source_key) in claims {
+            let child = key(source_key);
+            provider
+                .insert_source(child.clone(), format!("{source_key}.aura"), "")
+                .unwrap();
+        }
+        let iter: Box<dyn Iterator<Item = (&str, &str)>> = if reverse {
+            Box::new(claims.into_iter().rev())
+        } else {
+            Box::new(claims.into_iter())
+        };
+        for (logical_name, source_key) in iter {
+            provider
+                .add_child(&root, logical_name, &key(source_key))
+                .unwrap();
+        }
+        ModuleGraphBuilder::new()
+            .build(&provider)
+            .unwrap_err()
+            .diagnostic()
+            .message
+            .clone()
+    }
+
+    let forward = diagnostic(false);
+    let reversed = diagnostic(true);
+    assert_eq!(forward, reversed);
+    assert!(forward.contains("A and a"), "{forward}");
+    assert!(!forward.contains("B and b"), "{forward}");
+}
+
+#[test]
+fn large_child_set_reaches_duplicate_source_diagnostic_without_pairwise_case_scan() {
+    const CLAIMS: usize = 64_000;
+
+    let (mut provider, root) = provider("");
+    let shared = key("shared");
+    provider
+        .insert_source(shared.clone(), "shared.aura", "")
+        .unwrap();
+    for index in 0..CLAIMS {
+        provider
+            .add_child(&root, format!("m{index:x}"), &shared)
+            .unwrap();
+    }
+
+    let error = ModuleGraphBuilder::new().build(&provider).unwrap_err();
+    assert_eq!(error.diagnostic().code, codes::DUPLICATE_LOGICAL_SOURCE);
+}
+
 struct MissingChildProvider {
     entry: SourceDescriptor,
     child: SourceDescriptor,

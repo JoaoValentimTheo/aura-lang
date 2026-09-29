@@ -6,7 +6,7 @@
 //! Name resolution, imports, visibility, canonical names, checking, and
 //! execution remain downstream responsibilities.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::sync::Arc;
 
@@ -845,24 +845,32 @@ fn prepare_children<P: SourceProvider>(
         }
     }
 
-    for (index, left) in children.iter().enumerate() {
-        for right in &children[index + 1..] {
-            if left.logical_name() != right.logical_name()
-                && left
-                    .logical_name()
-                    .eq_ignore_ascii_case(right.logical_name())
+    let mut first_by_folded_name = BTreeMap::<String, usize>::new();
+    let mut first_case_collision = None;
+    for (index, child) in children.iter().enumerate() {
+        let folded_name = child.logical_name().to_ascii_lowercase();
+        if let Some(&first_index) = first_by_folded_name.get(&folded_name) {
+            if children[first_index].logical_name() != child.logical_name()
+                && first_case_collision.is_none_or(|(best_first, _)| first_index < best_first)
             {
-                return Err(SourceDiagnostic::locationless(Diag::locationless(
-                    codes::MODULE_SOURCE_PATH,
-                    format!(
-                        "case-only module collision under logical module `{}`: {} and {}",
-                        parent.path.display(),
-                        left.logical_name(),
-                        right.logical_name()
-                    ),
-                )));
+                first_case_collision = Some((first_index, index));
             }
+        } else {
+            first_by_folded_name.insert(folded_name, index);
         }
+    }
+    if let Some((left_index, right_index)) = first_case_collision {
+        let left = &children[left_index];
+        let right = &children[right_index];
+        return Err(SourceDiagnostic::locationless(Diag::locationless(
+            codes::MODULE_SOURCE_PATH,
+            format!(
+                "case-only module collision under logical module `{}`: {} and {}",
+                parent.path.display(),
+                left.logical_name(),
+                right.logical_name()
+            ),
+        )));
     }
 
     let mut index = 0;
