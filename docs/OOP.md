@@ -63,11 +63,14 @@ both:
    trait-provided method follows its **trait's** visibility. Overload
    visibility is **per overload**.
 
-**Why in-source.** The WebAssembly/Playground host has **no filesystem**. A
-boundary that depended on files the guest cannot see could not keep Native and
-WebAssembly semantics identical, so Aura's module is declared in source and has
-no file of its own. This is the smallest model that is a *real* boundary and
-survives every substrate.
+**Why logical modules.** The WebAssembly/Playground runtime has no arbitrary
+host-filesystem authority, so Aura module identity and semantics do not depend
+on physical paths. Native filesystem and virtual/in-memory providers may supply
+source texts, but both feed the same `ModuleGraphBuilder`, logical module tree,
+canonical resolver, checker, and runtime pipeline. Provider-backed files are
+acquisition/provenance inputs, not a second module model, which preserves the
+same module semantics across Native and WebAssembly without granting WASM host
+filesystem access.
 
 **Mutation is a separate dimension.** Reading through a binding is free;
 writing — a field assignment, an index assignment, a mutating built-in, or a
