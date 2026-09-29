@@ -951,3 +951,104 @@ Local Git closure after the implementation commit:
 Next exact action: create the status-only local Phase 4 closure commit, verify
 the final worktree/remote split, and stop before push/tag/release/version/runtime
 actions.
+
+### Phase 4 — remote closure — 2026-09-29
+
+**REMOTELY CLOSED — EXACT-SHA CI GREEN.** This checkpoint supersedes the
+earlier Phase 4 local-closure state for current status while preserving that
+historical chronology. The earlier `NOT PUSHED` wording remains correct only
+for the local checkpoint at the time it was recorded.
+
+Remote closure state:
+
+- branch: `rewrite/v3-rust`;
+- final remotely verified Phase 4 implementation HEAD:
+  `ac57d5af2c2d2fce7c6aea20dfa60e6c852f6e99`;
+- implementation stack:
+  - `877e8631aff80b97368159024c90c145f6c20583` —
+    `feat(modules): complete native filesystem provider`;
+  - `e2450b6a4e0223a61710bf1c77e0f7ea8f733830` —
+    `docs(status): close native filesystem module phase`;
+  - `ac57d5af2c2d2fce7c6aea20dfa60e6c852f6e99` —
+    `fix(modules): silence non-macos root alias warning`.
+
+Exact-SHA remote verification:
+
+- GitHub CI run `36597793002` on
+  `ac57d5af2c2d2fce7c6aea20dfa60e6c852f6e99`: **14/14 jobs success**;
+- verified CI surfaces: Ubuntu, macOS, Windows, rustfmt, Clippy, MSRV Rust
+  1.83, Miri, cargo audit, extended property tests, fuzz smoke,
+  Playground/WASM, language contract, pure-Rust binary / no CPython, and
+  website static validation;
+- Deploy website run `36597792813` on the same exact SHA: **2/2 jobs
+  success**, covering static-site build and GitHub Pages deployment.
+
+Remote-closure CI fix:
+
+- the initial Phase 4 pushed SHA
+  `e2450b6a4e0223a61710bf1c77e0f7ea8f733830` exposed one reproduced
+  portability defect under `RUSTFLAGS=-D warnings` on non-macOS targets:
+  unused variable `path` in `allowed_platform_root_alias(path: &Path)`;
+- the minimal correction was:
+
+  ```rust
+  #[cfg(not(target_os = "macos"))]
+  let _ = path;
+  ```
+
+- that correction was committed as
+  `ac57d5af2c2d2fce7c6aea20dfa60e6c852f6e99` and changed no filesystem
+  semantics.
+
+The remotely verified architecture remains:
+
+```text
+NativeFilesystemSourceProvider
+    ↓
+SourceProvider
+    ↓
+ModuleGraphBuilder
+    ↓
+logical ast::Module lowering
+    ↓
+resolve / resolve_sourced
+    ↓
+checker
+    ↓
+runtime
+```
+
+There is one graph-building semantic path and one resolver. No filesystem
+semantics were added to the checker or runtime. One logical module continues
+to have one authoritative owner.
+
+Validated Phase 4 behavior retained by the remote closure includes real
+filesystem module loading; `foo.aura`; `foo/mod.aura`; nested filesystem
+modules; deterministic discovery and ownership collisions; in-source/external
+ownership collision; exact-case behavior and the macOS case-insensitive
+regression fix; the no-symlink-traversal policy; root containment;
+`PermissionDenied` remaining distinct from absence; portable root-relative
+diagnostic paths; invalid UTF-8 provenance; multi-file `run` / `check`; stdin
+filesystem isolation and contextual `E2019`; cross-file parser, resolver,
+checker, and runtime provenance; cycle/diamond termination; `E1015` across
+real filesystem module depth; InMemory/native provider parity; and WASM
+isolation.
+
+Previously recorded local Phase 4 validation remains the local evidence for
+this implementation:
+
+- focused provider/module/CLI suites: **33 native_source + 32 module_graph +
+  33 CLI = 98 passed, 0 failed**;
+- all-features Rust: **836 passed, 0 failed**;
+- selected no-default Rust: **826 passed, 0 failed**.
+
+Release immutability was preserved through remote closure. No tag, release,
+version bump, or runtime publication was created, and the canonical historical
+runtime bytes/hashes recorded above remain authoritative and unchanged.
+
+Follow-up 3 / AUDIT-3 remains DECISION-PENDING; no code or doc changes beyond the existing decision package; property test AST-limit explicitly excludes TypeExpr-heavy inputs pending that decision.
+
+Next exact action: **STOP.** Phase 4 is remotely closed and exact-SHA
+CI-green. Do not begin Phase 5, Browser VFS, multi-file Playground UI, package
+management, LSP, async, OOP, macros, release work, or AUDIT-3 work without a
+new explicit human instruction.
