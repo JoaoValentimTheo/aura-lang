@@ -549,10 +549,189 @@ the pre-existing one-byte untracked `s` remain outside the implementation
 commit. No push, tag, release, version bump, runtime publication, or filesystem
 loader action was performed.
 
-Next exact action: **STOP after Phase 2.** Filesystem discovery/loading requires
-a new explicit phase instruction. The provenance foundation is ready for the
-future graph builder without changing the existing resolver/checker/runtime
-semantics.
+The Phase 2 stop gate was later satisfied by an explicit Phase 3 instruction.
+The pushed baseline is now `8d9765076867d803658c9a26d544b29f898357ad` on
+both local and `origin/rewrite/v3-rust`; GitHub CI run `36516460304` is 14/14
+green and Deploy website run `36516460327` succeeded on that exact SHA.
+
+### Phase 3 — provider-neutral module graph foundation
+
+**COMPLETE LOCALLY — FULLY VALIDATED; NOT PUSHED.** The provider-neutral
+module graph foundation is closed locally. Native filesystem discovery/loading,
+CLI child discovery, package roots/manifests, Playground multi-file UI,
+release/tag/version work, and runtime publication have not started.
+
+Remote starting baseline and gate evidence:
+
+- branch: `rewrite/v3-rust`;
+- Phase 3 started from exact pushed SHA
+  `8d9765076867d803658c9a26d544b29f898357ad`;
+- `origin/rewrite/v3-rust` was the same exact SHA before local Phase 3 commits;
+- GitHub CI run `36516460304`: **14/14 green** on that exact pushed SHA;
+- Deploy website run `36516460327`: **success** on that exact pushed SHA;
+- local validation below is local evidence and is not described as GitHub CI.
+
+Architecture and provider boundary:
+
+```text
+SourceProvider
+  -> opaque SourceKey / SourceDescriptor
+  -> deterministic ProviderChild discovery supplied by the provider
+  -> ModuleGraphBuilder
+  -> ModuleGraph ownership/provenance/topology
+  -> recursive ast::Module / Item::Module lowering
+  -> existing resolve::resolve semantic authority
+  -> existing checker
+  -> existing runtime
+```
+
+- `src/module_graph.rs` defines opaque `SourceKey`, `SourceDescriptor`,
+  `ProviderChild`, `ProviderError`, the `SourceProvider` trait, deterministic
+  `InMemorySourceProvider`, `LogicalModulePath`, `ModuleGraphNode`,
+  `ModuleGraph`, and `ModuleGraphBuilder`.
+- Provider identity (`SourceKey`), compilation identity (`SourceId`), and
+  Aura logical module identity (`LogicalModulePath`) are distinct types with
+  distinct responsibilities.
+- The graph stores source ownership, provenance, topology, deterministic child
+  order, and external depth only. It does not implement resolver scopes,
+  `use`, visibility, canonical-name rules, checker semantics, or runtime
+  semantics.
+- Source text remains shared through `Arc<str>`; SourceMap registration follows
+  deterministic graph order.
+- External wrappers are public logical module containers, appended after
+  parent-written items. Provider children are sorted deterministically by
+  logical name, display name, and opaque provider key before lowering.
+
+Ownership, cycles, diamonds, and logical lowering:
+
+- duplicate external owners, repeated claims for the same source, one source
+  owning conflicting logical paths, and in-source/external ownership
+  collisions are rejected deterministically;
+- the graph does not merge or augment competing module owners;
+- graph construction is iterative; malicious provider ownership cycles
+  terminate through duplicate source-identity detection;
+- valid Aura semantic reference cycles are not blanket-rejected by the graph;
+  they continue into the canonical resolver;
+- shared-owner/diamond cases load one physical owner once;
+- provider sources lower into recursive `ast::Module` /
+  `Item::Module` wrappers and then pass through the existing
+  `resolve::resolve` implementation; no second resolver was introduced;
+- aliases and `pub use` remain resolver-owned behavior.
+
+Provenance and limits:
+
+- per-item source provenance is carried in sidecar metadata rather than
+  changing `Span`, tokens, AST node layouts, or the public legacy `Diag`;
+- `resolve_sourced` preserves item/source association while still using the
+  existing Resolver and returns the flattened module with item `SourceId`
+  attribution;
+- checker and runtime sourced paths preserve active source/item attribution,
+  including delayed checker diagnostics and runtime failures in child
+  functions/lambdas;
+- `parse_with_initial_depth` seeds the existing parser recursion accounting
+  with external logical module depth so splitting source files cannot bypass
+  the current E1015/parser recursion backstop;
+- no semantic recursion/depth limit was silently changed.
+
+Compatibility and error surface:
+
+- public `Diag { code, message, span }` remains source-compatible;
+- legacy single-source compile/run APIs retain their existing signatures and
+  result shapes;
+- `compile_provider_with_mode` is additive;
+- new production codes are limited to implemented provider-neutral ownership
+  classes: `E2020 MODULE_SOURCE_OWNERSHIP`,
+  `E2021 DUPLICATE_LOGICAL_SOURCE`, and
+  `E2022 MODULE_SOURCE_PATH`;
+- provider read failure after ownership resolution uses existing `E4020 IO`;
+- no native path/case/symlink policy has been invented in Phase 3.
+
+Permanent focused coverage:
+
+- `cargo test --locked --test module_graph`: **32 passed, 0 failed**.
+- Coverage includes one-source/in-source compatibility, one and nested external
+  modules, semantic equivalence, deterministic ordering, duplicate ownership,
+  in-source/external collisions, equal local spans with distinct SourceIds,
+  direct/indirect provider ownership cycles, valid semantic reference cycles,
+  shared-owner diamonds, resolver-owned aliases/re-exports, malformed child
+  provenance, checker/resolver/runtime child provenance, missing-main entry
+  provenance, delayed overload diagnostic ordering, accumulated external
+  depth, opaque SourceKeys, missing/read-failing provider sources, and foreign
+  SourceId isolation.
+
+Independent adversarial review:
+
+- one independent read-only reviewer inspected `src/module_graph.rs`,
+  `src/lib.rs`, `src/parse/mod.rs`, `src/resolve.rs`,
+  `src/check/mod.rs`, `src/run/mod.rs`, and
+  `tests/module_graph.rs`;
+- it specifically challenged deterministic ordering, ownership collisions,
+  cycles/diamonds, provenance, depth, resolver authority, public API
+  compatibility, AST/token isolation, and opaque provider identity;
+- it independently ran the focused module-graph suite: **32 passed, 0 failed**;
+- no concrete Phase 3 defect remained after review, so no review-driven code
+  change was required.
+
+Full Phase 3 closure validation:
+
+- `cargo fmt --all -- --check`: pass.
+- `cargo clippy --locked --all-targets --all-features -- -D warnings`: pass.
+- `cargo test --locked --all-targets --all-features`:
+  **792 passed, 0 failed**.
+- `cargo test --locked --all-targets --no-default-features --features
+  cli,repl,json,regex,time`: **782 passed, 0 failed**.
+- `cargo +1.83.0 check --locked --all-features`: pass.
+- Playground runtime crate:
+  `cargo test --locked --manifest-path playground/runtime/Cargo.toml`:
+  **10 passed, 0 failed**.
+- `node playground/tests/node/run-all.mjs`: manifest **34/0**,
+  completion **7/0**, ABI **67/0**, integrity **29/0**,
+  differential **214/0**, syntax conformance **43 explicit native/WASM
+  comparisons**, browser **62/0**, worker **12/0**, cache **7/0**.
+  Differential detail: **60/60** freshly generated plus **19/19** committed
+  programs agree native/WASM; 37-depth TypeExpr sweep reported native ceiling
+  2048, wasm ceiling 768, **0 host failures**.
+- `node playground/build.mjs --check`: manifest matches **4 versions**.
+- `cargo build --locked --manifest-path playground/runtime/Cargo.toml
+  --release --target wasm32-unknown-unknown`: pass.
+- current local target-only WASM build:
+  **1,666,803 bytes**, SHA-256
+  `3e56dc2df1185c7859c977c54468788cee2e175b2e3773aab79b5359ee22071a`.
+  It was not copied into a published runtime directory.
+- `node website/tests/run-all.mjs`: examples **22/0**, links **2089
+  checked / 0 errors**, base **2088 refs / 0 violations**, browser **344/0**,
+  a11y **70/0**, and reused Playground suite fully green.
+
+Historical runtime immutability re-verified after the Phase 3 build:
+
+- `0.0.2`: **1,366,621 bytes**,
+  `5a4ad3f7e3f786164d65df437d607e7ddd5e25947ea2c8dd9b436a5490b334ed`.
+- `0.0.2-dev.23`: **1,604,958 bytes**,
+  `71072150e67384120c63e22d6176f3683110735b84f74723bea315f79778a528`.
+- `0.0.2-dev.29`: **1,614,239 bytes**,
+  `aa832ba72578897f6b99650574939011dda25e0d390fdb5efb6fae825816bdd3`.
+- `0.0.2-dev.30`: **1,654,216 bytes**,
+  `916a8282f7afcf67b89662af89d2f69cf562d9dbe41fe88cab1764a3ef19c578`.
+- `0.2.0`: **1,654,161 bytes**,
+  `9937fd8094ef402b7a9233d02bd232405f75b9e70661404646fcda7cd295c5bc`.
+
+Local Git closure before the status-only checkpoint commit:
+
+- implementation commit:
+  `0777d14b3b7f03aba64e3d6e17db4c23d44886e7`
+  (`feat(modules): add provider-neutral module graph foundation`);
+- remote remains
+  `8d9765076867d803658c9a26d544b29f898357ad`;
+- the pre-existing unrelated `.codex/config.toml` modification and one-byte
+  untracked `s` are preserved outside Phase 3;
+- Phase 3 has not been pushed.
+
+Follow-up 3 / AUDIT-3 remains DECISION-PENDING; no code or doc changes beyond the existing decision package; property test AST-limit explicitly excludes TypeExpr-heavy inputs pending that decision.
+
+Next exact action: await explicit human authorization to push the completed
+Phase 3 local commits. Do not begin `NativeFilesystemSourceProvider` or any
+native filesystem crawler/loader before that authorization and the next
+phase instruction.
 
 ## Do not reopen
 
