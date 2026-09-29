@@ -2756,9 +2756,9 @@ const_forward_reference_is_rejected_by_checker_and_runtime`.
 
 ## 27. Modules, `pub`, and `use`
 
-**Normative rule.** Aura modules are **in-source**: `module Name { items }`,
-where `Name` is an ordinary identifier (capitalized by convention) and `items`
-is a sequence of declarations. Modules **nest**. `module` is **contextual**: it
+**Normative rule.** Aura's module declaration syntax is **in-source**:
+`module Name { items }`, where `Name` is an ordinary identifier (capitalized by
+convention) and `items` is a sequence of declarations. Modules **nest**. `module` is **contextual**: it
 begins a module only in item position when followed by an identifier and `{`;
 elsewhere it is an ordinary identifier, so `let module = 1` remains valid.
 
