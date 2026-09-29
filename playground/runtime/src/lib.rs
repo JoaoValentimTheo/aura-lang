@@ -258,21 +258,18 @@ pub fn execute(source: &str, options_raw: &[u8]) -> (String, u32, &'static str) 
 
     let out: BrowserStdout = Arc::new(Mutex::new(Vec::new()));
 
-    let compilation = match aura::compile_named_with_mode(
-        source,
-        "<playground>",
-        aura::CompileMode::Program,
-    ) {
-        Ok(c) => c,
-        // No `main`: fall back to module semantics, as `aura eval` does.
-        Err(report) if report.diagnostic().code == codes::NO_MAIN => {
-            return run_module(source, options_raw, &opts, out);
-        }
-        Err(report) => {
-            let (json, code) = diagnostic_result(report.diagnostic(), source, "");
-            return (json, code, aura::LANGUAGE_VERSION);
-        }
-    };
+    let compilation =
+        match aura::compile_named_with_mode(source, "<playground>", aura::CompileMode::Program) {
+            Ok(c) => c,
+            // No `main`: fall back to module semantics, as `aura eval` does.
+            Err(report) if report.diagnostic().code == codes::NO_MAIN => {
+                return run_module(source, options_raw, &opts, out);
+            }
+            Err(report) => {
+                let (json, code) = diagnostic_result(report.diagnostic(), source, "");
+                return (json, code, aura::LANGUAGE_VERSION);
+            }
+        };
     let (program, sources, source_id) = compilation.into_parts();
 
     // Execute on the substrate's execution stack: a dedicated large stack on
