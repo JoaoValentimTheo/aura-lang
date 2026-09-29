@@ -22,7 +22,8 @@ continuing substantial work.
 
 Authoritative current value is `git rev-parse HEAD`, also printed by
 `scripts/agent-state.sh`; a tracked state file cannot safely hardcode its own
-commit SHA. Correction-pass starting HEAD: `e17f6b58b839d002904ca8afa0a3ad6cd2fe45f9`.
+commit SHA. Final blocker-remediation starting HEAD:
+`b55a43473379ecc04c209882345defb70801640d`.
 
 ## Remote HEAD
 
@@ -62,14 +63,32 @@ remains 1.
 
 ## Current Work
 
-Post-FSM-P5 correction pass is locally complete: FSM-P5 was independently
-audited, repository authority was reconciled, the source-provider boundary was
-clarified in current documentation, and validation is green. Human review is
-the next action. No FSM-P6 work is authorized.
+The final read-only push-readiness review found two FSM-P5 blockers. Both are
+now remediated in additive commits after `b55a434`: invalid virtual/provider
+source keys use the normative `E2022` diagnostic partition, and case-only child
+collision detection no longer performs the quadratic pairwise scan. The
+deterministic diagnostic ordering is preserved with an `O(n log n)` validation
+pass. Full local validation is green. No FSM-P6 work is authorized.
+
+Latest validation completed after both production fixes:
+
+- `cargo fmt --all -- --check`;
+- `cargo test --locked --all-targets --all-features`;
+- `cargo clippy --locked --all-targets --all-features -- -D warnings`;
+- `cargo test --locked --all-targets --no-default-features --features cli,repl,json,regex,time`;
+- `cargo +1.83.0 check --locked --all-features`;
+- `cargo build --locked --manifest-path playground/runtime/Cargo.toml --release --target wasm32-unknown-unknown`;
+- `node playground/tests/node/run-all.mjs`;
+- `node playground/build.mjs --check`;
+- `node website/tests/run-all.mjs`.
+
+The 64,000-claim VFS adversarial reproduction is within the 2 MiB request
+limit and returns deterministic `E2021` without a host failure. Frozen runtime
+artifacts remain byte-identical.
 
 ## Next Exact Action
 
-HUMAN REVIEW OF FSM-P5 + AUTHORITY RECONCILIATION BEFORE PUSH
+NEW FINAL READ-ONLY PUSH-READINESS REVIEW OF THE LOCAL FSM-P5 STACK
 
 ## Human Gates
 
