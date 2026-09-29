@@ -105,6 +105,9 @@ impl ProviderChild {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderError {
     message: String,
+    code: Option<u16>,
+    span: Option<Span>,
+    diagnostic_text: Option<Arc<str>>,
 }
 
 impl ProviderError {
@@ -113,6 +116,33 @@ impl ProviderError {
     pub fn new(message: impl Into<String>) -> ProviderError {
         ProviderError {
             message: message.into(),
+            code: None,
+            span: None,
+            diagnostic_text: None,
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn coded(code: u16, message: impl Into<String>) -> ProviderError {
+        ProviderError {
+            message: message.into(),
+            code: Some(code),
+            span: None,
+            diagnostic_text: None,
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn invalid_utf8(
+        message: impl Into<String>,
+        span: Span,
+        diagnostic_text: impl Into<Arc<str>>,
+    ) -> ProviderError {
+        ProviderError {
+            message: message.into(),
+            code: Some(codes::INVALID_CHAR),
+            span: Some(span),
+            diagnostic_text: Some(diagnostic_text.into()),
         }
     }
 
@@ -120,6 +150,18 @@ impl ProviderError {
     #[must_use]
     pub fn message(&self) -> &str {
         &self.message
+    }
+
+    const fn code(&self) -> Option<u16> {
+        self.code
+    }
+
+    const fn span(&self) -> Option<Span> {
+        self.span
+    }
+
+    fn diagnostic_text(&self) -> Option<Arc<str>> {
+        self.diagnostic_text.as_ref().map(Arc::clone)
     }
 }
 
@@ -501,8 +543,9 @@ impl ModuleGraphBuilder {
                 ));
             }
             Err(error) => {
-                return Err(read_report(
+                return Err(load_report(
                     format!("cannot read entry source `{}`", entry.name()),
+                    &entry,
                     error,
                     sources,
                 ));
@@ -582,12 +625,13 @@ impl ModuleGraphBuilder {
                     ));
                 }
                 Err(error) => {
-                    return Err(read_report(
+                    return Err(load_report(
                         format!(
                             "cannot read source `{}` for logical module `{}`",
                             child.source().name(),
                             path.display()
                         ),
+                        child.source(),
                         error,
                         sources,
                     ));
@@ -761,7 +805,7 @@ fn prepare_children<P: SourceProvider>(
 ) -> std::result::Result<Vec<ProviderChild>, SourceDiagnostic> {
     let mut children = provider.children(&parent.source_key).map_err(|error| {
         SourceDiagnostic::locationless(Diag::locationless(
-            codes::MODULE_SOURCE_PATH,
+            error.code().unwrap_or(codes::MODULE_SOURCE_PATH),
             format!(
                 "cannot enumerate children of logical module `{}`: {}",
                 parent.path.display(),
@@ -900,19 +944,32 @@ fn provider_report(
     sources: SourceMap,
 ) -> DiagnosticReport {
     locationless_report(
-        codes::MODULE_SOURCE_PATH,
+        error.code().unwrap_or(codes::MODULE_SOURCE_PATH),
         format!("{}: {}", context.as_ref(), error.message()),
         sources,
     )
 }
 
-fn read_report(
+fn load_report(
     context: impl AsRef<str>,
+    source: &SourceDescriptor,
     error: ProviderError,
-    sources: SourceMap,
+    mut sources: SourceMap,
 ) -> DiagnosticReport {
+    if error.code() == Some(codes::INVALID_CHAR) {
+        if let (Some(span), Some(text)) = (error.span(), error.diagnostic_text()) {
+            let source_id = sources.add(source.name(), text);
+            return DiagnosticReport::new(
+                SourceDiagnostic::new(
+                    Diag::new(codes::INVALID_CHAR, error.message(), span),
+                    source_id,
+                ),
+                sources,
+            );
+        }
+    }
     locationless_report(
-        codes::IO,
+        error.code().unwrap_or(codes::IO),
         format!("{}: {}", context.as_ref(), error.message()),
         sources,
     )

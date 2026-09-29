@@ -183,14 +183,19 @@ fn read_source(path: Option<&str>) -> Result<(String, String), ExitCode> {
     Ok((source.to_string(), file.to_string()))
 }
 
+fn render_cli_report(report: &aura::error::DiagnosticReport, stdin_source: bool) -> String {
+    let rendered = report.render();
+    if stdin_source && report.diagnostic().code == aura::error::codes::UNKNOWN_MODULE {
+        format!("{rendered}; filesystem modules are unavailable for <stdin>")
+    } else {
+        rendered
+    }
+}
+
 fn cmd_run(args: &[String]) -> ExitCode {
     let Some(path) = args.get(1).map(String::as_str) else {
         eprintln!("usage: aura run <file|-> [program args...]");
         return ExitCode::from(2);
-    };
-    let (src, file) = match read_source(Some(path)) {
-        Ok(v) => v,
-        Err(c) => return c,
     };
     // Program arguments are everything after the script path. When the script
     // was read from stdin (`-`), the process stdin has been consumed as
@@ -201,10 +206,21 @@ fn cmd_run(args: &[String]) -> ExitCode {
     } else {
         Some(Box::new(std::io::BufReader::new(std::io::stdin())) as Box<dyn std::io::BufRead + Send>)
     };
-    match aura::run_named_program_with(&src, &file, program_args, input) {
+    let result = if path == "-" {
+        let (src, file) = match read_source(Some(path)) {
+            Ok(v) => v,
+            Err(c) => return c,
+        };
+        aura::compile_named_with_mode(&src, &file, aura::CompileMode::Program)
+            .and_then(|compilation| compilation.execute_with(None, program_args, input))
+    } else {
+        aura::compile_file_with_mode(path, aura::CompileMode::Program)
+            .and_then(|compilation| compilation.execute_with(None, program_args, input))
+    };
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(report) => {
-            eprintln!("{}", report.render());
+            eprintln!("{}", render_cli_report(&report, path == "-"));
             ExitCode::FAILURE
         }
     }
@@ -219,14 +235,19 @@ fn cmd_check(args: &[String]) -> ExitCode {
         eprintln!("aura check takes exactly one source argument");
         return ExitCode::from(2);
     }
-    let (src, file) = match read_source(Some(path)) {
-        Ok(v) => v,
-        Err(c) => return c,
+    let result = if path == "-" {
+        let (src, file) = match read_source(Some(path)) {
+            Ok(v) => v,
+            Err(c) => return c,
+        };
+        aura::compile_named_with_mode(&src, &file, aura::CompileMode::Module)
+    } else {
+        aura::compile_file_with_mode(path, aura::CompileMode::Module)
     };
-    match aura::compile_named_with_mode(&src, &file, aura::CompileMode::Module) {
+    match result {
         Ok(_) => ExitCode::SUCCESS,
         Err(report) => {
-            eprintln!("{}", report.render());
+            eprintln!("{}", render_cli_report(&report, path == "-"));
             ExitCode::FAILURE
         }
     }

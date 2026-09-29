@@ -17,6 +17,8 @@ pub mod error;
 pub mod host;
 pub mod lex;
 pub mod module_graph;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod native_source;
 pub mod parse;
 #[cfg(feature = "repl")]
 pub mod repl;
@@ -452,6 +454,28 @@ pub fn compile_provider_with_mode<P: module_graph::SourceProvider>(
         }),
         Err(diagnostic) => Err(DiagnosticReport::new(diagnostic, sources)),
     }
+}
+
+/// Compile a selected native file together with its reachable filesystem
+/// module tree.
+///
+/// The selected file owns the logical root and its containing directory is the
+/// native source root. This API is unavailable on WebAssembly targets.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn compile_file_with_mode(
+    path: impl AsRef<std::path::Path>,
+    mode: CompileMode,
+) -> std::result::Result<Compilation, DiagnosticReport> {
+    let provider = native_source::NativeFilesystemSourceProvider::new(path).map_err(|error| {
+        DiagnosticReport::new(
+            SourceDiagnostic::locationless(error::Diag::locationless(
+                error::codes::MODULE_SOURCE_PATH,
+                error.message(),
+            )),
+            SourceMap::new(),
+        )
+    })?;
+    compile_provider_with_mode(&provider, mode)
 }
 
 /// Source-aware counterpart of [`run_program_with`].
