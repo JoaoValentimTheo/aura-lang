@@ -1,5 +1,23 @@
 # Aura Current Status
 
+**CURRENT OPERATIONAL STATE:** see `AGENT_STATE.md`.
+
+**THIS FILE:** detailed chronological status/history. Historical statements are
+preserved as evidence of what was true at the time; current operational
+decisions must not require reading this entire ledger.
+
+Filesystem-module phase namespace used for current work:
+
+- FSM-P0 — architecture reconstruction
+- FSM-P1 — filesystem module design
+- FSM-P2 — multi-source provenance
+- FSM-P3 — provider-neutral module graph
+- FSM-P4 — native filesystem provider
+- FSM-P5 — virtual/WASM VFS foundation
+
+Historical bare `Phase N` headings below predate this namespace and remain only
+where changing them would damage chronology.
+
 Authoritative continuation checkpoint for the AURA MASTER CORE COMPLETION
 PROGRAM (Zen-to-Win Final Language Core Freeze).
 
@@ -1048,17 +1066,17 @@ runtime bytes/hashes recorded above remain authoritative and unchanged.
 
 Follow-up 3 / AUDIT-3 remains DECISION-PENDING; no code or doc changes beyond the existing decision package; property test AST-limit explicitly excludes TypeExpr-heavy inputs pending that decision.
 
-Next exact action: **STOP.** Phase 4 is remotely closed and exact-SHA
-CI-green. Do not begin Phase 5, Browser VFS, multi-file Playground UI, package
+Next exact action: **STOP.** FSM-P4 is remotely closed and exact-SHA
+CI-green. Do not begin FSM-P5, Browser VFS, multi-file Playground UI, package
 management, LSP, async, OOP, macros, release work, or AUDIT-3 work without a
 new explicit human instruction.
 
-### Phase 5 — provider-neutral virtual source / WASM VFS local closure — 2026-09-29
+### FSM-P5 — provider-neutral virtual source / WASM VFS local closure — 2026-09-29
 
-**COMPLETE LOCALLY — FULLY VALIDATED; NOT PUSHED.** Phase 5 started from
+**COMPLETE LOCALLY — FULLY VALIDATED; NOT PUSHED.** FSM-P5 started from
 `75c57428ca70c53a3d592fdbb93ec3c5d7cb46f8` on `rewrite/v3-rust`, with the
 remote at the same SHA. The pre-existing unrelated `.codex/config.toml` change
-and untracked one-byte `s` file remained outside Phase 5 throughout.
+and untracked one-byte `s` file remained outside FSM-P5 throughout.
 
 The production virtual-source architecture reuses the existing provider-neutral
 pipeline:
@@ -1131,7 +1149,7 @@ evaluation fallback as the existing one-source Playground path. A genuinely
 multi-source program without `main` still reports E4027 against the entry
 `SourceName`, preserving the program-mode contract and missing-main provenance.
 
-Permanent Phase 5 coverage now proves virtual source success, nested children,
+Permanent FSM-P5 coverage now proves virtual source success, nested children,
 multiple siblings, insertion-order independence, native/InMemory/virtual
 parity, duplicate SourceKey and SourceName rejection, duplicate logical
 ownership, reused source ownership, in-source/external collision, case-only
@@ -1142,7 +1160,7 @@ deterministic initialization, E2003 forward-constant behavior, E1015 virtual
 depth accounting, malformed/duplicate-field JSON, path tricks, resource limits,
 runtime recovery, and legacy single-source ABI compatibility.
 
-The independent adversarial review reproduced two defects during Phase 5 and
+The independent adversarial review reproduced two defects during FSM-P5 and
 both were fixed with permanent regression coverage:
 
 1. duplicate virtual `SourceName` values could make distinct source diagnostics
@@ -1156,7 +1174,7 @@ The reviewer re-ran both attacks against the real WASM artifact, including
 reversed source insertion order, and found no unresolved reproduced defect or
 regression from the fixes.
 
-Final local validation after those fixes:
+Final FSM-P5 local validation after those fixes:
 
 - `cargo fmt --all -- --check`: success;
 - `cargo clippy --locked --all-targets --all-features -- -D warnings`: success;
@@ -1184,7 +1202,7 @@ The final current-source target-only WASM build is **1,761,796 bytes**, SHA-256
 It remains only in build output and was not copied into a versioned runtime
 directory.
 
-Historical runtime immutability was re-verified after final Phase 5 validation:
+Historical runtime immutability was re-verified after final FSM-P5 validation:
 
 - `0.0.2`: 1,366,621 bytes,
   `5a4ad3f7e3f786164d65df437d607e7ddd5e25947ea2c8dd9b436a5490b334ed`;
@@ -1203,7 +1221,78 @@ loading, async, macro, or AUDIT-3 work was performed.
 
 Follow-up 3 / AUDIT-3 remains DECISION-PENDING; no code or doc changes beyond the existing decision package; property test AST-limit explicitly excludes TypeExpr-heavy inputs pending that decision.
 
-Next exact action: **STOP after local Phase 5 commits.** Phase 5 is locally
-closed and fully validated. Do not push Phase 5 or begin multi-file Playground
+Next exact action: **STOP after local FSM-P5 commits.** FSM-P5 is locally
+closed and fully validated. Do not push FSM-P5 or begin multi-file Playground
 UI, package management, LSP, async, OOP, macros, release work, or AUDIT-3 work
 without a new explicit human instruction.
+
+### Post-FSM-P5 correction pass — authority reconciliation — 2026-09-29
+
+**FSM-P5 LOCALLY VERIFIED; AUTHORITY RECONCILIATION COMPLETE FOR HUMAN
+REVIEW.** The correction pass started from local HEAD
+`e17f6b58b839d002904ca8afa0a3ad6cd2fe45f9`; the remote tracking ref remained
+`75c57428ca70c53a3d592fdbb93ec3c5d7cb46f8` throughout. The pre-existing
+`.codex/config.toml` modification and untracked one-byte `s` remained protected
+and were not edited, staged, restored, normalized, or deleted.
+
+Independent FSM-P5 review confirmed one provider-neutral semantic pipeline:
+virtual project -> `InMemorySourceProvider` / `SourceProvider` ->
+`ModuleGraphBuilder` -> logical `ast::Module` -> `resolve_sourced` -> sourced
+checker -> sourced runtime -> WASM boundary. No second resolver, second graph
+builder, browser-specific Aura semantics, package system, or multi-file
+Playground UI was found. `SourceKey`, `SourceId`, `LogicalModulePath`, and
+`SourceName` remain distinct identities. Playground API remains `1`; Host ABI
+remains `1` with feature-detected additive virtual-project exports.
+
+No new reproducible FSM-P5 production defect was found in this correction
+pass. The two defects already found and fixed inside the local FSM-P5 stack
+(duplicate `SourceName` ambiguity and one-source virtual eval fallback) were
+revalidated by permanent tests. Focused current-pass validation:
+
+- `cargo test --locked --test module_graph`: **34 passed, 0 failed**;
+- `cargo test --locked --manifest-path playground/runtime/Cargo.toml`: **31
+  passed, 0 failed** across execute/provider-parity/virtual-project tests;
+- current-source WASM ABI test: **80 passed, 0 failed**.
+
+Full current-pass validation after authority/documentation correction:
+
+- `cargo fmt --all -- --check`: success;
+- `cargo clippy --locked --all-targets --all-features -- -D warnings`: success;
+- `cargo test --locked --all-targets --all-features`: **838 passed, 0 failed**;
+- selected no-default Rust: **828 passed, 0 failed**;
+- `cargo +1.83.0 check --locked --all-features`: success;
+- Playground runtime: **31 passed, 0 failed**;
+- current-source WASM ABI: **80 passed, 0 failed**;
+- Playground full suite: manifest **34/0**, completion **7/0**, stable ABI
+  **69/0**, integrity **29/0**, differential **214/0**, syntax **43/0**,
+  browser **62/0**, worker **12/0**, cache **7/0**;
+- `node playground/build.mjs --check`: manifest matches all 4 versions;
+- website: examples **22/0**, links **2089 checked across 39 pages**, base-path
+  **2088 refs across 39 pages**, browser **344/0**, a11y **70/0**, plus the
+  reused Playground suite.
+
+The rebuilt current-source WASM remains target-only at **1,761,796 bytes**,
+SHA-256
+`a0fce70c6e97268f1c7d12a0ddfe27a706452df36e818b9a28d9fd26c8d312fb`.
+It was not published, copied into a versioned runtime directory, or used for a
+version bump. Historical artifact immutability was re-verified:
+
+- `0.0.2`: 1,366,621 bytes,
+  `5a4ad3f7e3f786164d65df437d607e7ddd5e25947ea2c8dd9b436a5490b334ed`;
+- `0.2.0`: 1,654,161 bytes,
+  `9937fd8094ef402b7a9233d02bd232405f75b9e70661404646fcda7cd295c5bc`.
+
+Repository authority was reconciled by introducing `AGENT_STATE.md`, reducing
+`AGENTS.md` to durable rules plus startup/handoff protocols, mapping current
+filesystem work to the `FSM-P<N>` namespace, updating current planning/status,
+marking the filesystem design as the frozen FSM-P1 contract, and clarifying in
+the spec/contract that logical Aura module identity is independent of native or
+virtual source acquisition. Stable-release website statements remain stable
+release documentation; one stale OOP statement that incorrectly listed
+generics as absent from released Aura was corrected.
+
+Follow-up 3 / AUDIT-3 remains DECISION-PENDING; no code or doc changes beyond the existing decision package; property test AST-limit explicitly excludes TypeExpr-heavy inputs pending that decision.
+
+Next exact action: **HUMAN REVIEW OF FSM-P5 + AUTHORITY RECONCILIATION BEFORE
+PUSH.** Do not push, create tags/releases, bump versions, publish runtime bytes,
+or begin FSM-P6 without new human authorization.

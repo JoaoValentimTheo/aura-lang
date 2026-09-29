@@ -24,21 +24,28 @@ Playground and website now present `0.2.0` as the current stable release.
 - No new language feature was added beyond the approved Core work.
 - Filesystem modules were not part of the Core release itself; the subsequent
   filesystem-module program has since completed its native foundation and
-  virtual/WASM source foundation through Phase 5.
+  virtual/WASM source foundation through FSM-P5 locally.
 
 ## Current major program — AURA FILESYSTEM MODULE SYSTEM
 
-Phases 1-4 are remotely closed: architecture/source provenance, the
-provider-neutral module graph, cross-file semantic integration, and the native
-filesystem provider are complete. Phase 5 is locally closed and intentionally
-unpushed: browser/WASM can consume caller-supplied virtual multi-source
-projects through `InMemorySourceProvider` and the same `ModuleGraphBuilder`,
-resolver, checker, and runtime used by native modules.
+Current filesystem-track status:
+
+- FSM-P1 — design — complete;
+- FSM-P2 — multi-source provenance — complete;
+- FSM-P3 — provider-neutral graph — complete;
+- FSM-P4 — native filesystem provider — complete and remotely closed;
+- FSM-P5 — virtual/WASM VFS foundation — locally closed, not pushed;
+- FSM-P6 — not authorized and not yet defined.
+
+FSM-P5 lets browser/WASM callers supply virtual multi-source projects through
+`InMemorySourceProvider` and the same `ModuleGraphBuilder`, resolver, checker,
+and runtime used by native modules.
 
 The current single-file Playground UI remains unchanged. Multi-file editor UI,
 browser persistence, package manifests/package management, remote dependencies,
-and URL imports remain deferred. No second module graph or resolver is planned
-for browser sources.
+and URL imports remain deferred candidates. None of them defines FSM-P6 unless
+the human explicitly chooses that scope. No second module graph or resolver is
+planned for browser sources.
 
 ## Preserved decisions
 
