@@ -22,16 +22,23 @@ Playground and website now present `0.2.0` as the current stable release.
 - AUDIT-3 is DECISION-PENDING and was not modified.
 - No historical runtime artifact was overwritten.
 - No new language feature was added beyond the approved Core work.
-- Filesystem modules were not started.
+- Filesystem modules were not part of the Core release itself; the subsequent
+  filesystem-module program has since completed its native foundation and
+  virtual/WASM source foundation through Phase 5.
 
-## Next major phase — AURA FILESYSTEM MODULE SYSTEM
+## Current major program — AURA FILESYSTEM MODULE SYSTEM
 
-Not started. Begins only after Core publication closes, and includes:
-`mod.aura`, physical file discovery, the module graph, cross-file imports,
-cycles, source ownership, path diagnostics, native host loading, and a
-browser/virtual-filesystem strategy. It must feed the *same* in-source-style
-logical module tree, canonical resolver, checker, and runtime — no second
-module semantics.
+Phases 1-4 are remotely closed: architecture/source provenance, the
+provider-neutral module graph, cross-file semantic integration, and the native
+filesystem provider are complete. Phase 5 is locally closed and intentionally
+unpushed: browser/WASM can consume caller-supplied virtual multi-source
+projects through `InMemorySourceProvider` and the same `ModuleGraphBuilder`,
+resolver, checker, and runtime used by native modules.
+
+The current single-file Playground UI remains unchanged. Multi-file editor UI,
+browser persistence, package manifests/package management, remote dependencies,
+and URL imports remain deferred. No second module graph or resolver is planned
+for browser sources.
 
 ## Preserved decisions
 

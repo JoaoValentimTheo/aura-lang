@@ -1052,3 +1052,158 @@ Next exact action: **STOP.** Phase 4 is remotely closed and exact-SHA
 CI-green. Do not begin Phase 5, Browser VFS, multi-file Playground UI, package
 management, LSP, async, OOP, macros, release work, or AUDIT-3 work without a
 new explicit human instruction.
+
+### Phase 5 — provider-neutral virtual source / WASM VFS local closure — 2026-09-29
+
+**COMPLETE LOCALLY — FULLY VALIDATED; NOT PUSHED.** Phase 5 started from
+`75c57428ca70c53a3d592fdbb93ec3c5d7cb46f8` on `rewrite/v3-rust`, with the
+remote at the same SHA. The pre-existing unrelated `.codex/config.toml` change
+and untracked one-byte `s` file remained outside Phase 5 throughout.
+
+The production virtual-source architecture reuses the existing provider-neutral
+pipeline:
+
+```text
+caller-supplied virtual source set
+    ↓
+InMemorySourceProvider
+    ↓
+SourceProvider
+    ↓
+ModuleGraphBuilder
+    ↓
+logical ast::Module lowering
+    ↓
+resolve / resolve_sourced
+    ↓
+checker
+    ↓
+runtime
+```
+
+No `VirtualSourceProvider`, browser-specific graph builder, second resolver, or
+filesystem semantics were introduced. `SourceKey`, `SourceId`,
+`LogicalModulePath`, and user-visible `SourceName` remain distinct; `SourceId`
+does not cross the public runtime JSON boundary.
+
+The additive virtual-project request accepted by the current Playground runtime
+uses one opaque `entry` key plus a `sources` array. Each source carries `key`,
+user-visible `name`, UTF-8 `text`, and optional `{ name, key }` child ownership
+links. Arrays are retained at the transport boundary so duplicate keys/fields
+can be rejected deterministically. Virtual keys are transport identities, not
+OS paths: empty keys, `.`, `..`, slash/backslash forms, drive-like forms, UNC
+forms, and other path tricks are rejected before provider construction.
+
+Current transport ceilings are host/runtime policy, separate from Aura language
+semantics:
+
+- project request: 2 MiB;
+- source count: 4096;
+- virtual key: 128 bytes;
+- source display name: 1024 bytes;
+- existing per-source limit remains 256 KiB.
+
+`SourceName` is required to be unique within a virtual project so two sources
+cannot collapse to the same public diagnostic identity after `SourceId` is
+intentionally hidden. Sources are sorted by key before provider construction;
+children are sorted deterministically before registration; the existing
+`ModuleGraphBuilder` remains authoritative for ownership, logical-name validity,
+case-only collision policy, graph order, cycles, diamonds, provenance, and
+depth accounting.
+
+The WASM/JS boundary remains **Playground API 1 / Host ABI 1**. Existing exports
+remain intact. The current runtime adds feature-detectable exports:
+
+- `aura_project_reset()`;
+- `aura_project_push(word, nbytes)`;
+- `aura_run_project()`.
+
+`playground/web/runtime.mjs` adds `runProject(project, options)` while leaving
+`run(source, options)` unchanged. Historical ABI-1 runtimes are not required to
+export the project capability, and the loader continues to accept them.
+Single-source result JSON retains its existing schema. Virtual-project
+diagnostics add only a `source` field containing `SourceName` or `null`; no raw
+`SourceId`/`source_id` is serialized.
+
+Single-source compatibility is preserved precisely: a virtual project with one
+source and no virtual children uses the same E4027 -> `CompileMode::Module`
+evaluation fallback as the existing one-source Playground path. A genuinely
+multi-source program without `main` still reports E4027 against the entry
+`SourceName`, preserving the program-mode contract and missing-main provenance.
+
+Permanent Phase 5 coverage now proves virtual source success, nested children,
+multiple siblings, insertion-order independence, native/InMemory/virtual
+parity, duplicate SourceKey and SourceName rejection, duplicate logical
+ownership, reused source ownership, in-source/external collision, case-only
+collision, wrong-case and missing semantic references, parser/resolver/checker
+and delayed checker provenance, runtime child provenance, equal local spans with
+distinct names, semantic cycles, malformed provider cycles, diamonds,
+deterministic initialization, E2003 forward-constant behavior, E1015 virtual
+depth accounting, malformed/duplicate-field JSON, path tricks, resource limits,
+runtime recovery, and legacy single-source ABI compatibility.
+
+The independent adversarial review reproduced two defects during Phase 5 and
+both were fixed with permanent regression coverage:
+
+1. duplicate virtual `SourceName` values could make distinct source diagnostics
+   publicly indistinguishable; duplicate names are now rejected deterministically
+   as host-policy E4020 before provider construction;
+2. a one-source virtual project without `main` initially returned E4027 instead
+   of matching the established single-source eval fallback; the fallback is now
+   applied only to exactly one virtual source with no virtual children.
+
+The reviewer re-ran both attacks against the real WASM artifact, including
+reversed source insertion order, and found no unresolved reproduced defect or
+regression from the fixes.
+
+Final local validation after those fixes:
+
+- `cargo fmt --all -- --check`: success;
+- `cargo clippy --locked --all-targets --all-features -- -D warnings`: success;
+- all-features Rust: **838 passed, 0 failed**;
+- selected no-default Rust: **828 passed, 0 failed**;
+- MSRV Rust 1.83 all-features check: success;
+- focused root suites: **34 module_graph**, **33 native_source**, **33 CLI**;
+- Playground runtime: **10 execute + 2 provider_parity + 19 virtual_project =
+  31 passed, 0 failed**;
+- current-source WASM ABI: **80 passed, 0 failed**, with zero imports;
+- historical `0.2.0` ABI compatibility: **69 passed, 0 failed**;
+- current-source native/WASM differential: **214 passed, 0 failed** plus
+  **43 explicit syntax comparisons**, with generated parity **60/60 freshly
+  generated + 19/19 committed** and the existing 37-depth TypeExpr sweep;
+- Playground full suite: manifest **34/0**, completion **7/0**, ABI **69/0** on
+  the historical current artifact, integrity **29/0**, differential **214/0**,
+  syntax **43/0**, browser **62/0**, worker **12/0**, cache **7/0**;
+- `node playground/build.mjs --check`: manifest matches all 4 recorded versions;
+- website suite: examples **22/0**, links **2089 checked across 39 pages**,
+  base-path **2088 refs across 39 pages**, browser **344/0**, a11y **70/0**,
+  plus the reused Playground suite.
+
+The final current-source target-only WASM build is **1,761,796 bytes**, SHA-256
+`a0fce70c6e97268f1c7d12a0ddfe27a706452df36e818b9a28d9fd26c8d312fb`.
+It remains only in build output and was not copied into a versioned runtime
+directory.
+
+Historical runtime immutability was re-verified after final Phase 5 validation:
+
+- `0.0.2`: 1,366,621 bytes,
+  `5a4ad3f7e3f786164d65df437d607e7ddd5e25947ea2c8dd9b436a5490b334ed`;
+- `0.0.2-dev.23`: 1,604,958 bytes,
+  `71072150e67384120c63e22d6176f3683110735b84f74723bea315f79778a528`;
+- `0.0.2-dev.29`: 1,614,239 bytes,
+  `aa832ba72578897f6b99650574939011dda25e0d390fdb5efb6fae825816bdd3`;
+- `0.0.2-dev.30`: 1,654,216 bytes,
+  `916a8282f7afcf67b89662af89d2f69cf562d9dbe41fe88cab1764a3ef19c578`;
+- `0.2.0`: 1,654,161 bytes,
+  `9937fd8094ef402b7a9233d02bd232405f75b9e70661404646fcda7cd295c5bc`.
+
+No tag, release, version bump, runtime publication, multi-file Playground UI,
+browser persistence, package management, URL import, LSP, REPL VFS project
+loading, async, macro, or AUDIT-3 work was performed.
+
+Follow-up 3 / AUDIT-3 remains DECISION-PENDING; no code or doc changes beyond the existing decision package; property test AST-limit explicitly excludes TypeExpr-heavy inputs pending that decision.
+
+Next exact action: **STOP after local Phase 5 commits.** Phase 5 is locally
+closed and fully validated. Do not push Phase 5 or begin multi-file Playground
+UI, package management, LSP, async, OOP, macros, release work, or AUDIT-3 work
+without a new explicit human instruction.
