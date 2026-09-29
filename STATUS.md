@@ -405,6 +405,155 @@ start Phase 2, implement source provenance (`SourceId` / `Location` /
 discovery. Do not begin filesystem loading while diagnostics can still
 misattribute a local span to an arbitrary source.
 
+### Phase 2 — multi-source provenance foundation
+
+**COMPLETE. STOP BEFORE FILESYSTEM LOADING.** Phase 2 was implemented and
+validated without adding native/VFS module discovery, `mod.aura` loading,
+directory traversal, ownership resolution, symlink/case handling, package
+management, or a multi-file Playground UI.
+
+Local implementation commit:
+
+- `5fde3bf7e2806f7ad0c284e72ec28d194b7e1c3e` —
+  `feat(source): add multi-source provenance foundation`.
+- Phase 1 remains the separate parent commit
+  `8da50b9bbe304f4814e4b54a5d43ff952a5bdea4` —
+  `docs(modules): define filesystem module architecture`.
+
+Source/provenance model now implemented:
+
+- `Span { start, end }` is unchanged and remains source-local.
+- `SourceId` is an opaque 8-byte identity. Its packed map scope prevents an id
+  from one `SourceMap` from resolving in another map; its local slot follows
+  deterministic insertion order. Raw ids are not semantic ordering inputs.
+- `Location { source, span }` pairs source identity with the existing byte
+  range only at source-aware boundaries.
+- `SourceMap` authoritatively owns source display names and source text.
+  Text is `Arc<str>` so the native large-stack compiler worker and retained
+  diagnostic map share the same source allocation rather than copying it.
+- `SourceDiagnostic` wraps the legacy three-field `Diag` at source-aware
+  boundaries. `Diag` itself kept its public struct-literal shape, preserving
+  downstream source compatibility and keeping provenance out of AST/token
+  nodes.
+- `DiagnosticReport` owns both the `SourceDiagnostic` and its `SourceMap` and
+  renders source name/line/column through that authoritative map. Foreign ids,
+  out-of-range spans, reversed spans, and non-UTF-8-boundary spans do not
+  silently resolve.
+
+Compilation ownership and compatibility:
+
+- `Compilation` owns the resolved/checked module, `SourceMap`, and entry
+  `SourceId`.
+- `compile_source_in_map` is the narrow source boundary: parser/resolver/checker
+  internals still use source-local `Span`, then the resulting diagnostic is
+  lifted into `SourceDiagnostic`.
+- `compile_named_with_mode`, `run_named_program_with`, and
+  `run_named_toplevel_with` provide source-aware library entry points.
+- Existing `compile`, `compile_with_mode`, `run_source`, `run_program_with`, and
+  `run_toplevel_with` retain their legacy result shapes and semantics. The
+  compatibility execution APIs intentionally unwrap a report back to `Diag`;
+  callers that need retained provenance use the named/report APIs.
+- Current runtime attribution is correct for today's one-source compilation:
+  runtime diagnostics are lifted to that compilation's entry source. Per-item
+  cross-source runtime attribution remains a future module-assembly concern;
+  no multi-source logical program is assembled in Phase 2.
+
+Surface integration:
+
+- CLI `run`, `check`, and `eval` use source-aware reports. File inputs retain
+  their selected display identity; stdin remains `<stdin>` and does not infer a
+  filesystem root.
+- REPL retains a persistent `SourceMap`; completed submissions receive
+  `<repl:1>`, `<repl:2>`, ... identities in stable submission order. The
+  existing compact `E####: ...` UI is unchanged.
+- Python/Host public contracts are unchanged. Source-aware execution retains
+  provenance internally; focused Python coverage remains green.
+- Playground runtime compilation uses `<playground>` internally while keeping
+  Playground API 1 / Host ABI 1 and the existing source-name-free JSON shape.
+- No second resolver was introduced; `src/resolve.rs` remains authoritative.
+
+Permanent provenance coverage (`tests/source_provenance.rs`, 14 tests) proves:
+
+- `Span` remains two `usize` values; `SourceId` and `Option<SourceId>` are
+  8 bytes on the current 64-bit target;
+- identical byte ranges in distinct sources remain distinct;
+- cross-map ids cannot alias;
+- source order is stable even when independent maps interleave allocations;
+- names/text resolve through the correct map;
+- parser/checker offsets match legacy compilation exactly;
+- two independent source buffers with identical spans render against their own
+  source records;
+- current runtime diagnostics are lifted to the correct entry source;
+- stdin and non-filesystem display names work without filesystem semantics;
+- source-aware rendering is deterministic and rejects malformed source/span
+  pairings;
+- the legacy `Diag { code, message, span }` struct literal remains valid.
+
+Adversarial review:
+
+- Two independent read-only reviewers inspected provenance identity,
+  compilation ownership, diagnostics, CLI, REPL, Python/Host, WASM/Playground,
+  public API compatibility, source-copy behavior, AST/token impact, and release
+  artifacts.
+- Initial review found three concrete defects: adding source state directly to
+  public `Diag` broke downstream struct literals; registered source text was
+  copied again when moved to the native compiler worker; source-aware rendering
+  silently clamped malformed spans. All three were reproduced and fixed.
+- The review also challenged raw `SourceId` ordering/stability. Raw ids are now
+  explicitly isolation-only and do not implement `Ord`/`Hash`; deterministic
+  ordering is `SourceMap::order`, backed by the local insertion slot and tested
+  under interleaved maps.
+- Final re-review reported no remaining concrete Phase 2 contradiction.
+
+Final Phase 2 validation on the implementation state:
+
+- `cargo fmt --all -- --check`: pass.
+- `cargo clippy --locked --all-targets --all-features -- -D warnings`: pass.
+- `cargo test --locked --all-targets --all-features`: **760 passed, 0 failed**.
+- `cargo test --locked --all-targets --no-default-features --features
+  cli,repl,json,regex,time`: **750 passed, 0 failed**.
+- `cargo +1.83.0 check --locked --all-features`: pass.
+- Playground runtime crate: **10 passed, 0 failed**.
+- `node playground/tests/node/run-all.mjs`: manifest 34, completion 7, ABI 67,
+  integrity 29, differential 214, syntax 43, browser 62, worker 12, cache 7;
+  **0 failed**.
+- `node playground/build.mjs --check`: manifest matches 4 versions.
+- Current dirty-code WASM was rebuilt directly and tested rather than relying
+  only on the published runtime: ABI **67/0**, differential **214/0**, syntax
+  **43/0**, zero imports in syntax conformance. Built artifact: **1,655,697
+  bytes**, SHA-256
+  `00d5ac851a06f2d909708134e9aa9e4ed4b1b0b19cac53f597e42f20cec691ec`.
+- `node website/tests/run-all.mjs`: examples 22, links 2089, base 2088,
+  browser 344, a11y 70, reused Playground suite green; **0 failed**.
+
+Released runtime artifacts remain byte-identical and were not staged or
+modified:
+
+- `0.0.2`: 1,366,621 bytes,
+  `5a4ad3f7e3f786164d65df437d607e7ddd5e25947ea2c8dd9b436a5490b334ed`.
+- `0.0.2-dev.23`: 1,604,958 bytes,
+  `71072150e67384120c63e22d6176f3683110735b84f74723bea315f79778a528`.
+- `0.0.2-dev.29`: 1,614,239 bytes,
+  `aa832ba72578897f6b99650574939011dda25e0d390fdb5efb6fae825816bdd3`.
+- `0.0.2-dev.30`: 1,654,216 bytes,
+  `916a8282f7afcf67b89662af89d2f69cf562d9dbe41fe88cab1764a3ef19c578`.
+- `0.2.0`: 1,654,161 bytes,
+  `9937fd8094ef402b7a9233d02bd232405f75b9e70661404646fcda7cd295c5bc`.
+
+Follow-up 3 / AUDIT-3 remains DECISION-PENDING; no code or doc changes beyond the existing decision package; property test AST-limit explicitly excludes TypeExpr-heavy inputs pending that decision.
+
+Local closure state before the status-only checkpoint commit: branch
+`rewrite/v3-rust`, HEAD
+`5fde3bf7e2806f7ad0c284e72ec28d194b7e1c3e`; only this `STATUS.md` update and
+the pre-existing one-byte untracked `s` remain outside the implementation
+commit. No push, tag, release, version bump, runtime publication, or filesystem
+loader action was performed.
+
+Next exact action: **STOP after Phase 2.** Filesystem discovery/loading requires
+a new explicit phase instruction. The provenance foundation is ready for the
+future graph builder without changing the existing resolver/checker/runtime
+semantics.
+
 ## Do not reopen
 
 - The nine Core SPEC GAPs (closed).
