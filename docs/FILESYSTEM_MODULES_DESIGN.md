@@ -798,7 +798,9 @@ above.
 
 ### DEFERRED
 
-- exact numeric allocation for new module-source error codes;
+- case-collision and filesystem-specific module-source error subclasses beyond
+  the provider-neutral Phase 3 allocations (`E2020` ownership collision,
+  `E2021` duplicate logical source, `E2022` invalid/missing provider key/path);
 - hard-link identity/de-duplication;
 - explicit CLI `--root` for stdin/eval;
 - REPL filesystem-relative loading;

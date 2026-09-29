@@ -44,6 +44,9 @@ be produced by at least one program.
 | E2017 | Trait implementation missing a required method | `trait T { fn a(self); fn b(self) }` with `impl T for S` providing only `a` |
 | E2018 | Private item accessed across a module boundary | `module m { fn hidden() { } }` then `m::hidden()` |
 | E2019 | Unknown module, or unknown item in a `use` path | `use nope`; `use shapes::Missing` |
+| E2020 | Module-source ownership collision | two provider sources both claim logical module `foo`; or in-source `module foo` plus external `foo` |
+| E2021 | Duplicate logical source | one provider source key is supplied for two logical modules, or supplied twice for one logical module |
+| E2022 | Invalid/missing module-source path or provider key | provider advertises a missing child source; invalid logical child name such as `../foo` |
 
 ## Type-level
 

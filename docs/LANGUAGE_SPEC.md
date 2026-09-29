@@ -3014,6 +3014,9 @@ scope. Value and type namespaces are separate, so a session may hold `fn S` and
 | E2017 | trait implementation missing a required method |
 | E2018 | private item accessed across a module boundary |
 | E2019 | unknown module, or unknown item in a `use` path |
+| E2020 | multiple source owners claim the same logical module |
+| E2021 | one provider source is supplied for conflicting logical ownership |
+| E2022 | invalid or missing provider module-source path/key |
 | E3001 | type mismatch |
 | E3002 | unknown type or constructor |
 | E3005 | return type mismatch |
@@ -3488,4 +3491,3 @@ generic declaration does not mutate session state.
 *Evidence:* `Parser::opt_type_params`/`ty` (`src/parse/mod.rs`); `Ty::Param`,
 `Ty::App`, `Ty::substitute` (`src/types.rs`); `Checker::infer_substitution`,
 `sig_identical`, `check_user_call` (`src/check/mod.rs`); `tests/generics.rs`.
-

@@ -11,7 +11,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::ast::*;
-use crate::error::{codes, Diag, Result, Span};
+use crate::error::{codes, Diag, Result, SourceDiagnostic, Span};
+use crate::source::SourceId;
 use value::{Instance, MapKey, Value, Variant};
 
 /// Maximum number of simultaneously active user call frames, including the
@@ -217,6 +218,9 @@ pub struct Interp {
     ast_depth: usize,
     /// A thrown value in flight across a call boundary; consumed by `try`.
     pending_throw: Option<Value>,
+    closure_sources: HashMap<usize, SourceId>,
+    current_source: Option<SourceId>,
+    last_error_source: Option<SourceId>,
     /// The host capability boundary: standard output, standard input, program
     /// arguments, and optional filesystem/clock/sleep capabilities. Every
     /// language-visible interaction with the outside world goes through this;
@@ -240,6 +244,9 @@ impl Interp {
             depth: 0,
             ast_depth: 0,
             pending_throw: None,
+            closure_sources: HashMap::new(),
+            current_source: None,
+            last_error_source: None,
             host: crate::host::default_host(),
         };
         crate::stdlib::install(&mut it);
@@ -369,8 +376,71 @@ impl Interp {
         Ok(())
     }
 
+    pub(crate) fn run_sourced(
+        &mut self,
+        module: &Module,
+        item_sources: &[SourceId],
+        entry_source: SourceId,
+    ) -> std::result::Result<(), SourceDiagnostic> {
+        if module.items.len() != item_sources.len() {
+            return Err(SourceDiagnostic::locationless(Diag::locationless(
+                codes::INTERNAL,
+                "runtime source provenance does not match the resolved module",
+            )));
+        }
+
+        self.last_error_source = None;
+        for (item, source) in module.items.iter().zip(item_sources.iter().copied()) {
+            self.declare_item_with_source(item, Some(source));
+        }
+
+        for (item, source) in module.items.iter().zip(item_sources.iter().copied()) {
+            self.current_source = Some(source);
+            self.last_error_source = None;
+            let result = match item {
+                Item::Const { name, value, .. } => {
+                    let globals = self.globals.clone();
+                    self.eval_toplevel(value, &globals).and_then(|ctl| {
+                        let value = self.finish_global(ctl)?;
+                        self.globals.define(name.clone(), value, false);
+                        Ok(())
+                    })
+                }
+                Item::Expr(expr, _) => {
+                    let globals = self.globals.clone();
+                    self.eval_toplevel(expr, &globals)
+                        .and_then(|ctl| self.finish_global(ctl).map(|_| ()))
+                }
+                _ => Ok(()),
+            };
+            if let Err(diagnostic) = result {
+                let owner = self.last_error_source.take().unwrap_or(source);
+                return Err(SourceDiagnostic::new(diagnostic, owner));
+            }
+        }
+
+        if let Some(main) = self
+            .functions
+            .get("main")
+            .and_then(|set| set.first())
+            .cloned()
+        {
+            self.current_source = Some(entry_source);
+            self.last_error_source = None;
+            if let Err(diagnostic) = self.call(&main, Vec::new(), Span::default()) {
+                let owner = self.last_error_source.take().unwrap_or(entry_source);
+                return Err(SourceDiagnostic::new(self.uncaught(diagnostic), owner));
+            }
+        }
+        Ok(())
+    }
+
     /// Register one declaration into the interpreter's symbol tables.
     fn declare_item(&mut self, item: &Item) {
+        self.declare_item_with_source(item, None);
+    }
+
+    fn declare_item_with_source(&mut self, item: &Item, source: Option<SourceId>) {
         match item {
             Item::Fn {
                 name,
@@ -393,6 +463,10 @@ impl Interp {
                     body: body.clone(),
                     env: self.globals.clone(),
                 });
+                if let Some(source) = source {
+                    self.closure_sources
+                        .insert(Rc::as_ptr(&closure) as usize, source);
+                }
                 self.functions
                     .entry(name.clone())
                     .or_default()
@@ -435,6 +509,10 @@ impl Interp {
                             body: body.clone(),
                             env: self.globals.clone(),
                         });
+                        if let Some(source) = source {
+                            self.closure_sources
+                                .insert(Rc::as_ptr(&closure) as usize, source);
+                        }
                         self.methods
                             .entry((target.clone(), name.clone()))
                             .or_default()
@@ -528,7 +606,19 @@ impl Interp {
         // with a fresh nesting budget, so recursion is bounded by the call
         // limit (E4011) rather than by the expression-nesting limit.
         let saved_ast_depth = std::mem::take(&mut self.ast_depth);
+        let saved_source = self.current_source;
+        if let Some(source) = self
+            .closure_sources
+            .get(&(Rc::as_ptr(closure) as usize))
+            .copied()
+        {
+            self.current_source = Some(source);
+        }
         let r = self.exec_block(&closure.body, &env, false);
+        if r.is_err() && self.last_error_source.is_none() {
+            self.last_error_source = self.current_source;
+        }
+        self.current_source = saved_source;
         self.ast_depth = saved_ast_depth;
         self.depth -= 1;
         match r? {
@@ -1379,7 +1469,7 @@ impl Interp {
                     Expr::Block(stmts, _) => stmts.clone(),
                     expr => vec![Stmt::Return(Some(expr.clone()), Span::default())],
                 };
-                Ok(Ctl::Val(Value::Closure(Rc::new(Closure {
+                let closure = Rc::new(Closure {
                     name: "<lambda>".to_string(),
                     params: params.iter().map(|p| (p.name.clone(), p.mutable)).collect(),
                     param_tys: params
@@ -1388,7 +1478,12 @@ impl Interp {
                         .collect(),
                     body: body_stmts,
                     env: env.clone(),
-                }))))
+                });
+                if let Some(source) = self.current_source {
+                    self.closure_sources
+                        .insert(Rc::as_ptr(&closure) as usize, source);
+                }
+                Ok(Ctl::Val(Value::Closure(closure)))
             }
             Expr::Pipe(l, r, span) => {
                 let arg = val!(self.eval(l, env));

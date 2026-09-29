@@ -227,6 +227,9 @@ The checker runs before execution and rejects, at minimum:
 | E2017 | trait implementation missing a required method |
 | E2018 | private item accessed across a module boundary |
 | E2019 | unknown module, or unknown item in a `use` path |
+| E2020 | multiple source owners claim the same logical module |
+| E2021 | one provider source is supplied for conflicting logical ownership |
+| E2022 | invalid or missing provider module-source path/key |
 | E3001 | type mismatch (annotations are checked) |
 | E3002 | unknown type or constructor |
 | E3005 | return type mismatch |

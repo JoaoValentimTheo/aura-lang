@@ -16,6 +16,7 @@ pub mod check;
 pub mod error;
 pub mod host;
 pub mod lex;
+pub mod module_graph;
 pub mod parse;
 #[cfg(feature = "repl")]
 pub mod repl;
@@ -119,6 +120,37 @@ where
     F: FnOnce() -> error::Result<T> + Send + 'static,
 {
     on_execution_stack(f)
+}
+
+fn on_source_execution_stack<T, F>(f: F) -> std::result::Result<T, SourceDiagnostic>
+where
+    T: Send + 'static,
+    F: FnOnce() -> std::result::Result<T, SourceDiagnostic> + Send + 'static,
+{
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let handle = std::thread::Builder::new()
+            .name("aura-source-exec".to_string())
+            .stack_size(INTERP_STACK)
+            .spawn(f)
+            .map_err(|e| {
+                SourceDiagnostic::locationless(error::Diag::locationless(
+                    error::codes::FOREIGN,
+                    format!("cannot start source-aware execution thread: {e}"),
+                ))
+            })?;
+        match handle.join() {
+            Ok(result) => result,
+            Err(_) => Err(SourceDiagnostic::locationless(error::Diag::locationless(
+                error::codes::INTERNAL,
+                "the source-aware execution thread aborted; this is a bug in Aura, not in your program",
+            ))),
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        f()
+    }
 }
 
 /// A writer that appends to a shared buffer, so output can be read back
@@ -231,6 +263,7 @@ pub struct Compilation {
     module: ast::Module,
     sources: SourceMap,
     entry_source: SourceId,
+    item_sources: Option<Vec<SourceId>>,
 }
 
 impl Compilation {
@@ -270,7 +303,16 @@ impl Compilation {
         args: Vec<String>,
         input: Option<Input>,
     ) -> std::result::Result<(), DiagnosticReport> {
-        let (module, sources, entry_source) = self.into_parts();
+        let Compilation {
+            module,
+            sources,
+            entry_source,
+            item_sources,
+        } = self;
+        if let Some(item_sources) = item_sources {
+            return execute_with_sources(module, item_sources, entry_source, stdout, args, input)
+                .map_err(|diagnostic| DiagnosticReport::new(diagnostic, sources));
+        }
         match execute_with(module, stdout, args, input) {
             Ok(()) => Ok(()),
             Err(diagnostic) => Err(DiagnosticReport::new(
@@ -378,6 +420,35 @@ pub fn compile_named_with_mode(
             module,
             sources,
             entry_source: source,
+            item_sources: None,
+        }),
+        Err(diagnostic) => Err(DiagnosticReport::new(diagnostic, sources)),
+    }
+}
+
+/// Compile the provider's reachable logical module tree through Aura's
+/// existing resolver/checker pipeline while retaining per-source provenance.
+///
+/// This is provider-neutral: native filesystem and browser/VFS adapters can
+/// implement [`module_graph::SourceProvider`] without changing module
+/// semantics.
+pub fn compile_provider_with_mode<P: module_graph::SourceProvider>(
+    provider: &P,
+    mode: CompileMode,
+) -> std::result::Result<Compilation, DiagnosticReport> {
+    let graph = module_graph::ModuleGraphBuilder::new().build(provider)?;
+    let (module, sources, entry_source, _nodes, provenance) = graph.into_compilation_parts();
+    let semantic = on_source_execution_stack(move || {
+        let (module, item_sources) = resolve::resolve_sourced(module, &provenance)?;
+        check::Checker::module_in_mode_sourced(&module, &item_sources, entry_source, mode)?;
+        Ok((module, item_sources))
+    });
+    match semantic {
+        Ok((module, item_sources)) => Ok(Compilation {
+            module,
+            sources,
+            entry_source,
+            item_sources: Some(item_sources),
         }),
         Err(diagnostic) => Err(DiagnosticReport::new(diagnostic, sources)),
     }
@@ -428,6 +499,21 @@ pub fn compile_module(module: &ast::Module, mode: CompileMode) -> error::Result<
 /// Returns the first runtime diagnostic.
 pub fn execute(module: ast::Module, stdout: Option<Output>) -> error::Result<()> {
     execute_with(module, stdout, Vec::new(), None)
+}
+
+fn execute_with_sources(
+    module: ast::Module,
+    item_sources: Vec<SourceId>,
+    entry_source: SourceId,
+    stdout: Option<Output>,
+    args: Vec<String>,
+    input: Option<Input>,
+) -> std::result::Result<(), SourceDiagnostic> {
+    on_source_execution_stack(move || {
+        let mut interp = run::Interp::new();
+        interp.set_host(host::host_from_parts(stdout, args, input));
+        interp.run_sourced(&module, &item_sources, entry_source)
+    })
 }
 
 /// Execute a compiled module with an explicit execution context: an optional

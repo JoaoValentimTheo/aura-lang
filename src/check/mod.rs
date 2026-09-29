@@ -9,7 +9,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::ast::*;
-use crate::error::{codes, Diag, Result, Span};
+use crate::error::{codes, Diag, Result, SourceDiagnostic, Span};
+use crate::source::SourceId;
 use crate::types::Ty;
 
 /// Re-export of the shared type representation, for callers that expect
@@ -264,6 +265,11 @@ struct FnSig {
     mut_receiver: bool,
     /// The declaration's source span, for overload diagnostics.
     span: Span,
+    /// Source owner for source-aware multi-file diagnostics.
+    source: Option<SourceId>,
+    /// Deterministic flattened-program item order for diagnostics that are
+    /// emitted after the checker has aggregated multiple declarations.
+    order: Option<usize>,
     /// For a method, the module path it was declared in (`[]` for the root)
     /// and whether it is exported (`pub`). A method is reachable across a
     /// module boundary only when it is `pub` or the caller is the owning
@@ -431,6 +437,9 @@ pub struct Checker {
     /// bound (`T: Trait`) can be validated before the trait table itself is
     /// built (which happens after function signatures are annotated).
     declared_traits: std::collections::HashSet<String>,
+    item_sources: Vec<SourceId>,
+    active_source: Option<SourceId>,
+    active_item_order: usize,
 }
 
 impl Checker {
@@ -469,7 +478,21 @@ impl Checker {
             trait_type_params: HashMap::new(),
             current_type_params: Vec::new(),
             declared_traits: std::collections::HashSet::new(),
+            item_sources: Vec::new(),
+            active_source: None,
+            active_item_order: 0,
         }
+    }
+
+    fn activate_item_source(&mut self, index: usize) {
+        self.active_item_order = index;
+        if let Some(source) = self.item_sources.get(index).copied() {
+            self.active_source = Some(source);
+        }
+    }
+
+    fn attach_source(&self, diagnostic: Diag, fallback: SourceId) -> SourceDiagnostic {
+        SourceDiagnostic::new(diagnostic, self.active_source.unwrap_or(fallback))
     }
 
     /// Build a checker that already knows a set of global names (used by the
@@ -544,6 +567,8 @@ impl Checker {
                         owner: Vec::new(),
                         public: true,
                         span: Span::default(),
+                        source: None,
+                        order: None,
                         type_params: type_params.clone(),
                     });
                 }
@@ -660,6 +685,8 @@ impl Checker {
                                 owner: owner.clone(),
                                 public: m.public,
                                 span: Span::default(),
+                                source: None,
+                                order: None,
                                 type_params: type_params.clone(),
                             },
                         ));
@@ -695,6 +722,8 @@ impl Checker {
                                 owner: Vec::new(),
                                 public: true,
                                 span: Span::default(),
+                                source: None,
+                                order: None,
                                 type_params: type_params.clone(),
                             },
                         ));
@@ -717,7 +746,8 @@ impl Checker {
     /// Returns the first diagnostic found.
     pub fn check(&mut self, m: &Module) -> Result<()> {
         self.hoist(m)?;
-        for item in &m.items {
+        for (item_index, item) in m.items.iter().enumerate() {
+            self.activate_item_source(item_index);
             self.item(item)?;
         }
         Ok(())
@@ -745,7 +775,8 @@ impl Checker {
         // Collect trait names first, so a generic bound (`T: Trait`) written on
         // any declaration is validated against a known trait even though the
         // full trait table is built later in this pass.
-        for item in &m.items {
+        for (item_index, item) in m.items.iter().enumerate() {
+            self.activate_item_source(item_index);
             if let Item::Trait { name, .. } = item {
                 self.declared_traits.insert(name.clone());
             }
@@ -760,7 +791,8 @@ impl Checker {
         // earlier REPL submissions, and the annotation pass below must fill
         // this module's signatures, not overwrite the restored ones.
         let mut new_fn_base: HashMap<String, usize> = HashMap::new();
-        for item in &m.items {
+        for (item_index, item) in m.items.iter().enumerate() {
+            self.activate_item_source(item_index);
             match item {
                 Item::Fn {
                     name,
@@ -812,6 +844,8 @@ impl Checker {
                         owner,
                         public: *public,
                         span: *span,
+                        source: self.active_source,
+                        order: Some(self.active_item_order),
                         type_params: Vec::new(),
                     });
                     let base = self.functions.get(name).map_or(0, Vec::len) - 1;
@@ -939,7 +973,8 @@ impl Checker {
         // signatures have been annotated, so the Nth declaration fills the Nth
         // signature.
         let mut filled: HashMap<String, usize> = HashMap::new();
-        for item in &m.items {
+        for (item_index, item) in m.items.iter().enumerate() {
+            self.activate_item_source(item_index);
             match item {
                 Item::Struct {
                     name,
@@ -1061,17 +1096,31 @@ impl Checker {
         // on `HashMap` iteration order and make the reported error — and so the
         // CLI exit code — nondeterministic.
         let mut names: Vec<&String> = self.functions.keys().collect();
-        names.sort_by_key(|n| {
-            self.functions
-                .get(*n)
-                .and_then(|set| set.first())
-                .map_or((usize::MAX, usize::MAX), |s| (s.span.start, s.span.end))
+        names.sort_by(|left, right| {
+            let key = |name: &String| {
+                let set = &self.functions[name];
+                let order = set
+                    .iter()
+                    .filter_map(|signature| signature.order)
+                    .min()
+                    .unwrap_or(usize::MAX);
+                let span = set
+                    .first()
+                    .map_or(Span::default(), |signature| signature.span);
+                (order, span.start, span.end)
+            };
+            key(left)
+                .cmp(&key(right))
+                .then_with(|| left.as_bytes().cmp(right.as_bytes()))
         });
         for name in names {
             let set = &self.functions[name];
             for i in 0..set.len() {
                 for j in (i + 1)..set.len() {
                     if Self::sig_identical(&set[i], &set[j]) {
+                        if let Some(source) = set[j].source {
+                            self.active_source = Some(source);
+                        }
                         return Err(Diag::new(
                             codes::REDECLARED,
                             format!(
@@ -1087,7 +1136,8 @@ impl Checker {
         // all be populated before method/field collision and method signatures
         // are resolved, regardless of source order.
         // 1. Traits: register each declared trait's method signatures.
-        for item in &m.items {
+        for (item_index, item) in m.items.iter().enumerate() {
+            self.activate_item_source(item_index);
             if let Item::Trait {
                 name,
                 type_params,
@@ -1184,6 +1234,8 @@ impl Checker {
                             // (`LANGUAGE_SPEC.md` §28).
                             public: *public,
                             span: *mspan,
+                            source: self.active_source,
+                            order: Some(self.active_item_order),
                         },
                     ));
                 }
@@ -1192,7 +1244,8 @@ impl Checker {
             }
         }
         // 2. Inherent and trait implementations, merged into one method surface.
-        for item in &m.items {
+        for (item_index, item) in m.items.iter().enumerate() {
+            self.activate_item_source(item_index);
             if let Item::Impl {
                 target,
                 target_args,
@@ -1320,6 +1373,8 @@ impl Checker {
                             owner: owner.clone(),
                             public: false,
                             span: *mspan,
+                            source: self.active_source,
+                            order: Some(self.active_item_order),
                             type_params: Vec::new(),
                         };
                         if !self.method_sigs_compatible(expected, &actual) {
@@ -1417,6 +1472,8 @@ impl Checker {
                         owner: trait_module.clone().unwrap_or_else(|| owner.clone()),
                         public: trait_publicity.unwrap_or(*public_flag),
                         span: *mspan,
+                        source: self.active_source,
+                        order: Some(self.active_item_order),
                         type_params: method_p
                             .iter()
                             .map(|p| (p.name.clone(), p.bounds.clone()))
@@ -1491,6 +1548,8 @@ impl Checker {
                     owner: Vec::new(),
                     public: true,
                     span: Span::default(),
+                    source: None,
+                    order: None,
                     type_params: Vec::new(),
                 });
             }
@@ -1514,6 +1573,30 @@ impl Checker {
     pub fn module_in_mode(m: &Module, mode: crate::CompileMode) -> Result<()> {
         let mut c = Checker::new();
         c.check_mode(m, mode)
+    }
+
+    pub(crate) fn module_in_mode_sourced(
+        m: &Module,
+        item_sources: &[SourceId],
+        entry_source: SourceId,
+        mode: crate::CompileMode,
+    ) -> std::result::Result<(), SourceDiagnostic> {
+        if m.items.len() != item_sources.len() {
+            return Err(SourceDiagnostic::locationless(Diag::locationless(
+                codes::INTERNAL,
+                "checker source provenance does not match the resolved module",
+            )));
+        }
+        let mut c = Checker::new();
+        c.item_sources = item_sources.to_vec();
+        c.check(m)
+            .map_err(|diagnostic| c.attach_source(diagnostic, entry_source))?;
+        match mode {
+            crate::CompileMode::Module => Ok(()),
+            crate::CompileMode::Program => c
+                .require_main()
+                .map_err(|diagnostic| SourceDiagnostic::new(diagnostic, entry_source)),
+        }
     }
 
     /// Check a module and require an entry point.

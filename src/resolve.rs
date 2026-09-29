@@ -24,7 +24,10 @@ use crate::ast::{
     Arm, Expr, FPart, FieldDecl, Item, Module, Param, Pattern, Stmt, TypeExpr, TypeParam,
     VariantDecl,
 };
+use crate::error::SourceDiagnostic;
 use crate::error::{codes, Diag, Result, Span};
+use crate::module_graph::ItemProvenance;
+use crate::source::SourceId;
 
 /// The entry point: resolve `module` (the parsed file) into a flat module.
 ///
@@ -36,6 +39,59 @@ pub fn resolve(module: Module) -> Result<Module> {
     let mut r = Resolver::new();
     r.collect_module(&module.items, &[])?;
     r.flatten(&module.items, &[])
+}
+
+pub(crate) fn resolve_sourced(
+    module: Module,
+    provenance: &[ItemProvenance],
+) -> std::result::Result<(Module, Vec<SourceId>), SourceDiagnostic> {
+    let mut item_sources = HashMap::new();
+    if !register_item_sources(&module.items, provenance, &mut item_sources) {
+        return Err(SourceDiagnostic::locationless(Diag::locationless(
+            codes::INTERNAL,
+            "module provenance does not match the parsed module tree",
+        )));
+    }
+
+    let mut r = Resolver::new();
+    r.item_sources = item_sources;
+    if let Err(diagnostic) = r.collect_module(&module.items, &[]) {
+        return Err(r.attach_source(diagnostic));
+    }
+    let resolved = match r.flatten(&module.items, &[]) {
+        Ok(module) => module,
+        Err(diagnostic) => return Err(r.attach_source(diagnostic)),
+    };
+    if r.resolved_sources.len() != resolved.items.len() {
+        return Err(SourceDiagnostic::locationless(Diag::locationless(
+            codes::INTERNAL,
+            "resolved source provenance does not match the flattened module",
+        )));
+    }
+    Ok((resolved, r.resolved_sources))
+}
+
+fn register_item_sources(
+    items: &[Item],
+    provenance: &[ItemProvenance],
+    out: &mut HashMap<usize, SourceId>,
+) -> bool {
+    if items.len() != provenance.len() {
+        return false;
+    }
+    for (item, provenance) in items.iter().zip(provenance) {
+        out.insert(std::ptr::from_ref(item) as usize, provenance.source);
+        match item {
+            Item::Module { items: inner, .. } => {
+                if !register_item_sources(inner, &provenance.children, out) {
+                    return false;
+                }
+            }
+            _ if !provenance.children.is_empty() => return false,
+            _ => {}
+        }
+    }
+    true
 }
 
 /// A declaration retained by the REPL session. The name is canonical (a module
@@ -238,6 +294,9 @@ struct Resolver {
     /// declared type, even if one of the same name exists. Interior-mutable so
     /// the `&self` rewriters can scope it without threading a parameter.
     type_param_scope: std::cell::RefCell<Vec<HashSet<String>>>,
+    item_sources: HashMap<usize, SourceId>,
+    active_source: Option<SourceId>,
+    resolved_sources: Vec<SourceId>,
 }
 
 impl Resolver {
@@ -254,6 +313,26 @@ impl Resolver {
             reexports: HashMap::new(),
             applied_imports: Vec::new(),
             type_param_scope: std::cell::RefCell::new(Vec::new()),
+            item_sources: HashMap::new(),
+            active_source: None,
+            resolved_sources: Vec::new(),
+        }
+    }
+
+    fn activate_item(&mut self, item: &Item) {
+        if let Some(source) = self
+            .item_sources
+            .get(&(std::ptr::from_ref(item) as usize))
+            .copied()
+        {
+            self.active_source = Some(source);
+        }
+    }
+
+    fn attach_source(&self, diagnostic: Diag) -> SourceDiagnostic {
+        match self.active_source {
+            Some(source) => SourceDiagnostic::new(diagnostic, source),
+            None => SourceDiagnostic::locationless(diagnostic),
         }
     }
 
@@ -397,6 +476,7 @@ impl Resolver {
     fn declare_module(&mut self, items: &[Item], prefix: &[String]) -> Result<()> {
         self.module_paths.insert(prefix.to_vec());
         for item in items {
+            self.activate_item(item);
             match item {
                 Item::Fn { name, public, .. } => {
                     self.declare(prefix, name, *public, Namespace::Value, item_span(item));
@@ -499,6 +579,7 @@ impl Resolver {
     /// program's declarations are known.
     fn apply_imports(&mut self, items: &[Item], prefix: &[String]) -> Result<()> {
         for item in items {
+            self.activate_item(item);
             match item {
                 Item::Use {
                     path,
@@ -904,6 +985,7 @@ impl Resolver {
     fn flatten(&mut self, items: &[Item], prefix: &[String]) -> Result<Module> {
         let mut out = Vec::new();
         for item in items {
+            self.activate_item(item);
             match item {
                 Item::Module { items: inner, .. } => {
                     // The child module's canonical path must be reconstructed
@@ -918,7 +1000,12 @@ impl Resolver {
                     out.append(&mut sub.items);
                 }
                 Item::Use { .. } => {}
-                other => out.push(self.rewrite_item(other, prefix)?),
+                other => {
+                    out.push(self.rewrite_item(other, prefix)?);
+                    if let Some(source) = self.active_source {
+                        self.resolved_sources.push(source);
+                    }
+                }
             }
         }
         Ok(Module { items: out })

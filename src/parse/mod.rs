@@ -13,6 +13,19 @@ pub fn parse(src: &str) -> Result<Module> {
     on_parse_stack(src, parse_inner)
 }
 
+/// Parse one physical source as contents already nested under
+/// `initial_depth` synthetic module wrappers.
+///
+/// Filesystem/provider-backed module splitting must consume the same parser
+/// recursion budget as equivalent in-source `module` blocks. This crate-local
+/// entry point lets the provider-neutral graph builder preserve that invariant
+/// without putting source identity into the AST.
+pub(crate) fn parse_with_initial_depth(src: &str, initial_depth: usize) -> Result<Module> {
+    on_parse_stack(src, move |src| {
+        parse_inner_with_initial_depth(src, initial_depth)
+    })
+}
+
 /// Parse one expression (used by the REPL and tests).
 ///
 /// # Errors
@@ -47,11 +60,22 @@ where
 }
 
 fn parse_inner(src: &str) -> Result<Module> {
+    parse_inner_with_initial_depth(src, 0)
+}
+
+fn parse_inner_with_initial_depth(src: &str, initial_depth: usize) -> Result<Module> {
+    if initial_depth > parse_recursion_budget() {
+        return Err(Diag::new(
+            codes::NESTING,
+            "expression nests too deeply",
+            Span::default(),
+        ));
+    }
     let toks = lex(src)?;
     let mut p = Parser {
         toks,
         pos: 0,
-        depth: 0,
+        depth: initial_depth,
         expr_nodes: 0,
         atom_depth: 0,
     };

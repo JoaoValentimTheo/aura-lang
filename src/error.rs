@@ -300,6 +300,12 @@ pub mod codes {
     pub const PRIVATE_ACCESS: u16 = 2018;
     /// An unknown module, or an unknown item in a `use` path.
     pub const UNKNOWN_MODULE: u16 = 2019;
+    /// More than one source claims the same logical module.
+    pub const MODULE_SOURCE_OWNERSHIP: u16 = 2020;
+    /// One provider source is supplied for conflicting logical ownership.
+    pub const DUPLICATE_LOGICAL_SOURCE: u16 = 2021;
+    /// A provider/module source key or logical child path is invalid.
+    pub const MODULE_SOURCE_PATH: u16 = 2022;
     /// Type mismatch.
     pub const TYPE_MISMATCH: u16 = 3001;
     /// Return type mismatch.
