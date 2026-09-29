@@ -1296,3 +1296,96 @@ Follow-up 3 / AUDIT-3 remains DECISION-PENDING; no code or doc changes beyond th
 Next exact action: **HUMAN REVIEW OF FSM-P5 + AUTHORITY RECONCILIATION BEFORE
 PUSH.** Do not push, create tags/releases, bump versions, publish runtime bytes,
 or begin FSM-P6 without new human authorization.
+
+### Post-FSM-P5 authority/config alignment closure — 2026-09-29
+
+**FSM-P5 LOCALLY VERIFIED + AURA AUTHORITY ALIGNED — READY FOR HUMAN REVIEW
+BEFORE PUSH.** This pass started at local `911d6ff004c0cbc2a94fffb1735f12ee1062c121`
+with `origin/rewrite/v3-rust` at
+`75c57428ca70c53a3d592fdbb93ec3c5d7cb46f8`. The only initial worktree state
+outside commits was the now-in-scope project `.codex/config.toml` modification
+and the pre-existing untracked one-byte `s`; `s` remained untouched and
+unstaged. This entry supersedes only the preceding checkpoint's statement that
+`.codex/config.toml` was protected/out of scope; that statement was accurate
+for the earlier pass but is no longer current after explicit human scope
+expansion.
+
+Independent architecture review reconfirmed the single provider-neutral path:
+virtual sources -> `InMemorySourceProvider` / `SourceProvider` ->
+`ModuleGraphBuilder` -> logical module tree -> `resolve_sourced` -> checker ->
+runtime -> WASM boundary. `SourceKey`, `SourceId`, `LogicalModulePath`, and
+user-visible `SourceName` remain distinct. Provider ordering is normalized,
+ownership/case collisions are deterministic, provider ownership cycles
+terminate, semantic cycles remain resolver/runtime semantics, and malformed
+virtual requests remain host-policy diagnostics. Playground API and Host ABI
+remain `1`; virtual-project exports are additive and feature-detected.
+
+Findings closed in this alignment pass:
+
+- **PROJECT_CONFIG_STALE:** project-local `[models.new_thread]` and `[agents]`
+  routing overrode/conflicted with the global ChatGPT Web route. They were
+  removed; `.codex/config.toml` now contains only project-local safety/context,
+  output, and history policy. `codex features list` loads without the prior
+  project `models is ignored` warning.
+- **DOC DRIFT:** `AGENT_STATE.md` still treated project config as unrelated;
+  `src/lib.rs`, `src/source.rs`, and `src/resolve.rs` described provider-backed
+  assembly as future/in-source-only. These comments/checkpoint statements were
+  reconciled without semantic changes.
+- **DOC DRIFT:** `LANGUAGE_SPEC.md` §27 now says the *module declaration
+  syntax* is in-source, while the existing following normative paragraph keeps
+  native filesystem and virtual/in-memory acquisition feeding the same logical
+  module tree.
+- **NON-ISSUE after adversarial reproduction:** a virtual project exceeding the
+  2 MiB host-policy limit returned `E4020` on current WASM, did not trap, and
+  the same runtime instance successfully executed a following program.
+
+Global Codex routing remains outside project config and was re-observed as
+`chatgpt-web/gpt-5.6-sol`, reasoning `high`, Web bridge
+`http://127.0.0.1:17841/v1`, global concurrency `1`, compatibility depth `2`,
+`multi_agent = true`, and `multi_agent_v2 = false` (Compatibility V1). No
+credential values were inspected or recorded.
+
+Validation rerun for this closure:
+
+- `cargo fmt --all -- --check`: pass;
+- `cargo clippy --locked --all-targets --all-features -- -D warnings`: pass;
+- `cargo test --locked --all-targets --all-features`: **838 tests, exit 0**;
+- `cargo test --locked --all-targets --no-default-features --features
+  cli,repl,json,regex,time`: **828 tests, exit 0**;
+- `cargo +1.83.0 check --locked --all-features`: pass;
+- focused module/VFS parity: `module_graph` **34/0**, `virtual_project`
+  **19/0**, `provider_parity` **2/0**;
+- `cargo test --locked --test syntax_docs`: **2/0** after the final spec wording
+  correction;
+- Playground Node: manifest **34/0**, completion **7/0**, ABI **69/0**,
+  integrity **29/0**, differential **214/0**, syntax **43 explicit native/WASM
+  comparisons**, browser **62/0**, worker **12/0**, cache **7/0**; generated
+  parity **60/60 fresh + 19/19 committed**, TypeExpr sweep **37 depths**, zero
+  host failures and zero WASM imports;
+- `node playground/build.mjs --check`: manifest matches **4** versions;
+- website: examples **22/0**, links **2089 checked across 39 pages**, base-path
+  **2088 refs across 39 pages**, browser **344/0**, a11y **70/0**, plus the
+  reused Playground suite;
+- release WASM rebuild: pass, zero imports.
+
+The final current-source target-only WASM is **1,761,796 bytes**, SHA-256
+`a0fce70c6e97268f1c7d12a0ddfe27a706452df36e818b9a28d9fd26c8d312fb`.
+It remains build output only and was not published or copied into a versioned
+runtime directory. Historical artifacts were re-verified unchanged:
+
+- `0.0.2`: **1,366,621 bytes**,
+  `5a4ad3f7e3f786164d65df437d607e7ddd5e25947ea2c8dd9b436a5490b334ed`;
+- `0.2.0`: **1,654,161 bytes**,
+  `9937fd8094ef402b7a9233d02bd232405f75b9e70661404646fcda7cd295c5bc`.
+
+Local commits created by this alignment pass before this status checkpoint:
+
+- `98090d8 chore(codex): align Aura project configuration`;
+- `c7bdad3 docs(agent): reconcile post-FSM-P5 authority state`;
+- `c2522da docs(spec): clarify module declaration source syntax`.
+
+Follow-up 3 / AUDIT-3 remains DECISION-PENDING; no code or doc changes beyond the existing decision package; property test AST-limit explicitly excludes TypeExpr-heavy inputs pending that decision.
+
+Next exact action: **HUMAN REVIEW BEFORE PUSH.** FSM-P5 remains locally closed
+and unpushed. Do not begin FSM-P6, publish runtime bytes, create tags/releases,
+or alter AUDIT-3 without new human authorization.
