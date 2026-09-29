@@ -158,8 +158,8 @@ impl SourceMap {
 
     /// Deterministic insertion order of `id` within this map.
     ///
-    /// This is the ordering primitive future module assembly may use; raw
-    /// `SourceId` values are deliberately not semantic ordering inputs.
+    /// This ordering is available to source-aware assembly and diagnostics;
+    /// raw `SourceId` values are deliberately not semantic ordering inputs.
     #[must_use]
     pub fn order(&self, id: SourceId) -> Option<usize> {
         if id.scope() != self.scope {

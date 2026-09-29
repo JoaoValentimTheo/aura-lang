@@ -1,10 +1,10 @@
 //! Module resolution and visibility (`LANGUAGE_SPEC.md` §28).
 //!
-//! Aura modules are **in-source**: `module Name { items }`, nestable, reached
-//! by `::`-separated paths and `use` imports. They are the only module model
-//! that preserves Native ↔ WASM parity, because the WebAssembly/Playground host
-//! has no filesystem: a real module boundary cannot depend on files the guest
-//! cannot see.
+//! Aura module syntax is logical and host-path-free: `module Name { items }`,
+//! nestable, reached by `::`-separated paths and `use` imports. Native
+//! filesystem and virtual providers may assemble multiple source texts into
+//! this same logical module tree before this resolver runs; physical paths and
+//! provider keys never become Aura module identity.
 //!
 //! This pass runs between parsing and checking. It flattens the module tree
 //! into a single item list in which every declared name is **canonical** — the

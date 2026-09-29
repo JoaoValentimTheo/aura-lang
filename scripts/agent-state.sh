@@ -30,6 +30,11 @@ if ! git diff --quiet -- .codex/config.toml; then
     codex_state=MODIFIED
 fi
 
+writer=$(sed -n '/^## Writer$/,/^## /{/^NONE$/p;/^WEB-GPT$/p;}' AGENT_STATE.md | head -n 1)
+if test -z "$writer"; then
+    writer=UNKNOWN
+fi
+
 s_state=ABSENT
 if test -e s; then
     s_bytes=$(wc -c < s | tr -d ' ')
@@ -49,4 +54,6 @@ printf 'DIRTY=%s\n' "$dirty"
 printf 'CURRENT_TRACK=%s\n' "$current_track"
 printf 'CURRENT_PHASE=%s\n' "$current_phase"
 printf 'AUDIT3=%s\n' "$audit3"
-printf 'PROTECTED_STATE=.codex/config.toml:%s;s:%s\n' "$codex_state" "$s_state"
+printf 'PROJECT_CODEX_CONFIG=%s\n' "$codex_state"
+printf 'WRITER=%s\n' "$writer"
+printf 'S_STATE=%s\n' "$s_state"

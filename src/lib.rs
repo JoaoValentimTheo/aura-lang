@@ -256,10 +256,9 @@ pub enum CompileMode {
 /// A resolved and checked Aura module together with the source registry that
 /// owns every source identity used by its diagnostics.
 ///
-/// Phase 2 currently constructs one-source compilations through the public
-/// named-source entry points. The source map may already contain multiple
-/// independent buffers through [`compile_source_in_map`], which is the
-/// provenance boundary future module assembly will reuse.
+/// Named-source entry points construct one-source compilations, while
+/// provider-backed compilation uses the same source registry for multi-source
+/// module assembly and source-aware diagnostics.
 #[derive(Debug)]
 pub struct Compilation {
     module: ast::Module,

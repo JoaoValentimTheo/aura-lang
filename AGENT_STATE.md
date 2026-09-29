@@ -20,13 +20,9 @@ continuing substantial work.
 
 ## Local HEAD
 
-Authoritative current value: `git rev-parse HEAD` (also printed by
-`scripts/agent-state.sh`). A tracked state file cannot safely hardcode the SHA
-of the commit that contains itself without becoming stale as that commit is
-created.
-
-Correction-pass starting HEAD:
-`e17f6b58b839d002904ca8afa0a3ad6cd2fe45f9`.
+Authoritative current value is `git rev-parse HEAD`, also printed by
+`scripts/agent-state.sh`; a tracked state file cannot safely hardcode its own
+commit SHA. Correction-pass starting HEAD: `e17f6b58b839d002904ca8afa0a3ad6cd2fe45f9`.
 
 ## Remote HEAD
 
@@ -84,14 +80,22 @@ Valid approval tokens remain exactly:
 - `DECISION APPROVED: OPTION A`
 - `DECISION APPROVED: OPTION B`
 
+## Repository-local Codex Policy
+
+Project `.codex/config.toml` contains project-local safety/context settings
+only: approval policy, sandbox mode, documentation/output limits, and history
+persistence. Model selection, provider routing, the ChatGPT Web bridge,
+Compatibility mode, and global agent concurrency belong in
+`~/.codex/config.toml`.
+
+The stale project-local `[models.new_thread]` and `[agents]` routing overrides
+were removed during the post-FSM-P5 authority-alignment pass. The project file
+must not reintroduce model/provider/bridge/global-agent routing.
+
 ## Protected Local State
 
-- `.codex/config.toml` — pre-existing modified unrelated local state; do not
-  edit, stage, commit, restore, or normalize it in Aura work.
 - `s` — pre-existing untracked file; verified size 1 byte; do not edit, stage,
   commit, delete, or rename it.
-- The ignored project-level `.codex/config.toml` `models` warning is outside
-  this task and must not be “fixed” as incidental cleanup.
 
 ## Release Immutability
 
