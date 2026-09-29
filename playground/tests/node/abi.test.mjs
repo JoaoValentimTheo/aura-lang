@@ -17,6 +17,9 @@ if (!wasmPath) {
 
 const bytes = readFileSync(wasmPath);
 const runtime = await AuraRuntime.fromBytes(bytes, "test");
+const supportsVirtualProjects = ["aura_project_reset", "aura_project_push", "aura_run_project"].every(
+  (name) => name in runtime.exports,
+);
 
 let passed = 0;
 let failed = 0;
@@ -32,6 +35,10 @@ function check(name, cond, detail) {
 
 function run(source, options) {
   return runtime.run(source, options);
+}
+
+function runProject(project, options) {
+  return runtime.runProject(project, options);
 }
 
 function expectOk(name, source, stdout, options) {
@@ -162,6 +169,102 @@ expectCode("type mismatch E3001", 'fn main() { let x = 1 + "a"\n print(x) }', 30
 expectCode("nesting E1015", `fn main() { print(${"[".repeat(300)}1${"]".repeat(300)}) }`, 1015);
 expectCode("capability E5002", "fn main() { time_now() }", 5002);
 
+// --- provider-neutral virtual projects -----------------------------------
+if (supportsVirtualProjects) {
+  const successProject = {
+    entry: "root",
+    sources: [
+      {
+        key: "root",
+        name: "main.aura",
+        text: "fn main() { print(child::value()) }",
+        children: [{ name: "child", key: "child" }],
+      },
+      {
+        key: "child",
+        name: "child.aura",
+        text: "pub fn value() -> int { return 21 }",
+        children: [],
+      },
+    ],
+  };
+  const success = runProject(successProject);
+  check("virtual project executes", success.status === "ok", JSON.stringify(success));
+  check("virtual project stdout", success.stdout === "21\n", JSON.stringify(success));
+  check("Host ABI remains 1 with additive VFS exports", runtime.abiVersion === 1);
+
+  const evalFallback = runProject({
+    entry: "root",
+    sources: [{ key: "root", name: "main.aura", text: "1 + 2", children: [] }],
+  });
+  check("one-source virtual project keeps eval fallback", evalFallback.status === "ok", JSON.stringify(evalFallback));
+  check("one-source virtual project eval result", evalFallback.result === "3", JSON.stringify(evalFallback));
+
+  const runtimeErrorProject = {
+    entry: "root",
+    sources: [
+      {
+        key: "root",
+        name: "main.aura",
+        text: "fn main() { child::boom() }",
+        children: [{ name: "child", key: "child" }],
+      },
+      {
+        key: "child",
+        name: "child.aura",
+        text: "pub fn boom() { assert(false) }",
+        children: [],
+      },
+    ],
+  };
+  const runtimeFailure = runProject(runtimeErrorProject);
+  check(
+    "virtual child runtime diagnostic",
+    runtimeFailure.diagnostics[0]?.code === 4028,
+    JSON.stringify(runtimeFailure),
+  );
+  check(
+    "virtual child SourceName serialized",
+    runtimeFailure.diagnostics[0]?.source === "child.aura",
+    JSON.stringify(runtimeFailure),
+  );
+  check(
+    "virtual diagnostics do not expose SourceId",
+    !JSON.stringify(runtimeFailure).includes("SourceId") &&
+      !("source_id" in (runtimeFailure.diagnostics[0] || {})),
+    JSON.stringify(runtimeFailure),
+  );
+
+  const bad = runProject({
+    entry: "..",
+    sources: [{ key: "..", name: "main.aura", text: "fn main() {}", children: [] }],
+  });
+  check("malformed VFS request is a diagnostic", bad.status === "diagnostic", JSON.stringify(bad));
+  check("malformed VFS request is host-level E4020", bad.diagnostics[0]?.code === 4020, JSON.stringify(bad));
+
+  const duplicateSourceNames = runProject({
+    entry: "root",
+    sources: [
+      {
+        key: "root",
+        name: "same.aura",
+        text: "fn main() {}",
+        children: [{ name: "child", key: "child" }],
+      },
+      { key: "child", name: "same.aura", text: "@", children: [] },
+    ],
+  });
+  check(
+    "duplicate virtual SourceName is rejected before provenance becomes ambiguous",
+    duplicateSourceNames.diagnostics[0]?.code === 4020,
+    JSON.stringify(duplicateSourceNames),
+  );
+  const recovered = run('fn main() { print("recovered") }');
+  check("runtime recovers after rejected VFS request", recovered.stdout === "recovered\n", JSON.stringify(recovered));
+} else {
+  check("historical ABI 1 runtime may omit additive VFS exports", runtime.abiVersion === 1);
+}
+
 // --- no-main fallback (eval semantics) ------------------------------------
 {
   const r = run("1 + 2");
@@ -174,6 +277,15 @@ expectCode("capability E5002", "fn main() { time_now() }", 5002);
   const a = run('fn main() { print("x") }');
   const b = run('fn main() { print("x") }');
   check("determinism", JSON.stringify(a) === JSON.stringify(b));
+}
+
+{
+  const legacy = run("fn main() { nope }");
+  check(
+    "single-source diagnostic schema remains source-name-free",
+    !("source" in (legacy.diagnostics[0] || {})),
+    JSON.stringify(legacy),
+  );
 }
 
 console.log(`\nABI: ${passed} passed, ${failed} failed`);

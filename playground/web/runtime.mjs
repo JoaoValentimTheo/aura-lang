@@ -164,6 +164,31 @@ function pushBytes(exports, resetFn, pushFn, bytes) {
   }
 }
 
+function parseRuntimeResult(json, status) {
+  let parsed;
+  try {
+    parsed = JSON.parse(json);
+  } catch (e) {
+    return {
+      status: "internal",
+      stdout: "",
+      result: null,
+      diagnostics: [
+        {
+          code: 4999,
+          code_text: "E4999",
+          message: `runtime produced unreadable result: ${e.message}`,
+          line: 1,
+          column: 1,
+        },
+      ],
+      abiStatus: status,
+    };
+  }
+  parsed.abiStatus = status;
+  return parsed;
+}
+
 /** Encode Playground options into the runtime's line protocol. */
 function encodeOptions({ args = [], stdin = null } = {}) {
   const chunks = [];
@@ -276,28 +301,30 @@ export class AuraRuntime {
     pushBytes(this.exports, "aura_options_reset", "aura_options_push", opts);
     const status = this.exports.aura_run();
     const json = readString(this.exports, "aura_output_len", "aura_output_byte");
-    let parsed;
-    try {
-      parsed = JSON.parse(json);
-    } catch (e) {
-      return {
-        status: "internal",
-        stdout: "",
-        result: null,
-        diagnostics: [
-          {
-            code: 4999,
-            code_text: "E4999",
-            message: `runtime produced unreadable result: ${e.message}`,
-            line: 1,
-            column: 1,
-          },
-        ],
-        abiStatus: status,
-      };
+    return parseRuntimeResult(json, status);
+  }
+
+  /**
+   * Execute a caller-supplied virtual multi-source Aura project.
+   *
+   * This is an additive Host ABI 1 capability. Historical ABI-1 runtimes may
+   * not expose it; callers can feature-detect `runProject` support without
+   * affecting the existing single-source `run` path.
+   */
+  runProject(project, options = {}) {
+    const required = ["aura_project_reset", "aura_project_push", "aura_run_project"];
+    for (const sym of required) {
+      if (!(sym in this.exports)) {
+        throw new Error(`runtime artifact ${this.name} does not support virtual projects`);
+      }
     }
-    parsed.abiStatus = status;
-    return parsed;
+    const request = new TextEncoder().encode(JSON.stringify(project));
+    const opts = encodeOptions(options);
+    pushBytes(this.exports, "aura_project_reset", "aura_project_push", request);
+    pushBytes(this.exports, "aura_options_reset", "aura_options_push", opts);
+    const status = this.exports.aura_run_project();
+    const json = readString(this.exports, "aura_output_len", "aura_output_byte");
+    return parseRuntimeResult(json, status);
   }
 }
 

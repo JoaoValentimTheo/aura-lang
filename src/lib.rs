@@ -305,6 +305,26 @@ impl Compilation {
         args: Vec<String>,
         input: Option<Input>,
     ) -> std::result::Result<(), DiagnosticReport> {
+        self.execute_with_host_factory(move || host::host_from_parts(stdout, args, input))
+    }
+
+    /// Execute this compilation with a host constructed on Aura's execution
+    /// stack.
+    ///
+    /// Embedders whose host trait object itself is not `Send` can move a
+    /// `Send` factory across the native execution-thread boundary and create
+    /// the host there. This is also the browser/WASM embedding boundary used
+    /// by the Playground virtual-project runtime.
+    ///
+    /// # Errors
+    /// Returns the first runtime diagnostic with source provenance retained.
+    pub fn execute_with_host_factory<F>(
+        self,
+        make_host: F,
+    ) -> std::result::Result<(), DiagnosticReport>
+    where
+        F: FnOnce() -> Box<dyn host::Host> + Send + 'static,
+    {
         let Compilation {
             module,
             sources,
@@ -312,10 +332,19 @@ impl Compilation {
             item_sources,
         } = self;
         if let Some(item_sources) = item_sources {
-            return execute_with_sources(module, item_sources, entry_source, stdout, args, input)
-                .map_err(|diagnostic| DiagnosticReport::new(diagnostic, sources));
+            let outcome = on_source_execution_stack(move || {
+                let mut interp = run::Interp::new();
+                interp.set_host(make_host());
+                interp.run_sourced(&module, &item_sources, entry_source)
+            });
+            return outcome.map_err(|diagnostic| DiagnosticReport::new(diagnostic, sources));
         }
-        match execute_with(module, stdout, args, input) {
+        let outcome = on_execution_stack(move || {
+            let mut interp = run::Interp::new();
+            interp.set_host(make_host());
+            interp.run(&module)
+        });
+        match outcome {
             Ok(()) => Ok(()),
             Err(diagnostic) => Err(DiagnosticReport::new(
                 SourceDiagnostic::new(diagnostic, entry_source),
@@ -523,21 +552,6 @@ pub fn compile_module(module: &ast::Module, mode: CompileMode) -> error::Result<
 /// Returns the first runtime diagnostic.
 pub fn execute(module: ast::Module, stdout: Option<Output>) -> error::Result<()> {
     execute_with(module, stdout, Vec::new(), None)
-}
-
-fn execute_with_sources(
-    module: ast::Module,
-    item_sources: Vec<SourceId>,
-    entry_source: SourceId,
-    stdout: Option<Output>,
-    args: Vec<String>,
-    input: Option<Input>,
-) -> std::result::Result<(), SourceDiagnostic> {
-    on_source_execution_stack(move || {
-        let mut interp = run::Interp::new();
-        interp.set_host(host::host_from_parts(stdout, args, input));
-        interp.run_sourced(&module, &item_sources, entry_source)
-    })
 }
 
 /// Execute a compiled module with an explicit execution context: an optional

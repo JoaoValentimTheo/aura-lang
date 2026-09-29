@@ -671,6 +671,51 @@ fn invalid_logical_child_name_is_a_module_source_path_error() {
     assert!(error.location().is_none());
 }
 
+#[test]
+fn invalid_logical_child_diagnostic_is_independent_of_provider_order() {
+    fn diagnostic(order: [&str; 2]) -> String {
+        let (mut provider, root) = provider("");
+        for (index, logical_name) in order.into_iter().enumerate() {
+            let child = key(&format!("child-{index}"));
+            provider
+                .insert_source(child.clone(), format!("child-{index}.aura"), "")
+                .unwrap();
+            provider.add_child(&root, logical_name, &child).unwrap();
+        }
+        ModuleGraphBuilder::new()
+            .build(&provider)
+            .unwrap_err()
+            .diagnostic()
+            .to_string()
+    }
+
+    let left = diagnostic(["../z", "./a"]);
+    let right = diagnostic(["./a", "../z"]);
+    assert_eq!(left, right);
+    assert!(left.contains("../z"));
+}
+
+#[test]
+fn case_only_virtual_children_are_rejected_portably() {
+    let (mut provider, root) = provider("");
+    for (logical_name, source_key) in [("Foo", "upper"), ("foo", "lower")] {
+        let child = key(source_key);
+        provider
+            .insert_source(child.clone(), format!("{logical_name}.aura"), "")
+            .unwrap();
+        provider.add_child(&root, logical_name, &child).unwrap();
+    }
+
+    let error = ModuleGraphBuilder::new().build(&provider).unwrap_err();
+    assert_eq!(error.diagnostic().code, codes::MODULE_SOURCE_PATH);
+    assert!(error
+        .diagnostic()
+        .message
+        .contains("case-only module collision"));
+    assert!(error.diagnostic().message.contains("Foo"));
+    assert!(error.diagnostic().message.contains("foo"));
+}
+
 struct MissingChildProvider {
     entry: SourceDescriptor,
     child: SourceDescriptor,

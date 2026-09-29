@@ -814,18 +814,6 @@ fn prepare_children<P: SourceProvider>(
         ))
     })?;
 
-    for child in &children {
-        if !is_aura_module_name(child.logical_name()) {
-            return Err(SourceDiagnostic::locationless(Diag::locationless(
-                codes::MODULE_SOURCE_PATH,
-                format!(
-                    "provider child name `{}` is not a valid Aura module identifier",
-                    child.logical_name()
-                ),
-            )));
-        }
-    }
-
     children.sort_by(|left, right| {
         left.logical_name()
             .as_bytes()
@@ -844,6 +832,38 @@ fn prepare_children<P: SourceProvider>(
                     .cmp(right.source().key().as_str().as_bytes())
             })
     });
+
+    for child in &children {
+        if !is_aura_module_name(child.logical_name()) {
+            return Err(SourceDiagnostic::locationless(Diag::locationless(
+                codes::MODULE_SOURCE_PATH,
+                format!(
+                    "provider child name `{}` is not a valid Aura module identifier",
+                    child.logical_name()
+                ),
+            )));
+        }
+    }
+
+    for (index, left) in children.iter().enumerate() {
+        for right in &children[index + 1..] {
+            if left.logical_name() != right.logical_name()
+                && left
+                    .logical_name()
+                    .eq_ignore_ascii_case(right.logical_name())
+            {
+                return Err(SourceDiagnostic::locationless(Diag::locationless(
+                    codes::MODULE_SOURCE_PATH,
+                    format!(
+                        "case-only module collision under logical module `{}`: {} and {}",
+                        parent.path.display(),
+                        left.logical_name(),
+                        right.logical_name()
+                    ),
+                )));
+            }
+        }
+    }
 
     let mut index = 0;
     while index < children.len() {
