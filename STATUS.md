@@ -739,3 +739,215 @@ phase instruction.
 - AUDIT-3 without the exact human token.
 - Completed conformance/hardening without a reproduced regression.
 - Historical runtime artifacts.
+
+### Phase 3 remote closure / Phase 4 start — 2026-09-29
+
+- Branch: `rewrite/v3-rust`.
+- Phase 3 pushed SHA and `origin/rewrite/v3-rust`:
+  `3240b4a737ef3549828150a70b1b174d9ca60880`.
+- Exact-SHA GitHub CI run `36577679545`: **success, 14/14 jobs**.
+- Exact-SHA Deploy website run `36577679491`: **success, 2/2 jobs**.
+- Phase 4 gate is satisfied. Work is now limited to
+  `NativeFilesystemSourceProvider`, real filesystem module discovery, and
+  wiring `aura run/check <file>` through the existing provider-neutral graph.
+- The unrelated local state remains protected:
+  `M .codex/config.toml` and `?? s`.
+- Phase 4 is local-only: coherent commits may be created, but they must not be
+  pushed automatically.
+- No tag, release, version bump, or historical runtime publication is
+  authorized.
+
+Follow-up 3 / AUDIT-3 remains DECISION-PENDING; no code or doc changes beyond the existing decision package; property test AST-limit explicitly excludes TypeExpr-heavy inputs pending that decision.
+
+Next exact action: implement the native provider against the existing
+`SourceProvider` / `ModuleGraphBuilder`, then add focused temp-directory and
+CLI integration coverage before broader validation.
+
+### Phase 4 — native filesystem provider local closure — 2026-09-29
+
+**COMPLETE LOCALLY — FULLY VALIDATED; NOT PUSHED.** Phase 4 continues from the
+verified Phase 3 remote baseline without resetting the interrupted worktree.
+The native filesystem layer is an adapter into the existing provider-neutral
+module graph, resolver, checker, and runtime pipeline.
+
+Baseline and protected local state:
+
+- branch: `rewrite/v3-rust`;
+- starting/local Phase 3 baseline:
+  `3240b4a737ef3549828150a70b1b174d9ca60880`;
+- `origin/rewrite/v3-rust` matched the same SHA before Phase 4 commits;
+- Phase 3 exact-SHA GitHub CI run `36577679545`: **14/14 success**;
+- Phase 3 Deploy website run `36577679491`: **2/2 success**;
+- pre-existing unrelated `.codex/config.toml` remains modified and outside
+  Phase 4;
+- pre-existing untracked `s` remains exactly **1 byte** and outside Phase 4.
+
+Native source architecture and APIs:
+
+- `src/native_source.rs` defines `NativeFilesystemSourceProvider` as a native
+  adapter over the existing `SourceProvider` contract;
+- `NativeFilesystemSourceProvider::new(path)` selects one entry file, makes
+  that file the logical root owner, and makes exactly its parent directory the
+  source root;
+- `entry_path()` and `source_root()` expose the selected physical entry and
+  fixed source root for native callers/tests;
+- discovery supports `foo.aura`, `foo/mod.aura`, and nested descendants;
+- physical provider identity remains distinct from `SourceId` and logical
+  module path identity;
+- `compile_file_with_mode(path, mode)` feeds the provider into the existing
+  `compile_provider_with_mode` / `ModuleGraphBuilder` / resolver / checker /
+  runtime pipeline;
+- the native module and compile-file API are gated from `wasm32`; no native
+  filesystem semantics were added to the Playground/VFS path;
+- public `Diag { code, message, span }`, existing single-source compile APIs,
+  Playground API 1, and Host ABI 1 remain unchanged.
+
+Determinism and ownership:
+
+- the original directory-discovery path could report the first raw
+  `read_dir` failure before deterministic ordering; discovery now collects,
+  classifies, and sorts candidate/error records before selection;
+- repeated builds and trees created in different physical creation orders
+  produce the same graph order and first diagnostic;
+- `foo.aura` and `foo/mod.aura` each own logical child `foo` when unambiguous;
+- simultaneous `foo.aura` + `foo/mod.aura` is a deterministic ownership
+  collision;
+- root-level conflicting `mod.aura`, in-source/external module ownership, and
+  duplicate physical/provider ownership are rejected through the existing
+  graph ownership rules;
+- case-only candidate collisions are deterministic;
+- a reproduced macOS case-insensitive-filesystem bug allowed a selected path
+  such as `MAIN.aura` to resolve to physical `main.aura` and then rediscover
+  the same file as a child. The provider now requires the selected entry
+  basename to match an actual parent-directory entry exactly at the `OsStr`
+  level. Permanent regression coverage preserves this behavior.
+
+Permission, I/O, and diagnostic paths:
+
+- optional-owner `NotFound` remains absence;
+- `PermissionDenied` is no longer treated as absence and maps to the existing
+  physical/provider I/O error class (`E4020`) where ownership/load semantics
+  require it;
+- invalid UTF-8 maps to `E1001` with the source descriptor registered so the
+  diagnostic retains correct child provenance;
+- provider diagnostics use one root-relative, forward-slash display identity
+  instead of leaking host-specific absolute `PathBuf` spellings;
+- permanent tests assert temporary-directory prefixes do not appear in
+  diagnostics.
+
+Containment and symlink policy:
+
+- absolute `SourceKey`, `..`, and forbidden special-component traversal are
+  rejected;
+- the selected entry, source root, entry ancestors, child files, module
+  directories, and `mod.aura` owners are covered by explicit symlink tests;
+- the frozen `NO SYMLINK TRAVERSAL` policy is enforced without making
+  canonical physical paths Aura logical identity;
+- no upward manifest/root discovery was introduced.
+
+CLI and source provenance:
+
+- `aura check <file>` and `aura run <file>` use the native filesystem provider;
+- `aura check -` and `aura run -` remain on the existing single-source path;
+- stdin never treats the cwd as an implicit filesystem module root;
+- stdin unknown-module failures remain `E2019` and are contextualized at the
+  CLI boundary with `filesystem modules are unavailable for <stdin>`;
+- real-file fixtures preserve child provenance for parser, resolver, checker,
+  delayed checker, runtime, invalid UTF-8, and entry-level missing-main
+  diagnostics;
+- identical local spans in two physical files remain distinguishable by their
+  existing `SourceId` sidecar provenance.
+
+Cycles, diamonds, depth, and provider parity:
+
+- direct and indirect semantic cycles terminate operationally and remain
+  resolver/runtime-owned semantics;
+- diamond/shared-owner cases load one owner without duplicate ownership;
+- a real-file depth fixture proves filesystem wrapper nesting feeds the
+  existing parser depth accounting and cannot bypass `E1015` by splitting
+  source across files;
+- `InMemorySourceProvider` and `NativeFilesystemSourceProvider` fixtures feed
+  equivalent logical trees into the same `ModuleGraphBuilder` semantics.
+
+Permanent focused coverage after the final fixes:
+
+- `tests/native_source.rs`: **33 passed, 0 failed**;
+- `tests/module_graph.rs`: **32 passed, 0 failed**;
+- `tests/cli.rs`: **33 passed, 0 failed**.
+
+Full local Phase 4 validation already completed before closure:
+
+- `cargo fmt --all -- --check`: pass;
+- `cargo clippy --locked --all-targets --all-features -- -D warnings`: pass;
+- selected no-default clippy with `cli,repl,json,regex,time`: pass;
+- `cargo test --locked --all-targets --all-features`:
+  **836 passed, 0 failed across 40 test targets**;
+- `cargo test --locked --all-targets --no-default-features --features
+  cli,repl,json,regex,time`:
+  **826 passed, 0 failed across 40 test targets**;
+- `cargo +1.83.0 check --locked --all-features`: pass;
+- focused Python + REPL: Python **10/0**, REPL **51/0**;
+- selected no-default native release build: pass;
+- `git diff --check`: pass.
+
+Playground/WASM isolation validation:
+
+- Playground runtime clippy: pass;
+- Playground runtime tests: **10 passed, 0 failed**;
+- wasm32 release build: pass;
+- `node playground/build.mjs --check`: manifest matches **4 versions**;
+- Playground Node suite: manifest **34/0**, completion **7/0**, ABI **67/0**,
+  integrity **29/0**, differential **214/0**, syntax parity **43 explicit
+  native/WASM comparisons**, browser **62/0**, worker **12/0**, cache **7/0**;
+- differential detail: **60/60** generated programs plus **19/19** committed
+  programs agree native/WASM; TypeExpr sweep preserved native ceiling 2048,
+  wasm ceiling 768, and **0 host failures**;
+- current target-only local WASM build is **1,666,803 bytes**, SHA-256
+  `3e56dc2df1185c7859c977c54468788cee2e175b2e3773aab79b5359ee22071a`;
+  it was not copied into any historical or published runtime directory;
+- a root-crate `wasm32-unknown-unknown` cross-check that enables native-only
+  dependency families still fails in existing dependencies such as `pyo3-ffi`,
+  `fd-lock`, and `home`; the actual Playground WASM crate/build and Phase 4
+  native-filesystem isolation are green.
+
+Historical runtime immutability re-verified after Phase 4 work:
+
+- `0.0.2`: **1,366,621 bytes**,
+  `5a4ad3f7e3f786164d65df437d607e7ddd5e25947ea2c8dd9b436a5490b334ed`;
+- `0.0.2-dev.23`: **1,604,958 bytes**,
+  `71072150e67384120c63e22d6176f3683110735b84f74723bea315f79778a528`;
+- `0.0.2-dev.29`: **1,614,239 bytes**,
+  `aa832ba72578897f6b99650574939011dda25e0d390fdb5efb6fae825816bdd3`;
+- `0.0.2-dev.30`: **1,654,216 bytes**,
+  `916a8282f7afcf67b89662af89d2f69cf562d9dbe41fe88cab1764a3ef19c578`;
+- `0.2.0`: **1,654,161 bytes**,
+  `9937fd8094ef402b7a9233d02bd232405f75b9e70661404646fcda7cd295c5bc`.
+
+Independent adversarial review challenged discovery order, repeated-build
+determinism, containment, SourceKey traversal, file/mod and in-source/external
+collisions, case behavior, ancestor/module-directory symlinks,
+`PermissionDenied`, host-path leakage, stdin isolation, real-file provenance,
+E1015, cycles/diamonds, resolver authority, public `Diag` compatibility, and
+WASM isolation. **No unresolved concrete Phase 4 defect remained.**
+
+Follow-up 3 / AUDIT-3 remains DECISION-PENDING; no code or doc changes beyond the existing decision package; property test AST-limit explicitly excludes TypeExpr-heavy inputs pending that decision.
+
+Local Git closure after the implementation commit:
+
+- implementation commit:
+  `877e8631aff80b97368159024c90c145f6c20583`
+  (`feat(modules): complete native filesystem provider`);
+- the implementation commit contains only `src/lib.rs`, `src/main.rs`,
+  `src/module_graph.rs`, `src/native_source.rs`, `tests/cli.rs`, and
+  `tests/native_source.rs`;
+- `STATUS.md` remains the only Phase 4 closure change outside that
+  implementation commit;
+- unrelated `.codex/config.toml` remains modified and unstaged;
+- unrelated `s` remains untracked, unstaged, and exactly **1 byte**;
+- `origin/rewrite/v3-rust` remains the Phase 3 baseline
+  `3240b4a737ef3549828150a70b1b174d9ca60880`;
+- Phase 4 has not been pushed.
+
+Next exact action: create the status-only local Phase 4 closure commit, verify
+the final worktree/remote split, and stop before push/tag/release/version/runtime
+actions.
