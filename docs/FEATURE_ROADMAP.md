@@ -155,7 +155,8 @@ roadmap:
 | DELIVERED | In-source modules, visibility, imports and aliases | Spec §§27–28; tests/modules.rs |
 | DELIVERED | Struct methods, traits, generics and bounds | Spec §§17,36; tests/generics.rs, tests/traits.rs |
 | DELIVERED | Half-open ranges; general unions; multiline comments | Spec §§3–4,22; tests/lexer.rs, tests/parser.rs |
-| CURRENT LIMITATION | Filesystem/cross-file modules; named method arguments; range step; rest patterns | Separate proposals required |
+| DEVELOPMENT | Provider-backed cross-source modules (native complete; virtual/WASM foundation local/unreleased) | `docs/FILESYSTEM_MODULES_DESIGN.md`; `STATUS.md` |
+| CURRENT LIMITATION | Named method arguments; range step; rest patterns; package/project tooling | Separate proposals required |
 | DELIBERATE DESIGN DECISION | No tuple value type, XOR or increment operator | Spec §§4,21 |
 | RFC CANDIDATE | Multiline pipelines, list-rest patterns, range step, named method arguments | CONFORMANCE_PHASE1.md |
 | DECISION-PENDING | TypeExpr nesting | Existing AUDIT3_TYPE_NESTING_DECISION.md only |
@@ -298,15 +299,18 @@ effects; and whether it redesigns a frozen concept.
 * **Remaining.** Enum methods and bound-method values. In-source modules and
   visibility have since shipped (§27). See `docs/OOP.md` for the finalized four-pillar model.
 
-### 5. Modules / imports — **DELIVERED (in-source)**
+### 5. Modules / imports — **DELIVERED SEMANTICS; PROVIDER LOADING IN DEVELOPMENT**
 
 * **User value.** High for larger programs.
-* **Delivered.** `module Name { ... }` (nestable), private-by-default items,
+* **Delivered semantics.** `module Name { ... }` (nestable), private-by-default items,
   `pub` to export, `use path [as Alias]` imports, and `::`-qualified paths,
   enforced by `src/resolve.rs` and the checker (`LANGUAGE_SPEC.md` §27).
-  In-source, because the WebAssembly host has no filesystem.
-* **Remaining (future).** Filesystem-backed modules, cross-file imports, and a
-  package/build model remain a separate design phase; Aura does not have them.
+* **Provider loading.** Native filesystem sources and caller-supplied virtual
+  sources feed the same provider-neutral graph and resolver. The virtual/WASM
+  foundation is development HEAD work and is not a released Playground UI
+  feature.
+* **Remaining.** Package/build manifests, package management, remote dependency
+  resolution, and multi-file Playground product UI remain deferred.
 
 ### 6. Destructuring — **Class B**
 
@@ -579,7 +583,7 @@ under "Release hardening" below.
 | 11f | Variable shadowing | E | **done** (Shadowing: `let`/`let mut` shadow, `const` does not, §16.3) |
 | 11g | Foundation stability + CI/clean-room gate | E | **done** (Break-the-Aura II, PC ↔ Web symmetry, reproducibility) |
 | 12 | Method overloading | E | **done** (Function/method overloading by ordered input types, §15.7) |
-| 13 | Modules | E | **done** (in-source); cross-file modules remain future work |
+| 13 | Modules | E | **done** (logical semantics); provider-backed cross-source loading implemented through current filesystem track; package/project tooling remains future work |
 | — | Async / VM / `++`/`--` | E | Not planned |
 | 14 | Generics | E | **done** (Generic functions, structs, methods, traits, bounds, aliases; `docs/GENERICS.md`) |
 
@@ -622,7 +626,8 @@ types differ, the return type never distinguishes overloads, and resolution is
 deterministic (most specific wins; a tie is an error). **Generics** followed:
 static, erased, nominal type parameters on functions, structs, methods, traits,
 and aliases, with bounds and inference composed into the same overload resolver
-(`docs/GENERICS.md`). The filesystem module system is the next major phase.
+(`docs/GENERICS.md`). The filesystem module system is the active development
+track; FSM-P1 through FSM-P4 are closed and FSM-P5 is locally closed/unpushed.
 
 ### Increment/decrement decision (`++` / `--`)
 

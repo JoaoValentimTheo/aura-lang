@@ -295,10 +295,10 @@ impl Compilation {
 
     /// Execute this compilation with an explicit runtime context.
     ///
-    /// Runtime diagnostics produced by the current one-source pipeline are
-    /// lifted to the entry source at the execution boundary. Future
-    /// filesystem assembly will refine this to per-item source ownership
-    /// without changing `Span` or the diagnostic data model.
+    /// One-source compilations attribute runtime diagnostics to the entry
+    /// source. Provider-backed compilations retain per-item source ownership
+    /// and route execution through the sourced runtime path without changing
+    /// `Span` or the diagnostic data model.
     pub fn execute_with(
         self,
         stdout: Option<Output>,

@@ -74,18 +74,28 @@ byte-oriented:
 | Export | Purpose |
 |---|---|
 | `aura_abi_version() -> u32` | Host ABI version (`1`) |
-| `aura_version_len()` / `aura_version_byte(i)` | language version (`0.0.1`) |
+| `aura_version_len()` / `aura_version_byte(i)` | language version string |
 | `aura_runtime_version_len()` / `aura_runtime_version_byte(i)` | runtime artifact version |
 | `aura_source_reset()` / `aura_source_push(word, nbytes)` | feed source bytes |
+| `aura_project_reset()` / `aura_project_push(word, nbytes)` | optional additive feed for a virtual multi-source project |
 | `aura_options_reset()` / `aura_options_push(word, nbytes)` | feed options bytes |
 | `aura_run() -> u32` | `0` ok, `1` diagnostic, `2` internal |
+| `aura_run_project() -> u32` | execute a supplied virtual project; same status codes |
 | `aura_output_len()` / `aura_output_byte(i)` | read the JSON result |
+
+The virtual-project exports are an additive Host ABI 1 capability introduced
+by development FSM-P5. Historical ABI-1 runtime artifacts may omit them; the
+JavaScript loader feature-detects the exports, while the existing single-source
+`run` path remains unchanged. Virtual source keys are provider identity only,
+not host paths or Aura module identity.
 
 The options mini-protocol is `arg <text>\n` lines followed by an optional
 `stdin-bytes <n>\n` header and exactly `n` raw bytes.
 
-The result document is structured, built from Aura's own `Diag` and
-`line_col` — never scraped from rendered text:
+The result document is structured, built from Aura's own diagnostics and
+`line_col` — never scraped from rendered text. Single-source results keep the
+historical schema; virtual-project diagnostics may additionally carry a
+user-facing `source` name and never expose raw `SourceId` values:
 
 ```json
 {

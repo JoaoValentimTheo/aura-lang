@@ -2777,11 +2777,14 @@ field       := pub? name : T
 path        := Name (:: Name)*
 ```
 
-**Normative rule.** A module is a **real visibility boundary**. There is no
-filesystem component: a module is declared in source and has no file of its
-own. This is deliberate — the WebAssembly/Playground host has no filesystem,
-so a boundary that depended on files the guest cannot see could not keep
-Native and WebAssembly semantics identical.
+**Normative rule.** A module is a **real visibility boundary** identified by an
+Aura logical module path. Aura source syntax contains no host filesystem paths
+and physical/virtual source keys are not module identity. A compilation may
+acquire sources from in-source declarations, a native filesystem provider, or
+a virtual/in-memory provider; those providers construct the same logical Aura
+module tree consumed by the canonical resolver. Visibility and name resolution
+therefore remain identical across Native and WebAssembly regardless of how the
+source text was acquired.
 
 **Normative rule.** Every declaration is **private to its module by default**;
 `pub` exports it. A name is reachable from a module `M` when:
@@ -3384,8 +3387,9 @@ and unresolved contracts are recorded in `CONFORMANCE_PHASE1.md`. The following 
 explicitly **out of scope** for this specification and are not language
 features:
 
-* package managers, filesystem-backed modules, or cross-file imports
-  (in-source modules with visibility exist, §27);
+* package managers, package manifests, remote dependency resolution, or
+  host-path syntax in Aura source (provider-backed cross-source compilation
+  constructs the same logical modules described in §27);
 * interfaces, subtyping, and higher-kinded or associated types (generic
   parameters and trait bounds exist, §36; traits exist as static contracts,
   §17.7);

@@ -1,11 +1,17 @@
-# Aura Filesystem Modules — Phase 1 Design Contract
+# Aura Filesystem Modules — FSM-P1 Design Contract
 
-Status: **PHASE 1 DESIGN COMPLETE; NO PRODUCTION IMPLEMENTATION**
+Status: **FROZEN FSM-P1 DESIGN CONTRACT**
 
-This document defines the filesystem-module contract that later production
-work must implement. It is intentionally separate from `LANGUAGE_SPEC.md`:
-filesystem modules are not implemented yet, so this document records the
-approved implementation target without pretending the feature already exists.
+This document preserves the design contract approved in FSM-P1. Its original
+phase-status language was written before production implementation began;
+production work has since progressed through the provider-neutral graph,
+native filesystem provider, and local virtual/WASM VFS foundation. The design
+decisions below remain the architecture contract unless repository evidence and
+an explicit later decision supersede them.
+
+References below to “Phase 2” or other bare phase numbers are historical
+planning vocabulary from the time this document was written. They must not be
+confused with the current `FSM-P<N>` filesystem-module namespace.
 
 The existing resolver remains the semantic authority. Filesystem loading must
 produce the same logical module structure that equivalent in-source `module`

@@ -380,11 +380,13 @@ are identical across hosts; only capability availability differs.
 
 ## 10. Modules and visibility
 
-Aura modules are **in-source**: `module Name { items }`, nestable, reached by
-`::`-separated paths and `use path [as Alias]` imports. A module is a **real
-visibility boundary** (`LANGUAGE_SPEC.md` §27). There is no filesystem
-component: the WebAssembly host has no filesystem, so a file-backed boundary
-could not keep Native and WebAssembly semantics identical.
+Aura modules use logical Aura identity: `module Name { items }`, nestable,
+reached by `::`-separated paths and `use path [as Alias]` imports. A module is
+a **real visibility boundary** (`LANGUAGE_SPEC.md` §27). Aura syntax does not
+contain host filesystem paths. Native filesystem and virtual/in-memory source
+providers may assemble multiple source texts into the same logical module tree
+before the canonical resolver runs; provider keys and physical paths are
+provenance/acquisition identities, never Aura semantic module identity.
 
 * Every declaration — function, struct, enum, alias, constant, trait, field,
   and method — is **private to its module by default**; `pub` exports it.

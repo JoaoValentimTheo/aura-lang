@@ -76,12 +76,15 @@ writing — a field assignment, an index assignment, a mutating built-in, or a
 
 **Implemented.** Nominal structs; typed fields validated at construction;
 deterministic member lookup; field/method name-collision rejection;
-mutation-capability enforcement; in-source modules; `pub`; `use` with `as`;
+mutation-capability enforcement; logical modules; `pub`; `use` with `as`;
 private/public fields, methods, functions, constants, and traits; qualified
-`::` paths; and their REPL persistence.
+`::` paths; provider-backed source acquisition feeding the same logical module
+tree; and REPL persistence for the in-source semantic surface.
 
-**Deliberately absent.** Filesystem-backed modules; package management;
-cross-file imports; `pub(crate)`-style granularity. The module model has one
+**Deliberately absent.** Host-path syntax in Aura source; package management;
+package manifests; `pub(crate)`-style granularity. Native filesystem and
+virtual/in-memory providers may acquire multiple sources, but physical paths
+and provider keys are not semantic module identity. The module model has one
 visibility level (`pub` or private) and one boundary kind (a module), which is
 what encapsulation requires and nothing more.
 
@@ -300,9 +303,9 @@ model, and one member table.
 * classes, struct inheritance, subtype inheritance, implicit upcasting;
 * dynamic dispatch, trait objects, vtables, runtime type inspection;
 * default/variadic parameters, constructors, destructors, lifecycle hooks;
-* filesystem-backed modules, package management, cross-file imports,
-  finer visibility levels than `pub`/private;
-* generics, trait bounds, associated types/constants, operator overloading;
+* host-path module syntax, package management, package manifests, remote
+  dependencies, finer visibility levels than `pub`/private;
+* associated types/constants, operator overloading;
 * reflection, metaclasses, multiple inheritance.
 
 Each absence is a decision, recorded here and in

@@ -157,8 +157,7 @@ Aura deliberately has **no subtype polymorphism and no dynamic dispatch**.
 ## What Aura does not have
 
 Classes; inheritance; subtyping; implicit upcasting; dynamic dispatch; trait
-objects; default methods; supertraits; associated items; generics and trait
-bounds; filesystem-backed modules and finer visibility levels than
-`pub`/private; constructors and destructors;
+objects; default methods; supertraits; associated items; filesystem-backed
+modules and finer visibility levels than `pub`/private; constructors and destructors;
 operator overloading; reflection; metaclasses. Each absence is a decision, not
 an oversight — see `docs/OOP.md` and the specification §35.
