@@ -9,9 +9,10 @@ use std::io::{BufRead, Write};
 
 use crate::ast::{Item, Stmt, TypeParam};
 use crate::check::{GlobalDecl, MethodDecl, ParamDecl};
-use crate::error::{Diag, Span};
+use crate::error::{Diag, SourceDiagnostic, Span};
 use crate::resolve::{resolve_stmt, resolve_with_session, session_items, Session};
 use crate::run::{Ctl, Interp};
+use crate::source::{SourceId, SourceMap};
 
 /// The persistent state of one REPL session, independent of how lines are
 /// obtained. Both the buffered driver and the interactive (rustyline) driver
@@ -20,6 +21,11 @@ pub struct SessionEngine {
     interp: Interp,
     decls: Vec<GlobalDecl>,
     session: Session,
+    /// Source records for completed submissions, retained so locations from
+    /// earlier cells never alias later ones.
+    sources: SourceMap,
+    /// One-based deterministic display sequence for completed submissions.
+    next_submission: usize,
     /// The in-progress multi-line submission.
     pub(crate) pending: String,
 }
@@ -40,6 +46,8 @@ impl SessionEngine {
             interp: Interp::new(),
             decls: Vec::new(),
             session: Session::default(),
+            sources: SourceMap::new(),
+            next_submission: 1,
             pending: String::new(),
         }
     }
@@ -79,10 +87,15 @@ impl SessionEngine {
             return Step::Continue;
         }
         let source = std::mem::take(&mut self.pending);
+        let source_id = self
+            .sources
+            .add(format!("<repl:{}>", self.next_submission), source.clone());
+        self.next_submission += 1;
         eval_line(
             &mut self.interp,
             &mut self.decls,
             &mut self.session,
+            source_id,
             &source,
             out,
         );
@@ -124,7 +137,10 @@ pub fn run() -> Result<(), Diag> {
 #[cfg(feature = "repl")]
 fn run_interactive() -> Result<(), Diag> {
     use rustyline::error::ReadlineError;
-    let mut engine = SessionEngine::new();
+    // Keep the persistent session off the terminal thread's stack. The REPL
+    // deliberately accepts AST-valid inputs near the parser depth boundary;
+    // provenance state must not reduce the host stack available to parsing.
+    let mut engine = Box::new(SessionEngine::new());
     let mut rl = rustyline::DefaultEditor::new().map_err(|e| {
         Diag::new(
             crate::error::codes::EXPECTED,
@@ -170,7 +186,10 @@ fn run_interactive() -> Result<(), Diag> {
 /// # Errors
 /// Returns a diagnostic only for unrecoverable I/O failures.
 pub fn run_with<R: BufRead, W: Write>(mut reader: R, mut writer: W) -> Result<(), Diag> {
-    let mut engine = SessionEngine::new();
+    // The buffered driver is also used directly by tests on ordinary test
+    // threads. Heap-owning the persistent session keeps the parser's existing
+    // nesting boundary independent of SessionEngine's bookkeeping size.
+    let mut engine = Box::new(SessionEngine::new());
     let _ = writeln!(writer, "Aura {} REPL — :help for commands", crate::VERSION);
     loop {
         let _ = write!(writer, "{}", engine.prompt());
@@ -266,6 +285,7 @@ fn eval_line<W: Write>(
     interp: &mut Interp,
     decls: &mut Vec<GlobalDecl>,
     session: &mut Session,
+    source_id: SourceId,
     source: &str,
     writer: &mut W,
 ) {
@@ -279,13 +299,13 @@ fn eval_line<W: Write>(
         let stmt = match resolve_stmt(stmt, session) {
             Ok(s) => s,
             Err(e) => {
-                let _ = writeln!(writer, "{e}");
+                emit_diag(writer, source_id, e);
                 return;
             }
         };
         let mut checker = crate::check::Checker::with_declarations(decls);
         if let Err(e) = checker.check_stmt(&stmt) {
-            let _ = writeln!(writer, "{e}");
+            emit_diag(writer, source_id, e);
             return;
         }
         // Capture the inferred binding type here, while the checker still has
@@ -303,12 +323,12 @@ fn eval_line<W: Write>(
             // being silently swallowed (`LANGUAGE_SPEC.md` §28.5).
             Ok(other) => {
                 if let Err(d) = interp.finish_global(other) {
-                    let _ = writeln!(writer, "{d}");
+                    emit_diag(writer, source_id, d);
                 }
                 false
             }
             Err(e) => {
-                let _ = writeln!(writer, "{}", interp.uncaught_diag(e));
+                emit_diag(writer, source_id, interp.uncaught_diag(e));
                 false
             }
         };
@@ -374,13 +394,13 @@ fn eval_line<W: Write>(
             let (module, additions) = match resolve_with_session(module, session) {
                 Ok(m) => m,
                 Err(e) => {
-                    let _ = writeln!(writer, "{e}");
+                    emit_diag(writer, source_id, e);
                     return;
                 }
             };
             let mut checker = crate::check::Checker::with_declarations(decls);
             if let Err(e) = checker.check_mode(&module, crate::CompileMode::Module) {
-                let _ = writeln!(writer, "{e}");
+                emit_diag(writer, source_id, e);
                 return;
             }
             // Execute first; only persist declarations the session accepted.
@@ -399,7 +419,7 @@ fn eval_line<W: Write>(
                     other => interp.run_item(other),
                 };
                 if let Err(e) = result {
-                    let _ = writeln!(writer, "{e}");
+                    emit_diag(writer, source_id, e);
                     return;
                 }
             }
@@ -432,15 +452,22 @@ fn eval_line<W: Write>(
                     }
                     Ok(_) => {}
                     Err(e) => {
-                        let _ = writeln!(writer, "{e}");
+                        emit_diag(writer, source_id, e);
                     }
                 },
                 Err(_) => {
-                    let _ = writeln!(writer, "{e}");
+                    emit_diag(writer, source_id, e);
                 }
             }
         }
     }
+}
+
+/// Attach the current submission identity at the REPL source boundary while
+/// preserving the REPL's existing compact `E####: ...` presentation.
+fn emit_diag<W: Write>(writer: &mut W, source: SourceId, diag: Diag) {
+    let diag = SourceDiagnostic::new(diag, source);
+    let _ = writeln!(writer, "{}", diag.diagnostic());
 }
 
 /// Whether two method declaration lists are the same set: same names and same
@@ -638,4 +665,32 @@ fn method_decls(methods: &[Item]) -> Vec<MethodDecl> {
             _ => None,
         })
         .collect()
+}
+
+#[cfg(test)]
+mod provenance_tests {
+    use super::*;
+
+    #[test]
+    fn completed_submissions_receive_distinct_stable_source_ids() {
+        let mut engine = SessionEngine::new();
+        let mut out = Vec::new();
+
+        assert!(matches!(
+            engine.feed_line("let x = 1", &mut out),
+            Step::Continue
+        ));
+        assert!(matches!(
+            engine.feed_line("let y = 2", &mut out),
+            Step::Continue
+        ));
+
+        let sources: Vec<_> = engine.sources.iter().collect();
+        assert_eq!(sources.len(), 2);
+        assert_eq!(sources[0].name(), "<repl:1>");
+        assert_eq!(sources[1].name(), "<repl:2>");
+        assert_ne!(sources[0].id(), sources[1].id());
+        assert_eq!(engine.sources.order(sources[0].id()), Some(0));
+        assert_eq!(engine.sources.order(sources[1].id()), Some(1));
+    }
 }

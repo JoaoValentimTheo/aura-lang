@@ -201,10 +201,10 @@ fn cmd_run(args: &[String]) -> ExitCode {
     } else {
         Some(Box::new(std::io::BufReader::new(std::io::stdin())) as Box<dyn std::io::BufRead + Send>)
     };
-    match aura::run_program_with(&src, &file, program_args, input) {
+    match aura::run_named_program_with(&src, &file, program_args, input) {
         Ok(()) => ExitCode::SUCCESS,
-        Err(d) => {
-            eprintln!("{}", render_with_source(&file, &src, &d));
+        Err(report) => {
+            eprintln!("{}", report.render());
             ExitCode::FAILURE
         }
     }
@@ -223,10 +223,10 @@ fn cmd_check(args: &[String]) -> ExitCode {
         Ok(v) => v,
         Err(c) => return c,
     };
-    match aura::compile(&src, "module") {
+    match aura::compile_named_with_mode(&src, &file, aura::CompileMode::Module) {
         Ok(_) => ExitCode::SUCCESS,
-        Err(d) => {
-            eprintln!("{}", render_with_source(&file, &src, &d));
+        Err(report) => {
+            eprintln!("{}", report.render());
             ExitCode::FAILURE
         }
     }
@@ -246,10 +246,10 @@ fn cmd_eval(args: &[String]) -> ExitCode {
     let input = Some(
         Box::new(std::io::BufReader::new(std::io::stdin())) as Box<dyn std::io::BufRead + Send>
     );
-    match aura::run_toplevel_with(code, "<eval>", Vec::new(), input) {
+    match aura::run_named_toplevel_with(code, "<eval>", Vec::new(), input) {
         Ok(()) => ExitCode::SUCCESS,
-        Err(d) => {
-            eprintln!("{}", render_with_source("<eval>", code, &d));
+        Err(report) => {
+            eprintln!("{}", report.render());
             ExitCode::FAILURE
         }
     }

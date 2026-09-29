@@ -30,6 +30,17 @@ fn round_trips_collections() {
 fn reports_python_errors_with_a_code() {
     let err = run_source("fn main() { py_eval(\"1 / 0\") }", "<py>").unwrap_err();
     assert_eq!(err.code, aura::error::codes::PY_ERROR);
+
+    let report = aura::compile_named_with_mode(
+        "fn main() { py_eval(\"1 / 0\") }",
+        "<py>",
+        aura::CompileMode::Program,
+    )
+    .unwrap()
+    .execute_with(None, Vec::new(), None)
+    .unwrap_err();
+    assert_eq!(report.diagnostic().code, aura::error::codes::PY_ERROR);
+    assert!(report.location().is_some());
 }
 
 #[test]

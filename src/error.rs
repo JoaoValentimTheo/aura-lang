@@ -6,8 +6,10 @@
 
 use std::fmt;
 
+use crate::source::{Location, SourceId, SourceMap};
+
 /// A byte span in a source file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Span {
     /// First byte.
     pub start: usize,
@@ -22,7 +24,11 @@ impl Span {
     }
 }
 
-/// A diagnostic: a code, a message, and a location.
+/// A source-local diagnostic: code, message, and byte span.
+///
+/// Source identity intentionally lives outside this legacy public struct so
+/// downstream users that construct `Diag` with struct literals remain source
+/// compatible. [`SourceDiagnostic`] adds provenance at multi-source boundaries.
 #[derive(Debug, Clone)]
 pub struct Diag {
     /// The stable code, e.g. `1006`.
@@ -43,6 +49,18 @@ impl Diag {
         }
     }
 
+    /// Build a diagnostic that deliberately has no source location.
+    ///
+    /// `span` remains `Span::default()` for compatibility with callers that
+    /// still inspect the legacy field, but no fake [`SourceId`] is invented.
+    pub fn locationless(code: u16, message: impl Into<String>) -> Diag {
+        Diag {
+            code,
+            message: message.into(),
+            span: Span::default(),
+        }
+    }
+
     /// Render as `E1006: ...` for the CLI.
     #[must_use]
     pub fn render(&self) -> String {
@@ -57,6 +75,61 @@ impl fmt::Display for Diag {
 }
 
 impl std::error::Error for Diag {}
+
+/// A diagnostic paired with source identity at a multi-source boundary.
+///
+/// Compiler phases continue to produce compact source-local [`Diag`] values.
+/// This wrapper is introduced only when the owning source is known.
+#[derive(Debug, Clone)]
+pub struct SourceDiagnostic {
+    diagnostic: Diag,
+    source: Option<SourceId>,
+}
+
+impl SourceDiagnostic {
+    /// Pair a source-local diagnostic with its owning source.
+    #[must_use]
+    pub fn new(diagnostic: Diag, source: SourceId) -> SourceDiagnostic {
+        SourceDiagnostic {
+            diagnostic,
+            source: Some(source),
+        }
+    }
+
+    /// Preserve a diagnostic that deliberately has no meaningful source.
+    #[must_use]
+    pub fn locationless(diagnostic: Diag) -> SourceDiagnostic {
+        SourceDiagnostic {
+            diagnostic,
+            source: None,
+        }
+    }
+
+    /// The source-local diagnostic payload.
+    #[must_use]
+    pub const fn diagnostic(&self) -> &Diag {
+        &self.diagnostic
+    }
+
+    /// Owning source, when one exists.
+    #[must_use]
+    pub const fn source(&self) -> Option<SourceId> {
+        self.source
+    }
+
+    /// Source-aware location, when this diagnostic has one.
+    #[must_use]
+    pub fn location(&self) -> Option<Location> {
+        self.source
+            .map(|source| Location::new(source, self.diagnostic.span))
+    }
+
+    /// Consume the wrapper and return the compatibility diagnostic.
+    #[must_use]
+    pub fn into_diagnostic(self) -> Diag {
+        self.diagnostic
+    }
+}
 
 /// The result type used throughout the compiler.
 pub type Result<T> = std::result::Result<T, Diag>;
@@ -83,6 +156,101 @@ pub fn render_with_source(file: &str, src: &str, d: &Diag) -> String {
     let (line, col) = line_col(src, d.span.start);
     format!("{file}:{line}:{col}: {d}")
 }
+
+/// Render a source-aware diagnostic through its owning [`SourceMap`].
+///
+/// Returns `None` when the diagnostic is deliberately locationless or when
+/// its [`SourceId`] does not belong to `sources`. The latter is a hard safety
+/// property: locations from unrelated compilations never silently resolve by
+/// numeric index alone.
+#[must_use]
+pub fn render_with_sources(sources: &SourceMap, d: &SourceDiagnostic) -> Option<String> {
+    let location = d.location()?;
+    let source = sources.get(location.source)?;
+    let text = source.text();
+    if location.span.start > location.span.end
+        || location.span.end > text.len()
+        || !text.is_char_boundary(location.span.start)
+        || !text.is_char_boundary(location.span.end)
+    {
+        return None;
+    }
+    let (line, col) = line_col(text, location.span.start);
+    Some(format!(
+        "{}:{line}:{col}: {}",
+        source.name(),
+        d.diagnostic()
+    ))
+}
+
+/// A diagnostic together with the authoritative source map needed to render
+/// its [`Location`].
+///
+/// This is the source-aware error boundary used by compilation/execution APIs.
+/// Legacy APIs may still extract the underlying [`Diag`] and use its local
+/// [`Span`], while callers that need provenance retain the map as well.
+#[derive(Debug)]
+pub struct DiagnosticReport {
+    diagnostic: SourceDiagnostic,
+    sources: Box<SourceMap>,
+}
+
+impl DiagnosticReport {
+    /// Pair a diagnostic with the map that owns its source ids.
+    #[must_use]
+    pub fn new(diagnostic: SourceDiagnostic, sources: SourceMap) -> DiagnosticReport {
+        DiagnosticReport {
+            diagnostic,
+            sources: Box::new(sources),
+        }
+    }
+
+    /// The underlying diagnostic.
+    #[must_use]
+    pub const fn diagnostic(&self) -> &Diag {
+        self.diagnostic.diagnostic()
+    }
+
+    /// Source-aware diagnostic payload.
+    #[must_use]
+    pub const fn source_diagnostic(&self) -> &SourceDiagnostic {
+        &self.diagnostic
+    }
+
+    /// Source-aware location, when this report has one.
+    #[must_use]
+    pub fn location(&self) -> Option<Location> {
+        self.diagnostic.location()
+    }
+
+    /// The authoritative source map for this report.
+    #[must_use]
+    pub const fn sources(&self) -> &SourceMap {
+        &self.sources
+    }
+
+    /// Render with source name/line/column when the diagnostic has a valid
+    /// location, otherwise fall back to the ordinary `E####: ...` form.
+    #[must_use]
+    pub fn render(&self) -> String {
+        render_with_sources(&self.sources, &self.diagnostic)
+            .unwrap_or_else(|| self.diagnostic.diagnostic().to_string())
+    }
+
+    /// Consume the report and return the compatibility diagnostic.
+    #[must_use]
+    pub fn into_diagnostic(self) -> Diag {
+        self.diagnostic.into_diagnostic()
+    }
+}
+
+impl fmt::Display for DiagnosticReport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.render())
+    }
+}
+
+impl std::error::Error for DiagnosticReport {}
 
 /// Error codes, one constant per contract row.
 pub mod codes {

@@ -258,17 +258,22 @@ pub fn execute(source: &str, options_raw: &[u8]) -> (String, u32, &'static str) 
 
     let out: BrowserStdout = Arc::new(Mutex::new(Vec::new()));
 
-    let program = match aura::compile_with_mode(source, aura::CompileMode::Program) {
-        Ok(m) => m,
+    let compilation = match aura::compile_named_with_mode(
+        source,
+        "<playground>",
+        aura::CompileMode::Program,
+    ) {
+        Ok(c) => c,
         // No `main`: fall back to module semantics, as `aura eval` does.
-        Err(d) if d.code == codes::NO_MAIN => {
+        Err(report) if report.diagnostic().code == codes::NO_MAIN => {
             return run_module(source, options_raw, &opts, out);
         }
-        Err(d) => {
-            let (json, code) = diagnostic_result(&d, source, "");
+        Err(report) => {
+            let (json, code) = diagnostic_result(report.diagnostic(), source, "");
             return (json, code, aura::LANGUAGE_VERSION);
         }
     };
+    let (program, sources, source_id) = compilation.into_parts();
 
     // Execute on the substrate's execution stack: a dedicated large stack on
     // native (so the language's own `E4011` is authoritative), inline on wasm.
@@ -279,7 +284,11 @@ pub fn execute(source: &str, options_raw: &[u8]) -> (String, u32, &'static str) 
             .with_stdout_limit(limits::MAX_STDOUT_BYTES);
         let mut interp = Interp::with_host(Box::new(host));
         interp.run(&program)
-    });
+    })
+    .map_err(|d| aura::error::SourceDiagnostic::new(d, source_id));
+    // Keep the source map alive through runtime diagnostic production. The
+    // current JSON ABI remains intentionally source-name-free.
+    let _sources = sources;
     finish(outcome, source, out, None)
 }
 
@@ -292,13 +301,15 @@ fn run_module(
     out: BrowserStdout,
 ) -> (String, u32, &'static str) {
     let _ = options_raw;
-    let module = match aura::compile_with_mode(source, aura::CompileMode::Module) {
-        Ok(m) => m,
-        Err(d) => {
-            let (json, code) = diagnostic_result(&d, source, "");
-            return (json, code, aura::LANGUAGE_VERSION);
-        }
-    };
+    let compilation =
+        match aura::compile_named_with_mode(source, "<playground>", aura::CompileMode::Module) {
+            Ok(c) => c,
+            Err(report) => {
+                let (json, code) = diagnostic_result(report.diagnostic(), source, "");
+                return (json, code, aura::LANGUAGE_VERSION);
+            }
+        };
+    let (module, sources, source_id) = compilation.into_parts();
     let stdin = opts.stdin.clone();
     let args = opts.args.clone();
     let out2 = out.clone();
@@ -307,7 +318,9 @@ fn run_module(
             BrowserHost::with_stdout(out2, stdin, args).with_stdout_limit(limits::MAX_STDOUT_BYTES);
         let mut interp = Interp::with_host(Box::new(host));
         run_module_capture(&mut interp, &module)
-    });
+    })
+    .map_err(|d| aura::error::SourceDiagnostic::new(d, source_id));
+    let _sources = sources;
     match value {
         Ok(v) => {
             let stdout = take_stdout(&out);
@@ -319,7 +332,7 @@ fn run_module(
         }
         Err(d) => {
             let stdout = take_stdout(&out);
-            let (json, code) = diagnostic_result(&d, source, &stdout);
+            let (json, code) = diagnostic_result(d.diagnostic(), source, &stdout);
             (json, code, aura::LANGUAGE_VERSION)
         }
     }
@@ -368,7 +381,7 @@ fn take_stdout(out: &BrowserStdout) -> String {
 }
 
 fn finish(
-    outcome: Result<(), Diag>,
+    outcome: Result<(), aura::error::SourceDiagnostic>,
     source: &str,
     out: BrowserStdout,
     _result: Option<&str>,
@@ -381,7 +394,7 @@ fn finish(
             aura::LANGUAGE_VERSION,
         ),
         Err(d) => {
-            let (json, code) = diagnostic_result(&d, source, &stdout);
+            let (json, code) = diagnostic_result(d.diagnostic(), source, &stdout);
             (json, code, aura::LANGUAGE_VERSION)
         }
     }

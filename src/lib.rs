@@ -21,10 +21,14 @@ pub mod parse;
 pub mod repl;
 pub mod resolve;
 pub mod run;
+pub mod source;
 pub mod stdlib;
 pub mod types;
 
 use std::sync::{Arc, Mutex};
+
+use error::{DiagnosticReport, SourceDiagnostic};
+use source::{SourceId, SourceMap};
 
 /// The release version of the Aura implementation (the package version).
 ///
@@ -140,11 +144,14 @@ impl std::io::Write for SharedBuf {
 /// # Errors
 /// Returns the first diagnostic produced by lexing, parsing, checking, or
 /// execution.
-pub fn run_source(src: &str, _file: &str) -> error::Result<String> {
-    let src = src.to_string();
+pub fn run_source(src: &str, file: &str) -> error::Result<String> {
     let buf = Arc::new(Mutex::new(Vec::new()));
     let sink = SharedBuf(buf.clone());
-    execute(compile(&src, "module")?, Some(Box::new(sink)))?;
+    let compilation = compile_named_with_mode(src, file, CompileMode::Module)
+        .map_err(DiagnosticReport::into_diagnostic)?;
+    compilation
+        .execute_with(Some(Box::new(sink)), Vec::new(), None)
+        .map_err(DiagnosticReport::into_diagnostic)?;
     let text = buf
         .lock()
         .map(|v| String::from_utf8_lossy(&v).into_owned())
@@ -168,12 +175,11 @@ pub fn run_toplevel_stdout(src: &str, file: &str) -> error::Result<()> {
 /// Returns the first front-end or runtime diagnostic.
 pub fn run_toplevel_with(
     src: &str,
-    _file: &str,
+    file: &str,
     args: Vec<String>,
     input: Option<Input>,
 ) -> error::Result<()> {
-    let src = src.to_string();
-    execute_with(compile(&src, "module")?, None, args, input)
+    run_named_toplevel_with(src, file, args, input).map_err(DiagnosticReport::into_diagnostic)
 }
 
 /// Compile and run `src`, writing output to the process stdout.
@@ -197,12 +203,11 @@ pub fn run_program(src: &str, file: &str) -> error::Result<()> {
 /// diagnostic.
 pub fn run_program_with(
     src: &str,
-    _file: &str,
+    file: &str,
     args: Vec<String>,
     input: Option<Input>,
 ) -> error::Result<()> {
-    let src = src.to_string();
-    execute_with(compile(&src, "program")?, None, args, input)
+    run_named_program_with(src, file, args, input).map_err(DiagnosticReport::into_diagnostic)
 }
 
 /// The two ways a module can be compiled.
@@ -212,6 +217,68 @@ pub enum CompileMode {
     Module,
     /// An executable program; `fn main` is required (`E4027` otherwise).
     Program,
+}
+
+/// A resolved and checked Aura module together with the source registry that
+/// owns every source identity used by its diagnostics.
+///
+/// Phase 2 currently constructs one-source compilations through the public
+/// named-source entry points. The source map may already contain multiple
+/// independent buffers through [`compile_source_in_map`], which is the
+/// provenance boundary future module assembly will reuse.
+#[derive(Debug)]
+pub struct Compilation {
+    module: ast::Module,
+    sources: SourceMap,
+    entry_source: SourceId,
+}
+
+impl Compilation {
+    /// Resolved and checked module.
+    #[must_use]
+    pub const fn module(&self) -> &ast::Module {
+        &self.module
+    }
+
+    /// Source registry retained for diagnostics.
+    #[must_use]
+    pub const fn sources(&self) -> &SourceMap {
+        &self.sources
+    }
+
+    /// Source selected as the compilation entry.
+    #[must_use]
+    pub const fn entry_source(&self) -> SourceId {
+        self.entry_source
+    }
+
+    /// Consume the compilation and return its components.
+    #[must_use]
+    pub fn into_parts(self) -> (ast::Module, SourceMap, SourceId) {
+        (self.module, self.sources, self.entry_source)
+    }
+
+    /// Execute this compilation with an explicit runtime context.
+    ///
+    /// Runtime diagnostics produced by the current one-source pipeline are
+    /// lifted to the entry source at the execution boundary. Future
+    /// filesystem assembly will refine this to per-item source ownership
+    /// without changing `Span` or the diagnostic data model.
+    pub fn execute_with(
+        self,
+        stdout: Option<Output>,
+        args: Vec<String>,
+        input: Option<Input>,
+    ) -> std::result::Result<(), DiagnosticReport> {
+        let (module, sources, entry_source) = self.into_parts();
+        match execute_with(module, stdout, args, input) {
+            Ok(()) => Ok(()),
+            Err(diagnostic) => Err(DiagnosticReport::new(
+                SourceDiagnostic::new(diagnostic, entry_source),
+                sources,
+            )),
+        }
+    }
 }
 
 impl CompileMode {
@@ -253,17 +320,94 @@ pub fn compile(src: &str, mode: &str) -> error::Result<ast::Module> {
 /// # Errors
 /// Returns the first lexer, parser, or checker diagnostic.
 pub fn compile_with_mode(src: &str, mode: CompileMode) -> error::Result<ast::Module> {
+    compile_owned_source(Arc::<str>::from(src), mode)
+}
+
+fn compile_owned_source(src: Arc<str>, mode: CompileMode) -> error::Result<ast::Module> {
     // Parsing, module resolution, and checking all walk the AST recursively on
     // the caller's stack, so the whole front end runs on the execution
     // substrate: a program up to the language nesting limit (`E1015`) is a
     // deterministic diagnostic, never a host stack overflow.
-    let src = src.to_string();
     on_execution_stack(move || {
         let module = parse::parse(&src)?;
         let module = resolve::resolve(module)?;
         check::Checker::module_in_mode(&module, mode)?;
         Ok(module)
     })
+}
+
+/// Compile one source already registered in `sources`.
+///
+/// Internals continue to use source-local [`error::Span`] values; any
+/// diagnostic leaving this source boundary is paired with `source`.
+///
+/// # Errors
+/// Returns an `INTERNAL` locationless diagnostic if `source` does not belong
+/// to `sources`, otherwise the first front-end diagnostic with source identity
+/// attached.
+pub fn compile_source_in_map(
+    sources: &SourceMap,
+    source: SourceId,
+    mode: CompileMode,
+) -> std::result::Result<ast::Module, SourceDiagnostic> {
+    let Some(record) = sources.get(source) else {
+        return Err(SourceDiagnostic::locationless(error::Diag::locationless(
+            error::codes::INTERNAL,
+            "source id does not belong to this source map",
+        )));
+    };
+    compile_owned_source(record.text_handle(), mode).map_err(|d| SourceDiagnostic::new(d, source))
+}
+
+/// Compile one named UTF-8 source into a source-aware [`Compilation`].
+///
+/// The display name is provenance only; it does not imply filesystem module
+/// semantics.
+///
+/// # Errors
+/// Returns the first front-end diagnostic together with the owning source map.
+pub fn compile_named_with_mode(
+    src: &str,
+    display_name: &str,
+    mode: CompileMode,
+) -> std::result::Result<Compilation, DiagnosticReport> {
+    let mut sources = SourceMap::new();
+    let source = sources.add(display_name, src);
+    match compile_source_in_map(&sources, source, mode) {
+        Ok(module) => Ok(Compilation {
+            module,
+            sources,
+            entry_source: source,
+        }),
+        Err(diagnostic) => Err(DiagnosticReport::new(diagnostic, sources)),
+    }
+}
+
+/// Source-aware counterpart of [`run_program_with`].
+///
+/// # Errors
+/// Returns a renderable diagnostic report retaining the source map.
+pub fn run_named_program_with(
+    src: &str,
+    display_name: &str,
+    args: Vec<String>,
+    input: Option<Input>,
+) -> std::result::Result<(), DiagnosticReport> {
+    compile_named_with_mode(src, display_name, CompileMode::Program)?
+        .execute_with(None, args, input)
+}
+
+/// Source-aware counterpart of [`run_toplevel_with`].
+///
+/// # Errors
+/// Returns a renderable diagnostic report retaining the source map.
+pub fn run_named_toplevel_with(
+    src: &str,
+    display_name: &str,
+    args: Vec<String>,
+    input: Option<Input>,
+) -> std::result::Result<(), DiagnosticReport> {
+    compile_named_with_mode(src, display_name, CompileMode::Module)?.execute_with(None, args, input)
 }
 
 /// Check an already-parsed module in the given mode.
