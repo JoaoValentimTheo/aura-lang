@@ -174,6 +174,18 @@ fn modules_do_not_collide_with_builtins() {
 }
 
 #[test]
+fn module_member_may_reuse_a_builtin_spelling() {
+    // ADR-0002: a module member named `sum` occupies the module's member
+    // namespace, not the caller's value namespace. It is reachable qualified
+    // (`M::sum`) and unqualified *inside* its own module, and never leaks into
+    // a caller's value namespace. The reservation stays scoped to value
+    // bindings (see `import_alias_to_builtin_is_reserved` for the one boundary
+    // at which an alias would collide).
+    let src = "module M {\n pub fn sum(n: int) -> int { return n + 1 }\n pub fn caller() -> int { return sum(41) }\n}\nfn main() { print(M::sum(1))\n print(M::caller()) }";
+    assert_eq!(code(src), Ok("2\n42\n".to_string()));
+}
+
+#[test]
 fn normal_names_still_work() {
     for name in ["tot", "x", "foo", "bar", "counter", "running"] {
         let src = format!("fn main() {{ let mut {name} = 0\n {name} = 1\n print({name}) }}");

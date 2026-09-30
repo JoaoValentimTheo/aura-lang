@@ -49,15 +49,23 @@ Each dimension is independently scoped and independently claimed.
 | Python | Aura |
 |---|---|
 | `None` | `none` |
-| `bool` | `bool` (checked before `int`; `bool` is an `int` subclass) |
+| `bool` (exact type) | `bool` (checked before `int`; `bool` is an `int` subclass) |
 | `int` within i64 | `int` |
 | `int` outside i64 | **rejected** `E4013` (never demoted to `float`) |
-| `float` | `float` |
-| `str` | `string` |
+| `float` (exact type) | `float` |
+| `str` (exact type) | `string` |
 | `list` | list |
 | `dict` with `str`/`int`/`bool` keys | map (other key kinds **rejected** `E5002`) |
 | any other object | its `repr`, as a `string` |
 | reference cycle | **rejected** `E5002` |
+
+Conversion matches on **exact type identity**, not on whether a coercion would
+succeed. A user object implementing `__float__`, `__index__`, `__bool__`, or
+`__str__` is **not** silently coerced; it takes the `repr` fallback like any
+other non-mappable object. This prevents silent precision loss (e.g. an
+`__index__` returning a value beyond `i64`) and prevents a raising dunder from
+being swallowed. `bytes`/`bytearray`/`tuple`/`set`/`complex` and other opaque
+objects likewise cross as their `repr` string (they are **not** rejected).
 
 Both directions are bounded: a node budget (1,000,000) and a depth bound
 (`MAX_VALUE_DEPTH`) make a pathological or cyclic graph a diagnostic, not a
@@ -100,8 +108,9 @@ must not allow this build without `py`.
 ## Evidence plan
 
 An interop matrix (`tests/interop_matrix.rs`, feature `py`) covering: `None`,
-`bool`, `int` (in/out of range), `float`, `str` (ASCII/Unicode), `bytes`
-(rejected), `list`, `tuple` (repr), `dict` (valid keys, rejected keys),
-exceptions, callbacks (unsupported/rejected), large values, nested structures,
-cycles, repeated calls, and cleanup after failure. Cross-platform and
-per-Python-version coverage runs in CI as a separate job.
+`bool`, `int` (in/out of range), `float`, `str` (ASCII/Unicode), opaque objects
+(`bytes`, `tuple`, `set`, user types with `__float__`/`__bool__`/`__str__`) as
+`repr`, `list`, `dict` (valid keys, rejected keys), exceptions, non-mappable
+Aura values (struct/enum/fn/range) rejected, cycles, repeated calls, and
+recovery after failure. Cross-platform and per-Python-version coverage runs in
+CI as a separate job.
