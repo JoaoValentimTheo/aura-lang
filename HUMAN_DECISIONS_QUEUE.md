@@ -57,6 +57,14 @@ current behavior, evidence, options, and the team recommendation.
     `aura::LANGUAGE_VERSION == aura::VERSION`. A bug-fix release
     `0.2.1` (language unchanged at `0.2.0`) would fail this test, which was
     written for the 0.2.0 *language* release.
+  - **Version-identity divergence (independently found):** HEAD declares
+    `VERSION = LANGUAGE_VERSION = "0.2.0"`, but HEAD is *semantically different*
+    from tag `v0.2.0` (commit `668722f`, 2026-09-28). The builtin-name
+    reservation (`c8ded06`, 2026-09-30) is not an ancestor of `v0.2.0`
+    (`git tag --contains c8ded06` is empty). So two distinct language surfaces
+    both claim `0.2.0`: the released tag accepts `let sum = 1`; HEAD rejects it
+    with `E1009`. This is the concrete reason the version scheme needs a
+    decision before the next tag.
 - **Consequence:** the T1 patch train (bridge diagnostic fix) is
   release-ready, but tagging it requires deciding whether release ≠ language is
   permitted. This is a genuine version-policy decision, not an implementation

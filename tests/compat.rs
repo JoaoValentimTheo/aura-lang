@@ -14,6 +14,12 @@
 //!
 //! These fixtures are cumulative by language version. When a new language
 //! version ships, add a section rather than editing the released one.
+//!
+//! Scope caveat: the `c020_*` fixtures describe the 0.2.0 Core language
+//! surface as it stands on the current development line. Where a rule changed
+//! *after* tag `v0.2.0` (notably builtin-name reservation), the fixture notes
+//! it explicitly rather than claiming the released tag already had it. See
+//! `HUMAN_DECISIONS_QUEUE.md` HD-4 for the version-identity question.
 
 use aura::error::codes;
 use aura::run_source;
@@ -173,7 +179,16 @@ fn c020_builtins_unchanged() {
 
 #[test]
 fn c020_builtin_name_reservation() {
-    // The 0.2.0 hardening: builtin names are reserved in the value namespace.
+    // NOTE: this fixture pins the **post-`v0.2.0` development line**, not the
+    // released `v0.2.0` tag. The builtin-name value-namespace reservation
+    // (`E1009`, commit `c8ded06`) landed *after* tag `v0.2.0`; `git tag
+    // --contains c8ded06` is empty. At the released tag, `let sum = 1` was
+    // accepted, and `let mut sum = 0; sum = sum + 1` was a misleading `E2001`.
+    // The reservation is a justified fix: it intentionally rejects programs
+    // that were never semantically well defined (the binding collided with a
+    // builtin and broke assignment lookup). The version-identity question it
+    // exposes (HEAD declares `0.2.0` but differs from tag `v0.2.0`) is tracked
+    // in HUMAN_DECISIONS_QUEUE.md HD-4.
     assert_eq!(err("fn main() { let sum = 1 }"), codes::RESERVED_NAME);
     assert_eq!(
         err("fn main() { let mut sum = 0\n sum = sum + 1 }"),

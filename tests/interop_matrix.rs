@@ -238,8 +238,9 @@ fn repeated_calls_are_stable() {
     assert_eq!(out(src), "100\n");
 }
 
-/// Python errors are fatal and uncatchable in v1 (`E5001`); a subsequent,
-/// independent call still succeeds, proving no interpreter state corruption.
+/// Python errors are fatal and uncatchable in v1 (`E5001`); a subsequent
+/// crossing still succeeds, so a failed call does not leave the (process-global)
+/// CPython interpreter in a state that breaks later conversions.
 #[test]
 fn failure_then_success_recovers() {
     assert_eq!(code("fn main() { py_eval(\"1 / 0\") }"), codes::PY_ERROR);
