@@ -1,16 +1,22 @@
 [package]
 name = "aura-playground-runtime"
 # The `0.2.0` release runtime artifact is frozen and immutable. This is the
-# second development runtime on the `0.2.0` line, carrying the additive Host
-# ABI 1 virtual-project capability (`aura_project_reset`,
-# `aura_project_push`, `aura_run_project`) so the Playground's multi-file
-# project surface can be exercised end to end, plus the core-language
-# builtin-name value-namespace reservation (E1009) that postdates
-# `0.2.0-dev.1`. It is a development pre-release, never a published release:
-# advancing it means bumping this pre-release identifier (e.g.
-# `0.2.0-dev.3`), never overwriting an existing artifact, and never touching
-# `runtimes/0.2.0/`.
-version = "0.2.0-dev.2"
+# first development runtime on the `0.2.1` line. The `0.2.1` language contract
+# differs from `0.2.0`: the builtin-name value-namespace reservation (E1009)
+# rejects value bindings that collide with a builtin, which `0.2.0` accepted
+# (see docs/adr/0001-release-vs-language-version.md). A runtime that carries a
+# different language contract must have a different identity, so this is a new
+# artifact; `0.2.0-dev.1`/`0.2.0-dev.2` remain frozen and selectable. It is a
+# development pre-release, never a published release: advancing it means
+# bumping this pre-release identifier, never overwriting an existing artifact,
+# and never touching `runtimes/0.2.0/`.
+#
+# `0.2.1-dev.1` was built before the ADR-0004 parser change (structural type
+# nesting counted toward the semantic AST limit). It is superseded by this
+# build, `0.2.1-dev.2`, which carries the full `0.2.1` language contract; the
+# `.1` artifact is preserved on disk as an unlisted intermediate, per the
+# convention that only the final development runtime of a line is manifested.
+version = "0.2.1-dev.2"
 edition = "2021"
 rust-version = "1.83"
 description = "The Aura Playground WebAssembly execution wrapper: a minimal, zero-import C ABI over the real aura runtime."

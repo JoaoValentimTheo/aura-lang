@@ -9,7 +9,19 @@
 // Usage: node playground/tests/node/browser.test.mjs
 // Requires the `playwright` package with Chromium installed.
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { startServer } from "./serve.mjs";
+
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const manifest = JSON.parse(
+  readFileSync(join(__dirname, "..", "..", "runtimes", "manifest.json"), "utf8"),
+);
+// The selector default is whatever the manifest's `current` pointer names.
+// Deriving it (rather than hardcoding a dev identity) keeps this test correct
+// when the development runtime advances.
+const currentRuntime = manifest.current;
 
 let chromium;
 try {
@@ -164,7 +176,7 @@ async function runAndWait(page, timeout = 15000) {
   // runtime on the `0.2.0` line while the multi-file Playground is under
   // development.
   const selected = await page.evaluate(() => document.getElementById("version").value);
-  check("the manifest current pointer selects the default", selected === "0.2.0-dev.2", selected);
+  check("the manifest current pointer selects the default", selected === currentRuntime, selected);
   check("0.2.0 release selectable", options.some((o) => o.value === "0.2.0" && !o.disabled), JSON.stringify(options));
   check("historical 0.0.2 release selectable", options.some((o) => o.value === "0.0.2" && !o.disabled));
   check("0.0.1 present but unavailable", options.some((o) => o.value === "0.0.1" && o.disabled));
@@ -172,7 +184,7 @@ async function runAndWait(page, timeout = 15000) {
   check("0.2.0 is labelled release", release && /release/i.test(release.text), release && release.text);
   // A development runtime is present, selectable, and labelled as a
   // development runtime rather than a release.
-  const dev = options.find((o) => o.value === "0.2.0-dev.2");
+  const dev = options.find((o) => o.value === currentRuntime);
   check("development runtime selectable", dev && !dev.disabled, JSON.stringify(options));
   check("development runtime is labelled development", dev && /development/i.test(dev.text), dev && dev.text);
   check("development is distinguished from release", dev && release && dev.text !== release.text);

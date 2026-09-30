@@ -15,12 +15,16 @@
 //
 // Nothing here reimplements Aura semantics: the assertions read the runtime's
 // own structured result. The suite requires the runtime artifact that carries
-// the virtual-project exports (`0.2.0-dev.2`); it selects that version
-// explicitly so the test never depends on which entry is the manifest default.
+// the virtual-project exports; it selects the manifest's current development
+// runtime explicitly so the test never depends on which entry is the manifest
+// default.
 //
 // Usage: node playground/tests/node/multifile.test.mjs
 // Requires the `playwright` package with Chromium installed.
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { startServer } from "./serve.mjs";
 
 let chromium;
@@ -31,8 +35,13 @@ try {
   process.exit(0);
 }
 
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const manifest = JSON.parse(
+  readFileSync(join(__dirname, "..", "..", "runtimes", "manifest.json"), "utf8"),
+);
+
 /** The development runtime that carries the additive virtual-project exports. */
-const PROJECT_RUNTIME = "0.2.0-dev.2";
+const PROJECT_RUNTIME = manifest.current;
 
 /** A runtime that predates `aura_project_*`. */
 const LEGACY_RUNTIME = "0.0.2";
