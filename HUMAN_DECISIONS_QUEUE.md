@@ -46,11 +46,28 @@ current behavior, evidence, options, and the team recommendation.
 
 ## HD-4 — Pre-v1 release line and version scheme
 
-- **Status:** QUEUED (blocks tagging prereleases).
+- **Status:** QUEUED — **blocks the automatic patch release.**
 - **Question:** For the road to 1.0, do we release `0.3.0` minor trains, or move
-  directly to `1.0.0-alpha.N`/`-beta.N`/`-rc.N`?
-- **Evidence:** existing releases `v0.0.1`, `v0.0.2`, `v0.2.0`; language version
-  pinned at `0.2.0`.
-- **Recommendation:** use pre-1.0 development versions on the existing line and
-  enter `1.0.0-rc.N` for the stabilization train. Requires human confirmation
-  before the first prerelease tag.
+  directly to `1.0.0-alpha.N`/`-beta.N`/`-rc.N`? And: may the **release** version
+  advance past the **language** version within the pre-1.0 line (a bug-fix
+  patch)?
+- **Evidence:**
+  - existing releases `v0.0.1`, `v0.0.2`, `v0.2.0`; language pinned at `0.2.0`.
+  - `tests/contract.rs:191-204` asserts `aura::VERSION == "0.2.0"` and
+    `aura::LANGUAGE_VERSION == aura::VERSION`. A bug-fix release
+    `0.2.1` (language unchanged at `0.2.0`) would fail this test, which was
+    written for the 0.2.0 *language* release.
+- **Consequence:** the T1 patch train (bridge diagnostic fix) is
+  release-ready, but tagging it requires deciding whether release ≠ language is
+  permitted. This is a genuine version-policy decision, not an implementation
+  choice, so it is not decided unilaterally.
+- **Options:**
+  - (A) Allow release > language pre-1.0: relax the equality assertion to
+    `VERSION >= LANGUAGE_VERSION` and cut `0.2.1` as a patch.
+  - (B) Keep release == language until 1.0: fold the patch into the next
+    language-release train (no standalone patch).
+  - (C) Jump to a prerelease scheme now (`0.3.0-alpha.N` or `1.0.0-alpha.N`).
+- **Recommendation:** Option A for the near term (enables honest, frequent
+  patch releases of fixes that do not change language semantics), transitioning
+  to `1.0.0-rc.N` for stabilization. Requires human confirmation before the
+  first such tag.

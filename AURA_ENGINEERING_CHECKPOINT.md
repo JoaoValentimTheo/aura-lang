@@ -5,19 +5,20 @@ Resumable operational state for the Road-to-1.0 program.
 ## State
 
 ```
-PROGRAM HEAD:            6d25985 + T0/T1 commits (unpushed as of writing)
-REMOTE HEAD:             6d25985
+PROGRAM HEAD:            f262180 (pushed)
+REMOTE HEAD:             f262180
 LATEST RELEASE:          v0.2.0
 LATEST PRERELEASE:       none
 LATEST DEV RUNTIME:      0.2.0-dev.2
-CURRENT RELEASE TRAIN:   T1 (patch) on top of T0 (org bootstrap)
+CURRENT RELEASE TRAIN:   T1 (patch) closing; T2 (CPython) started
 ```
 
 ## Active work
 
-- T0 organization bootstrap (docs) — in progress.
-- T1-1 bridge diagnostic-provenance fix — done (awaiting independent review).
-- T1-2 red-team boundary pass — in progress.
+- T0 organization bootstrap (docs) — done.
+- T1-1 bridge diagnostic-provenance fix — done; T1 CI green at c12b39f.
+- T2-1 CPython interop matrix + version policy — interop tests + CI matrix added.
+- T4 performance baseline — done (`tests/bench.rs`, `docs/engineering/PERFORMANCE.md`).
 
 ## Agent ownership (logical)
 
@@ -42,11 +43,16 @@ CURRENT RELEASE TRAIN:   T1 (patch) on top of T0 (org bootstrap)
 ## Commits
 
 - `fix(bridge): attribute Python boundary errors to the Aura call site`
-- `docs(org): establish the Aura engineering organization and v1 program` (pending)
+- `docs(org): establish the Aura engineering organization and v1 program`
+- `test(interop): add the CPython interoperability matrix`
+- `docs(security): strip trailing whitespace in trust boundaries`
+- `test(perf): add scaling shape guards and a timing baseline`
+- `ci(interop): add a CPython version/platform interop matrix`
 
 ## Pushes / CI runs
 
-- Last known green: CI 36765658391 at `6d25985`.
+- Green: CI 36765658391 at `6d25985`; CI 36769088433 at `c12b39f`.
+- Pushed `c12b39f..f262180` (perf + CI interop matrix); CI running.
 
 ## V1 readiness snapshot
 
