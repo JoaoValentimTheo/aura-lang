@@ -5,12 +5,15 @@ Resumable operational state for the Road-to-1.0 program.
 ## State
 
 ```
-PROGRAM HEAD:            50d6d78 (pushed; CI green)
-REMOTE HEAD:             50d6d78
+PROGRAM HEAD:            584af85 (pushed; CI 36777716800 green)
+REMOTE HEAD:             584af85
 LATEST RELEASE:          v0.2.0
 LATEST PRERELEASE:       none
 LATEST DEV RUNTIME:      0.2.0-dev.2
-CURRENT RELEASE TRAIN:   T0-T5 complete; release tag blocked by HD-4
+CURRENT RELEASE TRAIN:   T0-T5 complete; tag blocked by HD-4/HD-3
+FINAL STATE:             HUMAN DECISIONS REQUIRED (version/semantic policy);
+                         all independent engineering continues to be possible
+                         work, which is complete for this train.
 ```
 
 ## Completed this session
