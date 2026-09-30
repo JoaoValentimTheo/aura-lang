@@ -48,6 +48,15 @@ found deleted from the working tree (`git status` showed ` D`). These were
 `git checkout -- .kilo/`; `git status` is clean again except untracked `s`. No
 history was affected. Recorded here for transparency.
 
+## Review 3 — filesystem module boundary (red team, read-only)
+
+- **Scope:** `NativeFilesystemSourceProvider` discovery (TH-3).
+- **Result:** a `.aura` symlink to `/etc/passwd`, and a symlinked subdirectory
+  to `/etc`, are both rejected with `E2022` ("reachable module candidate … is a
+  symlink"). No escape via symlink. Physical children are reachable only by
+  qualified path (`sub::secret()`); an undeclared child is `E2003`. Boundary
+  behavior matches the threat model; no defect.
+
 ## Outstanding review items
 
 - Performance benchmark guards: reviewed for false-positive flakiness; a real
