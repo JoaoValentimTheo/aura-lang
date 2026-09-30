@@ -126,14 +126,25 @@ mod py {
         }
         *budget -= 1;
         if depth >= crate::run::value::MAX_VALUE_DEPTH {
-            let repr = obj.repr().map_err(|e| map_pyerr(e, span))?.to_string();
-            return Ok(Value::str(repr));
+            // Symmetric with the Aura -> Python direction, which rejects
+            // over-depth conversions: a pathologically deep Python container
+            // must not silently degrade into a `repr` string with a different
+            // type. The documented contract is that both directions bound depth
+            // with a diagnostic (`CPYTHON_COMPATIBILITY_TARGET.md`). The
+            // shallow opaque-object fallback below is unaffected.
+            return Err(Diag::new(
+                codes::PY_UNSUPPORTED,
+                "Python value is nested too deeply to cross into Aura",
+                span,
+            ));
         }
         if obj.is_none() {
             return Ok(Value::None);
         }
-        // Exact-type match: `extract::<bool>()` is truthiness-based in PyO3 and
-        // would coerce any object with a `__bool__`, so require a real `bool`.
+        // Identity match: `extract::<bool>()` is truthiness-based in PyO3 and
+        // would coerce any object with a `__bool__`, so require a genuine
+        // `bool` instance (`is_instance_of` accepts a `bool` subclass, which is
+        // sound — it is still represented as a `bool`).
         if obj.is_instance_of::<PyBool>() {
             return Ok(Value::Bool(
                 obj.extract::<bool>().map_err(|e| map_pyerr(e, span))?,
@@ -154,13 +165,13 @@ mod py {
             ));
         }
         // Match on *type identity*, not on whether a conversion happens to
-        // succeed. `obj.extract::<f64>()` and `extract::<String>()` are
-        // duck-typed in PyO3: they invoke `__float__`/`__index__`/`__str__`.
-        // A user type implementing those would otherwise be silently coerced
-        // to `float`/`string` (with possible precision loss) instead of taking
-        // the documented opaque-object fallback (its `repr`), and a dunder
-        // that raises would be silently swallowed. Only genuine `float` and
-        // `str` instances convert; everything else falls through to `repr`.
+        // succeed. `extract::<f64>()` is duck-typed in PyO3: it invokes
+        // `__float__` (and `extract::<i64>` invokes `__index__`). A plain user
+        // type implementing those would otherwise be silently coerced to
+        // `float` (with possible precision loss) instead of taking the
+        // documented opaque-object fallback (its `repr`), and a dunder that
+        // raises would be silently swallowed. Only genuine `float` and `str`
+        // instances convert; everything else falls through to `repr`.
         if obj.is_instance_of::<PyFloat>() {
             return Ok(Value::Float(
                 obj.extract::<f64>().map_err(|e| map_pyerr(e, span))?,
@@ -201,22 +212,44 @@ mod py {
             let mut map = BTreeMap::new();
             for (k, v) in dict.iter() {
                 // Aura map keys are the key-capable scalars `string`, `int`,
-                // and `bool`. Refuse to coerce any other key: stringifying an
-                // arbitrary key would collapse distinct keys (e.g. `1` and
-                // `"1"`) into one.
-                let key = if let Ok(s) = k.extract::<String>() {
-                    crate::run::value::MapKey::str(s)
-                } else if k.is_instance_of::<PyBool>() {
-                    // Checked before `i64`: a Python `bool` is an `int`
+                // and `bool`. Match on *type identity*, exactly as the scalar
+                // path above: `extract::<i64>()` is duck-typed (it invokes
+                // `__index__`), so a user object implementing `__index__` would
+                // otherwise be silently coerced into an `int` key, collapsing
+                // distinct keys and reintroducing the precision/identity loss
+                // the scalar path rejects (`CPYTHON_COMPATIBILITY_TARGET.md`).
+                let key = if k.is_instance_of::<PyBool>() {
+                    // Checked before `int`: a Python `bool` is an `int`
                     // subclass, so an integer extraction would otherwise turn
                     // `True` into `1` and lose the key's identity.
                     crate::run::value::MapKey::Bool(
                         k.extract::<bool>().map_err(|e| map_pyerr(e, span))?,
                     )
-                } else if let Ok(i) = k.extract::<i64>() {
-                    crate::run::value::MapKey::Int(i)
+                } else if k.is_instance_of::<PyInt>() {
+                    match k.extract::<i64>() {
+                        Ok(i) => crate::run::value::MapKey::Int(i),
+                        // An integer key outside `i64` is the same overflow the
+                        // scalar path reports, never a silent demotion.
+                        Err(_) => {
+                            let text = k.str().map_err(|e| map_pyerr(e, span))?.to_string();
+                            return Err(Diag::new(
+                                codes::OVERFLOW,
+                                format!(
+                                    "Python integer key `{text}` does not fit in Aura's 64-bit `int`"
+                                ),
+                                span,
+                            ));
+                        }
+                    }
+                } else if k.is_instance_of::<PyString>() {
+                    crate::run::value::MapKey::str(
+                        k.extract::<String>().map_err(|e| map_pyerr(e, span))?,
+                    )
                 } else {
-                    let shown = k.str().map_err(|e| map_pyerr(e, span))?.to_string();
+                    // Not a key-capable scalar. Use `repr`, not `str`, so the
+                    // diagnostic does not invoke a user `__str__` (which could
+                    // itself raise or have side effects).
+                    let shown = k.repr().map_err(|e| map_pyerr(e, span))?.to_string();
                     return Err(Diag::new(
                         codes::PY_UNSUPPORTED,
                         format!(

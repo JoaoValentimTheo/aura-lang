@@ -59,13 +59,20 @@ Each dimension is independently scoped and independently claimed.
 | any other object | its `repr`, as a `string` |
 | reference cycle | **rejected** `E5002` |
 
-Conversion matches on **exact type identity**, not on whether a coercion would
-succeed. A user object implementing `__float__`, `__index__`, `__bool__`, or
-`__str__` is **not** silently coerced; it takes the `repr` fallback like any
-other non-mappable object. This prevents silent precision loss (e.g. an
-`__index__` returning a value beyond `i64`) and prevents a raising dunder from
-being swallowed. `bytes`/`bytearray`/`tuple`/`set`/`complex` and other opaque
-objects likewise cross as their `repr` string (they are **not** rejected).
+Conversion matches on **type identity**, not on whether a coercion would
+succeed. A value converts only when it is an instance of the builtin scalar
+(`bool`/`int`/`float`/`str`); a Python subclass of a builtin scalar *is* such an
+instance and converts as its base type, which is sound (a subclass may narrow
+behavior but never changes the base type's representation). A plain user object
+implementing `__float__`, `__index__`, `__bool__`, or `__str__` is **not** an
+instance of the builtin, so it is **not** silently coerced; it takes the `repr`
+fallback like any other non-mappable object. This prevents silent precision
+loss (e.g. an `__index__` returning a value beyond `i64`) and prevents a
+raising dunder from being swallowed. The same identity rule governs **map
+keys**: an `__index__`-implementing object is not a valid `int` key and is
+rejected `E5002`, never coerced. `bytes`/`bytearray`/`tuple`/`set`/`complex`
+and other opaque objects likewise cross as their `repr` string (they are **not**
+rejected).
 
 Both directions are bounded: a node budget (1,000,000) and a depth bound
 (`MAX_VALUE_DEPTH`) make a pathological or cyclic graph a diagnostic, not a

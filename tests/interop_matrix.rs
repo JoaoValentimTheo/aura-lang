@@ -116,6 +116,29 @@ fn maps_round_trip_and_reject_bad_keys() {
         code("fn main() { py_eval(\"{1.5: 'x'}\") }"),
         codes::PY_UNSUPPORTED
     );
+    // A user object implementing `__index__` must NOT be duck-typed into an
+    // `int` key: the same exact-type rule the scalar path enforces applies to
+    // keys, so it is rejected rather than silently coerced (which would
+    // collapse distinct keys and can lose precision).
+    assert_eq!(
+        code(
+            "fn main() { py_eval(\"{type('K',(),{'__index__':lambda s:42,'__hash__':lambda s:1})(): 'a'}\") }"
+        ),
+        codes::PY_UNSUPPORTED
+    );
+    // An `__index__` that raises is likewise not swallowed into a different
+    // diagnostic: the key is simply not key-capable.
+    assert_eq!(
+        code(
+            "fn main() { py_eval(\"{type('K',(),{'__index__':lambda s:(_ for _ in ()).throw(RuntimeError('x')),'__hash__':lambda s:1})(): 'a'}\") }"
+        ),
+        codes::PY_UNSUPPORTED
+    );
+    // An out-of-i64 integer key is the same overflow as the scalar path.
+    assert_eq!(
+        code("fn main() { py_eval(\"{2**63: 'x'}\") }"),
+        codes::OVERFLOW
+    );
     // Aura map with int key -> Python dict, observed via a Python call.
     assert_eq!(
         out("fn main() { print(py_call(\"builtins\", \"len\", {1: \"a\", 2: \"b\"})) }"),
@@ -233,6 +256,28 @@ fn duck_typed_objects_are_not_silently_coerced() {
     assert_eq!(out("fn main() { print(py_eval(\"1.5\")) }"), "1.5\n");
     assert_eq!(out("fn main() { print(py_eval(\"True\")) }"), "true\n");
     assert_eq!(out("fn main() { print(py_eval(\"'hi'\")) }"), "hi\n");
+}
+
+/// Depth is bounded symmetrically: a pathologically deep Python container is a
+/// structured `E5002` in the Python -> Aura direction, matching the Aura ->
+/// Python direction, rather than silently degrading into a `repr` string of a
+/// different type. Shallow nesting and opaque objects are unaffected.
+#[test]
+fn deep_python_container_is_rejected_not_stringified() {
+    assert_eq!(
+        code(
+            "fn main() { let d = py_eval(\"__import__('functools').reduce(lambda a, _: [a], range(600), 0)\")\n print(d) }"
+        ),
+        codes::PY_UNSUPPORTED
+    );
+    // Shallow nesting still crosses structurally.
+    assert_eq!(
+        out("fn main() { print(py_eval(\"[[[1]]]\")) }"),
+        "[[[1]]]\n"
+    );
+    // A shallow opaque object still takes the documented `repr` fallback.
+    let o = out("fn main() { print(py_eval(\"type('X',(),{})()\").contains('X')) }");
+    assert_eq!(o, "true\n");
 }
 
 /// Unicode strings round-trip exactly (no normalization, no lossy encoding).
