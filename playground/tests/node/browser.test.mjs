@@ -159,25 +159,28 @@ async function runAndWait(page, timeout = 15000) {
       text: o.textContent,
     })),
   );
-  // 0.2.0 is the current public release and the selector default.
+  // `0.2.0` remains a real, selectable, frozen release. The selector default
+  // is whatever the manifest's `current` pointer names: the newest development
+  // runtime on the `0.2.0` line while the multi-file Playground is under
+  // development.
   const selected = await page.evaluate(() => document.getElementById("version").value);
-  check("0.2.0 is the default selection", selected === "0.2.0", selected);
+  check("the manifest current pointer selects the default", selected === "0.2.0-dev.1", selected);
   check("0.2.0 release selectable", options.some((o) => o.value === "0.2.0" && !o.disabled), JSON.stringify(options));
   check("historical 0.0.2 release selectable", options.some((o) => o.value === "0.0.2" && !o.disabled));
   check("0.0.1 present but unavailable", options.some((o) => o.value === "0.0.1" && o.disabled));
   const release = options.find((o) => o.value === "0.2.0");
   check("0.2.0 is labelled release", release && /release/i.test(release.text), release && release.text);
-  // The final development runtime is present, selectable, and labelled as a
+  // A development runtime is present, selectable, and labelled as a
   // development runtime rather than a release.
-  const dev = options.find((o) => o.value === "0.0.2-dev.30");
+  const dev = options.find((o) => o.value === "0.2.0-dev.1");
   check("development runtime selectable", dev && !dev.disabled, JSON.stringify(options));
   check("development runtime is labelled development", dev && /development/i.test(dev.text), dev && dev.text);
   check("development is distinguished from release", dev && release && dev.text !== release.text);
 
-  // The default release executes with the completed Core language.
+  // The default runtime executes with the completed Core language.
   await setSource(page, "fn main() { print(\"v020\") }");
   const r = await runAndWait(page);
-  check("0.2.0 release executes", r.stdout === "v020\n", JSON.stringify(r));
+  check("the default runtime executes", r.stdout === "v020\n", JSON.stringify(r));
 
   // Run against the historical 0.0.2 release artifact: unchanged behavior.
   await page.selectOption("#version", "0.0.2");
@@ -202,10 +205,11 @@ async function runAndWait(page, timeout = 15000) {
   const rs = await runAndWait(page);
   check("0.2.0 enforces the separator rule", rs.status !== "ok", JSON.stringify(rs));
 
-  // The historical development runtime is still selectable and executes.
+  // The final development runtime of the pre-0.2.0 line is still selectable and
+  // executes.
   await page.selectOption("#version", "0.0.2-dev.30");
   const note = await page.textContent("#runtime-note");
-  check("development runtime explains itself", /development runtime/i.test(note), note);
+  check("historical development runtime explains itself", /development runtime/i.test(note), note);
   await setSource(
     page,
     'type Number = int | float\nfn f(x: Number) { print(x) }\nfn main() {\n f(42)\n f(3.14)\n}',

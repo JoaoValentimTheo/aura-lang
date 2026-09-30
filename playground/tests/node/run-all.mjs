@@ -34,7 +34,9 @@ if (!existsSync(wasm)) {
 }
 
 run("manifest", [join(here, "manifest.test.mjs")]);
-// Presentational completion + shared language metadata (no runtime needed).
+// The Playground's project state (files, active file, entry file) is a pure
+// model: no DOM, no Worker, no wasm.
+run("project", [join(here, "project.test.mjs")]);// Presentational completion + shared language metadata (no runtime needed).
 run("completion", [join(here, "completion.test.mjs")]);
 run("abi", [join(here, "abi.test.mjs"), wasm]);
 // Load-time SHA-256 verification of the fetched artifact bytes (the loader
@@ -87,9 +89,12 @@ try {
 if (havePlaywright) {
   run("browser", [join(here, "browser.test.mjs")]);
   run("worker", [join(here, "worker.test.mjs")]);
+  // End-to-end multi-file projects: file tabs → project state → worker →
+  // runtime.runProject → aura_project_* → the canonical pipeline.
+  run("multi-file", [join(here, "multifile.test.mjs")]);
   run("cache", [join(here, "cache.test.mjs")]);
 } else {
-  console.log("\n=== browser/worker/cache ===\nSKIPPED: Playwright not installed.");
+  console.log("\n=== browser/worker/multi-file/cache ===\nSKIPPED: Playwright not installed.");
   console.log("Install with: (cd playground && npm install && npx playwright install chromium)");
 }
 

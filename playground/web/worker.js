@@ -10,7 +10,17 @@
 // runtime artifact, validates its ABI, calls it, and posts the structured
 // result back. It implements no Aura semantics.
 //
-// Message in:  { runId, artifactUrl, expectedAbi, expectedSha256, source, args, stdin }
+// Two transports are supported, additively:
+//
+//   * `source`  — the historical single-source execution path (`runtime.run`);
+//   * `project` — a virtual multi-source project (`runtime.runProject`), which
+//     is feature-detected because historical ABI-1 artifacts predate the
+//     additive `aura_project_*` exports.
+//
+// Message in:  { runId, artifactUrl, expectedAbi, expectedSha256,
+//                source, project, args, stdin }
+//              Exactly one of `source` / `project` is supplied. `source` keeps
+//              the historical behavior byte-for-byte.
 // Message out: { runId, kind: "loaded", runtimeVersion, abiVersion }
 //              { runId, kind: "result", result }
 //              { runId, kind: "error", phase, code, message }
@@ -18,6 +28,13 @@
 importScripts(); // no-op; kept for clarity that there are no imports.
 
 let runtimePromise = null;
+
+/** Exports a runtime must provide to execute a virtual project. */
+const PROJECT_EXPORTS = ["aura_project_reset", "aura_project_push", "aura_run_project"];
+
+function hasVirtualProjects(runtime) {
+  return PROJECT_EXPORTS.every((sym) => sym in runtime.exports);
+}
 
 async function loadRuntime(artifactUrl, expectedAbi, expectedSha256) {
   const url = new URL(artifactUrl, self.location.href);
@@ -45,7 +62,7 @@ async function loadRuntime(artifactUrl, expectedAbi, expectedSha256) {
 
 self.onmessage = async (event) => {
   const msg = event.data || {};
-  const { runId, artifactUrl, expectedAbi, expectedSha256, source, args, stdin } = msg;
+  const { runId, artifactUrl, expectedAbi, expectedSha256, source, project, args, stdin } = msg;
   try {
     runtimePromise =
       runtimePromise || loadRuntime(artifactUrl, expectedAbi, expectedSha256);
@@ -56,8 +73,29 @@ self.onmessage = async (event) => {
       runtimeVersion: runtime.runtimeVersion,
       languageVersion: runtime.languageVersion,
       abiVersion: runtime.abiVersion,
+      // Reported so the page can explain, rather than guess, whether the
+      // selected runtime can execute a multi-file project. This is a
+      // capability fact read off the loaded module, never a language rule.
+      supportsProjects: hasVirtualProjects(runtime),
     });
-    const result = runtime.run(source, { args: args || [], stdin: stdin ?? null });
+    // A virtual project is requested only when the page actually sent one.
+    // `source` remains the default so the historical path is unchanged.
+    const wantsProject = project !== undefined && project !== null;
+    if (wantsProject && !hasVirtualProjects(runtime)) {
+      self.postMessage({
+        runId,
+        kind: "error",
+        phase: "capability",
+        code: "NO_VIRTUAL_PROJECTS",
+        // Raw internals never cross this boundary; only this explanation.
+        message:
+          "the selected runtime predates virtual projects and can execute a single source only",
+      });
+      return;
+    }
+    const result = wantsProject
+      ? runtime.runProject(project, { args: args || [], stdin: stdin ?? null })
+      : runtime.run(source, { args: args || [], stdin: stdin ?? null });
     self.postMessage({ runId, kind: "result", result });
   } catch (err) {
     self.postMessage({
