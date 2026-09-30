@@ -94,7 +94,16 @@ frozen artifact mutation. Release tagging blocked by HD-4.
 1. Human: decide HD-4 (unblocks the first gated patch release), then HD-3,
    then HD-1/HD-2 before semantic freeze.
 2. Add end-user install/quickstart + artifact-matrix docs (packaging GREEN).
-3. Independent review + release audit of the train.
+3. Independent review + release audit of the train. See
+   `docs/engineering/REVIEW_RECORD_T0_T5.md`.
 4. Broaden performance workloads (REPL, WASM startup, large module graphs).
 5. SBOM/provenance + reproducible-build investigation.
 6. Then proceed through the RC train (`1.0.0-alpha/beta/rc`) after freeze.
+
+## Independent review (T0–T5)
+
+- Bridge fix: NOT FALSIFIED. Frozen artifacts: all checks PASS.
+- One MEDIUM fixture-scope defect found and corrected (`tests/compat.rs`);
+  exposed a version-identity divergence now recorded as HD-4 evidence.
+- Worktree integrity: 13 accidentally-deleted tracked `.kilo/` files restored.
+- Full record: `docs/engineering/REVIEW_RECORD_T0_T5.md`.
