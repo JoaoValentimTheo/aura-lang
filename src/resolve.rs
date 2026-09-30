@@ -644,6 +644,22 @@ impl Resolver {
         }
         let namespace = self.items.get(&canonical).map(|i| i.namespace);
         let local = alias.map_or_else(|| path.last().cloned().unwrap_or_default(), str::to_string);
+        // Aura reserves registered builtin function names in the
+        // user-visible value namespace (human law): an import that would
+        // bind a builtin name as a value is `E1009`. Type and variant
+        // namespaces are separate, so only value-namespace imports
+        // (including type imports, which also bind the value namespace)
+        // are rejected; module aliases live in the module namespace.
+        let binds_value = !matches!(namespace, Some(Namespace::Variant));
+        if binds_value && crate::stdlib::builtin_names().contains(&local.as_str()) {
+            return Err(Diag::new(
+                codes::RESERVED_NAME,
+                format!(
+                    "`{local}` is a built-in function and cannot be used as a user-defined name"
+                ),
+                span,
+            ));
+        }
         // Importing across a module boundary respects visibility: a private
         // target is `E2018`, exactly as a direct path would be.
         self.check_visible(&canonical, prefix, span)?;

@@ -192,6 +192,15 @@ true false none
 Using a reserved word where a name is required is a lexical/parse error
 (`E1009`, or `E1006` in declaration positions).
 
+**Normative rule (builtin reservation).** Registered builtin function names
+(`src/stdlib/signatures.rs::builtins`, e.g. `sum`, `len`, `print`) MUST NOT be
+used as user-defined names in the value namespace: `let`/`let mut`, function
+parameters, lambda parameters, loop bindings, catch bindings, pattern
+bindings, user functions, top-level `let`, and import aliases. A violation is
+`E1009` (`RESERVED_NAME`) at the declaration. Type names (`struct`/`enum`/`type`),
+modules, struct fields, enum variants, and methods live in separate namespaces
+and may reuse a builtin spelling (§26, §27).
+
 **Normative rule (contextual words).** The words `module`, `const`, `impl`, `self`, and `trait`
 are **not** reserved. They remain ordinary identifiers everywhere
 (`let impl = 1`, `fn self(x)`, `let trait = 1`, a field named `impl`,

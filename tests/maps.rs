@@ -55,7 +55,7 @@ fn bool_keyed_maps_work_end_to_end() {
 #[test]
 fn generic_map_alias_works() {
     assert_eq!(
-        ok("type Map<K, V> = {K: V}\nfn main() { let values: Map<int, float> = {1: 1.2, 2: 3.3}\n print(values[2]) }"),
+        ok("type Map<K, V> = {K: V}\nfn main() { let vals: Map<int, float> = {1: 1.2, 2: 3.3}\n print(vals[2]) }"),
         "3.3\n"
     );
 }

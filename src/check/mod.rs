@@ -802,6 +802,19 @@ impl Checker {
                     public,
                     ..
                 } => {
+                    // Aura reserves registered builtin function names in the
+                    // user-visible value namespace (human law): a user
+                    // function must not shadow a builtin. Same `E1009` as
+                    // `declare_inner` for local bindings.
+                    if crate::stdlib::builtin_names().contains(&name.as_str()) {
+                        return Err(Diag::new(
+                            codes::RESERVED_NAME,
+                            format!(
+                                "`{name}` is a built-in function and cannot be used as a user-defined name"
+                            ),
+                            *span,
+                        ));
+                    }
                     // Overloading: several top-level functions may share a name
                     // when their ordered parameter types differ. A name already
                     // declared by a non-function (a constant or top-level
@@ -854,6 +867,20 @@ impl Checker {
                     self.scopes[0].vars.insert(name.clone(), false);
                 }
                 Item::Const { name, span, .. } => {
+                    // Top-level `let` bindings are module constants in the
+                    // value namespace, so the builtin reservation applies
+                    // here as well as in `declare_inner`. (`const NAME`
+                    // requires uppercase, so a lowercase builtin can only
+                    // arrive via top-level `let`.)
+                    if crate::stdlib::builtin_names().contains(&name.as_str()) {
+                        return Err(Diag::new(
+                            codes::RESERVED_NAME,
+                            format!(
+                                "`{name}` is a built-in function and cannot be used as a user-defined name"
+                            ),
+                            *span,
+                        ));
+                    }
                     // Constants share the value-namespace scope rule: a prior
                     // declaration (module or session) makes this `E2007`.
                     // `const NAME` and a top-level `let NAME` are the same
@@ -1666,6 +1693,21 @@ impl Checker {
                 span,
             ));
         }
+        // Aura reserves registered builtin function names in the user-visible
+        // binding namespace: a user must not declare a binding that would
+        // silently shadow a builtin, because the runtime dispatches builtins by
+        // name and a binding here would be ambiguous. The diagnostic code is
+        // the same `RESERVED_NAME` used for keywords, because the policy and
+        // the effect on the user are identical.
+        if crate::stdlib::builtin_names().contains(&name) {
+            return Err(Diag::new(
+                codes::RESERVED_NAME,
+                format!(
+                    "`{name}` is a built-in function and cannot be used as a user-defined name"
+                ),
+                span,
+            ));
+        }
         let Some(scope) = self.scopes.last_mut() else {
             return Ok(());
         };
@@ -1694,9 +1736,6 @@ impl Checker {
     }
 
     fn lookup(&self, name: &str) -> Option<bool> {
-        if crate::stdlib::builtin_names().contains(&name) {
-            return Some(false);
-        }
         // While checking a constant initializer, only constants declared
         // before it are initialized (source-order semantics).
         if let (Some(active), Some(ord)) = (self.active_const, self.const_order.get(name)) {
@@ -1708,6 +1747,16 @@ impl Checker {
             if let Some(m) = scope.vars.get(name) {
                 return Some(*m);
             }
+        }
+        // A builtin function name is a *global callable*, not a binding: it is
+        // immutable and is never `mut`. This fallback must come **after** the
+        // lexical scopes, or a user binding that happens to share a builtin's
+        // name would be reported immutable no matter how it was declared
+        // (`let mut sum = 0` then `sum = 1` was `E2001`). The declaration
+        // itself is what the builtin-reservation rule governs — see
+        // `declare_inner` — not this lookup.
+        if crate::stdlib::builtin_names().contains(&name) {
+            return Some(false);
         }
         None
     }

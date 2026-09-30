@@ -485,24 +485,25 @@ fn direct_call_return_type_flows() {
     );
 }
 
-/// A user function whose name matches a builtin takes precedence, exactly as
-/// the runtime dispatches. Its own signature is checked; the builtin signature
-/// is not applied to it. This preserves the pre-feature resolution order.
+/// A user function must not use a builtin name (human law): `fn len` is
+/// `E1009` (`RESERVED_NAME`), not a shadowing user signature. This supersedes
+/// the pre-hardening shadowing behavior.
 #[test]
 fn user_fn_shadowing_a_builtin_name_uses_user_signature() {
-    // `fn len` wins over the builtin at runtime and in the checker.
+    // `fn len` is reserved and cannot be declared as a user function.
     assert_eq!(
-        out("fn len(x) { return 99 }\nfn main() { print(len(5)) }"),
-        "99\n"
+        fail("fn len(x) { return 99 }\nfn main() { print(len(5)) }"),
+        codes::RESERVED_NAME
     );
     assert_eq!(
-        out("fn len(a, b) { return a + b }\nfn main() { print(len(1, 2)) }"),
-        "3\n"
+        fail("fn len(a, b) { return a + b }\nfn main() { print(len(1, 2)) }"),
+        codes::RESERVED_NAME
     );
-    // Its annotated parameter is checked against the user function.
+    // Its annotated parameter is never reached: the declaration itself is
+    // rejected.
     assert_eq!(
         check("fn len(x: string) { return x }\nfn main() { len(5) }"),
-        Err(codes::TYPE_MISMATCH)
+        Err(codes::RESERVED_NAME)
     );
     // Without a user function, the builtin still applies.
     assert_eq!(out("fn main() { print(len([1, 2, 3])) }"), "3\n");
@@ -947,7 +948,7 @@ fn field_read_hoisting_and_recursion() {
         "5\n"
     );
     assert_eq!(
-        out("struct N { v: int }\nfn sum(n: N) -> int { return n.v }\nfn main() { print(sum(N { v: 3 })) }"),
+        out("struct N { v: int }\nfn total(n: N) -> int { return n.v }\nfn main() { print(total(N { v: 3 })) }"),
         "3\n"
     );
 }
