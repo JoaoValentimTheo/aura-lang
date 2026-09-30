@@ -17,6 +17,7 @@ HIGH / MEDIUM / LOW.
 | TD-10 | LOW | Pre-1.0 development runtime identities not uniformly documented in one place | Discoverability | Manifest is authoritative | Playground | — |
 | TD-11 | MEDIUM | CPython embedded via `auto-initialize`; no explicit init/shutdown policy | Threading/embedding semantics unclear | v1 scope | CPython | v1 |
 | TD-12 | LOW | No `docs/engineering` tree until now | Ops docs scattered | Created now | Program | closed |
+| TD-13 | MEDIUM | REPL submissions are O(N²) in session size | Each submission rebuilds the checker environment from all prior declarations (`Checker::with_declarations`), so a very long session (thousands of bindings) slows down; measured 16/49/175/661/2576/10162 ms for 100/200/400/800/1600/3200 submissions | Correctness is unaffected; incremental checking is a non-trivial refactor deferred past v1-core | Static Semantics / DX | v1.1 |
 
 ## Rules
 

@@ -232,6 +232,39 @@ fn module_graph_scales_subquadratically() {
     );
 }
 
+/// REPL submissions rebuild the checker environment from all prior session
+/// declarations each time (`Checker::with_declarations`), so N submissions is
+/// **O(N²)** by design (recorded as TD-13). This guard therefore asserts only
+/// that the cost is *no worse than quadratic*: a doubling ratio near 4 is
+/// expected, and a cubic regression (~8) fails. Making the REPL incremental is
+/// a tracked optimisation, not a correctness fix.
+#[cfg(feature = "repl")]
+#[test]
+fn repl_incremental_state_is_not_worse_than_quadratic() {
+    use aura::repl::SessionEngine;
+    let run = |n: usize| {
+        time_millis(|| {
+            let mut engine = SessionEngine::new();
+            let mut sink = Vec::new();
+            for i in 0..n {
+                let line = format!("let v{i} = {i}");
+                let _ = engine.feed_line(&line, &mut sink);
+            }
+        })
+    };
+    let base = 150;
+    let small = run(base);
+    let large = run(base * 2);
+    let ratio = if small <= 0.0 { 1.0 } else { large / small };
+    // Quadratic ≈ 4; allow headroom for constant-factor/cache effects, but a
+    // cubic path is ~8 and must fail.
+    assert!(
+        ratio < 6.0,
+        "repl(batches): doubling N scaled {ratio:.2}x ({small:.3}ms -> {large:.3}ms); \
+         expected no worse than quadratic (TD-13)"
+    );
+}
+
 /// Human-readable timing report. Run with:
 /// `cargo test --release --test bench -- --ignored --nocapture`.
 #[test]

@@ -50,6 +50,28 @@ recorded before/after and an explanation.
 | module graph, N children | sub-quadratic doubling ratio |
 | runtime list materialisation, N=2000→4000 | sub-quadratic doubling ratio |
 
+## Known characteristic: REPL is O(N²) in session size
+
+`SessionEngine` rebuilds the checker environment from all prior session
+declarations on every submission (`Checker::with_declarations` over the growing
+`decls`). N submissions therefore cost O(N²). Measured (release, single batch of
+`let v{i} = i` submissions):
+
+| submissions | ms |
+|--:|--:|
+| 100 | 16.1 |
+| 200 | 48.8 |
+| 400 | 174.7 |
+| 800 | 661.5 |
+| 1600 | 2575.6 |
+| 3200 | 10162.4 |
+
+A doubling ratio of ~4 confirms quadratic. This is a **performance
+characteristic, not a correctness defect**: sessions of ordinary length are
+unaffected. Tracked as TD-13; the guard
+`repl_incremental_state_is_not_worse_than_quadratic` fails only on a *cubic*
+regression. Incremental checking is a deferred optimisation.
+
 ## Regression protection
 
 - `tests/bench.rs` shape guards run in the default CI test job.
