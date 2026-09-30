@@ -1317,7 +1317,8 @@ installSearch();
 // It exists so a test or an embedder can declare a multi-file module layout
 // without inventing a UI that pretends a file name is a module name.
 window.__setChildren = (children) => setActiveChildren(children);
-if (els.outputTab) els.outputTab.addEventListener("click", () => showTab("output"));if (els.problemsTab) els.problemsTab.addEventListener("click", () => showTab("problems"));
+if (els.outputTab) els.outputTab.addEventListener("click", () => showTab("output"));
+if (els.problemsTab) els.problemsTab.addEventListener("click", () => showTab("problems"));
 showTab("output");
 
 // The initial program is the default one; a handoff from a host site's
