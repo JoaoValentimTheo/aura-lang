@@ -16,9 +16,14 @@ CURRENT RELEASE TRAIN:   T1 (patch) closing; T2 (CPython) started
 ## Active work
 
 - T0 organization bootstrap (docs) — done.
-- T1-1 bridge diagnostic-provenance fix — done; T1 CI green at c12b39f.
-- T2-1 CPython interop matrix + version policy — interop tests + CI matrix added.
-- T4 performance baseline — done (`tests/bench.rs`, `docs/engineering/PERFORMANCE.md`).
+- T1 patch train: bridge provenance fix + interop matrix — CI green.
+- T2 CPython train: compatibility target, interop matrix, multi-version CI — done.
+- T3 security train: threat model, trust boundaries, WASM import policy,
+  action SHA-pinning + least-privilege CI (TD-01 closed) — done.
+- T4 performance train: shape guards + baseline (`docs/engineering/PERFORMANCE.md`) — done.
+- T5 compat: `tests/compat.rs` pins the released 0.2.0 surface — done.
+- T5 packaging/release docs: RELEASE_ENGINEERING.md, CHANGELOG.md, README security note — done.
+- **BLOCKED (human):** tagging a patch release pending HD-4 (release vs language version).
 
 ## Agent ownership (logical)
 
@@ -79,9 +84,9 @@ No known CRITICAL/HIGH. R-08 (perf regression detection) and R-12/R-13
 
 ## Next tasks
 
-1. Commit T0 scaffolding; push; verify CI.
-2. Write the CPython interop matrix test (`tests/interop_matrix.rs`).
-3. Add a committed benchmark suite + baseline (T4).
-4. Independent review of the bridge fix; red-team pass on the bridge.
-5. WASM import policy + action pinning (security train).
-6. Compatibility fixtures + install/artifact docs (packaging train).
+1. Commit/close T2/T3/T5 docs; push; verify CI.
+2. Human decision on HD-4 (unblocks the first gated patch release `0.2.1`).
+3. Write the install/quickstart + artifact-matrix end-user docs (packaging GREEN).
+4. Independent review + release audit of the train (release author ≠ approver).
+5. Broaden performance workloads (REPL, WASM startup, module graph large-N).
+6. Compat upgrade matrix across released artifacts.
