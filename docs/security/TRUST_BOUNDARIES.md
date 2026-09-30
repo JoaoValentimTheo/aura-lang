@@ -30,7 +30,7 @@ side, and whether that authority is intentional.
   - network access, environment variables, subprocess spawning;
   - reading process state and the current working directory.
 - **Intentional:** yes, and explicitly documented. Aura provides **no Python
-  sandbox and no capability restriction**. Red-team evidence: 
+  sandbox and no capability restriction**. Red-team evidence:
   `py_eval("__import__('os').getcwd()")` returns the host CWD; `py_import("os")`
   enumerates `os`.
 - **Consequence:** a deployment that must not allow arbitrary code execution
