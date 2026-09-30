@@ -14,6 +14,12 @@ on:
 permissions:
   contents: write
 
+# Never allow two releases (e.g. a tag push racing a manual dispatch) to run
+# concurrently; serialize them per ref.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   # ------------------------------------------------------------- validate
   # The release gate. Mirrors the CI contract before anything is built or
@@ -41,6 +47,37 @@ jobs:
         run: cargo test --locked --all-targets --all-features
       - name: test (pure Rust, no Python)
         run: cargo test --locked --no-default-features --features cli,repl,json,regex,time
+      - name: Version and metadata consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+          crate_version=$(grep -m1 '^version = ' Cargo.toml | sed -E 's/^version = "(.*)"/\1/')
+          lang_version=$(grep -oE 'LANGUAGE_VERSION: &str = "[^"]+"' src/lib.rs | sed -E 's/.*"(.*)"/\1/')
+          echo "release=$crate_version language=$lang_version"
+          # ADR-0001: the language version must not be ahead of the release.
+          if [ "$crate_version" != "$lang_version" ]; then
+            # Equal is the common case; if they differ, language must be the
+            # lower of the two under the same major.minor line. Compare with a
+            # tiny sort check rather than a custom comparator.
+            lowest=$(printf '%s\n%s\n' "$crate_version" "$lang_version" | sort -V | head -n1)
+            if [ "$lowest" != "$lang_version" ]; then
+              echo "LANGUAGE_VERSION ($lang_version) is ahead of release version ($crate_version)" >&2
+              exit 1
+            fi
+          fi
+          # A tagged release must have its versioned runtime directory present;
+          # fail here (early) rather than in publish after a full build.
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            tag_version="${GITHUB_REF_NAME#v}"
+            if [ "$tag_version" != "$crate_version" ]; then
+              echo "tag v$tag_version does not match Cargo.toml version $crate_version" >&2
+              exit 1
+            fi
+            if [ ! -f "playground/runtimes/${tag_version}/aura_playground_runtime.wasm" ]; then
+              echo "missing playground/runtimes/${tag_version}/aura_playground_runtime.wasm for tag v${tag_version}" >&2
+              exit 1
+            fi
+          fi
 
   # ---------------------------------------------------------------- build
   build:

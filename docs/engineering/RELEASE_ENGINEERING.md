@@ -11,10 +11,12 @@ Semantic Versioning, adjusted for Aura's pre-v1 history:
 - `MAJOR.MINOR.PATCH`, pre-release suffixes `-alpha.N`, `-beta.N`, `-rc.N`.
 - The **release version** (`Cargo.toml`), the **language version**
   (`aura::LANGUAGE_VERSION`), and the **runtime artifact version** are distinct
-  identities and must not be conflated. `0.2.0` happens to coincide across
-  release and language; this is not guaranteed.
+  identities and must not be conflated (ADR-0001). The invariant is
+  `LANGUAGE_VERSION <= RELEASE_VERSION`; they are equal when a release *is* a
+  language release, and the release may advance alone for runtime/tooling-only
+  work.
 - Version integrity is CI-checked: `Cargo.toml` == `Cargo.lock` ==
-  `aura::VERSION`.
+  `aura::VERSION`, and `LANGUAGE_VERSION <= VERSION`.
 
 ## Immutability (non-negotiable)
 
@@ -23,8 +25,8 @@ Semantic Versioning, adjusted for Aura's pre-v1 history:
 - Never force-move a release ref; never `overwrite_files` on a release.
 - Frozen runtimes `0.0.2` and `0.2.0` are immutable forever.
 - Every published development runtime identity (`0.2.0-dev.1`, `0.2.0-dev.2`,
-  …) is immutable; a semantic change requires a **new** identity, never an
-  overwrite.
+  `0.2.1-dev.1`, `0.2.1-dev.2`, …) is immutable; a semantic change requires a
+  **new** identity, never an overwrite.
 
 ## Version selection
 

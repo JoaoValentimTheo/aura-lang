@@ -182,24 +182,55 @@ fn r10_defined_errors_documented() {
     assert_eq!(sorted.len(), all.len());
 }
 
-/// The current release identity is `0.2.0`, derived from the package version
-/// (not a hardcoded duplicate). This keeps the crate version, the exported
-/// `aura::VERSION`, and `aura version` in agreement. `0.0.1` and `0.0.2`
-/// remain historical releases, not the current one.
+/// The release identity is derived from the package version (not a hardcoded
+/// duplicate), so the crate version, the exported `aura::VERSION`, and
+/// `aura version` always agree. The exact value is not pinned here; it is only
+/// required to be valid semver. Historical releases (`0.0.1`, `0.0.2`,
+/// `0.2.0`) are immutable artifacts of the past, not the current release.
 #[test]
-fn release_version_is_zero_two_zero() {
-    assert_eq!(aura::VERSION, "0.2.0");
+fn release_version_is_valid_semver_and_derived() {
     assert_eq!(aura::VERSION, env!("CARGO_PKG_VERSION"));
+    assert!(
+        parse_semver(aura::VERSION).is_some(),
+        "release version is not valid semver: {}",
+        aura::VERSION
+    );
 }
 
-/// The language semantics version tracks the current public language contract.
-/// `0.2.0` is a language release (Core completion), so the two identities
-/// coincide here. They remain separate constants so a future runtime-only
-/// release can advance the release version without silently advancing the
-/// language (see `src/lib.rs`), and both are asserted so the identities can
-/// never be conflated accidentally.
+/// The language semantics version tracks the current public language contract
+/// and must be valid semver. It is independent of the release version.
+///
+/// Invariant (ADR-0001): `LANGUAGE_VERSION <= RELEASE_VERSION`. A release may
+/// advance without a language change; a language change never ships ahead of
+/// the release that carries it. They are equal when the release *is* a language
+/// release.
 #[test]
-fn language_version_matches_the_current_language_contract() {
-    assert_eq!(aura::LANGUAGE_VERSION, "0.2.0");
-    assert_eq!(aura::LANGUAGE_VERSION, aura::VERSION);
+fn language_version_is_valid_semver_and_not_ahead_of_release() {
+    let lang = parse_semver(aura::LANGUAGE_VERSION).unwrap_or_else(|| {
+        panic!(
+            "language version is not valid semver: {}",
+            aura::LANGUAGE_VERSION
+        )
+    });
+    let rel = parse_semver(aura::VERSION).expect("release version checked above");
+    assert!(
+        lang <= rel,
+        "LANGUAGE_VERSION ({}) must not exceed RELEASE_VERSION ({})",
+        aura::LANGUAGE_VERSION,
+        aura::VERSION
+    );
+}
+
+/// Parse a `MAJOR.MINOR.PATCH` (optionally with a pre-release suffix ignored
+/// for ordering here) into a comparable tuple. Returns `None` if not semver.
+fn parse_semver(v: &str) -> Option<(u64, u64, u64)> {
+    let core = v.split(['-', '+']).next()?;
+    let mut parts = core.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((major, minor, patch))
 }
