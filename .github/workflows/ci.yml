@@ -78,6 +78,46 @@ jobs:
         if: runner.os == 'ubuntu-latest'
         run: cargo test --locked --all-features --test corpus
 
+  # ---------------------------------------------------------- cpython interop
+  # The `py` feature is a distinct trust boundary with its own supported
+  # CPython version policy (docs/CPYTHON_COMPATIBILITY_TARGET.md). Prove the
+  # interop matrix against several CPython minor lines on Linux, and one macOS
+  # line. (Windows links CPython through PyO3 but setup-python's Windows
+  # interpreters are not reliably linkable by the MSVC toolchain without an
+  # explicit lib path; the pure-Rust build is exercised there instead.)
+  cpython-interop:
+    name: cpython interop (${{ matrix.python }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: "3.10"
+          - os: ubuntu-latest
+            python: "3.11"
+          - os: ubuntu-latest
+            python: "3.12"
+          - os: ubuntu-latest
+            python: "3.13"
+          - os: macos-latest
+            python: "3.12"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.98.1
+      - uses: Swatinem/rust-cache@v2
+      - name: Install CPython ${{ matrix.python }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Point PyO3 at the selected interpreter
+        shell: bash
+        run: echo "PYO3_PYTHON=$(python -c 'import sys; print(sys.executable)')" >> "$GITHUB_ENV"
+      - name: Interop matrix
+        run: cargo test --locked --features py --test interop_matrix
+      - name: Python bridge suites
+        run: cargo test --locked --features py --test python
+
   # -------------------------------------------------------------- no-python
   no-python:
     name: pure Rust binary links no CPython
