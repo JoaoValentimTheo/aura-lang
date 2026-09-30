@@ -5,8 +5,8 @@ Operational state for the Aura Completion Program. Not language law.
 ## Heads
 
 - PROGRAM BASE: `f416201`
-- LOCAL HEAD: `7a951bb` + pending (HD-1 docs)
-- REMOTE HEAD (origin/rewrite/v3-rust): `7a951bb`
+- LOCAL HEAD: `0ffa49e` + final report/checkpoint
+- REMOTE HEAD (origin/rewrite/v3-rust): `0ffa49e`
 
 ## Push checkpoints
 
@@ -79,7 +79,7 @@ Operational state for the Aura Completion Program. Not language law.
 
 ## Next action
 
-- Commit HD-1 package + this checkpoint; verify M5/M8 CI.
-- Continue: M2 parser/type/call closure probes already broadly clean; expand
-  adversarial/property coverage; M6 determinism/perf; M9 examples/docs; M11
-  CI/platform review; M12 global break-the-language pass.
+- Program state: AURA CORE COMPLETE — READY FOR FINAL RELEASE REVIEW.
+- Committed `AURA_COMPLETION_REPORT.md` and this checkpoint.
+- Remaining human items: HD-1 decision; release/version decision (out of scope).
+- Optional: independent final adversarial review against `0ffa49e`.
