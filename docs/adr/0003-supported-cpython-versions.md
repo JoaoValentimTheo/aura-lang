@@ -46,8 +46,11 @@ interop matrix on it.**
 
 - `docs/CPYTHON_COMPATIBILITY_TARGET.md` is updated to state these tiers
   verbatim; its evidence plan matches the actual matrix.
-- Follow-up (tracked, not blocking): add an **optional** Windows × 3.12
-  `continue-on-error` interop leg with explicit `LIB`/`PATH` wiring to measure
-  feasibility; promote it to TESTED only once reliably green. If it succeeds,
-  amend this ADR to include Windows.
+- Follow-up (tracked, not blocking): the optional Windows × 3.12
+  `continue-on-error` interop leg is implemented as the
+  `cpython-interop-windows-probe` job in `.github/workflows/ci.yml`: it installs
+  CPython 3.12 via `setup-python` and wires `PYO3_PYTHON` plus the interpreter's
+  `libs`/`Include` directories into the MSVC environment. It measures
+  feasibility without gating the build; it is promoted to TESTED (and this ADR
+  amended to claim Windows) only once it is reliably green.
 - Expanding macOS to additional versions is low-value; left as best-effort.

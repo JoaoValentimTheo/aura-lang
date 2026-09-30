@@ -122,6 +122,39 @@ jobs:
       - name: Python bridge suites
         run: cargo test --locked --features py --test python
 
+  # --------------------------------------------- cpython interop (Windows, probe)
+  # ADR-0003 tracks Windows `py` support as *not claimed* until a CI leg
+  # measures feasibility. This job is the measurement: it installs CPython and
+  # wires `PYO3_PYTHON` plus the interpreter's `libs`/`include` directories into
+  # the MSVC link environment, which `setup-python`'s Windows interpreters do
+  # not do by default. It is intentionally `continue-on-error` and has no macOS
+  # sibling: a failure here is evidence, not a release blocker, until it turns
+  # reliably green and ADR-0003 is amended to promote Windows to TESTED.
+  cpython-interop-windows-probe:
+    name: cpython interop (windows feasibility probe)
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@1.98.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - name: Install CPython 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Wire PyO3 to the MSVC link environment
+        shell: pwsh
+        run: |
+          $py = python -c "import sys; print(sys.executable)"
+          $prefix = Split-Path $py
+          "PYO3_PYTHON=$py" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "LIB=$prefix\libs;$env:LIB" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "INCLUDE=$prefix\Include;$env:INCLUDE" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Interop matrix
+        run: cargo test --locked --features py --test interop_matrix
+      - name: Python bridge suites
+        run: cargo test --locked --features py --test python
+
   # -------------------------------------------------------------- no-python
   no-python:
     name: pure Rust binary links no CPython
