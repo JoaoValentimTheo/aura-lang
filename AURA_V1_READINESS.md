@@ -24,7 +24,7 @@ never by schedule. Status legend: **GREEN** (ready), **YELLOW** (gaps remain),
 | PLATFORM — MACOS | GREEN | CI green |
 | PLATFORM — WINDOWS | GREEN | CI green |
 | DOCS | YELLOW | language/stdlib docs current; security/CPython/ops docs now present; CHANGELOG created; install/quickstart and migration still thin |
-| PACKAGING | YELLOW | release workflow builds 3 targets + wasm; install guide thin; artifact matrix documented in RELEASE_ENGINEERING.md; no end-user install test yet |
+| PACKAGING | YELLOW | release workflow builds 3 targets + wasm with checksums and a built-binary smoke before release; install guide (`docs/INSTALL.md`, website) present; end-user installed-binary smoke now automated (`scripts/artifact-smoke.sh`, run in CI and the release gate); artifact matrix documented in RELEASE_ENGINEERING.md |
 | CI | GREEN | comprehensive matrix; all green; now includes a CPython interop version/platform job |
 | RELEASE ENGINEERING | YELLOW | gated release workflow + policy doc + CHANGELOG; version scheme decided (ADR-0001: release ≠ language, `LANG <= RELEASE`); pre-release metadata consistency gate added to the release workflow; no SBOM/provenance |
 | SUPPLY CHAIN | YELLOW | cargo audit in CI; actions not SHA-pinned; no SBOM |

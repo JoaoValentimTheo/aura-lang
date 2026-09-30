@@ -47,6 +47,8 @@ jobs:
         run: cargo test --locked --all-targets --all-features
       - name: test (pure Rust, no Python)
         run: cargo test --locked --no-default-features --features cli,repl,json,regex,time
+      - name: end-user artifact smoke (installed binary)
+        run: scripts/artifact-smoke.sh --release
       - name: Version and metadata consistency
         shell: bash
         run: |

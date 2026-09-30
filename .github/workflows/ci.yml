@@ -170,11 +170,11 @@ jobs:
             echo "pyo3 must not be linked without the py feature" >&2
             exit 1
           fi
-      - name: Smoke test (version + run)
-        run: |
-          ./target/release/aura version | grep -qx "aura $(grep -m1 '^version = ' Cargo.toml | sed -E 's/^version = \"(.*)\"/\1/')"
-          echo 'fn main() { print("ok") }' > /tmp/smoke.aura
-          ./target/release/aura run /tmp/smoke.aura | grep -qx ok
+      - name: End-user artifact smoke (installed binary)
+        # Exercises the shipped executable end to end: version, run/check/eval,
+        # stdin, modules, collections, JSON, error exit codes, the REPL, and the
+        # pure-Rust `py_*` E5002 contract.
+        run: scripts/artifact-smoke.sh --release
 
   # ------------------------------------------------------------------ MSRV
   # The declared `rust-version` must hold for the feature set that is actually

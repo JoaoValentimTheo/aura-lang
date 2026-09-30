@@ -40,7 +40,8 @@ Semantic Versioning, adjusted for Aura's pre-v1 history:
 ## Release gate (all required)
 
 1. Local gate green (fmt, all-features, no-default, clippy `-D warnings`, MSRV,
-   Miri, runtime crate, playground, website, build `--check`).
+   Miri, runtime crate, playground, website, build `--check`, and
+   `scripts/artifact-smoke.sh --release` — the end-user installed-binary smoke).
 2. Remote CI green on the release commit.
 3. Independent review green (release author ≠ sole approver).
 4. Security review green where the release touches a trust boundary.
@@ -48,7 +49,10 @@ Semantic Versioning, adjusted for Aura's pre-v1 history:
    frozen history, no secrets, expected binaries, dependency audit.
 6. Artifact hashes verified.
 7. Docs + CHANGELOG ready.
-8. Post-build smoke green (built executable runs `version` and a program).
+8. Post-build smoke green: `scripts/artifact-smoke.sh --release` exercises the
+   built executable end to end (version, run/check/eval, stdin, modules,
+   collections, JSON, error exit codes, REPL, and the pure-Rust `py_*` E5002
+   contract).
 
 ## Artifact matrix
 
