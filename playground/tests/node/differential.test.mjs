@@ -596,7 +596,7 @@ const cases = [
   ],
   [
     'generic map alias',
-    'type Map<K, V> = {K: V}\nfn main() {\n let values: Map<int, float> = {1: 1.2, 2: 3.3}\n print(values[2])\n}',
+    'type Map<K, V> = {K: V}\nfn main() {\n let vals: Map<int, float> = {1: 1.2, 2: 3.3}\n print(vals[2])\n}',
   ],
   [
     'generic map function',

@@ -3009,7 +3009,7 @@ scope. Value and type namespaces are separate, so a session may hold `fn S` and
 | E1004 | unterminated string |
 | E1005 | unterminated multiline comment |
 | E1006 | expected token |
-| E1009 | reserved word used as a name |
+| E1009 | reserved word or builtin name used as a value-namespace name |
 | E1015 | nesting limit exceeded |
 | E2001 | assignment to an immutable binding |
 | E2003 | undefined name/function/field/key |
