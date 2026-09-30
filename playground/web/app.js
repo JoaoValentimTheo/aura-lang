@@ -2,19 +2,25 @@
 //
 // This file contains no Aura semantics. It:
 //   * applies a host site's selected-example handoff once, then leaves the
-//     editor as the single authoritative source of execution;
+//     project's files as the single authoritative source of execution;
+//   * holds the multi-file *project state* (files, active file, entry file) and
+//     translates it into the runtime's virtual-project transport. It resolves
+//     nothing: Aura module names, visibility, and canonical names come only
+//     from the source text and are the resolver's business;
 //   * resolves the versioned runtime manifest and lets the user pick a version;
 //   * spawns a fresh Worker per run so execution is isolated from the UI thread;
 //   * terminates the Worker on Stop or completion (hard cancellation);
 //   * ignores stale messages by execution generation id;
 //   * renders the structured ExecutionResult as a developer-facing Output /
-//     Problems view.
+//     Problems view, attributing each diagnostic to the source that produced
+//     it when the runtime reports one.
 //
 // The version selector is real: the chosen entry's immutable artifact URL is
 // what the Worker fetches and executes.
 
 import { highlight } from "./highlight.js";
 import { candidates } from "./completion.js";
+import { Project, DEFAULT_SOURCE_NAME } from "./project.js";
 
 const els = {
   version: document.getElementById("version"),
@@ -37,6 +43,13 @@ const els = {
   problemsPanel: document.getElementById("panel-problems"),
   examples: document.getElementById("examples"),
   editor: document.getElementById("editor"),
+  fileTabs: document.getElementById("file-tabs"),
+  fileAdd: document.getElementById("file-add"),
+  fileRename: document.getElementById("file-rename"),
+  fileEntry: document.getElementById("file-entry"),
+  fileDelete: document.getElementById("file-delete"),
+  projectReset: document.getElementById("project-reset"),
+  projectNote: document.getElementById("project-note"),
   completion: document.getElementById("completion"),
   searchBar: document.getElementById("search"),
   searchToggle: document.getElementById("search-toggle"),
@@ -48,18 +61,13 @@ const els = {
   searchClose: document.getElementById("search-close"),
 };
 
-const DEFAULT_SOURCE = `fn main() {
-    print("hello, Aura")
-
-    let xs = [1, 2, 3, 4, 5]
-    let evens = xs.filter((x) -> x % 2 == 0)
-    print(evens.map((x) -> x * x))
-}
-`;
-
 // Small, valid examples that teach one idea each. They are shown in the
-// Explorer; selecting one replaces the current buffer (there is a single source
-// buffer — the Playground does not pretend to have a filesystem).
+// Explorer; selecting one replaces the whole project.
+//
+// An example is either single-source (`source`) or multi-file (`files`). A
+// multi-file example names the file that is the entry point; its Aura module
+// structure still comes entirely from the source text, never from the file
+// names.
 const EXAMPLES = [
   {
     id: "hello",
@@ -115,27 +123,49 @@ fn main() {
 `,
   },
   {
-    id: "composition",
-    title: "composition.aura",
-    source: `struct Engine { power: int }
-
-impl Engine {
-    fn describe(self) { return f"{self.power}hp" }
-}
-
-struct Car { engine: Engine, name: string }
-
-impl Car {
-    fn describe(self) {
-        return self.name + " (" + self.engine.describe() + ")"
-    }
-}
-
-fn main() {
-    let car = Car { engine: Engine { power: 120 }, name: "Aura GT" }
-    print(car.describe())
+    id: "modules",
+    title: "modules (3 files)",
+    entry: "main.aura",
+    files: [
+      {
+        name: "main.aura",
+        text: `fn main() {
+    let cart = ["apple", "pear", "plum"]
+    print(pricing::describe(cart))
+    print(f"total: {pricing::total(cart)}")
 }
 `,
+        children: [{ name: "pricing", to: "pricing.aura" }],
+      },
+      {
+        name: "pricing.aura",
+        text: `use catalog
+
+pub fn total(items: [string]) -> int {
+    let mut running = 0
+    for i in range(0, items.len()) {
+        running = running + catalog::price(items[i])
+    }
+    return running
+}
+
+pub fn describe(items: [string]) -> string {
+    return f"{items.len()} item(s) at {total(items)} cents"
+}
+`,
+        children: [{ name: "catalog", to: "catalog.aura" }],
+      },
+      {
+        name: "catalog.aura",
+        text: `pub fn price(item: string) -> int {
+    if item == "apple" { return 120 }
+    if item == "pear" { return 90 }
+    return 45
+}
+`,
+        children: [],
+      },
+    ],
   },
 ];
 
@@ -158,6 +188,14 @@ const HANDOFF_PARAMS = ["source", "args", "stdin"];
 let manifest = null;
 let currentRun = null;
 let generation = 0;
+
+// The Playground's project state. The model owns files, keys, and the active/
+// entry selection; this file owns the DOM binding around it.
+const project = Project.default();
+
+// The most recent structured result, so a diagnostic click can resolve the
+// source it came from even after the files have been edited.
+let lastResult = null;
 
 function parseArgsParam(raw) {
   if (raw == null || raw === "") return [];
@@ -236,7 +274,17 @@ function takeHandoff() {
 function applyHandoff() {
   const handoff = takeHandoff();
   if (!handoff) return;
-  if (handoff.source != null) els.source.value = handoff.source;
+  // A handoff carries a single program, so it replaces the whole project with
+  // the canonical one-file project. The historical behavior — the payload
+  // becomes the editor's program, once — is unchanged.
+  if (handoff.source != null) {
+    project.reset();
+    project.setText(project.activeKey, handoff.source);
+    // The editor is the active file's editing surface, so it must show the
+    // replaced project before anything reads or executes it.
+    loadActiveIntoEditor();
+    renderFileTabs();
+  }
   els.args.value = handoff.args.join("\n");
   els.stdin.value = handoff.stdin;
 }
@@ -246,12 +294,230 @@ function setStatus(text, kind) {
   els.status.className = `status${kind ? ` ${kind}` : ""}`;
 }
 
+// ------------------------------------------------------------- project state
+//
+// The UI side of the project: a compact file-tab strip plus the file actions.
+// Every mutation goes through the model (`web/project.js`), which keeps the
+// active and entry keys valid and the display names unique. Nothing here
+// decides anything about Aura: a filename is UI identity only.
+
+/** Human-readable label for a file tab, marking the entry file. */
+function fileTabLabel(source) {
+  return source.key === project.entryKey ? `${source.name} ★` : source.name;
+}
+
+function renderFileTabs() {
+  if (!els.fileTabs) return;
+  els.fileTabs.replaceChildren();
+  for (const source of project.sources) {
+    const tab = document.createElement("button");
+    tab.type = "button";
+    tab.className = "tab file-tab";
+    tab.setAttribute("role", "tab");
+    tab.dataset.key = source.key;
+    const isActive = source.key === project.activeKey;
+    const isEntry = source.key === project.entryKey;
+    tab.setAttribute("aria-selected", String(isActive));
+    tab.tabIndex = isActive ? 0 : -1;
+    tab.title = isEntry
+      ? `${source.name} — the entry point`
+      : source.name;
+    const label = document.createElement("span");
+    label.className = "file-tab__name";
+    label.textContent = source.name;
+    tab.append(label);
+    if (isEntry) {
+      const mark = document.createElement("span");
+      mark.className = "file-tab__entry";
+      mark.textContent = "★";
+      mark.setAttribute("aria-hidden", "true");
+      tab.append(mark);
+      tab.setAttribute("aria-label", `${source.name} (entry point)`);
+    }
+    tab.addEventListener("click", () => selectFile(source.key));
+    els.fileTabs.append(tab);
+  }
+  if (els.fileDelete) {
+    els.fileDelete.disabled = project.size <= 1;
+  }
+  if (els.fileEntry) {
+    els.fileEntry.disabled = project.activeKey === project.entryKey;
+  }
+  if (els.projectReset) {
+    els.projectReset.disabled = false;
+  }
+}
+
+/** A short, non-fatal message about project capability or a refused action. */
+function setProjectNote(text) {
+  if (!els.projectNote) return;
+  if (!text) {
+    els.projectNote.hidden = true;
+    els.projectNote.textContent = "";
+    return;
+  }
+  els.projectNote.hidden = false;
+  els.projectNote.textContent = text;
+}
+
+/** Store the editor's current text into the model before leaving a file. */
+function commitEditor() {
+  project.setText(project.activeKey, els.source.value);
+}
+
+/**
+ * Declare the *active* file's provider child links.
+ *
+ * A link is `{ name, to }`: `name` is the Aura logical module name the parent
+ * refers to, and `to` is the display name of the file that provides it. The UI
+ * does not interpret either one — ownership, collisions, and ordering belong to
+ * the runtime's graph builder — and it never derives a module name from a file
+ * name.
+ *
+ * This is the project-state entry point for a module layout. Interactive link
+ * editing is deliberately deferred (FSM-P6 Q3: no module-tree UI); a project
+ * loaded from an example declares its links directly.
+ *
+ * @returns {boolean} whether the declaration was accepted
+ */
+function setActiveChildren(children) {
+  commitEditor();
+  const active = project.active();
+  if (!active) return false;
+  const list = Array.isArray(children) ? children.map((c) => ({ ...c })) : [];
+  // A child link belongs to the *provider source* that declares it. If the
+  // project's storage replaced its source records (a load or a reset), the
+  // in-memory record must be updated too, or the declaration would be silently
+  // discarded when the request is built.
+  active.children = list;
+  const stored = project.get(active.key);
+  if (stored) stored.children = list.map((c) => ({ ...c }));
+  renderFileTabs();
+  return true;
+}
+
+/** Load a file into the editor, preserving nothing but the text itself. */
+function loadActiveIntoEditor() {
+  els.source.value = project.active().text;
+  closeCompletion();
+  refreshEditor();
+}
+
+/** Select a file: commit the current edits first, then swap the buffer. */
+function selectFile(key) {
+  if (key === project.activeKey) return;
+  commitEditor();
+  const r = project.selectSource(key);
+  if (!r.ok) return;
+  loadActiveIntoEditor();
+  renderFileTabs();
+  setProjectNote("");
+}
+
+function addFile() {
+  commitEditor();
+  const r = project.createSource();
+  if (!r.ok) {
+    setProjectNote(r.error);
+    return;
+  }
+  loadActiveIntoEditor();
+  renderFileTabs();
+  setProjectNote("");
+  els.source.focus();
+}
+
+function renameFile() {
+  commitEditor();
+  const current = project.active();
+  const next = window.prompt("Rename file", current.name);
+  if (next === null) return;
+  const r = project.renameSource(current.key, next);
+  if (!r.ok) {
+    setProjectNote(r.error);
+    return;
+  }
+  renderFileTabs();
+  setProjectNote(
+    project.size > 1
+      ? "A file name is display identity only: Aura module names still come from the source text."
+      : "",
+  );
+}
+
+function setEntryFile() {
+  commitEditor();
+  const r = project.setEntry(project.activeKey);
+  if (!r.ok) {
+    setProjectNote(r.error);
+    return;
+  }
+  renderFileTabs();
+  setProjectNote(`"${project.active().name}" is now the entry point.`);
+}
+
+function deleteFile() {
+  commitEditor();
+  const current = project.active();
+  const r = project.deleteSource(current.key);
+  if (!r.ok) {
+    setProjectNote(r.error);
+    return;
+  }
+  loadActiveIntoEditor();
+  renderFileTabs();
+  setProjectNote("");
+}
+
+function resetProject() {
+  project.reset();
+  els.args.value = "";
+  els.stdin.value = "";
+  loadActiveIntoEditor();
+  renderFileTabs();
+  setProjectNote("");
+}
+
+/** Replace the whole project with an example, single- or multi-file. */
+function loadExample(example) {
+  if (Array.isArray(example.files)) {
+    project.loadFiles(example.files);
+    if (example.entry) {
+      const entry = project.sources.find((s) => s.name === example.entry);
+      if (entry) project.setEntry(entry.key);
+    }
+  } else {
+    project.reset();
+    project.setText(project.activeKey, example.source);
+    project.renameSource(project.activeKey, example.title || DEFAULT_SOURCE_NAME);
+  }
+  els.args.value = "";
+  els.stdin.value = "";
+  loadActiveIntoEditor();
+  renderFileTabs();
+  setProjectNote(
+    project.size > 1
+      ? `${project.size} files loaded. Run executes the whole project through the runtime's virtual-project path.`
+      : "",
+  );
+}
+
+function installProjectControls() {
+  if (els.fileAdd) els.fileAdd.addEventListener("click", addFile);
+  if (els.fileRename) els.fileRename.addEventListener("click", renameFile);
+  if (els.fileEntry) els.fileEntry.addEventListener("click", setEntryFile);
+  if (els.fileDelete) els.fileDelete.addEventListener("click", deleteFile);
+  if (els.projectReset) els.projectReset.addEventListener("click", resetProject);
+}
+
 // ------------------------------------------------------------------ editor
 //
 // The editor is a transparent <textarea> layered over a highlighted <pre>.
-// The textarea remains the single source of truth (selection, undo/redo,
-// clipboard, and accessibility all behave normally); the layers below only
-// paint colour, line numbers, and the current-line band, and are aria-hidden.
+// The textarea is the editing surface for the *active* file: it stays the
+// single source of truth for selection, undo/redo, clipboard, and
+// accessibility, and the project model holds the text of every file. The
+// layers below only paint colour, line numbers, and the current-line band, and
+// are aria-hidden.
 
 let sourceDirty = true;
 
@@ -311,6 +577,27 @@ function focusLine(line) {
   els.source.scrollTop = Math.max(0, (line - 3) * lineHeight);
   paintCurrentLine();
   syncEditorScroll();
+}
+
+/**
+ * Focus a diagnostic: activate the source it came from, then move to its line.
+ *
+ * A project diagnostic carries the runtime's `source` display name; a
+ * single-source diagnostic does not, and belongs to the active file. This
+ * activates a file and moves the caret — it never reinterprets a code, a
+ * message, or a location.
+ */
+function focusDiagnostic(diagnostic) {
+  if (diagnostic && typeof diagnostic.source === "string") {
+    const owner = project.sources.find((s) => s.name === diagnostic.source);
+    if (owner && owner.key !== project.activeKey) {
+      commitEditor();
+      project.selectSource(owner.key);
+      loadActiveIntoEditor();
+      renderFileTabs();
+    }
+  }
+  focusLine(diagnostic && diagnostic.line);
 }
 
 function indentSelection(outdent) {
@@ -688,12 +975,11 @@ function mountExamples() {
     btn.textContent = ex.title;
     btn.dataset.example = ex.id;
     btn.addEventListener("click", () => {
-      els.source.value = ex.source;
       for (const other of els.examples.querySelectorAll(".explorer__item")) {
         other.removeAttribute("aria-current");
       }
       btn.setAttribute("aria-current", "true");
-      refreshEditor();
+      loadExample(ex);
       els.source.focus();
     });
     li.append(btn);
@@ -773,7 +1059,16 @@ function renderDiagnostics(diagnostics) {
     loc.className = "diag-loc";
     loc.textContent = `${d.line}:${d.column}`;
     head.append(code, loc, phase);
-    head.addEventListener("click", () => focusLine(d.line));
+    // The runtime attributes a project diagnostic to the source that produced
+    // it. Show that name, and let a click activate that file before moving to
+    // the line. The code, message, line, and column are never reinterpreted.
+    if (typeof d.source === "string" && d.source.length > 0) {
+      const owner = document.createElement("span");
+      owner.className = "diag-source";
+      owner.textContent = d.source;
+      head.append(owner);
+    }
+    head.addEventListener("click", () => focusDiagnostic(d));
     const msg = document.createElement("div");
     msg.className = "problem__msg";
     msg.textContent = d.message;
@@ -853,6 +1148,9 @@ function stopCurrent(reason) {
 function run() {
   const entry = selectedVersion();
   if (!entry || !entry.available) return;
+  // The editor is the editing surface for the active file, so commit it before
+  // building the request. Run always executes exactly what is on screen.
+  commitEditor();
   // Cancel any previous execution before starting a new one.
   if (currentRun && currentRun.worker) {
     currentRun.worker.terminate();
@@ -861,6 +1159,7 @@ function run() {
   const runId = generation;
   clearOutput();
   showNote("");
+  setProjectNote("");
   setStatus("running…");
   els.run.disabled = true;
   els.stop.disabled = false;
@@ -872,6 +1171,25 @@ function run() {
   const args = els.args.value.split("\n").filter((l) => l.length > 0);
   const stdinRaw = els.stdin.value;
   const stdin = stdinRaw.length > 0 ? stdinRaw : null;
+
+  // A single-file project keeps the historical single-source transport
+  // byte-for-byte (the runtime applies its eval fallback to exactly that
+  // shape). A genuinely multi-file project goes through the virtual-project
+  // transport.
+  const single = project.isSingleSource();
+  let projectRequest = null;
+  if (!single) {
+    const limits = project.checkLimits();
+    if (!limits.ok) {
+      renderDiagnostics([
+        { code: 4999, code_text: "E4999", message: limits.error, line: 1, column: 1 },
+      ]);
+      setStatus("project too large", "error");
+      stopCurrent("project too large");
+      return;
+    }
+    projectRequest = project.toRequest();
+  }
 
   worker.onmessage = (event) => {
     // Ignore any message that is not from the current generation: a Worker
@@ -894,17 +1212,27 @@ function run() {
       // structured `msg.code` (`RUNTIME_INTEGRITY`) remains available to
       // programmatic consumers; the UI does not invent an undocumented code.
       const integrity = msg.code === "RUNTIME_INTEGRITY";
+      const capability = msg.code === "NO_VIRTUAL_PROJECTS";
       renderDiagnostics([
         {
           code: 4999,
           code_text: "E4999",
           message: integrity
             ? `runtime integrity check failed: ${msg.message}`
-            : `worker ${msg.phase} error: ${msg.message}`,
+            : capability
+              ? `this runtime cannot run a multi-file project: ${msg.message}`
+              : `worker ${msg.phase} error: ${msg.message}`,
           line: 1,
           column: 1,
         },
       ]);
+      if (capability) {
+        // Say what is true: the selected runtime has no virtual-project
+        // capability, and a single file still runs normally on it.
+        setProjectNote(
+          `Runtime ${entry.id} does not support virtual projects, so a multi-file project cannot run on it. Select a runtime that provides them, or reduce the project to one file.`,
+        );
+      }
       setStatus("worker error", "error");
       stopCurrent("worker error");
     }
@@ -938,16 +1266,20 @@ function run() {
     // verifies the fetched bytes against it before instantiation, so a
     // substituted or corrupted artifact is refused rather than executed.
     expectedSha256: entry.sha256,
-    // Single authoritative source: Run executes exactly what the editor holds
+    // Single authoritative source: Run executes exactly what the project holds
     // right now. It never reconstructs a program from the default source or
     // from any consumed handoff state.
-    source: els.source.value,
+    source: project.active().text,
+    // Present only for a genuinely multi-file project; `null` selects the
+    // historical single-source path.
+    project: projectRequest,
     args,
     stdin,
   });
 }
 
 function finishRun(record, result) {
+  lastResult = result;
   els.stdout.textContent = result.stdout || "";
   renderDiagnostics(result.diagnostics || []);
   if (result.status === "ok") {
@@ -971,18 +1303,28 @@ function finishRun(record, result) {
 els.run.addEventListener("click", run);
 els.stop.addEventListener("click", () => stopCurrent("stopped"));
 els.version.addEventListener("change", onVersionChange);
-els.source.value = DEFAULT_SOURCE;
+// The canonical one-file project is the initial state; the editor shows its
+// only file. A handoff or an example may replace the project before any run.
+els.source.value = project.active().text;
 mountExamples();
+installProjectControls();
+renderFileTabs();
 installEditor();
 installSearch();
-if (els.outputTab) els.outputTab.addEventListener("click", () => showTab("output"));
-if (els.problemsTab) els.problemsTab.addEventListener("click", () => showTab("problems"));
+// Declare the active file's provider child links (Aura logical module name →
+// display file name). This is *project state*, not resolution: the runtime's
+// graph builder remains authoritative for ownership, collisions, and order.
+// It exists so a test or an embedder can declare a multi-file module layout
+// without inventing a UI that pretends a file name is a module name.
+window.__setChildren = (children) => setActiveChildren(children);
+if (els.outputTab) els.outputTab.addEventListener("click", () => showTab("output"));if (els.problemsTab) els.problemsTab.addEventListener("click", () => showTab("problems"));
 showTab("output");
 
 // The initial program is the default one; a handoff from a host site's
 // "Run in Playground" link — carried by the navigation itself — replaces it,
 // along with the example's arguments/standard input, before any execution.
 applyHandoff();
+renderFileTabs();
 refreshEditor();
 
 // The Worker is the primary cancellation mechanism; terminate it if the page

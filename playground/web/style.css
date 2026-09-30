@@ -301,6 +301,61 @@ kbd {
   align-items: center;
 }
 
+/* The file strip scrolls horizontally rather than wrapping, so a project with
+   many files never pushes the editor actions out of reach. */
+.file-tabs {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.file-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.file-actions .btn {
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.file-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.file-tab__entry {
+  color: var(--md-primary);
+  font-size: 0.7rem;
+}
+
+.file-tab[aria-selected="true"] .file-tab__entry {
+  color: var(--md-on-surface);
+}
+
+.project-note {
+  padding: 6px 14px;
+  font-size: 0.76rem;
+  color: var(--md-on-surface-variant);
+  background: var(--md-surface-container-low);
+  border-bottom: 1px solid var(--md-outline-variant);
+}
+
+.project-note[hidden] {
+  display: none;
+}
+
 .tab {
   font: inherit;
   font-size: 0.8rem;
@@ -534,11 +589,29 @@ kbd {
 }
 
 .diag-phase {
-  margin-left: auto;
   font-size: 0.68rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   opacity: 0.75;
+}
+
+/* The source a project diagnostic came from. Display identity only; the
+   runtime supplies it and the UI never rewrites it. */
+.diag-source {
+  font-size: 0.72rem;
+  color: var(--md-on-surface-variant);
+  background: var(--md-surface-container-high);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+.diag-source + .diag-phase {
+  margin-left: 6px;
 }
 
 .diagnostics li.empty {

@@ -37,8 +37,26 @@
 
       <section class="editor-pane" aria-label="Editor">
         <div class="editor-pane__tabs">
-          <span class="tab tab--active">main.aura</span>
+          <div id="file-tabs" class="file-tabs" role="tablist" aria-label="Aura source files"></div>
+          <div class="file-actions">
+            <button id="file-add" class="btn ghost" type="button" title="Add a source file">
+              Add file
+            </button>
+            <button id="file-rename" class="btn ghost" type="button" title="Rename the active file">
+              Rename
+            </button>
+            <button id="file-entry" class="btn ghost" type="button" title="Make the active file the entry point">
+              Set entry
+            </button>
+            <button id="file-delete" class="btn ghost" type="button" title="Delete the active file">
+              Delete
+            </button>
+            <button id="project-reset" class="btn ghost" type="button" title="Reset the project">
+              Reset
+            </button>
+          </div>
         </div>
+        <div id="project-note" class="project-note" hidden></div>
         <div class="editor-pane__tools">
           <button id="search-toggle" class="btn ghost" type="button" title="Find (Ctrl/Cmd + F)">
             Find
