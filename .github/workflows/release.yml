@@ -229,6 +229,12 @@ jobs:
               shasum -a 256 "aura-playground-runtime-${version}.wasm" > "aura-playground-runtime-${version}.wasm.sha256"
             fi)
           cat "dist/aura-playground-runtime-${version}.wasm.sha256"
+      - name: Generate the release manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/release-manifest.sh > "dist/release-manifest.json"
+          cat "dist/release-manifest.json"
       - name: Assemble release notes
         shell: bash
         run: |

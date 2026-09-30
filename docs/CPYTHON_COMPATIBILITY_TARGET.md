@@ -1,6 +1,6 @@
 # Aura CPython Compatibility Target
 
-**Status:** draft for human review (HD-3). Defines precisely what "CPython
+**Status:** resolved (ADR-0003). Defines precisely what "CPython
 compatibility" means for Aura, so no vague claim is ever made.
 
 ## The claim rule
@@ -89,14 +89,20 @@ Errors are `E5001` (Python error) or `E5002` (crossing not representable),
 attributed to the Aura call site. Requires the `py` feature; without it the
 names exist and return `E5002`.
 
-## Python version policy (proposed — HD-3)
+## Python version policy (resolved — ADR-0003)
 
-- Support the currently-maintained CPython minor lines that CI can install on
-  Linux, macOS, and Windows.
-- **Proposed matrix:** CPython **3.10 – 3.13**, tested in CI with a
-  representative subset; the exact linked version is reported by `py_version()`.
-- The pre-1.0 bridge is built with PyO3 `0.29` and `auto-initialize`; no stable
-  Aura↔Python ABI is promised.
+We advertise only what CI verifies. Tiers:
+
+- **TESTED:** Linux 3.10, 3.11, 3.12, 3.13; macOS 3.12.
+- **SUPPORTED (best effort):** other CPython 3.10–3.13 lines not in the CI
+  matrix. Expected to work; not gated.
+- **UNSUPPORTED:** CPython ≤ 3.9, and any native Windows `py` build until the
+  `cpython-interop-windows-probe` CI leg is reliably green (then this ADR and
+  tier are amended to add Windows).
+
+The pre-1.0 bridge is built with PyO3 `0.29` and `auto-initialize`; no stable
+Aura↔Python ABI is promised. The exact linked version is reported by
+`py_version()`. See `docs/adr/0003-supported-cpython-versions.md`.
 
 ## Security (see `SECURITY.md`)
 

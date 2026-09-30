@@ -34,6 +34,9 @@ if (!existsSync(wasm)) {
 }
 
 run("manifest", [join(here, "manifest.test.mjs")]);
+// The release-manifest generator (section 98) describes a release from the
+// repository's canonical version sources; no runtime needed.
+run("release-manifest", [join(here, "release_manifest.test.mjs")]);
 // The Playground's project state (files, active file, entry file) is a pure
 // model: no DOM, no Worker, no wasm.
 run("project", [join(here, "project.test.mjs")]);// Presentational completion + shared language metadata (no runtime needed).
