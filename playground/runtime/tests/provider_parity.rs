@@ -160,3 +160,97 @@ fn child_checker_diagnostic_matches_across_all_three_providers() {
     );
     assert_eq!(virtual_result["diagnostics"][0]["source"], "child.aura");
 }
+
+/// The Playground's multi-file UI sends the entry source's ownership links on
+/// the *entry* source, exactly as the other two providers do. This pins that
+/// shape: a request whose links sit on the child instead of the parent is a
+/// different (and wrong) project, and it must not resolve the child module.
+#[test]
+fn virtual_project_ownership_links_belong_to_the_declaring_parent() {
+    let root = "fn main() { print(child::value()) }";
+    let child = "pub fn value() -> int { return 5 }";
+
+    // The shape the Playground produces: `child` is declared by the entry.
+    let correct = serde_json::to_vec(&json!({
+        "entry": "root",
+        "sources": [
+            {
+                "key": "root",
+                "name": "main.aura",
+                "text": root,
+                "children": [{ "name": "child", "key": "child" }],
+            },
+            { "key": "child", "name": "child.aura", "text": child, "children": [] },
+        ],
+    }))
+    .unwrap();
+    let (ok_json, ok_status, _) = rt::execute_project_bytes(&correct, &[]);
+    let ok: Value = serde_json::from_str(&ok_json).unwrap();
+    assert_eq!(ok_status, rt::status::OK);
+    assert_eq!(ok["stdout"], "5\n");
+
+    // The same two sources with the link attached to the child: the parent
+    // never claims ownership, so the module is unknown and the run fails.
+    let misplaced = serde_json::to_vec(&json!({
+        "entry": "root",
+        "sources": [
+            { "key": "root", "name": "main.aura", "text": root, "children": [] },
+            {
+                "key": "child",
+                "name": "child.aura",
+                "text": child,
+                "children": [{ "name": "child", "key": "child" }],
+            },
+        ],
+    }))
+    .unwrap();
+    let (bad_json, bad_status, _) = rt::execute_project_bytes(&misplaced, &[]);
+    let bad: Value = serde_json::from_str(&bad_json).unwrap();
+    assert_eq!(bad_status, rt::status::DIAGNOSTIC);
+    assert_eq!(bad["diagnostics"][0]["code"], 2003);
+    assert_eq!(bad["diagnostics"][0]["source"], "main.aura");
+}
+
+/// Native, in-memory, and virtual providers must agree on which source a
+/// runtime diagnostic belongs to, not only on its code.
+#[test]
+fn runtime_diagnostic_source_attribution_matches_across_all_three_providers() {
+    let root = "fn main() { child::boom() }";
+    let children = vec![("child", "child", "pub fn boom() { assert(false) }")];
+    let tree = TempProject::new();
+    tree.write("main.aura", root);
+    tree.write("child.aura", children[0].2);
+
+    let native = aura::compile_file_with_mode(tree.entry(), CompileMode::Program).unwrap();
+    let native_err = native
+        .execute_with(None, Vec::new(), None)
+        .expect_err("the child asserts false");
+    let native_name = native_err
+        .location()
+        .and_then(|loc| native_err.sources().get(loc.source))
+        .map(aura::source::Source::name);
+
+    let memory =
+        aura::compile_provider_with_mode(&memory_project(root, &children), CompileMode::Program)
+            .unwrap();
+    let memory_err = memory
+        .execute_with(None, Vec::new(), None)
+        .expect_err("the child asserts false");
+    let memory_name = memory_err
+        .location()
+        .and_then(|loc| memory_err.sources().get(loc.source))
+        .map(aura::source::Source::name);
+
+    assert_eq!(native_name, Some("child.aura"));
+    assert_eq!(memory_name, native_name);
+
+    let (virtual_json, virtual_status, _) =
+        rt::execute_project_bytes(&virtual_project(root, &children), &[]);
+    let virtual_result: Value = serde_json::from_str(&virtual_json).unwrap();
+    assert_eq!(virtual_status, rt::status::DIAGNOSTIC);
+    assert_eq!(
+        virtual_result["diagnostics"][0]["code"],
+        u64::from(native_err.diagnostic().code)
+    );
+    assert_eq!(virtual_result["diagnostics"][0]["source"], "child.aura");
+}

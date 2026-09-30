@@ -68,9 +68,28 @@ const FROZEN_0_0_2 = {
   bytes: 1366621,
 };
 
+// The `0.2.0` release runtime artifact, pinned so it can never drift. It was
+// the artifact this file generated while the runtime crate carried the release
+// version; the crate has since advanced to a development pre-release on the
+// same line, so the release identity is now pinned here permanently and the
+// build refuses to regenerate it. Publishing a newer release means adding a
+// *new* pinned entry, never editing this one.
+const FROZEN_0_2_0 = {
+  id: "0.2.0",
+  release_version: "0.2.0",
+  language_version: "0.2.0",
+  runtime_version: "0.2.0",
+  host_abi_version: 1,
+  available: true,
+  channel: "release",
+  artifact: "0.2.0/aura_playground_runtime.wasm",
+  sha256: "9937fd8094ef402b7a9233d02bd232405f75b9e70661404646fcda7cd295c5bc",
+  bytes: 1654161,
+};
+
 // The final development artifact of the pre-0.2.0 line. It is preserved and
-// addressable but is no longer the selector default: `0.2.0` is the current
-// public release. Its identity is pinned so the artifact can never drift.
+// addressable for as long as it remains in the manifest. Its identity is
+// pinned so the artifact can never drift.
 const HISTORICAL_DEV_0_0_2_DEV_30 = {
   id: "0.0.2-dev.30",
   release_version: "0.0.2",
@@ -158,7 +177,7 @@ if (checkOnly) {
       // a historical artifact or the pinned identity, and the build refuses to
       // proceed.
       if (entry.channel === "release") {
-        const pinned = [FROZEN_0_0_1, FROZEN_0_0_2].find((f) => f.id === entry.id);
+        const pinned = [FROZEN_0_0_1, FROZEN_0_0_2, FROZEN_0_2_0].find((f) => f.id === entry.id);
         if (pinned && entry.available) {
           if (pinned.sha256 !== entry.sha256 || pinned.bytes !== entry.bytes) {
             console.error(
@@ -172,7 +191,7 @@ if (checkOnly) {
   }
   // Every frozen release artifact must still be present, byte-for-byte, even
   // if something removed it from the manifest.
-  for (const frozen of [FROZEN_0_0_2]) {
+  for (const frozen of [FROZEN_0_0_2, FROZEN_0_2_0]) {
     const p = join(runtimesDir, frozen.artifact);
     if (!existsSync(p)) {
       console.error(`build --check: frozen release artifact missing: ${frozen.artifact}`);
@@ -247,14 +266,15 @@ const channel = isRelease ? "release" : "development";
 
 const manifest = {
   playground_api_version: PLAYGROUND_API_VERSION,
-  // The current release runtime is the selector's default. Historical entries
-  // remain present, honest, and selectable, and are never substituted
-  // silently.
+  // The generated runtime is the selector's default while it is under
+  // development; every frozen and historical entry remains present, honest,
+  // and selectable, and is never substituted silently.
   current: runtimeVersion,
   versions: [
     FROZEN_0_0_1,
     FROZEN_0_0_2,
     HISTORICAL_DEV_0_0_2_DEV_30,
+    FROZEN_0_2_0,
     {
       id: runtimeVersion,
       // A release entry's runtime version equals its release version; a

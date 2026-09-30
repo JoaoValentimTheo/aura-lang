@@ -27,13 +27,19 @@ fn parse(json: &str) -> serde_json::Value {
 
 #[test]
 fn version_model_is_coherent() {
-    // The current release is 0.2.0; it is a language release, so the language
-    // semantics version also moved to 0.2.0. The runtime artifact is the
-    // release itself (not a pre-release) and matches the crate version.
+    // The language semantics version is the completed Core `0.2.0`. The
+    // *runtime artifact* is a separate identity: a published release records
+    // the release itself, while a development runtime records a pre-release of
+    // that line. Both are real runtime identities; neither is a release by
+    // implication.
     assert_eq!(aura::LANGUAGE_VERSION, "0.2.0");
     assert_eq!(aura::VERSION, "0.2.0");
     assert_eq!(rt::RUNTIME_VERSION, env!("CARGO_PKG_VERSION"));
-    assert_eq!(rt::RUNTIME_VERSION, "0.2.0");
+    assert!(
+        rt::RUNTIME_VERSION == "0.2.0" || rt::RUNTIME_VERSION.starts_with("0.2.0-"),
+        "the runtime artifact must be the 0.2.0 release or a pre-release of it, got {}",
+        rt::RUNTIME_VERSION
+    );
     assert_eq!(rt::ABI_VERSION, 1);
     let (_json, _status, language_version) = rt::execute("fn main() {}", &[]);
     assert_eq!(language_version, "0.2.0");
