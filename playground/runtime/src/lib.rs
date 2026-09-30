@@ -236,8 +236,9 @@ fn build_virtual_provider(
         )));
     }
 
-    let mut project: VirtualProjectRequest = serde_json::from_slice(raw)
-        .map_err(|error| VirtualProjectError::host(format!("invalid virtual project JSON: {error}")))?;
+    let mut project: VirtualProjectRequest = serde_json::from_slice(raw).map_err(|error| {
+        VirtualProjectError::host(format!("invalid virtual project JSON: {error}"))
+    })?;
     if project.sources.len() > limits::MAX_PROJECT_SOURCES {
         return Err(VirtualProjectError::host(format!(
             "virtual project has too many sources (limit {})",
@@ -333,7 +334,11 @@ fn build_virtual_provider(
                 )));
             }
             provider
-                .add_child(&parent, child.name.clone(), &SourceKey::new(child.key.clone()))
+                .add_child(
+                    &parent,
+                    child.name.clone(),
+                    &SourceKey::new(child.key.clone()),
+                )
                 .map_err(|error| VirtualProjectError::module_source(error.to_string()))?;
         }
     }
@@ -378,12 +383,7 @@ fn diag_json(d: &Diag, src: &str, first: &mut bool) -> String {
     s
 }
 
-fn sourced_diag_json(
-    d: &Diag,
-    src: &str,
-    source_name: Option<&str>,
-    first: &mut bool,
-) -> String {
+fn sourced_diag_json(d: &Diag, src: &str, source_name: Option<&str>, first: &mut bool) -> String {
     let (line, col) = line_col(src, d.span.start);
     let mut s = String::new();
     if !*first {
@@ -492,10 +492,13 @@ pub fn execute_project_bytes(
     options_raw: &[u8],
 ) -> (String, u32, &'static str) {
     if project_raw.len() > limits::MAX_PROJECT_BYTES {
-        let (json, code) = virtual_input_error(codes::IO, format!(
-            "virtual project exceeds the {} byte limit",
-            limits::MAX_PROJECT_BYTES
-        ));
+        let (json, code) = virtual_input_error(
+            codes::IO,
+            format!(
+                "virtual project exceeds the {} byte limit",
+                limits::MAX_PROJECT_BYTES
+            ),
+        );
         return (json, code, aura::LANGUAGE_VERSION);
     }
     let opts = match parse_options(options_raw) {

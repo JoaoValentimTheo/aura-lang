@@ -61,12 +61,7 @@ fn nested_virtual_children_use_the_existing_module_graph() {
                 "fn main() { print(foo::bar::value()) }",
                 vec![child("foo", "foo")],
             ),
-            source(
-                "foo",
-                "foo.aura",
-                "",
-                vec![child("bar", "bar")],
-            ),
+            source("foo", "foo.aura", "", vec![child("bar", "bar")]),
             source(
                 "bar",
                 "foo/bar.aura",
@@ -91,18 +86,8 @@ fn virtual_source_and_child_insertion_order_is_non_semantic() {
                 "fn main() { print(a::value() + b::value()) }",
                 root_children.clone(),
             ),
-            source(
-                "a",
-                "a.aura",
-                "pub fn value() -> int { return 1 }",
-                vec![],
-            ),
-            source(
-                "b",
-                "b.aura",
-                "pub fn value() -> int { return 2 }",
-                vec![],
-            ),
+            source("a", "a.aura", "pub fn value() -> int { return 1 }", vec![]),
+            source("b", "b.aura", "pub fn value() -> int { return 2 }", vec![]),
         ];
         if reverse {
             root_children.reverse();
@@ -195,10 +180,7 @@ fn missing_main_is_attributed_to_virtual_entry() {
 
 #[test]
 fn one_source_virtual_project_matches_single_source_eval_fallback() {
-    let raw = project(
-        "root",
-        vec![source("root", "main.aura", "1 + 2", vec![])],
-    );
+    let raw = project("root", vec![source("root", "main.aura", "1 + 2", vec![])]);
     let result = run(&raw);
     assert_eq!(result["status"], "ok");
     assert_eq!(result["result"], "3");
@@ -211,7 +193,12 @@ fn equal_local_spans_in_distinct_virtual_sources_keep_distinct_names() {
         let raw = project(
             "root",
             vec![
-                source("root", "main.aura", "fn main() {}", vec![child(logical, key)]),
+                source(
+                    "root",
+                    "main.aura",
+                    "fn main() {}",
+                    vec![child(logical, key)],
+                ),
                 source(key, name, "@", vec![]),
             ],
         );
@@ -246,10 +233,7 @@ fn invalid_virtual_provider_keys_are_module_source_path_errors() {
         "a/b",
         "a..b",
     ] {
-        let raw = project(
-            key,
-            vec![source(key, "main.aura", "fn main() {}", vec![])],
-        );
+        let raw = project(key, vec![source(key, "main.aura", "fn main() {}", vec![])]);
         let result = run(&raw);
         assert_eq!(
             code(&result),
@@ -413,10 +397,7 @@ fn case_collision_and_wrong_case_reference_are_portable() {
             source("lower", "foo.aura", "", vec![]),
         ],
     );
-    assert_eq!(
-        code(&run(&collision)),
-        u64::from(codes::MODULE_SOURCE_PATH)
-    );
+    assert_eq!(code(&run(&collision)), u64::from(codes::MODULE_SOURCE_PATH));
 
     let wrong_case = project(
         "root",
@@ -468,12 +449,7 @@ fn semantic_cycle_runs_and_provider_ownership_cycle_terminates() {
     let ownership_cycle = project(
         "root",
         vec![
-            source(
-                "root",
-                "main.aura",
-                "fn main() {}",
-                vec![child("a", "a")],
-            ),
+            source("root", "main.aura", "fn main() {}", vec![child("a", "a")]),
             source("a", "a.aura", "", vec![child("root", "root")]),
         ],
     );
@@ -534,10 +510,7 @@ fn virtual_depth_consumes_the_existing_e1015_budget() {
 #[test]
 fn virtual_transport_limits_are_host_policy_errors() {
     let huge = "x".repeat(rt::limits::MAX_SOURCE_BYTES + 1);
-    let raw = project(
-        "root",
-        vec![source("root", "main.aura", &huge, vec![])],
-    );
+    let raw = project("root", vec![source("root", "main.aura", &huge, vec![])]);
     assert_eq!(code(&run(&raw)), u64::from(codes::IO));
 }
 
