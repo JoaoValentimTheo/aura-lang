@@ -57,6 +57,9 @@ can advance the release version without claiming a language change.
 
 ## Install
 
+See [docs/INSTALL.md](docs/INSTALL.md) for the full guide (prebuilt binaries,
+source build, feature sets, quickstart, verification).
+
 From a checkout (requires Rust 1.83+):
 
 ```bash
