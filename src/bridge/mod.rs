@@ -90,8 +90,9 @@ mod py {
         });
     }
 
-    /// Python object -> Aura value.
-    fn to_value(obj: &Bound<'_, PyAny>) -> Result<Value> {
+    /// Python object -> Aura value. `span` is the Aura call site, attached to
+    /// every diagnostic so a Python-side failure points at the crossing.
+    fn to_value(obj: &Bound<'_, PyAny>, span: Span) -> Result<Value> {
         let mut budget = MAX_PY_SOURCE_NODES;
         // Python identity of every container already on the current descent
         // path: a reference back to one of these is a cycle, and is rejected
@@ -100,7 +101,7 @@ mod py {
         // sharing and is converted again (correct, and bounded by the node
         // budget).
         let mut path: Vec<usize> = Vec::new();
-        to_value_depth(obj, 0, &mut budget, &mut path)
+        to_value_depth(obj, 0, &mut budget, &mut path, span)
     }
 
     /// Bounded-depth and bounded-node conversion so a deeply nested, aliased,
@@ -112,17 +113,18 @@ mod py {
         depth: usize,
         budget: &mut usize,
         path: &mut Vec<usize>,
+        span: Span,
     ) -> Result<Value> {
         if *budget == 0 {
             return Err(Diag::new(
                 codes::PY_UNSUPPORTED,
                 "Python object has too many nodes to cross into Aura",
-                Span::default(),
+                span,
             ));
         }
         *budget -= 1;
         if depth >= crate::run::value::MAX_VALUE_DEPTH {
-            let repr = obj.repr().map_err(map_pyerr)?.to_string();
+            let repr = obj.repr().map_err(|e| map_pyerr(e, span))?.to_string();
             return Ok(Value::str(repr));
         }
         if obj.is_none() {
@@ -138,11 +140,11 @@ mod py {
             if let Ok(i) = obj.extract::<i64>() {
                 return Ok(Value::Int(i));
             }
-            let text = obj.str().map_err(map_pyerr)?.to_string();
+            let text = obj.str().map_err(|e| map_pyerr(e, span))?.to_string();
             return Err(Diag::new(
                 codes::OVERFLOW,
                 format!("Python integer `{text}` does not fit in Aura's 64-bit `int`"),
-                Span::default(),
+                span,
             ));
         }
         if let Ok(f) = obj.extract::<f64>() {
@@ -157,13 +159,13 @@ mod py {
                 return Err(Diag::new(
                     codes::PY_UNSUPPORTED,
                     "Python object contains a reference cycle, which Aura cannot represent",
-                    Span::default(),
+                    span,
                 ));
             }
             path.push(id);
             let mut out = Vec::with_capacity(list.len());
             for item in list.iter() {
-                out.push(to_value_depth(&item, depth + 1, budget, path)?);
+                out.push(to_value_depth(&item, depth + 1, budget, path, span)?);
             }
             path.pop();
             return Ok(Value::list(out));
@@ -174,7 +176,7 @@ mod py {
                 return Err(Diag::new(
                     codes::PY_UNSUPPORTED,
                     "Python object contains a reference cycle, which Aura cannot represent",
-                    Span::default(),
+                    span,
                 ));
             }
             path.push(id);
@@ -190,38 +192,41 @@ mod py {
                     // Checked before `i64`: a Python `bool` is an `int`
                     // subclass, so an integer extraction would otherwise turn
                     // `True` into `1` and lose the key's identity.
-                    crate::run::value::MapKey::Bool(k.extract::<bool>().map_err(map_pyerr)?)
+                    crate::run::value::MapKey::Bool(
+                        k.extract::<bool>().map_err(|e| map_pyerr(e, span))?,
+                    )
                 } else if let Ok(i) = k.extract::<i64>() {
                     crate::run::value::MapKey::Int(i)
                 } else {
-                    let shown = k.str().map_err(map_pyerr)?.to_string();
+                    let shown = k.str().map_err(|e| map_pyerr(e, span))?.to_string();
                     return Err(Diag::new(
                         codes::PY_UNSUPPORTED,
                         format!(
                             "Python dict key `{shown}` cannot be an Aura map key; map keys must be `string`, `int`, or `bool`"
                         ),
-                        Span::default(),
+                        span,
                     ));
                 };
-                map.insert(key, to_value_depth(&v, depth + 1, budget, path)?);
+                map.insert(key, to_value_depth(&v, depth + 1, budget, path, span)?);
             }
             path.pop();
             return Ok(Value::Map(Rc::new(RefCell::new(map))));
         }
         // Fallback: render as a string, so opaque objects remain printable.
-        let repr = obj.repr().map_err(map_pyerr)?.to_string();
+        let repr = obj.repr().map_err(|e| map_pyerr(e, span))?.to_string();
         Ok(Value::str(repr))
     }
 
-    /// Aura value -> Python object.
-    fn to_py<'py>(py: Python<'py>, v: &Value) -> Result<Bound<'py, PyAny>> {
+    /// Aura value -> Python object. `span` is the Aura call site, attached to
+    /// every diagnostic so a conversion failure points at the crossing.
+    fn to_py<'py>(py: Python<'py>, v: &Value, span: Span) -> Result<Bound<'py, PyAny>> {
         let mut budget = MAX_PY_NODES;
         // Addresses of the Aura containers on the current descent path, so a
         // cycle is detected by identity and rejected rather than re-expanded
         // forever. Sharing (the same container reachable by two paths) is not
         // a cycle and is converted again, bounded by the node budget.
         let mut path: HashSet<usize> = HashSet::new();
-        to_py_depth(py, v, 0, &mut budget, &mut path)
+        to_py_depth(py, v, 0, &mut budget, &mut path, span)
     }
 
     /// Bounded-depth and bounded-node conversion so a deeply nested, aliased,
@@ -234,12 +239,13 @@ mod py {
         depth: usize,
         budget: &mut usize,
         path: &mut HashSet<usize>,
+        span: Span,
     ) -> Result<Bound<'py, PyAny>> {
         if *budget == 0 {
             return Err(Diag::new(
                 codes::PY_UNSUPPORTED,
                 "value has too many nodes to cross into Python",
-                Span::default(),
+                span,
             ));
         }
         *budget -= 1;
@@ -247,22 +253,28 @@ mod py {
             return Err(Diag::new(
                 codes::PY_UNSUPPORTED,
                 "value is nested too deeply to cross into Python",
-                Span::default(),
+                span,
             ));
         }
         Ok(match v {
             Value::None => py.None().into_bound(py),
             Value::Bool(b) => b
                 .into_pyobject(py)
-                .map_err(map_conversion)?
+                .map_err(|e| map_conversion(e, span))?
                 .to_owned()
                 .into_any(),
-            Value::Int(i) => i.into_pyobject(py).map_err(map_conversion)?.into_any(),
-            Value::Float(f) => f.into_pyobject(py).map_err(map_conversion)?.into_any(),
+            Value::Int(i) => i
+                .into_pyobject(py)
+                .map_err(|e| map_conversion(e, span))?
+                .into_any(),
+            Value::Float(f) => f
+                .into_pyobject(py)
+                .map_err(|e| map_conversion(e, span))?
+                .into_any(),
             Value::Str(s) => s
                 .to_string()
                 .into_pyobject(py)
-                .map_err(map_conversion)?
+                .map_err(|e| map_conversion(e, span))?
                 .into_any(),
             Value::List(l) => {
                 let id = Rc::as_ptr(l) as usize;
@@ -270,13 +282,13 @@ mod py {
                     return Err(Diag::new(
                         codes::PY_UNSUPPORTED,
                         "value contains a reference cycle, which cannot cross into Python",
-                        Span::default(),
+                        span,
                     ));
                 }
                 let list = PyList::empty(py);
                 for item in l.borrow().iter() {
-                    list.append(to_py_depth(py, item, depth + 1, budget, path)?)
-                        .map_err(map_pyerr)?;
+                    list.append(to_py_depth(py, item, depth + 1, budget, path, span)?)
+                        .map_err(|e| map_pyerr(e, span))?;
                 }
                 path.remove(&id);
                 list.into_any()
@@ -287,7 +299,7 @@ mod py {
                     return Err(Diag::new(
                         codes::PY_UNSUPPORTED,
                         "value contains a reference cycle, which cannot cross into Python",
-                        Span::default(),
+                        span,
                     ));
                 }
                 let dict = PyDict::new(py);
@@ -296,17 +308,18 @@ mod py {
                         crate::run::value::MapKey::Str(s) => s
                             .to_string()
                             .into_pyobject(py)
-                            .map_err(map_conversion)?
+                            .map_err(|e| map_conversion(e, span))?
                             .into_any(),
-                        crate::run::value::MapKey::Int(i) => {
-                            i.into_pyobject(py).map_err(map_conversion)?.into_any()
-                        }
+                        crate::run::value::MapKey::Int(i) => i
+                            .into_pyobject(py)
+                            .map_err(|e| map_conversion(e, span))?
+                            .into_any(),
                         crate::run::value::MapKey::Bool(b) => {
                             PyBool::new(py, *b).to_owned().into_any()
                         }
                     };
-                    dict.set_item(key, to_py_depth(py, val, depth + 1, budget, path)?)
-                        .map_err(map_pyerr)?;
+                    dict.set_item(key, to_py_depth(py, val, depth + 1, budget, path, span)?)
+                        .map_err(|e| map_pyerr(e, span))?;
                 }
                 path.remove(&id);
                 dict.into_any()
@@ -318,20 +331,20 @@ mod py {
                         "value of type {} cannot cross into Python",
                         other.type_name()
                     ),
-                    Span::default(),
+                    span,
                 ))
             }
         })
     }
 
-    fn map_pyerr(e: PyErr) -> Diag {
-        Diag::new(codes::PY_ERROR, format!("python: {e}"), Span::default())
+    fn map_pyerr(e: PyErr, span: Span) -> Diag {
+        Diag::new(codes::PY_ERROR, format!("python: {e}"), span)
     }
 
     /// Convert any `into_pyobject` error (which implements `Into<PyErr>`)
-    /// into an Aura diagnostic.
-    fn map_conversion<E: Into<PyErr>>(e: E) -> Diag {
-        map_pyerr(e.into())
+    /// into an Aura diagnostic at the given call site.
+    fn map_conversion<E: Into<PyErr>>(e: E, span: Span) -> Diag {
+        map_pyerr(e.into(), span)
     }
 
     pub(super) fn install(it: &mut Interp) {
@@ -343,8 +356,10 @@ mod py {
             Python::attach(|py| {
                 let c = std::ffi::CString::new(&**code)
                     .map_err(|_| err("Python code contains a NUL byte", span))?;
-                let result = py.eval(c.as_c_str(), None, None).map_err(map_pyerr)?;
-                to_value(&result)
+                let result = py
+                    .eval(c.as_c_str(), None, None)
+                    .map_err(|e| map_pyerr(e, span))?;
+                to_value(&result, span)
             })
         });
         it.native("py_import", |_it, args, span| {
@@ -353,11 +368,11 @@ mod py {
             };
             ensure_init();
             Python::attach(|py| {
-                let module = PyModule::import(py, name.as_ref()).map_err(map_pyerr)?;
+                let module = PyModule::import(py, name.as_ref()).map_err(|e| map_pyerr(e, span))?;
                 // Return a dict of the module's public attributes as strings.
                 let mut map = BTreeMap::new();
                 for (k, _) in module.dict().iter() {
-                    let key = k.str().map_err(map_pyerr)?.to_string();
+                    let key = k.str().map_err(|e| map_pyerr(e, span))?.to_string();
                     if !key.starts_with('_') {
                         map.insert(crate::run::value::MapKey::str(key), Value::str("<python>"));
                     }
@@ -378,15 +393,18 @@ mod py {
             let call_args = args.get(2..).unwrap_or(&[]);
             ensure_init();
             Python::attach(|py| {
-                let module = PyModule::import(py, module.as_str()).map_err(map_pyerr)?;
-                let func = module.getattr(attr.as_str()).map_err(map_pyerr)?;
+                let module =
+                    PyModule::import(py, module.as_str()).map_err(|e| map_pyerr(e, span))?;
+                let func = module
+                    .getattr(attr.as_str())
+                    .map_err(|e| map_pyerr(e, span))?;
                 let owned: Vec<Bound<'_, PyAny>> = call_args
                     .iter()
-                    .map(|v| to_py(py, v))
+                    .map(|v| to_py(py, v, span))
                     .collect::<Result<Vec<_>>>()?;
-                let tuple = PyTuple::new(py, owned).map_err(map_pyerr)?;
-                let result = func.call1(&tuple).map_err(map_pyerr)?;
-                to_value(&result)
+                let tuple = PyTuple::new(py, owned).map_err(|e| map_pyerr(e, span))?;
+                let result = func.call1(&tuple).map_err(|e| map_pyerr(e, span))?;
+                to_value(&result, span)
             })
         });
         it.native("py_version", |_it, _args, _span| {

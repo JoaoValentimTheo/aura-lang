@@ -44,6 +44,32 @@ fn reports_python_errors_with_a_code() {
 }
 
 #[test]
+fn python_errors_point_at_the_call_site() {
+    // A Python-side failure must be attributed to the Aura `py_*` call token,
+    // not to offset 0.
+    let src = "fn main() {\n    py_eval(\"1 / 0\")\n}";
+    let report = aura::compile_named_with_mode(src, "<py>", aura::CompileMode::Program)
+        .unwrap()
+        .execute_with(None, Vec::new(), None)
+        .unwrap_err();
+    let location = report.location().expect("a source location");
+    let expected = src.find("py_eval").unwrap();
+    assert_eq!(location.span.start, expected, "call-site byte offset");
+    assert_eq!(aura::error::line_col(src, location.span.start), (2, 5));
+}
+
+#[test]
+fn python_conversion_errors_point_at_the_call_site() {
+    // A value that cannot cross the boundary is likewise attributed to the
+    // crossing call token, not to offset 0.
+    let src = "fn main() {\n    let x = py_eval(\"2**100\")\n}";
+    let err = run_source(src, "<py>").unwrap_err();
+    assert_eq!(err.code, aura::error::codes::OVERFLOW);
+    let expected = src.find("py_eval").unwrap();
+    assert_eq!(err.span.start, expected);
+}
+
+#[test]
 fn py_version_is_available() {
     let out = run_source("fn main() { print(len(py_version()) > 0) }", "<py>").unwrap();
     assert_eq!(out, "true\n");
