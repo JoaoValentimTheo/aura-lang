@@ -2,85 +2,81 @@
 
 Operational state for the Aura Completion Program. Not language law.
 
-## Program base / heads
+## Heads
 
-- PROGRAM BASE: `f416201` (hardening final local HEAD at program start)
-- LOCAL HEAD: `fef6904` + pending M5 commits
-- REMOTE HEAD (origin/rewrite/v3-rust): `fef6904` after Push Gate 0
-- REMOTE HEAD before gate: `bf95d10`
+- PROGRAM BASE: `f416201`
+- LOCAL HEAD: `7a951bb` + pending (HD-1 docs)
+- REMOTE HEAD (origin/rewrite/v3-rust): `7a951bb`
 
-## Push Gate 0
+## Push checkpoints
 
-- Pushed `bf95d10..fef6904` (10 commits: FSM-P6 + hardening + review report).
-- CI run 36760642764 (CI) and 36760642643 (Deploy website) triggered.
-- As of last check: rustfmt, clippy, playground, miri, MSRV, proptest, audit,
-  contract, website, ubuntu tests, no-python all SUCCESS; macos/windows/fuzz
-  in progress. Awaiting close.
+- **REMOTE CHECKPOINT 0 — CLOSED.** Pushed `bf95d10..fef6904`; CI run
+  36760642764 all green (rustfmt, clippy, playground, miri, MSRV, proptest,
+  audit, contract, website, ubuntu/macos/windows tests, no-python, fuzz smoke)
+  + website deploy green.
+- **REMOTE CHECKPOINT 5 — PUSHED.** `fef6904..0c99a6b`: stdlib value-semantics
+  tests (`tests/builtins.rs`), completeness matrix, checkpoint. CI pending/green.
+- **REMOTE CHECKPOINT 8 �� PUSHED.** `0c99a6b..7a951bb`: 0.2.0-dev.2 runtime.
 
-## Current milestone
+## Milestones
 
-M1 (completeness matrix + semantic closure) and M5 (stdlib/runtime) work
-started. Matrix complete; no accidental PARTIAL/MISSING core item found.
-One actionable gap closed: builtin value-semantics tests.
+- M0 baseline + Push Gate 0 — DONE.
+- M1 completeness matrix — DONE (matrix committed).
+- M5 stdlib/runtime — IN PROGRESS: `min`/`max` and peer edge semantics now
+  tested (14 tests); probe sweeps of every builtin category found no defect.
+- M8 WASM/Playground — DONE for the runtime-coherence fix (0.2.0-dev.2).
 
 ## Completeness matrix status
 
-- COMPLETE: ~135
-- IMPLEMENTED BUT UNDERTESTED: 0 (was 1: min/max — now tested)
-- PARTIAL / MISSING / DESIGNED-NOT-IMPLEMENTED: 0
-- BLOCKED BY HUMAN DECISION: 2 (HD-1 module-member × builtin; AUDIT-3)
-- NOT PART OF CURRENT CORE (deliberate): 12
+- COMPLETE ~135; PARTIAL/MISSING/DESIGNED-NOT-IMPLEMENTED 0;
+  IMPLEMENTED-BUT-UNDERTESTED 0 (was 1).
+- BLOCKED BY HUMAN DECISION: 2 (HD-1, AUDIT-3).
+- NOT PART OF CURRENT CORE (deliberate): 12.
 
-## Bugs found
+## Bugs found / fixed
 
-- None new (no defect found in this session so far). min/max/regex/assert/
-  higher-order/index/enum/equality probes all matched spec.
+- **F-COMP-1 (MEDIUM) — Playground default runtime predated builtin
+  reservation.** `0.2.0-dev.1` gave E2001 for `let mut sum` and accepted
+  `let sum`, diverging from `aura run`. Fixed by advancing the dev runtime to
+  `0.2.0-dev.2` (current source); `dev.1` preserved as a pinned historical
+  entry. Frozen releases untouched.
+- No other product defect found. Probes clean: parser malformed inputs, CLI
+  (missing/dir/permission/symlink/unicode), REPL rollback, modules
+  (diamond/cycle/re-export/visibility), types (all E3001/E3005 paths), numeric
+  (overflow/div0/i64::MIN), cycles, resource boundaries (AST depth, call
+  frames), precedence, f-strings, enums, generics/overloads/traits, finally.
 
-## Bugs fixed
+## Performance
 
-- None this session (the only hardening-era bug was fixed in f416201,
-  pre-program).
+- Sibling modules near-linear (25..400 -> 0.19..0.34s); 8000 functions 0.18s;
+  8000 top-level lets 0.16s. No quadratic behavior found.
 
-## Performance changes
+## Security
 
-- None yet. N-sibling scale re-measured: near-linear (25..400 -> 0.19..0.34s).
-
-## Security findings
-
-- None new. Panic surface, cycles, numeric totality clean.
-
-## Commits this session
-
-- `fef6904` docs(audit): record the independent hardening review report
-- (pending) test(builtins): pin stdlib value semantics
-- (pending) docs(program): add completeness matrix + checkpoint
-
-## Local gates
-
-- Full local gate at HEAD fef6904: fmt/all-features(854)/no-default(844)/
-  clippy/MSRV + runtime fmt+test+clippy + playground suite + build --check +
-  website suite = ALL GREEN.
+- No new finding. Fuzz parser/checker 45s each + runtime: 0 crashes,
+  0 artifacts. Miri green in CI.
 
 ## Frozen hashes (unchanged)
 
 - 0.0.2: 1,366,621 / 5a4ad3f7e3f786164d65df437d607e7ddd5e25947ea2c8dd9b436a5490b334ed
 - 0.2.0: 1,654,161 / 9937fd8094ef402b7a9233d02bd232405f75b9e70661404646fcda7cd295c5bc
+- dev.1 preserved: 1,767,068 / ba40e89c834896badfb17d5c72aa2dcb227907a7b5ba513c315ef2f2da0adf08
+- dev.2 current:   1,767,723 / b69f212bf3f1d8df41b66ad249bf9c9829015b06459569fd2b765a5596b66c06
 
 ## Protected artifacts
 
 - `s` (1 byte, untracked): present, untouched.
-- `session-ses_f179.md`: gitignored local artifact, untouched.
+- `session-ses_f179.md`: gitignored local artifact.
 
 ## Human decisions
 
-- HD-1 (module member can reuse a builtin spelling; shadows builtin only
-  inside the module). Normative text ambiguity; HIGH risk if resolved by
-  accident. Not implemented.
-- AUDIT-3 (TypeExpr nesting): DECISION-PENDING, untouched.
+- HD-1: package at `docs/HD1_MODULE_MEMBER_BUILTIN_NAMES_DECISION.md`;
+  recommendation Option A (keep behavior). Does not block work.
+- AUDIT-3: DECISION-PENDING, untouched.
 
 ## Next action
 
-- Close Push Gate 0 when CI completes.
-- Commit M5 builtin tests + matrix/checkpoint.
-- Continue: broaden stdlib/runtime/numeric/collection totality tests and
-  adversarial cases; then M2 parser/type/call closure.
+- Commit HD-1 package + this checkpoint; verify M5/M8 CI.
+- Continue: M2 parser/type/call closure probes already broadly clean; expand
+  adversarial/property coverage; M6 determinism/perf; M9 examples/docs; M11
+  CI/platform review; M12 global break-the-language pass.
