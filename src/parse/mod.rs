@@ -78,6 +78,7 @@ fn parse_inner_with_initial_depth(src: &str, initial_depth: usize) -> Result<Mod
         depth: initial_depth,
         expr_nodes: 0,
         atom_depth: 0,
+        type_depth: 0,
     };
     let module = p.module()?;
     // Reject trees deeper than the language limit here, before any later
@@ -95,6 +96,7 @@ fn parse_expr_inner(src: &str) -> Result<Expr> {
         depth: 0,
         expr_nodes: 0,
         atom_depth: 0,
+        type_depth: 0,
     };
     p.skip_newlines();
     let e = p.expr()?;
@@ -118,6 +120,7 @@ fn parse_expr_at(src: &str, base: usize) -> Result<Expr> {
         depth: 0,
         expr_nodes: 0,
         atom_depth: 0,
+        type_depth: 0,
     };
     p.skip_newlines();
     let e = p.expr()?;
@@ -135,6 +138,7 @@ fn parse_stmt_inner(src: &str) -> Result<Stmt> {
         depth: 0,
         expr_nodes: 0,
         atom_depth: 0,
+        type_depth: 0,
     };
     p.skip_newlines();
     let s = p.stmt()?;
@@ -394,6 +398,12 @@ struct Parser {
     /// descent can exhaust the host stack on a substrate whose physical
     /// ceiling is below the recursion budget (`LANGUAGE_SPEC.md` §31.2/§31.5).
     atom_depth: usize,
+    /// Current structural nesting depth of a type annotation (`Box<…>`, `[T]`,
+    /// `{K: V}`). Type nesting counts toward the same [`MAX_AST_DEPTH`] budget
+    /// as every other node kind (ADR-0004), so "valid under the semantic limit"
+    /// holds identically on native and WASM. A flat union (`A | B | …`) is a
+    /// loop, not nesting, and is not counted per member.
+    type_depth: usize,
 }
 
 impl Parser {
@@ -1486,12 +1496,24 @@ impl Parser {
     fn ty(&mut self) -> Result<TypeExpr> {
         // A generic application nests (`Box<Box<int>>`), so a type recurses
         // through the same host-stack backstop as an expression. An over-deep
-        // annotation is `E1015`, never a host-stack trap. A *flat* union is a
-        // loop over members and stays at one level, so a long union is still
-        // accepted.
+        // annotation is `E1015`, never a host-stack trap. Structural type
+        // nesting counts toward the same semantic budget as every other node
+        // kind (ADR-0004), so the limit is identical on native and WASM. A
+        // *flat* union is a loop over members and stays at one level, so a long
+        // union is still accepted.
+        self.type_depth += 1;
+        if self.type_depth > MAX_AST_DEPTH {
+            self.type_depth -= 1;
+            return Err(Diag::new(
+                codes::NESTING,
+                "type nests too deeply",
+                self.span(),
+            ));
+        }
         self.enter()?;
         let r = self.ty_inner();
         self.leave();
+        self.type_depth -= 1;
         r
     }
 

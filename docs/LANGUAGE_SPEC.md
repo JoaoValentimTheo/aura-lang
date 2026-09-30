@@ -198,8 +198,11 @@ used as user-defined names in the value namespace: `let`/`let mut`, function
 parameters, lambda parameters, loop bindings, catch bindings, pattern
 bindings, user functions, top-level `let`, and import aliases. A violation is
 `E1009` (`RESERVED_NAME`) at the declaration. Type names (`struct`/`enum`/`type`),
-modules, struct fields, enum variants, and methods live in separate namespaces
-and may reuse a builtin spelling (§26, §27).
+modules, struct fields, enum variants, methods, and **module members**
+(`module M { pub fn sum … }`, reachable only as `M::sum` or through an explicit
+`use`) live in separate namespaces and may reuse a builtin spelling (§26, §27;
+ADR-0002). "user functions" here means top-level functions in the
+user-visible value namespace, not module members.
 
 **Normative rule (contextual words).** The words `module`, `const`, `impl`, `self`, and `trait`
 are **not** reserved. They remain ordinary identifiers everywhere
@@ -3089,6 +3092,15 @@ AST levels**. Deeper nesting is `E1015`, never a crash. The limit counts AST
 nodes (calls, operators, collections, blocks, and so on), starting at 1 for
 each top-level expression. Grouping parentheses add no AST depth.
 
+**Normative rule (type annotations).** Structural nesting of a `TypeExpr`
+counts toward the same **256-level** budget as every other node: generic
+application (`Box<…>`), a list (`[T]`), and a map (`{K: V}`) each add one
+level, and the innermost atomic type (e.g. `int`) occupies the deepest level.
+A nested annotation at the limit is accepted; one past it is `E1015`. This
+makes the semantic limit identical on every execution substrate (ADR-0004).
+A *flat union* (`A | B | …`) is a list of alternatives, not nesting, and is
+**not** counted per member: a long union remains accepted.
+
 **Normative rule.** The AST-node budget is counted **per statement** (and per
 top-level item expression) and accumulates across every nested sub-expression.
 It is enforced *during* parsing, not only after it: a chain of nested calls
@@ -3134,6 +3146,14 @@ require.
 >
 > "256" describes **AST nodes**, not raw parentheses. A chain of grouping
 > parentheses is limited by mechanism 2, not by the number 256.
+
+> **RESOLVED (ADR-0004).** `TypeExpr` nodes were the one place where
+> acceptance depended on the substrate: type nesting was bounded only by the
+> substrate-calibrated backstop (native accepted ≤2047 / rejected 2048; WASM
+> ≤767 / 768). The parser now counts structural type nesting toward the
+> §31.1 semantic budget, so the type-nesting ceiling is **256 on every
+> substrate** and the divergence is removed. The backstop continues to bound
+> non-AST recursion (grouping) only.
 
 ### 31.3 Call-frame limit
 

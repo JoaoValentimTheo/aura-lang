@@ -446,3 +446,80 @@ fn nested_modules_are_bounded_not_a_stack_overflow() {
     }
     assert!(run(&format!("{flat}\nfn main() {{ print(m1999::f()) }}")).is_ok());
 }
+
+/// `LANGUAGE_SPEC.md` §31.1 + ADR-0004: structural `TypeExpr` nesting counts
+/// toward the same `MAX_AST_DEPTH = 256` semantic budget as every other AST
+/// node, so a type annotation at the limit is accepted and one past it is the
+/// stable `E1015` on *every* substrate. Before ADR-0004 the parser did not
+/// descend `TypeExpr` nodes, so type nesting was bounded only by the
+/// substrate-calibrated parser backstop (native 2047 accepted / 2048 rejected;
+/// WASM 767 / 768), a native/WASM acceptance divergence. This test pins the
+/// unified boundary at N-1/N/N+1.
+#[test]
+fn type_nesting_counts_toward_the_semantic_ast_limit() {
+    // A generic application nests structurally: `Box<Box<...<int>>>`.
+    let type_src = |n: usize| {
+        let mut t = "int".to_string();
+        for _ in 0..n {
+            t = format!("Box<{t}>");
+        }
+        format!("struct Box<T> {{ value: T }}\nfn f(x: {t}) -> int {{ return 1 }}\nfn main() {{ print(1) }}")
+    };
+    // The `int` atom occupies the deepest level, so `n` generic wraps is
+    // `n + 1` AST levels. "At most 256 levels" therefore accepts 255 wraps and
+    // rejects 256 (the parity this test pins at N-1/N/N+1 levels).
+    assert!(
+        run(&type_src(254)).is_ok(),
+        "255 AST levels must be accepted"
+    );
+    assert!(
+        run(&type_src(255)).is_ok(),
+        "256 AST levels (the limit) must be accepted"
+    );
+    assert_eq!(
+        run(&type_src(256)),
+        Err(codes::NESTING),
+        "257 AST levels must be `E1015`"
+    );
+
+    // A *flat* union is a loop over members, not nesting, so a long union is
+    // accepted: ADR-0004 must not penalize union breadth per member.
+    let defs = (0..4000)
+        .map(|i| format!("type T{i} = int"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let members = (0..4000)
+        .map(|i| format!("T{i}"))
+        .collect::<Vec<_>>()
+        .join(" | ");
+    let flat = format!("{defs}\ntype All = {members}\nfn main() {{ let x: All = 1 }}");
+    assert!(
+        run(&flat).is_ok(),
+        "a flat 4000-member union must stay accepted"
+    );
+}
+
+/// ADR-0004 also covers nesting inside other annotation positions: a list and
+/// a map nest the same way a generic application does and must be bounded.
+#[test]
+fn list_and_map_type_nesting_are_bounded() {
+    let list_src = |n: usize| {
+        let mut t = "int".to_string();
+        for _ in 0..n {
+            t = format!("[{t}]");
+        }
+        format!("fn f(x: {t}) -> int {{ return 1 }}\nfn main() {{ print(1) }}")
+    };
+    assert!(run(&list_src(255)).is_ok());
+    assert_eq!(run(&list_src(300)), Err(codes::NESTING));
+
+    let map_src = |n: usize| {
+        let mut t = "int".to_string();
+        for _ in 0..n {
+            t = format!("{{string: {t}}}");
+        }
+        format!("fn main() {{ let x: {t} = {{}} }}")
+    };
+    assert!(run(&map_src(100)).is_ok());
+    assert_eq!(run(&map_src(300)), Err(codes::NESTING));
+}

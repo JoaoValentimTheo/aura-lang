@@ -753,9 +753,11 @@ if (postError.text === norm({ status: "ok", stdout: "3\n", result: null, diagnos
 //      `tests/corpus/ast/gen_*.aura`) as a compatibility sweep, so the shared
 //      Rust/JS corpus is also compared on both engines.
 //
-// Excluded: TypeExpr-heavy inputs (AUDIT-3 substrate divergence is
-// intentionally excluded pending the human decision). Neither generator emits
-// a TypeExpr-heavy program, so the exclusion is automatic here.
+// Excluded: TypeExpr-heavy inputs are not emitted by either generator, so the
+// property stays focused on the expression/statement surface where both
+// generators live. Type-nesting parity is now pinned explicitly by the
+// dedicated sweep below (ADR-0004 unified the ceiling; there is no longer a
+// substrate divergence to avoid).
 //
 // A mismatch prints the program and its deterministic seed, so it is
 // reproducible by running that single program through both engines.
@@ -896,33 +898,28 @@ if (postError.text === norm({ status: "ok", stdout: "3\n", result: null, diagnos
 }
 
 // ---------------------------------------------------------------------------
-// TypeExpr nesting sweep (permanent).
+// TypeExpr nesting sweep (permanent, ADR-0004).
 //
-// `enforce_depth` descends expressions and statements, not `TypeExpr` nodes, so
-// a deeply nested *type annotation* is bounded only by the substrate-calibrated
-// parser backstop (LANGUAGE_SPEC.md §31.2) — not by the 256-node semantic limit
-// (§31.1). The two substrates therefore have different acceptance ceilings for
-// type nesting. This sweep makes that curve explicit and permanent so any
-// future change to `enforce_depth` (or to the backstop) is immediately visible,
-// and so the §31.5 invariant — no host failure at any depth — is locked.
-//
-// Observed ceilings (reconfirmed at the boundary): native first-rejects at
-// 2048, wasm at 768; below each ceiling the input is accepted, at and above it
-// the substrate reports E1015. The native/wasm split is the documented,
-// permitted backstop calibration; it must never become a trap, an abort, or a
-// silent acceptance on one side only.
+// Structural type nesting (`Box<…>`, `[T]`, `{K: V}`) counts toward the same
+// 256-level semantic AST budget as every other node, on every substrate
+// (LANGUAGE_SPEC.md §31.1). The ceiling is therefore unified: native and WASM
+// accept and reject at exactly the same depth, and the old substrate split
+// (native 2047/2048, WASM 767/768) is gone. This sweep pins the unified
+// boundary (N-1/N/N+1), the flat-union exemption, and the §31.5 invariant — no
+// host failure at any depth, on either substrate.
 {
   const typeSrc = (n) => {
     let t = "int";
     for (let i = 0; i < n; i += 1) t = `Box<${t}>`;
     return `struct Box<T> { value: T }\nfn f(x: ${t}) -> int { return 1 }\nfn main() { print(1) }`;
   };
-  // Every 64 levels from 0 to 32 past the native ceiling (2048), plus the exact
-  // boundaries of both substrates (N-1/N/N+1).
-  const depths = new Set();
-  for (let d = 0; d <= 2080; d += 64) depths.add(d);
-  for (const b of [767, 768, 769, 2047, 2048, 2049]) depths.add(b);
-  const sorted = [...depths].sort((a, b) => a - b);
+  // Around the unified ceiling, plus the exact boundary levels (N-1/N/N+1) and
+  // the old substrate ceilings, which must now agree.
+  const levels = new Set();
+  for (const d of [0, 1, 2, 64, 128, 192, 250, 254, 255, 256, 257, 258, 512, 767, 768, 2047, 2048]) {
+    levels.add(d);
+  }
+  const sorted = [...levels].sort((a, b) => a - b);
 
   let sweepFailures = 0;
   let nativeHostFailures = 0;
@@ -999,55 +996,66 @@ if (postError.text === norm({ status: "ok", stdout: "3\n", result: null, diagnos
     }
   }
 
-  // The acceptance ceilings are exactly the observed backstops. A change here
-  // is a deliberate calibration change, not an accident.
-  const NATIVE_CEILING = 2048; // first native rejection
-  const WASM_CEILING = 768; // first wasm rejection
+  // ADR-0004: one unified ceiling. `n` generic wraps is `n + 1` AST levels, so
+  // 255 wraps (256 levels) is accepted and 256 wraps (257 levels) is rejected —
+  // identically on both substrates.
+  const CEILING_WRAPS = 256; // first rejected wrap count
   const nativeFirstReject = table.find(([, nk]) => nk === "reject")?.[0];
   const wasmFirstReject = table.find(([, , , wk]) => wk === "reject")?.[0];
-  if (nativeFirstReject === NATIVE_CEILING) passed += 1;
-  else {
-    failed += 1;
-    console.error(
-      `FAIL typeexpr native ceiling: first rejection at ${nativeFirstReject}, expected ${NATIVE_CEILING}`,
-    );
-  }
-  if (wasmFirstReject === WASM_CEILING) passed += 1;
-  else {
-    failed += 1;
-    console.error(
-      `FAIL typeexpr wasm ceiling: first rejection at ${wasmFirstReject}, expected ${WASM_CEILING}`,
-    );
+  for (const [label, first] of [
+    ["native", nativeFirstReject],
+    ["wasm", wasmFirstReject],
+  ]) {
+    if (first === CEILING_WRAPS) passed += 1;
+    else {
+      failed += 1;
+      console.error(
+        `FAIL typeexpr ${label} ceiling: first rejection at ${first} wraps, expected ${CEILING_WRAPS}`,
+      );
+    }
   }
 
-  // Below the wasm ceiling, both substrates accept; between the ceilings, the
-  // difference is exactly the documented calibration (native accept, wasm
-  // E1015) and must be nothing else. This pins the *shape* of the divergence.
+  // Unified shape: below the ceiling both accept; at/after it both reject with
+  // E1015. Any native/wasm disagreement is the removed divergence returning.
   let shapeOk = true;
   for (const [n, nk, , wk] of table) {
-    if (n < WASM_CEILING) {
-      if (!(nk === "accept" && wk === "accept")) {
-        shapeOk = false;
-        console.error(`FAIL typeexpr n=${n} (< wasm ceiling): expected accept/accept, got ${nk}/${wk}`);
-      }
-    } else if (n < NATIVE_CEILING) {
-      if (!(nk === "accept" && wk === "reject")) {
-        shapeOk = false;
-        console.error(
-          `FAIL typeexpr n=${n} (between ceilings): expected native accept / wasm reject, got ${nk}/${wk}`,
-        );
-      }
-    } else if (!(nk === "reject" && wk === "reject")) {
+    const expected = n < CEILING_WRAPS ? ["accept", "accept"] : ["reject", "reject"];
+    if (!(nk === expected[0] && wk === expected[1])) {
       shapeOk = false;
-      console.error(`FAIL typeexpr n=${n} (>= native ceiling): expected reject/reject, got ${nk}/${wk}`);
+      console.error(
+        `FAIL typeexpr n=${n}: expected ${expected[0]}/${expected[1]}, got ${nk}/${wk}`,
+      );
     }
   }
   if (shapeOk && sweepFailures === 0) passed += 1;
   else failed += 1;
 
+  // ADR-0004 consequence: a *flat* union is alternatives, not nesting, and must
+  // stay accepted on both substrates no matter how many members it lists.
+  {
+    const names = Array.from({ length: 600 }, (_, i) => `T${i}`);
+    const defs = names.map((t) => `type ${t} = int`).join("\n");
+    const flat = `${defs}\ntype All = ${names.join(" | ")}\nfn main() { let x: All = 1 }`;
+    let flatOk = true;
+    const nf = join(dir, "typeexpr_flatunion.aura");
+    writeFileSync(nf, flat);
+    try {
+      const out = execFileSync(nativeBin, [nf, optionsFile], { encoding: "utf8" }).trim();
+      if (JSON.parse(out).status !== "ok") flatOk = false;
+    } catch {
+      flatOk = false;
+    }
+    if (runtime.run(flat, options).status !== "ok") flatOk = false;
+    if (flatOk) passed += 1;
+    else {
+      failed += 1;
+      console.error("FAIL typeexpr flat union: a 600-member union must stay accepted");
+    }
+  }
+
   // Characterize the curve for the record (visible in CI output).
   console.log(
-    `typeexpr sweep: ${table.length} depths, native ceiling=${nativeFirstReject}, wasm ceiling=${wasmFirstReject}, host failures=0`,
+    `typeexpr sweep: ${table.length} depths, unified ceiling=${CEILING_WRAPS} wraps, host failures=0`,
   );
 }
 

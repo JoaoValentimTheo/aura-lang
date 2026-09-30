@@ -7,6 +7,7 @@ the runtime model.
 | Limit | Value | Exceeding it |
 |---|---|---|
 | AST nesting depth | 256 | `E1015` |
+| Type-annotation nesting depth | 256 | `E1015` |
 | Call-frame limit (recursion) | 512 | `E4011` |
 | Range materialization | 10,000,000 elements | `E4013` |
 | Runtime value display/JSON depth | 512 | truncated (display) / `null` (JSON) |
@@ -18,6 +19,12 @@ the runtime model.
 The checker and evaluator bound how deeply expressions and statements may nest.
 A program at the limit is valid; beyond it is `E1015`, reported before
 execution.
+
+Structural nesting of a type annotation — a generic application (`Box<…>`), a
+list (`[T]`), or a map (`{K: V}`) — counts toward the same 256-level budget,
+uniformly on every substrate. A *flat union* (`A | B | …`) lists alternatives
+rather than nesting and is not penalized per member, so a long union is still
+accepted.
 
 ## Call frames (E4011)
 
