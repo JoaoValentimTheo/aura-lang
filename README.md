@@ -209,6 +209,15 @@ Values cross structurally: ints, floats, strings, bools, `none`, lists, and
 dicts map both ways. Without the feature the same names exist but every call
 is `E5002`, and the binary links no CPython — programs still run.
 
+The exact supported surface, value-conversion table, and per-dimension scope
+are defined in [docs/CPYTHON_COMPATIBILITY_TARGET.md](docs/CPYTHON_COMPATIBILITY_TARGET.md).
+
+> **Security:** the `py` feature executes **arbitrary Python with the full
+> authority of the host process** — filesystem, network, environment,
+> subprocess, and native extensions. `py_eval`/`py_call`/`py_import` are **not
+> a sandbox**. Build with `--no-default-features --features cli,repl,json,regex,time`
+> when arbitrary code execution must not be available. See [SECURITY.md](SECURITY.md).
+
 ## CLI
 
 | Command | Purpose |

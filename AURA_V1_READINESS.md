@@ -28,7 +28,7 @@ never by schedule. Status legend: **GREEN** (ready), **YELLOW** (gaps remain),
 | CI | GREEN | comprehensive matrix; all green; now includes a CPython interop version/platform job |
 | RELEASE ENGINEERING | YELLOW | gated release workflow + policy doc + CHANGELOG; no SBOM/provenance; version scheme decision pending (HD-4) |
 | SUPPLY CHAIN | YELLOW | cargo audit in CI; actions not SHA-pinned; no SBOM |
-| BACKWARD COMPAT | YELLOW | no versioned compatibility fixtures/upgrade tests yet |
+| BACKWARD COMPAT | YELLOW | `tests/compat.rs` pins the released 0.2.0 language surface behaviorally; compatibility policy in RELEASE_ENGINEERING.md; upgrade/older-artifact matrix still pending |
 | RELEASE-READY (v1 GO) | RED | CPYTHON/SECURITY/PERF/DOCS/PACKAGING/COMPAT not yet GREEN; HD-1 + AUDIT-3 open |
 
 ## Current blockers toward v1 GO

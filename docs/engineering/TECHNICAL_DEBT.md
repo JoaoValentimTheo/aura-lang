@@ -10,7 +10,7 @@ HIGH / MEDIUM / LOW.
 | TD-03 | MEDIUM | No SBOM / build provenance / artifact signing | Release supply chain below best practice | Needs infra decision | Release Eng | v1 |
 | TD-04 | MEDIUM | Reproducible builds not verified | Cannot prove artifact provenance bit-for-bit | Not measured | Release Eng | v1 |
 | TD-05 | MEDIUM | No committed performance benchmark suite | Regressions can go unnoticed | Ad-hoc measurement only | Performance | now (T4) |
-| TD-06 | MEDIUM | No versioned backward-compatibility fixtures / upgrade tests | Breaking changes could slip silently | Pre-1.0 churn tolerated | Backward Compat | v1 |
+| TD-06 | MEDIUM | No versioned backward-compatibility fixtures / upgrade tests | Breaking changes could slip silently | Pre-1.0 churn tolerated | Backward Compat | **partially closed** — `tests/compat.rs` pins 0.2.0; upgrade/older-artifact matrix pending |
 | TD-07 | LOW | `E5003` (`FEATURE_UNAVAILABLE`) defined but unused | Dead code constant | Documented in spec | Static Semantics | — |
 | TD-08 | LOW | `s` transient file written by a property test at repo root | Untracked artifact noise | Pre-existing test hygiene | QA | — |
 | TD-09 | LOW | Boolean lowering uses Python-compatible keywords (`and/or/not`, `True/False/None`) internally | Cosmetic only; not user-visible Aura syntax | Chosen representation | Runtime | — |
