@@ -1,14 +1,16 @@
 [package]
 name = "aura-playground-runtime"
 # The `0.2.0` release runtime artifact is frozen and immutable. This is the
-# first development runtime on the `0.2.0` line, carrying the additive Host
+# second development runtime on the `0.2.0` line, carrying the additive Host
 # ABI 1 virtual-project capability (`aura_project_reset`,
 # `aura_project_push`, `aura_run_project`) so the Playground's multi-file
-# project surface can be exercised end to end. It is a development
-# pre-release, never a published release: advancing it means bumping this
-# pre-release identifier (e.g. `0.2.0-dev.2`), never overwriting an existing
-# artifact, and never touching `runtimes/0.2.0/`.
-version = "0.2.0-dev.1"
+# project surface can be exercised end to end, plus the core-language
+# builtin-name value-namespace reservation (E1009) that postdates
+# `0.2.0-dev.1`. It is a development pre-release, never a published release:
+# advancing it means bumping this pre-release identifier (e.g.
+# `0.2.0-dev.3`), never overwriting an existing artifact, and never touching
+# `runtimes/0.2.0/`.
+version = "0.2.0-dev.2"
 edition = "2021"
 rust-version = "1.83"
 description = "The Aura Playground WebAssembly execution wrapper: a minimal, zero-import C ABI over the real aura runtime."

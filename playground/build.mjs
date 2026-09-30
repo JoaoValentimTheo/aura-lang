@@ -103,6 +103,24 @@ const HISTORICAL_DEV_0_0_2_DEV_30 = {
   bytes: 1654216,
 };
 
+// The first development artifact of the `0.2.0` line, superseded by
+// `0.2.0-dev.2`. It predates the builtin-name value-namespace reservation, so
+// it is preserved and selectable as a historical development runtime but is no
+// longer the manifest default. Its identity is pinned so the artifact can
+// never drift.
+const HISTORICAL_DEV_0_2_0_DEV_1 = {
+  id: "0.2.0-dev.1",
+  release_version: "0.2.0",
+  language_version: "0.2.0",
+  runtime_version: "0.2.0-dev.1",
+  host_abi_version: 1,
+  available: true,
+  channel: "development",
+  artifact: "0.2.0-dev.1/aura_playground_runtime.wasm",
+  sha256: "ba40e89c834896badfb17d5c72aa2dcb227907a7b5ba513c315ef2f2da0adf08",
+  bytes: 1767068,
+};
+
 function sha256(buf) {
   return createHash("sha256").update(buf).digest("hex");
 }
@@ -274,6 +292,7 @@ const manifest = {
     FROZEN_0_0_1,
     FROZEN_0_0_2,
     HISTORICAL_DEV_0_0_2_DEV_30,
+    HISTORICAL_DEV_0_2_0_DEV_1,
     FROZEN_0_2_0,
     {
       id: runtimeVersion,

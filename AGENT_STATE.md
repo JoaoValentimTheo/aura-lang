@@ -82,13 +82,14 @@ state model, without adding any language semantics:
 - `playground/web/worker.js` — additive project transport: `runProject` when a
   project is supplied, `run` otherwise; a runtime without `aura_project_*`
   reports a structured capability error instead of failing obscurely.
-- `playground/runtimes/0.2.0-dev.1/` — a development runtime carrying the
-  additive Host ABI 1 virtual-project exports. Development channel only; not a
-  release, not tagged, never a replacement for `0.2.0`.
+- `playground/runtimes/0.2.0-dev.2/` — a development runtime carrying the
+  additive Host ABI 1 virtual-project exports and the builtin-name reservation.
+  Development channel only; not a release, not tagged, never a replacement for
+  `0.2.0`.
 
 `playground/build.mjs` now pins the `0.2.0` release identity permanently, so
 the build can never regenerate or overwrite it. The manifest lists 5 entries
-(`0.0.1`, `0.0.2`, `0.0.2-dev.30`, `0.2.0`, `0.2.0-dev.1`).
+(`0.0.1`, `0.0.2`, `0.0.2-dev.30`, `0.2.0`, `0.2.0-dev.2`).
 
 Host ABI remains 1. Playground API remains 1. No `src/**` change. No frozen
 artifact change.
@@ -154,8 +155,11 @@ must not reintroduce model/provider/bridge/global-agent routing.
   `5a4ad3f7e3f786164d65df437d607e7ddd5e25947ea2c8dd9b436a5490b334ed`
 - `0.2.0` — 1,654,161 bytes —
   `9937fd8094ef402b7a9233d02bd232405f75b9e70661404646fcda7cd295c5bc`
-- `0.2.0-dev.1` — 1,767,068 bytes — development runtime, NOT a release:
+- `0.2.0-dev.1` — 1,767,068 bytes — superseded development runtime, NOT a
+  release:
   `ba40e89c834896badfb17d5c72aa2dcb227907a7b5ba513c315ef2f2da0adf08`
+- `0.2.0-dev.2` — 1,767,723 bytes — current development runtime, NOT a release:
+  `b69f212bf3f1d8df41b66ad249bf9c9829015b06459569fd2b765a5596b66c06`
 
 Historical runtime directories are immutable. `playground/build.mjs` pins each
 frozen release identity and refuses to regenerate or overwrite it; advancing a

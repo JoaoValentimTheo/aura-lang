@@ -15,7 +15,7 @@
 //
 // Nothing here reimplements Aura semantics: the assertions read the runtime's
 // own structured result. The suite requires the runtime artifact that carries
-// the virtual-project exports (`0.2.0-dev.1`); it selects that version
+// the virtual-project exports (`0.2.0-dev.2`); it selects that version
 // explicitly so the test never depends on which entry is the manifest default.
 //
 // Usage: node playground/tests/node/multifile.test.mjs
@@ -32,7 +32,7 @@ try {
 }
 
 /** The development runtime that carries the additive virtual-project exports. */
-const PROJECT_RUNTIME = "0.2.0-dev.1";
+const PROJECT_RUNTIME = "0.2.0-dev.2";
 
 /** A runtime that predates `aura_project_*`. */
 const LEGACY_RUNTIME = "0.0.2";

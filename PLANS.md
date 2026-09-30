@@ -47,7 +47,7 @@ provider child links) and executes it through the same virtual-project
 transport. It is a UI/state/transport phase — no language semantics were added,
 and no second module graph or resolver exists for browser sources.
 
-A development runtime, `0.2.0-dev.1`, carries the additive Host ABI 1
+A development runtime, `0.2.0-dev.2`, carries the additive Host ABI 1
 virtual-project exports so the surface can be exercised end to end. It is a
 development artifact: not a release, not tagged, and never a replacement for
 `0.2.0`.
