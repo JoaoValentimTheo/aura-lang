@@ -50,7 +50,9 @@ mod py {
     use crate::run::value::Value;
     use crate::run::Interp;
     use pyo3::prelude::*;
-    use pyo3::types::{PyAnyMethods, PyBool, PyDict, PyInt, PyList, PyModule, PyTuple};
+    use pyo3::types::{
+        PyAnyMethods, PyBool, PyDict, PyFloat, PyInt, PyList, PyModule, PyString, PyTuple,
+    };
     use std::cell::RefCell;
     use std::collections::{BTreeMap, HashSet};
     use std::rc::Rc;
@@ -130,8 +132,12 @@ mod py {
         if obj.is_none() {
             return Ok(Value::None);
         }
-        if let Ok(b) = obj.extract::<bool>() {
-            return Ok(Value::Bool(b));
+        // Exact-type match: `extract::<bool>()` is truthiness-based in PyO3 and
+        // would coerce any object with a `__bool__`, so require a real `bool`.
+        if obj.is_instance_of::<PyBool>() {
+            return Ok(Value::Bool(
+                obj.extract::<bool>().map_err(|e| map_pyerr(e, span))?,
+            ));
         }
         // Check `int` *before* `float` and reject values outside `i64` rather
         // than silently demoting them to a `float`, which would lose
@@ -147,11 +153,23 @@ mod py {
                 span,
             ));
         }
-        if let Ok(f) = obj.extract::<f64>() {
-            return Ok(Value::Float(f));
+        // Match on *type identity*, not on whether a conversion happens to
+        // succeed. `obj.extract::<f64>()` and `extract::<String>()` are
+        // duck-typed in PyO3: they invoke `__float__`/`__index__`/`__str__`.
+        // A user type implementing those would otherwise be silently coerced
+        // to `float`/`string` (with possible precision loss) instead of taking
+        // the documented opaque-object fallback (its `repr`), and a dunder
+        // that raises would be silently swallowed. Only genuine `float` and
+        // `str` instances convert; everything else falls through to `repr`.
+        if obj.is_instance_of::<PyFloat>() {
+            return Ok(Value::Float(
+                obj.extract::<f64>().map_err(|e| map_pyerr(e, span))?,
+            ));
         }
-        if let Ok(s) = obj.extract::<String>() {
-            return Ok(Value::str(s));
+        if obj.is_instance_of::<PyString>() {
+            return Ok(Value::str(
+                obj.extract::<String>().map_err(|e| map_pyerr(e, span))?,
+            ));
         }
         if let Ok(list) = obj.cast::<PyList>() {
             let id = obj.as_ptr() as usize;

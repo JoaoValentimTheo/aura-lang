@@ -206,6 +206,35 @@ fn opaque_python_objects_render_as_repr() {
     assert_eq!(f, "true\n");
 }
 
+/// A user object implementing `__float__`/`__index__`/`__bool__`/`__str__` must
+/// NOT be silently coerced: only genuine `float`/`int`/`bool`/`str` instances
+/// convert, and everything else takes the documented `repr` fallback. Before
+/// this rule, PyO3's duck-typed `extract::<f64>()` coerced such objects (and
+/// `__index__` returning a large value lost precision), contradicting the
+/// conversion table.
+#[test]
+fn duck_typed_objects_are_not_silently_coerced() {
+    // `__float__` -> repr, not the float 2.5
+    let f = out(
+        "fn main() { print(py_eval(\"type('X',(),{'__float__':lambda s:2.5})()\").contains('X')) }",
+    );
+    assert_eq!(f, "true\n");
+    // `__index__` returning 9 -> repr, not 9.0
+    let i = out(
+        "fn main() { print(py_eval(\"type('X',(),{'__index__':lambda s:9})()\").contains('X')) }",
+    );
+    assert_eq!(i, "true\n");
+    // `__bool__` -> repr, not true
+    let b = out(
+        "fn main() { print(py_eval(\"type('X',(),{'__bool__':lambda s:True})()\").contains('X')) }",
+    );
+    assert_eq!(b, "true\n");
+    // Genuine instances still convert.
+    assert_eq!(out("fn main() { print(py_eval(\"1.5\")) }"), "1.5\n");
+    assert_eq!(out("fn main() { print(py_eval(\"True\")) }"), "true\n");
+    assert_eq!(out("fn main() { print(py_eval(\"'hi'\")) }"), "hi\n");
+}
+
 /// Unicode strings round-trip exactly (no normalization, no lossy encoding).
 #[test]
 fn unicode_round_trips() {
