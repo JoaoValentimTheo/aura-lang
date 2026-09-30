@@ -654,6 +654,25 @@ const cases = [
     'list annotated mismatch',
     'fn main() { let xs: [int] = [1, "x"] }',
   ],
+  // Builtin-name value-namespace reservation (E1009). These pin that the wasm
+  // and native engines agree on the reservation; the historical `let values`
+  // regression was a corpus entry that became illegal after the rule landed.
+  [
+    'builtin reserved let mut',
+    'fn main() {\n let mut sum = 0\n sum = sum + 1\n print(sum)\n}',
+  ],
+  [
+    'builtin reserved let',
+    'fn main() { let sum = 1\n print(sum) }',
+  ],
+  [
+    'builtin reservation near miss',
+    'fn main() { let vals = 1\n print(vals) }',
+  ],
+  [
+    'builtin call still works',
+    'fn main() { print(sum([1, 2, 3])) }',
+  ],
 ];
 
 const options = { args: ["alpha", "beta"], stdin: "line one\nline two\n" };
