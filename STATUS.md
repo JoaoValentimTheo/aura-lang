@@ -1389,3 +1389,95 @@ Follow-up 3 / AUDIT-3 remains DECISION-PENDING; no code or doc changes beyond th
 Next exact action: **HUMAN REVIEW BEFORE PUSH.** FSM-P5 remains locally closed
 and unpushed. Do not begin FSM-P6, publish runtime bytes, create tags/releases,
 or alter AUDIT-3 without new human authorization.
+
+### FSM-P6 — Multi-file Playground UX — 2026-09-30
+
+**IMPLEMENTED LOCALLY; NOT COMMITTED, NOT PUSHED.** FSM-P6 began from the
+remotely closed FSM-P5 checkpoint
+`bf95d101dd18f3ad16eaa7bfb99c8304d44bf49d` (CI 14/14 green, Deploy green).
+
+FSM-P6 is a UI/state/transport phase, not a language-semantics phase. No
+`src/**` file changed; no checker, resolver, or runtime semantics changed; Host
+ABI remains 1 and Playground API remains 1. The browser reaches Aura only
+through the virtual-provider path FSM-P5 delivered:
+
+```text
+project state (web/project.js)
+    ↓
+worker `project` message (web/worker.js)
+    ↓
+runtime.runProject → aura_project_reset / aura_project_push / aura_run_project
+    ↓
+InMemorySourceProvider → ModuleGraphBuilder → logical module tree
+    ↓
+canonical resolver → checker → runtime
+    ↓
+structured result / diagnostics (each project diagnostic carries `source`)
+```
+
+Delivered:
+
+- `playground/web/project.js` — a pure project state model: files with opaque
+  `SourceKey`s, unique display names, an active file, an entry file, and each
+  file's declared provider child links. Keys are `s<N>`, path-free, stable
+  across rename, and never derived from a filename.
+- `playground/web/app.js` — file tabs, add / rename / set entry / delete /
+  reset, a multi-file-capable example loader, source-aware diagnostics (a click
+  activates the owning file), and a `run()` that sends `source` for a one-file
+  project and `project` otherwise.
+- `playground/web/worker.js` — additive project transport with capability
+  detection; a runtime without the exports reports a structured limitation
+  instead of failing obscurely.
+- `playground/index.html`, `playground/web/style.css` — the file strip and the
+  diagnostic source chip.
+- `playground/tests/node/project.test.mjs` (36 tests) and
+  `playground/tests/node/multifile.test.mjs` (42 tests).
+- `playground/runtimes/0.2.0-dev.1/` — a **development** runtime carrying the
+  additive Host ABI 1 virtual-project exports: 1,767,068 bytes, SHA-256
+  `ba40e89c834896badfb17d5c72aa2dcb227907a7b5ba513c315ef2f2da0adf08`, zero
+  wasm imports. It is not a release, not tagged, and not a replacement for
+  `0.2.0`.
+- `playground/build.mjs` now pins the `0.2.0` release identity permanently and
+  verifies it independently of the manifest, so a release artifact can never be
+  regenerated or overwritten.
+
+Defects found and fixed inside FSM-P6:
+
+1. the Phase-4 rewrite silently broke the URL/`sessionStorage` example handoff
+   (the project was replaced but the editor was not reloaded). Fixed, and the
+   existing browser handoff tests now guard it;
+2. the multi-file test harness declared provider child links on the *child*
+   file, while ownership belongs to the *declaring parent*. The runtime was
+   correct — the request was wrong. The harness now declares links on the entry
+   file, and `multifile.test.mjs` asserts the posted payload so the mistake
+   cannot recur silently.
+
+Frozen artifacts re-verified byte-identical before and after the development
+runtime build: `0.0.2` (1,366,621 /
+`5a4ad3f7…b334ed`) and `0.2.0` (1,654,161 / `9937fd80…c5bc`).
+
+Deferred, and explicitly not part of FSM-P6: browser project persistence,
+shareable project URLs, package manifests/package management, remote
+dependencies, URL imports, a visual module-ownership tree, and interactive
+child-link editing.
+
+**OUT-OF-SCOPE FINDING (pre-existing, not FSM-P6).** A mutable user binding
+named `sum` is rejected with `E2001`:
+
+```aura
+fn main() {
+    let mut sum = 0
+    sum = sum + 1
+}
+```
+
+`sum` is a stdlib builtin, and the checker's `lookup()` consults
+`crate::stdlib::builtin_names()` before the lexical scopes, so the builtin's
+immutability shadows the user's `let mut`. `src/**` was not touched. This
+requires a separate remediation task.
+
+Follow-up 3 / AUDIT-3 remains DECISION-PENDING; no code or doc changes beyond the existing decision package; property test AST-limit explicitly excludes TypeExpr-heavy inputs pending that decision.
+
+Next exact action: **INDEPENDENT REVIEW OF THE LOCAL FSM-P6 STACK.** Do not
+push, publish a runtime, create a tag or release, begin package management or
+persistence, or alter AUDIT-3 without new human authorization.

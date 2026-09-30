@@ -44,6 +44,8 @@ AURA FILESYSTEM MODULE SYSTEM
 - FSM-P3 — provider-neutral module graph
 - FSM-P4 — native filesystem provider
 - FSM-P5 — virtual/WASM VFS foundation
+- FSM-P6 — multi-file Playground UX (UI + state + transport; no language
+  semantics)
 
 Never use bare “Phase N” for filesystem-module work. `CONFORMANCE_PHASE<N>` is
 the historical conformance series and `FEATURE_<NNN>` is the feature series.
@@ -54,7 +56,9 @@ the historical conformance series and `FEATURE_<NNN>` is the feature series.
 - FSM-P2 — CLOSED
 - FSM-P3 — CLOSED
 - FSM-P4 — CLOSED REMOTELY
-- FSM-P5 — LOCALLY CLOSED — NOT PUSHED
+- FSM-P5 — CLOSED REMOTELY (green on
+  `bf95d101dd18f3ad16eaa7bfb99c8304d44bf49d`)
+- FSM-P6 — IMPLEMENTED LOCALLY — NOT COMMITTED, NOT PUSHED
 
 FSM-P5 uses caller-supplied virtual sources through `InMemorySourceProvider`,
 the existing `SourceProvider`, `ModuleGraphBuilder`, canonical resolver,
@@ -63,12 +67,35 @@ remains 1.
 
 ## Current Work
 
-The final read-only push-readiness review found two FSM-P5 blockers. Both are
-now remediated in additive commits after `b55a434`: invalid virtual/provider
-source keys use the normative `E2022` diagnostic partition, and case-only child
-collision detection no longer performs the quadratic pairwise scan. The
-deterministic diagnostic ordering is preserved with an `O(n log n)` validation
-pass. Full local validation is green. No FSM-P6 work is authorized.
+FSM-P6 — Multi-file Playground UX. The Playground now exposes the virtual
+multi-source capability FSM-P5 delivered, through a file-tab UI and a project
+state model, without adding any language semantics:
+
+- `playground/web/project.js` — the project state model (files, opaque
+  `SourceKey`s, unique display names, active file, entry file, declared
+  provider child links). Pure, DOM-free, unit-testable.
+- `playground/web/app.js` — file tabs, add/rename/set-entry/delete/reset, an
+  example loader that supports multi-file examples, source-aware diagnostics
+  (a diagnostic activates the file that produced it), and a `run()` that sends
+  `source` for a one-file project (historical path) or `project` for a real
+  multi-file project.
+- `playground/web/worker.js` — additive project transport: `runProject` when a
+  project is supplied, `run` otherwise; a runtime without `aura_project_*`
+  reports a structured capability error instead of failing obscurely.
+- `playground/runtimes/0.2.0-dev.1/` — a development runtime carrying the
+  additive Host ABI 1 virtual-project exports. Development channel only; not a
+  release, not tagged, never a replacement for `0.2.0`.
+
+`playground/build.mjs` now pins the `0.2.0` release identity permanently, so
+the build can never regenerate or overwrite it. The manifest lists 5 entries
+(`0.0.1`, `0.0.2`, `0.0.2-dev.30`, `0.2.0`, `0.2.0-dev.1`).
+
+Host ABI remains 1. Playground API remains 1. No `src/**` change. No frozen
+artifact change.
+
+The earlier FSM-P5 blockers remain remediated: invalid virtual/provider source
+keys use the normative `E2022` diagnostic partition, and case-only child
+collision detection no longer performs the quadratic pairwise scan.
 
 Latest validation completed after both production fixes:
 
@@ -88,7 +115,12 @@ artifacts remain byte-identical.
 
 ## Next Exact Action
 
-NEW FINAL READ-ONLY PUSH-READINESS REVIEW OF THE LOCAL FSM-P5 STACK
+INDEPENDENT REVIEW OF THE LOCAL FSM-P6 STACK, THEN HUMAN AUTHORIZATION TO PUSH.
+
+FSM-P6 is implemented and locally validated but deliberately uncommitted and
+unpushed. Do not push without new explicit human authorization, and do not
+begin a follow-up phase (package management, persistence, LSP, formatter) until
+FSM-P6 is reviewed.
 
 ## Human Gates
 
@@ -122,9 +154,12 @@ must not reintroduce model/provider/bridge/global-agent routing.
   `5a4ad3f7e3f786164d65df437d607e7ddd5e25947ea2c8dd9b436a5490b334ed`
 - `0.2.0` — 1,654,161 bytes —
   `9937fd8094ef402b7a9233d02bd232405f75b9e70661404646fcda7cd295c5bc`
+- `0.2.0-dev.1` — 1,767,068 bytes — development runtime, NOT a release:
+  `ba40e89c834896badfb17d5c72aa2dcb227907a7b5ba513c315ef2f2da0adf08`
 
-Historical runtime directories are immutable. A development build may remain
-in target/output only until separately authorized for publication.
+Historical runtime directories are immutable. `playground/build.mjs` pins each
+frozen release identity and refuses to regenerate or overwrite it; advancing a
+runtime means adding a new version, never replacing one.
 
 ## Do Not Reopen
 
@@ -134,6 +169,7 @@ in target/output only until separately authorized for publication.
 - FSM-P2;
 - FSM-P3;
 - FSM-P4;
+- FSM-P5.
 
 Reopen only for a concrete reproducible regression.
 
@@ -141,10 +177,9 @@ Reopen only for a concrete reproducible regression.
 
 Without new human authorization:
 
-- FSM-P6;
-- multi-file Playground UI;
 - package manager;
 - package manifest;
+- browser/localStorage project persistence;
 - LSP;
 - formatter product;
 - async;
@@ -152,8 +187,10 @@ Without new human authorization:
 - new release;
 - AUDIT-3 implementation.
 
-FSM-P6 is not yet defined. Deferred candidates must not be promoted into it by
-assumption.
+FSM-P6 is defined as *Multi-file Playground UX* and is implemented locally. It
+authorizes no language-semantics change: the deferred candidates above (package
+management, persistence, LSP, formatter) remain deferred and must not be
+promoted into a follow-up phase by assumption.
 
 ## Handoff
 

@@ -34,18 +34,27 @@ Current filesystem-track status:
 - FSM-P2 — multi-source provenance — complete;
 - FSM-P3 — provider-neutral graph — complete;
 - FSM-P4 — native filesystem provider — complete and remotely closed;
-- FSM-P5 — virtual/WASM VFS foundation — locally closed, not pushed;
-- FSM-P6 — not authorized and not yet defined.
+- FSM-P5 — virtual/WASM VFS foundation — complete and remotely closed;
+- FSM-P6 — multi-file Playground UX — implemented locally, under review.
 
 FSM-P5 lets browser/WASM callers supply virtual multi-source projects through
 `InMemorySourceProvider` and the same `ModuleGraphBuilder`, resolver, checker,
 and runtime used by native modules.
 
-The current single-file Playground UI remains unchanged. Multi-file editor UI,
-browser persistence, package manifests/package management, remote dependencies,
-and URL imports remain deferred candidates. None of them defines FSM-P6 unless
-the human explicitly chooses that scope. No second module graph or resolver is
-planned for browser sources.
+FSM-P6 exposes that capability in the browser: the Playground holds a project
+(a flat set of files, an active file, an entry file, and each file's declared
+provider child links) and executes it through the same virtual-project
+transport. It is a UI/state/transport phase — no language semantics were added,
+and no second module graph or resolver exists for browser sources.
+
+A development runtime, `0.2.0-dev.1`, carries the additive Host ABI 1
+virtual-project exports so the surface can be exercised end to end. It is a
+development artifact: not a release, not tagged, and never a replacement for
+`0.2.0`.
+
+Still deferred, and not part of FSM-P6: browser persistence, package
+manifests/package management, remote dependency resolution, URL imports, a
+visual module-ownership tree, and interactive child-link editing.
 
 ## Preserved decisions
 

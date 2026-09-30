@@ -87,7 +87,9 @@ The virtual-project exports are an additive Host ABI 1 capability introduced
 by development FSM-P5. Historical ABI-1 runtime artifacts may omit them; the
 JavaScript loader feature-detects the exports, while the existing single-source
 `run` path remains unchanged. Virtual source keys are provider identity only,
-not host paths or Aura module identity.
+not host paths or Aura module identity. The Playground reports a runtime
+without the exports as a capability limitation rather than flattening a
+multi-file project into one source.
 
 The options mini-protocol is `arg <text>\n` lines followed by an optional
 `stdin-bytes <n>\n` header and exactly `n` raw bytes.
@@ -129,6 +131,23 @@ entry. `playground/build.mjs`:
 
 `node playground/build.mjs --check` re-derives hashes from disk and fails on
 any drift; it is exercised by the test suite and CI.
+
+Every frozen release identity is also *pinned in the build script*, so a
+release artifact can never be regenerated or overwritten: the build refuses to
+write `runtimes/<version>/` when the bytes differ, and `--check` compares each
+pinned release against the artifact on disk independently of the manifest. The
+manifest currently lists five entries — `0.0.1`, `0.0.2`, `0.0.2-dev.30`,
+`0.2.0`, and the current `0.2.0-dev.1`.
+
+### Development runtimes
+
+A development runtime is an artifact on a release line that is **not** that
+release. `0.2.0-dev.1` is the current one: it carries the additive Host ABI 1
+virtual-project exports so the multi-file Playground can be exercised, and it
+is labelled `development runtime` in the selector. It is not a release, not
+tagged, and never a replacement for `0.2.0` — which remains frozen, selectable,
+and byte-identical. Advancing a development runtime means bumping the runtime
+crate's pre-release version, never overwriting an existing artifact.
 
 ### 0.0.1 vs 0.0.2
 
@@ -177,14 +196,115 @@ node playground/tests/node/serve.mjs 8080
 cargo test --manifest-path playground/runtime/Cargo.toml
 cargo test --no-default-features --features cli,repl,json,regex,time
 
-# JS: manifest/immutability, ABI, native/wasm differential, browser, worker
+# JS: manifest/immutability, project state, ABI, native/wasm differential,
+# browser, worker, multi-file, cache
 node playground/tests/node/run-all.mjs
 ```
 
 Browser and Worker suites require Playwright's Chromium; when it is not
 installed they report **skipped**, never a silent pass.
 
-## 7. Known NIT — no committed Node lockfile
+`multifile.test.mjs` drives the real UI, the real Worker, and the real wasm
+runtime through the virtual-project path, and asserts the payload the page
+actually posted — so a regression that dropped ownership links would fail as a
+transport assertion rather than as a confusing `E2003`. It selects the
+project-capable development runtime explicitly, so it never depends on which
+entry the manifest marks as current.
+
+## 7. Multi-file projects
+
+The Playground executes a *project*: a flat set of Aura sources, one of which is
+the entry point. This is the FSM-P6 surface. It adds no language semantics — it
+exposes the virtual-provider capability FSM-P5 delivered.
+
+```text
+file tabs / project state (web/project.js, web/app.js)
+    ↓  worker `project` message (web/worker.js)
+runtime.runProject → aura_project_*  (Host ABI 1, additive)
+    ↓
+InMemorySourceProvider → ModuleGraphBuilder → logical module tree
+    ↓
+canonical resolver → checker → runtime
+    ↓
+structured result / diagnostics (each project diagnostic carries `source`)
+```
+
+### Project state
+
+`playground/web/project.js` is the project model. It is pure (no DOM, no
+Worker, no wasm) and holds only:
+
+* `sources[]` — each with an opaque `key`, a display `name`, its `text`, and any
+  **declared provider child links**;
+* `activeKey` — the file the editor is showing;
+* `entryKey` — the file that is the program entry.
+
+A **display filename is UI identity only**. It never becomes Aura module
+identity and never becomes a provider key. Aura module names come from the
+source text (`module Name { … }`, `use`, `::` paths) exactly as before.
+
+### `SourceKey` strategy
+
+Each source's provider key is generated as `s` followed by a monotonically
+increasing counter (`s1`, `s2`, …), advanced past any key already present. Keys
+are therefore path-free, satisfy the runtime's virtual-key grammar
+(`[A-Za-z0-9_-]{1,128}`), are stable across rename, and can never be derived
+from — or confused with — a filename or a host path. Display names are kept
+unique within a project, because a duplicate would collapse two sources onto
+one public diagnostic identity; the runtime refuses a duplicate before provider
+construction.
+
+### Ownership links
+
+A file may declare the Aura logical modules its *siblings* provide, as
+`{ name, to }`: `name` is the module name the parent refers to and `to` is the
+display name of the providing file. `toRequest()` translates `to` into the
+provider key and drops a link whose target no longer exists. Ownership,
+collisions, case rules, and ordering remain entirely the graph builder's
+business — the UI declares, it does not resolve.
+
+Links are declared in project state. FSM-P6 ships no visual module-ownership
+tree and no interactive link editor; a multi-file example declares its links
+directly.
+
+### Execution
+
+`Run` sends `source` (the historical single-source path) when the project is one
+file with no links, and `project` otherwise. The one-file path therefore keeps
+the runtime's eval fallback and the historical result schema exactly. A
+genuinely multi-file project goes through `runProject`.
+
+### Diagnostics
+
+A project diagnostic carries the runtime's `source` display name. The Problems
+list shows it and a click **activates the file that produced it** before moving
+the caret to the line. Codes, messages, lines, and columns are never
+reinterpreted.
+
+### Limits
+
+The runtime's host limits are authoritative: 2 MiB per project request, 4096
+sources, 256 KiB per source, 128-byte keys, 1024-byte display names. The UI
+checks the same ceilings first so an oversized project is reported before it is
+sent, but the runtime's refusal is the decision.
+
+### Legacy runtimes
+
+A runtime that predates `aura_project_*` still runs a single source normally. A
+multi-file project on such a runtime is refused with a clear capability message
+naming the selected runtime; the project is never silently flattened into one
+source and the runtime is never switched behind the user's back.
+
+### Deferred
+
+Not part of FSM-P6: browser project persistence (`localStorage`/IndexedDB),
+shareable project URLs, package manifests/package management, remote
+dependencies, URL imports, a visual module-ownership tree, and interactive
+child-link editing.
+
+---
+
+## 8. Known NIT — no committed Node lockfile
 
 The Playground's browser/worker test dependency (`playwright`) is declared in
 `playground/package.json` but **no lockfile is committed** (`package-lock.json`

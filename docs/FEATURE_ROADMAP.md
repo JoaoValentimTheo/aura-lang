@@ -306,11 +306,14 @@ effects; and whether it redesigns a frozen concept.
   `pub` to export, `use path [as Alias]` imports, and `::`-qualified paths,
   enforced by `src/resolve.rs` and the checker (`LANGUAGE_SPEC.md` §27).
 * **Provider loading.** Native filesystem sources and caller-supplied virtual
-  sources feed the same provider-neutral graph and resolver. The virtual/WASM
-  foundation is development HEAD work and is not a released Playground UI
-  feature.
+  sources feed the same provider-neutral graph and resolver. FSM-P6 exposes the
+  virtual path in the browser: the Playground holds a multi-file project and
+  executes it through the same transport. The runtime that carries the additive
+  virtual-project exports is currently a development artifact
+  (`0.2.0-dev.1`), not a published release.
 * **Remaining.** Package/build manifests, package management, remote dependency
-  resolution, and multi-file Playground product UI remain deferred.
+  resolution, browser project persistence, and a visual module-ownership tree
+  remain deferred.
 
 ### 6. Destructuring — **Class B**
 
@@ -627,7 +630,8 @@ deterministic (most specific wins; a tie is an error). **Generics** followed:
 static, erased, nominal type parameters on functions, structs, methods, traits,
 and aliases, with bounds and inference composed into the same overload resolver
 (`docs/GENERICS.md`). The filesystem module system is the active development
-track; FSM-P1 through FSM-P4 are closed and FSM-P5 is locally closed/unpushed.
+track; FSM-P1 through FSM-P5 are closed, and FSM-P6 (the multi-file Playground
+UX) is implemented locally and under review.
 
 ### Increment/decrement decision (`++` / `--`)
 
