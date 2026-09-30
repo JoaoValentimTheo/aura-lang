@@ -14,9 +14,12 @@ Operational state for the Aura Completion Program. Not language law.
   36760642764 all green (rustfmt, clippy, playground, miri, MSRV, proptest,
   audit, contract, website, ubuntu/macos/windows tests, no-python, fuzz smoke)
   + website deploy green.
-- **REMOTE CHECKPOINT 5 — PUSHED.** `fef6904..0c99a6b`: stdlib value-semantics
-  tests (`tests/builtins.rs`), completeness matrix, checkpoint. CI pending/green.
-- **REMOTE CHECKPOINT 8 �� PUSHED.** `0c99a6b..7a951bb`: 0.2.0-dev.2 runtime.
+- **REMOTE CHECKPOINT 5 — CLOSED.** `fef6904..0c99a6b`: stdlib value-semantics
+  tests (`tests/builtins.rs`), completeness matrix, checkpoint. CI green.
+- **REMOTE CHECKPOINT 8 — CLOSED.** `0c99a6b..7a951bb`: 0.2.0-dev.2 runtime.
+  CI run 36763070542 all green (all platforms + playground + website deploy).
+- Follow-up `aae399d`: +4 native/wasm differential cases for builtin
+  reservation (CI pending).
 
 ## Milestones
 
