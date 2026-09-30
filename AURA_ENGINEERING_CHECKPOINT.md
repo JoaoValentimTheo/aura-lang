@@ -5,15 +5,15 @@ Resumable operational state for the Road-to-1.0 program.
 ## State
 
 ```
-PROGRAM HEAD:            584af85 (pushed; CI 36777716800 green)
-REMOTE HEAD:             584af85
+PROGRAM HEAD:            ecfda79 (pushed; T0-T5 final checkpoint)
+REMOTE HEAD:             ecfda79
 LATEST RELEASE:          v0.2.0
 LATEST PRERELEASE:       none
-LATEST DEV RUNTIME:      0.2.0-dev.2
-CURRENT RELEASE TRAIN:   T0-T5 complete; tag blocked by HD-4/HD-3
-FINAL STATE:             HUMAN DECISIONS REQUIRED (version/semantic policy);
-                         all independent engineering continues to be possible
-                         work, which is complete for this train.
+LATEST DEV RUNTIME:      0.2.1-dev.2 (development channel only)
+CURRENT RELEASE TRAIN:   T0-T5 complete; ADR council resolved HD-1..HD-4
+FINAL STATE:             ADR-0001..0004 IMPLEMENTED IN WORKING TREE, NOT
+                         COMMITTED, NOT PUSHED. Validation floor green.
+                         Next: commit the ADR work; then independent review.
 ```
 
 ## Completed this session
@@ -73,32 +73,43 @@ broader workloads), DOCS, PACKAGING, RELEASE ENGINEERING, SUPPLY CHAIN,
 BACKWARD COMPAT.
 RED: v1 GO — blocked by the YELLOW categories and the open human decisions.
 
-## Human decisions queued (blocking v1, not other work)
+## Human decisions — RESOLVED (Architecture Decision Council, 2026-09-30)
 
-- HD-1 module-member × builtin reservation (non-blocking).
-- HD-2 AUDIT-3 TypeExpr nesting (blocks semantic freeze).
-- HD-3 CPython supported-version policy (proposed 3.10–3.13, enforced in CI;
-  formal confirmation pending).
-- HD-4 pre-v1 version scheme — **blocks the first patch release** (`0.2.1`),
-  because `tests/contract.rs` asserts release == language version.
+All four queued decisions were resolved as ADRs; the implementations are in
+the uncommitted working tree.
+
+- **HD-4 → ADR-0001** version scheme: release ≠ language, `LANG <= RELEASE`;
+  source line advances to `0.2.1`.
+- **HD-1 → ADR-0002** module members may reuse builtin spellings.
+- **HD-3 → ADR-0003** CPython tiers (TESTED: Linux 3.10–3.13, macOS 3.12).
+- **HD-2 / AUDIT-3 → ADR-0004** structural type nesting counts toward
+  `MAX_AST_DEPTH = 256` on every substrate (Option A).
 
 ## Risks / blockers
 
-No known CRITICAL/HIGH. R-08 (perf), R-12/R-13 (compat/versioning) open. No
-frozen artifact mutation. Release tagging blocked by HD-4.
+No known CRITICAL/HIGH. R-08 (perf), R-12/R-13 (compat/versioning) remain
+tracked. No frozen artifact mutation. The ADR-0004 parser change is a
+patch-level language correction; the practical breakage surface is empty (no
+real program nests types beyond depth 1).
 
-## Frozen hashes (verified repeatedly this session)
+## Frozen hashes (verified this session)
 
 - 0.0.2: 1,366,621 / 5a4ad3f7e3f786164d65df437d607e7ddd5e25947ea2c8dd9b436a5490b334ed
 - 0.2.0: 1,654,161 / 9937fd8094ef402b7a9233d02bd232405f75b9e70661404646fcda7cd295c5bc
 
+## Development runtimes
+
+- 0.2.1-dev.1: intermediate (predates ADR-0004), preserved on disk, unlisted.
+- 0.2.1-dev.2: current, 1,767,962 /
+  6661e1776da4859f367d3f524d7dc21e1d77cdef2992f2551f91af0e8ac2fc21
+
 ## Next tasks
 
-1. Human: decide HD-4 (unblocks the first gated patch release), then HD-3,
-   then HD-1/HD-2 before semantic freeze.
-2. Add end-user install/quickstart + artifact-matrix docs (packaging GREEN).
-3. Independent review + release audit of the train. See
-   `docs/engineering/REVIEW_RECORD_T0_T5.md`.
+1. Commit the ADR-0001…0004 working tree as additive local commits (do not
+   push without explicit authorization).
+2. Independent adversarial review of the ADR implementations (especially
+   ADR-0004's boundary and the alias-expansion budget) and release audit.
+3. Add end-user install/quickstart + artifact-matrix docs (packaging GREEN).
 4. Broaden performance workloads (REPL, WASM startup, large module graphs).
 5. SBOM/provenance + reproducible-build investigation.
 6. Then proceed through the RC train (`1.0.0-alpha/beta/rc`) after freeze.

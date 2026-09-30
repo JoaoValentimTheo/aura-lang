@@ -22,15 +22,14 @@ continuing substantial work.
 
 Authoritative current value is `git rev-parse HEAD`, also printed by
 `scripts/agent-state.sh`; a tracked state file cannot safely hardcode its own
-commit SHA. Final blocker-remediation starting HEAD:
-`b55a43473379ecc04c209882345defb70801640d`.
+commit SHA. At this checkpoint the committed HEAD is `ecfda79`, whose tree does
+**not** yet include the uncommitted ADR-0001…0004 work (below).
 
 ## Remote HEAD
 
-`origin/rewrite/v3-rust` =
-`75c57428ca70c53a3d592fdbb93ec3c5d7cb46f8`
-
-FSM-P5 is local/unpushed relative to that remote HEAD.
+`origin/rewrite/v3-rust` = `ecfda79` (equal to local committed HEAD). The
+FSM-P6 stack, the TOTAL HARDENING commits, and the T0–T5 engineering train are
+all pushed and CI-green. Only the ADR-0001…0004 work (below) is uncommitted.
 
 ## Current Track
 
@@ -65,7 +64,45 @@ the existing `SourceProvider`, `ModuleGraphBuilder`, canonical resolver,
 checker, runtime, and WASM boundary. Playground API remains 1 and Host ABI
 remains 1.
 
-## Current Work
+## Current Work — ADR COUNCIL RESOLUTIONS (UNCOMMITTED)
+
+The Architecture Decision Council resolved the four queued human decisions
+(HD-1…HD-4) as ADRs; the resolutions are implemented in the working tree and
+are **not yet committed**. This is the active uncommitted work.
+
+- **ADR-0001 (version scheme)** — release and language versions are distinct;
+  invariant `LANGUAGE_VERSION <= RELEASE_VERSION`. Source line advances to
+  `0.2.1` (release + language). `docs/adr/0001-…`, `Cargo.toml`, `src/lib.rs`,
+  `tests/contract.rs`, `.github/workflows/release.yml`.
+- **ADR-0002 (module members)** — module members may reuse builtin spellings;
+  reservation stays scoped to the user-visible value namespace. No behavior
+  change. `docs/adr/0002-…`, `docs/LANGUAGE_SPEC.md` §3.3.
+- **ADR-0003 (CPython policy)** — support tiers; TESTED = Linux 3.10–3.13,
+  macOS 3.12. `docs/adr/0003-…`, `docs/CPYTHON_COMPATIBILITY_TARGET.md`.
+- **ADR-0004 (TypeExpr nesting)** — structural type nesting (`Box<…>`, `[T]`,
+  `{K: V}`) counts toward `MAX_AST_DEPTH = 256` on every substrate; the
+  native/WASM divergence is removed. `src/parse/mod.rs` (`type_depth`),
+  `docs/LANGUAGE_SPEC.md` §31.1/§31.2, `website/content/reference-limits.md`,
+  `playground/tests/node/differential.test.mjs` sweep, `tests/boundaries.rs`.
+  Flagged `type_depth` accesses were rewritten to avoid a clippy
+  `misrefactoring` false positive.
+
+Also uncommitted and validated: the type-alias **expansion budget**
+(`MAX_TYPE_NODES`, `src/check/mod.rs`) bounding exponentially duplicating
+alias chains as `E1015` (`tests/adversarial.rs`); the **PyO3 exact-type**
+boundary fix (`src/bridge/mod.rs`, `tests/interop_matrix.rs`); the runtime
+crate advancing to `0.2.1-dev.2` (the `0.2.1-dev.1` build predates the
+ADR-0004 parser change and is preserved on disk, unlisted).
+
+## Next Exact Action
+
+COMMIT THE ADR-0001…0004 WORK, THEN INDEPENDENT REVIEW.
+
+The full validation floor is green (see below). The work is a coherent,
+additive implementation of the already-decided ADRs and is ready to commit
+locally. Do not push without explicit human authorization.
+
+## FSM-P6 (committed, pushed)
 
 FSM-P6 — Multi-file Playground UX. The Playground now exposes the virtual
 multi-source capability FSM-P5 delivered, through a file-tab UI and a project
@@ -114,22 +151,31 @@ The 64,000-claim VFS adversarial reproduction is within the 2 MiB request
 limit and returns deterministic `E2021` without a host failure. Frozen runtime
 artifacts remain byte-identical.
 
-## Next Exact Action
+## Validation Floor (ADR work, this checkpoint)
 
-INDEPENDENT REVIEW OF THE LOCAL FSM-P6 STACK, THEN HUMAN AUTHORIZATION TO PUSH.
+All green on the uncommitted ADR-0001…0004 tree:
 
-FSM-P6 is implemented and locally validated but deliberately uncommitted and
-unpushed. Do not push without new explicit human authorization, and do not
-begin a follow-up phase (package management, persistence, LSP, formatter) until
-FSM-P6 is reviewed.
+- `cargo fmt --all -- --check` and the runtime-crate fmt check;
+- `cargo test --locked --all-targets --all-features` — 911 passed;
+- `cargo test --locked --all-targets --no-default-features --features cli,repl,json,regex,time` — 884 passed;
+- `cargo clippy --locked --all-targets --all-features -- -D warnings`;
+- `cargo +1.83.0 check --locked --all-features`;
+- `cargo test --locked --manifest-path playground/runtime/Cargo.toml` and its clippy;
+- `node playground/tests/node/run-all.mjs` — differential 219/0 with the
+  unified typeexpr ceiling, multi-file 42/42;
+- `node playground/build.mjs --check`;
+- `node website/build.mjs` + `node website/tests/run-all.mjs` — browser 344/0.
+
+Frozen runtime artifacts (`0.0.2`, `0.2.0`) remain byte-identical.
 
 ## Human Gates
 
-AUDIT-3 / TypeExpr nesting = DECISION-PENDING.
-
-Valid approval tokens remain exactly:
+None pending. HD-1…HD-4 were resolved by the Architecture Decision Council as
+ADR-0001…0004 (`docs/adr/`). AUDIT-3 is resolved by ADR-0004 (Option A,
+adopted). The old approval tokens
 
 - `DECISION APPROVED: OPTION A`
+- `DECISION APPROVED: OPTION B`
 - `DECISION APPROVED: OPTION B`
 
 ## Repository-local Codex Policy
@@ -158,8 +204,13 @@ must not reintroduce model/provider/bridge/global-agent routing.
 - `0.2.0-dev.1` — 1,767,068 bytes — superseded development runtime, NOT a
   release:
   `ba40e89c834896badfb17d5c72aa2dcb227907a7b5ba513c315ef2f2da0adf08`
-- `0.2.0-dev.2` — 1,767,723 bytes — current development runtime, NOT a release:
+- `0.2.0-dev.2` — 1,767,723 bytes — superseded development runtime, NOT a
+  release:
   `b69f212bf3f1d8df41b66ad249bf9c9829015b06459569fd2b765a5596b66c06`
+- `0.2.1-dev.1` — intermediate development build, predates the ADR-0004 parser
+  change; preserved on disk, unlisted, NOT a release.
+- `0.2.1-dev.2` — 1,767,962 bytes — current development runtime, NOT a release:
+  `6661e1776da4859f367d3f524d7dc21e1d77cdef2992f2551f91af0e8ac2fc21`
 
 Historical runtime directories are immutable. `playground/build.mjs` pins each
 frozen release identity and refuses to regenerate or overwrite it; advancing a

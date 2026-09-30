@@ -7,8 +7,10 @@ Authority order: `docs/LANGUAGE_SPEC.md` > this roadmap for engineering order.
 
 - Base `6d25985` = remote; CI green; frozen `0.0.2`/`0.2.0` intact.
 - Core language COMPLETE (see `AURA_COMPLETENESS_MATRIX.md`).
-- Latest release `v0.2.0`; latest dev runtime `0.2.0-dev.2`.
-- Open semantic items: HD-1, AUDIT-3.
+- Latest release `v0.2.0`; latest dev runtime `0.2.1-dev.2`; source line
+  `0.2.1`.
+- Semantic/version items closed: HD-1…HD-4 resolved by ADR-0001…0004
+  (implementations validated in the working tree; commit pending).
 
 ## Mission
 
@@ -26,7 +28,7 @@ process. v1 is evidence-based, never date-based.
 | **T3 — Security train** | threat model, trust boundaries, supply-chain, WASM import policy | PLANNED |
 | **T4 — Performance/resource train** | benchmarks, budgets, scaling guards | PLANNED |
 | **T5 — Platform/packaging train** | install paths, artifact matrix, provenance | PLANNED |
-| **T6 — v1 semantic freeze** | close HD-1/AUDIT-3 or exclude; freeze core | PLANNED |
+| **T6 — v1 semantic freeze** | HD-1/AUDIT-3 now closed (ADR-0002/0004); commit + freeze core | PLANNED |
 | **T7 — RC train** | 1.0.0-alpha/beta/rc with independent audits | PLANNED |
 
 ## Work queue (current)

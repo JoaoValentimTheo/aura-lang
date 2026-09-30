@@ -5,7 +5,27 @@ Notable changes to Aura. Format follows Keep a Changelog; versions follow
 current engineering program; earlier history is in `docs/release-notes/` and
 Git.
 
-## [Unreleased]
+## [Unreleased] — 0.2.1 development line
+
+### Changed
+- **Version scheme (ADR-0001).** Release and language versions are distinct
+  identities with the invariant `LANGUAGE_VERSION <= RELEASE_VERSION`. The
+  source line advances to `0.2.1` (release and language) because the builtin
+  reservation changed observable language behavior after tag `v0.2.0`.
+- **Builtin-name value-namespace reservation (`E1009`).** A user value binding
+  (`let`/`let mut`, parameters, loop/catch/pattern bindings, top-level `let`,
+  top-level `fn`, import aliases) may no longer use a registered builtin name.
+  Type, module, field, variant, and method namespaces are unaffected
+  (ADR-0002).
+- **Type-nesting limit (ADR-0004).** Structural `TypeExpr` nesting (`Box<…>`,
+  `[T]`, `{K: V}`) now counts toward the semantic `MAX_AST_DEPTH = 256` budget
+  on every substrate, removing the former native/WASM acceptance divergence. A
+  flat union is unaffected. A resolved-type expansion budget bounds
+  exponentially duplicating alias chains as `E1015`.
+- **PyO3 boundary conversion is exact-type, not duck-typed.** Only genuine
+  `bool`/`int`/`float`/`str` instances convert; a user object implementing
+  `__bool__`/`__float__`/`__index__`/`__str__` takes the documented `repr`
+  fallback instead of being silently coerced.
 
 ### Fixed
 - **CPython boundary diagnostics** now point at the Aura call site instead of
@@ -14,6 +34,8 @@ Git.
   source location.
 
 ### Added
+- `docs/adr/0001`–`0004` recording the Architecture Decision Council's
+  resolutions of the queued human decisions HD-1…HD-4.
 - Engineering organization, V1 readiness, roadmap, human-decision queue,
   security program (threat model, trust boundaries, architecture, incident
   response), CPython compatibility target, release policy, technical-debt and
