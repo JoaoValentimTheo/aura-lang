@@ -84,4 +84,5 @@ side, and whether that authority is intentional.
 - **Input:** crate and GitHub Action code.
 - **Authority:** arbitrary code at build time.
 - **Intentional:** yes, under a trusted-supply-chain assumption; minimized
-  dependencies; `cargo audit` in CI; action SHA-pinning is tracked debt.
+  dependencies; `cargo audit` in CI; standard actions pinned to immutable
+  commit SHAs; CI runs least-privilege (`contents: read`).

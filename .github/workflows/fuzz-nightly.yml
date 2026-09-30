@@ -33,9 +33,9 @@ jobs:
     # model does not reclaim an `Rc` cycle, so the runtime target legitimately
     # retains cycle memory. Crashes, aborts, and timeouts still fail the job.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@nightly
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: "fuzz -> target"
       - name: Install cargo-fuzz (pinned to the version in fuzz/README.md)
@@ -76,7 +76,7 @@ jobs:
             cargo +nightly fuzz run runtime -- -max_total_time=300 -rss_limit_mb=6144 -timeout=25
       - name: Upload any crash artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: fuzz-artifacts
           path: |

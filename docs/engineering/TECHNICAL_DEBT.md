@@ -5,7 +5,7 @@ HIGH / MEDIUM / LOW.
 
 | ID | Severity | Item | Impact | Deferred reason | Owner | Target |
 |---|---|---|---|---|---|---|
-| TD-01 | MEDIUM | GitHub Actions use major-version tags, not SHA pins | Supply-chain: a compromised action tag could affect builds/releases | Standard practice; pinning is a hardening step | Supply Chain | v1 |
+| TD-01 | MEDIUM | GitHub Actions use major-version tags, not SHA pins | Supply-chain: a compromised action tag could affect builds/releases | Standard practice; pinning is a hardening step | Supply Chain | **closed** — all standard actions SHA-pinned; `ci.yml` least-privilege |
 | TD-02 | MEDIUM | No CHANGELOG until now | Users cannot see changes per release | Not previously maintained | Docs/Release | now (created) |
 | TD-03 | MEDIUM | No SBOM / build provenance / artifact signing | Release supply chain below best practice | Needs infra decision | Release Eng | v1 |
 | TD-04 | MEDIUM | Reproducible builds not verified | Cannot prove artifact provenance bit-for-bit | Not measured | Release Eng | v1 |

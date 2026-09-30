@@ -67,5 +67,6 @@ See `docs/security/TRUST_BOUNDARIES.md` and
 
 - Rust dependencies are minimal (`serde_json`, `regex`, `chrono`, `rustyline`,
   `pyo3`; proptest dev-only) and audited in CI.
-- GitHub Actions currently use major-version tags; SHA-pinning is a tracked
-  hardening item (`docs/engineering/TECHNICAL_DEBT.md`).
+- GitHub Actions are pinned to immutable commit SHAs (standard actions) and CI
+  runs with least-privilege `contents: read` permissions. The release workflow
+  requests `contents: write` only for publishing.
