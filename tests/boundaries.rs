@@ -523,3 +523,49 @@ fn list_and_map_type_nesting_are_bounded() {
     assert!(run(&map_src(100)).is_ok());
     assert_eq!(run(&map_src(300)), Err(codes::NESTING));
 }
+
+/// ADR-0004 covers every annotation position, not just `fn` parameters: all
+/// type syntax routes through the parser's single `ty()` entry, which owns the
+/// `type_depth` counter. This pins the deeply-nested type in a struct field,
+/// an enum payload, an alias target, a `let` annotation, and a return type.
+#[test]
+fn type_nesting_is_bounded_in_every_annotation_position() {
+    // 256 wraps is 257 AST levels (reject); 255 wraps is 256 (accept).
+    let deep = |n: usize| {
+        let mut t = "int".to_string();
+        for _ in 0..n {
+            t = format!("Box<{t}>");
+        }
+        t
+    };
+    let over = deep(256);
+    let ok = deep(255);
+    let prelude = "struct Box<T> { value: T }\n";
+
+    let cases = [
+        format!("{prelude}struct S {{ x: {over} }}\nfn main() {{ print(1) }}"),
+        format!("{prelude}enum E {{ V({over}) }}\nfn main() {{ print(1) }}"),
+        format!("{prelude}type MyAlias = {over}\nfn main() {{ print(1) }}"),
+        format!("{prelude}fn main() {{ let x: {over} = 0 }}"),
+        format!("{prelude}fn f() -> {over} {{ return 0 }}\nfn main() {{ print(1) }}"),
+    ];
+    for (i, src) in cases.iter().enumerate() {
+        assert_eq!(
+            run(src),
+            Err(codes::NESTING),
+            "annotation position {i} must reject a 257-level type"
+        );
+    }
+    // The same positions accept one level under the limit.
+    let ok_cases = [
+        format!("{prelude}struct S {{ x: {ok} }}\nfn main() {{ print(1) }}"),
+        format!("{prelude}enum E {{ V({ok}) }}\nfn main() {{ print(1) }}"),
+        format!("{prelude}type MyAlias = {ok}\nfn main() {{ print(1) }}"),
+    ];
+    for (i, src) in ok_cases.iter().enumerate() {
+        assert!(
+            run(src).is_ok(),
+            "annotation position {i} must accept 256 levels"
+        );
+    }
+}
