@@ -18,7 +18,7 @@ Every rejection carries a stable code. Codes are grouped by phase:
 | E1004 | Unterminated string | `"abc` |
 | E1005 | Unterminated multiline comment | `<!-- never closed` |
 | E1006 | Expected token | `let = 1`, `fn ()`, `int \| 5`; a `const` name not starting with an uppercase letter (`const pi = 3`) |
-| E1009 | Reserved word as name | `let if = 1` |
+| E1009 | Reserved word or builtin name as a value-namespace name | `let if = 1`; `let sum = 1` (`sum` is a builtin) |
 | E1015 | Expression/statement nests too deeply | a 5000-term expression |
 
 ## Name and rule checking (`E2xxx`, static)
