@@ -7,8 +7,8 @@ HIGH / MEDIUM / LOW.
 |---|---|---|---|---|---|---|
 | TD-01 | MEDIUM | GitHub Actions use major-version tags, not SHA pins | Supply-chain: a compromised action tag could affect builds/releases | Standard practice; pinning is a hardening step | Supply Chain | **closed** — all standard actions SHA-pinned; `ci.yml` least-privilege |
 | TD-02 | MEDIUM | No CHANGELOG until now | Users cannot see changes per release | Not previously maintained | Docs/Release | now (created) |
+| TD-04 | MEDIUM | Cross-host/cross-toolchain reproducible builds not verified | Cannot prove artifact provenance bit-for-bit across environments | Single-host pure-Rust reproducibility **measured** (bit-identical); cross-host pending | Release Eng | v1 |
 | TD-03 | MEDIUM | No SBOM / build provenance / artifact signing | Release supply chain below best practice | Needs infra decision | Release Eng | v1 |
-| TD-04 | MEDIUM | Reproducible builds not verified | Cannot prove artifact provenance bit-for-bit | Not measured | Release Eng | v1 |
 | TD-05 | MEDIUM | No committed performance benchmark suite | Regressions can go unnoticed | Ad-hoc measurement only | Performance | now (T4) |
 | TD-06 | MEDIUM | No versioned backward-compatibility fixtures / upgrade tests | Breaking changes could slip silently | Pre-1.0 churn tolerated | Backward Compat | **partially closed** — `tests/compat.rs` pins 0.2.0; upgrade/older-artifact matrix pending |
 | TD-07 | LOW | `E5003` (`FEATURE_UNAVAILABLE`) defined but unused | Dead code constant | Documented in spec | Static Semantics | — |

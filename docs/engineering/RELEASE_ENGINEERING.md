@@ -67,11 +67,26 @@ Download released artifacts, verify hashes, run `version`, run representative
 programs (and interop smoke if `py` shipped), verify the website/Playground
 references. Only then is the release checkpoint closed.
 
+## Reproducibility
+
+**Measured (2026-09, one host, one toolchain):** two independent clean builds of
+the pure-Rust feature set in separate `CARGO_TARGET_DIR`s produced
+**bit-identical** executables
+(`a12b2c5555dd866b825a85869ad297d84a6943c98a78b0c533b7c1dcc042201c`). This is
+consistent with the release profile (`lto = true`, `codegen-units = 1`) and the
+absence of build-script non-determinism.
+
+**Not yet claimed:** cross-host and cross-toolchain bit-reproducibility, and
+reproducibility of the `py`-feature build (which links a host-provided CPython
+and is expected to differ per interpreter). Until those are measured and
+recorded, Aura claims reproducible builds **only** for the pure-Rust build on a
+fixed toolchain/host.
+
 ## Not yet implemented (tracked debt)
 
 - SBOM, build provenance, artifact signing (TD-03).
-- Verified reproducible builds (TD-04).
-- SHA-pinned GitHub Actions (TD-01).
+- Cross-host/cross-toolchain reproducible-build verification (TD-04).
+- SHA-pinned GitHub Actions (TD-01) — **done**; standard actions are pinned.
 
 ## Rules
 
