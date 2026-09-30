@@ -8,6 +8,7 @@
 use aura::check::Checker;
 use aura::error::codes;
 use aura::run_source;
+use std::fmt::Write as _;
 
 fn out(src: &str) -> String {
     run_source(src, "<adv>").expect("program runs")
@@ -388,4 +389,50 @@ fn doubling_alias_union_resolves_in_linear_time() {
         Checker::module(&module).map_or_else(|d| d.code, |()| 0),
         codes::TYPE_MISMATCH
     );
+}
+
+// ---------------------------------------- type-alias expansion amplification
+
+#[test]
+fn chained_duplicating_aliases_are_bounded() {
+    // A parameterized alias that duplicates its argument (`[T] | {string: T}`)
+    // makes a chain `A{n} = Dup<A{n-1}>` expand to 2^n nodes even though its
+    // nesting depth is one, so the syntactic depth limit cannot bound it. The
+    // resolver's flat node budget must turn it into a structured `E1015`
+    // instead of an unbounded CPU/memory blow-up. Reproduced by the red team
+    // at `A24` (declaration-only, no use required).
+    for n in [16usize, 20, 24, 32] {
+        let mut src = String::from("type Dup<T> = [T] | {string: T}\ntype A0 = int\n");
+        for i in 1..=n {
+            let alias = format!("type A{i} = Dup<A{}>\n", i - 1);
+            src.push_str(&alias);
+        }
+        let driver = format!("fn f(x: A{n}) -> int {{ return 1 }}\nfn main() {{ print(1) }}\n");
+        src.push_str(&driver);
+        assert_eq!(
+            check_code(&src),
+            codes::NESTING,
+            "an exponentially expanding alias chain must be a bounded `E1015` at n={n}"
+        );
+    }
+    // A single non-amplifying parameterized alias still resolves.
+    let ok = "type Pair<T> = [T]\nfn f(x: Pair<int>) -> int { return 1 }\nfn main() { print(1) }";
+    assert_eq!(check_code(ok), 0);
+}
+
+#[test]
+fn broad_but_linear_aliases_still_check() {
+    // The budget must not reject legitimate breadth: thousands of distinct
+    // aliases and a long flat union are far below `MAX_TYPE_NODES`.
+    let mut src = String::new();
+    for i in 0..3000 {
+        let def = format!("type T{i} = int\n");
+        src.push_str(&def);
+    }
+    let union = (0..3000)
+        .map(|i| format!("T{i}"))
+        .collect::<Vec<_>>()
+        .join(" | ");
+    let _ = write!(src, "type All = {union}\nfn main() {{ let x: All = 1 }}\n");
+    assert_eq!(check_code(&src), 0);
 }

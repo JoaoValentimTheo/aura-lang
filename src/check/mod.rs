@@ -5,7 +5,7 @@
 //! forbidden construct (e.g. `break` outside a loop) is rejected by the
 //! parser or reported here.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
 use crate::ast::*;
@@ -116,6 +116,14 @@ fn normalize_resolved_union(members: Vec<TypeExpr>) -> TypeExpr {
 /// Maximum AST nesting the checker will descend before reporting a limit.
 /// Prevents a flat but deeply nested program from exhausting the host stack.
 const MAX_AST_DEPTH: usize = 256;
+
+/// Maximum total type nodes produced while expanding one resolved type
+/// annotation (including parameterized alias expansion). Bounds the flat size
+/// of an expanded `TypeExpr` so a chain of duplicating aliases reports `E1015`
+/// instead of expanding exponentially (see `type_budget`). Far above any real
+/// program: the largest legitimate case in the suite is a 5000-member flat
+/// union plus a few thousand separate aliases.
+const MAX_TYPE_NODES: usize = 100_000;
 
 /// A lexical scope of bindings.
 #[derive(Debug, Default)]
@@ -415,6 +423,17 @@ pub struct Checker {
     /// fan out exponentially. Failures are never cached, so cycle diagnostics
     /// keep their precise span.
     resolved_aliases: RefCell<HashMap<String, TypeExpr>>,
+    /// Remaining budget for total type-node expansion across one resolution.
+    ///
+    /// A parameterized alias can duplicate its argument (`type Dup<T> =
+    /// [T] | {string: T}`), so a chain `A24 = Dup<A23>` expands to 2^24 nodes
+    /// even though its *nesting depth* is one. The syntactic depth limit
+    /// (`E1015` in the parser, ADR-0004) cannot bound this. This flat node
+    /// budget makes over-expansion a structured `E1015` diagnostic instead of
+    /// an unbounded CPU/memory blow-up. It is generous enough that any real
+    /// program — including a several-thousand-member flat union — is far
+    /// below it.
+    type_budget: Cell<usize>,
     /// Value-namespace names carried from earlier REPL submissions (bindings,
     /// functions, constants). Used so a new submission cannot redeclare one
     /// (`E2007`). Types live in their own namespace (`types`) and are checked
@@ -472,6 +491,7 @@ impl Checker {
             current_module: Vec::new(),
             alias_targets: HashMap::new(),
             resolved_aliases: RefCell::new(HashMap::new()),
+            type_budget: Cell::new(MAX_TYPE_NODES),
             session_value_names: HashMap::new(),
             type_type_params: HashMap::new(),
             type_type_param_bounds: HashMap::new(),
@@ -3385,9 +3405,32 @@ impl Checker {
     }
 
     fn annotation(&self, t: &TypeExpr, span: Span) -> Result<Ty> {
+        // Each annotation gets a fresh expansion budget, so a legitimate
+        // program with many separate large annotations is unaffected while a
+        // single pathological expansion is bounded.
+        self.type_budget.set(MAX_TYPE_NODES);
         let mut visiting = Vec::new();
         let resolved = self.resolve_type_expr(t, span, &mut visiting)?;
         self.ty_from_expr(&resolved, span)
+    }
+
+    /// Charge one resolved type node against the current annotation's budget.
+    ///
+    /// Returns `E1015` when the expansion exceeds [`MAX_TYPE_NODES`]. This is
+    /// the bound that stops a chain of duplicating parameterized aliases from
+    /// expanding exponentially: depth stays small, so the syntactic nesting
+    /// limit never fires.
+    fn consume_type_budget(&self, span: Span) -> Result<()> {
+        let remaining = self.type_budget.get();
+        if remaining == 0 {
+            return Err(Diag::new(
+                codes::NESTING,
+                "resolved type expands too large",
+                span,
+            ));
+        }
+        self.type_budget.set(remaining - 1);
+        Ok(())
     }
 
     /// Convert a resolved type expression to a checker type, treating a name in
@@ -3547,7 +3590,9 @@ impl Checker {
         }
         for a in args {
             // Resolve each argument so an unknown or parameter reference is
-            // reported at the `impl` head rather than silently accepted.
+            // reported at the `impl` head rather than silently accepted. Each
+            // argument gets a fresh expansion budget.
+            self.type_budget.set(MAX_TYPE_NODES);
             let mut visiting = Vec::new();
             let r = self.resolve_type_expr(a, span, &mut visiting)?;
             self.ty_from_expr(&r, span)?;
@@ -3693,6 +3738,7 @@ impl Checker {
         span: Span,
         visiting: &mut Vec<String>,
     ) -> Result<TypeExpr> {
+        self.consume_type_budget(span)?;
         Ok(match t {
             TypeExpr::Named(n) => {
                 // A bound generic parameter is a placeholder: it is left as
