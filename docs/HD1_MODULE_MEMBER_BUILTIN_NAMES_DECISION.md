@@ -1,6 +1,15 @@
 # HD-1 — Module-Member Names and Builtin Reservation
 
-Status: **HUMAN SEMANTIC DECISION REQUIRED**
+> **RESOLVED (ADR-0002, `docs/adr/0002-module-member-builtin-names.md`).** The
+> Architecture Decision Council, under delegated authority, resolved that module
+> members **may** reuse builtin spellings: the reservation is scoped to the
+> user-visible value namespace, and a module member is reachable only as
+> `M::name` or through an explicit `use` (which is itself a value binding and
+> therefore still reserved). Implemented in `docs/LANGUAGE_SPEC.md` §3.3 and
+> `tests/builtin_reservation.rs`. This file is preserved as the historical
+> decision package.
+
+**Status:** RESOLVED by ADR-0002 (was HUMAN SEMANTIC DECISION REQUIRED).
 
 This is a decision package, not a resolved rule. No behavior was changed.
 

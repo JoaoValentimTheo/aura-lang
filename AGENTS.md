@@ -63,15 +63,13 @@ Stable release `0.2.0`:
 - size `1,654,161`
 - SHA-256 `9937fd8094ef402b7a9233d02bd232405f75b9e70661404646fcda7cd295c5bc`
 
-AUDIT-3 / TypeExpr nesting remains DECISION-PENDING. Never implement Option A
-or Option B unless the human provides exactly one of:
-
-- `DECISION APPROVED: OPTION A`
-- `DECISION APPROVED: OPTION B`
-
-Use this exact status sentence when relevant:
-
-`Follow-up 3 / AUDIT-3 remains DECISION-PENDING; no code or doc changes beyond the existing decision package; property test AST-limit explicitly excludes TypeExpr-heavy inputs pending that decision.`
+AUDIT-3 / TypeExpr nesting is **RESOLVED** by ADR-0004
+(`docs/adr/0004-typeexpr-nesting-policy.md`): the human owner delegated routine
+language-design decisions to the Architecture Decision Council, which adopted
+Option A — structural `TypeExpr` nesting counts toward the `MAX_AST_DEPTH = 256`
+semantic limit on every substrate. Implemented, tested, and documented; no
+further human token is required. The historical decision package is preserved at
+`docs/AUDIT3_TYPE_NESTING_DECISION.md`.
 
 ## Reproduce before fixing
 

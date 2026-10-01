@@ -1,6 +1,13 @@
 # DECISION REQUIRING HUMAN APPROVAL — Type-annotation nesting limit
 
-**Status:** OPEN — do not implement until approved.
+> **RESOLVED (ADR-0004, `docs/adr/0004-typeexpr-nesting-policy.md`).** The
+> Architecture Decision Council adopted Option A under delegated authority:
+> structural `TypeExpr` nesting counts toward the `MAX_AST_DEPTH = 256` semantic
+> budget on every substrate. Implemented, tested (N-1/N/N+1 boundaries,
+> differential sweep), and documented in `LANGUAGE_SPEC.md` §31.1/§31.2. This
+> file is preserved as the historical decision package.
+
+**Status:** RESOLVED by ADR-0004 (was OPEN — do not implement until approved).
 **Finding:** AUDIT-3 (pre-modules audit, `docs/PRE_MODULES_AUDIT.md` §1).
 **Nature:** a change to the *frozen* language line (the 256-node semantic AST
 limit, `LANGUAGE_SPEC.md` §31.1/§31.2). It is therefore a spec decision, not a
