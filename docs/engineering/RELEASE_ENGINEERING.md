@@ -88,11 +88,20 @@ and is expected to differ per interpreter). Until those are measured and
 recorded, Aura claims reproducible builds **only** for the pure-Rust build on a
 fixed toolchain/host.
 
-## Not yet implemented (tracked debt)
+## Supply-chain controls
 
-- SBOM, build provenance, artifact signing (TD-03).
-- Cross-host/cross-toolchain reproducible-build verification (TD-04).
-- SHA-pinned GitHub Actions (TD-01) — **done**; standard actions are pinned.
+- SBOM (CycloneDX) and a release manifest with a dependency-lock SHA-256 are
+  generated per release; signed SLSA build provenance is attested at publish.
+  Cryptographic release signing remains tracked (TD-03).
+- Cross-host/cross-toolchain reproducible-build verification is tracked (TD-04);
+  only the single-host pure-Rust build is claimed reproducible.
+- Third-party GitHub Actions are SHA-pinned (TD-01). The exception is
+  `dtolnay/rust-toolchain`, which is referenced by *version* (`@1.98.1`,
+  `@1.83.0`, `@nightly`, `@stable`) rather than a commit SHA: it is a
+  first-party-adjacent toolchain selector whose version ref is part of its
+  intended interface, and pinning it to a SHA would require threading an
+  explicit `toolchain:` input through every use. The residual risk is tracked
+  (TD-17) rather than silently claimed as pinned.
 
 ## Rules
 
