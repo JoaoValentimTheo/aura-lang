@@ -8,10 +8,12 @@ Git.
 ## [Unreleased] — 0.2.1 development line
 
 ### Changed
-- **Version scheme (ADR-0001).** Release and language versions are distinct
+- **Versioning (ADR-0001).** Release and language versions are distinct
   identities with the invariant `LANGUAGE_VERSION <= RELEASE_VERSION`. The
   source line advances to `0.2.1` (release and language) because the builtin
-  reservation changed observable language behavior after tag `v0.2.0`.
+  reservation changed observable language behavior after tag `v0.2.0`. The
+  Playground runtime is promoted from `0.2.1-dev.5` to the clean release
+  identity `0.2.1` (same language contract).
 - **Builtin-name value-namespace reservation (`E1009`).** A user value binding
   (`let`/`let mut`, parameters, loop/catch/pattern bindings, top-level `let`,
   top-level `fn`, import aliases) may no longer use a registered builtin name.

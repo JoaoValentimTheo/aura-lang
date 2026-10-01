@@ -172,9 +172,10 @@ async function runAndWait(page, timeout = 15000) {
     })),
   );
   // `0.2.0` remains a real, selectable, frozen release. The selector default
-  // is whatever the manifest's `current` pointer names: the newest development
-  // runtime on the `0.2.0` line while the multi-file Playground is under
-  // development.
+  // is whatever the manifest's `current` pointer names: either the newest
+  // development runtime on a line, or — once a line is promoted — that line's
+  // release artifact. The label must match the entry's channel, not assume the
+  // current runtime is always a development build.
   const selected = await page.evaluate(() => document.getElementById("version").value);
   check("the manifest current pointer selects the default", selected === currentRuntime, selected);
   check("0.2.0 release selectable", options.some((o) => o.value === "0.2.0" && !o.disabled), JSON.stringify(options));
@@ -182,12 +183,18 @@ async function runAndWait(page, timeout = 15000) {
   check("0.0.1 present but unavailable", options.some((o) => o.value === "0.0.1" && o.disabled));
   const release = options.find((o) => o.value === "0.2.0");
   check("0.2.0 is labelled release", release && /release/i.test(release.text), release && release.text);
-  // A development runtime is present, selectable, and labelled as a
-  // development runtime rather than a release.
-  const dev = options.find((o) => o.value === currentRuntime);
-  check("development runtime selectable", dev && !dev.disabled, JSON.stringify(options));
-  check("development runtime is labelled development", dev && /development/i.test(dev.text), dev && dev.text);
-  check("development is distinguished from release", dev && release && dev.text !== release.text);
+  // The current runtime is present, selectable, and labelled according to its
+  // own channel: a development entry must say "development"; a release entry
+  // must say "release" and must not claim to be a development runtime.
+  const currentEntry = manifest.versions.find((v) => v.id === currentRuntime);
+  const current = options.find((o) => o.value === currentRuntime);
+  check("current runtime selectable", current && !current.disabled, JSON.stringify(options));
+  if (currentEntry && currentEntry.channel === "development") {
+    check("development runtime is labelled development", current && /development/i.test(current.text), current && current.text);
+    check("development is distinguished from release", current && release && current.text !== release.text);
+  } else {
+    check("release runtime is labelled release", current && /release/i.test(current.text), current && current.text);
+  }
 
   // The default runtime executes with the completed Core language.
   await setSource(page, "fn main() { print(\"v020\") }");

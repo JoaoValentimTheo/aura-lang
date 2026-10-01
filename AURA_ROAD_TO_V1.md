@@ -7,8 +7,8 @@ Authority order: `docs/LANGUAGE_SPEC.md` > this roadmap for engineering order.
 
 - Base `6d25985` = remote; CI green; frozen `0.0.2`/`0.2.0` intact.
 - Core language COMPLETE (see `AURA_COMPLETENESS_MATRIX.md`).
-- Latest release `v0.2.0`; latest dev runtime `0.2.1-dev.2`; source line
-  `0.2.1`.
+- Latest release `v0.2.0`; the `0.2.1` release candidate is staged (runtime
+  promoted to `0.2.1`, preflight clean); source line `0.2.1`.
 - Semantic/version items closed: HD-1…HD-4 resolved by ADR-0001…0004
   (implementations validated in the working tree; commit pending).
 

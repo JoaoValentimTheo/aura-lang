@@ -22,14 +22,17 @@ continuing substantial work.
 
 Authoritative current value is `git rev-parse HEAD`, also printed by
 `scripts/agent-state.sh`; a tracked state file cannot safely hardcode its own
-commit SHA. At this checkpoint the committed HEAD is `ecfda79`, whose tree does
-**not** yet include the uncommitted ADR-0001…0004 work (below).
+commit SHA. At the last pushed checkpoint the committed HEAD is `31aa0205`
+(TRAIN 5). The ADR-0001…0004 work, the hardening trains, and the T0–T5
+engineering train are committed. A `0.2.1` release candidate is staged locally
+(runtime promoted to `0.2.1`); see `AURA_ENGINEERING_CHECKPOINT.md`.
 
 ## Remote HEAD
 
-`origin/rewrite/v3-rust` = `ecfda79` (equal to local committed HEAD). The
-FSM-P6 stack, the TOTAL HARDENING commits, and the T0–T5 engineering train are
-all pushed and CI-green. Only the ADR-0001…0004 work (below) is uncommitted.
+`origin/rewrite/v3-rust` = `31aa0205` (equal to local committed HEAD). The
+FSM-P6 stack, the TOTAL HARDENING commits, the ADR-0001…0004 work, and the
+T0–T5 engineering train are all pushed and CI-green. The only uncommitted work
+is the local `0.2.1` release candidate (runtime promotion + QA + docs).
 
 ## Current Track
 
@@ -64,44 +67,36 @@ the existing `SourceProvider`, `ModuleGraphBuilder`, canonical resolver,
 checker, runtime, and WASM boundary. Playground API remains 1 and Host ABI
 remains 1.
 
-## Current Work — ADR COUNCIL RESOLUTIONS (UNCOMMITTED)
+## Current Work — AURA 0.2.1 RELEASE CANDIDATE (UNCOMMITTED)
 
-The Architecture Decision Council resolved the four queued human decisions
-(HD-1…HD-4) as ADRs; the resolutions are implemented in the working tree and
-are **not yet committed**. This is the active uncommitted work.
+The ADR-0001…0004 resolutions (HD-1…HD-4) are **committed and pushed** — this
+section previously recorded them as pending; Git reconciled it.
 
 - **ADR-0001 (version scheme)** — release and language versions are distinct;
-  invariant `LANGUAGE_VERSION <= RELEASE_VERSION`. Source line advances to
-  `0.2.1` (release + language). `docs/adr/0001-…`, `Cargo.toml`, `src/lib.rs`,
-  `tests/contract.rs`, `.github/workflows/release.yml`.
+  invariant `LANGUAGE_VERSION <= RELEASE_VERSION`; source line `0.2.1`.
 - **ADR-0002 (module members)** — module members may reuse builtin spellings;
-  reservation stays scoped to the user-visible value namespace. No behavior
-  change. `docs/adr/0002-…`, `docs/LANGUAGE_SPEC.md` §3.3.
+  reservation stays scoped to the user-visible value namespace.
 - **ADR-0003 (CPython policy)** — support tiers; TESTED = Linux 3.10–3.13,
-  macOS 3.12. `docs/adr/0003-…`, `docs/CPYTHON_COMPATIBILITY_TARGET.md`.
-- **ADR-0004 (TypeExpr nesting)** — structural type nesting (`Box<…>`, `[T]`,
-  `{K: V}`) counts toward `MAX_AST_DEPTH = 256` on every substrate; the
-  native/WASM divergence is removed. `src/parse/mod.rs` (`type_depth`),
-  `docs/LANGUAGE_SPEC.md` §31.1/§31.2, `website/content/reference-limits.md`,
-  `playground/tests/node/differential.test.mjs` sweep, `tests/boundaries.rs`.
-  Flagged `type_depth` accesses were rewritten to avoid a clippy
-  `misrefactoring` false positive.
+  macOS 3.12, Windows 3.12.
+- **ADR-0004 (TypeExpr nesting)** — structural type nesting counts toward
+  `MAX_AST_DEPTH = 256` on every substrate; the native/WASM divergence is
+  removed.
 
-Also uncommitted and validated: the type-alias **expansion budget**
-(`MAX_TYPE_NODES`, `src/check/mod.rs`) bounding exponentially duplicating
-alias chains as `E1015` (`tests/adversarial.rs`); the **PyO3 exact-type**
-boundary fix (`src/bridge/mod.rs`, `tests/interop_matrix.rs`); the runtime
-crate advancing to `0.2.1-dev.4` (earlier `0.2.1-dev.N` builds predate
-ADR-0004, the train-1 parser hardening, and the re-verification checker fixes;
-all are preserved on disk, unlisted).
+Active uncommitted work is the **Aura 0.2.1 release candidate**:
+`playground/runtime` promoted from `0.2.1-dev.5` to the clean `0.2.1` release
+identity; the `0.2.1` WASM artifact built and pinned (`FROZEN_0_2_1` in
+`playground/build.mjs`); manifest/docs/browser-label synced; the
+`tests/cross_subsystem.rs` QA suite added. The full local gate is green (see
+`AURA_ENGINEERING_CHECKPOINT.md`, Train 6).
 
 ## Next Exact Action
 
-COMMIT THE ADR-0001…0004 WORK, THEN INDEPENDENT REVIEW.
+INDEPENDENT REVIEW OF THE `0.2.1` RELEASE CANDIDATE, THEN COMMIT AND PUSH.
 
-The full validation floor is green (see below). The work is a coherent,
-additive implementation of the already-decided ADRs and is ready to commit
-locally. Do not push without explicit human authorization.
+The release candidate is preflight-clean (`scripts/release-preflight.sh 0.2.1
+--tag`) and every local gate item is green. After independent review: commit,
+push to `origin/rewrite/v3-rust`, monitor CI, then tag `v0.2.1` — the tag
+itself requires explicit human authorization per `AGENTS.md`.
 
 ## FSM-P6 (committed, pushed)
 
@@ -125,9 +120,10 @@ state model, without adding any language semantics:
   Development channel only; not a release, not tagged, never a replacement for
   `0.2.0`.
 
-`playground/build.mjs` now pins the `0.2.0` release identity permanently, so
-the build can never regenerate or overwrite it. The manifest lists 5 entries
-(`0.0.1`, `0.0.2`, `0.0.2-dev.30`, `0.2.0`, `0.2.0-dev.2`).
+`playground/build.mjs` pins each frozen release identity permanently, so the
+build can never regenerate or overwrite one. The manifest lists 7 entries
+(`0.0.1`, `0.0.2`, `0.0.2-dev.30`, `0.2.0-dev.1`, `0.2.0-dev.2`, `0.2.0`, and
+the current `0.2.1` release).
 
 Host ABI remains 1. Playground API remains 1. No `src/**` change. No frozen
 artifact change.
@@ -216,8 +212,12 @@ must not reintroduce model/provider/bridge/global-agent routing.
   the red-team re-verification checker fixes; preserved on disk, unlisted.
 - `0.2.1-dev.4` — 1,768,270 bytes — intermediate development build, predates
   the TD-15 diagnostic-location change; preserved on disk, unlisted.
-- `0.2.1-dev.5` — 1,768,369 bytes — current development runtime, NOT a release:
+- `0.2.1-dev.5` — 1,768,369 bytes — development runtime; superseded by the
+  `0.2.1` release, preserved on disk:
   `8f8c3e1689fc7fb1472293d610c9392d5ea2b7fe106b50f0c7a5535dfc54bc19`
+- `0.2.1` — 1,768,322 bytes — **current release runtime** (release candidate,
+  pending tag):
+  `48c456fcda6c50dd6808ccc5f15a0bca4c0b81d7d970172557817decf427cc9e`
 
 Historical runtime directories are immutable. `playground/build.mjs` pins each
 frozen release identity and refuses to regenerate or overwrite it; advancing a

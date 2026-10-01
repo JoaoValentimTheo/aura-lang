@@ -5,12 +5,11 @@ Resumable operational state for the Road-to-1.0 program.
 ## State
 
 ```
-PROGRAM HEAD:            f3fcd850 (pushed)
-REMOTE HEAD:             f3fcd850
-CURRENT RELEASE:         v0.2.0 (tagged; immutable)
-CURRENT TRAIN:           TRAIN 4 — signed provenance, docs versioning,
-                         cross-release compat, CPython formalization
-LATEST DEV RUNTIME:      0.2.1-dev.5 (development channel only)
+PROGRAM HEAD:            31aa0205 (pushed) + release-candidate commits (local)
+REMOTE HEAD:             31aa0205
+CURRENT RELEASE:         v0.2.0 (tagged; immutable); v0.2.1 release candidate staged
+CURRENT TRAIN:           TRAIN 6 — promote and publish Aura 0.2.1
+LATEST DEV RUNTIME:      0.2.1 (promoted release runtime); 0.2.1-dev.5 preserved
 TEAM STATUS:             language/runtime/security GREEN; CPython, performance,
                          release engineering, docs advancing
 DECISIONS CLOSED:        HD-1, HD-2 (AUDIT-3), HD-3, HD-4 — all four, via ADR-0001…0004
@@ -126,12 +125,31 @@ NEXT PARALLEL PHASE:     TRAIN 3 — CPython formalization (Windows probe result
 - **Release path prepared**: `docs/release-notes/v0.2.1.md` written; the
   release preflight passes everything except the runtime promotion.
 
+## Train 6 — in progress: publish Aura 0.2.1
+
+- **Runtime promoted**: `playground/runtime` advanced from `0.2.1-dev.5` to the
+  clean release identity `0.2.1`; built and pinned the `0.2.1` WASM artifact
+  (`1768322` bytes, sha256 `48c456fc…`), zero host imports, Host ABI 1. It is
+  contract-identical to `0.2.1-dev.5` (no semantic change intervened).
+- **Immutability**: `FROZEN_0_2_1` pinned in `playground/build.mjs` with a
+  dedupe guard so the release entry survives a later crate advance; `--check`
+  and the frozen-artifact sweep both cover it.
+- **QA**: `tests/cross_subsystem.rs` added (8 cross-subsystem interaction
+  cases); Playground browser label test made channel-aware (no longer assumes
+  the current runtime is always a development build).
+- **Gate (all green, release candidate):** fmt, all-features tests,
+  no-default-features tests, clippy `-D warnings`, MSRV (`+1.83.0`), runtime
+  crate tests, `node playground/tests/node/run-all.mjs`, `build --check`,
+  `node website/tests/run-all.mjs`, `scripts/artifact-smoke.sh --release` (12/12),
+  `scripts/release-preflight.sh 0.2.1 --tag`, frozen hashes byte-identical.
+- **Remaining**: independent adversarial review; commit; push; CI; tag
+  `v0.2.1` (needs explicit human authorization per `AGENTS.md`).
+
 ## Next tasks
 
-1. TRAIN 5 completion — stage the `0.2.1` release under ADR-0001: promote a
-   **release** runtime artifact for `0.2.1` (the release-preflight check flags
-   its absence: a tag would fail without it), then tag. Per `AGENTS.md`,
-   creating a release tag requires explicit human authorization.
+1. TRAIN 6 completion — independent review, commit the release candidate, push,
+   monitor CI, then tag `v0.2.1`. Per `AGENTS.md`, creating a release tag
+   requires explicit human authorization; the release candidate and its
+   runtime artifact are ready and preflight-clean.
 2. Remaining non-blocking extras: cryptographic tag/asset signing (TD-03),
-   `rust-toolchain` SHA-pinning (TD-17), TD-13 incremental REPL (v1.1),
-   TD-15 diagnostic locations.
+   `rust-toolchain` SHA-pinning (TD-17), TD-13 incremental REPL (v1.1).
