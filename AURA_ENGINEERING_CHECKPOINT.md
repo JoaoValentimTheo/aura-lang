@@ -9,7 +9,7 @@ PROGRAM HEAD:            f80c5be (pushed) + uncommitted docs/fuzz batch
 REMOTE HEAD:             f80c5be
 CURRENT RELEASE:         v0.2.0 (tagged; immutable)
 CURRENT TRAIN:           TRAIN 1 — semantic-decision closure + first hardening pass
-LATEST DEV RUNTIME:      0.2.1-dev.2 (development channel only)
+LATEST DEV RUNTIME:      0.2.1-dev.3 (development channel only)
 TEAM STATUS:             language/runtime GREEN; CPython, security, performance,
                          docs advancing
 DECISIONS CLOSED:        HD-1, HD-2 (AUDIT-3), HD-3, HD-4 — all four, via ADR-0001…0004
@@ -21,7 +21,7 @@ BUGS FIXED:              CPython map-key identity; CPython depth symmetry;
 PERFORMANCE RESULTS:     parser fuzz 200k runs clean; checker fuzz 150k clean
 SECURITY RESULTS:        red-team campaign vs 92ea6bc in progress
 COMMITS:                 ADR-0001…0004; alias bound; PyO3 exact-type; runtime
-                         0.2.1-dev.2; program state; website install; CPython
+                         0.2.1-dev.3; program state; website install; CPython
                          key/depth fixes; errors doc; fuzz pin
 PUSHES:                  ecfda79..92ea6bc; 92ea6bc..f80c5be
 CI:                      ecfda79→92ea6bc GREEN; f80c5be in progress
@@ -52,7 +52,7 @@ NEXT PARALLEL PHASE:     finish TRAIN 1 (red team + CI) → TRAIN 2 from the
 - **CPython bridge**: exact-type identity for dict keys (was duck-typed
   `__index__`); depth bounded symmetrically (Python→Aura rejects, no silent
   `repr`); doc wording reconciled to the implementation.
-- Runtime `0.2.1-dev.2`; playbook/website/docs synced to the new version line.
+- Runtime `0.2.1-dev.3`; playbook/website/docs synced to the new version line.
 
 ## Root-caused, deferred (not defects)
 

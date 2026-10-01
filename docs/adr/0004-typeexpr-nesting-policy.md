@@ -67,8 +67,9 @@ penalized per member. Only true structural nesting (generic application
   flat-union acceptance test (a long union stays accepted).
 - A WASM runtime carrying this parser change needs a **new** development
   runtime identity (per the runtime-identity policy); the `0.2.1-dev.1` build,
-  which predated this change, is superseded by `0.2.1-dev.2` (the manifested
-  current development runtime) and preserved on disk unlisted.
+  which predated this change, is superseded by `0.2.1-dev.2` and then
+  `0.2.1-dev.3` (the manifested current development runtime, which also carries
+  the train-1 parser hardening) and preserved on disk unlisted.
 
 ## Alternatives considered
 

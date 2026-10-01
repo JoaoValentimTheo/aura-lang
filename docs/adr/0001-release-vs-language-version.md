@@ -81,8 +81,9 @@ Historical artifacts keep their identities unchanged and immutable:
 tag `v0.2.0`, frozen runtimes `0.0.2`/`0.2.0`, and development runtimes
 `0.2.0-dev.1`/`0.2.0-dev.2`. Their `language_version` metadata remains correct
 *for those artifacts*. A future runtime that carries the `0.2.1` language
-contract receives a **new** identity (`0.2.1-dev.2`; the earlier `0.2.1-dev.1`
-build was superseded by the ADR-0004 parser change); dev.2 is never relabeled.
+contract receives a **new** identity (the current is `0.2.1-dev.3`; each
+earlier `0.2.1-dev.N` was superseded by a later observable change); an existing
+dev identity is never relabeled.
 
 ## Consequences
 

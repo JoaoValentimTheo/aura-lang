@@ -122,13 +122,15 @@ const HISTORICAL_DEV_0_2_0_DEV_1 = {
 };
 
 // The second development artifact of the `0.2.0` line, superseded by
-// `0.2.1-dev.2`. It carries the builtin-name reservation but predates the
+// `0.2.1-dev.3`. It carries the builtin-name reservation but predates the
 // `0.2.1` version line (ADR-0001), so it is preserved and selectable as a
 // historical development runtime but is no longer the manifest default. Its
 // identity is pinned so the artifact can never drift. (The intermediate
-// `0.2.1-dev.1` was built before the ADR-0004 parser change and is preserved
-// on disk unreferenced, per the convention that only the final development
-// runtime of a line is manifested.)
+// `0.2.1-dev.1` and `0.2.1-dev.2` are preserved on disk unreferenced, per the
+// convention that only the final development runtime of a line is manifested:
+// `.1` predates ADR-0004, and `.2` predates the train-1 parser hardening —
+// bounded alias-chain resolution depth, semantic module-nesting, and O(n)
+// string lexing.)
 const HISTORICAL_DEV_0_2_0_DEV_2 = {
   id: "0.2.0-dev.2",
   release_version: "0.2.0",
