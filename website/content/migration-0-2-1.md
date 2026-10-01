@@ -27,7 +27,7 @@ top-level `let`, a top-level `fn`, or a `use ... as` alias — may no longer reu
 a registered builtin name (for example `len`, `sum`, `print`).
 
 ```aura
-// 0.2.0: accepted. 0.2.1: E1009.
+# 0.2.0: accepted. 0.2.1: E1009.
 fn main() { let sum = 1 }
 ```
 
@@ -37,7 +37,7 @@ Type, module, field, variant, method, and **module-member** names are separate
 namespaces and are unaffected (ADR-0002):
 
 ```aura
-// Allowed: the member `sum` lives in module `M`'s namespace.
+# Allowed: the member `sum` lives in module `M`'s namespace.
 module M { pub fn sum(n: int) -> int { return n + 1 } }
 fn main() { print(M::sum(1)) }
 ```
