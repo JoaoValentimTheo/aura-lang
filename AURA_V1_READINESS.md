@@ -28,7 +28,7 @@ never by schedule. Status legend: **GREEN** (ready), **YELLOW** (gaps remain),
 | CI | GREEN | comprehensive matrix; all green; now includes a CPython interop version/platform job |
 | RELEASE ENGINEERING | YELLOW | gated release workflow + policy doc + CHANGELOG; version scheme decided (ADR-0001); pre-release metadata consistency gate; release-manifest + SBOM generated and attached; provenance/attestation pending |
 | SUPPLY CHAIN | YELLOW | cargo audit in CI; standard actions SHA-pinned; CycloneDX SBOM generated and attached to releases (`scripts/sbom.sh`, tested); provenance/attestation pending |
-| BACKWARD COMPAT | YELLOW | `tests/compat.rs` pins the released 0.2.0 language surface behaviorally; compatibility policy in RELEASE_ENGINEERING.md; upgrade/older-artifact matrix still pending |
+| BACKWARD COMPAT | YELLOW | `tests/compat.rs` pins the released 0.2.0 surface *and* the 0.2.1 additions (reservation, unified nesting, bounded alias chains) behaviorally, with documented intentional breaks; compatibility policy in RELEASE_ENGINEERING.md; cross-release artifact run-through still pending |
 | RELEASE-READY (v1 GO) | RED | CPYTHON/SECURITY/PERF/DOCS/PACKAGING/COMPAT not yet GREEN; all semantic/version decisions (HD-1…HD-4) now closed by ADR-0001…0004 and implemented/pushed |
 
 ## Current blockers toward v1 GO

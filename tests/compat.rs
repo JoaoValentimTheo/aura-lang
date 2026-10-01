@@ -18,11 +18,19 @@
 //! Scope caveat: the `c020_*` fixtures describe the 0.2.0 Core language
 //! surface as it stands on the current development line. Where a rule changed
 //! *after* tag `v0.2.0` (notably builtin-name reservation), the fixture notes
-//! it explicitly rather than claiming the released tag already had it. See
-//! `HUMAN_DECISIONS_QUEUE.md` HD-4 for the version-identity question.
+//! it explicitly rather than claiming the released tag already had it. The
+//! `c021_*` fixtures pin the **0.2.1** language additions; the version-identity
+//! question is resolved by ADR-0001 (`docs/adr/0001-release-vs-language-version.md`).
+//!
+//! Upgrade expectation: a program valid under the `0.2.0` spelling stays valid
+//! under `0.2.1` unless it relied on a binding that collided with a builtin
+//! (never legal to rely on — it broke assignment lookup) or on an alias chain
+//! that expanded past the semantic depth limit (never a real program). Both
+//! are pinned below as intentional, documented breaks.
 
 use aura::error::codes;
 use aura::run_source;
+use std::fmt::Write as _;
 
 fn ok(src: &str) -> String {
     run_source(src, "<compat>").expect("program runs")
@@ -225,5 +233,68 @@ fn c020_error_codes_are_stable() {
             .unwrap_err()
             .code,
         codes::NO_MAIN
+    );
+}
+
+// ── 0.2.1 language additions ───────────────────────────────────────────────
+
+/// Builtin-name reservation (`E1009`): the 0.2.1 language rejects a user value
+/// binding that reuses a builtin name. This is a documented, intentional break
+/// from the pre-`0.2.1` spelling (ADR-0002); a program that relied on such a
+/// binding was never assignment-safe.
+#[test]
+fn c021_builtin_binding_is_reserved() {
+    assert_eq!(err("fn main() { let len = 1 }"), codes::RESERVED_NAME);
+    // Non-value namespaces are unaffected (ADR-0002): a module member may
+    // reuse a builtin spelling.
+    assert_eq!(
+        ok("module M { pub fn len() -> int { return 1 } }\nfn main() { print(M::len()) }"),
+        "1\n"
+    );
+    // A parameter is a value binding too.
+    assert_eq!(
+        err("fn f(print: int) -> int { return print }\nfn main() { print(1) }"),
+        codes::RESERVED_NAME
+    );
+}
+
+/// Unified structural nesting (ADR-0004): a type annotation nested past the
+/// semantic AST limit is `E1015` on every substrate, and a flat union stays
+/// accepted.
+#[test]
+fn c021_type_nesting_is_unified() {
+    let deep = |n: usize| {
+        let mut t = String::from("int");
+        for _ in 0..n {
+            t = format!("Box<{t}>");
+        }
+        format!("struct Box<T> {{ value: T }}\nfn f(x: {t}) -> int {{ return 1 }}\nfn main() {{ print(1) }}")
+    };
+    assert!(run_source(&deep(255), "<compat>").is_ok());
+    assert_eq!(
+        run_source(&deep(256), "<compat>").unwrap_err().code,
+        codes::NESTING
+    );
+}
+
+/// Bound alias-chain resolution (train-1 hardening): a chain of wrapping
+/// aliases past the semantic depth limit is `E1015`, never a host abort.
+#[test]
+fn c021_alias_chain_depth_is_bounded() {
+    let chain = |n: usize| {
+        let mut s = String::from("type A0 = int\n");
+        for i in 1..=n {
+            let _ = writeln!(s, "type A{i} = [A{}]", i - 1);
+        }
+        let _ = write!(
+            s,
+            "fn f(x: A{n}) -> int {{ return 1 }}\nfn main() {{ print(1) }}\n"
+        );
+        s
+    };
+    assert!(run_source(&chain(255), "<compat>").is_ok());
+    assert_eq!(
+        run_source(&chain(20_000), "<compat>").unwrap_err().code,
+        codes::NESTING
     );
 }
