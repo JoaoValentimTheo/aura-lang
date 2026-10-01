@@ -26,8 +26,8 @@ never by schedule. Status legend: **GREEN** (ready), **YELLOW** (gaps remain),
 | DOCS | YELLOW | language/stdlib docs current; security/CPython/ops docs now present; CHANGELOG created; install/quickstart and migration still thin |
 | PACKAGING | YELLOW | release workflow builds 3 targets + wasm with checksums and a built-binary smoke before release; install guide (`docs/INSTALL.md`, website) present; end-user installed-binary smoke now automated (`scripts/artifact-smoke.sh`, run in CI and the release gate); artifact matrix documented in RELEASE_ENGINEERING.md |
 | CI | GREEN | comprehensive matrix; all green; now includes a CPython interop version/platform job |
-| RELEASE ENGINEERING | YELLOW | gated release workflow + policy doc + CHANGELOG; version scheme decided (ADR-0001: release ≠ language, `LANG <= RELEASE`); pre-release metadata consistency gate added to the release workflow; no SBOM/provenance |
-| SUPPLY CHAIN | YELLOW | cargo audit in CI; actions not SHA-pinned; no SBOM |
+| RELEASE ENGINEERING | YELLOW | gated release workflow + policy doc + CHANGELOG; version scheme decided (ADR-0001); pre-release metadata consistency gate; release-manifest + SBOM generated and attached; provenance/attestation pending |
+| SUPPLY CHAIN | YELLOW | cargo audit in CI; standard actions SHA-pinned; CycloneDX SBOM generated and attached to releases (`scripts/sbom.sh`, tested); provenance/attestation pending |
 | BACKWARD COMPAT | YELLOW | `tests/compat.rs` pins the released 0.2.0 language surface behaviorally; compatibility policy in RELEASE_ENGINEERING.md; upgrade/older-artifact matrix still pending |
 | RELEASE-READY (v1 GO) | RED | CPYTHON/SECURITY/PERF/DOCS/PACKAGING/COMPAT not yet GREEN; all semantic/version decisions (HD-1…HD-4) now closed by ADR-0001…0004 and implemented/pushed |
 

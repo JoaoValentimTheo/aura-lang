@@ -37,6 +37,9 @@ run("manifest", [join(here, "manifest.test.mjs")]);
 // The release-manifest generator (section 98) describes a release from the
 // repository's canonical version sources; no runtime needed.
 run("release-manifest", [join(here, "release_manifest.test.mjs")]);
+// The SBOM generator (section 53) lists every dependency with name, version,
+// and license; no runtime needed.
+run("sbom", [join(here, "sbom.test.mjs")]);
 // The Playground's project state (files, active file, entry file) is a pure
 // model: no DOM, no Worker, no wasm.
 run("project", [join(here, "project.test.mjs")]);// Presentational completion + shared language metadata (no runtime needed).

@@ -235,6 +235,12 @@ jobs:
           set -euo pipefail
           scripts/release-manifest.sh > "dist/release-manifest.json"
           cat "dist/release-manifest.json"
+      - name: Generate the SBOM
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/sbom.sh > "dist/sbom.json"
+          echo "SBOM components: $(python3 -c 'import json,sys; print(len(json.load(open("dist/sbom.json"))["components"]))')"
       - name: Assemble release notes
         shell: bash
         run: |
@@ -259,3 +265,5 @@ jobs:
             dist/*.tar.gz
             dist/*.sha256
             dist/aura-playground-runtime-*.wasm
+            dist/release-manifest.json
+            dist/sbom.json
