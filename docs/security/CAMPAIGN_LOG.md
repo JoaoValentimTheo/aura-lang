@@ -63,6 +63,10 @@ the child source; physical wrapper cannot bypass E1015).
 
 ### Campaigns with no finding
 
+- **Deep fuzz (post-fix, 2026-10-01, pending `0.2.1-dev.4`):** `parser` 2.0M+
+  executions, `checker` 1.18M runs, `runtime` 1,087 runs (slower per exec), each
+  with a 4 GiB RSS cap — no crash, hang, or OOM. The hardened alias-depth and
+  module-depth paths were exercised.
 - **S1 malformed source** — 52 targeted malformed inputs plus 4000 random
   token-soup inputs: all structured diagnostics, no panic/abort/timeout.
 - **S2 deep structures** (non-module) — bounded `E1015`.
