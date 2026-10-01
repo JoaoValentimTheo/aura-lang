@@ -9,11 +9,12 @@
 // disturbing existing ones.
 //
 // `docsVersion` is the **release** the docs are published with. The language
-// semantics it documents are the frozen `docsLanguageVersion`; the two are
-// intentionally distinct.
+// semantics it documents are `docsLanguageVersion`; the two are intentionally
+// distinct (ADR-0001). These pages document the current stable release `0.2.0`
+// and the `0.2.1` development additions (see the migration guide).
 
-export const docsVersion = "0.0.2";
-export const docsLanguageVersion = "0.0.1";
+export const docsVersion = "0.2.0";
+export const docsLanguageVersion = "0.2.0";
 
 export const docGroups = [
   {
