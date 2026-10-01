@@ -79,6 +79,10 @@ fn parse_inner_with_initial_depth(src: &str, initial_depth: usize) -> Result<Mod
         expr_nodes: 0,
         atom_depth: 0,
         type_depth: 0,
+        // A physical wrapper (a loaded child source) is equivalent to an
+        // in-source `module` block, so it consumes the same semantic nesting
+        // budget: `initial_depth` is that wrapper depth.
+        module_depth: initial_depth,
     };
     let module = p.module()?;
     // Reject trees deeper than the language limit here, before any later
@@ -97,6 +101,7 @@ fn parse_expr_inner(src: &str) -> Result<Expr> {
         expr_nodes: 0,
         atom_depth: 0,
         type_depth: 0,
+        module_depth: 0,
     };
     p.skip_newlines();
     let e = p.expr()?;
@@ -121,6 +126,7 @@ fn parse_expr_at(src: &str, base: usize) -> Result<Expr> {
         expr_nodes: 0,
         atom_depth: 0,
         type_depth: 0,
+        module_depth: 0,
     };
     p.skip_newlines();
     let e = p.expr()?;
@@ -139,6 +145,7 @@ fn parse_stmt_inner(src: &str) -> Result<Stmt> {
         expr_nodes: 0,
         atom_depth: 0,
         type_depth: 0,
+        module_depth: 0,
     };
     p.skip_newlines();
     let s = p.stmt()?;
@@ -404,6 +411,13 @@ struct Parser {
     /// holds identically on native and WASM. A flat union (`A | B | …`) is a
     /// loop, not nesting, and is not counted per member.
     type_depth: usize,
+    /// Current structural nesting depth of in-source `module` blocks. Module
+    /// nesting is structural, so it counts toward the same [`MAX_AST_DEPTH`]
+    /// budget as expressions, statements, and types: without this a deep
+    /// module chain was bounded only by the substrate-calibrated parser
+    /// backstop (native accepted 2047, WASM 767), the same native/WASM
+    /// acceptance divergence ADR-0004 removed for types.
+    module_depth: usize,
 }
 
 impl Parser {
@@ -615,7 +629,21 @@ impl Parser {
         // a native stack overflow instead of the stable `E1015`
         // (`LANGUAGE_SPEC.md` §31.2, §31.5).
         self.enter()?;
+        // Module nesting is structural and counts toward the semantic
+        // `MAX_AST_DEPTH` on every substrate (ADR-0004), so acceptance does not
+        // depend on the substrate-calibrated backstop.
+        self.module_depth += 1;
+        if self.module_depth > MAX_AST_DEPTH {
+            self.module_depth -= 1;
+            self.leave();
+            return Err(Diag::new(
+                codes::NESTING,
+                "module nests too deeply",
+                self.span(),
+            ));
+        }
         let r = self.module_item_inner(public);
+        self.module_depth -= 1;
         self.leave();
         r
     }

@@ -113,6 +113,40 @@ fn normalize_resolved_union(members: Vec<TypeExpr>) -> TypeExpr {
     }
 }
 
+/// Whether a resolved type expression nests deeper than `limit`.
+///
+/// Iterative (explicit stack), never recursive: it is called on a type that may
+/// be the very structure whose recursive `Drop` would overflow the host stack,
+/// so it must not itself recurse or the guard would be self-defeating. A name
+/// or primitive is depth 1; each `List`/`Map`/`App`/`Union` layer adds one.
+fn type_expr_depth_exceeds(t: &TypeExpr, limit: usize) -> bool {
+    let mut stack: Vec<(&TypeExpr, usize)> = vec![(t, 1)];
+    while let Some((node, depth)) = stack.pop() {
+        if depth > limit {
+            return true;
+        }
+        match node {
+            TypeExpr::List(i) => stack.push((i, depth + 1)),
+            TypeExpr::Map(k, v) => {
+                stack.push((k, depth + 1));
+                stack.push((v, depth + 1));
+            }
+            TypeExpr::App(_, args) => {
+                for a in args {
+                    stack.push((a, depth + 1));
+                }
+            }
+            TypeExpr::Union(ms) => {
+                for m in ms {
+                    stack.push((m, depth + 1));
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 /// Maximum AST nesting the checker will descend before reporting a limit.
 /// Prevents a flat but deeply nested program from exhausting the host stack.
 const MAX_AST_DEPTH: usize = 256;
@@ -3764,6 +3798,23 @@ impl Checker {
                         visiting.push(n.clone());
                         let resolved = self.resolve_type_expr(target, span, visiting)?;
                         visiting.pop();
+                        // A resolved alias may be a chain that nests one level
+                        // deeper per alias (`type A{i} = [A{i-1}]`). Because
+                        // resolution is memoized and in declaration order, the
+                        // recursion itself stays shallow but the cached value
+                        // grows a level at a time: without this bound the cache
+                        // accumulates a pathologically deep type (Θ(k²) memory)
+                        // whose recursive `Drop` overflows the host stack
+                        // (§31.5). Rejecting an over-deep resolved type as the
+                        // same `E1015` a literally over-nested type produces
+                        // keeps resolution bounded on every substrate (ADR-0004).
+                        if type_expr_depth_exceeds(&resolved, MAX_AST_DEPTH) {
+                            return Err(Diag::new(
+                                codes::NESTING,
+                                "resolved type nests too deeply",
+                                span,
+                            ));
+                        }
                         self.resolved_aliases
                             .borrow_mut()
                             .insert(n.clone(), resolved.clone());

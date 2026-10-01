@@ -671,12 +671,15 @@ fn missing_main_is_attributed_to_real_entry_file() {
 
 #[test]
 fn real_file_wrapper_depth_cannot_bypass_e1015() {
-    let budget = aura::parse::parse_recursion_budget();
+    // Module nesting is bounded by the semantic AST limit (256), not the
+    // substrate-calibrated parser backstop (ADR-0004), so exactly-at-limit
+    // parses and one more level is `E1015`.
+    let semantic_limit = 256;
     let mut nested = String::new();
-    for _ in 0..budget {
+    for _ in 0..semantic_limit {
         nested.push_str("module nested {\n");
     }
-    for _ in 0..budget {
+    for _ in 0..semantic_limit {
         nested.push_str("}\n");
     }
     assert!(aura::parse::parse(&nested).is_ok());

@@ -56,6 +56,27 @@ fn gen_list_call(n: usize) -> String {
     format!("fn main() {{ print(len([{items}])) }}\n")
 }
 
+/// A single string literal of `n` characters (red-team F3 regression shape).
+fn gen_long_string(n: usize) -> String {
+    format!("let s = \"{}\"\n", "a".repeat(n))
+}
+
+/// A linear chain of wrapping aliases `type A{i} = [A{i-1}]` of length `n` (the
+/// red-team F1/F2 shape). Kept below the semantic nesting limit in the scaling
+/// guard, which exercises the accepted path.
+fn gen_alias_chain(n: usize) -> String {
+    use std::fmt::Write as _;
+    let mut s = String::from("type A0 = int\n");
+    for i in 1..=n {
+        let _ = writeln!(s, "type A{i} = [A{}]", i - 1);
+    }
+    let _ = writeln!(
+        s,
+        "fn f(x: A{n}) -> int {{ return 1 }}\nfn main() {{ print(1) }}"
+    );
+    s
+}
+
 /// Measure one workload, repeating it until each sample is comfortably above
 /// scheduler noise, then return the **minimum** per-iteration milliseconds
 /// (the minimum is the least-noise-contaminated estimate).
@@ -147,6 +168,39 @@ fn lex_scales_subquadratically() {
             let _ = lex(&src).unwrap();
         },
         400,
+    );
+}
+
+/// Red-team F3: lexing a long string literal must be linear. The previous
+/// scanner re-validated the entire remaining source per character (Θ(n²)), so a
+/// 5 MB literal took ~40s. The guard doubles N; quadratic gives ~4x.
+#[test]
+fn lex_long_string_scales_subquadratically() {
+    assert_subquadratic(
+        "lex(long_string)",
+        |n| {
+            let src = gen_long_string(n);
+            let _ = lex(&src).unwrap();
+        },
+        100_000,
+    );
+}
+
+/// Red-team F1/F2: a *linear* alias chain below the semantic depth limit must
+/// resolve sub-quadratically. Before the fix, resolution was memoized in
+/// declaration order and each cached level nested one deeper, so a chain cost
+/// Θ(k²) memory/time (16k aliases took ~40s and 3.4 GB); above the limit the
+/// resolver now returns `E1015`. The guard keeps N below the 256-level limit.
+#[test]
+fn alias_chain_resolution_scales_subquadratically() {
+    assert_subquadratic(
+        "check(alias_chain)",
+        |n| {
+            let src = gen_alias_chain(n);
+            let m = parse(&src).unwrap();
+            Checker::module(&m).unwrap();
+        },
+        60,
     );
 }
 

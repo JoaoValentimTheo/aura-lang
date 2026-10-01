@@ -432,7 +432,25 @@ fn nested_modules_are_bounded_not_a_stack_overflow() {
         "\n}".repeat(50)
     );
     assert!(run(&nested).is_ok(), "50 nested modules must be accepted");
-    // A deeply nested module chain is the stable nesting diagnostic.
+    // Module nesting counts toward the semantic limit on every substrate
+    // (ADR-0004): 256 levels is accepted, 257 is `E1015`.
+    let at_limit = format!(
+        "{}pub fn f() -> int {{\n return 1\n}}{}\nfn main() {{ print(1) }}\n",
+        "module A {\n".repeat(256),
+        "\n}".repeat(256)
+    );
+    assert!(
+        run(&at_limit).is_ok(),
+        "256 nested modules must be accepted"
+    );
+    let over_limit = format!(
+        "{}pub fn f() -> int {{\n return 1\n}}{}\nfn main() {{ print(1) }}\n",
+        "module A {\n".repeat(257),
+        "\n}".repeat(257)
+    );
+    assert_eq!(run(&over_limit), Err(codes::NESTING));
+    // A deeply nested module chain is the same stable diagnostic (never a host
+    // abort), well past the semantic limit.
     let over = format!("{}{}", "module A {\n".repeat(20_000), "\n}".repeat(20_000));
     assert_eq!(run(&over), Err(codes::NESTING));
     // A flat set of many sibling modules is accepted (no depth).

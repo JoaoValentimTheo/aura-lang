@@ -436,3 +436,41 @@ fn broad_but_linear_aliases_still_check() {
     let _ = write!(src, "type All = {union}\nfn main() {{ let x: All = 1 }}\n");
     assert_eq!(check_code(&src), 0);
 }
+
+/// Red-team F1/F2 (train 1): a *linear* chain of wrapping aliases
+/// (`type A{i} = [A{i-1}]`) makes alias resolution recurse once per alias.
+/// The flat node budget did not bound depth, so a long chain overflowed the
+/// host stack (SIGABRT, §31.5) and, because resolution is memoized, also cost
+/// Θ(k²) memory. The resolver now bounds the *depth* of a resolved type at the
+/// semantic AST limit, so an over-deep chain is the stable `E1015`, exactly as
+/// ADR-0004 governs a literally over-nested type. A chain at the limit still
+/// resolves.
+#[test]
+fn linear_alias_chains_are_depth_bounded() {
+    let chain = |n: usize, use_it: bool| {
+        let mut src = String::from("type A0 = int\n");
+        for i in 1..=n {
+            let alias = format!("type A{i} = [A{}]\n", i - 1);
+            src.push_str(&alias);
+        }
+        if use_it {
+            let driver = format!("fn f(x: A{n}) -> int {{ return 1 }}\nfn main() {{ print(1) }}\n");
+            src.push_str(&driver);
+        } else {
+            let _ = write!(src, "let z: A{n} = []\nfn main() {{ print(1) }}\n");
+        }
+        src
+    };
+    // 255 wrapping aliases = 256 AST levels: accepted.
+    assert_eq!(
+        check_code(&chain(255, true)),
+        0,
+        "256 levels must be accepted"
+    );
+    // 256 wrapping aliases = 257 levels: `E1015`, on the function-annotation
+    // path and on the top-level-`let` path alike.
+    assert_eq!(check_code(&chain(256, true)), codes::NESTING);
+    assert_eq!(check_code(&chain(256, false)), codes::NESTING);
+    // A very long chain is the same bounded diagnostic, never a host abort.
+    assert_eq!(check_code(&chain(20_000, true)), codes::NESTING);
+}

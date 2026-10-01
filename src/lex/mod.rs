@@ -388,6 +388,24 @@ impl Lexer<'_> {
         Ok(Tok::Str(unescape(&raw, self.base + start + 1)?))
     }
 
+    /// The UTF-8 length of the character whose first byte is at `pos`.
+    ///
+    /// `Lexer` is only ever built from a `&str` (see [`lex`] / [`decode_source`]),
+    /// so the bytes are valid UTF-8 and the width follows from the lead byte.
+    /// Computing it from the lead byte is O(1); the previous implementation
+    /// validated `from_utf8(&self.bytes[pos..])` over the *entire remaining
+    /// source* for every character, making a single long string literal Θ(n²)
+    /// to lex (a red-team DoS finding).
+    fn char_len_at(&self, pos: usize) -> usize {
+        match self.bytes.get(pos) {
+            None => 0,
+            Some(&b) if b < 0x80 => 1,
+            Some(&b) if b >> 5 == 0b110 => 2,
+            Some(&b) if b >> 4 == 0b1110 => 3,
+            Some(_) => 4,
+        }
+    }
+
     fn raw_string_body(&mut self, quote: u8, start: usize) -> Result<String> {
         let body_start = self.pos;
         loop {
@@ -411,14 +429,10 @@ impl Lexer<'_> {
                     // Keep raw bytes verbatim, including a complete Unicode
                     // scalar after a backslash. Only the matching quote is
                     // escaped for delimiter scanning; unescape validates later.
-                    if self.peek().is_some() {
-                        let rest = std::str::from_utf8(&self.bytes[self.pos..]).unwrap_or_default();
-                        self.pos += rest.chars().next().map_or(0, char::len_utf8);
-                    }
+                    self.pos += self.char_len_at(self.pos);
                 }
                 Some(_) => {
-                    let rest = std::str::from_utf8(&self.bytes[self.pos..]).unwrap_or_default();
-                    self.pos += rest.chars().next().map_or(0, char::len_utf8);
+                    self.pos += self.char_len_at(self.pos);
                 }
             }
         }

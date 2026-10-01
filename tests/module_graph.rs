@@ -539,16 +539,23 @@ fn runtime_error_in_child_keeps_child_provenance() {
 }
 
 #[test]
-fn external_depth_is_part_of_the_parser_recursion_budget() {
-    let budget = aura::parse::parse_recursion_budget();
+fn external_depth_failure_is_attributed_to_the_child_source() {
+    // Module nesting counts toward the semantic AST limit on every substrate
+    // (ADR-0004): 256 levels parse, 257 is `E1015`. This test's intent is that
+    // a depth failure inside an external child is reported against *that*
+    // child source, so it uses a nesting depth just past the semantic limit.
+    let semantic_limit = 256;
     let mut child_source = String::new();
-    for _ in 0..budget {
+    for _ in 0..=semantic_limit {
         child_source.push_str("module nested {\n");
     }
-    for _ in 0..budget {
+    for _ in 0..=semantic_limit {
         child_source.push_str("}\n");
     }
-    assert!(aura::parse::parse(&child_source).is_ok());
+    assert!(
+        aura::parse::parse(&child_source).is_err(),
+        "257 nested modules must be rejected by the parser"
+    );
 
     let (mut provider, root) = provider("");
     add_source(
