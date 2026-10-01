@@ -4,15 +4,15 @@
 # Playground runtime crate build output
 /playground/runtime/target/
 
-# Playground JS tooling (Playwright is installed on demand for browser tests)
+# Playground JS tooling (Playwright is installed on demand for browser tests).
+# The lockfile is committed for supply-chain reproducibility.
 /playground/node_modules/
-/playground/package-lock.json
 /playground/test-results/
 
-# Website build output (static site generated for GitHub Pages)
+# Website build output (static site generated for GitHub Pages).
+# The lockfile is committed for supply-chain reproducibility.
 /website/dist/
 /website/node_modules/
-/website/package-lock.json
 
 # Aura build output
 output/

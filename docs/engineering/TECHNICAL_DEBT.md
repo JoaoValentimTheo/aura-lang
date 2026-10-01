@@ -27,3 +27,4 @@ HIGH / MEDIUM / LOW.
 - A HIGH item blocks the corresponding release if not closed or explicitly
   accepted by a human decision.
 | TD-17 | LOW | `dtolnay/rust-toolchain` referenced by version ref, not SHA | A mutable version ref for one action is a residual supply-chain risk | Version refs are the action's intended interface; SHA-pinning needs an explicit `toolchain:` input at ~19 sites | Supply Chain | v1.1 |
+| TD-18 | LOW | npm dev/test dependencies had no committed lockfile | Non-reproducible local browser-test installs; no audit trail | Now committed (`website/package-lock.json`, `playground/package-lock.json`) and audited in CI | Supply Chain | closed |

@@ -251,7 +251,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.98.1
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - run: cargo install cargo-audit --locked || true
+      # Audit every workspace lockfile: the core crate, the Playground runtime,
+      # and the fuzz crate each resolve their own dependency graph.
       - run: cargo audit
+      - run: cargo audit --file fuzz/Cargo.lock
+      - run: cargo audit --file playground/runtime/Cargo.lock
+      # Audit the committed npm lockfiles (dev/test tooling: Playwright, axe).
+      - run: npm audit --audit-level=high
+        working-directory: website
+      - run: npm audit --audit-level=high
+        working-directory: playground
 
   # ------------------------------------------------------------------ fuzz
   # A bounded libFuzzer smoke run of the four hardening targets on every PR.

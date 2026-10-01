@@ -27,14 +27,15 @@ never by schedule. Status legend: **GREEN** (ready), **YELLOW** (gaps remain),
 | PACKAGING | GREEN | release workflow builds Linux/macOS/Windows + wasm with per-artifact checksums and a built-binary smoke before release; install guide (`docs/INSTALL.md`, website); end-user installed-binary smoke (`scripts/artifact-smoke.sh`) runs in CI and the release gate; artifact matrix documented; the produced release artifact is exercised post-publish by the release workflow |
 | CI | GREEN | comprehensive matrix; all green; now includes a CPython interop version/platform job |
 | RELEASE ENGINEERING | GREEN | gated release workflow (validate→build→publish) + policy doc + CHANGELOG; ADR-0001 version scheme; metadata-consistency and release-preflight gates (version identities, runtime artifact, tag immutability); release-manifest + SBOM attached; signed SLSA provenance at publish; documented runbook. Cryptographic tag/asset signing is a supply-chain extra (TD-03) |
-| SUPPLY CHAIN | YELLOW | cargo audit in CI; standard actions SHA-pinned; CycloneDX SBOM generated and attached to releases (`scripts/sbom.sh`, tested); release manifest records a dependency-lock SHA-256; signed SLSA build provenance runs at publish (SHA-pinned action); cryptographic release signing still pending (TD-03) |
+| SUPPLY CHAIN | GREEN | every workspace Cargo.lock and the committed npm lockfiles are audited in CI (`cargo audit` x3, `npm audit`); third-party actions SHA-pinned (rust-toolchain tracked, TD-17); CycloneDX SBOM + release manifest with a dependency-lock hash attached to releases; signed SLSA build provenance at publish. Cryptographic tag/asset signing is tracked (TD-03) |
 | BACKWARD COMPAT | GREEN | `tests/compat.rs` pins the released 0.2.0 surface *and* the 0.2.1 additions behaviorally with documented intentional breaks; `crossrelease.test.mjs` runs every frozen runtime against its language line's fixtures (released behavior unchanged); compatibility policy in RELEASE_ENGINEERING.md |
-| RELEASE-READY (v1 GO) | RED | SUPPLY CHAIN still YELLOW (every other category GREEN); all semantic/version decisions (HD-1…HD-4) closed, implemented, pushed, CI-green |
+| RELEASE-READY (v1 GO) | RED | not yet met — v1 GO requires a *published, post-release-verified* 1.0 (section 110/111). Every readiness capability category is now GREEN and all semantic/version decisions (HD-1…HD-4) are closed, implemented, pushed, and CI-green, so the remaining work is the release train itself, not a capability gap |
 
 ## Current blockers toward v1 GO
 
-1. SUPPLY CHAIN still YELLOW → must be GREEN. RELEASE ENGINEERING is now
-   GREEN alongside every other category except SUPPLY CHAIN.
+1. No readiness category is YELLOW. The remaining path to v1 GO is executing
+   the gated prerelease→RC→1.0 train (section 47 onward) with published-artifact
+   verification, not closing a capability gap.
 2. The ADR-0001…0004 resolutions plus the train-1 red-team fixes are committed
    and pushed; independent re-verification of the train-1 fixes is in progress.
    All semantic-freeze decisions are resolved (no open HD items).
