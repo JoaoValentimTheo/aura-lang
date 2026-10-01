@@ -20,6 +20,7 @@ Likelihood/impact: Low / Medium / High.
 | R-13 | Compatibility | Pre-1.0 version scheme confusion | M | L | Resolved by ADR-0001 (release vs language identities, LANG <= RELEASE) | Closed |
 | R-14 | CI | Required CI green but wrong thing tested | L | M | Contract/spec/artifact jobs; independent audits | Monitored |
 | R-15 | Resource | New feature introduces unbounded work | M | M | Resource review per change; boundary tests | Monitored |
+| R-16 | Security | User-controlled input causes host stack overflow / super-linear DoS | L | H | Red-team train 1 found and fixed alias-chain overflow (F1), Θ(k²) alias memory (F2), Θ(n²) string lexing (F3), module-nesting divergence (F4); scaling + boundary guards added | Closed (guarded) |
 
 ## Rules
 
