@@ -1,6 +1,8 @@
 # ADR-0003 — Supported CPython versions
 
-- **Status:** Accepted (Architecture Decision Council, 2026-09-30)
+- **Status:** Accepted (Architecture Decision Council, 2026-09-30); **amended**
+  2026-10-01 to promote Windows 3.12 to TESTED after the probe leg ran reliably
+  green.
 - **Supersedes:** queued decision HD-3
 - **Related:** `docs/CPYTHON_COMPATIBILITY_TARGET.md`,
   `.github/workflows/ci.yml` (`cpython-interop`), `src/bridge/mod.rs`
@@ -30,15 +32,14 @@ interop matrix on it.**
 
 | Tier | Meaning | Versions / platforms |
 |---|---|---|
-| **TESTED** | CI runs `interop_matrix` + `python` suites; failures block | Linux: CPython **3.10, 3.11, 3.12, 3.13**. macOS: CPython **3.12** |
-| **SUPPORTED (best effort)** | Expected to work; not CI-gated | macOS: 3.10, 3.11, 3.13; Linux/macOS other patch releases of the 3.10–3.13 lines |
-| **UNSUPPORTED** | Not claimed | CPython ≤ 3.9; ≥ 3.14 until tested; any Windows `py` build until a CI leg exists |
+| **TESTED** | CI runs `interop_matrix` + `python` suites; failures block | Linux: CPython **3.10, 3.11, 3.12, 3.13**. macOS: CPython **3.12**. Windows: CPython **3.12** |
+| **SUPPORTED (best effort)** | Expected to work; not CI-gated | macOS: 3.10, 3.11, 3.13; Linux/macOS/Windows other patch releases of the 3.10–3.13 lines |
+| **UNSUPPORTED** | Not claimed | CPython ≤ 3.9; ≥ 3.14 until tested |
 
 - The primary v1 CPython claim: **"Aura supports CPython 3.10–3.13 through the
-  `py` interoperability feature on Linux (fully tested) and macOS (best
-  effort), with the documented value-conversion table, exception propagation,
-  and import behavior."** Windows `py` support is explicitly **not claimed**
-  until a CI leg exists.
+  `py` interoperability feature, with the documented value-conversion table,
+  exception propagation, and import behavior, tested on Linux (3.10–3.13),
+  macOS 3.12, and Windows 3.12."**
 - 3.9 is dropped from the claim: it is past upstream maintenance and would add
   a CI leg for little value.
 
@@ -46,11 +47,10 @@ interop matrix on it.**
 
 - `docs/CPYTHON_COMPATIBILITY_TARGET.md` is updated to state these tiers
   verbatim; its evidence plan matches the actual matrix.
-- Follow-up (tracked, not blocking): the optional Windows × 3.12
-  `continue-on-error` interop leg is implemented as the
-  `cpython-interop-windows-probe` job in `.github/workflows/ci.yml`: it installs
-  CPython 3.12 via `setup-python` and wires `PYO3_PYTHON` plus the interpreter's
-  `libs`/`Include` directories into the MSVC environment. It measures
-  feasibility without gating the build; it is promoted to TESTED (and this ADR
-  amended to claim Windows) only once it is reliably green.
+- **Windows promotion (2026-10-01):** the `cpython-interop-windows` job in
+  `.github/workflows/ci.yml` installs CPython 3.12 via `setup-python`, wires
+  `PYO3_PYTHON` plus the interpreter's `libs`/`Include` directories into the
+  MSVC environment, and runs the interop matrix + bridge suites. It ran
+  reliably green across repeated runs, so Windows 3.12 is TESTED and the job is
+  now blocking (no `continue-on-error`).
 - Expanding macOS to additional versions is low-value; left as best-effort.

@@ -68,7 +68,11 @@ with open("docs/CPYTHON_COMPATIBILITY_TARGET.md") as f:
         if "TESTED" in line:
             tested_line = line
             break
-for platform, pattern in (("linux", r"Linux[^;|]*"), ("macos", r"macOS[^;|]*")):
+for platform, pattern in (
+    ("linux", r"Linux[^;|]*"),
+    ("macos", r"macOS[^;|]*"),
+    ("windows", r"Windows[^;|]*"),
+):
     segment = re.search(pattern, tested_line)
     if segment:
         for ver in re.findall(r"3\.\d+", segment.group(0)):

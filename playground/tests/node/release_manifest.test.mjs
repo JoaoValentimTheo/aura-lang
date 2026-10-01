@@ -89,6 +89,10 @@ check(
   "supported_python lists macOS 3.12",
   manifest.supported_python.some((p) => p.platform === "macos" && p.python === "3.12"),
 );
+check(
+  "supported_python lists Windows 3.12",
+  manifest.supported_python.some((p) => p.platform === "windows" && p.python === "3.12"),
+);
 
 console.log(`release-manifest: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

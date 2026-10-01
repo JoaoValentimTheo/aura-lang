@@ -93,12 +93,10 @@ names exist and return `E5002`.
 
 We advertise only what CI verifies. Tiers:
 
-- **TESTED:** Linux 3.10, 3.11, 3.12, 3.13; macOS 3.12.
+- **TESTED:** Linux 3.10, 3.11, 3.12, 3.13; macOS 3.12; Windows 3.12.
 - **SUPPORTED (best effort):** other CPython 3.10–3.13 lines not in the CI
   matrix. Expected to work; not gated.
-- **UNSUPPORTED:** CPython ≤ 3.9, and any native Windows `py` build until the
-  `cpython-interop-windows-probe` CI leg is reliably green (then this ADR and
-  tier are amended to add Windows).
+- **UNSUPPORTED:** CPython ≤ 3.9; ≥ 3.14 until tested.
 
 The pre-1.0 bridge is built with PyO3 `0.29` and `auto-initialize`; no stable
 Aura↔Python ABI is promised. The exact linked version is reported by

@@ -122,18 +122,16 @@ jobs:
       - name: Python bridge suites
         run: cargo test --locked --features py --test python
 
-  # --------------------------------------------- cpython interop (Windows, probe)
-  # ADR-0003 tracks Windows `py` support as *not claimed* until a CI leg
-  # measures feasibility. This job is the measurement: it installs CPython and
-  # wires `PYO3_PYTHON` plus the interpreter's `libs`/`include` directories into
-  # the MSVC link environment, which `setup-python`'s Windows interpreters do
-  # not do by default. It is intentionally `continue-on-error` and has no macOS
-  # sibling: a failure here is evidence, not a release blocker, until it turns
-  # reliably green and ADR-0003 is amended to promote Windows to TESTED.
-  cpython-interop-windows-probe:
-    name: cpython interop (windows feasibility probe)
+  # ----------------------------------------- cpython interop (Windows, blocking)
+  # ADR-0003 initially left Windows `py` *not claimed* until a CI leg measured
+  # feasibility. The probe leg ran reliably green (install CPython; wire
+  # `PYO3_PYTHON` plus the interpreter's `libs`/`Include` directories into the
+  # MSVC link environment, which `setup-python`'s Windows interpreters do not do
+  # by default; run the interop matrix and bridge suites), so Windows 3.12 is
+  # promoted to TESTED and this job is now blocking (ADR-0003 amended).
+  cpython-interop-windows:
+    name: cpython interop (windows, py 3.12)
     runs-on: windows-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@1.98.1

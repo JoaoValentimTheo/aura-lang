@@ -15,7 +15,7 @@ never by schedule. Status legend: **GREEN** (ready), **YELLOW** (gaps remain),
 | REPL | GREEN | persistence + rollback; `tests/repl.rs` |
 | WASM | GREEN | 0 imports; Host ABI 1; differential 219/219; module/alias depth unified with native |
 | PLAYGROUND | GREEN | FSM-P6 suites green; capability detection; dev runtime advanced |
-| CPYTHON | YELLOW | bridge works end-to-end (arbitrary authority — documented); compatibility target + normative conversion table + interop matrix + multi-version CI; support tiers now decided (ADR-0003: TESTED Linux 3.10–3.13, macOS 3.12); Windows not claimed |
+| CPYTHON | YELLOW | bridge works end-to-end (arbitrary authority — documented); normative conversion table + interop matrix; TESTED tiers (ADR-0003): Linux 3.10–3.13, macOS 3.12, Windows 3.12 (Windows probe promoted to a blocking leg after running green); lifetime/GIL review pending |
 | SECURITY | YELLOW | threat model / trust boundaries / architecture / incident response written; red-team train-1 campaign recorded (`docs/security/CAMPAIGN_LOG.md`) with F1 CRITICAL + F2/F3/F4 fixed and guarded; action SHA-pinning + SBOM open |
 | PERFORMANCE | YELLOW | scaling shape guards + baseline committed (`tests/bench.rs`, `docs/engineering/PERFORMANCE.md`); budgets set; needs broader workload coverage before GREEN |
 | RESOURCE LIMITS | GREEN | limits tested limit−1/limit/+1; recovery verified |
