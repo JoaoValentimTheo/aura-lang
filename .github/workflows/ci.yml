@@ -225,8 +225,10 @@ jobs:
   # -------------------------------------------------------------- miri (UB)
   miri:
     name: miri (unsafe-free guarantee)
+    # Miri has run green across the train-4 runs, so it is now blocking: the
+    # codebase claims no `unsafe`, and this enforces it. (Was continue-on-error
+    # while the toolchain integration was being validated.)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@nightly
@@ -238,6 +240,10 @@ jobs:
   # --------------------------------------------------------------- supply chain
   audit:
     name: cargo audit
+    # RustSec advisories against the lockfile. Kept `continue-on-error`: an
+    # advisory can appear upstream with no available fix, and blocking releases
+    # on external data is not appropriate. The result is visible and reviewed;
+    # a relevant advisory is triaged as a security finding.
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
