@@ -22,6 +22,7 @@ export const docGroups = [
       { slug: "getting-started", title: "Getting started", file: "getting-started.md" },
       { slug: "install", title: "Installing Aura", file: "install.md" },
       { slug: "first-program", title: "Your first program", file: "first-program.md" },
+      { slug: "migration-0-2-1", title: "Migrating to 0.2.1", file: "migration-0-2-1.md" },
       { slug: "zen", title: "Zen-to-Win", file: "zen.md" },
     ],
   },
