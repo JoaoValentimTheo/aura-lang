@@ -28,14 +28,14 @@ never by schedule. Status legend: **GREEN** (ready), **YELLOW** (gaps remain),
 | CI | GREEN | comprehensive matrix; all green; now includes a CPython interop version/platform job |
 | RELEASE ENGINEERING | YELLOW | gated release workflow + policy doc + CHANGELOG; version scheme decided (ADR-0001); pre-release metadata consistency gate; release-manifest + SBOM generated and attached; signed SLSA provenance at publish; cryptographic signing pending |
 | SUPPLY CHAIN | YELLOW | cargo audit in CI; standard actions SHA-pinned; CycloneDX SBOM generated and attached to releases (`scripts/sbom.sh`, tested); release manifest records a dependency-lock SHA-256; signed SLSA build provenance runs at publish (SHA-pinned action); cryptographic release signing still pending (TD-03) |
-| BACKWARD COMPAT | YELLOW | `tests/compat.rs` pins the released 0.2.0 surface *and* the 0.2.1 additions (reservation, unified nesting, bounded alias chains) behaviorally, with documented intentional breaks; compatibility policy in RELEASE_ENGINEERING.md; cross-release artifact run-through still pending |
-| RELEASE-READY (v1 GO) | RED | CPYTHON/SECURITY/DOCS/RELEASE ENGINEERING/SUPPLY CHAIN/BACKWARD COMPAT still YELLOW; all semantic/version decisions (HD-1…HD-4) closed by ADR-0001…0004, implemented, pushed, and CI-green |
+| BACKWARD COMPAT | GREEN | `tests/compat.rs` pins the released 0.2.0 surface *and* the 0.2.1 additions behaviorally with documented intentional breaks; `crossrelease.test.mjs` runs every frozen runtime against its language line's fixtures (released behavior unchanged); compatibility policy in RELEASE_ENGINEERING.md |
+| RELEASE-READY (v1 GO) | RED | CPYTHON/SECURITY/DOCS/RELEASE ENGINEERING/SUPPLY CHAIN still YELLOW (BACKWARD COMPAT, PERFORMANCE, PACKAGING now GREEN); all semantic/version decisions (HD-1…HD-4) closed by ADR-0001…0004, implemented, pushed, CI-green |
 
 ## Current blockers toward v1 GO
 
-1. CPYTHON formal claim, SECURITY (signed provenance), DOCS, RELEASE
-   ENGINEERING, SUPPLY CHAIN, and BACKWARD-COMPAT coverage still YELLOW →
-   must be GREEN. PERFORMANCE and PACKAGING are now GREEN.
+1. CPYTHON formal claim, SECURITY (release signing), DOCS, RELEASE
+   ENGINEERING, and SUPPLY CHAIN still YELLOW → must be GREEN. PERFORMANCE,
+   PACKAGING, and BACKWARD COMPAT are now GREEN.
 2. The ADR-0001…0004 resolutions plus the train-1 red-team fixes are committed
    and pushed; independent re-verification of the train-1 fixes is in progress.
    All semantic-freeze decisions are resolved (no open HD items).

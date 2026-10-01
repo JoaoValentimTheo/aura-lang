@@ -40,6 +40,8 @@ run("release-manifest", [join(here, "release_manifest.test.mjs")]);
 // The SBOM generator (section 53) lists every dependency with name, version,
 // and license; no runtime needed.
 run("sbom", [join(here, "sbom.test.mjs")]);
+// Frozen historical runtimes must still run the programs they always did (TD-06).
+run("cross-release", [join(here, "crossrelease.test.mjs")]);
 // The Playground's project state (files, active file, entry file) is a pure
 // model: no DOM, no Worker, no wasm.
 run("project", [join(here, "project.test.mjs")]);// Presentational completion + shared language metadata (no runtime needed).
