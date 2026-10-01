@@ -10,9 +10,9 @@
 //! depth 512) and every previously confirmed finding's minimal reproducer live
 //! here, so each stays permanently regression-tested.
 //!
-//! TypeExpr nesting is intentionally **not** represented: Follow-up 3 /
-//! AUDIT-3 remains DECISION-PENDING, so this corpus does not encode either
-//! option.
+//! Structural type nesting is now governed by ADR-0004 (a resolved decision),
+//! and its boundary is pinned by `tests/boundaries.rs` and the differential
+//! harness rather than duplicated as a corpus fixture here.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

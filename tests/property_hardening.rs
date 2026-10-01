@@ -204,19 +204,19 @@ proptest! {
 }
 
 // ---------------------------------------------------------------------------
-// PROPERTY 3 — AST limit / substrate-source parity (TypeExpr excluded)
+// PROPERTY 3 — AST limit / substrate-source parity
 // ---------------------------------------------------------------------------
 
-// AUDIT-3 TypeExpr substrate divergence is intentionally excluded pending human decision.
-// Follow-up 3 / AUDIT-3 remains DECISION-PENDING.
-// This exclusion is temporary and must be revisited after the human decision.
+// AUDIT-3 TypeExpr nesting is RESOLVED by ADR-0004: structural TypeExpr nesting
+// counts toward the semantic AST limit on every substrate, so there is no
+// substrate divergence to exclude any more. The differential harness now pins
+// the unified ceiling explicitly (see its TypeExpr sweep).
 
-// INVARIANT. For generated programs *within* the semantic AST limit and
-// **excluding TypeExpr-heavy programs**, the native checker and the runtime
-// agree on accept/reject. This property runs natively; the cross-substrate
-// half (native vs wasm) is enforced by the differential harness, which shares
-// the same generated-program corpus via the committed `tests/corpus/ast/*`
-// fixtures.
+// INVARIANT. For generated programs *within* the semantic AST limit, the native
+// checker and the runtime agree on accept/reject. This property runs natively;
+// the cross-substrate half (native vs wasm) is enforced by the differential
+// harness, which shares the same generated-program corpus via the committed
+// `tests/corpus/ast/*` fixtures.
 //
 // The generator (shared with the fuzz targets) emits only programs that pass
 // the checker; this property therefore asserts that contract holds for every
@@ -254,9 +254,9 @@ proptest! {
 // the differential harness (`playground/tests/node/differential.test.mjs`,
 // "Generated-program native/wasm parity"), which reads exactly these committed
 // fixtures, runs each through both engines, and requires stdout / diagnostic
-// code / status to agree — with TypeExpr-heavy inputs excluded pending
-// AUDIT-3. This property is the Rust-side half of that contract: the corpus the
-// differential harness consumes is the corpus the generator defines.
+// code / status to agree. This property is the Rust-side half of that
+// contract: the corpus the differential harness consumes is the corpus the
+// generator defines.
 // This half of Property 4 is a deterministic `#[test]`, not a proptest: it must
 // pin *every* committed fixture on every run, not sample a subset.
 #[test]
