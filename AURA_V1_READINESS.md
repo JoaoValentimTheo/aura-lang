@@ -23,18 +23,19 @@ never by schedule. Status legend: **GREEN** (ready), **YELLOW** (gaps remain),
 | PLATFORM — LINUX | GREEN | CI green |
 | PLATFORM — MACOS | GREEN | CI green |
 | PLATFORM — WINDOWS | GREEN | CI green |
-| DOCS | YELLOW | language/stdlib/reference docs current; security/CPython/ops docs present; CHANGELOG; install guide + website quickstart; 0.2.1 migration guide; website Python-interop, security, and known-limitations pages added; stable/development version indicator; every published example validated against the runtime and Aura comments checked; broader worked examples still pending |
+| DOCS | GREEN | every V1 documentation-gate item is present and current: install, quickstart, language guide, reference, stdlib, modules, REPL, CLI, Python interop, security, Playground, migration, and known limitations; CHANGELOG current; every published example is validated against the runtime and Aura comments are checked; stable/development version indicator |
 | PACKAGING | GREEN | release workflow builds Linux/macOS/Windows + wasm with per-artifact checksums and a built-binary smoke before release; install guide (`docs/INSTALL.md`, website); end-user installed-binary smoke (`scripts/artifact-smoke.sh`) runs in CI and the release gate; artifact matrix documented; the produced release artifact is exercised post-publish by the release workflow |
 | CI | GREEN | comprehensive matrix; all green; now includes a CPython interop version/platform job |
 | RELEASE ENGINEERING | YELLOW | gated release workflow + policy doc + CHANGELOG; version scheme decided (ADR-0001); pre-release metadata consistency gate; release-manifest + SBOM generated and attached; signed SLSA provenance at publish; cryptographic signing pending |
 | SUPPLY CHAIN | YELLOW | cargo audit in CI; standard actions SHA-pinned; CycloneDX SBOM generated and attached to releases (`scripts/sbom.sh`, tested); release manifest records a dependency-lock SHA-256; signed SLSA build provenance runs at publish (SHA-pinned action); cryptographic release signing still pending (TD-03) |
 | BACKWARD COMPAT | GREEN | `tests/compat.rs` pins the released 0.2.0 surface *and* the 0.2.1 additions behaviorally with documented intentional breaks; `crossrelease.test.mjs` runs every frozen runtime against its language line's fixtures (released behavior unchanged); compatibility policy in RELEASE_ENGINEERING.md |
-| RELEASE-READY (v1 GO) | RED | DOCS/RELEASE ENGINEERING/SUPPLY CHAIN still YELLOW (LANGUAGE…CPYTHON, SECURITY, PERFORMANCE, PACKAGING, BACKWARD COMPAT GREEN); all semantic/version decisions (HD-1…HD-4) closed, implemented, pushed, CI-green |
+| RELEASE-READY (v1 GO) | RED | RELEASE ENGINEERING/SUPPLY CHAIN still YELLOW (LANGUAGE…CPYTHON, SECURITY, PERFORMANCE, DOCS, PACKAGING, BACKWARD COMPAT GREEN); all semantic/version decisions (HD-1…HD-4) closed, implemented, pushed, CI-green |
 
 ## Current blockers toward v1 GO
 
-1. DOCS, RELEASE ENGINEERING, and SUPPLY CHAIN still YELLOW → must be GREEN.
-   SECURITY, CPYTHON, PERFORMANCE, PACKAGING, and BACKWARD COMPAT are GREEN.
+1. RELEASE ENGINEERING and SUPPLY CHAIN still YELLOW → must be GREEN. DOCS
+   is now GREEN alongside SECURITY, CPYTHON, PERFORMANCE, PACKAGING, and
+   BACKWARD COMPAT.
 2. The ADR-0001…0004 resolutions plus the train-1 red-team fixes are committed
    and pushed; independent re-verification of the train-1 fixes is in progress.
    All semantic-freeze decisions are resolved (no open HD items).
