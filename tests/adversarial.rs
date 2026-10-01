@@ -6,9 +6,11 @@
 //! replay the exact input that first exposed it.
 
 use aura::check::Checker;
-use aura::error::codes;
+use aura::error::{codes, Diag};
 use aura::run_source;
 use std::fmt::Write as _;
+
+type Result<T> = std::result::Result<T, Diag>;
 
 fn out(src: &str) -> String {
     run_source(src, "<adv>").expect("program runs")
@@ -21,6 +23,20 @@ fn code(src: &str) -> u16 {
 fn check_code(src: &str) -> u16 {
     let module = aura::parse::parse(src).expect("parses");
     Checker::module(&module).map_or_else(|d| d.code, |()| 0)
+}
+
+/// Like [`check_code`], but runs on the production execution stack. Deep alias
+/// expansion recurses through the checker, which on native runs on the 64 MiB
+/// execution stack (see `aura::on_execution_stack`); a bare test thread would
+/// overflow on an adversarial-but-bounded input. This mirrors how the CLI and
+/// library entry points actually run.
+fn check_code_on_stack(src: &str) -> u16 {
+    let owned = src.to_string();
+    let outcome: Result<()> = aura::on_execution_stack(move || {
+        let module = aura::parse::parse(&owned)?;
+        Checker::module(&module)
+    });
+    outcome.map_or_else(|d| d.code, |()| 0)
 }
 
 // ---------------------------------------------------- P0: host crashes
@@ -473,4 +489,72 @@ fn linear_alias_chains_are_depth_bounded() {
     assert_eq!(check_code(&chain(256, false)), codes::NESTING);
     // A very long chain is the same bounded diagnostic, never a host abort.
     assert_eq!(check_code(&chain(20_000, true)), codes::NESTING);
+}
+
+/// Red-team re-verification N1 (HIGH): a *parameterised* alias chain
+/// (`type A{i}<T> = A{i-1}<T>`) is expanded by `substitute_alias`, which was not
+/// memoised, so a chain of k aliases re-expanded quadratically (k=2000 took
+/// ~11.5s, k=4000 timed out) even though it is never used. The expansion-path
+/// depth guard now bounds it at the semantic limit, so it is a fast `E1015`.
+#[test]
+fn parameterized_alias_chains_are_depth_bounded() {
+    let chain = |n: usize, used: bool| {
+        let mut src = String::from("type A0<T> = [T]\n");
+        for i in 1..=n {
+            let alias = format!("type A{i}<T> = A{}<T>\n", i - 1);
+            src.push_str(&alias);
+        }
+        if used {
+            let _ = write!(
+                src,
+                "fn f(x: A{n}<int>) -> int {{ return 1 }}\nfn main() {{ print(1) }}\n"
+            );
+        } else {
+            src.push_str("fn main() { print(1) }\n");
+        }
+        src
+    };
+    // 255 wrapping aliases = 256 expansion levels: accepted, and fast.
+    assert_eq!(check_code_on_stack(&chain(255, true)), 0);
+    // One more is `E1015` on the used path.
+    assert_eq!(check_code_on_stack(&chain(256, true)), codes::NESTING);
+    // A very long chain is the same bounded diagnostic, whether or not it is
+    // used, rather than a quadratic hang. (An unused chain is resolved lazily,
+    // so its exact boundary is one level looser; the bounded, no-hang property
+    // is what matters here and is pinned for the deep case.)
+    assert_eq!(check_code_on_stack(&chain(20_000, false)), codes::NESTING);
+    assert_eq!(check_code_on_stack(&chain(20_000, true)), codes::NESTING);
+}
+
+/// Red-team re-verification N2 (MEDIUM): a parameterised alias that *grows* its
+/// argument (`type A{i}<T> = A{i-1}<[T]>`) bypassed the depth limit because the
+/// guard only measured the unparameterised `Named` arm. The expansion-path
+/// depth guard now covers the parameterised path too, so the resolved type is
+/// bounded at the semantic ceiling.
+#[test]
+fn parameterized_alias_cannot_bypass_the_depth_limit() {
+    let growing = |n: usize| {
+        let mut src = String::from("type A0<T> = T\n");
+        for i in 1..=n {
+            let alias = format!("type A{i}<T> = A{}<[T]>\n", i - 1);
+            src.push_str(&alias);
+        }
+        let _ = writeln!(src, "fn main() {{ let x: A{n}<int> = [] }}");
+        src
+    };
+    // A modest chain is accepted; a deep chain is bounded rather than accepted
+    // (the pre-fix bypass accepted 300–440). The exact 255/256 boundary for the
+    // parameterised path is covered by `parameterized_alias_chains_are_depth_bounded`;
+    // here the point is that growth past the limit cannot slip through.
+    assert_eq!(
+        check_code_on_stack(&growing(64)),
+        0,
+        "a shallow chain must be accepted"
+    );
+    assert_eq!(
+        check_code_on_stack(&growing(256)),
+        codes::NESTING,
+        "a 257-level chain must be E1015"
+    );
+    assert_eq!(check_code_on_stack(&growing(300)), codes::NESTING);
 }

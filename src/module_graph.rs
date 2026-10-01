@@ -639,20 +639,24 @@ impl ModuleGraphBuilder {
             };
 
             let source = sources.add(child.source().name(), Arc::clone(&text));
+            // A physical source path is equivalent to an in-source `module`
+            // chain: one wrapper per logical segment. Module nesting counts
+            // toward the semantic `MAX_AST_DEPTH` on every substrate
+            // (ADR-0004), so a *pure* physical directory chain must be bounded
+            // by the same limit — otherwise it bypasses the semantic ceiling
+            // that in-source nesting respects (and would reintroduce the
+            // native/WASM acceptance split for deep physical trees).
             let depth = path.segments().len();
-            if depth > crate::parse::parse_recursion_budget() {
+            if depth > crate::parse::MAX_AST_DEPTH {
                 return Err(DiagnosticReport::new(
                     SourceDiagnostic::new(
-                        Diag::new(
-                            codes::NESTING,
-                            "expression nests too deeply",
-                            Span::default(),
-                        ),
+                        Diag::new(codes::NESTING, "module nests too deeply", Span::default()),
                         source,
                     ),
                     sources,
                 ));
             }
+            debug_assert!(depth <= crate::parse::parse_recursion_budget());
 
             let parsed = match crate::parse::parse_with_initial_depth(&text, depth) {
                 Ok(module) => module,

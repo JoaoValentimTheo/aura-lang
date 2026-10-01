@@ -895,3 +895,38 @@ fn parent_items_precede_sorted_physical_child_wrappers() {
         aura::ast::Item::Module { name, public: true, .. } if name == "b"
     ));
 }
+
+/// Red-team re-verification (F4 residual): a *pure* physical directory chain
+/// (one logical module per directory segment) must be bounded by the semantic
+/// `MAX_AST_DEPTH`, exactly like an equivalent in-source `module` chain —
+/// otherwise it bypasses the limit that in-source nesting respects. Logical
+/// depth is exercised through the provider so the test is not limited by the
+/// host's filesystem path length.
+#[test]
+fn deep_physical_wrapper_chain_is_bounded_by_the_semantic_limit() {
+    use aura::parse::MAX_AST_DEPTH;
+
+    // Build a logical chain of `depth` nested physical children.
+    let build = |depth: usize| {
+        let (mut provider, root) = provider("");
+        let mut parent = root.clone();
+        for i in 0..depth {
+            let key = key(&format!("k{i}"));
+            provider
+                .insert_source(key.clone(), format!("m{i}.aura"), "\n")
+                .unwrap();
+            provider.add_child(&parent, format!("m{i}"), &key).unwrap();
+            parent = key;
+        }
+        ModuleGraphBuilder::new().build(&provider)
+    };
+
+    // At the limit: accepted.
+    assert!(
+        build(MAX_AST_DEPTH).is_ok(),
+        "{MAX_AST_DEPTH} nested physical modules must be accepted"
+    );
+    // One past: the same stable diagnostic an equivalent in-source chain gives.
+    let error = build(MAX_AST_DEPTH + 1).unwrap_err();
+    assert_eq!(error.diagnostic().code, codes::NESTING);
+}

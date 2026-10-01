@@ -3773,6 +3773,21 @@ impl Checker {
         visiting: &mut Vec<String>,
     ) -> Result<TypeExpr> {
         self.consume_type_budget(span)?;
+        // Bound the alias-expansion path itself. `visiting` holds exactly the
+        // aliases on the current expansion path, for both the unparameterised
+        // (`Named`) and parameterised (`App` -> `substitute_alias`) shapes, so
+        // its length is the expansion depth. This is what makes an over-deep
+        // chain (parameterised or not) the stable `E1015` on every substrate
+        // (ADR-0004) *before* a deep resolved type can be built or a
+        // non-memoised parameterised chain re-expands quadratically. The node
+        // budget remains the orthogonal bound on *breadth*.
+        if visiting.len() > MAX_AST_DEPTH {
+            return Err(Diag::new(
+                codes::NESTING,
+                "resolved type nests too deeply",
+                span,
+            ));
+        }
         Ok(match t {
             TypeExpr::Named(n) => {
                 // A bound generic parameter is a placeholder: it is left as

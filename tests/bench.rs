@@ -236,6 +236,45 @@ fn alias_chain_resolution_scales_subquadratically() {
     );
 }
 
+/// A *parameterised* alias chain (`type A{i}<T> = A{i-1}<T>`) is expanded by
+/// `substitute_alias`, which is not memoised, so its cost is quadratic in the
+/// chain length. The red-team re-verification N1 found that with **no depth
+/// bound** this was unbounded (k=2000 ≈ 11.5s, k=4000 timed out). The
+/// expansion-path depth guard now caps the chain at the semantic limit (256),
+/// so the quadratic factor applies only to a bounded length: the absolute worst
+/// case is small. This test pins the bound — a maximal accepted chain completes
+/// quickly, and one past the limit is a diagnostic — rather than a scaling shape
+/// a depth cap makes moot.
+#[test]
+fn parameterized_alias_chain_is_bounded_by_the_depth_cap() {
+    use std::fmt::Write as _;
+    let gen = |n: usize| {
+        let mut s = String::from("type A0<T> = [T]\n");
+        for i in 1..=n {
+            let _ = writeln!(s, "type A{i}<T> = A{}<T>", i - 1);
+        }
+        let _ = write!(
+            s,
+            "fn f(x: A{n}<int>) -> int {{ return 1 }}\nfn main() {{ print(1) }}"
+        );
+        s
+    };
+    // The maximal accepted chain (255 wraps) must check quickly.
+    let at_limit = gen(255);
+    let m = parse(&at_limit).unwrap();
+    let start = Instant::now();
+    Checker::module(&m).unwrap();
+    let elapsed = start.elapsed().as_millis();
+    assert!(
+        elapsed < 2_000,
+        "a depth-capped parameterized chain took {elapsed}ms; the depth bound should keep it fast"
+    );
+    // One past the limit is the stable diagnostic, never a hang.
+    let over = gen(20_000);
+    let m = parse(&over).unwrap();
+    assert!(Checker::module(&m).is_err());
+}
+
 #[test]
 fn check_scales_subquadratically() {
     assert_subquadratic(
