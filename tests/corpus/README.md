@@ -87,11 +87,11 @@ The corpus is append-mostly. A fixture is removed only when it is explicitly
 tested was removed). Silent deletion, or leaving a fixture on disk unexecuted,
 is not permitted — the inventory test enforces both directions.
 
-## 8. TypeExpr nesting — deliberately not represented
+## 8. TypeExpr nesting — resolved, tested elsewhere
 
-Type-annotation nesting is bounded by a substrate-dependent parser backstop,
-and whether to change that (the "AUDIT-3 / Follow-up 3" decision) is **still
-pending**. This corpus therefore does **not** encode either option: there is no
-fixture asserting a specific TypeExpr-nesting ceiling. See
-`docs/AUDIT3_TYPE_NESTING_DECISION.md`. When the decision is made, add fixtures
-at the new boundary as part of that work.
+Type-annotation nesting is governed by ADR-0004: structural `TypeExpr` nesting
+counts toward the `MAX_AST_DEPTH = 256` semantic limit on every substrate. The
+boundary is pinned explicitly by `tests/boundaries.rs` (N-1/N/N+1 across every
+annotation position, plus the flat-union exemption) and by the differential
+harness's TypeExpr sweep, rather than duplicated as a corpus fixture. See
+`docs/adr/0004-typeexpr-nesting-policy.md`.
