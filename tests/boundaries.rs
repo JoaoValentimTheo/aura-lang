@@ -587,3 +587,35 @@ fn type_nesting_is_bounded_in_every_annotation_position() {
         );
     }
 }
+
+/// TD-15: depth-limit `E1015` diagnostics must carry a source location, so a
+/// tool can point at the offending node rather than the whole program. Before,
+/// some (`module`, and the post-parse expression/statement walk) used
+/// `Span::default()`.
+#[test]
+fn depth_diagnostics_carry_a_source_location() {
+    // Deep expression: the post-parse walk attributes the exact node.
+    let expr = (0..300).fold(String::from("1"), |acc, _| format!("({acc} + 1)"));
+    let src = format!("fn main() {{ let x = {expr} }}");
+    let module = aura::parse::parse(&src).expect_err("must be E1015");
+    assert_eq!(module.code, codes::NESTING);
+    let loc = module.span;
+    assert!(
+        loc.start > 0 && loc.end > loc.start,
+        "expression depth diagnostic must carry a real span, got {loc:?}"
+    );
+
+    // Deep module: located at the nesting site, not 1:1.
+    let nested = format!(
+        "{}fn f() {{}}\n{}\nfn main() {{ print(1) }}\n",
+        "module M {\n".repeat(300),
+        "}\n".repeat(300)
+    );
+    let module = aura::parse::parse(&nested).expect_err("must be E1015");
+    assert_eq!(module.code, codes::NESTING);
+    let (line, _col) = aura::error::line_col(&nested, module.span.start);
+    assert_eq!(
+        line, 257,
+        "module depth diagnostic must point at the deep level"
+    );
+}

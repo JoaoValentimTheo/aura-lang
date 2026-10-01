@@ -373,6 +373,39 @@ pub enum Expr {
     Block(Vec<Stmt>, Span),
 }
 
+impl Expr {
+    /// The source span of this expression node.
+    ///
+    /// Every variant carries a span, so this is total. It is used to attribute
+    /// diagnostics (for example the depth-limit `E1015`) to the exact node
+    /// rather than the whole program (`LANGUAGE_SPEC.md` §31.5).
+    #[must_use]
+    pub fn span(&self) -> Span {
+        match self {
+            Expr::Lit(_, s)
+            | Expr::Name(_, s)
+            | Expr::FStr(_, s)
+            | Expr::Unary(_, _, s)
+            | Expr::Binary(_, _, _, s)
+            | Expr::Call(_, _, _, s)
+            | Expr::Method(_, _, _, _, s)
+            | Expr::Field(_, _, s)
+            | Expr::Index(_, _, s)
+            | Expr::List(_, s)
+            | Expr::Map(_, s)
+            | Expr::Construct(_, _, _, s)
+            | Expr::Tuple(_, s)
+            | Expr::Lambda(_, _, s)
+            | Expr::Pipe(_, _, s)
+            | Expr::Range(_, _, s)
+            | Expr::If(_, _, _, s)
+            | Expr::Match(_, _, s)
+            | Expr::Block(_, s) => *s,
+            Expr::ListComp { span, .. } | Expr::MapComp { span, .. } => *span,
+        }
+    }
+}
+
 /// An argument, possibly named (`field: value`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Arg {
@@ -536,6 +569,29 @@ pub enum Stmt {
         /// Span.
         span: Span,
     },
+}
+
+impl Stmt {
+    /// The source span of this statement node. Every variant carries a span, so
+    /// this is total; it attributes a diagnostic (for example the depth-limit
+    /// `E1015`) to the exact statement.
+    #[must_use]
+    pub fn span(&self) -> Span {
+        match self {
+            Stmt::Let { span, .. }
+            | Stmt::LetPattern { span, .. }
+            | Stmt::Assign { span, .. }
+            | Stmt::Expr(_, span)
+            | Stmt::Return(_, span)
+            | Stmt::Throw(_, span)
+            | Stmt::Break(span)
+            | Stmt::Continue(span)
+            | Stmt::While(_, _, span)
+            | Stmt::Loop(_, span)
+            | Stmt::For(_, _, _, span)
+            | Stmt::Try { span, .. } => *span,
+        }
+    }
 }
 
 /// A function parameter.

@@ -223,7 +223,7 @@ fn check_expr_depth(root: &Expr, start: usize) -> Result<()> {
             return Err(Diag::new(
                 codes::NESTING,
                 "expression nests too deeply",
-                Span::default(),
+                e.span(),
             ));
         }
         let d = depth + 1;
@@ -341,7 +341,7 @@ fn check_stmt_depth(stmts: &[Stmt], start: usize) -> Result<()> {
             return Err(Diag::new(
                 codes::NESTING,
                 "program nests too deeply",
-                Span::default(),
+                s.span(),
             ));
         }
         match s {
