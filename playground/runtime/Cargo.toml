@@ -13,14 +13,15 @@ name = "aura-playground-runtime"
 #
 # `0.2.1-dev.1` was built before the ADR-0004 parser change (structural type
 # nesting counted toward the semantic AST limit). `0.2.1-dev.2` carried the
-# ADR-0004 contract but predates the train-1 parser hardening: bounded
-# alias-chain resolution depth, module-nesting bounded by the semantic limit on
-# every substrate, and O(n) rather than O(n^2) string lexing. That hardening is
-# observable (it changes which programs are accepted and how fast they lex), so
-# `0.2.1-dev.3` supersedes `0.2.1-dev.2`; the earlier artifacts are preserved on
-# disk as unlisted intermediates, per the convention that only the final
-# development runtime of a line is manifested.
-version = "0.2.1-dev.3"
+# ADR-0004 contract but predates the train-1 parser hardening. `0.2.1-dev.3`
+# carried that hardening but predates the red-team re-verification fixes:
+# bounded parameterized-alias expansion (was a quadratic hang), the
+# parameterized-alias depth-limit bypass, and the pure-physical module-depth
+# bound. Every one of these changes which programs are accepted, so
+# `0.2.1-dev.4` supersedes them; the earlier artifacts are preserved on disk as
+# unlisted intermediates, per the convention that only the final development
+# runtime of a line is manifested.
+version = "0.2.1-dev.4"
 edition = "2021"
 rust-version = "1.83"
 description = "The Aura Playground WebAssembly execution wrapper: a minimal, zero-import C ABI over the real aura runtime."

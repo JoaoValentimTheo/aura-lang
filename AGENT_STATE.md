@@ -91,9 +91,9 @@ Also uncommitted and validated: the type-alias **expansion budget**
 (`MAX_TYPE_NODES`, `src/check/mod.rs`) bounding exponentially duplicating
 alias chains as `E1015` (`tests/adversarial.rs`); the **PyO3 exact-type**
 boundary fix (`src/bridge/mod.rs`, `tests/interop_matrix.rs`); the runtime
-crate advancing to `0.2.1-dev.3` (the `0.2.1-dev.1` build predates ADR-0004
-and `0.2.1-dev.2` predates the train-1 parser hardening; both are preserved on
-disk, unlisted).
+crate advancing to `0.2.1-dev.4` (earlier `0.2.1-dev.N` builds predate
+ADR-0004, the train-1 parser hardening, and the re-verification checker fixes;
+all are preserved on disk, unlisted).
 
 ## Next Exact Action
 
@@ -212,8 +212,10 @@ must not reintroduce model/provider/bridge/global-agent routing.
   change; preserved on disk, unlisted, NOT a release.
 - `0.2.1-dev.2` — 1,767,962 bytes — intermediate development build, predates
   the train-1 parser hardening; preserved on disk, unlisted, NOT a release.
-- `0.2.1-dev.3` — 1,768,535 bytes — current development runtime, NOT a release:
-  `73655b3b297c3845851dbb3a9583b35cf3632cc2a6271c19d4692d08a3758484`
+- `0.2.1-dev.3` — 1,768,535 bytes — intermediate development build, predates
+  the red-team re-verification checker fixes; preserved on disk, unlisted.
+- `0.2.1-dev.4` — 1,768,270 bytes — current development runtime, NOT a release:
+  `de19d1eeffa30559646e7481db9fba39956c958993f431d37eaf4dc49add4aa0`
 
 Historical runtime directories are immutable. `playground/build.mjs` pins each
 frozen release identity and refuses to regenerate or overwrite it; advancing a

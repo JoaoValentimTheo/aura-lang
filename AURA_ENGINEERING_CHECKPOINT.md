@@ -9,7 +9,7 @@ PROGRAM HEAD:            45b5f9d (pushed)
 REMOTE HEAD:             45b5f9d
 CURRENT RELEASE:         v0.2.0 (tagged; immutable)
 CURRENT TRAIN:           TRAIN 2 — supply chain, perf breadth, compat, docs
-LATEST DEV RUNTIME:      0.2.1-dev.3 (development channel only)
+LATEST DEV RUNTIME:      0.2.1-dev.4 (development channel only)
 TEAM STATUS:             language/runtime/security GREEN; CPython, performance,
                          release engineering, docs advancing
 DECISIONS CLOSED:        HD-1, HD-2 (AUDIT-3), HD-3, HD-4 — all four, via ADR-0001…0004
@@ -24,7 +24,7 @@ PERFORMANCE RESULTS:     parser fuzz 200k + checker 150k + runtime 80k clean;
 SECURITY RESULTS:        campaign recorded (docs/security/CAMPAIGN_LOG.md);
                          no known CRITICAL/HIGH open
 COMMITS:                 ADR-0001…0004; security F1–F4; CPython fixes; runtime
-                         0.2.1-dev.3; SBOM + release manifest; perf breadth;
+                         0.2.1-dev.4; SBOM + release manifest; perf breadth;
                          compat fixtures; decision-doc resolutions
 PUSHES:                  …→45b5f9d (all CI-green)
 CI:                      GREEN through 45b5f9d
@@ -57,7 +57,7 @@ NEXT PARALLEL PHASE:     TRAIN 3 — CPython formalization (Windows probe result
 - **CPython bridge**: exact-type identity for dict keys (was duck-typed
   `__index__`); depth bounded symmetrically (Python→Aura rejects, no silent
   `repr`); doc wording reconciled to the implementation.
-- Runtime `0.2.1-dev.3`; playbook/website/docs synced to the new version line.
+- Runtime `0.2.1-dev.4`; playbook/website/docs synced to the new version line.
 
 ## Train 2 — completed work
 
@@ -73,7 +73,7 @@ NEXT PARALLEL PHASE:     TRAIN 3 — CPython formalization (Windows probe result
 - **Compatibility**: `tests/compat.rs` now pins the `0.2.1` additions with
   documented intentional breaks; stale AUDIT-3/HD-1 "pending" markers removed
   across `AGENTS.md`, decision packages, corpus, and property tests.
-- **WASM runtime** `0.2.1-dev.3` carries the train-1 parser hardening.
+- **WASM runtime** `0.2.1-dev.4` carries the train-1 + re-verification hardening.
 
 ## Root-caused, deferred (not defects)
 
