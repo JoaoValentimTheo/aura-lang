@@ -15,7 +15,7 @@ never by schedule. Status legend: **GREEN** (ready), **YELLOW** (gaps remain),
 | REPL | GREEN | persistence + rollback; `tests/repl.rs` |
 | WASM | GREEN | 0 imports; Host ABI 1; differential 219/219; module/alias depth unified with native |
 | PLAYGROUND | GREEN | FSM-P6 suites green; capability detection; dev runtime advanced |
-| CPYTHON | YELLOW | bridge works end-to-end (arbitrary authority — documented); normative conversion table + interop matrix; TESTED tiers (ADR-0003): Linux 3.10–3.13, macOS 3.12, Windows 3.12 (Windows probe promoted to a blocking leg after running green); lifetime/GIL review documented (dimension M); conversion edge cases + a generated conversion matrix (no host failure) |
+| CPYTHON | GREEN | normative conversion table; interop matrix + edge cases + a generated conversion matrix (no host failure); call-site source spans tested; TESTED tiers (ADR-0003): Linux 3.10–3.13, macOS 3.12, Windows 3.12 (all CI legs blocking); lifetime/GIL reviewed (dimension M); security boundary explicit (arbitrary CPython authority, no sandbox claimed) |
 | SECURITY | YELLOW | threat model / trust boundaries / architecture / incident response written; red-team campaign + re-verification recorded (`docs/security/CAMPAIGN_LOG.md`), all CRITICAL/HIGH fixed and guarded; deep fuzz campaign clean; SBOM + signed SLSA build provenance at publish; cryptographic release signing still pending (TD-03) |
 | PERFORMANCE | GREEN | sub-quadratic scaling guards for lex/parse/check, module graph, list/map runtime ops, function calls, string iteration, long-string lexing, and alias chains; budgets set (`docs/engineering/PERFORMANCE.md`); no input-driven catastrophic complexity in the deep fuzz campaign; TD-13 (REPL O(N^2)) root-caused, bounded, and explicitly justified with a recorded fix design |
 | RESOURCE LIMITS | GREEN | limits tested limit−1/limit/+1; recovery verified |
@@ -29,13 +29,13 @@ never by schedule. Status legend: **GREEN** (ready), **YELLOW** (gaps remain),
 | RELEASE ENGINEERING | YELLOW | gated release workflow + policy doc + CHANGELOG; version scheme decided (ADR-0001); pre-release metadata consistency gate; release-manifest + SBOM generated and attached; signed SLSA provenance at publish; cryptographic signing pending |
 | SUPPLY CHAIN | YELLOW | cargo audit in CI; standard actions SHA-pinned; CycloneDX SBOM generated and attached to releases (`scripts/sbom.sh`, tested); release manifest records a dependency-lock SHA-256; signed SLSA build provenance runs at publish (SHA-pinned action); cryptographic release signing still pending (TD-03) |
 | BACKWARD COMPAT | GREEN | `tests/compat.rs` pins the released 0.2.0 surface *and* the 0.2.1 additions behaviorally with documented intentional breaks; `crossrelease.test.mjs` runs every frozen runtime against its language line's fixtures (released behavior unchanged); compatibility policy in RELEASE_ENGINEERING.md |
-| RELEASE-READY (v1 GO) | RED | CPYTHON/SECURITY/DOCS/RELEASE ENGINEERING/SUPPLY CHAIN still YELLOW (BACKWARD COMPAT, PERFORMANCE, PACKAGING now GREEN); all semantic/version decisions (HD-1…HD-4) closed by ADR-0001…0004, implemented, pushed, CI-green |
+| RELEASE-READY (v1 GO) | RED | SECURITY/DOCS/RELEASE ENGINEERING/SUPPLY CHAIN still YELLOW (LANGUAGE…CPYTHON, PERFORMANCE, PACKAGING, BACKWARD COMPAT GREEN); all semantic/version decisions (HD-1…HD-4) closed by ADR-0001…0004, implemented, pushed, CI-green |
 
 ## Current blockers toward v1 GO
 
-1. CPYTHON formal claim, SECURITY (release signing), DOCS, RELEASE
-   ENGINEERING, and SUPPLY CHAIN still YELLOW → must be GREEN. PERFORMANCE,
-   PACKAGING, and BACKWARD COMPAT are now GREEN.
+1. SECURITY (release signing), DOCS, RELEASE ENGINEERING, and SUPPLY CHAIN
+   still YELLOW → must be GREEN. CPYTHON, PERFORMANCE, PACKAGING, and
+   BACKWARD COMPAT are now GREEN.
 2. The ADR-0001…0004 resolutions plus the train-1 red-team fixes are committed
    and pushed; independent re-verification of the train-1 fixes is in progress.
    All semantic-freeze decisions are resolved (no open HD items).
