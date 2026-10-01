@@ -28,8 +28,8 @@ SECURITY RESULTS:        campaign recorded (docs/security/CAMPAIGN_LOG.md);
 COMMITS:                 ADR-0001…0004; security F1–F4; CPython fixes; runtime
                          0.2.1-dev.4; SBOM + release manifest; perf breadth;
                          compat fixtures; decision-doc resolutions
-PUSHES:                  …→45b5f9d (all CI-green)
-CI:                      GREEN through 45b5f9d
+PUSHES:                  …→2d5c9a31 (all CI-green)
+CI:                      GREEN through 2d5c9a31 (incl. fuzz smoke)
 RELEASES:                none this train (v0.2.0 remains latest)
 V1 GREEN:                LANGUAGE, TYPE SYSTEM, RUNTIME, STDLIB, MODULES, CLI,
                          REPL, RESOURCE LIMITS, DETERMINISM, WASM, PLAYGROUND,
