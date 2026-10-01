@@ -5,10 +5,11 @@ Resumable operational state for the Road-to-1.0 program.
 ## State
 
 ```
-PROGRAM HEAD:            45b5f9d (pushed)
-REMOTE HEAD:             45b5f9d
+PROGRAM HEAD:            93b1ce9e (pushed)
+REMOTE HEAD:             93b1ce9e
 CURRENT RELEASE:         v0.2.0 (tagged; immutable)
-CURRENT TRAIN:           TRAIN 2 — supply chain, perf breadth, compat, docs
+CURRENT TRAIN:           TRAIN 3 — security re-verification closure, supply
+                         chain, CPython formalization, docs, perf
 LATEST DEV RUNTIME:      0.2.1-dev.4 (development channel only)
 TEAM STATUS:             language/runtime/security GREEN; CPython, performance,
                          release engineering, docs advancing
@@ -84,9 +85,29 @@ NEXT PARALLEL PHASE:     TRAIN 3 — CPython formalization (Windows probe result
   fix needs an exactly-equivalent incremental `absorb_decl` + a differential
   oracle. Design recorded in `docs/engineering/TECHNICAL_DEBT.md` (v1.1).
 
+## Train 3 — completed work
+
+- **Security re-verification closure**: N1 (HIGH parameterized-alias hang),
+  N2 (depth-limit bypass), N3 (physical module-depth bypass) fixed; deep fuzz
+  campaign clean (parser 2.0M+, checker 1.18M, runtime 1,087 runs).
+- **CPython formalization**: the Windows 3.12 `py` probe ran reliably green, so
+  ADR-0003 is amended and Windows is promoted to TESTED (blocking CI leg); the
+  lifetime/GIL review (dimension M) is documented; exact-type dict-key rule.
+- **Supply chain**: CycloneDX SBOM + release manifest with a dependency-lock
+  SHA-256 (self-contained provenance). Signed SLSA attestation remains tracked.
+- **Performance**: sub-quadratic guards across lex/parse/check, module graph,
+  map/call/string runtime ops, long-string lexing, alias chains; TD-13
+  (REPL O(N²)) root-caused and explicitly justified; PERFORMANCE → GREEN.
+- **Packaging**: end-user installed-binary smoke in CI and the release gate;
+  PACKAGING → GREEN.
+- **Docs**: 0.2.1 migration guide (repo + website); stale AUDIT-3/HD-1 "pending"
+  markers removed across `AGENTS.md`, decision packages, corpus, property tests.
+- **Runtimes**: `0.2.1-dev.3` (train-1 hardening) and `0.2.1-dev.4`
+  (re-verification checker fixes), both zero-import.
+
 ## Next tasks
 
-1. TRAIN 3: CPython formalization (Windows probe outcome, lifetime/GIL review),
-   provenance/attestation + signing, PERFORMANCE report + TD-13 design,
-   docs install/quickstart/migration, TD-06 cross-release artifact run-through.
+1. TRAIN 4: signed SLSA build attestation + release signing (TD-03); TD-06
+   cross-release artifact run-through; formal docs-site versioning; broaden
+   worked examples with a docs-code CI check.
 2. Then the pre-1.0 progression (`0.2.1` dev → alpha/beta/rc) under ADR-0001.
