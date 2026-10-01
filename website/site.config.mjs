@@ -17,12 +17,15 @@ export const site = {
   releases:
     "https://github.com/JoaoValentimTheo/aura-lang/releases",
   license: "MIT",
-  // Distinct identities, deliberately not collapsed. `0.2.0` is a language
-  // release, so the release and language versions coincide here.
-  //   * releaseVersion  — the current published release / runtime artifact
-  //   * languageVersion — the language semantics the release implements
-  //   * runtimeVersion  — the current browser runtime artifact
-  //   * previousRelease — the prior published release, kept addressable
+  // Distinct identities, deliberately not collapsed (ADR-0001). `0.2.0` is the
+  // current published release; `0.2.1` is the development line, whose language
+  // is a superset of `0.2.0` (builtin-name reservation, unified type nesting).
+  //   * releaseVersion      — the current published release / runtime artifact
+  //   * languageVersion     — the language semantics the release implements
+  //   * runtimeVersion      — the current browser runtime artifact
+  //   * currentRelease      — the published release shown in the header/hero
+  //   * developmentVersion  — the unreleased development line (labeled as such)
+  //   * previousRelease     — the prior published release, kept addressable
   releaseVersion: "0.2.0",
   languageVersion: "0.2.0",
   runtimeVersion: "0.2.0",
@@ -31,6 +34,9 @@ export const site = {
   earliestRelease: "0.0.1",
   // Current published release, shown in the header and hero.
   currentRelease: "0.2.0",
+  // The development line: documented and shown, but always clearly labeled
+  // "development" so it is never mistaken for the stable release.
+  developmentVersion: "0.2.1",
 };
 
 // Primary navigation. `key` links a nav entry to page metadata.

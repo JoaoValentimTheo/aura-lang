@@ -108,6 +108,9 @@ function footer(base) {
       ${columns}
     </div>
     <div class="footer-bottom">
+      <span class="footer-version">Stable <strong>${escapeHtml(site.currentRelease)}</strong> · development <strong>${escapeHtml(site.developmentVersion)}</strong></span>
+    </div>
+    <div class="footer-bottom">
       <span>© ${new Date().getFullYear()} The Aura project · Licensed ${site.license}</span>
       <span>
         <a href="${site.issues}" target="_blank" rel="noopener">Issues</a> ·
