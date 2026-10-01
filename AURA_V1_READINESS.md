@@ -13,10 +13,10 @@ never by schedule. Status legend: **GREEN** (ready), **YELLOW** (gaps remain),
 | MODULES | GREEN | providers parity; eager discovery defined; visibility/collision tested |
 | CLI | GREEN | `tests/cli.rs`; exit codes; paths; stdin |
 | REPL | GREEN | persistence + rollback; `tests/repl.rs` |
-| WASM | GREEN | 0 imports; Host ABI 1; differential 218/218 |
+| WASM | GREEN | 0 imports; Host ABI 1; differential 219/219; module/alias depth unified with native |
 | PLAYGROUND | GREEN | FSM-P6 suites green; capability detection; dev runtime advanced |
 | CPYTHON | YELLOW | bridge works end-to-end (arbitrary authority — documented); compatibility target + normative conversion table + interop matrix + multi-version CI; support tiers now decided (ADR-0003: TESTED Linux 3.10–3.13, macOS 3.12); Windows not claimed |
-| SECURITY | YELLOW | threat model / trust boundaries / architecture / incident response written; no known CRITICAL/HIGH; action SHA-pinning + SBOM open |
+| SECURITY | YELLOW | threat model / trust boundaries / architecture / incident response written; red-team train-1 campaign recorded (`docs/security/CAMPAIGN_LOG.md`) with F1 CRITICAL + F2/F3/F4 fixed and guarded; action SHA-pinning + SBOM open |
 | PERFORMANCE | YELLOW | scaling shape guards + baseline committed (`tests/bench.rs`, `docs/engineering/PERFORMANCE.md`); budgets set; needs broader workload coverage before GREEN |
 | RESOURCE LIMITS | GREEN | limits tested limit−1/limit/+1; recovery verified |
 | DETERMINISM | GREEN | single-output diagnostics; ordered maps |
@@ -29,17 +29,16 @@ never by schedule. Status legend: **GREEN** (ready), **YELLOW** (gaps remain),
 | RELEASE ENGINEERING | YELLOW | gated release workflow + policy doc + CHANGELOG; version scheme decided (ADR-0001: release ≠ language, `LANG <= RELEASE`); pre-release metadata consistency gate added to the release workflow; no SBOM/provenance |
 | SUPPLY CHAIN | YELLOW | cargo audit in CI; actions not SHA-pinned; no SBOM |
 | BACKWARD COMPAT | YELLOW | `tests/compat.rs` pins the released 0.2.0 language surface behaviorally; compatibility policy in RELEASE_ENGINEERING.md; upgrade/older-artifact matrix still pending |
-| RELEASE-READY (v1 GO) | RED | CPYTHON/SECURITY/PERF/DOCS/PACKAGING/COMPAT not yet GREEN; all semantic/version decisions (HD-1…HD-4) now closed by ADR-0001…0004 |
+| RELEASE-READY (v1 GO) | RED | CPYTHON/SECURITY/PERF/DOCS/PACKAGING/COMPAT not yet GREEN; all semantic/version decisions (HD-1…HD-4) now closed by ADR-0001…0004 and implemented/pushed |
 
 ## Current blockers toward v1 GO
 
 1. CPYTHON formal claim, SECURITY (SBOM/provenance), PERFORMANCE breadth,
    DOCS/PACKAGING/RELEASE ENGINEERING, and BACKWARD-COMPAT coverage still
    YELLOW → must be GREEN.
-2. The ADR-0001…0004 implementations (version scheme, module-member rule,
-   CPython tiers, unified type-nesting) are validated in the working tree but
-   **not yet committed or pushed**; commit and independent review are the next
-   step. All semantic-freeze decisions are resolved (no open HD items).
+2. The ADR-0001…0004 resolutions plus the train-1 red-team fixes are committed
+   and pushed; independent re-verification of the train-1 fixes is in progress.
+   All semantic-freeze decisions are resolved (no open HD items).
 
 ## Notes
 
