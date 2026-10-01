@@ -5,11 +5,11 @@ Resumable operational state for the Road-to-1.0 program.
 ## State
 
 ```
-PROGRAM HEAD:            93b1ce9e (pushed)
-REMOTE HEAD:             93b1ce9e
+PROGRAM HEAD:            8d307e9e (pushed)
+REMOTE HEAD:             8d307e9e
 CURRENT RELEASE:         v0.2.0 (tagged; immutable)
-CURRENT TRAIN:           TRAIN 3 — security re-verification closure, supply
-                         chain, CPython formalization, docs, perf
+CURRENT TRAIN:           TRAIN 4 — signed provenance, docs versioning,
+                         cross-release compat, CPython formalization
 LATEST DEV RUNTIME:      0.2.1-dev.4 (development channel only)
 TEAM STATUS:             language/runtime/security GREEN; CPython, performance,
                          release engineering, docs advancing
@@ -33,10 +33,10 @@ CI:                      GREEN through 2d5c9a31 (incl. fuzz smoke)
 RELEASES:                none this train (v0.2.0 remains latest)
 V1 GREEN:                LANGUAGE, TYPE SYSTEM, RUNTIME, STDLIB, MODULES, CLI,
                          REPL, RESOURCE LIMITS, DETERMINISM, WASM, PLAYGROUND,
-                         PLATFORMS, CI
-V1 YELLOW:               CPYTHON, SECURITY, PERFORMANCE, DOCS, PACKAGING,
-                         RELEASE ENGINEERING, SUPPLY CHAIN, BACKWARD COMPAT
-V1 RED:                  v1 GO — blocked by the YELLOW categories
+                         PLATFORMS, CI, CPYTHON, PERFORMANCE, PACKAGING,
+                         BACKWARD COMPAT
+V1 YELLOW:               SECURITY, DOCS, RELEASE ENGINEERING, SUPPLY CHAIN
+V1 RED:                  v1 GO — blocked by the four YELLOW categories
 FROZEN HASHES:           0.0.2 = 1,366,621 / 5a4ad3f7…; 0.2.0 = 1,654,161 / 9937fd80…
 NEXT PARALLEL PHASE:     TRAIN 3 — CPython formalization (Windows probe result,
                          lifetime review), SECURITY provenance/signing,
@@ -105,9 +105,21 @@ NEXT PARALLEL PHASE:     TRAIN 3 — CPython formalization (Windows probe result
 - **Runtimes**: `0.2.1-dev.3` (train-1 hardening) and `0.2.1-dev.4`
   (re-verification checker fixes), both zero-import.
 
+## Train 4 — completed work
+
+- **Signed provenance**: `actions/attest-build-provenance` (SHA-pinned) attests
+  every shipped artifact at publish (TD-03; release signing remains).
+- **Website version awareness**: stable vs development version labeled
+  site-wide (ADR-0001 identity model).
+- **Cross-release compatibility** (TD-06, closed): every frozen runtime runs its
+  language line's fixtures with unchanged output; BACKWARD COMPAT → GREEN.
+- **CPython formalization**: conversion edge cases + a generated conversion
+  matrix (no host failure); CPYTHON → GREEN.
+
 ## Next tasks
 
-1. TRAIN 4: signed SLSA build attestation + release signing (TD-03); TD-06
-   cross-release artifact run-through; formal docs-site versioning; broaden
-   worked examples with a docs-code CI check.
-2. Then the pre-1.0 progression (`0.2.1` dev → alpha/beta/rc) under ADR-0001.
+1. TRAIN 5: cryptographic release signing (TD-03 remaining); a docs-code CI
+   check that executes repo `docs/` samples; broaden worked examples; then the
+   pre-1.0 progression (`0.2.1` dev → alpha/beta/rc) under ADR-0001.
+2. Re-audit SECURITY/DOCS/RELEASE ENGINEERING/SUPPLY CHAIN against their V1
+   gates (§101/§105/§107) to close them.
