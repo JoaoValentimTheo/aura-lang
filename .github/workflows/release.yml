@@ -13,6 +13,11 @@ on:
 
 permissions:
   contents: write
+  # Signed build provenance (SLSA): the publish job attests each release
+  # artifact, which requires an OIDC token and permission to write
+  # attestations. Scoped to the workflow; the build job only needs contents.
+  id-token: write
+  attestations: write
 
 # Never allow two releases (e.g. a tag push racing a manual dispatch) to run
 # concurrently; serialize them per ref.
@@ -252,6 +257,16 @@ jobs:
           else
             printf '# Aura %s\n\nSee the repository changelog.\n' "$version" > dist/RELEASE_NOTES.md
           fi
+      - name: Attest build provenance (signed SLSA)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          # Signed, verifiable provenance for every shipped artifact. Consumers
+          # verify with `gh attestation verify <artifact> --repo <owner/repo>`.
+          subject-path: |
+            dist/*.tar.gz
+            dist/aura-playground-runtime-*.wasm
+            dist/release-manifest.json
+            dist/sbom.json
       - name: Create GitHub release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
