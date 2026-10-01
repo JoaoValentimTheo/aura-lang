@@ -32,10 +32,29 @@ Git.
   `1:1`. Every `py_eval`/`py_import`/`py_call` failure and every boundary
   conversion error (`E5001`, `E5002`, oversized-int `E4013`) carries the real
   source location.
+- **CPython dict keys use exact-type identity.** A Python object implementing
+  `__index__` is no longer coerced into an `int` key (rejected `E5002`), and an
+  out-of-`i64` integer key is `E4013`, matching the scalar path.
+- **CPython depth is bounded symmetrically.** A pathologically deep Python
+  container is `E5002` in the Python→Aura direction (matching Aura→Python),
+  not a silent `repr` string.
+- **Security (red-team train 1):** bounded type-alias expansion depth so a long
+  alias chain is `E1015`, never a host stack overflow; bounded *parameterized*
+  alias expansion (was a quadratic hang); module nesting (in-source and
+  physical) counts toward the 256-level semantic limit on every substrate; and
+  string lexing is O(n) instead of O(n²).
 
 ### Added
 - `docs/adr/0001`–`0004` recording the Architecture Decision Council's
   resolutions of the queued human decisions HD-1…HD-4.
+- A CycloneDX **SBOM** and a machine-readable **release manifest** (with a
+  dependency-lock hash), both attached to releases, plus signed SLSA build
+  provenance at publish.
+- An **end-user installed-binary smoke** (`scripts/artifact-smoke.sh`) and a
+  **cross-release** test that runs every frozen runtime against its language
+  line's fixtures.
+- A website **migration guide** (0.2.1), Python-interop, security, and
+  known-limitations pages.
 - Engineering organization, V1 readiness, roadmap, human-decision queue,
   security program (threat model, trust boundaries, architecture, incident
   response), CPython compatibility target, release policy, technical-debt and
