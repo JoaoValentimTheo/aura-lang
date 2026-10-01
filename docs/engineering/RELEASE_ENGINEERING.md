@@ -54,6 +54,27 @@ Semantic Versioning, adjusted for Aura's pre-v1 history:
    collections, JSON, error exit codes, REPL, and the pure-Rust `py_*` E5002
    contract).
 
+## Preflight and release runbook
+
+Run `scripts/release-preflight.sh <version> --tag` before pushing a release
+tag; the release workflow runs it again on the tag. It verifies the static
+prerequisites a tag needs: `Cargo.toml`/`Cargo.lock`/`aura::VERSION` agree;
+`LANGUAGE_VERSION <= release` (ADR-0001); the versioned Playground runtime
+artifact exists (a development runtime is not a release artifact — promote one
+first); a curated `docs/release-notes/v<version>.md` is present (or notes are
+generated); and the tag is free (releases are immutable).
+
+Runbook:
+
+1. Confirm the development line is frozen: CI green on the release commit.
+2. Promote a runtime artifact for the release version if the release changes
+   WASM semantics (add `playground/runtimes/<version>/…` and a manifest entry).
+3. Write `docs/release-notes/v<version>.md` and update the CHANGELOG.
+4. `scripts/release-preflight.sh <version> --tag` passes.
+5. Tag `v<version>`; pushing the tag runs `release.yml` (validate → build →
+   publish with SBOM, manifest, and signed provenance).
+6. Post-release gate (below): verify the published assets.
+
 ## Artifact matrix
 
 | Target | Archive | Smoke-tested in CI |
