@@ -13,12 +13,13 @@ LATEST DEV RUNTIME:      0.2.1-dev.4 (development channel only)
 TEAM STATUS:             language/runtime/security GREEN; CPython, performance,
                          release engineering, docs advancing
 DECISIONS CLOSED:        HD-1, HD-2 (AUDIT-3), HD-3, HD-4 — all four, via ADR-0001…0004
-ACTIVE FINDINGS:         train-1 red-team F1(FIXED), F2/F3/F4(FIXED),
-                         F5(LOW, tracked TD-15), F6(INFO, by design)
-BUGS FIXED:              alias-chain stack overflow (F1) + Θ(k²) memory (F2);
-                         Θ(n²) string lexing (F3); module-nesting substrate
-                         divergence (F4); CPython dict-key identity + depth
-                         symmetry; alias expansion amplification (TD-14)
+ACTIVE FINDINGS:         train-1 F1–F4 (FIXED); re-verification N1(HIGH),
+                         N2/N3(MEDIUM) (FIXED); F5(LOW, tracked TD-15),
+                         F6(INFO, by design)
+BUGS FIXED:              F1–F4; re-verification N1–N3 (parameterized-alias
+                         expansion hang + depth bypass, physical module-depth
+                         bypass); CPython dict-key identity + depth symmetry;
+                         alias expansion amplification (TD-14)
 PERFORMANCE RESULTS:     parser fuzz 200k + checker 150k + runtime 80k clean;
                          13 sub-quadratic scaling guards incl. map/call/string
 SECURITY RESULTS:        campaign recorded (docs/security/CAMPAIGN_LOG.md);

@@ -33,6 +33,28 @@ F4 counts module nesting toward the same 256-level semantic budget, and a
 physical wrapper (loaded child source) seeds that budget so it cannot bypass
 the limit.
 
+### Re-verification round (`af909fd`, fixes on `f69d6bf`)
+
+An independent re-verification falsified parts of the F1/F2 and F4 fixes and
+confirmed F3 fully fixed:
+
+| ID | Severity | Class | Summary | Status |
+|----|----------|-------|---------|--------|
+| N1 | HIGH | DoS (super-linear, unbounded) | A *parameterized* alias chain (`type A{i}<T> = A{i-1}<T>`) is expanded by `substitute_alias`, which is not memoized, so k=2000 took ~11.5s and k=4000 did not finish — even when unused. | FIXED (`f69d6bf`) |
+| N2 | MEDIUM | Limit bypass | A parameterized alias that grows its argument (`type A{i}<T> = A{i-1}<[T]>`) bypassed the 256 semantic depth limit (300–440 accepted) because the guard measured only the unparameterized `Named` arm. | FIXED (`f69d6bf`) |
+| N3 | MEDIUM | Substrate divergence | A *pure physical* directory chain was bounded only by the substrate `parse_recursion_budget` (2048 native / 768 WASM), not the semantic limit. | FIXED (`f69d6bf`) |
+| — | — | — | F3 string lexing: linear across plain/escaped/multibyte/f-string/CRLF; all encodings correct. | NOT FALSIFIED |
+| — | — | — | F1/F2 non-parameterized shapes, boundaries, flat-set non-rejection: correct. | NOT FALSIFIED |
+
+N1/N2 share one fix: an **expansion-path depth guard** (`visiting.len() >
+MAX_AST_DEPTH`) in `resolve_type_expr`, which covers both the `Named` and the
+`App`/`substitute_alias` shapes. N3 bounds physical module depth by
+`MAX_AST_DEPTH` in the graph builder. Regression coverage:
+`tests/adversarial.rs` (parameterized chain depth, used and unused; growing
+argument bypass) running on the production execution stack; `tests/module_graph.rs`
+(physical depth boundary); `tests/bench.rs` (depth-capped parameterized chain
+completes fast; a past-limit chain is a diagnostic).
+
 Regression coverage: `tests/adversarial.rs` (linear alias chains),
 `tests/boundaries.rs` (N-1/N/N+1 for aliases and modules; annotation
 positions), `tests/bench.rs` (alias-chain and long-string sub-quadratic scaling
