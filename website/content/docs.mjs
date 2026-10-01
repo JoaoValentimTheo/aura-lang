@@ -24,6 +24,7 @@ export const docGroups = [
       { slug: "install", title: "Installing Aura", file: "install.md" },
       { slug: "first-program", title: "Your first program", file: "first-program.md" },
       { slug: "migration-0-2-1", title: "Migrating to 0.2.1", file: "migration-0-2-1.md" },
+      { slug: "known-limitations", title: "Known limitations", file: "known-limitations.md" },
       { slug: "zen", title: "Zen-to-Win", file: "zen.md" },
     ],
   },
@@ -61,6 +62,8 @@ export const docGroups = [
       { slug: "repl", title: "REPL", file: "repl.md" },
       { slug: "playground-doc", title: "Playground", file: "playground-doc.md" },
       { slug: "runtime-doc", title: "Runtime & host", file: "runtime-doc.md" },
+      { slug: "python", title: "Python interoperability", file: "python.md" },
+      { slug: "security", title: "Security", file: "security.md" },
     ],
   },
 ];

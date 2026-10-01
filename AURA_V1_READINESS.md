@@ -23,7 +23,7 @@ never by schedule. Status legend: **GREEN** (ready), **YELLOW** (gaps remain),
 | PLATFORM — LINUX | GREEN | CI green |
 | PLATFORM — MACOS | GREEN | CI green |
 | PLATFORM — WINDOWS | GREEN | CI green |
-| DOCS | YELLOW | language/stdlib docs current; security/CPython/ops docs present; CHANGELOG; install guide + website quickstart; 0.2.1 migration guide added (docs + website); broader worked examples pending; the website now carries a stable/development version indicator |
+| DOCS | YELLOW | language/stdlib/reference docs current; security/CPython/ops docs present; CHANGELOG; install guide + website quickstart; 0.2.1 migration guide; website Python-interop, security, and known-limitations pages added; stable/development version indicator; every published example validated against the runtime and Aura comments checked; broader worked examples still pending |
 | PACKAGING | GREEN | release workflow builds Linux/macOS/Windows + wasm with per-artifact checksums and a built-binary smoke before release; install guide (`docs/INSTALL.md`, website); end-user installed-binary smoke (`scripts/artifact-smoke.sh`) runs in CI and the release gate; artifact matrix documented; the produced release artifact is exercised post-publish by the release workflow |
 | CI | GREEN | comprehensive matrix; all green; now includes a CPython interop version/platform job |
 | RELEASE ENGINEERING | YELLOW | gated release workflow + policy doc + CHANGELOG; version scheme decided (ADR-0001); pre-release metadata consistency gate; release-manifest + SBOM generated and attached; signed SLSA provenance at publish; cryptographic signing pending |
