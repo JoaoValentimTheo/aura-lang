@@ -5,8 +5,8 @@ Resumable operational state for the Road-to-1.0 program.
 ## State
 
 ```
-PROGRAM HEAD:            5c2c5a0f (pushed)
-REMOTE HEAD:             5c2c5a0f
+PROGRAM HEAD:            f3fcd850 (pushed)
+REMOTE HEAD:             f3fcd850
 CURRENT RELEASE:         v0.2.0 (tagged; immutable)
 CURRENT TRAIN:           TRAIN 4 — signed provenance, docs versioning,
                          cross-release compat, CPython formalization
@@ -119,12 +119,19 @@ NEXT PARALLEL PHASE:     TRAIN 3 — CPython formalization (Windows probe result
 - **CPython formalization**: conversion edge cases + a generated conversion
   matrix (no host failure); CPYTHON → GREEN.
 
+## Train 5 — completed work
+
+- **TD-15 closed**: depth-limit `E1015` now points at the offending node
+  (added `Expr::span()`/`Stmt::span()`); new dev runtime `0.2.1-dev.5`.
+- **Release path prepared**: `docs/release-notes/v0.2.1.md` written; the
+  release preflight passes everything except the runtime promotion.
+
 ## Next tasks
 
-1. TRAIN 5 — pre-1.0 release progression under ADR-0001: stage a `0.2.1`
-   prerelease. This requires promoting a **release** runtime artifact for
-   `0.2.1` (the release-preflight check flags its absence: a tag would fail
-   without it) and a curated `docs/release-notes/v0.2.1.md`, then tagging.
+1. TRAIN 5 completion — stage the `0.2.1` release under ADR-0001: promote a
+   **release** runtime artifact for `0.2.1` (the release-preflight check flags
+   its absence: a tag would fail without it), then tag. Per `AGENTS.md`,
+   creating a release tag requires explicit human authorization.
 2. Remaining non-blocking extras: cryptographic tag/asset signing (TD-03),
    `rust-toolchain` SHA-pinning (TD-17), TD-13 incremental REPL (v1.1),
    TD-15 diagnostic locations.
