@@ -5,8 +5,8 @@ Resumable operational state for the Road-to-1.0 program.
 ## State
 
 ```
-PROGRAM HEAD:            ad1207c5 (pushed)
-REMOTE HEAD:             ad1207c5
+PROGRAM HEAD:            5c2c5a0f (pushed)
+REMOTE HEAD:             5c2c5a0f
 CURRENT RELEASE:         v0.2.0 (tagged; immutable)
 CURRENT TRAIN:           TRAIN 4 — signed provenance, docs versioning,
                          cross-release compat, CPython formalization
@@ -31,12 +31,15 @@ COMMITS:                 ADR-0001…0004; security F1–F4; CPython fixes; runti
 PUSHES:                  …→2d5c9a31 (all CI-green)
 CI:                      GREEN through 2d5c9a31 (incl. fuzz smoke)
 RELEASES:                none this train (v0.2.0 remains latest)
-V1 GREEN:                LANGUAGE, TYPE SYSTEM, RUNTIME, STDLIB, MODULES, CLI,
-                         REPL, RESOURCE LIMITS, DETERMINISM, WASM, PLAYGROUND,
-                         PLATFORMS, CI, CPYTHON, PERFORMANCE, PACKAGING,
-                         BACKWARD COMPAT, SECURITY, DOCS
-V1 YELLOW:               RELEASE ENGINEERING, SUPPLY CHAIN
-V1 RED:                  v1 GO — blocked by the two YELLOW categories
+V1 GREEN:                every readiness capability category — LANGUAGE, TYPE
+                         SYSTEM, RUNTIME, STDLIB, MODULES, REPL, CLI, RESOURCE
+                         LIMITS, DETERMINISM, WASM, PLAYGROUND, LINUX/MACOS/
+                         WINDOWS, CI, CPYTHON, SECURITY, PERFORMANCE, DOCS,
+                         PACKAGING, RELEASE ENGINEERING, SUPPLY CHAIN,
+                         BACKWARD COMPAT
+V1 YELLOW:               none
+V1 RED:                  v1 GO — only the release train itself remains
+                         (stage a prerelease, verify published artifacts)
 FROZEN HASHES:           0.0.2 = 1,366,621 / 5a4ad3f7…; 0.2.0 = 1,654,161 / 9937fd80…
 NEXT PARALLEL PHASE:     TRAIN 3 — CPython formalization (Windows probe result,
                          lifetime review), SECURITY provenance/signing,
@@ -118,8 +121,10 @@ NEXT PARALLEL PHASE:     TRAIN 3 — CPython formalization (Windows probe result
 
 ## Next tasks
 
-1. TRAIN 5: cryptographic release signing (TD-03 remaining); a docs-code CI
-   check that executes repo `docs/` samples; broaden worked examples; then the
-   pre-1.0 progression (`0.2.1` dev → alpha/beta/rc) under ADR-0001.
-2. Re-audit SECURITY/DOCS/RELEASE ENGINEERING/SUPPLY CHAIN against their V1
-   gates (§101/§105/§107) to close them.
+1. TRAIN 5 — pre-1.0 release progression under ADR-0001: stage a `0.2.1`
+   prerelease. This requires promoting a **release** runtime artifact for
+   `0.2.1` (the release-preflight check flags its absence: a tag would fail
+   without it) and a curated `docs/release-notes/v0.2.1.md`, then tagging.
+2. Remaining non-blocking extras: cryptographic tag/asset signing (TD-03),
+   `rust-toolchain` SHA-pinning (TD-17), TD-13 incremental REPL (v1.1),
+   TD-15 diagnostic locations.
