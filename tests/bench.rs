@@ -218,22 +218,29 @@ fn lex_long_string_scales_subquadratically() {
     );
 }
 
-/// Red-team F1/F2: a *linear* alias chain below the semantic depth limit must
-/// resolve sub-quadratically. Before the fix, resolution was memoized in
-/// declaration order and each cached level nested one deeper, so a chain cost
-/// Θ(k²) memory/time (16k aliases took ~40s and 3.4 GB); above the limit the
-/// resolver now returns `E1015`. The guard keeps N below the 256-level limit.
+/// Red-team F1/F2: a *linear* alias chain (`type A{i} = [A{i-1}]`) was Θ(k²)
+/// because resolution is memoized in declaration order and each cached level
+/// nested one deeper (16k aliases took ~40s and 3.4 GB), and above the semantic
+/// limit it then overflowed the stack. The depth guard now caps the chain at
+/// 256 levels, so the meaningful contract is a bounded absolute cost within the
+/// accepted range plus `E1015` past it — not a ratio (the accepted range cannot
+/// be doubled). This mirrors the parameterized-chain guard.
 #[test]
-fn alias_chain_resolution_scales_subquadratically() {
-    assert_subquadratic(
-        "check(alias_chain)",
-        |n| {
-            let src = gen_alias_chain(n);
-            let m = parse(&src).unwrap();
-            Checker::module(&m).unwrap();
-        },
-        60,
+fn alias_chain_resolution_is_bounded_by_the_depth_cap() {
+    // The maximal accepted chain must check quickly.
+    let at_limit = gen_alias_chain(255);
+    let m = parse(&at_limit).unwrap();
+    let start = Instant::now();
+    Checker::module(&m).unwrap();
+    let elapsed = start.elapsed().as_millis();
+    assert!(
+        elapsed < 2_000,
+        "a depth-capped alias chain took {elapsed}ms; the depth bound should keep it fast"
     );
+    // Past the limit is the stable diagnostic, never a hang or overflow.
+    let over = gen_alias_chain(20_000);
+    let m = parse(&over).unwrap();
+    assert!(Checker::module(&m).is_err());
 }
 
 /// A *parameterised* alias chain (`type A{i}<T> = A{i-1}<T>`) is expanded by
