@@ -344,3 +344,102 @@ fn py_call_positional_arguments() {
 fn py_version_reports_a_string() {
     assert_eq!(out("fn main() { print(len(py_version()) > 0) }"), "true\n");
 }
+
+/// Conversion edge cases (§70): boundary values and special floats must not
+/// panic, truncate silently, or cross as the wrong kind. Each case either
+/// yields an exact expected value or a structured diagnostic.
+#[test]
+fn conversion_edge_cases() {
+    // Float specials.
+    assert_eq!(
+        out("fn main() { print(py_eval(\"float('inf')\")) }"),
+        "inf\n"
+    );
+    assert_eq!(
+        out("fn main() { print(py_eval(\"float('-inf')\")) }"),
+        "-inf\n"
+    );
+    // NaN is not equal to itself; cross it and check via `!=`.
+    assert_eq!(
+        out("fn main() { let n = py_eval(\"float('nan')\")\n print(n != n) }"),
+        "true\n"
+    );
+    // int at the i64 boundaries (in range) and just outside.
+    assert_eq!(
+        out("fn main() { print(py_eval(\"2**63 - 1\")) }"),
+        "9223372036854775807\n"
+    );
+    assert_eq!(
+        out("fn main() { print(py_eval(\"-(2**63)\")) }"),
+        "-9223372036854775808\n"
+    );
+    assert_eq!(code("fn main() { py_eval(\"2**63\") }"), codes::OVERFLOW);
+    // bool is not int at the boundary: `True` crosses as a bool.
+    assert_eq!(out("fn main() { print(py_eval(\"True\")) }"), "true\n");
+    assert_eq!(
+        out("fn main() { print(py_eval(\"type(True).__name__\")) }"),
+        "bool\n"
+    );
+    // Unicode strings survive intact, including astral-plane scalars.
+    assert_eq!(
+        out("fn main() { print(py_eval(\"'café 日本語 😀'\")) }"),
+        "café 日本語 😀\n"
+    );
+    assert_eq!(out("fn main() { print(len(py_eval(\"'😀🚀'\"))) }"), "2\n");
+}
+
+/// Generated conversions (§70): a spread of Python literals crossing into Aura
+/// and back must never panic or produce a host failure; the result is either
+/// `ok` or a structured diagnostic.
+#[test]
+fn conversion_matrix_never_host_fails() {
+    let literals = [
+        "None",
+        "True",
+        "False",
+        "0",
+        "-1",
+        "2**62",
+        "2**63",
+        "-(2**63) - 1",
+        "0.0",
+        "-0.0",
+        "float('inf')",
+        "float('-inf')",
+        "float('nan')",
+        "1e308",
+        "1e309",
+        "''",
+        "'x'",
+        "'\\\\n\\\\t\\\\u00e9'",
+        "[]",
+        "[[]]",
+        "[[[[1]]]]",
+        "{}",
+        "{'a': [], 'b': {}}",
+        "b'bytes'",
+        "(1, 2)",
+        "{1, 2}",
+        "complex(1, 2)",
+        "range(3)",
+        "object()",
+        "lambda: 1",
+        "10**100",
+    ];
+    for lit in literals {
+        let escaped = lit.replace('\\', "\\\\").replace('"', "\\\"");
+        let src = format!("fn main() {{ let v = py_eval(\"{escaped}\")\n print(v) }}");
+        match aura::run_source(&src, "<interop-fuzz>") {
+            Ok(_) => {}
+            Err(d) => {
+                // A structured diagnostic is acceptable; a specific error code
+                // is not asserted, but it must not be an internal failure.
+                assert_ne!(
+                    d.code,
+                    codes::INTERNAL,
+                    "literal {lit} produced an internal failure"
+                );
+            }
+        }
+    }
+}
