@@ -214,8 +214,10 @@ must not reintroduce model/provider/bridge/global-agent routing.
   the train-1 parser hardening; preserved on disk, unlisted, NOT a release.
 - `0.2.1-dev.3` — 1,768,535 bytes — intermediate development build, predates
   the red-team re-verification checker fixes; preserved on disk, unlisted.
-- `0.2.1-dev.4` — 1,768,270 bytes — current development runtime, NOT a release:
-  `de19d1eeffa30559646e7481db9fba39956c958993f431d37eaf4dc49add4aa0`
+- `0.2.1-dev.4` — 1,768,270 bytes — intermediate development build, predates
+  the TD-15 diagnostic-location change; preserved on disk, unlisted.
+- `0.2.1-dev.5` — 1,768,369 bytes — current development runtime, NOT a release:
+  `8f8c3e1689fc7fb1472293d610c9392d5ea2b7fe106b50f0c7a5535dfc54bc19`
 
 Historical runtime directories are immutable. `playground/build.mjs` pins each
 frozen release identity and refuses to regenerate or overwrite it; advancing a

@@ -21,7 +21,12 @@ name = "aura-playground-runtime"
 # `0.2.1-dev.4` supersedes them; the earlier artifacts are preserved on disk as
 # unlisted intermediates, per the convention that only the final development
 # runtime of a line is manifested.
-version = "0.2.1-dev.4"
+#
+# `0.2.1-dev.4` carries the train-1/re-verification checker hardening but
+# predates the TD-15 diagnostic-location change (depth-limit E1015 now points
+# at the offending node), which is observable in the WASM runtime's diagnostic
+# output, so `0.2.1-dev.5` supersedes it.
+version = "0.2.1-dev.5"
 edition = "2021"
 rust-version = "1.83"
 description = "The Aura Playground WebAssembly execution wrapper: a minimal, zero-import C ABI over the real aura runtime."

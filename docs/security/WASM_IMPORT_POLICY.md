@@ -19,6 +19,7 @@ API), not by inspecting Rust source:
 | `0.2.1-dev.2/aura_playground_runtime.wasm` | 0 |
 | `0.2.1-dev.3/aura_playground_runtime.wasm` | 0 |
 | `0.2.1-dev.4/aura_playground_runtime.wasm` | 0 |
+| `0.2.1-dev.5/aura_playground_runtime.wasm` | 0 |
 
 Consequences:
 

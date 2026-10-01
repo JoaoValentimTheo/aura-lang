@@ -10,7 +10,7 @@ REMOTE HEAD:             5c2c5a0f
 CURRENT RELEASE:         v0.2.0 (tagged; immutable)
 CURRENT TRAIN:           TRAIN 4 — signed provenance, docs versioning,
                          cross-release compat, CPython formalization
-LATEST DEV RUNTIME:      0.2.1-dev.4 (development channel only)
+LATEST DEV RUNTIME:      0.2.1-dev.5 (development channel only)
 TEAM STATUS:             language/runtime/security GREEN; CPython, performance,
                          release engineering, docs advancing
 DECISIONS CLOSED:        HD-1, HD-2 (AUDIT-3), HD-3, HD-4 — all four, via ADR-0001…0004

@@ -137,12 +137,12 @@ release artifact can never be regenerated or overwritten: the build refuses to
 write `runtimes/<version>/` when the bytes differ, and `--check` compares each
 pinned release against the artifact on disk independently of the manifest. The
 manifest currently lists seven entries — `0.0.1`, `0.0.2`, `0.0.2-dev.30`,
-`0.2.0-dev.1`, `0.2.0-dev.2`, `0.2.0`, and the current `0.2.1-dev.4`.
+`0.2.0-dev.1`, `0.2.0-dev.2`, `0.2.0`, and the current `0.2.1-dev.5`.
 
 ### Development runtimes
 
 A development runtime is an artifact on a release line that is **not** that
-release. `0.2.1-dev.4` is the current one: it carries the additive Host ABI 1
+release. `0.2.1-dev.5` is the current one: it carries the additive Host ABI 1
 virtual-project exports so the multi-file Playground can be exercised, and it
 implements the `0.2.1` language contract, which adds the builtin-name
 value-namespace reservation (`E1009`), the unified type-nesting limit
@@ -157,7 +157,7 @@ replacement for `0.2.0` — which remains frozen, selectable, and byte-identical
 Advancing a development runtime means bumping the runtime crate's pre-release
 version, never overwriting an existing artifact. The superseded
 `0.2.0-dev.1`/`0.2.0-dev.2` remain selectable historical development entries;
-the intermediate `0.2.1-dev.1`..`0.2.1-dev.3` builds are preserved on disk,
+the intermediate `0.2.1-dev.1`..`0.2.1-dev.4` builds are preserved on disk,
 unlisted.
 
 ### 0.0.1 vs 0.0.2
