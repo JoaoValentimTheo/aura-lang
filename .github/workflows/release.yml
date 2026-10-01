@@ -56,11 +56,13 @@ jobs:
         run: scripts/artifact-smoke.sh --release
       - name: Release preflight (version identities, runtime artifact, tag)
         shell: bash
-        # On a tag build, check the exact released version; on a manual run,
-        # check the current Cargo.toml version.
+        # On a tag build, check the exact released version. The tag already
+        # exists in this context, so pass `--on-tag`: preflight then verifies
+        # the tag points at the released commit instead of requiring it to be
+        # free (which would make every tag-triggered release fail).
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            scripts/release-preflight.sh "${GITHUB_REF_NAME#v}"
+            scripts/release-preflight.sh "${GITHUB_REF_NAME#v}" --on-tag
           else
             scripts/release-preflight.sh
           fi

@@ -37,6 +37,10 @@ run("manifest", [join(here, "manifest.test.mjs")]);
 // The release-manifest generator (section 98) describes a release from the
 // repository's canonical version sources; no runtime needed.
 run("release-manifest", [join(here, "release_manifest.test.mjs")]);
+// The release preflight's tag semantics: a pre-tag check requires the tag to be
+// free, while the tag-triggered workflow (`--on-tag`) requires it to point at
+// the released commit. Locks the fix for the v0.2.1 publish failure.
+run("release-preflight", [join(here, "release_preflight.test.mjs")]);
 // The SBOM generator (section 53) lists every dependency with name, version,
 // and license; no runtime needed.
 run("sbom", [join(here, "sbom.test.mjs")]);

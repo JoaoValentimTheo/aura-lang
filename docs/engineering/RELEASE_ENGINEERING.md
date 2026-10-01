@@ -57,12 +57,18 @@ Semantic Versioning, adjusted for Aura's pre-v1 history:
 ## Preflight and release runbook
 
 Run `scripts/release-preflight.sh <version> --tag` before pushing a release
-tag; the release workflow runs it again on the tag. It verifies the static
-prerequisites a tag needs: `Cargo.toml`/`Cargo.lock`/`aura::VERSION` agree;
-`LANGUAGE_VERSION <= release` (ADR-0001); the versioned Playground runtime
-artifact exists (a development runtime is not a release artifact — promote one
-first); a curated `docs/release-notes/v<version>.md` is present (or notes are
-generated); and the tag is free (releases are immutable).
+tag; the release workflow runs the same checks on the tag itself. It verifies
+the static prerequisites a tag needs: `Cargo.toml`/`Cargo.lock`/`aura::VERSION`
+agree; `LANGUAGE_VERSION <= release` (ADR-0001); the versioned Playground
+runtime artifact exists (a development runtime is not a release artifact —
+promote one first); a curated `docs/release-notes/v<version>.md` is present (or
+notes are generated); and the tag is free (releases are immutable). Inside the
+tag-triggered workflow the tag *necessarily* exists, so the workflow passes
+`--on-tag`: preflight then verifies the tag points at the released commit
+instead of requiring it to be free. (A pre-`--on-tag` version of this check
+required the tag to be absent even while validating that very tag, which made
+every tag-triggered release fail; `playground/tests/node/release_preflight.test.mjs`
+guards both modes.)
 
 Runbook:
 
