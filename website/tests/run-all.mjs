@@ -29,6 +29,7 @@ if (!existsSync(dist)) {
 }
 
 run("examples", "validate-examples.mjs");
+run("aura-comments", "check-aura-comments.mjs");
 run("links", "check-links.mjs");
 run("base", "check-base.mjs");
 
