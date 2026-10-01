@@ -5,8 +5,8 @@ Resumable operational state for the Road-to-1.0 program.
 ## State
 
 ```
-PROGRAM HEAD:            8d307e9e (pushed)
-REMOTE HEAD:             8d307e9e
+PROGRAM HEAD:            ad1207c5 (pushed)
+REMOTE HEAD:             ad1207c5
 CURRENT RELEASE:         v0.2.0 (tagged; immutable)
 CURRENT TRAIN:           TRAIN 4 — signed provenance, docs versioning,
                          cross-release compat, CPython formalization
@@ -34,9 +34,9 @@ RELEASES:                none this train (v0.2.0 remains latest)
 V1 GREEN:                LANGUAGE, TYPE SYSTEM, RUNTIME, STDLIB, MODULES, CLI,
                          REPL, RESOURCE LIMITS, DETERMINISM, WASM, PLAYGROUND,
                          PLATFORMS, CI, CPYTHON, PERFORMANCE, PACKAGING,
-                         BACKWARD COMPAT
-V1 YELLOW:               SECURITY, DOCS, RELEASE ENGINEERING, SUPPLY CHAIN
-V1 RED:                  v1 GO — blocked by the four YELLOW categories
+                         BACKWARD COMPAT, SECURITY, DOCS
+V1 YELLOW:               RELEASE ENGINEERING, SUPPLY CHAIN
+V1 RED:                  v1 GO — blocked by the two YELLOW categories
 FROZEN HASHES:           0.0.2 = 1,366,621 / 5a4ad3f7…; 0.2.0 = 1,654,161 / 9937fd80…
 NEXT PARALLEL PHASE:     TRAIN 3 — CPython formalization (Windows probe result,
                          lifetime review), SECURITY provenance/signing,
