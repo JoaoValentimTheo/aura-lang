@@ -53,6 +53,10 @@ check(
 );
 check("commit is a 40-hex SHA", /^[0-9a-f]{40}$/.test(manifest.commit));
 check(
+  "dependency_lock_sha256 is a 64-hex SHA",
+  /^[0-9a-f]{64}$/.test(manifest.dependency_lock_sha256),
+);
+check(
   "playground_api_version matches the runtime manifest",
   manifest.playground_api_version === runtimeManifest.playground_api_version,
 );

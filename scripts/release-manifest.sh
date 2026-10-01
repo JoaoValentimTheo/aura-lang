@@ -23,6 +23,14 @@ cd "$REPO_ROOT"
 release_version=$(grep -m1 '^version = ' Cargo.toml | sed -E 's/^version = "(.*)"/\1/')
 language_version=$(grep -oE 'LANGUAGE_VERSION: &str = "[^"]+"' src/lib.rs | sed -E 's/.*"(.*)"/\1/')
 commit=$(git rev-parse HEAD)
+# A hash of the dependency closures: the exact pinned inputs a build used. This
+# is self-contained provenance (no external attestation service required) and
+# lets a consumer tie an artifact to the lockfiles that produced it.
+if command -v sha256sum >/dev/null 2>&1; then
+    lock_hash=$(cat Cargo.lock playground/runtime/Cargo.lock | sha256sum | cut -d' ' -f1)
+else
+    lock_hash=$(cat Cargo.lock playground/runtime/Cargo.lock | shasum -a 256 | cut -d' ' -f1)
+fi
 
 # Invariant (ADR-0001): language must not be ahead of release.
 lowest=$(printf '%s\n%s\n' "$release_version" "$language_version" | sort -V | head -n1)
@@ -31,12 +39,12 @@ if [ "$lowest" != "$language_version" ]; then
     exit 1
 fi
 
-python3 - "$release_version" "$language_version" "$commit" <<'PY'
+python3 - "$release_version" "$language_version" "$commit" "$lock_hash" <<'PY'
 import json
 import re
 import sys
 
-release_version, language_version, commit = sys.argv[1:4]
+release_version, language_version, commit, lock_hash = sys.argv[1:5]
 
 with open("playground/runtimes/manifest.json") as f:
     runtime_manifest = json.load(f)
@@ -82,6 +90,7 @@ manifest = {
     "release_version": release_version,
     "language_version": language_version,
     "commit": commit,
+    "dependency_lock_sha256": lock_hash,
     "playground_api_version": runtime_manifest.get("playground_api_version"),
     "current_runtime": current,
     "supported_python": supported_python,
