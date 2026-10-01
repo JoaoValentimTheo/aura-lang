@@ -116,6 +116,28 @@ must not allow this build without `py`.
 - Python raising Aura errors (J is one-way).
 - Sandboxing Python (separate program; not claimed).
 
+## Lifetime and GIL (dimension M) — reviewed
+
+An independent review of the bridge (train 2) found no reference-leak, lifetime,
+or GIL defect:
+
+- Every entry point runs inside `Python::attach`; `Bound` values never escape
+  the closure — the result is converted to an owned Aura `Value` before return.
+- Argument conversion builds a `PyTuple` within the same `'py` lifetime, so no
+  reference outlives its interpreter borrow.
+- Cycle guards key on stable pointers (`Rc::as_ptr` for Aura values,
+  `PyAny::as_ptr` for Python objects) for the duration of one conversion, and
+  the path stack is popped on success.
+- A raising dunder is never silently swallowed now: the scalar and dict-key
+  paths match on type identity and route failures through `map_pyerr`, and a
+  failure-then-success sequence recovers cleanly.
+- Errors clear the Python indicator (PyO3 `extract`/`call` semantics), so no
+  stale exception state leaks into a later call.
+
+The embedded interpreter uses PyO3 `auto-initialize`; explicit
+initialize/finalize policy for embedding Aura as a library is tracked (TD-11)
+and is out of scope for the CLI.
+
 ## Evidence plan
 
 An interop matrix (`tests/interop_matrix.rs`, feature `py`) covering: `None`,
