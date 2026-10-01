@@ -49,6 +49,11 @@ recorded before/after and an explanation.
 | check | < 30 ms |
 | module graph, N children | sub-quadratic doubling ratio |
 | runtime list materialisation, N=2000→4000 | sub-quadratic doubling ratio |
+| runtime map ops, N=2000→4000 | sub-quadratic doubling ratio |
+| runtime function calls, N=4000→8000 | sub-quadratic doubling ratio |
+| runtime string walk, N=20000→40000 | sub-quadratic doubling ratio |
+| lex long string literal, N=100k→200k | sub-quadratic doubling ratio |
+| check alias chain (below depth limit), N=60→120 | sub-quadratic doubling ratio |
 
 ## Known characteristic: REPL is O(N²) in session size
 

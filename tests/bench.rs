@@ -56,6 +56,38 @@ fn gen_list_call(n: usize) -> String {
     format!("fn main() {{ print(len([{items}])) }}\n")
 }
 
+/// `n` keyed map insertions then one lookup: exercises map construction and
+/// hashing, a runtime workload distinct from list materialisation.
+fn gen_map_ops(n: usize) -> String {
+    let mut s = String::from("fn main() {\n let mut m = {\"seed\": 0}\n");
+    for i in 0..n {
+        let _ = writeln!(s, " m[\"k{i}\"] = {i}");
+    }
+    s.push_str(" print(len(m))\n}\n");
+    s
+}
+
+/// A chain of `n` top-level function calls: exercises call dispatch, frames,
+/// and closures through the interpreter.
+fn gen_calls(n: usize) -> String {
+    let mut s =
+        String::from("fn inc(x: int) -> int { return x + 1 }\nfn main() {\n let mut x = 0\n");
+    for _ in 0..n {
+        s.push_str(" x = inc(x)\n");
+    }
+    s.push_str(" print(x)\n}\n");
+    s
+}
+
+/// A fold over `n` characters of a string: exercises string iteration and
+/// byte handling.
+fn gen_string_walk(n: usize) -> String {
+    format!(
+        "fn main() {{\n let s = \"{}\"\n let mut i = 0\n let mut acc = 0\n while i < len(s) {{\n acc = acc + 1\n i = i + 1\n }}\n print(acc)\n}}\n",
+        "a".repeat(n)
+    )
+}
+
 /// A single string literal of `n` characters (red-team F3 regression shape).
 fn gen_long_string(n: usize) -> String {
     format!("let s = \"{}\"\n", "a".repeat(n))
@@ -251,6 +283,42 @@ fn runtime_list_materialisation_scales_subquadratically() {
             let _ = run_source(&src, "<bench>").unwrap();
         },
         2_000,
+    );
+}
+
+#[test]
+fn runtime_map_ops_scale_subquadratically() {
+    assert_subquadratic(
+        "run(map_ops)",
+        |n| {
+            let src = gen_map_ops(n);
+            let _ = run_source(&src, "<bench>").unwrap();
+        },
+        2_000,
+    );
+}
+
+#[test]
+fn runtime_function_calls_scale_subquadratically() {
+    assert_subquadratic(
+        "run(calls)",
+        |n| {
+            let src = gen_calls(n);
+            let _ = run_source(&src, "<bench>").unwrap();
+        },
+        4_000,
+    );
+}
+
+#[test]
+fn runtime_string_walk_scales_subquadratically() {
+    assert_subquadratic(
+        "run(string_walk)",
+        |n| {
+            let src = gen_string_walk(n);
+            let _ = run_source(&src, "<bench>").unwrap();
+        },
+        20_000,
     );
 }
 
