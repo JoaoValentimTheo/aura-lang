@@ -20,6 +20,14 @@ is.
 
 - The semantic **AST nesting limit is 256 levels** (expressions, statements,
   types, and modules), reported as `E1015` on every substrate.
+- **WebAssembly call depth (open defect, B-1, present in released `0.2.1`):**
+  native execution enforces the 512-frame call limit and reports `E4011`. In
+  the browser, execution runs inline on the JavaScript engine stack, and a
+  mainstream recursive program can exhaust that engine stack below 512 frames;
+  the Playground then reports `E4999: Maximum call stack size exceeded` (a
+  Worker error) instead of `E4011`. The 512-frame contract itself is unchanged
+  and native is unaffected. Fixes ship as a new version; released runtime
+  artifacts are immutable (see [Resource limits](/docs/reference-limits/)).
 - **Integers are 64-bit.** Arithmetic overflow is a diagnostic (`E4013`), not
   wraparound.
 - **Ranges materialize to at most 10,000,000 elements** (`E4013`).
