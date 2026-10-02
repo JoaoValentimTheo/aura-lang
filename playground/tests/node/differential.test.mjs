@@ -744,38 +744,57 @@ if (postError.text === norm({ status: "ok", stdout: "3\n", result: null, diagnos
 // A recursive function with an `else` block is the common shape, and it costs
 // more WebAssembly engine-stack frames per Aura call than the thin corpus
 // shapes (`tests/corpus/call-frames/*`, which reach the 512-frame language
-// limit). On the committed 0.2.1 artifact this shape traps (RangeError) around
-// depth 397 — below the language limit — and in Chromium around depth 196; see
-// `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (OPEN decision). This guard pins the
-// working region at a depth that is comfortable on every substrate (150), so a
-// change that reduces engine-stack headroom further fails here without
-// encoding the pending decision.
+// limit). On the committed 0.2.1 artifact the mainstream shapes trap
+// (RangeError) below the language limit — measured first-trap depths on Node
+// 24, fresh instance: else 387, match 459, closure 356, module 387, if-chain
+// 419 — and in the Playground's Web Worker as early as 196; see
+// `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (OPEN, remediation blocked). The
+// per-call engine-stack cost is shape-dependent, so this guard pins the
+// working region for every shape at a depth comfortable on every measured
+// substrate (150). It keeps a structured native/WASM agreement for each
+// control-flow family, so a change that erodes engine-stack headroom further
+// fails here without encoding the pending decision.
 {
   const depth = 150;
-  const src =
-    "fn count(n: int) -> int {\n" +
-    "  if n <= 0 {\n" +
-    "    return 0\n" +
-    "  } else {\n" +
-    "    return count(n - 1) + 1\n" +
-    "  }\n" +
-    "}\n" +
-    `fn main() { print(count(${depth})) }\n`;
-  const wasm = wasmResult(src);
-  const srcFile = join(dir, `recursion_else_${depth}.aura`);
-  writeFileSync(srcFile, src);
-  const native = JSON.parse(
-    execFileSync(nativeBin, [srcFile, optionsFile], { encoding: "utf8" }).trim(),
-  );
-  const expected = norm({ status: "ok", stdout: `${depth}\n`, result: null, diagnostics: [] });
-  if (wasm.text === expected && norm(native) === expected) {
-    passed += 1;
-  } else {
-    failed += 1;
-    console.error(
-      `FAIL mainstream-shape recursion parity at depth ${depth}\n  wasm:   ${wasm.text}\n  native: ${norm(native)}`,
+  const shapes = {
+    "else-block": `fn count(n: int) -> int {\n  if n <= 0 {\n    return 0\n  } else {\n    return count(n - 1) + 1\n  }\n}\nfn main() { print(count(${depth})) }\n`,
+    "match-arm": `fn count(n: int) -> int {\n  match n {\n    0 -> 0,\n    _ -> count(n - 1) + 1\n  }\n}\nfn main() { print(count(${depth})) }\n`,
+    closure: `fn main() {\n  let go = (self_rec, n: int) -> { if n <= 0 { return 0 } else { return self_rec(self_rec, n - 1) + 1 } }\n  print(go(go, ${depth}))\n}\n`,
+    "in-source module": `module inner {\n  pub fn count(n: int) -> int {\n    if n <= 0 {\n      return 0\n    } else {\n      return count(n - 1) + 1\n    }\n  }\n}\nfn main() { print(inner::count(${depth})) }\n`,
+    method: `struct C { }\nimpl C {\n  fn count(self, n: int) -> int {\n    if n <= 0 { return 0 }\n    return self.count(n - 1) + 1\n  }\n}\nfn main() { let c = C { }\n print(c.count(${depth})) }\n`,
+    mutual: `fn even(n) { if n == 0 { return 1 }\n return odd(n - 1) }\nfn odd(n) { if n == 0 { return 0 }\n return even(n - 1) }\nfn main() { print(even(${depth})) }\n`,
+    "for-body": `fn count(n: int) -> int {\n  if n <= 0 { return 0 }\n  let mut r = 0\n  for i in [0] { r = count(n - 1) + 1 }\n  return r\n}\nfn main() { print(count(${depth})) }\n`,
+    "if-else chain": `fn f(n: int) -> int {\n  if n <= 0 { return 0 }\n  if n % 2 == 0 {\n    return f(n - 1) + 1\n  } else {\n    return f(n - 1) + 1\n  }\n}\nfn main() { print(f(${depth})) }\n`,
+  };
+  let shapeFailures = 0;
+  for (const [name, src] of Object.entries(shapes)) {
+    const wasm = wasmResult(src);
+    const srcFile = join(dir, `recursion_${name.replace(/[^a-z0-9]/gi, "_")}_${depth}.aura`);
+    writeFileSync(srcFile, src);
+    const native = JSON.parse(
+      execFileSync(nativeBin, [srcFile, optionsFile], { encoding: "utf8" }).trim(),
     );
+    // The mutual shape alternates parity by depth; the case count is the
+    // observable, the same on both substrates.
+    const expectedStdout = `${depth % 2 === 0 && name === "mutual" ? 1 : depth}\n`;
+    const expected = norm({
+      status: "ok",
+      stdout: expectedStdout,
+      result: null,
+      diagnostics: [],
+    });
+    if (wasm.text === expected && norm(native) === expected) {
+      passed += 1;
+    } else {
+      failed += 1;
+      shapeFailures += 1;
+      console.error(
+        `FAIL ${name} recursion parity at depth ${depth}\n  wasm:   ${wasm.text}\n  native: ${norm(native)}`,
+      );
+    }
   }
+  if (shapeFailures === 0) passed += 1;
+  else failed += 1;
 }
 
 // ---------------------------------------------------------------------------

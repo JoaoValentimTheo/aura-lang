@@ -508,15 +508,16 @@ async function runAndWait(page, timeout = 15000) {
 
 // --- 9. mainstream-shape recursion parity guard (BREAK-0.2.1 / B-1) --------
 {
-  // The browser is the substrate with the least engine-stack headroom. A
-  // recursive `else`-block function traps here around depth 196 on the
-  // committed 0.2.1 artifact (native accepts the same program well past it),
-  // and the Worker surfaces the trap as `E4999 … Maximum call stack size
-  // exceeded` instead of `E4011`. See
-  // `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (OPEN decision). This guard pins
-  // the working region at a depth comfortably below the browser floor (150)
-  // and requires the structured, successful result — so any change that erodes
-  // engine-stack headroom fails the browser suite now.
+  // The Playground executes in a fresh Web Worker, whose engine stack is
+  // smaller than the page's main thread. On the committed 0.2.1 artifact a
+  // recursive `else`-block function traps there at depth 196 (native accepts
+  // the same program up to the 512-frame language limit), and the Worker
+  // surfaces the trap as `E4999 … Maximum call stack size exceeded` instead of
+  // `E4011`. See `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (OPEN, remediation
+  // blocked). This guard pins the working region at a depth comfortably below
+  // the measured browser floor (150) and requires the structured, successful
+  // result — so any change that erodes engine-stack headroom fails the
+  // browser suite now.
   const { page, errors } = await newPage();
   await setSource(
     page,
@@ -533,6 +534,29 @@ async function runAndWait(page, timeout = 15000) {
   check("browser recursion depth 150 succeeds", r.status === "ok", JSON.stringify(r));
   check("browser recursion depth 150 stdout", r.stdout === "150\n", JSON.stringify(r.stdout));
   check("no page errors in recursion guard", errors.length === 0, errors.join("; "));
+  await page.close();
+}
+
+// --- 10. Worker-path language-limit boundary (BREAK-0.2.1 / B-1) ----------
+{
+  // Secondary, substrate-pinning assertion for B-1: the thinnest possible
+  // recursive body (`fn f() { f() }`, no local state, no arithmetic) must
+  // reach the *language* boundary in the production Worker and produce a
+  // structured `E4011` — the one shape that does today. That anchors the
+  // upper edge of the working region: the guard in section 9 pins depth 150,
+  // and this pins the fact that the language limit itself is still reachable
+  // on the Worker path. The mainstream finite shapes (else/match/etc.) do NOT
+  // reach it there; that gap is the open B-1 defect, not an accepted result,
+  // so it is deliberately not asserted here.
+  const { page, errors } = await newPage();
+  await setSource(page, "fn f() { f() }\nfn main() { f() }");
+  const r = await runAndWait(page);
+  check(
+    "worker recursion limit reports structured E4011",
+    r.status === "diagnostic" && /E4011/.test(JSON.stringify(r.diagnostics)),
+    JSON.stringify(r),
+  );
+  check("no page errors in worker boundary probe", errors.length === 0, errors.join("; "));
   await page.close();
 }
 
