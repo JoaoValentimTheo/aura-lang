@@ -23,9 +23,9 @@ continuing substantial work.
 Authoritative current value is `git rev-parse HEAD`, also printed by
 `scripts/agent-state.sh`; a tracked state file cannot safely hardcode its own
 commit SHA. At stabilization intake (2026-10-02) the committed and pushed HEAD
-is `3f5f8702` (`fix(release): preflight must not require the tag to be free
+was `3f5f8702` (`fix(release): preflight must not require the tag to be free
 on-tag`), which is also the dereferenced `v0.2.1` tag commit. The stabilization
-work sits in six local, unpushed commits on top of it.
+work and the B-1 correction pass sit in local, unpushed commits on top of it.
 
 ## Remote HEAD
 
@@ -53,7 +53,8 @@ has been pushed by this program.
 
 ## Current Track
 
-POST-v0.2.1 STABILIZATION (stages 0–8 complete locally; B-1 decision open)
+POST-v0.2.1 STABILIZATION + B-1 CORRECTION PASS (B-1 reclassified as
+implementation nonconformance; remediation blocked pending human decision)
 
 ## Phase Namespace
 
@@ -125,20 +126,37 @@ the website and Pages CI jobs). Stages 4–8 attacked the language, modules, CLI
 REPL, CPython, WASM, and Playground surfaces; ran native/WASM parity,
 contract-sync, hardening, and performance checks.
 
-- **B-1 (OPEN, decision required) — WASM call-frame trap below the 512-frame
-  language limit.** A legal mainstream recursive shape (`else`-block recursion)
-  exhausts the WebAssembly engine stack at depth ~397 in Node and ~196 in
-  Chromium and traps instead of reporting `E4011`; native is correct at the
-  full limit. Present in every released WASM artifact (`0.0.2`, `0.2.0`,
-  `0.2.1`); `src/` and `playground/runtime/src/` are byte-identical to the
-  `v0.2.1` tag, so this is not a post-0.2.1 regression. It is a conflict
-  between `LANGUAGE_SPEC` §31.3 and §31.5 and therefore a specification
-  decision (substrate-calibrated cap vs iterative interpreter), not a routine
-  fix. Decision package: `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (OPEN).
-  Safe-depth (150) native/WASM parity guards were added to
-  `playground/tests/node/differential.test.mjs` and
-  `playground/tests/node/browser.test.mjs`; the guards pin the working region
-  without encoding the undecided cap.
+- **B-1 (OPEN — IMPLEMENTATION NONCONFORMANCE, remediation blocked) — WASM
+  call-frame trap below the 512-frame language limit.** Corrected
+  classification: this is an implementation defect, not a conflict between
+  `LANGUAGE_SPEC` §31.3 and §31.5. Those rules reinforce each other: 512 user
+  call frames is a language rule "not a host limitation", and §31.5 forbids
+  host stack overflow. On WebAssembly, mainstream recursive shapes exhaust the
+  JavaScript engine stack before the interpreter's `depth` counter reaches
+  `MAX_CALL_FRAMES = 512` and the guest traps instead of reporting `E4011`.
+  Fresh-instance first-trap depths (Node 24 / Chromium 153 main thread /
+  Chromium production Worker): else 387 / none / 196; match 459 / none / 233;
+  closure 356; module 387; if-chain 419; thin shapes reach 510/511 except the
+  Worker thin shape (360). The engine stack, not the 4 MiB wasm shadow stack,
+  is binding (16 MiB control build: identical; `node --stack-size=4000`:
+  full boundary). Present in every released WASM artifact (`0.0.2` 317,
+  `0.2.0` 389, `0.2.1` 387 for the else shape) and in HEAD; not a post-0.2.1
+  regression. A second trap on the same instance permanently corrupts it
+  (`memory access out of bounds`). The contract-preserving remedy is an
+  engine-stack-independent evaluator (explicit frame/continuation stack) — a
+  runtime-architecture program, not a stabilization fix; any substrate-
+  calibrated cap would change the released semantics, which this pass must
+  not do automatically. Decision package:
+  `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (rewritten this pass, OPEN —
+  Remedies blocked, Options A/B/C).
+  Coverage added: six native boundary shapes exact at 510/511 in
+  `tests/corpus/call-frames/` (else, match, method, closure, module, try);
+  cross-substrate safe-depth (150) shape matrix in
+  `playground/tests/node/differential.test.mjs`; Worker-path structured
+  `E4011` assertion in `playground/tests/node/browser.test.mjs`. WASM
+  limit−1/limit/limit+1 assertions are deliberately absent until remediation:
+  they cannot pass while the defect exists, and encoding it as an expected
+  failure is not acceptable coverage.
 - All other stabilization findings classified as NON-ISSUE, EXPECTED
   DOCUMENTED LIMITATION (eager filesystem-module discovery of malformed
   reachable siblings; case-insensitive filesystem artifacts), or HISTORICAL
@@ -156,16 +174,18 @@ browser persistence, LSP, formatter, async, and macros remain deferred.
 
 ## Next Exact Action
 
-HUMAN REVIEW OF POST-v0.2.1 STABILIZATION STACK BEFORE PUSH.
+1. HUMAN REVIEW OF POST-v0.2.1 STABILIZATION STACK BEFORE PUSH.
+2. B-1 DECISION: choose Option A/B/C in
+   `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (remediation is blocked; the
+   contract-preserving fix is an engine-independent evaluator program).
 
 The `0.2.1` release itself is done and unchanged. What remains is human review
-of the six local, unpushed stabilization commits (state docs + website `0.2.1`
-alignment + release-version drift guard + B-1 decision package and safe-depth
-guards), then an explicit decision whether to push them. Separately, the B-1
-decision (Option A/B/C in `docs/WASM_CALL_FRAME_LIMIT_DECISION.md`) needs a
-human/Council choice before any runtime behavior changes. Do not push, deploy,
-tag, change runtime behavior, or start a new development program without
-authorization.
+of the local, unpushed stabilization commits (state docs + website `0.2.1`
+alignment + release-version drift guard + B-1 correction pass: reclassified
+finding, native boundary corpus, cross-substrate shape matrix, Worker boundary
+assertion), then an explicit decision whether to push them. Do not push,
+deploy, tag, change runtime behavior, or start a new development program
+without authorization.
 
 ## Release Immutability
 

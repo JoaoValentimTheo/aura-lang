@@ -13,7 +13,7 @@ never by schedule. Status legend: **GREEN** (ready), **YELLOW** (gaps remain),
 | MODULES | GREEN | providers parity; eager discovery defined; visibility/collision tested |
 | CLI | GREEN | `tests/cli.rs`; exit codes; paths; stdin |
 | REPL | GREEN | persistence + rollback; `tests/repl.rs` |
-| WASM | YELLOW | 0 imports; Host ABI 1; differential 220/220; module/alias depth unified with native. **Open B-1:** a mainstream recursive shape traps on the engine stack below the 512-frame limit (Node ~397, Chromium ~196) instead of `E4011` — `LANGUAGE_SPEC` §31.5; every released WASM artifact (0.0.2, 0.2.0, 0.2.1) is affected; decision package `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (OPEN) |
+| WASM | YELLOW | 0 imports; Host ABI 1; differential 228/228; module/alias depth unified with native. **Open B-1 (implementation nonconformance):** mainstream recursive shapes exhaust the JavaScript engine stack below the 512-frame language limit and trap instead of `E4011` — `LANGUAGE_SPEC` §31.3 is a language rule and §31.5 forbids host failures; the two reinforce each other (corrected classification). Fresh-instance first-trap depths: else 387 (Node) / 196 (production Worker), match 459/233, closure 356, module 387, if-chain 419; thin shapes reach the boundary except in the Worker (360). Binding resource is the engine stack, not the 4 MiB guest stack (16 MiB control identical; `--stack-size=4000` restores the limit). A second trap corrupts the instance. Every released WASM artifact is affected (`0.0.2` 317, `0.2.0` 389, `0.2.1` 387); native conforms. Remediation blocked: the contract-preserving fix is an engine-independent evaluator (runtime-architecture program), and a substrate-calibrated cap would be a semantics change. `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (rewritten, OPEN, Options A/B/C) |
 | PLAYGROUND | GREEN | FSM-P6 suites green; multi-file project state + tabs; capability detection; released `0.2.1` runtime is the selector default |
 | CPYTHON | GREEN | normative conversion table; interop matrix + edge cases + a generated conversion matrix (no host failure); call-site source spans tested; TESTED tiers (ADR-0003): Linux 3.10–3.13, macOS 3.12, Windows 3.12 (all CI legs blocking); lifetime/GIL reviewed (dimension M); security boundary explicit (arbitrary CPython authority, no sandbox claimed) |
 | SECURITY | GREEN | threat model / trust boundaries / architecture / incident response current; red-team campaign + re-verification recorded, all CRITICAL/HIGH fixed and guarded; deep fuzz campaign clean; no `unsafe` and Miri is a blocking CI gate; cargo audit reviewed; WASM zero-import policy verified; CPython arbitrary-authority boundary documented; release pipeline reviewed; SBOM + signed SLSA provenance (release signing is a supply-chain extra, tracked TD-03) |
@@ -40,18 +40,24 @@ never by schedule. Status legend: **GREEN** (ready), **YELLOW** (gaps remain),
    implementations are committed, pushed, released in `v0.2.1`, and CI-green.
    The `v0.2.1` release train is closed (published 2026-10-01; 27/27 check-runs
    green; GitHub Pages deploy green).
-3. **WASM (B-1, YELLOW):** a legal mainstream recursive program traps on the
-   WebAssembly engine stack below the 512-frame language limit instead of
-   reporting `E4011` (§31.5). Present in every released WASM artifact and in
-   HEAD. `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (OPEN) records the
-   reproduction, root cause, and options; the fix is a specification decision
-   (substrate-calibrated call-frame limit vs an iterative interpreter). Not a
+3. **WASM (B-1, YELLOW — implementation nonconformance, remediation
+   blocked):** mainstream recursive programs exhaust the JavaScript engine
+   stack below the 512-frame language limit instead of reporting `E4011`
+   (§31.3 is a language rule; §31.5 forbids host failures — they reinforce
+   each other, so this is an implementation defect, not a spec conflict).
+   Present in every released WASM artifact and in HEAD; native conforms. The
+   contract-preserving remedy is an engine-stack-independent evaluator (an
+   explicit frame/continuation stack) — a runtime-architecture program; any
+   substrate-calibrated cap would change released semantics and is not
+   authorized automatically. `docs/WASM_CALL_FRAME_LIMIT_DECISION.md`
+   (rewritten this pass; OPEN — Options A/B/C, recommendation B). Not a
    `v0.2.1` regression and not a release-immutability issue.
 
 ## Notes
 
-- One unresolved correctness blocker is known: **B-1** (WASM call-frame trap
-  below the language limit; `docs/WASM_CALL_FRAME_LIMIT_DECISION.md`, OPEN).
+- One unresolved correctness blocker is known: **B-1** (WASM call-frame
+  implementation nonconformance: the engine stack traps below the language
+  limit; `docs/WASM_CALL_FRAME_LIMIT_DECISION.md`, OPEN, remediation blocked).
   No unresolved CRITICAL/HIGH *security* blocker is known.
 - Frozen `0.0.2`/`0.2.0`/`0.2.1` artifacts verified byte-identical at intake;
   the published `0.2.1` release asset matches the in-repository artifact.

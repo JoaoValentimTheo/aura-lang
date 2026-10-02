@@ -1584,3 +1584,68 @@ release-version drift guard; frozen artifacts byte-identical.
 Next exact action: **HUMAN REVIEW OF THE LOCAL STABILIZATION STACK BEFORE
 PUSH**, plus a decision on B-1 (Option A/B/C). Nothing was pushed, tagged,
 deployed, or released; `v0.2.1` is unchanged.
+
+---
+
+## B-1 CORRECTION PASS — 2026-10-02
+
+A dedicated correction pass revisited B-1 (WASM call-frame trap). The prior
+classification — "a conflict between `LANGUAGE_SPEC` §31.3 and §31.5 that
+needs a specification decision" — was **wrong**. §31.3 states the 512-frame
+limit as a language rule, "not a host limitation"; §31.5 forbids host stack
+overflow. The rules reinforce each other, so a well-formed program within the
+frame contract that traps is an **implementation nonconformance**, not a spec
+conflict. The released contract (512 user frames including `main`; builtins
+not counted; callbacks, closures, and methods counted; frame 513 is `E4011`;
+substrate-independent) is preserved unchanged.
+
+Reproduction was redone first-hand with fresh instances per probe:
+
+- Native (release and debug CLI): every tested shape conforms — `count(510)`
+  accepted (512 frames), `count(511)` `E4011` — for else, match, method,
+  closure, module, try/catch, mutual, `for`-body, and if-chain shapes.
+- Node 24 first-trap depths (released `0.2.1`, fresh instance): else 387,
+  match 459, closure 356, module 387, if-chain 419; thin shapes reach
+  510/511. Thresholds shift with JIT/scan state (same shape traps at 435 when
+  scanned from depth 300 in-process).
+- Chromium 153 main thread: reaches 510/511. The **production Playground
+  Worker** (the real path) traps at else 196, match 233, thin 360; only the
+  thinnest `fn f() { f() }` reaches a structured `E4011` there.
+- Causality: `node --stack-size=500 → 193`, default `984 → 387`,
+  `1200 → 473`, `4000 → full boundary` (~2.5 KB V8 stack per Aura call); a
+  16 MiB linker-stack build behaves identically, so the engine stack, not the
+  wasm shadow stack, is binding.
+- Cross-release (else shape, Node): `0.0.2` traps at 317, `0.2.0` at 389 —
+  the defect predates `0.2.1`.
+- Recovery: one trap recovers; two consecutive traps permanently corrupt the
+  instance (`memory access out of bounds`), 5/5 reproducible. The Playground's
+  fresh-Worker-per-run model contains this; instance-reusing embedders are
+  exposed.
+
+Remediation options were evaluated. The only contract-preserving remedy is an
+engine-stack-independent evaluator (an explicit frame/continuation stack for
+the recursive `src/run/mod.rs` core: 2,303 lines, 51 recursive `eval` sites,
+`Ctl` propagation, `try`/`finally`, closures, methods, source provenance, and
+builtin higher-order callbacks that re-enter through `call_value_pub`) — a
+runtime-architecture program, not a stabilization fix, and one that touches
+observable behavior. Substrate-calibrated caps (A/C) would change the released
+semantics and cannot be proven safe across unmeasured engines. Per the
+mandate, semantics were not changed automatically: B-1 is recorded as
+**IMPLEMENTATION REMEDIATION BLOCKED** with a rewritten decision package
+(`docs/WASM_CALL_FRAME_LIMIT_DECISION.md`, OPEN, options B (recommended), A,
+C). No runtime behavior changed.
+
+Coverage added (all green): twelve native boundary fixtures for six shapes
+(`tests/corpus/call-frames/{else,match,method,closure,module,try}_{510,511}
+.aura`, exact 510 accepted / 511 `E4011`), a cross-substrate safe-depth (150)
+shape matrix in `playground/tests/node/differential.test.mjs`, and a
+Worker-path structured-`E4011` assertion in
+`playground/tests/node/browser.test.mjs`. WASM limit−1/limit/limit+1
+assertions remain deliberately absent until remediation — they cannot pass
+while the defect exists, and an expected failure would encode the defect as
+accepted behavior.
+
+Next exact action: **HUMAN REVIEW OF THE LOCAL STABILIZATION + B-1 CORRECTION
+STACK BEFORE PUSH**, and a decision on B-1 Option A/B/C. Nothing was pushed,
+tagged, deployed, or released; `v0.2.1` is unchanged and still contains the
+defect.
