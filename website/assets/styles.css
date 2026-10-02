@@ -1234,6 +1234,62 @@ table.data tr:last-child td {
 .pg-actions {
   display: flex;
   gap: var(--space-2);
+  margin-left: auto;
+}
+
+/* The file strip scrolls horizontally rather than wrapping, so a project with
+   many files never pushes the editor actions out of reach. */
+.file-tabs {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.file-actions {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.file-actions .btn {
+  font-size: var(--type-label-small);
+  padding: 0 var(--space-2);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.file-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.file-tab__entry {
+  color: var(--md-primary);
+  font-size: var(--type-label-small);
+}
+
+.file-tab[aria-selected="true"] .file-tab__entry {
+  color: var(--md-on-primary-container);
+}
+
+.project-note {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--type-label-medium);
+  color: var(--md-on-surface-variant);
+  background: var(--md-surface-container-high);
+  border-radius: var(--shape-sm);
+}
+
+.project-note[hidden] {
+  display: none;
 }
 
 /* explorer items are buttons rendered by the controller */

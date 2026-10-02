@@ -31,7 +31,7 @@ export const playgroundPage = {
   <div class="container">
     ${callout(
       "info",
-      "<p>The <strong>Runtime</strong> selector chooses a real, immutable artifact with a recorded hash, not a label. The <strong>development runtime</strong> (<code>0.0.2-dev.30</code>) exercises the current language — struct methods, traits, method overloading, generics, generic map keys, and the finalized OOP model — while the published <code>0.0.2</code> release remains frozen and selectable. Filesystem, clock, and sleep are unavailable here and report <code>E5002</code>; standard input and arguments work.</p>",
+      "<p>The <strong>Runtime</strong> selector chooses a real, immutable artifact with a recorded hash, not a label. The released <code>0.2.1</code> runtime (the default) exercises the current language — modules, struct methods, traits, method overloading, generics, generic map keys, and the finalized OOP model — while the previous <code>0.2.0</code> and historical <code>0.0.2</code> releases remain frozen and selectable. The browser host has <strong>no host filesystem</strong>: filesystem, clock, and sleep report <code>E5002</code>. Standard input, arguments, and <strong>virtual multi-file projects</strong> work (the files live in your browser session, not on a disk).</p>",
     )}
   </div>
 </section>
@@ -47,7 +47,24 @@ export const playgroundPage = {
 
   <section class="pg-pane pg-pane--editor" aria-label="Editor">
     <div class="pg-editor__tabs">
-      <span class="tab tab--active">main.aura</span>
+      <div id="file-tabs" class="file-tabs" role="tablist" aria-label="Aura source files"></div>
+      <div class="file-actions">
+        <button id="file-add" class="btn btn--text btn--small" type="button" title="Add a source file">
+          Add file
+        </button>
+        <button id="file-rename" class="btn btn--text btn--small" type="button" title="Rename the active file">
+          Rename
+        </button>
+        <button id="file-entry" class="btn btn--text btn--small" type="button" title="Make the active file the entry point">
+          Set entry
+        </button>
+        <button id="file-delete" class="btn btn--text btn--small" type="button" title="Delete the active file">
+          Delete
+        </button>
+        <button id="project-reset" class="btn btn--text btn--small" type="button" title="Reset the project">
+          Reset
+        </button>
+      </div>
       <div class="pg-actions">
         <button id="run" class="btn btn--filled btn--small" type="button" title="Ctrl/Cmd + Enter">
           Run
@@ -55,6 +72,7 @@ export const playgroundPage = {
         <button id="stop" class="btn btn--outlined btn--small" type="button" disabled>Stop</button>
       </div>
     </div>
+    <div id="project-note" class="project-note" hidden></div>
     <div class="pg-versions">
       <label for="version">Runtime</label>
       <select id="version" aria-label="Aura runtime version"></select>

@@ -20,16 +20,22 @@ const PHASES = [
     body: "The completed Aura Core: generic map keys and ordered keys, <code>map.items()</code>, list and map comprehensions, the Core separator/numeric/f-string rules, completed in-source module semantics (<code>pub</code>, <code>pub use</code>, aliases), collection type coherence, and CLI/REPL and Playground completion, with Native/WASM parity.",
   },
   {
+    tag: "Released",
+    kind: "success",
+    title: "0.2.1 · Filesystem modules and multi-file Playground",
+    body: "Filesystem-backed module acquisition for the CLI: a sibling <code>math.aura</code> or a directory <code>pkg/mod.aura</code> becomes a logical module through the same resolver as in-source modules (dual ownership is <code>E2020</code>). The Playground gains virtual multi-file projects over the additive Host ABI 1 <code>aura_project_*</code> transport. The language tightens too: builtin names are reserved as value bindings (<code>E1009</code>) and structural type nesting is bounded at 256 on every substrate (ADR-0004).",
+  },
+  {
     tag: "Delivered",
     kind: "success",
     title: "OOP V1 · Struct methods",
-    body: "Behavior attached to structs with <code>impl</code> blocks and an explicit <code>self</code> receiver, plus composition. Structs remain data, methods remain functions, and there are no classes, inheritance, or dynamic dispatch. Available in the development runtime.",
+    body: "Behavior attached to structs with <code>impl</code> blocks and an explicit <code>self</code> receiver, plus composition. Structs remain data, methods remain functions, and there are no classes, inheritance, or dynamic dispatch.",
   },
   {
     tag: "Delivered",
     kind: "success",
     title: "Traits · static behavioral contracts",
-    body: "A <code>trait</code> names a set of method signatures a struct agrees to implement with <code>impl Trait for Struct</code>. Traits add no value type and no dynamic dispatch: calls resolve statically by nominal type. Available in the development runtime.",
+    body: "A <code>trait</code> names a set of method signatures a struct agrees to implement with <code>impl Trait for Struct</code>. Traits add no value type and no dynamic dispatch: calls resolve statically by nominal type.",
   },
   {
     tag: "Delivered",
@@ -68,16 +74,16 @@ const PHASES = [
     body: "Static, erased, nominal parametric polymorphism over the OOP model: generic functions, structs, methods, traits, and aliases, with trait bounds and inference composed into the single overload resolver. Collections stay structural (<code>[T]</code>, <code>{K: V}</code>, where a key must be key-capable); a type parameter is a compile-time placeholder erased before execution.",
   },
   {
-    tag: "Next",
-    kind: "planned",
-    title: "Filesystem module system",
-    body: "The next major phase: a project layout with <code>mod.aura</code> export surfaces, directories as module hierarchies, and <code>pub</code>/<code>use</code> over files, generalising the in-source module model.",
+    tag: "Delivered",
+    kind: "success",
+    title: "Hardening and conformance",
+    body: "Conformance suites, differential testing, and fuzzing, plus the train-1 red-team campaign: every finding was fixed with regression coverage, and the language behaves identically across every substrate.",
   },
   {
-    tag: "Planned",
+    tag: "Pending human decision",
     kind: "planned",
-    title: "Hardening and conformance",
-    body: "Conformance suites, differential testing, and fuzzing. The goal is confidence that the language behaves identically across every substrate.",
+    title: "Next major direction",
+    body: "The filesystem-module program (FSM-P1…P6) is delivered and released. No successor engineering program has been selected; nothing is started by assumption. The explicitly deferred candidates include package management, browser persistence, an LSP, a formatter, async, and macros.",
   },
   {
     tag: "Long-term",
@@ -93,7 +99,7 @@ export const roadmapPage = {
   path: "roadmap/",
   activeKey: "roadmap",
   description:
-    "The Aura roadmap: delivered infrastructure (0.0.1, 0.0.2), the completed Aura Core (0.2.0: generic maps, items(), comprehensions, syntax rules, modules, generics), and the next phase — the filesystem module system.",
+    "The Aura roadmap: delivered infrastructure (0.0.1, 0.0.2), the completed Aura Core (0.2.0), the released 0.2.1 (filesystem modules and the multi-file Playground), and the next direction, which is not yet selected.",
   async render(base) {
     const items = PHASES.map(
       (p) => `<div class="card card--elevated">
@@ -105,13 +111,13 @@ export const roadmapPage = {
     return `${pageHead({
       eyebrow: "Roadmap",
       title: "Where Aura is going",
-      lede: "Aura is built in deliberate stages. Infrastructure and portability came first; the language foundation is now synchronized and frozen before the next feature is added.",
+      lede: "Aura is built in deliberate stages. Infrastructure and portability came first; the language core and the filesystem-module program are now delivered and released as 0.2.1.",
     })}
 <section class="section">
   <div class="container">
     ${callout(
       "info",
-      "<p>Items marked <strong>Planned</strong> or <strong>Long-term</strong> are not available today. They are listed so the project's direction is honest and visible.</p>",
+      "<p>Items marked <strong>Pending human decision</strong> or <strong>Long-term</strong> are not available today and are not started. They are listed so the project's direction is honest and visible.</p>",
     )}
     <div class="grid grid--2" style="margin-top:var(--space-6)">${items}</div>
     <div class="divider"></div>
@@ -123,13 +129,14 @@ export const roadmapPage = {
       artifacts before it grows its syntax.</p>
       <p>After 0.0.2, development moved through a deliberate maturation
       cycle — syntax refinement, semantic consistency, diagnostics, and
-      conformance testing — which is now complete. OOP V1 (struct methods) and
+      conformance testing — which is complete. OOP V1 (struct methods) and
       OOP V2 (traits) are delivered, and the language foundation (bindings,
       scopes, mutation, operators, f-strings) is synchronized, stabilised, and
       frozen. Function and method overloading, generics, and the completed Core
       collections (generic maps, <code>items()</code>, comprehensions) are
-      implemented and released as <strong>0.2.0</strong>. The filesystem module
-      system is the next phase.</p>
+      implemented and released as <strong>0.2.0</strong>. The filesystem-module
+      program (FSM-P1…P6) shipped in <strong>0.2.1</strong>. The next major
+      direction has not yet been selected.</p>
       <a class="eyebrow-link" href="${url("releases/", base)}">See releases →</a>
     </div>
   </div>

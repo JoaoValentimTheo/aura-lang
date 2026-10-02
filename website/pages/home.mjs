@@ -1,4 +1,5 @@
 import { site } from "../site.config.mjs";
+import { examples } from "../examples/examples.mjs";
 import {
   codeBlock,
   feature,
@@ -216,9 +217,11 @@ fn main() {
           <h2>What exists today.</h2>
           <p class="section__lede">Aura ${site.releaseVersion} is the current public
           release, implementing the <strong>${site.languageVersion}</strong>
-          language. It completes the language core: generic maps and ordered keys,
-          <code>items()</code>, list and map comprehensions, the Core syntax rules,
-          and in-source module semantics.</p>
+          language. It completes the language core (generic maps and ordered keys,
+          <code>items()</code>, comprehensions, the Core syntax rules, modules)
+          and adds filesystem-backed module acquisition for the CLI, the
+          multi-file Playground, builtin-name reservation (<code>E1009</code>),
+          and a unified type-nesting limit.</p>
         </div>
         ${statusList([
           ["Lexer, parser, AST", "Implemented", "success"],
@@ -232,6 +235,8 @@ fn main() {
           ["Traits, shadowing, foundation, overloading", "Delivered", "success"],
           ["OOP completion (four pillars, no inheritance)", "Delivered", "success"],
           ["In-source modules and visibility (pub/use)", "Delivered", "success"],
+          ["Filesystem modules for the CLI", "Delivered", "success"],
+          ["Multi-file Playground projects", "Delivered", "success"],
           ["Generics and trait bounds", "Delivered", "success"],
           ["Python/PyO3", "Later", "planned"],
         ])}
@@ -250,7 +255,7 @@ fn main() {
           </a>
           <a class="card" href="${url("examples/", base)}" style="display:block;text-decoration:none">
             <h3>Examples</h3>
-            <p>${16} runnable programs — each validated against the real runtime — with
+            <p>${examples.length} runnable programs — each validated against the real runtime — with
             copy and Run-in-Playground actions.</p>
             <span class="eyebrow-link">Browse examples ${icon("arrow")}</span>
           </a>
@@ -272,8 +277,8 @@ fn main() {
       <span class="section__eyebrow">Roadmap</span>
       <h2>Where Aura is going.</h2>
       <p class="section__lede">With ${site.releaseVersion} released, the language
-      core is frozen. The next phase is the filesystem module system, built on
-      the same resolver.</p>
+      core and the filesystem-module program (FSM-P1…P6) are delivered. The
+      next major engineering direction has not yet been selected.</p>
     </div>
     ${dataTable(
       ["Stage", "Focus", "Status"],
@@ -282,12 +287,14 @@ fn main() {
         ["0.0.1", "Scripting I/O, language core, native runtime", chip("Released", "success")],
         ["0.0.2", "WebAssembly, host boundary, Playground, website", chip("Released", "success")],
         ["0.2.0", "Core completion: generic maps, items(), comprehensions, syntax, modules", chip("Released", "success")],
+        ["0.2.1", "Filesystem modules, multi-file Playground, E1009, unified nesting limit", chip("Released", "success")],
         ["OOP V1", "Struct methods: <code>impl</code>, <code>self</code>, composition", chip("Delivered", "success")],
         ["OOP V2 & foundation", "Traits, shadowing, mutation, operators, f-strings, stability", chip("Delivered", "success")],
         ["Overloading", "Functions and methods by ordered input types", chip("Delivered", "success")],
         ["OOP completion", "Four pillars mapped to Aura; composition over inheritance", chip("Delivered", "success")],
-        ["Hardening", "Conformance, differential testing, fuzzing", chip("Planned", "planned")],
+        ["Hardening", "Conformance, differential testing, fuzzing", chip("Delivered", "success")],
         ["Generics", "Static, erased, nominal parametric polymorphism", chip("Delivered", "success")],
+        ["Next direction", "Not yet selected; no successor program is authorized", chip("Pending human decision", "planned")],
         ["Python / data", "PyO3 interop and the scientific ecosystem", chip("Long-term", "planned")],
       ],
     )}

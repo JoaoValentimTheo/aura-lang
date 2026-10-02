@@ -2,9 +2,36 @@
 
 A `module` is a **real access boundary**. Its items are private by default and
 exported with `pub`. A `::`-separated path or a `use` import reaches an
-exported name. Modules are **in-source** — declared in the same file, not on
-disk — which is what keeps Native and WebAssembly semantics identical, since
-the WebAssembly host has no filesystem.
+exported name. Modules are declared **in-source** (the same file) and, on
+native targets since `0.2.1`, also **filesystem-backed**: a sibling
+`math.aura` or a directory `pkg/mod.aura` becomes a logical child module
+resolved by the same canonical resolver. The WebAssembly host has **no host
+filesystem** — it reports `E5002` and supports virtual multi-file projects
+supplied by the page instead.
+
+## Filesystem-backed modules (native CLI)
+
+`aura run` / `aura check` compile a selected file together with its reachable
+filesystem module tree. The entry file's directory is the source root; each
+sibling `<name>.aura` file and `<name>/mod.aura` directory becomes a logical
+child module named by its stem (`pkg/util.aura` is `pkg::util`), resolved by
+the same canonical resolver as in-source modules. Files are discovered
+eagerly and sorted deterministically; `mod.aura` is the module body.
+Declaring the same logical module in source *and* on disk is a collision
+(`E2020`).
+
+```text
+app.aura
+pkg/mod.aura        # module `pkg` (may be empty)
+pkg/util.aura       # module `pkg::util`
+```
+
+`app.aura` reaches `pkg/util.aura` as `pkg::util::double(21)` with no import
+declaration needed: filesystem ownership is structural.
+
+The WebAssembly host has **no host filesystem** — filesystem capabilities
+report `E5002` there, and the Playground supports virtual multi-file projects
+supplied by the page instead.
 
 ## Declaring and using a module
 

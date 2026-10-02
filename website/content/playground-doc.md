@@ -42,6 +42,24 @@ and arguments. Filesystem, clock, and sleep are **unavailable** and report
 | `read_file` / `write_file` | `E5002` |
 | `time_now` / `time_unix` / `sleep_ms` | `E5002` |
 
+## Multi-file projects
+
+The browser has **no host filesystem authority** — `read_file` / `write_file`
+and the filesystem module provider are `E5002`. That is not the same as being
+single-file: the Playground executes a *project*, a flat set of Aura sources
+with one entry file, supplied by the page itself (virtual sources, held in the
+browser session). The file tabs add, rename, set the entry file, delete, and
+reset sources; each file's declared provider child links (`name → file`) define
+the module layout, and Aura module identity still comes from the source text,
+never from a filename.
+
+Execution goes through the additive Host ABI 1 `aura_project_reset` /
+`aura_project_push` / `aura_run_project` transport into the same
+`InMemorySourceProvider → ModuleGraphBuilder → resolver → checker → runtime`
+path used by native modules. A one-file project keeps the historical
+single-source path. A runtime artifact that predates the project exports
+reports a structured capability error instead of silently running one file.
+
 ## Version selection
 
 The runtime selector chooses a **versioned, immutable artifact**. Each version

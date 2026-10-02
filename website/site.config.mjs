@@ -17,26 +17,28 @@ export const site = {
   releases:
     "https://github.com/JoaoValentimTheo/aura-lang/releases",
   license: "MIT",
-  // Distinct identities, deliberately not collapsed (ADR-0001). `0.2.0` is the
-  // current published release; `0.2.1` is the development line, whose language
-  // is a superset of `0.2.0` (builtin-name reservation, unified type nesting).
+  // Distinct identities, deliberately not collapsed (ADR-0001). `0.2.1` is the
+  // current published release; the language it implements is also `0.2.1`
+  // (builtin-name reservation, unified type nesting). There is no active
+  // development line yet, so `developmentVersion` is explicitly null rather
+  // than a fabricated successor version.
   //   * releaseVersion      — the current published release / runtime artifact
   //   * languageVersion     — the language semantics the release implements
   //   * runtimeVersion      — the current browser runtime artifact
   //   * currentRelease      — the published release shown in the header/hero
-  //   * developmentVersion  — the unreleased development line (labeled as such)
+  //   * developmentVersion  — the unreleased development line, or null
   //   * previousRelease     — the prior published release, kept addressable
-  releaseVersion: "0.2.0",
-  languageVersion: "0.2.0",
-  runtimeVersion: "0.2.0",
-  previousRelease: "0.0.2",
+  releaseVersion: "0.2.1",
+  languageVersion: "0.2.1",
+  runtimeVersion: "0.2.1",
+  previousRelease: "0.2.0",
   // Historical releases, kept addressable and clearly not current.
   earliestRelease: "0.0.1",
   // Current published release, shown in the header and hero.
-  currentRelease: "0.2.0",
-  // The development line: documented and shown, but always clearly labeled
-  // "development" so it is never mistaken for the stable release.
-  developmentVersion: "0.2.1",
+  currentRelease: "0.2.1",
+  // No development line exists after `0.2.1`: the release train is closed and
+  // no successor version has been selected. Rendering must handle null.
+  developmentVersion: null,
 };
 
 // Primary navigation. `key` links a nav entry to page metadata.

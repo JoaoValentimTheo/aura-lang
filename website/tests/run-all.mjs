@@ -32,6 +32,7 @@ run("examples", "validate-examples.mjs");
 run("aura-comments", "check-aura-comments.mjs");
 run("links", "check-links.mjs");
 run("base", "check-base.mjs");
+run("release-version", "release-version.test.mjs");
 
 function haveDeps() {
   try {

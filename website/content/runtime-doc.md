@@ -76,6 +76,11 @@ needs no `unsafe` and can never gain host authority:
 | `aura_options_reset` / `aura_options_push` | feed options bytes |
 | `aura_run` | execute; returns a status code |
 | `aura_output_len` / `aura_output_byte` | read the JSON result |
+| `aura_project_reset` / `aura_project_push` | feed a virtual multi-source project (Host ABI 1, additive) |
+| `aura_run_project` | execute the supplied project |
 
 The result is assembled from Aura's own structured types, so diagnostics are
 real data, never scraped text.
+
+The runtime artifact for the current release is `0.2.1` (1,768,322 bytes,
+SHA-256 `48c456fc…cc9e`); `0.2.0` remains available as the previous release.

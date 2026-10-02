@@ -9,9 +9,9 @@ the optional Python bridge links CPython only when you ask for it.
 * A C toolchain for linking (standard on Linux, macOS, and Windows with the
   MSVC toolchain).
 * Optional: CPython for the `py` feature. Supported (CI-tested) versions are
-  **3.10–3.13 on Linux** and **3.12 on macOS**; other 3.10–3.13 lines are
-  best-effort. Windows `py` builds are not claimed until a CI leg exists. See
-  the [CPython compatibility target](https://github.com/JoaoValentimTheo/aura-lang/blob/rewrite/v3-rust/docs/CPYTHON_COMPATIBILITY_TARGET.md).
+  **3.10–3.13 on Linux**, **3.12 on macOS**, and **3.12 on Windows**; other
+  3.10–3.13 lines are best-effort. See the
+  [CPython compatibility target](https://github.com/JoaoValentimTheo/aura-lang/blob/rewrite/v3-rust/docs/CPYTHON_COMPATIBILITY_TARGET.md).
 
 ## Build from a checkout
 
@@ -47,11 +47,20 @@ The release workflow publishes per-platform tarballs built for:
 * `x86_64-pc-windows-msvc`
 
 They are attached to each [GitHub release](https://github.com/JoaoValentimTheo/aura-lang/releases).
-The most recent tagged release is **v0.2.0**, an Aura Core language release.
-The development line is **`0.2.1`**, which additionally reserves builtin names
-as user value bindings (`E1009`) and unifies type-nesting under the semantic AST
-limit (ADR-0004). Release and language versions are distinct identities
-(ADR-0001); `0.0.2` and `0.0.1` are historical, frozen, and remain available.
+The most recent tagged release is **v0.2.1** (published 2026-10-01), which adds
+builtin-name reservation for user value bindings (`E1009`), a unified
+type-nesting limit (ADR-0004), filesystem-backed module acquisition for the
+CLI, and the multi-file Playground. Release and language versions are distinct
+identities (ADR-0001); `0.2.0`, `0.0.2`, and `0.0.1` are historical, frozen,
+and remain available.
+
+Install the latest release from a tagged checkout:
+
+```bash
+git checkout v0.2.1
+cargo build --release --no-default-features --features cli,repl,json,regex,time
+./target/release/aura version   # aura 0.2.1
+```
 
 ## Feature flags
 

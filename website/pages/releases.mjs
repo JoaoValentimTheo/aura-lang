@@ -7,12 +7,12 @@ export const releasesPage = {
   path: "releases/",
   activeKey: "releases",
   description:
-    "Aura releases: the current 0.2.0 and the historical 0.0.2 and 0.0.1.",
+    "Aura releases: the current 0.2.1 and the previous 0.2.0, 0.0.2, and 0.0.1.",
   async render(base) {
     return `${pageHead({
       eyebrow: "Releases",
       title: "Aura releases",
-      lede: "Aura 0.2.0 is the current public release: it completes the language core with generic maps, map.items(), comprehensions, the Core syntax rules, and in-source module semantics.",
+      lede: "Aura 0.2.1 is the current public release: builtin-name reservation, a unified type-nesting limit, filesystem-backed module acquisition for the CLI, and the multi-file Playground.",
     })}
 
 <section class="section section--tight">
@@ -20,15 +20,39 @@ export const releasesPage = {
     <div class="card card--elevated">
       <div class="example-card__meta">
         ${chip("Published", "success")}
-        ${chip("0.2.0")}
+        ${chip("0.2.1")}
         ${chip("Latest")}
+      </div>
+      <h2 style="margin-top:var(--space-3)">Aura 0.2.1</h2>
+      <p>The current release (published 2026-10-01). It builds on the completed
+      Aura Core and adds module acquisition from the filesystem, multi-file
+      projects in the Playground, and two language-contract tightenings.</p>
+      <ul>
+        <li>Filesystem-backed module acquisition: sibling <code>math.aura</code> and directory <code>pkg/mod.aura</code> sources become logical modules</li>
+        <li>Multi-file Playground projects over the additive Host ABI 1 <code>aura_project_*</code> transport</li>
+        <li>Builtin names reserved as user value bindings (<code>E1009</code>)</li>
+        <li>Structural type nesting and alias chains bounded at 256 on every substrate (<code>E1015</code>, ADR-0004)</li>
+        <li>O(n) string lexing, exact-type Python dict keys, and red-team robustness fixes</li>
+        <li>Host ABI 1 and Playground API 1 unchanged; Native/WASM parity retained</li>
+      </ul>
+      <div class="hero__actions">
+        <a class="btn btn--filled" href="${site.releases}" target="_blank" rel="noopener">${icon("external")} Release downloads</a>
+        <a class="btn btn--outlined" href="${url("docs/migration-0-2-1/", base)}">Migration guide</a>
+        <a class="btn btn--text" href="${site.repository}" target="_blank" rel="noopener">${icon("github")} Source</a>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:var(--space-6)">
+      <div class="example-card__meta">
+        ${chip("Previous")}
+        ${chip("0.2.0")}
       </div>
       <h2 style="margin-top:var(--space-3)">Aura 0.2.0</h2>
       <p>The Core-completion release. It ships the completed Aura Core language —
       generic maps keyed by <code>string</code>, <code>int</code>, or
       <code>bool</code>, <code>map.items()</code>, list and map comprehensions,
       the decided separator/numeric/f-string rules, and real in-source module
-      visibility.</p>
+      visibility. It remains frozen and selectable.</p>
       <ul>
         <li>Generic map keys <code>{K: V}</code> with key-capability checking and ordered keys</li>
         <li><code>map.items()</code> and honest collection type checking</li>
@@ -37,11 +61,6 @@ export const releasesPage = {
         <li>Completed in-source modules: <code>pub</code>, <code>pub use</code>, aliases, per-module tags</li>
         <li>CLI/REPL and Playground completion; Native/WASM parity</li>
       </ul>
-      <div class="hero__actions">
-        <a class="btn btn--filled" href="${site.releases}" target="_blank" rel="noopener">${icon("external")} Release downloads</a>
-        <a class="btn btn--outlined" href="${url("docs/", base)}">Documentation</a>
-        <a class="btn btn--text" href="${site.repository}" target="_blank" rel="noopener">${icon("github")} Source</a>
-      </div>
     </div>
 
     <div class="card" style="margin-top:var(--space-6)">
@@ -99,7 +118,8 @@ export const releasesPage = {
       [
         ["0.0.1", "0.0.1", "none", chip("Historical (native only)")],
         ["0.0.2", "0.0.1", "WebAssembly, ABI 1", chip("Historical")],
-        ["0.2.0", "0.2.0", "WebAssembly, ABI 1", chip("Current", "success")],
+        ["0.2.0", "0.2.0", "WebAssembly, ABI 1", chip("Previous")],
+        ["0.2.1", "0.2.1", "WebAssembly, ABI 1", chip("Current", "success")],
       ],
     )}
     <p class="muted">Immutable historical artifacts are never silently

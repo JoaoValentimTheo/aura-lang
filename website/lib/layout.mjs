@@ -91,6 +91,11 @@ function footer(base) {
 </div>`,
     )
     .join("");
+  // A closed release line has no development version; render "Stable X" alone
+  // rather than "development null" or a fabricated successor.
+  const versionLabel = site.developmentVersion
+    ? `Stable <strong>${escapeHtml(site.currentRelease)}</strong> · development <strong>${escapeHtml(site.developmentVersion)}</strong>`
+    : `Stable <strong>${escapeHtml(site.currentRelease)}</strong>`;
   return `<footer class="site-footer">
   <div class="container">
     <div class="footer-grid">
@@ -108,7 +113,7 @@ function footer(base) {
       ${columns}
     </div>
     <div class="footer-bottom">
-      <span class="footer-version">Stable <strong>${escapeHtml(site.currentRelease)}</strong> · development <strong>${escapeHtml(site.developmentVersion)}</strong></span>
+      <span class="footer-version">${versionLabel}</span>
     </div>
     <div class="footer-bottom">
       <span>© ${new Date().getFullYear()} The Aura project · Licensed ${site.license}</span>

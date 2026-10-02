@@ -90,13 +90,14 @@ export const aboutPage = {
       overloading plus static union resolution, and generic type parameters are
       static, erased, and nominal. Beyond that, to keep the project
       honest: Aura has no classes or inheritance, no dynamic dispatch, no
-      interfaces or trait objects, and no higher-kinded or associated types;
-      modules are
-      in-source (private by default, <code>pub</code> to export,
-      <code>use</code> to import) rather than filesystem-backed, and there is
-      no package manager; no LSP, debugger, or formatter; and no data-science
-      or AI ecosystem. The filesystem module system is the next direction,
-      listed on the
+      interfaces or trait objects, and no higher-kinded or associated types.
+      Modules work in-source (private by default, <code>pub</code> to export,
+      <code>use</code> to import) and, on native targets since 0.2.1, from the
+      filesystem (<code>math.aura</code>, <code>pkg/mod.aura</code>); the
+      browser host has no filesystem and supports virtual multi-file projects
+      instead. There is no package manager; no LSP, debugger, or formatter; and
+      no data-science or AI ecosystem. The next major direction has not been
+      selected and is listed on the
       <a href="${url("roadmap/", base)}">roadmap</a>.</p>
     </div>
   </div>

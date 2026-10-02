@@ -72,7 +72,7 @@ $ aura eval 'print(1 + 2)'
         ["Persistent REPL", "Available"],
         ["Stable <code>E####</code> diagnostics", "Available"],
         ["Scripting I/O and arguments", "Available"],
-        ["Browser Playground (WebAssembly)", "In development"],
+        ["Browser Playground (WebAssembly, multi-file projects)", "Available"],
         ["Language server / LSP", "Not yet"],
         ["Debugger / step execution", "Not yet"],
         ["Package manager", "Not yet"],

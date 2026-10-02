@@ -41,14 +41,19 @@ is.
 - The CLI ships for Linux, macOS, and Windows (pure Rust, no CPython).
 - The **`py` feature is TESTED** on Linux 3.10–3.13, macOS 3.12, and Windows
   3.12. Other CPython versions/platforms are best-effort or unsupported.
-- The in-browser **Playground runs WebAssembly** and has no filesystem or
-  CPython access.
+- The in-browser **Playground runs WebAssembly** and has **no host filesystem
+  access** (`read_file`/`write_file` and the filesystem module provider report
+  `E5002`). It can still execute a caller-supplied **virtual multi-file
+  project** — the files live in the browser session, not on a disk.
 
 ## Pre-1.0 status
 
-- The **release** line is `0.2.0`; a **`0.2.1` development line** adds
-  builtin-name reservation and unified type nesting (see the
+- The current **release** is `0.2.1` (published 2026-10-01), which adds
+  builtin-name reservation, unified type nesting, filesystem-backed module
+  acquisition for the CLI, and the multi-file Playground (see the
   [migration guide](/docs/migration-0-2-1/)).
+- There is **no active development line**: the `0.2.1` release train is closed
+  and no successor version has been selected.
 - Released runtime artifacts are immutable; fixes ship as a new version.
 - Semantics may still change before 1.0, always with an ADR and a migration
   note.
