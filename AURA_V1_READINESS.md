@@ -13,7 +13,7 @@ never by schedule. Status legend: **GREEN** (ready), **YELLOW** (gaps remain),
 | MODULES | GREEN | providers parity; eager discovery defined; visibility/collision tested |
 | CLI | GREEN | `tests/cli.rs`; exit codes; paths; stdin |
 | REPL | GREEN | persistence + rollback; `tests/repl.rs` |
-| WASM | GREEN | 0 imports; Host ABI 1; differential 219/219; module/alias depth unified with native |
+| WASM | YELLOW | 0 imports; Host ABI 1; differential 220/220; module/alias depth unified with native. **Open B-1:** a mainstream recursive shape traps on the engine stack below the 512-frame limit (Node ~397, Chromium ~196) instead of `E4011` — `LANGUAGE_SPEC` §31.5; every released WASM artifact (0.0.2, 0.2.0, 0.2.1) is affected; decision package `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (OPEN) |
 | PLAYGROUND | GREEN | FSM-P6 suites green; multi-file project state + tabs; capability detection; released `0.2.1` runtime is the selector default |
 | CPYTHON | GREEN | normative conversion table; interop matrix + edge cases + a generated conversion matrix (no host failure); call-site source spans tested; TESTED tiers (ADR-0003): Linux 3.10–3.13, macOS 3.12, Windows 3.12 (all CI legs blocking); lifetime/GIL reviewed (dimension M); security boundary explicit (arbitrary CPython authority, no sandbox claimed) |
 | SECURITY | GREEN | threat model / trust boundaries / architecture / incident response current; red-team campaign + re-verification recorded, all CRITICAL/HIGH fixed and guarded; deep fuzz campaign clean; no `unsafe` and Miri is a blocking CI gate; cargo audit reviewed; WASM zero-import policy verified; CPython arbitrary-authority boundary documented; release pipeline reviewed; SBOM + signed SLSA provenance (release signing is a supply-chain extra, tracked TD-03) |
@@ -39,12 +39,19 @@ never by schedule. Status legend: **GREEN** (ready), **YELLOW** (gaps remain),
 2. All semantic-freeze decisions are resolved (no open HD items); their
    implementations are committed, pushed, released in `v0.2.1`, and CI-green.
    The `v0.2.1` release train is closed (published 2026-10-01; 27/27 check-runs
-   green; GitHub Pages deploy green). No independent re-verification is
-   outstanding.
+   green; GitHub Pages deploy green).
+3. **WASM (B-1, YELLOW):** a legal mainstream recursive program traps on the
+   WebAssembly engine stack below the 512-frame language limit instead of
+   reporting `E4011` (§31.5). Present in every released WASM artifact and in
+   HEAD. `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (OPEN) records the
+   reproduction, root cause, and options; the fix is a specification decision
+   (substrate-calibrated call-frame limit vs an iterative interpreter). Not a
+   `v0.2.1` regression and not a release-immutability issue.
 
 ## Notes
 
-- No unresolved CRITICAL/HIGH correctness or security blocker is currently
-  known.
+- One unresolved correctness blocker is known: **B-1** (WASM call-frame trap
+  below the language limit; `docs/WASM_CALL_FRAME_LIMIT_DECISION.md`, OPEN).
+  No unresolved CRITICAL/HIGH *security* blocker is known.
 - Frozen `0.0.2`/`0.2.0`/`0.2.1` artifacts verified byte-identical at intake;
   the published `0.2.1` release asset matches the in-repository artifact.

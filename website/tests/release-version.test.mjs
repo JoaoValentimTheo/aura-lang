@@ -104,6 +104,36 @@ if (lineIsClosed) {
       : manifest.current === site.releaseVersion,
     `current=${manifest.current} development=${site.developmentVersion}`,
   );
+  // An open development line must be a real successor: it may not be the
+  // published release, a previous release, or an earlier point on the release
+  // line. Undeclared fabricated successors ("0.2.2" with no work behind it)
+  // are caught here: the version must be strictly greater than the release.
+  const cmp = (a, b) => {
+    const pa = a.split(".").map(Number);
+    const pb = b.split(".").map(Number);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
+      const d = (pa[i] || 0) - (pb[i] || 0);
+      if (d !== 0) return d;
+    }
+    return 0;
+  };
+  check(
+    "open line: developmentVersion is a successor of the current release",
+    typeof site.developmentVersion === "string" &&
+      cmp(site.developmentVersion.replace(/-.*$/, ""), site.releaseVersion) > 0 &&
+      site.developmentVersion !== site.previousRelease,
+    `development=${site.developmentVersion} release=${site.releaseVersion}`,
+  );
+  // The development line must have a manifested development entry to back it.
+  const devEntry = manifest.versions.find(
+    (v) =>
+      v.id === site.developmentVersion || v.id.startsWith(`${site.developmentVersion}-`),
+  );
+  check(
+    "open line: a development runtime entry exists in the manifest",
+    Boolean(devEntry) && devEntry.channel === "development",
+    `development=${site.developmentVersion}`,
+  );
 }
 
 // -- cross-authority agreement ------------------------------------------------
@@ -203,19 +233,43 @@ check(
 // the dev.* chain, but no page may call a non-current version the current
 // release, call the released version a development line, or describe a
 // non-current dev build as the current runtime.
+//
+// Wording varies ("is the current release", "is the latest public release"),
+// and prose breaks across lines, so claims are scanned on whitespace-
+// normalized text. A line carrying an explicit historical marker ("was",
+// "previous", "superseded", "predates", a migration context) is history, not
+// a current-state claim, and is left alone.
 
-const currentPublicReleaseRe = /([0-9][0-9A-Za-z.\-]*)`? is the current public release/g;
-const developmentLineRe = /([0-9][0-9A-Za-z.\-]*)`? development line/g;
+const historicalMarkers =
+  /\b(was|were|former|formerly|previous(?:ly)?|prior|histor(?:y|ical)|superseded|predates?|migrat\w*|before|earlier|at the time)\b/i;
+const currentReleaseRe =
+  /([0-9][0-9A-Za-z.\-]*)`? is (?:the )?(?:current|latest) (?:public )?release/gi;
+const developmentLineRe = /([0-9][0-9A-Za-z.\-]*)`? (?:is (?:the )?)?(?:current )?development line/gi;
+
+/** True when the match sits inside an explicitly historical clause. */
+function inHistoricalContext(normalized, index) {
+  const start = Math.max(0, index - 80);
+  const context = normalized.slice(start, index);
+  // Do not let a marker leak across a sentence boundary.
+  const clause = context.split(/[.;!?]\s*/).pop() ?? context;
+  return historicalMarkers.test(clause);
+}
 
 function scanClaims(where, text) {
-  for (const m of text.matchAll(currentPublicReleaseRe)) {
+  // Claims can span a line break in the templates ("is the current public\n
+  // release"), so whitespace is normalized before matching; matches whose
+  // immediate clause is explicitly historical ("0.2.1 was ...") are skipped.
+  const normalized = text.replace(/\s+/g, " ");
+  for (const m of normalized.matchAll(currentReleaseRe)) {
+    if (inHistoricalContext(normalized, m.index)) continue;
     check(
-      `${where}: "is the current public release" names the current release`,
+      `${where}: "is the current/latest release" names the current release`,
       m[1] === site.currentRelease,
       `claimed ${m[1]}, current is ${site.currentRelease}`,
     );
   }
-  for (const m of text.matchAll(developmentLineRe)) {
+  for (const m of normalized.matchAll(developmentLineRe)) {
+    if (inHistoricalContext(normalized, m.index)) continue;
     check(
       `${where}: the released version is not called a development line`,
       m[1] !== site.currentRelease,
@@ -227,6 +281,9 @@ function scanClaims(where, text) {
     if (!/-dev\./.test(line) || !/current/i.test(line)) continue;
     const dev = line.match(/([0-9][0-9A-Za-z.\-]*-dev\.[0-9]+)/);
     if (!dev) continue;
+    // "predates the current release" is a historical statement about the dev
+    // build, not a claim that it is current.
+    if (/predates?/i.test(line)) continue;
     check(
       `${where}: dev runtime described as current is the manifest current`,
       dev[1] === manifest.current,
@@ -284,6 +341,26 @@ if (existsSync(dist)) {
     indexHtml.includes(`Aura ${site.currentRelease}`),
     site.currentRelease,
   );
+
+  // The releases page must lead with the current release: its first release
+  // heading must name the current version, and the "Latest" chip must be
+  // attached to that heading's card, not to a historical one.
+  {
+    const headingRe = /<h2[^>]*>\s*Aura\s+([0-9][0-9A-Za-z.\-]*)\s*<\/h2>/gi;
+    const headings = [...releasesHtml.matchAll(headingRe)].map((m) => m[1]);
+    check(
+      "generated releases page lists releases in descending order",
+      headings.length > 0 && headings[0] === site.currentRelease,
+      `headings: ${JSON.stringify(headings)}`,
+    );
+    const firstHeadingAt = releasesHtml.search(headingRe);
+    const latestChipAt = releasesHtml.search(/>\s*Latest\s*</);
+    check(
+      "generated releases page attaches Latest to the current release",
+      firstHeadingAt !== -1 && latestChipAt !== -1 && latestChipAt < firstHeadingAt,
+      `latest chip at ${latestChipAt}, first heading at ${firstHeadingAt}`,
+    );
+  }
 
   // The published dev.30 runtime is historical, never "current".
   if (existsSync(join(dist, "runtime/index.html"))) {

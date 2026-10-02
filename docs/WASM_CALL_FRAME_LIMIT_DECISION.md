@@ -56,9 +56,13 @@ fn main() { print(count(N)) }
 | 196 | prints | prints | **Worker error: `E4999 Maximum call stack size exceeded`** |
 | 396 | prints | prints | Worker error |
 | 397 | prints | **`RangeError` (host trap, no JSON result)** | Worker error |
-| 510 | prints | host trap | Worker error |
-| 511 | prints (512 frames incl. `main`) | host trap | Worker error |
-| 512 | `E4011` | host trap | Worker error |
+| 510 | prints (last accepted; 511 frames incl. `main`) | host trap | Worker error |
+| 511 | `E4011` (first rejected) | host trap | Worker error |
+
+The frame count includes the terminal `count(0)` call and the entry `main`, so
+`count(N)` consumes N + 2 frames and the first rejected depth is `count(511)`
+(native), matching `tests/corpus.rs` (`simple_510` accepted / `simple_511`
+`E4011`).
 
 The wasm trap is not caught by `runtime.mjs`; the Worker surfaces it as an
 unstructured load error. The instance is not poisoned — a subsequent unrelated
@@ -158,11 +162,11 @@ does **not** encode the decision; it pins the working region.
 ## 7. Evidence commands
 
 ```sh
-# native (release): accepts 511 recursive calls + main, E4011 at 512
+# native (release): accepts count(510); count(511) is E4011
 cargo build --locked --release --no-default-features \
   --features cli,repl,json,time | true
-./target/release/aura run <count(511)>.aura   # prints
-./target/release/aura run <count(512)>.aura   # E4011
+./target/release/aura run <count(510)>.aura   # prints
+./target/release/aura run <count(511)>.aura   # E4011
 
 # wasm: traps at 397 (Node) / 196 (Chromium) instead of E4011
 node playground/tests/node/differential.test.mjs \
