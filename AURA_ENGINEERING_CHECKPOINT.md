@@ -5,10 +5,10 @@ Resumable operational state for the Road-to-1.0 program.
 ## State
 
 ```
-PROGRAM HEAD:            31aa0205 (pushed) + release-candidate commits (local)
-REMOTE HEAD:             31aa0205
-CURRENT RELEASE:         v0.2.0 (tagged; immutable); v0.2.1 release candidate staged
-CURRENT TRAIN:           TRAIN 6 — promote and publish Aura 0.2.1
+PROGRAM HEAD:             3f5f8702 (pushed) + local post-release reconciliation (unpushed)
+REMOTE HEAD:              3f5f8702
+CURRENT RELEASE:         v0.2.1 (tagged; published 2026-10-01; immutable)
+CURRENT TRAIN:           TRAIN 6 — COMPLETE (Aura 0.2.1 published); next program not selected
 LATEST DEV RUNTIME:      0.2.1 (promoted release runtime); 0.2.1-dev.5 preserved
 TEAM STATUS:             language/runtime/security GREEN; CPython, performance,
                          release engineering, docs advancing
@@ -27,9 +27,10 @@ SECURITY RESULTS:        campaign recorded (docs/security/CAMPAIGN_LOG.md);
 COMMITS:                 ADR-0001…0004; security F1–F4; CPython fixes; runtime
                          0.2.1-dev.4; SBOM + release manifest; perf breadth;
                          compat fixtures; decision-doc resolutions
-PUSHES:                  …→2d5c9a31 (all CI-green)
-CI:                      GREEN through 2d5c9a31 (incl. fuzz smoke)
-RELEASES:                none this train (v0.2.0 remains latest)
+PUSHES:                  …→3f5f8702 (all CI-green; tag v0.2.1)
+CI:                      GREEN on 3f5f8702 (27/27 check-runs, incl. release publish)
+RELEASES:                v0.2.1 published 2026-10-01 (WASM 1,768,322 / 48c456fc…;
+                         Linux/macOS/Windows tarballs; manifest + SBOM attached)
 V1 GREEN:                every readiness capability category — LANGUAGE, TYPE
                          SYSTEM, RUNTIME, STDLIB, MODULES, REPL, CLI, RESOURCE
                          LIMITS, DETERMINISM, WASM, PLAYGROUND, LINUX/MACOS/
@@ -37,13 +38,12 @@ V1 GREEN:                every readiness capability category — LANGUAGE, TYPE
                          PACKAGING, RELEASE ENGINEERING, SUPPLY CHAIN,
                          BACKWARD COMPAT
 V1 YELLOW:               none
-V1 RED:                  v1 GO — only the release train itself remains
-                         (stage a prerelease, verify published artifacts)
-FROZEN HASHES:           0.0.2 = 1,366,621 / 5a4ad3f7…; 0.2.0 = 1,654,161 / 9937fd80…
-NEXT PARALLEL PHASE:     TRAIN 3 — CPython formalization (Windows probe result,
-                         lifetime review), SECURITY provenance/signing,
-                         PERFORMANCE report + TD-13 incremental REPL design,
-                         DOCS install/quickstart + migration
+V1 RED:                  v1 GO — requires a published, post-release-verified 1.0;
+                         the prerelease→RC→1.0 train remains
+FROZEN HASHES:           0.0.2 = 1,366,621 / 5a4ad3f7…; 0.2.0 = 1,654,161 / 9937fd80…;
+                         0.2.1 = 1,768,322 / 48c456fc…
+NEXT PHASE:              NOT SELECTED — human review of the post-v0.2.1
+                         reconciliation first; do not start a new program
 ```
 
 ## Train 1 — completed work
@@ -53,7 +53,8 @@ NEXT PARALLEL PHASE:     TRAIN 3 — CPython formalization (Windows probe result
 - **HD-1 → ADR-0002**: module members may reuse builtin spellings; reservation
   scoped to the user-visible value namespace.
 - **HD-3 → ADR-0003**: CPython support tiers (TESTED Linux 3.10–3.13, macOS
-  3.12; best-effort other 3.10–3.13; Windows not claimed).
+  3.12; best-effort other 3.10–3.13; Windows 3.12 later promoted to TESTED
+  2026-10-01 when its CI leg proved reliable).
 - **HD-2 / AUDIT-3 → ADR-0004**: structural type nesting counts toward the
   semantic AST limit (256) on every substrate; flat unions exempt.
 - **TD-14 (new)**: checker type-alias expansion budget bounds exponentially
@@ -125,7 +126,7 @@ NEXT PARALLEL PHASE:     TRAIN 3 — CPython formalization (Windows probe result
 - **Release path prepared**: `docs/release-notes/v0.2.1.md` written; the
   release preflight passes everything except the runtime promotion.
 
-## Train 6 — in progress: publish Aura 0.2.1
+## Train 6 — COMPLETE: Aura 0.2.1 published
 
 - **Runtime promoted**: `playground/runtime` advanced from `0.2.1-dev.5` to the
   clean release identity `0.2.1`; built and pinned the `0.2.1` WASM artifact
@@ -137,19 +138,20 @@ NEXT PARALLEL PHASE:     TRAIN 3 — CPython formalization (Windows probe result
 - **QA**: `tests/cross_subsystem.rs` added (8 cross-subsystem interaction
   cases); Playground browser label test made channel-aware (no longer assumes
   the current runtime is always a development build).
-- **Gate (all green, release candidate):** fmt, all-features tests,
-  no-default-features tests, clippy `-D warnings`, MSRV (`+1.83.0`), runtime
-  crate tests, `node playground/tests/node/run-all.mjs`, `build --check`,
-  `node website/tests/run-all.mjs`, `scripts/artifact-smoke.sh --release` (12/12),
-  `scripts/release-preflight.sh 0.2.1 --tag`, frozen hashes byte-identical.
-- **Remaining**: independent adversarial review; commit; push; CI; tag
-  `v0.2.1` (needs explicit human authorization per `AGENTS.md`).
+- **Released**: `v0.2.1` tagged at `3f5f870` (annotated tag object
+  `df755340…`) and published 2026-10-01T20:29:36Z, non-draft, non-prerelease.
+  Release workflow `36920912666` succeeded (validate + three platform builds +
+  publish); 27/27 check-runs green on the release SHA; GitHub Pages deploy
+  green. A tag-triggered preflight defect found while publishing was fixed in
+  `3f5f870` and guarded by `release_preflight.test.mjs`.
 
 ## Next tasks
 
-1. TRAIN 6 completion — independent review, commit the release candidate, push,
-   monitor CI, then tag `v0.2.1`. Per `AGENTS.md`, creating a release tag
-   requires explicit human authorization; the release candidate and its
-   runtime artifact are ready and preflight-clean.
+1. **HUMAN REVIEW OF POST-v0.2.1 STATE + WEBSITE ALIGNMENT.** The `0.2.1`
+   release train is closed; a local reconciliation pass (authority docs +
+   website `0.2.1` alignment + release-version drift guard) awaits human review
+   before any push decision.
 2. Remaining non-blocking extras: cryptographic tag/asset signing (TD-03),
    `rust-toolchain` SHA-pinning (TD-17), TD-13 incremental REPL (v1.1).
+3. The next major engineering program is **not selected**; do not start one
+   without explicit human authorization.

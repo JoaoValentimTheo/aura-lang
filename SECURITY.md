@@ -18,7 +18,8 @@ See `docs/security/INCIDENT_RESPONSE.md` for triage and disclosure handling.
 
 | Version | Supported |
 |---|---|
-| `0.2.0` (latest release) | yes (fixes via new patch releases) |
+| `0.2.1` (latest release) | yes (fixes via new patch releases) |
+| `0.2.0` | no (historical release; fixes go to the current line) |
 | `0.0.2`, `0.0.1` | no (historical, frozen artifacts retained) |
 
 Pre-1.0, fixes ship as new versions; published artifacts and tags are never

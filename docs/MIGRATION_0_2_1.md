@@ -1,6 +1,6 @@
 # Migrating to Aura `0.2.1`
 
-`0.2.1` is the development line after the released `0.2.0` Core language. This
+`0.2.1` is the released line after the `0.2.0` Core language. This
 guide lists every change in observable language behavior and what to do about
 it. Most programs need no changes.
 
@@ -85,6 +85,21 @@ duck-typed keys must convert explicitly. See
 - Core syntax, modules (`pub`/`pub use`/aliases), generics, the four OOP
   pillars, collections, comprehensions, and the standard library are unchanged.
 - Diagnostics keep their codes; wording may have improved.
+
+## New capabilities (additive, not breaking)
+
+- **Filesystem-backed modules on native targets.** `aura run` / `aura check`
+  compile a selected file together with its reachable filesystem module tree:
+  a sibling `math.aura` or a directory `pkg/mod.aura` becomes a logical child
+  module, resolved by the same canonical resolver as in-source modules. A
+  logical module owned by both `foo.aura` and `foo/mod.aura` is `E2020`. This
+  does not change in-source module semantics, and the browser host remains
+  filesystem-less (`E5002`).
+- **Multi-file Playground.** The browser Playground can execute a virtual
+  multi-source project through the additive Host ABI 1 `aura_project_*`
+  transport; a one-file project keeps the historical single-source path.
+- **`docs/adr/0001`–`0004`** record the decision processes behind the changes
+  above.
 
 ## Checking compatibility
 

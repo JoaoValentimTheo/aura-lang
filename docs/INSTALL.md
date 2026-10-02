@@ -1,7 +1,7 @@
 # Installing Aura
 
 Aura runs on Linux, macOS, and Windows (native), and in the browser (WebAssembly
-Playground). This guide covers the supported installation paths for **0.2.0**.
+Playground). This guide covers the supported installation paths for **0.2.1**.
 
 ## Requirements
 

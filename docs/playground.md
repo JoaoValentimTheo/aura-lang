@@ -142,23 +142,23 @@ manifest currently lists seven entries — `0.0.1`, `0.0.2`, `0.0.2-dev.30`,
 ### Development runtimes
 
 A development runtime is an artifact on a release line that is **not** that
-release. The `0.2.1` release is the current one: it carries the additive Host
-ABI 1 virtual-project exports so the multi-file Playground can be exercised, and
-it implements the `0.2.1` language contract, which adds the builtin-name
-value-namespace reservation (`E1009`), the unified type-nesting limit
-(ADR-0004), and the train-1 parser hardening (bounded alias-chain resolution
-depth, module nesting bounded by the semantic limit on every substrate, and
-O(n) string lexing, and bounded parameterized-alias expansion / physical
-module depth) on top of the `0.2.0` language (see
-`docs/adr/0001-release-vs-language-version.md`,
+release. The **`0.2.1` release is the current published release** (tag `v0.2.1`,
+2026-10-01): it carries the additive Host ABI 1 virtual-project exports so the
+multi-file Playground can be exercised, and it implements the `0.2.1` language
+contract, which adds the builtin-name value-namespace reservation (`E1009`),
+the unified type-nesting limit (ADR-0004), and the train-1 parser hardening
+(bounded alias-chain resolution depth, module nesting bounded by the semantic
+limit on every substrate, O(n) string lexing, and bounded
+parameterized-alias expansion / physical module depth) on top of the `0.2.0`
+language (see `docs/adr/0001-release-vs-language-version.md`,
 `docs/adr/0004-typeexpr-nesting-policy.md`). Its pre-release `0.2.1-dev.5`
 build carried the same contract; the clean `0.2.1` identity is the promoted
-release. It is not tagged until the release train closes, and it is never a
-replacement for `0.2.0` — which remains frozen, selectable, and byte-identical.
-Advancing the runtime means bumping the runtime crate's version, never
-overwriting an existing artifact. The superseded `0.2.0-dev.1`/`0.2.0-dev.2`
-remain selectable historical development entries; the intermediate
-`0.2.1-dev.1`..`0.2.1-dev.5` builds are preserved on disk, unlisted.
+release. It is never a replacement for `0.2.0` — which remains frozen,
+selectable, and byte-identical. Advancing the runtime means bumping the
+runtime crate's version, never overwriting an existing artifact. The superseded
+`0.2.0-dev.1`/`0.2.0-dev.2` remain selectable historical development entries;
+the intermediate `0.2.1-dev.1`..`0.2.1-dev.5` builds are preserved on disk,
+unlisted.
 
 ### 0.0.1 vs 0.0.2
 
@@ -174,11 +174,11 @@ runtime**, and the manifest records it honestly as `available: false` with a
 reason. The first wasm-executable runtime was the historical **0.0.2** release
 (`runtimes/0.0.2/`). No historical artifact is fabricated or overwritten.
 
-**0.2.0** is the current public release. It is a *language* release (the
-completed Aura Core: generic maps, `items()`, comprehensions, the Core syntax
-rules, and module semantics), so its `release_version`, `runtime_version`, and
-`language_version` are all `0.2.0`; the current runtime artifact lives at
-`runtimes/0.2.0/` and is the selector default. The historical **0.0.2** entry
+**0.2.1** is the current published release. It is a *language* release
+(`release = language = runtime = 0.2.1`), so its `release_version`,
+`runtime_version`, and `language_version` are all `0.2.1`; the current runtime
+artifact lives at `runtimes/0.2.1/` and is the selector default. The previous
+**0.2.0** release remains frozen and selectable. The historical **0.0.2** entry
 shipped the frozen **0.0.1** language semantics (`language_version: "0.0.1"`),
 distinct from its release identity. The `0.0.2-dev.*` chain is preserved as
 development history and is never the current release.

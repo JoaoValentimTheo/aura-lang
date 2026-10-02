@@ -22,21 +22,35 @@ continuing substantial work.
 
 Authoritative current value is `git rev-parse HEAD`, also printed by
 `scripts/agent-state.sh`; a tracked state file cannot safely hardcode its own
-commit SHA. At the last pushed checkpoint the committed HEAD is `31aa0205`
-(TRAIN 5). The ADR-0001…0004 work, the hardening trains, and the T0–T5
-engineering train are committed. A `0.2.1` release candidate is staged locally
-(runtime promoted to `0.2.1`); see `AURA_ENGINEERING_CHECKPOINT.md`.
+commit SHA. At reconciliation intake (2026-10-02) the committed and pushed HEAD
+is `3f5f8702` (`fix(release): preflight must not require the tag to be free
+on-tag`), which is also the dereferenced `v0.2.1` tag commit.
 
 ## Remote HEAD
 
-`origin/rewrite/v3-rust` = `31aa0205` (equal to local committed HEAD). The
-FSM-P6 stack, the TOTAL HARDENING commits, the ADR-0001…0004 work, and the
-T0–T5 engineering train are all pushed and CI-green. The only uncommitted work
-is the local `0.2.1` release candidate (runtime promotion + QA + docs).
+`origin/rewrite/v3-rust` = `3f5f8702` (equal to local committed HEAD).
+
+## Released
+
+**Aura `v0.2.1` is a published, non-draft, non-prerelease GitHub release.**
+
+- Annotated tag object `df755340e008faea402ea7bd774afdaafef0d41f`;
+- dereferenced commit `3f5f8702bcfad778a3007b792cc8e270a88f97e8`
+  (== `origin/rewrite/v3-rust`);
+- published `2026-10-01T20:29:36Z`;
+- release identity: release = language = runtime = `0.2.1`; Host ABI `1`;
+  Playground API `1`;
+- release WASM asset `aura-playground-runtime-0.2.1.wasm`: 1,768,322 bytes,
+  SHA-256 `48c456fcda6c50dd6808ccc5f15a0bca4c0b81d7d970172557817decf427cc9e`
+  (byte-identical to the in-repository artifact);
+- release note: the published body omits the filesystem-module and multi-file
+  Playground capabilities that are inside the tag; the local
+  `docs/release-notes/v0.2.1.md` documents them now. The published release body
+  was not edited (releases are immutable).
 
 ## Current Track
 
-AURA FILESYSTEM MODULE SYSTEM
+POST-v0.2.1 RELEASE RECONCILIATION
 
 ## Phase Namespace
 
@@ -58,139 +72,63 @@ the historical conformance series and `FEATURE_<NNN>` is the feature series.
 - FSM-P2 — CLOSED
 - FSM-P3 — CLOSED
 - FSM-P4 — CLOSED REMOTELY
-- FSM-P5 — CLOSED REMOTELY (green on
-  `bf95d101dd18f3ad16eaa7bfb99c8304d44bf49d`)
-- FSM-P6 — IMPLEMENTED LOCALLY — NOT COMMITTED, NOT PUSHED
+- FSM-P5 — CLOSED REMOTELY
+- FSM-P6 — COMMITTED, PUSHED, AND INCLUDED IN `v0.2.1`
 
-FSM-P5 uses caller-supplied virtual sources through `InMemorySourceProvider`,
-the existing `SourceProvider`, `ModuleGraphBuilder`, canonical resolver,
-checker, runtime, and WASM boundary. Playground API remains 1 and Host ABI
-remains 1.
+All of FSM-P1…P6 are ancestors of the `v0.2.1` tag (verified with
+`git merge-base --is-ancestor`). FSM-P5 uses caller-supplied virtual sources
+through `InMemorySourceProvider`; FSM-P6 exposes that in the Playground as a
+project state model plus the additive Host ABI 1 `aura_project_*` transport and
+`aura_run_project`. Host ABI remains 1 and Playground API remains 1.
 
-## Current Work — AURA 0.2.1 RELEASE CANDIDATE (UNCOMMITTED)
+Native filesystem module acquisition is user-visible in the `0.2.1` binaries:
+`aura run` / `aura check` compile a selected file together with its reachable
+filesystem module tree (`compile_file_with_mode`,
+`NativeFilesystemSourceProvider`). Verified end to end: `main.aura` +
+`math.aura` prints `42`; a directory with `pkg/mod.aura` prints `42`; a logical
+module owned by both `foo.aura` and `foo/mod.aura` is rejected `E2020`.
 
-The ADR-0001…0004 resolutions (HD-1…HD-4) are **committed and pushed** — this
-section previously recorded them as pending; Git reconciled it.
+## Human Decisions
 
-- **ADR-0001 (version scheme)** — release and language versions are distinct;
-  invariant `LANGUAGE_VERSION <= RELEASE_VERSION`; source line `0.2.1`.
-- **ADR-0002 (module members)** — module members may reuse builtin spellings;
-  reservation stays scoped to the user-visible value namespace.
-- **ADR-0003 (CPython policy)** — support tiers; TESTED = Linux 3.10–3.13,
-  macOS 3.12, Windows 3.12.
-- **ADR-0004 (TypeExpr nesting)** — structural type nesting counts toward
-  `MAX_AST_DEPTH = 256` on every substrate; the native/WASM divergence is
-  removed.
+HD-1…HD-4 are all **CURRENT_RESOLVED** by ADR-0001…0004 (see
+`docs/adr/`), implemented, tested, committed, pushed, and CI-green. The old
+approval-token gate text is historical and must not be reintroduced.
 
-Active uncommitted work is the **Aura 0.2.1 release candidate**:
-`playground/runtime` promoted from `0.2.1-dev.5` to the clean `0.2.1` release
-identity; the `0.2.1` WASM artifact built and pinned (`FROZEN_0_2_1` in
-`playground/build.mjs`); manifest/docs/browser-label synced; the
-`tests/cross_subsystem.rs` QA suite added. The full local gate is green (see
-`AURA_ENGINEERING_CHECKPOINT.md`, Train 6).
+- ADR-0001 — release and language versions are distinct;
+  `LANGUAGE_VERSION <= RELEASE_VERSION`; source line `0.2.1`.
+- ADR-0002 — module members may reuse builtin spellings; reservation stays
+  scoped to the user-visible value namespace.
+- ADR-0003 — CPython support tiers; TESTED = Linux 3.10–3.13, macOS 3.12,
+  Windows 3.12.
+- ADR-0004 — structural `TypeExpr` nesting counts toward `MAX_AST_DEPTH = 256`
+  on every substrate; the native/WASM divergence is removed.
+
+## Program State
+
+The `0.2.1` release train is **closed**: the release is published and its
+workflow run (ID `36920912666`) succeeded, including validate, the three
+platform builds, and publish. Branch CI (`36920833058`) and the GitHub Pages
+deployment (`36920833002`) also succeeded on the release SHA; 27/27 check-runs
+green.
+
+This reconciliation pass stages local, **unpushed** repository/doc/website
+alignment for the released `0.2.1` identity (authority docs, official website,
+and a release-version drift guard). It adds no language semantics, no runtime
+bytes, and no new release. It is committed locally and awaits human review
+before push.
+
+No post-`0.2.1` development line exists yet, and none may be invented here. The
+next major engineering direction has not been selected; package management,
+browser persistence, LSP, formatter, async, and macros remain deferred.
 
 ## Next Exact Action
 
-INDEPENDENT REVIEW OF THE `0.2.1` RELEASE CANDIDATE, THEN COMMIT AND PUSH.
+HUMAN REVIEW OF POST-v0.2.1 STATE + WEBSITE ALIGNMENT BEFORE PUSH.
 
-The release candidate is preflight-clean (`scripts/release-preflight.sh 0.2.1
---tag`) and every local gate item is green. After independent review: commit,
-push to `origin/rewrite/v3-rust`, monitor CI, then tag `v0.2.1` — the tag
-itself requires explicit human authorization per `AGENTS.md`.
-
-## FSM-P6 (committed, pushed)
-
-FSM-P6 — Multi-file Playground UX. The Playground now exposes the virtual
-multi-source capability FSM-P5 delivered, through a file-tab UI and a project
-state model, without adding any language semantics:
-
-- `playground/web/project.js` — the project state model (files, opaque
-  `SourceKey`s, unique display names, active file, entry file, declared
-  provider child links). Pure, DOM-free, unit-testable.
-- `playground/web/app.js` — file tabs, add/rename/set-entry/delete/reset, an
-  example loader that supports multi-file examples, source-aware diagnostics
-  (a diagnostic activates the file that produced it), and a `run()` that sends
-  `source` for a one-file project (historical path) or `project` for a real
-  multi-file project.
-- `playground/web/worker.js` — additive project transport: `runProject` when a
-  project is supplied, `run` otherwise; a runtime without `aura_project_*`
-  reports a structured capability error instead of failing obscurely.
-- `playground/runtimes/0.2.0-dev.2/` — a development runtime carrying the
-  additive Host ABI 1 virtual-project exports and the builtin-name reservation.
-  Development channel only; not a release, not tagged, never a replacement for
-  `0.2.0`.
-
-`playground/build.mjs` pins each frozen release identity permanently, so the
-build can never regenerate or overwrite one. The manifest lists 7 entries
-(`0.0.1`, `0.0.2`, `0.0.2-dev.30`, `0.2.0-dev.1`, `0.2.0-dev.2`, `0.2.0`, and
-the current `0.2.1` release).
-
-Host ABI remains 1. Playground API remains 1. No `src/**` change. No frozen
-artifact change.
-
-The earlier FSM-P5 blockers remain remediated: invalid virtual/provider source
-keys use the normative `E2022` diagnostic partition, and case-only child
-collision detection no longer performs the quadratic pairwise scan.
-
-Latest validation completed after both production fixes:
-
-- `cargo fmt --all -- --check`;
-- `cargo test --locked --all-targets --all-features`;
-- `cargo clippy --locked --all-targets --all-features -- -D warnings`;
-- `cargo test --locked --all-targets --no-default-features --features cli,repl,json,regex,time`;
-- `cargo +1.83.0 check --locked --all-features`;
-- `cargo build --locked --manifest-path playground/runtime/Cargo.toml --release --target wasm32-unknown-unknown`;
-- `node playground/tests/node/run-all.mjs`;
-- `node playground/build.mjs --check`;
-- `node website/tests/run-all.mjs`.
-
-The 64,000-claim VFS adversarial reproduction is within the 2 MiB request
-limit and returns deterministic `E2021` without a host failure. Frozen runtime
-artifacts remain byte-identical.
-
-## Validation Floor (ADR work, this checkpoint)
-
-All green on the uncommitted ADR-0001…0004 tree:
-
-- `cargo fmt --all -- --check` and the runtime-crate fmt check;
-- `cargo test --locked --all-targets --all-features` — 911 passed;
-- `cargo test --locked --all-targets --no-default-features --features cli,repl,json,regex,time` — 884 passed;
-- `cargo clippy --locked --all-targets --all-features -- -D warnings`;
-- `cargo +1.83.0 check --locked --all-features`;
-- `cargo test --locked --manifest-path playground/runtime/Cargo.toml` and its clippy;
-- `node playground/tests/node/run-all.mjs` — differential 219/0 with the
-  unified typeexpr ceiling, multi-file 42/42;
-- `node playground/build.mjs --check`;
-- `node website/build.mjs` + `node website/tests/run-all.mjs` — browser 344/0.
-
-Frozen runtime artifacts (`0.0.2`, `0.2.0`) remain byte-identical.
-
-## Human Gates
-
-None pending. HD-1…HD-4 were resolved by the Architecture Decision Council as
-ADR-0001…0004 (`docs/adr/`). AUDIT-3 is resolved by ADR-0004 (Option A,
-adopted). The old approval tokens
-
-- `DECISION APPROVED: OPTION A`
-- `DECISION APPROVED: OPTION B`
-- `DECISION APPROVED: OPTION B`
-
-## Repository-local Codex Policy
-
-Project `.codex/config.toml` contains project-local safety/context settings
-only: approval policy, sandbox mode, documentation/output limits, and history
-persistence. Model selection, provider routing, the ChatGPT Web bridge,
-Compatibility mode, and global agent concurrency belong in
-`~/.codex/config.toml`.
-
-The stale project-local `[models.new_thread]` and `[agents]` routing overrides
-were removed during the post-FSM-P5 authority-alignment pass. The project file
-must not reintroduce model/provider/bridge/global-agent routing.
-
-## Protected Local State
-
-- `s` — pre-existing untracked file; verified size 1 byte; do not edit, stage,
-  commit, delete, or rename it.
+The `0.2.1` release itself is done. What remains is human review of the local
+reconciliation commits (state docs + website `0.2.1` alignment + drift guard),
+then an explicit decision whether to push them. Do not push, deploy, tag, or
+start a new development program without that authorization.
 
 ## Release Immutability
 
@@ -215,8 +153,8 @@ must not reintroduce model/provider/bridge/global-agent routing.
 - `0.2.1-dev.5` — 1,768,369 bytes — development runtime; superseded by the
   `0.2.1` release, preserved on disk:
   `8f8c3e1689fc7fb1472293d610c9392d5ea2b7fe106b50f0c7a5535dfc54bc19`
-- `0.2.1` — 1,768,322 bytes — **current release runtime** (release candidate,
-  pending tag):
+- `0.2.1` — 1,768,322 bytes — **published release runtime** (tag `v0.2.1`,
+  GitHub release published 2026-10-01):
   `48c456fcda6c50dd6808ccc5f15a0bca4c0b81d7d970172557817decf427cc9e`
 
 Historical runtime directories are immutable. `playground/build.mjs` pins each
@@ -231,7 +169,8 @@ runtime means adding a new version, never replacing one.
 - FSM-P2;
 - FSM-P3;
 - FSM-P4;
-- FSM-P5.
+- FSM-P5;
+- FSM-P6.
 
 Reopen only for a concrete reproducible regression.
 
@@ -246,13 +185,11 @@ Without new human authorization:
 - formatter product;
 - async;
 - macros;
-- new release;
-- AUDIT-3 implementation.
+- a new release or version line;
+- a new FSM phase.
 
-FSM-P6 is defined as *Multi-file Playground UX* and is implemented locally. It
-authorizes no language-semantics change: the deferred candidates above (package
-management, persistence, LSP, formatter) remain deferred and must not be
-promoted into a follow-up phase by assumption.
+The next major engineering direction is **not selected**. Do not promote a
+deferred candidate into a follow-up phase by assumption.
 
 ## Handoff
 

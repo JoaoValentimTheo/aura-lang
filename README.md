@@ -20,23 +20,27 @@ No Python required to run.
 Aura v3 is a from-scratch Rust rewrite. The previous Python transpiler is
 gone; the last Python release is preserved as tag `v0.2.0a8`.
 
-Version **`v0.2.0`** is the current public release. It completes the Aura Core
-language: generic maps keyed by `string`, `int`, or `bool` (or a union of
-these) with `type Map<K, V> = {K: V}`, `map.items()`, list and map
-comprehensions, the decided Core syntax rules (real statement separators,
-numeric underscore placement, f-string brace edges), and in-source module
-semantics (`pub`, `pub use`, aliases, per-module variant tags). It also ships
-the completed CLI/REPL, the Playground, and verified Native/WASM parity.
+Version **`v0.2.1`** is the current public release (published 2026-10-01). It
+builds on the completed Aura Core (generic maps keyed by `string`, `int`, or
+`bool`, `map.items()`, comprehensions, the decided Core syntax rules, in-source
+module semantics, generics, the four-pillar object model) and adds:
 
-The source tree has since advanced to the **`0.2.1` development line** (release
-and language `0.2.1`), which adds the builtin-name value-namespace reservation
-(`E1009`) and unifies structural type-nesting under the semantic AST limit
-(ADR-0004). `0.0.2` (WebAssembly runtime, host boundary, Playground, website)
-and `0.0.1` (first usable release) are historical and remain available and
-frozen; `0.0.2-dev.*`, `0.2.0-dev.*`, and `0.2.1-dev.*` are development
-pre-releases of their lines. Release, language, and runtime versions remain
-distinct constants (ADR-0001) so a runtime-only release can advance the release
-version without claiming a language change.
+- filesystem-backed module acquisition for the CLI (`<name>.aura` siblings and
+  `<name>/mod.aura` directories become logical modules through the same
+  resolver);
+- the multi-file Playground (`FSM-P6`) with an additive Host ABI 1
+  virtual-project transport;
+- builtin-name reservation for user value bindings (`E1009`);
+- a unified structural type-nesting limit (256) on every substrate (ADR-0004);
+- exact-type CPython boundary conversion and red-team robustness fixes.
+
+`0.2.0` is the previous release (the Core-completion language release).
+`0.0.2` (WebAssembly runtime, host boundary, Playground, website) and `0.0.1`
+(first usable release) are historical and remain available and frozen;
+`0.0.2-dev.*`, `0.2.0-dev.*`, and `0.2.1-dev.*` are development pre-releases of
+their lines. Release, language, and runtime versions remain distinct constants
+(ADR-0001) so a runtime-only release can advance the release version without
+claiming a language change.
 
 | Area | State |
 |------|-------|
@@ -126,7 +130,8 @@ fn main() {
   top-level functions (`f(x: 1)`); positional arguments come first. Named
   arguments are for `struct` construction too; enum variant payloads are
   positional.
-* `module` declares an in-source module, `pub` exports an item from it, and
+* `module` declares a module (in-source or, on native targets, filesystem-backed
+  through `<name>.aura` / `<name>/mod.aura`), `pub` exports an item from it, and
   `use path [as Alias]` imports a name; modules are real visibility boundaries
   (see [docs/contract.md](docs/contract.md) §10).
 

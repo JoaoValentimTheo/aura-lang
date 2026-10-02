@@ -1,5 +1,10 @@
 # Aura Engineering Report — Road to 1.0 (Train T0–T5)
 
+> **Historical record.** This report describes the T0–T5 engineering trains at
+> HEAD `584af85`. The HD-4/version-identity questions it records as open were
+> later resolved by ADR-0001 and released as `0.2.1`. For current state see
+> `AGENT_STATE.md`.
+
 Program: **Aura Autonomous Engineering Organization — Road to Aura 1.0**.
 Base `6d25985` → HEAD `584af85` (pushed; CI green). Nothing was released or
 tagged; frozen artifacts unchanged.

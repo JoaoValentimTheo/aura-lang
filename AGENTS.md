@@ -63,6 +63,13 @@ Stable release `0.2.0`:
 - size `1,654,161`
 - SHA-256 `9937fd8094ef402b7a9233d02bd232405f75b9e70661404646fcda7cd295c5bc`
 
+Current release `0.2.1` (tag `v0.2.1` = commit `3f5f8702`, published
+2026-10-01):
+
+- `playground/runtimes/0.2.1/aura_playground_runtime.wasm`
+- size `1,768,322`
+- SHA-256 `48c456fcda6c50dd6808ccc5f15a0bca4c0b81d7d970172557817decf427cc9e`
+
 AUDIT-3 / TypeExpr nesting is **RESOLVED** by ADR-0004
 (`docs/adr/0004-typeexpr-nesting-policy.md`): the human owner delegated routine
 language-design decisions to the Architecture Decision Council, which adopted

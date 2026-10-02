@@ -15,9 +15,8 @@
 //
 // Nothing here reimplements Aura semantics: the assertions read the runtime's
 // own structured result. The suite requires the runtime artifact that carries
-// the virtual-project exports; it selects the manifest's current development
-// runtime explicitly so the test never depends on which entry is the manifest
-// default.
+// the virtual-project exports; it selects the manifest's current runtime
+// explicitly so the test never depends on which entry is the manifest default.
 //
 // Usage: node playground/tests/node/multifile.test.mjs
 // Requires the `playwright` package with Chromium installed.
@@ -40,7 +39,7 @@ const manifest = JSON.parse(
   readFileSync(join(__dirname, "..", "..", "runtimes", "manifest.json"), "utf8"),
 );
 
-/** The development runtime that carries the additive virtual-project exports. */
+/** The manifest's current runtime, which carries the additive virtual-project exports. */
 const PROJECT_RUNTIME = manifest.current;
 
 /** A runtime that predates `aura_project_*`. */

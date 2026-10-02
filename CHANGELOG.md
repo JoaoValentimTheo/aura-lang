@@ -5,7 +5,19 @@ Notable changes to Aura. Format follows Keep a Changelog; versions follow
 current engineering program; earlier history is in `docs/release-notes/` and
 Git.
 
-## [Unreleased] — 0.2.1 development line
+## [Unreleased]
+
+Nothing yet. The `0.2.1` release line is closed; no successor version has been
+selected.
+
+## [0.2.1] — 2026-10-01
+
+A language release (`release = language = 0.2.1`), published as tag `v0.2.1`
+(commit `3f5f870`). It is a focused, additive step over `0.2.0`: builtin-name
+reservation, a unified type-nesting limit, filesystem-backed module
+acquisition, a multi-file Playground, and robustness fixes found by independent
+adversarial review. See `docs/release-notes/v0.2.1.md` and
+`docs/MIGRATION_0_2_1.md`.
 
 ### Changed
 - **Versioning (ADR-0001).** Release and language versions are distinct
@@ -47,6 +59,20 @@ Git.
   string lexing is O(n) instead of O(n²).
 
 ### Added
+- **Filesystem-backed module acquisition.** `aura run` / `aura check` compile a
+  selected file together with its reachable filesystem module tree
+  (`NativeFilesystemSourceProvider` over the provider-neutral module graph):
+  sibling `<name>.aura` files and `<name>/mod.aura` directories become logical
+  child modules consumed by the same canonical resolver. A logical module with
+  both a file and a `mod.aura` owner is `E2020`. Native-only; the WebAssembly
+  host has no filesystem.
+- **Multi-file Playground (FSM-P6).** A project state model (files with opaque
+  `SourceKey`s, an active file, an entry file, declared provider child links),
+  file tabs with add/rename/set-entry/delete/reset, source-aware diagnostics,
+  and an additive Host ABI 1 `aura_project_*` transport (`aura_run_project`)
+  that executes a virtual multi-source project through the same resolver,
+  checker, and runtime. A one-file project keeps the historical `source` path;
+  a runtime without the exports reports a structured capability error.
 - `docs/adr/0001`–`0004` recording the Architecture Decision Council's
   resolutions of the queued human decisions HD-1…HD-4.
 - A CycloneDX **SBOM** and a machine-readable **release manifest** (with a

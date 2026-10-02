@@ -12,7 +12,8 @@ synchronization, CI-RELIABILITY-1, the final development runtime, adversarial
 remediation, and CONF-PLAY-1 (a stale browser scroll fixture). The version
 authority was then migrated from the `0.0.x` line to the public `0.2.0`
 release, a new `0.2.0` runtime artifact was built and verified, and the
-Playground and website now present `0.2.0` as the current stable release.
+Playground and website were updated to present `0.2.0` as the then-current
+stable release (later superseded by `0.2.1`; see below).
 
 `docs/CORE_FREEZE.md` is the status/evidence record for the frozen Core;
 `docs/LANGUAGE_SPEC.md` remains the semantic authority.
@@ -26,16 +27,17 @@ Playground and website now present `0.2.0` as the current stable release.
   filesystem-module program has since completed its native foundation and
   virtual/WASM source foundation through FSM-P5 locally.
 
-## Current major program — AURA FILESYSTEM MODULE SYSTEM
+## Completed program — AURA FILESYSTEM MODULE SYSTEM (released in v0.2.1)
 
-Current filesystem-track status:
+The filesystem-module program is complete and shipped:
 
 - FSM-P1 — design — complete;
 - FSM-P2 — multi-source provenance — complete;
 - FSM-P3 — provider-neutral graph — complete;
 - FSM-P4 — native filesystem provider — complete and remotely closed;
 - FSM-P5 — virtual/WASM VFS foundation — complete and remotely closed;
-- FSM-P6 — multi-file Playground UX — implemented locally, under review.
+- FSM-P6 — multi-file Playground UX — **committed, pushed, and included in
+  `v0.2.1`**.
 
 FSM-P5 lets browser/WASM callers supply virtual multi-source projects through
 `InMemorySourceProvider` and the same `ModuleGraphBuilder`, resolver, checker,
@@ -47,15 +49,31 @@ provider child links) and executes it through the same virtual-project
 transport. It is a UI/state/transport phase — no language semantics were added,
 and no second module graph or resolver exists for browser sources.
 
-A development runtime, `0.2.0-dev.2`, carries the additive Host ABI 1
-virtual-project exports so the surface can be exercised end to end. It is a
-development artifact: not a release, not tagged, and never a replacement for
-`0.2.0`.
+Native filesystem module acquisition is also user-visible in `v0.2.1`:
+`aura run`/`aura check` compile a selected file together with its reachable
+filesystem module tree. The release runtime `0.2.1` carries the additive Host
+ABI 1 virtual-project exports; superseded development runtimes
+(`0.2.0-dev.1`/`0.2.0-dev.2`, `0.2.1-dev.1`..`.5`) remain preserved historical
+artifacts.
 
-Still deferred, and not part of FSM-P6: browser persistence, package
-manifests/package management, remote dependency resolution, URL imports, a
-visual module-ownership tree, and interactive child-link editing.
+## Next major program — NOT SELECTED
+
+`v0.2.1` is published. No successor engineering program has been chosen, and
+nothing below is authorized. Explicitly deferred until a human selects a
+direction:
+
+- browser persistence (localStorage/URL project sharing);
+- package manifests / package management / remote dependency resolution / URL
+  imports;
+- LSP or a formatter product;
+- async;
+- macros;
+- a new release or version line.
+
+Do not begin any of them by assumption.
 
 ## Preserved decisions
 
-Follow-up 3 / AUDIT-3 remains DECISION-PENDING; no code or doc changes beyond the existing decision package; property test AST-limit explicitly excludes TypeExpr-heavy inputs pending that decision.
+AUDIT-3 / HD-1…HD-4 are resolved (ADR-0001…0004) and must not be reopened or
+re-queued. The TypeExpr property-test exclusion was lifted once ADR-0004
+landed.

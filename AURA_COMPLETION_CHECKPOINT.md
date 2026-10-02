@@ -1,5 +1,10 @@
 # AURA COMPLETION CHECKPOINT
 
+> **Historical record.** Operational state for the Aura Completion Program at
+> `0ffa49e`. Human-decision rows below were true then; they were later resolved
+> (ADR-0002/ADR-0004) and the `0.2.1` release shipped. For current state see
+> `AGENT_STATE.md`.
+
 Operational state for the Aura Completion Program. Not language law.
 
 ## Heads

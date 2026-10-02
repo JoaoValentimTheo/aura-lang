@@ -21,9 +21,9 @@ else
     dirty=YES
 fi
 
-current_track=$(sed -n '/^## Current Track$/,/^## /{/^AURA /p;}' AGENT_STATE.md | head -n 1)
-current_phase=$(sed -n '/^## Verified Closed$/,/^## /{/FSM-P5/p;}' AGENT_STATE.md | head -n 1 | sed 's/^- //')
-audit3=$(sed -n '/^## Human Gates$/,/^## /{/AUDIT-3 \/ TypeExpr nesting =/p;}' AGENT_STATE.md | head -n 1)
+current_track=$(sed -n '/^## Current Track$/{n;n;p;q;}' AGENT_STATE.md)
+current_phase=$(sed -n '/^## Verified Closed$/,/^## /{/FSM-P6/p;}' AGENT_STATE.md | head -n 1 | sed 's/^- //')
+audit3=$(sed -n '/^## Human Decisions$/,/^## /{/ADR-0004/p;}' AGENT_STATE.md | head -n 1 | sed 's/^- //')
 
 codex_state=CLEAN
 if ! git diff --quiet -- .codex/config.toml; then

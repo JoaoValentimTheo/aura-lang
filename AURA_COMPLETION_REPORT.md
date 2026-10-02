@@ -1,5 +1,10 @@
 # AURA COMPLETION REPORT
 
+> **Historical record.** This report describes the completion program as it
+> stood at HEAD `0ffa49e`. Its HD-1/AUDIT-3 statements were true then and are
+> preserved; both were later resolved by ADR-0002/ADR-0004 and the `0.2.1`
+> release. For current state see `AGENT_STATE.md`.
+
 Program: AURA COMPLETION PROGRAM — core language, runtime, tooling,
 performance, security, DX, cross-platform CI, release readiness.
 Final local/remote HEAD: `0ffa49e`. Nothing was released, tagged, or pushed

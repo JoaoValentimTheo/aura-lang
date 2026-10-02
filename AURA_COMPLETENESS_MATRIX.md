@@ -1,5 +1,10 @@
 # AURA COMPLETENESS MATRIX
 
+> **Historical record (program start).** This matrix predates the ADR-0001…0004
+> resolutions and the `0.2.1` release. Its "BLOCKED BY HUMAN DECISION" rows
+> were true at the time and are preserved; HD-1/AUDIT-3 are now resolved. For
+> current state see `AGENT_STATE.md`.
+
 Derived from repository evidence at program start (local HEAD `fef6904`,
 remote `bf95d10`). Authority order: `docs/LANGUAGE_SPEC.md` (normative),
 `docs/FILESYSTEM_MODULES_DESIGN.md`, `docs/contract.md`, `docs/grammar.md`,

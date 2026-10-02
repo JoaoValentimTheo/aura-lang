@@ -1,5 +1,10 @@
 # Human Decisions Queue
 
+> **Status (2026-10-02): no decisions are pending.** HD-1…HD-4 were all
+> resolved by the Architecture Decision Council as ADR-0001…0004, implemented,
+> tested, and released in `v0.2.1`; no owner-level item is open. The decision
+> packages below are preserved as historical records.
+
 Genuinely human-level decisions. Under the permanent engineering organization
 the Architecture Decision Council holds delegated authority to resolve these;
 each resolution produces an ADR. This file records the outcomes and any truly

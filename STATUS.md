@@ -1481,3 +1481,54 @@ Follow-up 3 / AUDIT-3 remains DECISION-PENDING; no code or doc changes beyond th
 Next exact action: **INDEPENDENT REVIEW OF THE LOCAL FSM-P6 STACK.** Do not
 push, publish a runtime, create a tag or release, begin package management or
 persistence, or alter AUDIT-3 without new human authorization.
+
+---
+
+## v0.2.1 RELEASED — POST-RELEASE STATE RECONCILIATION — 2026-10-02
+
+**AURA v0.2.1 IS PUBLISHED.** This checkpoint supersedes the "Next exact
+action" statements above; those remain as historical evidence of what was true
+when written.
+
+Release certificate (independently re-verified on 2026-10-02):
+
+- Annotated tag `v0.2.1`, tag object
+  `df755340e008faea402ea7bd774afdaafef0d41f`, dereferenced commit
+  `3f5f8702bcfad778a3007b792cc8e270a88f97e8`;
+- `origin/rewrite/v3-rust` == `v0.2.1^{commit}` == `3f5f8702`;
+- GitHub release published `2026-10-01T20:29:36Z`, non-draft, non-prerelease;
+- release identity: release = language = runtime = `0.2.1`; Host ABI `1`;
+  Playground API `1`;
+- release WASM `aura-playground-runtime-0.2.1.wasm`: 1,768,322 bytes,
+  SHA-256 `48c456fcda6c50dd6808ccc5f15a0bca4c0b81d7d970172557817decf427cc9e`,
+  byte-identical to the in-repository artifact (verified by download and `cmp`);
+- release assets also include Linux/macOS/Windows tarballs with `.sha256`
+  files, `release-manifest.json` (`84c068c0…`), and `sbom.json`
+  (`21be49be…`), all hash-verified after download;
+- all 27 check-runs on `3f5f8702` succeeded; release workflow run `36920912666`
+  succeeded (validate + three platform builds + publish); branch CI
+  `36920833058` and Pages deploy `36920833002` green.
+
+**FSM-P1…P6 are all ancestors of `v0.2.1` and therefore shipped in it.** In
+particular FSM-P6 is not merely local: `playground/web/project.js`, the file-tab
+UI, worker project transport, and the additive Host ABI 1 `aura_project_*`
+exports are inside the tag. Native filesystem module acquisition is also
+user-visible in the released binaries (`aura run main.aura` with `math.aura` →
+`42`; `pkg/mod.aura` → `42`; dual ownership → `E2020`), verified by CLI smoke.
+
+HD-1…HD-4 remain resolved by ADR-0001…0004; no human gate is open.
+
+Release-note completeness: `docs/release-notes/v0.2.1.md` originally omitted the
+filesystem-module and multi-file Playground capabilities that are in the tag.
+The local file now documents them; **the published GitHub release body was not
+edited** (releases are immutable).
+
+This reconciliation pass also locally aligns the official website to the
+released `0.2.1` identity (`website/site.config.mjs`, docs version metadata,
+install/known-limitations/migration/runtime/playground/releases/roadmap/home
+surfaces, footer version rendering, and a release-version drift guard test).
+It adds no language semantics, no runtime bytes, and no release.
+
+Next exact action: **HUMAN REVIEW OF POST-v0.2.1 STATE + WEBSITE ALIGNMENT
+BEFORE PUSH.** The release train is closed; nothing is pushed by this
+reconciliation pass.
