@@ -141,7 +141,7 @@ stack size, which a browser does not expose to the artifact.
 
 The trap depth depends on the shape, the engine, and the current JIT/execution
 state: the same `else` shape traps at 387 when scanned cold from depth 0, at
-435 when scanned from 300 in the same process, and at different depths on
+435–436 when scanned from 300 in the same process, and at different depths on
 other engines. Only the *violation* is stable; the depth is not a contract
 constant.
 
