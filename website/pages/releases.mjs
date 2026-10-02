@@ -6,13 +6,12 @@ export const releasesPage = {
   title: "Releases",
   path: "releases/",
   activeKey: "releases",
-  description:
-    "Aura releases: the current 0.2.1 and the previous 0.2.0, 0.0.2, and 0.0.1.",
+  description: `Aura releases: the current ${site.currentRelease} and the previous ${site.previousRelease}, plus the historical releases.`,
   async render(base) {
     return `${pageHead({
       eyebrow: "Releases",
       title: "Aura releases",
-      lede: "Aura 0.2.1 is the current public release: builtin-name reservation, a unified type-nesting limit, filesystem-backed module acquisition for the CLI, and the multi-file Playground.",
+      lede: `Aura ${site.currentRelease} is the current public release: builtin-name reservation, a unified type-nesting limit, filesystem-backed module acquisition for the CLI, and the multi-file Playground.`,
     })}
 
 <section class="section section--tight">

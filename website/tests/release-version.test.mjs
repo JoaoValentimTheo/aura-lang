@@ -14,17 +14,23 @@
 //
 //   * `previousRelease` must not equal `currentRelease`;
 //   * `developmentVersion` must not equal `currentRelease`, and may be null;
-//   * the runtime selector's default must be the current release identity;
+//   * the manifest must agree with the declared line: closed line (null
+//     development version) means the manifest default is the published
+//     release; an open line may default to a development build;
 //   * the generated releases/runtime pages must name the current release and
 //     must not present a stale one as "Current";
 //   * the generated footer must not render `null` as a development label;
-//   * a development runtime must never be presented as the current release.
+//   * a positive claim that some version "is the current public release" must
+//     name the current release, and the released line must not be labelled a
+//     development line;
+//   * a development runtime mentioned as "current" must be the manifest's
+//     current entry (historical mentions elsewhere are fine).
 //
 // No network access: everything is read from the repository.
 //
 // Usage: node website/tests/release-version.test.mjs
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -72,11 +78,33 @@ check("src/lib.rs LANGUAGE_VERSION readable", typeof languageVersion === "string
 const currentEntry = manifest.versions.find((v) => v.id === manifest.current);
 check("manifest current entry exists", Boolean(currentEntry), manifest.current);
 check("manifest current entry is available", Boolean(currentEntry && currentEntry.available));
-check(
-  "manifest current entry is a release channel",
-  Boolean(currentEntry && currentEntry.channel === "release"),
-  currentEntry && currentEntry.channel,
-);
+
+// Two legitimate states exist:
+//   * closed line  — `developmentVersion` is null and the manifest default is
+//                    the published release (channel `release`, id == release);
+//   * open line    — `developmentVersion` is set and the manifest default may
+//                    be a development build on that line (observed before the
+//                    0.2.1 release: manifest default `0.2.1-dev.5`).
+// The guard accepts both and rejects only mismatches between them.
+const lineIsClosed = site.developmentVersion === null;
+const currentChannel = currentEntry && currentEntry.channel;
+if (lineIsClosed) {
+  check(
+    "closed line: manifest current is the published release",
+    manifest.current === site.releaseVersion && currentChannel === "release",
+    `current=${manifest.current} channel=${currentChannel}`,
+  );
+} else {
+  check(
+    "open line: manifest current belongs to the declared development line",
+    currentChannel === "development"
+      ? manifest.current === site.developmentVersion ||
+        manifest.current.startsWith(`${site.developmentVersion}-`) ||
+        (currentEntry && currentEntry.release_version === site.developmentVersion)
+      : manifest.current === site.releaseVersion,
+    `current=${manifest.current} development=${site.developmentVersion}`,
+  );
+}
 
 // -- cross-authority agreement ------------------------------------------------
 
@@ -110,10 +138,12 @@ check(
   docs.docsLanguageVersion === site.languageVersion,
   `${docs.docsLanguageVersion} != ${site.languageVersion}`,
 );
+// The manifest's current entry must describe the manifest identity exactly,
+// whether that is a release or a development build.
 check(
-  "manifest current runtime id matches the site release",
-  manifest.current === site.releaseVersion,
-  `${manifest.current} != ${site.releaseVersion}`,
+  "manifest current id is self-consistent",
+  Boolean(currentEntry) && currentEntry.runtime_version === manifest.current,
+  currentEntry && currentEntry.runtime_version,
 );
 check(
   "manifest current language_version matches the site language version",
@@ -121,9 +151,11 @@ check(
   `${currentEntry && currentEntry.language_version} != ${site.languageVersion}`,
 );
 check(
-  "manifest current release_version matches the site release",
-  currentEntry && currentEntry.release_version === site.releaseVersion,
-  `${currentEntry && currentEntry.release_version} != ${site.releaseVersion}`,
+  "manifest current release_version is the release or development identity",
+  currentEntry &&
+    (currentEntry.release_version === site.releaseVersion ||
+      currentEntry.release_version === site.developmentVersion),
+  `${currentEntry && currentEntry.release_version} vs release=${site.releaseVersion} dev=${site.developmentVersion}`,
 );
 
 // -- identity invariants ------------------------------------------------------
@@ -158,11 +190,64 @@ check(
   site.previousRelease,
 );
 
-// A development runtime must never be the manifest default/current release.
-const currentIsDevelopment = manifest.versions.some(
-  (v) => v.id === manifest.current && v.channel === "development",
-);
-check("manifest current is never a development runtime", currentIsDevelopment === false);
+// The manifest may legitimately point at a development runtime while a line is
+// open (observed: `0.2.1-dev.5` before the release); that is already handled by
+// the closed/open-line checks above. A development runtime must never be
+// *presented as* the published current release — that claim is guarded against
+// the generated output below and in the source-level claim scan.
+
+// -- claim scan (scope-aware, source level) -----------------------------------
+//
+// These patterns guard *positive current* claims without forbidding a version
+// number outright: migration guides and release history may mention 0.2.0 and
+// the dev.* chain, but no page may call a non-current version the current
+// release, call the released version a development line, or describe a
+// non-current dev build as the current runtime.
+
+const currentPublicReleaseRe = /([0-9][0-9A-Za-z.\-]*)`? is the current public release/g;
+const developmentLineRe = /([0-9][0-9A-Za-z.\-]*)`? development line/g;
+
+function scanClaims(where, text) {
+  for (const m of text.matchAll(currentPublicReleaseRe)) {
+    check(
+      `${where}: "is the current public release" names the current release`,
+      m[1] === site.currentRelease,
+      `claimed ${m[1]}, current is ${site.currentRelease}`,
+    );
+  }
+  for (const m of text.matchAll(developmentLineRe)) {
+    check(
+      `${where}: the released version is not called a development line`,
+      m[1] !== site.currentRelease,
+      `called ${m[1]} a development line while it is current`,
+    );
+  }
+  // A dev build described as *current* must be the manifest's current entry.
+  for (const line of text.split("\n")) {
+    if (!/-dev\./.test(line) || !/current/i.test(line)) continue;
+    const dev = line.match(/([0-9][0-9A-Za-z.\-]*-dev\.[0-9]+)/);
+    if (!dev) continue;
+    check(
+      `${where}: dev runtime described as current is the manifest current`,
+      dev[1] === manifest.current,
+      `line mentions ${dev[1]}, manifest current is ${manifest.current}`,
+    );
+  }
+}
+
+const websiteDir = join(repo, "website");
+const claimFiles = [];
+const pagesDir = join(websiteDir, "pages");
+const contentDir = join(websiteDir, "content");
+for (const dir of [pagesDir, contentDir]) {
+  for (const name of readdirSync(dir)) {
+    if (name.endsWith(".mjs") || name.endsWith(".md")) claimFiles.push(join(dir, name));
+  }
+}
+claimFiles.push(join(websiteDir, "site.config.mjs"));
+for (const file of claimFiles) {
+  scanClaims(file.slice(repo.length + 1), readFileSync(file, "utf8"));
+}
 
 // -- generated output ---------------------------------------------------------
 
