@@ -1532,3 +1532,55 @@ It adds no language semantics, no runtime bytes, and no release.
 Next exact action: **HUMAN REVIEW OF POST-v0.2.1 STATE + WEBSITE ALIGNMENT
 BEFORE PUSH.** The release train is closed; nothing is pushed by this
 reconciliation pass.
+
+---
+
+## POST-v0.2.1 STABILIZATION — 2026-10-02
+
+The staged post-0.2.1 stabilization program (reality reconstruction → doc/web
+sync → break → parity → contract → harden → perf) executed locally on top of
+`3f5f8702`. STAGE 0 re-verified branch, tag object `df755340`, dereferenced
+commit `3f5f8702`, release publication, all 27 check-runs, Pages deploy, the
+release asset (download + `cmp`), and the three frozen runtime artifacts
+(byte hashes unchanged: `0.0.2` `5a4ad3f7…`, `0.2.0` `9937fd80…`, `0.2.1`
+`48c456fc…`). STAGE 0C/0D/0E confirmed release = language = runtime = `0.2.1`,
+Host ABI 1, Playground API 1, FSM-P1…P6 all ancestors of `v0.2.1`, and
+HD-1…HD-4 resolved by ADR-0001…0004.
+
+STAGES 4–8 ran the BREAK/PARITY/CONTRACT/HARDEN/PERF campaigns. Findings:
+
+1. **B-1 (OPEN, WASM call-frame trap below the 512-frame language limit).** A
+   legal mainstream recursive shape (`else` block) exhausts the WebAssembly
+   engine stack at depth ~397 (Node) / ~196 (Chromium) and traps instead of
+   `E4011`; native reports `E4011` at the full 512-frame limit. `node
+   --stack-size=4000` moves the wasm boundary to the language limit, and a
+   16 MiB wasm shadow stack does not change it, so the binding resource is the
+   engine stack, not the guest linear stack. Present in every released WASM
+   artifact (`0.0.2`, `0.2.0`, `0.2.1`) and at HEAD; not a 0.2.1 regression.
+   It conflicts with `LANGUAGE_SPEC` §31.5 (and §31.3), so it needs an explicit
+   specification decision (substrate-calibrated cap vs iterative interpreter).
+   Decision package `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (OPEN), with
+   reproduction, root cause, options, and recommendation. Safe-depth (150)
+   parity guards were added to the differential and browser node suites.
+2. Eager filesystem-module discovery that fails on an unrelated malformed
+   sibling `.aura` file was reproduced and then classified **EXPECTED
+   DOCUMENTED LIMITATION** (`docs/FILESYSTEM_MODULES_DESIGN.md` documents
+   eager reachable-child discovery and the parser-failure row). Not a defect.
+3. Case-collision observations on macOS were APFS case-insensitivity artifacts
+   (a write replaced the earlier file), not language behavior. NON-ISSUE.
+4. A debug-profile native `if`-chain abort at ~382 was debug-frame inflation;
+   the release profile accepts to the language limit and raises `E4011`.
+   HISTORICAL/INFORMATIONAL only.
+
+STAGE 8 re-profiled the known REPL O(N²): clean quadratic, root-caused to the
+per-submission checker rebuild, with an equivalence-safe fix design recorded in
+`docs/engineering/PERFORMANCE.md` (TD-13). No performance change was made.
+
+Validation at closure: contract 11, compat 17, cross-subsystem 8; playground
+node suites green (differential 220/220 native/WASM agreement, syntax, modules,
+multifile, browser, a11y); website suite green including the hardened
+release-version drift guard; frozen artifacts byte-identical.
+
+Next exact action: **HUMAN REVIEW OF THE LOCAL STABILIZATION STACK BEFORE
+PUSH**, plus a decision on B-1 (Option A/B/C). Nothing was pushed, tagged,
+deployed, or released; `v0.2.1` is unchanged.

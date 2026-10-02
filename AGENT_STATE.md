@@ -22,13 +22,16 @@ continuing substantial work.
 
 Authoritative current value is `git rev-parse HEAD`, also printed by
 `scripts/agent-state.sh`; a tracked state file cannot safely hardcode its own
-commit SHA. At reconciliation intake (2026-10-02) the committed and pushed HEAD
+commit SHA. At stabilization intake (2026-10-02) the committed and pushed HEAD
 is `3f5f8702` (`fix(release): preflight must not require the tag to be free
-on-tag`), which is also the dereferenced `v0.2.1` tag commit.
+on-tag`), which is also the dereferenced `v0.2.1` tag commit. The stabilization
+work sits in six local, unpushed commits on top of it.
 
 ## Remote HEAD
 
-`origin/rewrite/v3-rust` = `3f5f8702` (equal to local committed HEAD).
+`origin/rewrite/v3-rust` = `3f5f8702` (the released `v0.2.1` commit). Local
+`rewrite/v3-rust` is ahead of it by the unpushed stabilization commits; nothing
+has been pushed by this program.
 
 ## Released
 
@@ -50,7 +53,7 @@ on-tag`), which is also the dereferenced `v0.2.1` tag commit.
 
 ## Current Track
 
-POST-v0.2.1 RELEASE RECONCILIATION
+POST-v0.2.1 STABILIZATION (stages 0–8 complete locally; B-1 decision open)
 
 ## Phase Namespace
 
@@ -111,11 +114,41 @@ platform builds, and publish. Branch CI (`36920833058`) and the GitHub Pages
 deployment (`36920833002`) also succeeded on the release SHA; 27/27 check-runs
 green.
 
+## Post-v0.2.1 Stabilization
+
+The post-0.2.1 stabilization campaign (STAGE 0 reality reconstruction through
+STAGE 8 performance) executed locally on top of `3f5f8702` and is recorded
+here. Stages 0–3 verified the release, reconciled repository authority, and
+aligned the official website to the released `0.2.1` identity with a
+release-version drift guard (`website/tests/release-version.test.mjs`, run in
+the website and Pages CI jobs). Stages 4–8 attacked the language, modules, CLI,
+REPL, CPython, WASM, and Playground surfaces; ran native/WASM parity,
+contract-sync, hardening, and performance checks.
+
+- **B-1 (OPEN, decision required) — WASM call-frame trap below the 512-frame
+  language limit.** A legal mainstream recursive shape (`else`-block recursion)
+  exhausts the WebAssembly engine stack at depth ~397 in Node and ~196 in
+  Chromium and traps instead of reporting `E4011`; native is correct at the
+  full limit. Present in every released WASM artifact (`0.0.2`, `0.2.0`,
+  `0.2.1`); `src/` and `playground/runtime/src/` are byte-identical to the
+  `v0.2.1` tag, so this is not a post-0.2.1 regression. It is a conflict
+  between `LANGUAGE_SPEC` §31.3 and §31.5 and therefore a specification
+  decision (substrate-calibrated cap vs iterative interpreter), not a routine
+  fix. Decision package: `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (OPEN).
+  Safe-depth (150) native/WASM parity guards were added to
+  `playground/tests/node/differential.test.mjs` and
+  `playground/tests/node/browser.test.mjs`; the guards pin the working region
+  without encoding the undecided cap.
+- All other stabilization findings classified as NON-ISSUE, EXPECTED
+  DOCUMENTED LIMITATION (eager filesystem-module discovery of malformed
+  reachable siblings; case-insensitive filesystem artifacts), or HISTORICAL
+  behavior; no other unresolved CRITICAL/HIGH defect was reproduced.
+
 This reconciliation pass stages local, **unpushed** repository/doc/website
 alignment for the released `0.2.1` identity (authority docs, official website,
-and a release-version drift guard). It adds no language semantics, no runtime
-bytes, and no new release. It is committed locally and awaits human review
-before push.
+a release-version drift guard), the B-1 decision package and guards. It adds no
+language semantics, no runtime bytes, and no new release. It is committed
+locally and awaits human review before push.
 
 No post-`0.2.1` development line exists yet, and none may be invented here. The
 next major engineering direction has not been selected; package management,
@@ -123,12 +156,16 @@ browser persistence, LSP, formatter, async, and macros remain deferred.
 
 ## Next Exact Action
 
-HUMAN REVIEW OF POST-v0.2.1 STATE + WEBSITE ALIGNMENT BEFORE PUSH.
+HUMAN REVIEW OF POST-v0.2.1 STABILIZATION STACK BEFORE PUSH.
 
-The `0.2.1` release itself is done. What remains is human review of the local
-reconciliation commits (state docs + website `0.2.1` alignment + drift guard),
-then an explicit decision whether to push them. Do not push, deploy, tag, or
-start a new development program without that authorization.
+The `0.2.1` release itself is done and unchanged. What remains is human review
+of the six local, unpushed stabilization commits (state docs + website `0.2.1`
+alignment + release-version drift guard + B-1 decision package and safe-depth
+guards), then an explicit decision whether to push them. Separately, the B-1
+decision (Option A/B/C in `docs/WASM_CALL_FRAME_LIMIT_DECISION.md`) needs a
+human/Council choice before any runtime behavior changes. Do not push, deploy,
+tag, change runtime behavior, or start a new development program without
+authorization.
 
 ## Release Immutability
 
