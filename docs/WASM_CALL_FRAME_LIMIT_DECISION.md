@@ -67,11 +67,11 @@ All WASM probes use a **fresh instance per case** (see §3 on poisoning) with
 the production loader (`playground/web/runtime.mjs`) and the real Playground
 UI for the Worker column. Native is the shipped release CLI.
 
-| Shape (Aura) | native | Node 24 default (fresh) | Chromium 153 main thread | Chromium 153 **production Worker** |
+| Shape (Aura) | native | Node 24 default (fresh, cold) | Chromium 153 main thread | Chromium 153 **production Worker** |
 |---|---|---|---|---|
-| thin early-return (`if n <= 0 { return 0 }\n return 1 + f(n-1)`) | 510 ok / 511 `E4011` | 510 ok / 511 `E4011` | 510 ok / 511 `E4011` | traps at **360** |
-| `else`-block recursion | 510 ok / 511 `E4011` | traps at **387** | 510 ok / 511 `E4011` | traps at **196** |
-| `match` recursion | 510 ok / 511 `E4011` | traps at **459** | 510 ok / 511 `E4011` | traps at **233** |
+| thin early-return (`if n <= 0 { return 0 }\n return 1 + f(n-1)`) | 510 ok / 511 `E4011` | 510 ok / 511 `E4011` | cold: traps ~360–400; warmed: 510 ok / 511 `E4011` | traps at **360** |
+| `else`-block recursion | 510 ok / 511 `E4011` | traps at **387** (cold) | cold: traps ~400; warmed: reaches 510/511 | traps at **196** |
+| `match` recursion | 510 ok / 511 `E4011` | traps at **459** (cold) | — | traps at **233** |
 | closure (self-passing) recursion | 510 ok / 511 `E4011` | traps at **356** | — | — |
 | in-source module recursion | 510 ok / 511 `E4011` | traps at **387** | — | — |
 | method (`impl` + `self`) recursion | 510 ok / 511 `E4011` | 510 ok / 511 `E4011` | — | — |
@@ -87,13 +87,16 @@ Notes on the WASM columns:
   Node, or `E4999 … Maximum call stack size exceeded` (worker error) in the
   Playground. It is **not** `E4011`, and no structured Aura result is
   produced.
-* Chromium's **main thread** reaches the full language boundary; the
-  Playground, however, always executes in a fresh **Web Worker** (the
-  hard-cancellation design), and the Worker's engine stack is much smaller.
-  That is the production path and the narrowest surface.
-* Even the *thinnest finite* shape (early return) traps at 360 in the Worker;
-  only the maximally thin `fn f() { f() }` body reaches the 512-frame limit
-  and reports `E4011` there.
+* Chromium's **main thread** does not uniformly reach the boundary either: a
+  cold first execution of the `else` shape traps around 400, and only after
+  warm-up (repeated shallower runs) does the main thread accept `count(510)`
+  and report `E4011` at 511. The Playground, however, always executes in a
+  fresh **Web Worker** (the hard-cancellation design), and the Worker's
+  engine stack is much smaller. That is the production path and the narrowest
+  surface.
+* Even the *thinnest finite* shape (early return) traps at 360 in the
+  production Worker; only the maximally thin `fn f() { f() }` body reaches
+  the 512-frame limit and reports `E4011` there.
 
 ### Node engine-stack control (causality)
 
@@ -114,6 +117,26 @@ Rebuilding the runtime crate with `-zstack-size=16777216` (4× the committed
 (387 for the `else` shape). The committed `build.rs` calibration sizes the
 parser backstop's stack, not the resource that binds recursion.
 
+### Build-flag / binaryen controls (no lever reaches the contract)
+
+Every alternative build of the same source was measured cold, fresh instance,
+`else` shape:
+
+| Build | first trap |
+|---|---|
+| committed release artifact | 387 |
+| `-zstack-size=16777216` (shadow stack ×4) | 387 (identical) |
+| `wasm-opt -O1` (binaryen 132) | 402 |
+| `wasm-opt -O2` / `-O3` / `-Oz` | 356 |
+| `opt-level=3` rebuild | 366 |
+| `opt-level=2, codegen-units=16` rebuild | 382 |
+| Node `--stack-size=4000` (host stack) | none: full 510/511 |
+
+No artifact-side lever approaches 512; the per-call cost is the number of
+WebAssembly engine frames the interpreter structure demands, which
+optimization does not remove. The only reachable lever is the host engine
+stack size, which a browser does not expose to the artifact.
+
 ### Thresholds are state-dependent, not constants
 
 The trap depth depends on the shape, the engine, and the current JIT/execution
@@ -124,23 +147,38 @@ constant.
 
 ### Cross-release
 
-The same probe on the frozen artifacts (Node, fresh instance) traps at 317
-(`0.0.2`) and 389 (`0.2.0`) for the `else` shape; all three tags declare
-`MAX_CALL_FRAMES = 512`. The defect predates `0.2.1` and was never tracked.
+The same probe on the frozen artifacts (Node, fresh instance, cold scan from
+depth 0) first fails at 317 (`0.0.2`), 389 (`0.2.0`), and 387 (`0.2.1`) for
+the `else` shape; all three tags declare `MAX_CALL_FRAMES = 512`. The failure
+kind differs by release: `0.0.2` — which predates the committed
+`-zstack-size` linker calibration — fails with `memory access out of bounds`
+(a guest shadow-stack failure), while `0.2.0`/`0.2.1` fail with the JavaScript
+`Maximum call stack size exceeded` (an engine-stack failure). Either way the
+contract is violated and the depth is far below 512. The defect predates
+`0.2.1` and was never tracked.
 
-### Recovery and instance poisoning (secondary host-failure effect)
+### Post-trap instance state (secondary host-failure effect)
 
-* After **one** trap, the same WebAssembly instance still runs an unrelated
-  program (`ok`), 5/5 repetitions.
-* After **two consecutive traps** (any shapes) with no successful run in
-  between, the instance is permanently corrupted: every later call returns
-  `memory access out of bounds`, including trivial programs (5/5
-  repetitions). A successful run between traps prevents the corruption.
+* One trap does not poison the instance: an unrelated trivial program still
+  runs `ok` afterwards (5/5 repetitions), and a shallow recursion still runs.
+* Repeated traps **degrade the instance cumulatively**. After two consecutive
+  deep-recursion traps (`else` at 510) with no intervening success, shallow
+  programs still run (measured `count(30)`…`count(150)` → `ok`), but deeper
+  execution — measured `count(200)` and up — fails with `memory access out of
+  bounds` instead of running or trapping cleanly. A third trap without an
+  intervening success fails directly with `memory access out of bounds`.
+* A successful shallow run between traps does **not** restore the instance:
+  `trap → count(100) ok → trap → count(200)` reproduces `memory access out of
+  bounds` (3/3; also 6/6 in the reviewer's independent probe).
+* Two traps followed by a shallow success (`count(50) ok`) and then a trivial
+  program still behave normally in the measured depth range, so the corrupted
+  state is not a permanent global failure — it is a degraded engine/shadow
+  stack whose usable depth shrinks.
 * The Playground creates a **fresh Worker per run**, so the product contains
-  the corruption per run; any host that reuses an instance across runs (the
-  Node harness, embedders) can be poisoned. A JS `catch` of the `RangeError`
-  cannot restore the instance, so "catch and convert to `E4011`" is not a
-  remedy.
+  the degradation per run; any host that reuses an instance across runs (the
+  Node harness, embedders) is exposed. A JS `catch` of the `RangeError`
+  cannot restore the instance or yield a structured `E4011`, so "catch and
+  convert" is not a remedy.
 
 ## 3. Root cause
 
@@ -167,9 +205,10 @@ The contract-preserving fixes were evaluated and each fails a requirement of
 the task:
 
 1. **Increase the shadow/linear stack** — proven ineffective (§2).
-2. **Catch the trap in JS and convert it to `E4011`** — the instance is
-   corrupted after repeated traps and no structured language result can be
-   produced; the acceptance boundary would still diverge.
+2. **Catch the trap in JS and convert it to `E4011`** — repeated traps degrade
+   the instance (a later, otherwise-legal run fails `memory access out of
+   bounds`) and no structured language result can be produced; the acceptance
+   boundary would still diverge.
 3. **Lower `MAX_CALL_FRAMES` on WASM (substrate-calibrated cap)** — a semantic
    change: a program recursing 300 deep runs natively and would be rejected
    in the browser; this contradicts §31.3's own "not a host limitation"
@@ -182,6 +221,9 @@ the task:
    cannot prove the general 512-frame contract across expression shapes,
    `try`/`catch`, callbacks through builtins, methods, and closures; leaves
    engine-stack dependence in general recursion.
+6. **Artifact-side build/codegen levers** (linker stack size, `wasm-opt`
+   at any level, Rust `opt-level`/`codegen-units`) — all measured; none
+   approaches the contract (§2, build-flag controls).
 
 The only contract-preserving remedy is an **engine-stack-independent
 evaluator**: replacing implicit Rust recursion in `src/run/mod.rs` (2,303

@@ -1604,23 +1604,29 @@ Reproduction was redone first-hand with fresh instances per probe:
 - Native (release and debug CLI): every tested shape conforms — `count(510)`
   accepted (512 frames), `count(511)` `E4011` — for else, match, method,
   closure, module, try/catch, mutual, `for`-body, and if-chain shapes.
-- Node 24 first-trap depths (released `0.2.1`, fresh instance): else 387,
-  match 459, closure 356, module 387, if-chain 419; thin shapes reach
-  510/511. Thresholds shift with JIT/scan state (same shape traps at 435 when
-  scanned from depth 300 in-process).
-- Chromium 153 main thread: reaches 510/511. The **production Playground
+- Node 24 first-trap depths (released `0.2.1`, fresh instance, cold scan):
+  else 387, match 459, closure 356, module 387, if-chain 419; thin shapes
+  reach 510/511. Thresholds shift with JIT/scan state (same shape traps at
+  435–436 when scanned from depth 300 in-process).
+- Chromium 153 main thread: a cold first run traps near the same region as
+  Node; after warm-up it reaches 510/511. The **production Playground
   Worker** (the real path) traps at else 196, match 233, thin 360; only the
   thinnest `fn f() { f() }` reaches a structured `E4011` there.
 - Causality: `node --stack-size=500 → 193`, default `984 → 387`,
   `1200 → 473`, `4000 → full boundary` (~2.5 KB V8 stack per Aura call); a
   16 MiB linker-stack build behaves identically, so the engine stack, not the
   wasm shadow stack, is binding.
-- Cross-release (else shape, Node): `0.0.2` traps at 317, `0.2.0` at 389 —
-  the defect predates `0.2.1`.
-- Recovery: one trap recovers; two consecutive traps permanently corrupt the
-  instance (`memory access out of bounds`), 5/5 reproducible. The Playground's
-  fresh-Worker-per-run model contains this; instance-reusing embedders are
-  exposed.
+- Cross-release (else shape, Node cold scan): `0.0.2` fails at 317 with
+  `memory access out of bounds` (guest shadow-stack overflow; that release
+  predates the linker-stack calibration), `0.2.0` at 389 and `0.2.1` at 387
+  with `Maximum call stack size exceeded`.
+- Post-trap state: one trap does not poison the instance (trivial and shallow
+  programs still run). Repeated traps degrade it cumulatively — after two
+  traps with no intervening success, shallow depths (≤150) still run but
+  deeper execution (≥200) fails with `memory access out of bounds`; an
+  intervening success does not prevent this (3/3 reproducible). The
+  Playground's fresh-Worker-per-run model contains this; instance-reusing
+  embedders are exposed.
 
 Remediation options were evaluated. The only contract-preserving remedy is an
 engine-stack-independent evaluator (an explicit frame/continuation stack for

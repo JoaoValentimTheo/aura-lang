@@ -134,19 +134,22 @@ contract-sync, hardening, and performance checks.
   host stack overflow. On WebAssembly, mainstream recursive shapes exhaust the
   JavaScript engine stack before the interpreter's `depth` counter reaches
   `MAX_CALL_FRAMES = 512` and the guest traps instead of reporting `E4011`.
-  Fresh-instance first-trap depths (Node 24 / Chromium 153 main thread /
-  Chromium production Worker): else 387 / none / 196; match 459 / none / 233;
-  closure 356; module 387; if-chain 419; thin shapes reach 510/511 except the
-  Worker thin shape (360). The engine stack, not the 4 MiB wasm shadow stack,
-  is binding (16 MiB control build: identical; `node --stack-size=4000`:
-  full boundary). Present in every released WASM artifact (`0.0.2` 317,
-  `0.2.0` 389, `0.2.1` 387 for the else shape) and in HEAD; not a post-0.2.1
-  regression. A second trap on the same instance permanently corrupts it
-  (`memory access out of bounds`). The contract-preserving remedy is an
-  engine-stack-independent evaluator (explicit frame/continuation stack) — a
-  runtime-architecture program, not a stabilization fix; any substrate-
-  calibrated cap would change the released semantics, which this pass must
-  not do automatically. Decision package:
+  Fresh-instance first-trap depths (Node 24 cold / Chromium 153 main thread
+  cold / Chromium production Worker): else 387 / ~400 cold / 196; match 459 /
+  — / 233; closure 356; module 387; if-chain 419; thin shapes reach 510/511
+  except the Worker thin shape (360); the Chromium main thread reaches the
+  boundary only after warm-up. The engine stack, not the 4 MiB wasm shadow
+  stack, is binding (16 MiB control build: identical; `node
+  --stack-size=4000`: full boundary). Present in every released WASM artifact
+  (`0.0.2` 317, `0.2.0` 389, `0.2.1` 387 for the else shape) and in HEAD; not
+  a post-0.2.1 regression. Traps degrade a reused instance cumulatively (a
+  second trap without an intervening success leaves deeper execution failing
+  with `memory access out of bounds`) while trivial programs still run; the
+  Playground's fresh-Worker-per-run model contains this. The
+  contract-preserving remedy is an engine-stack-independent evaluator
+  (explicit frame/continuation stack) — a runtime-architecture program, not a
+  stabilization fix; any substrate-calibrated cap would change the released
+  semantics, which this pass must not do automatically. Decision package:
   `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (rewritten this pass, OPEN —
   Remedies blocked, Options A/B/C).
   Coverage added: six native boundary shapes exact at 510/511 in
