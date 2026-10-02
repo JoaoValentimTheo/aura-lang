@@ -387,6 +387,7 @@ jobs:
           node website/tests/validate-examples.mjs
           node website/tests/check-links.mjs --base=/aura-lang/
           node website/tests/check-base.mjs --base=/aura-lang/
+          node website/tests/release-version.test.mjs
       - name: Assert no internal link bypasses the project base
         run: |
           set -euo pipefail

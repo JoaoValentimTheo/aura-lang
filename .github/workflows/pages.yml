@@ -78,6 +78,9 @@ jobs:
       - name: Validate examples against the real runtime
         run: node website/tests/validate-examples.mjs
 
+      - name: Validate release-version consistency
+        run: node website/tests/release-version.test.mjs
+
       - name: Validate links and required assets
         env:
           AURA_SITE_BASE: /aura-lang/
