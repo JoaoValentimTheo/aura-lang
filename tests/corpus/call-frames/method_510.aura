@@ -1,0 +1,9 @@
+struct C { }
+impl C {
+  fn count(self, n: int) -> int {
+    if n <= 0 { return 0 }
+    return self.count(n - 1) + 1
+  }
+}
+fn main() { let c = C { }
+ print(c.count(510)) }

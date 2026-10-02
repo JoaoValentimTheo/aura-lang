@@ -18,7 +18,8 @@ explicit expected outcome.
 tests/corpus/
 ├── README.md            this policy
 ├── ast/                 AST-node nesting boundaries and generated programs
-├── call-frames/         call-depth boundaries (simple, mutual, generic)
+├── call-frames/         call-depth boundaries (simple, mutual, generic, else,
+│                        match, method, closure, module, try)
 ├── cycles/              value-model cycles and shared (DAG) references
 ├── generics/            generics edge cases (overload, union, alias, bounds, …)
 ├── overload/            overload resolution (ties, identity, determinism)

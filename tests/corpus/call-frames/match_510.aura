@@ -1,0 +1,7 @@
+fn count(n: int) -> int {
+  match n {
+    0 -> 0,
+    _ -> count(n - 1) + 1
+  }
+}
+fn main() { print(count(510)) }

@@ -1,0 +1,4 @@
+fn main() {
+  let go = (self_rec, n: int) -> { if n <= 0 { return 0 } else { return self_rec(self_rec, n - 1) + 1 } }
+  print(go(go, 510))
+}
