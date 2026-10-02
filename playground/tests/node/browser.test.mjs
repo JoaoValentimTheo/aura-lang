@@ -506,6 +506,36 @@ async function runAndWait(page, timeout = 15000) {
   await page.close();
 }
 
+// --- 9. mainstream-shape recursion parity guard (BREAK-0.2.1 / B-1) --------
+{
+  // The browser is the substrate with the least engine-stack headroom. A
+  // recursive `else`-block function traps here around depth 196 on the
+  // committed 0.2.1 artifact (native accepts the same program well past it),
+  // and the Worker surfaces the trap as `E4999 … Maximum call stack size
+  // exceeded` instead of `E4011`. See
+  // `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (OPEN decision). This guard pins
+  // the working region at a depth comfortably below the browser floor (150)
+  // and requires the structured, successful result — so any change that erodes
+  // engine-stack headroom fails the browser suite now.
+  const { page, errors } = await newPage();
+  await setSource(
+    page,
+    "fn count(n: int) -> int {\n" +
+      "  if n <= 0 {\n" +
+      "    return 0\n" +
+      "  } else {\n" +
+      "    return count(n - 1) + 1\n" +
+      "  }\n" +
+      "}\n" +
+      "fn main() { print(count(150)) }",
+  );
+  const r = await runAndWait(page);
+  check("browser recursion depth 150 succeeds", r.status === "ok", JSON.stringify(r));
+  check("browser recursion depth 150 stdout", r.stdout === "150\n", JSON.stringify(r.stdout));
+  check("no page errors in recursion guard", errors.length === 0, errors.join("; "));
+  await page.close();
+}
+
 await browser.close();
 server.close();
 

@@ -739,6 +739,45 @@ if (postError.text === norm({ status: "ok", stdout: "3\n", result: null, diagnos
   console.error(`FAIL instance recovery after rejected deep input\n  wasm: ${postError.text}`);
 }
 
+// Mainstream-shape call-frame parity guard (BREAK-0.2.1 / B-1).
+//
+// A recursive function with an `else` block is the common shape, and it costs
+// more WebAssembly engine-stack frames per Aura call than the thin corpus
+// shapes (`tests/corpus/call-frames/*`, which reach the 512-frame language
+// limit). On the committed 0.2.1 artifact this shape traps (RangeError) around
+// depth 397 — below the language limit — and in Chromium around depth 196; see
+// `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (OPEN decision). This guard pins the
+// working region at a depth that is comfortable on every substrate (150), so a
+// change that reduces engine-stack headroom further fails here without
+// encoding the pending decision.
+{
+  const depth = 150;
+  const src =
+    "fn count(n: int) -> int {\n" +
+    "  if n <= 0 {\n" +
+    "    return 0\n" +
+    "  } else {\n" +
+    "    return count(n - 1) + 1\n" +
+    "  }\n" +
+    "}\n" +
+    `fn main() { print(count(${depth})) }\n`;
+  const wasm = wasmResult(src);
+  const srcFile = join(dir, `recursion_else_${depth}.aura`);
+  writeFileSync(srcFile, src);
+  const native = JSON.parse(
+    execFileSync(nativeBin, [srcFile, optionsFile], { encoding: "utf8" }).trim(),
+  );
+  const expected = norm({ status: "ok", stdout: `${depth}\n`, result: null, diagnostics: [] });
+  if (wasm.text === expected && norm(native) === expected) {
+    passed += 1;
+  } else {
+    failed += 1;
+    console.error(
+      `FAIL mainstream-shape recursion parity at depth ${depth}\n  wasm:   ${wasm.text}\n  native: ${norm(native)}`,
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Generated-program native/wasm parity (Property 4, permanent).
 //
