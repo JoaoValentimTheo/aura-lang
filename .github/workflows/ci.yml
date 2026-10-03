@@ -277,6 +277,15 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: "fuzz -> target"
+      # `fuzz/` is a separate Cargo workspace, so the root
+      # `cargo test --all-targets` never compiles it. Without this explicit
+      # gate an AST representation change can leave the fuzz targets stale and
+      # unnoticed until the (slower) fuzz run below — or not at all if the run
+      # is skipped. Compile every fuzz target first so any incompatibility
+      # fails fast and deterministically, before cargo-fuzz is installed or any
+      # fuzzing time is spent.
+      - name: Compile all fuzz targets (fast AST-compatibility gate)
+        run: cargo +nightly check --manifest-path fuzz/Cargo.toml --all-targets
       - name: Install cargo-fuzz (pinned to the version in fuzz/README.md)
         run: |
           set -euo pipefail
