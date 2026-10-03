@@ -45,6 +45,14 @@ if test -e s; then
     fi
 fi
 
+# Minimal authority guard: the resume set must exist and be non-empty so a
+# session cannot silently lose its current-state handoff.
+authority=MISSING
+if test -s AGENTS.md && test -s AGENT_STATE.md \
+    && test -s docs/engineering/CURRENT_HANDOFF.md; then
+    authority=OK
+fi
+
 printf '%s\n' 'AURA AGENT PREFLIGHT'
 printf 'BRANCH=%s\n' "$branch"
 printf 'LOCAL_HEAD=%s\n' "$local_head"
@@ -57,3 +65,4 @@ printf 'AUDIT3=%s\n' "$audit3"
 printf 'PROJECT_CODEX_CONFIG=%s\n' "$codex_state"
 printf 'WRITER=%s\n' "$writer"
 printf 'S_STATE=%s\n' "$s_state"
+printf 'AUTHORITY=%s\n' "$authority"

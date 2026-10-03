@@ -1,12 +1,16 @@
 # B-1 — WASM call-frame implementation nonconformance
 
-**Status:** OPEN — IMPLEMENTATION **NOT** STARTED; **REMEDIATION ARCHITECTURE
-DESIGNED** (design-only pass 2026-10-02, no runtime behavior changed). Human
-review of the design is the gate before implementation. The WebAssembly
-implementation does not currently satisfy the released contract, and the
-contract-preserving remedy is a runtime rework outside a stabilization pass.
+**Status:** OPEN — REMEDIATION IN PROGRESS; B-1 not fixed. Option B is selected
+and its architecture is designed (`docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md`);
+the B-1R3A machine skeleton and first executable semantic subset are implemented
+locally and unpushed (`docs/engineering/CURRENT_HANDOFF.md`), feature-gated and
+non-production. Production execution is still the recursive evaluator, so the
+WebAssembly implementation does not yet satisfy the released contract. This
+section is a decision record; current engineering state is in `AGENT_STATE.md`
+and `docs/engineering/CURRENT_HANDOFF.md`.
 **Finding:** BREAK-0.2.1 / B-1; correction pass 2026-10-02; design pass
-2026-10-02 (`docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md`).
+2026-10-02 (`docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md`); B-1R3A skeleton
+2026-10-03 (local, unpushed).
 **Classification (corrected):** **IMPLEMENTATION NONCONFORMANCE**, WebAssembly
 substrate. `LANGUAGE_SPEC.md` §31.3 and §31.5 reinforce each other; they are not
 in conflict. §31.3 states the 512-frame limit as a language rule, "not a host

@@ -45,13 +45,13 @@ No owner-level decisions are currently pending.
 ## HD-2 — AUDIT-3 TypeExpr nesting policy
 
 - **Status:** RESOLVED by ADR-0004 (Option A adopted). Original package:
-- **Question:** Which TypeExpr nesting policy (Option A or B) does Aura adopt?
-- **Current behavior:** Native accept ≤2047 / reject 2048 (`E1015`); WASM accept
-  ≤767 / reject 768. Not normalized; property tests exclude TypeExpr-heavy
-  inputs.
-- **Required before v1 semantic freeze:** decide, or explicitly freeze the
-  current substrate-dependent behavior as documented. Decision package:
   `docs/AUDIT3_TYPE_NESTING_DECISION.md`.
+- **Question:** Which TypeExpr nesting policy (Option A or B) does Aura adopt?
+- **Pre-decision behavior (HISTORICAL):** Native accepted ≤2047 / rejected
+  2048 (`E1015`); WASM accepted ≤767 / rejected 768 — a substrate divergence.
+- **Resolution:** ADR-0004 unified structural `TypeExpr` nesting to the
+  semantic `MAX_AST_DEPTH = 256` on every substrate; the property-test
+  exclusion was lifted.
 
 ---
 

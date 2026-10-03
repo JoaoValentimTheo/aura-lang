@@ -18,9 +18,10 @@ stable release (later superseded by `0.2.1`; see below).
 `docs/CORE_FREEZE.md` is the status/evidence record for the frozen Core;
 `docs/LANGUAGE_SPEC.md` remains the semantic authority.
 
-### Non-goals preserved
+### Non-goals preserved (historical, as of the Core completion pass)
 
-- AUDIT-3 is DECISION-PENDING and was not modified.
+- AUDIT-3 was not modified *during that pass*; it was later resolved by
+  ADR-0004 (see “Preserved decisions” below).
 - No historical runtime artifact was overwritten.
 - No new language feature was added beyond the approved Core work.
 - Filesystem modules were not part of the Core release itself; the subsequent

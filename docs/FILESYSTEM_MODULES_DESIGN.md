@@ -818,6 +818,13 @@ above.
 
 ## 17. AUDIT-3 boundary
 
+> **SUPERSEDED (status note).** When this design was frozen, AUDIT-3 was
+> DECISION-PENDING. It has since been **RESOLVED** by ADR-0004
+> (`docs/adr/0004-typeexpr-nesting-policy.md`): structural `TypeExpr` nesting
+> counts toward `MAX_AST_DEPTH = 256` on every substrate, and the property-test
+> exclusion cited below was lifted. The original text is preserved as the
+> frozen contract's historical boundary statement; it is not current status.
+
 Follow-up 3 / AUDIT-3 remains DECISION-PENDING; no code or doc changes beyond the existing decision package; property test AST-limit explicitly excludes TypeExpr-heavy inputs pending that decision.
 
 Filesystem module design does not alter that decision package or its property

@@ -1,12 +1,15 @@
 # Aura Engineering Checkpoint
 
-Resumable operational state for the Road-to-1.0 program.
+**HISTORICAL CHECKPOINT** (Road-to-1.0 / `0.2.1` release train). For current
+repository state see `AGENT_STATE.md`; for the active task see
+`docs/engineering/CURRENT_HANDOFF.md`. The state block below is preserved as of
+the `v0.2.1` release and does not reflect later B-1R work.
 
 ## State
 
 ```
-PROGRAM HEAD:             3f5f8702 (pushed) + local post-release reconciliation (unpushed)
-REMOTE HEAD:              3f5f8702
+PROGRAM HEAD:             3f5f8702 (the released v0.2.1 commit)
+REMOTE HEAD:              (superseded; see AGENT_STATE.md for the current value)
 CURRENT RELEASE:         v0.2.1 (tagged; published 2026-10-01; immutable)
 CURRENT TRAIN:           TRAIN 6 — COMPLETE (Aura 0.2.1 published); next program not selected
 LATEST DEV RUNTIME:      0.2.1 (promoted release runtime); 0.2.1-dev.5 preserved
@@ -42,9 +45,11 @@ V1 YELLOW:               WASM — open B-1 implementation nonconformance: the
                          below the normative 512-frame language limit instead of
                          reporting `E4011`; native conforms; remediation
                          architecture designed (docs/engineering/
-                         ITERATIVE_EVALUATOR_DESIGN.md), implementation not
-                         started. See AURA_V1_READINESS.md and
-                         docs/WASM_CALL_FRAME_LIMIT_DECISION.md.
+                         ITERATIVE_EVALUATOR_DESIGN.md); B-1R3A non-production
+                         skeleton implemented locally (unpushed), production
+                         still recursive. See AURA_V1_READINESS.md and
+                         docs/WASM_CALL_FRAME_LIMIT_DECISION.md, and
+                         docs/engineering/CURRENT_HANDOFF.md for current work.
 V1 RED:                  v1 GO — requires a published, post-release-verified 1.0;
                          the prerelease→RC→1.0 train remains
 FROZEN HASHES:           0.0.2 = 1,366,621 / 5a4ad3f7…; 0.2.0 = 1,654,161 / 9937fd80…;

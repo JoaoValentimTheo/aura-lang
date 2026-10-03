@@ -1,12 +1,13 @@
-# Aura Current Status
+# Aura Status Ledger (chronology)
 
-**CURRENT OPERATIONAL STATE:** see `AGENT_STATE.md`.
+**CURRENT OPERATIONAL STATE:** see `AGENT_STATE.md` (and
+`docs/engineering/CURRENT_HANDOFF.md` for the active task).
 
 **THIS FILE:** detailed chronological status/history. Historical statements are
 preserved as evidence of what was true at the time; current operational
 decisions must not require reading this entire ledger.
 
-Filesystem-module phase namespace used for current work:
+Phase namespaces:
 
 - FSM-P0 — architecture reconstruction
 - FSM-P1 — filesystem module design
@@ -14,6 +15,7 @@ Filesystem-module phase namespace used for current work:
 - FSM-P3 — provider-neutral module graph
 - FSM-P4 — native filesystem provider
 - FSM-P5 — virtual/WASM VFS foundation
+- B-1R1… — WASM call-frame evaluator remediation series (design, oracle, R3A…)
 
 Historical bare `Phase N` headings below predate this namespace and remain only
 where changing them would damage chronology.
@@ -1717,3 +1719,40 @@ Validation run (no production change): `cargo fmt --check`;
 Next exact action: **HUMAN REVIEW OF THE ENGINE-STACK-INDEPENDENT EVALUATOR
 DESIGN BEFORE AUTHORIZING B-1R2**. Nothing was pushed, tagged, deployed, or
 released; `v0.2.1` is unchanged and still contains the defect.
+
+## B-1R2 / B-1R3A-ARCH-1 / B-1R3A — evaluator remediation (chronology)
+
+Executed on top of the pushed stabilization stack; confined to the `evaluator-oracle`
+feature plus test/docs. B-1 remains OPEN and production stays recursive
+throughout.
+
+- **B-1R3A-ARCH-1 (2026-10-03):** resolved the design §16.1 `Rc`-vs-`Send`
+  contradiction by adopting `std::sync::Arc` for AST sharing and applying the
+  minimum conversion; `Module`/`Item`/`Stmt`/`Expr` proven `Send + Sync` by
+  compile-time assertions (`tests/ast_sharing.rs`). Runtime `Rc` semantics
+  unchanged. `docs/B1R3A_AST_SHARING_DECISION.md`.
+- **B-1R2 (2026-10-03, test-only):** built the differential oracle
+  (`tests/evaluator_oracle.rs`, `tests/oracle/**`): normalization of stdout,
+  type-tagged values, diagnostics (code/message/source/span/line/column); 104
+  deterministic cases incl. the call-position matrix, try/catch/finally matrix,
+  native-vs-closure callback frame accounting, and the compound-assignment
+  double-evaluation pinned as CURRENT OBSERVABLE BEHAVIOR PRESERVED FOR
+  EVALUATOR MIGRATION; committed `tests/oracle/golden.tsv`; 11 deliberate
+  mutations detected and reverted. `docs/engineering/B1R2_DIFFERENTIAL_ORACLE.md`.
+- **Post-push CI remediation (2026-10-03):** fixed the Arc conversion's stale
+  `fuzz/` workspace (`fuzz/fuzz_targets/ast_gen.rs`), added an explicit fuzz
+  compile gate to CI, and pinned `tests/oracle/golden.tsv` to LF
+  (`.gitattributes`). Exact-SHA CI green at `809cab7`.
+- **B-1R3A (2026-10-03, local, unpushed):** implemented the real
+  explicit-continuation machine (`src/run/iterative.rs`: `Machine`/`Ctrl`/`Cont`/
+  `UserFrame`/`FrameBoundary`; one loop + `Vec<Cont>`; 512/513 frame accounting;
+  `E1015` guard) with the first executable subset (literals, name lookup,
+  expression statements, blocks, `let` shadowing, `if`/`else`); every other
+  construct returns `E4999` with no recursive fallback. Extended the oracle with
+  an identified R3A subset, strict supported-subset equality, a no-fallback
+  test, and a full-field iterative golden (`tests/oracle/r3a_golden.tsv`).
+  Mutations M1–M9 detected and reverted; two oracle blind spots found and fixed.
+  Production unchanged; frozen artifacts untouched.
+
+Current exact next action: **HUMAN REVIEW OF B-1R3A, THEN B-1R3B** (values and
+operators) — see `docs/engineering/CURRENT_HANDOFF.md`.

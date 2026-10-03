@@ -1,7 +1,14 @@
 # B-1R2 — differential evaluator oracle
 
-**Status:** COMPLETE — differential semantic oracle built and mutation-validated.
-No runtime behavior changed; no evaluator implemented. B-1 stays **OPEN**.
+**Status:** COMPLETE — differential semantic oracle built and mutation-validated
+for the recursive baseline. No production runtime behavior changed. B-1 stays
+**OPEN**.
+
+> **Extended by B-1R3A (2026-10-03, local):** the same oracle now also drives the
+> real iterative machine for an identified R3A subset
+> (`tests/oracle/r3a.rs`, `tests/oracle/r3a_golden.tsv`, and the R3A tests in
+> `tests/evaluator_oracle.rs`). The main manifest `tests/oracle/golden.tsv` is
+> unchanged. See `docs/engineering/CURRENT_HANDOFF.md`.
 
 **Authority:** `docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md` §24–§26.
 **Instrument:** `tests/evaluator_oracle.rs`, `tests/oracle/mod.rs`,
