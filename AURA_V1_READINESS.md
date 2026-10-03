@@ -29,13 +29,18 @@ never by schedule. Status legend: **GREEN** (ready), **YELLOW** (gaps remain),
 | RELEASE ENGINEERING | GREEN | gated release workflow (validate→build→publish) + policy doc + CHANGELOG; ADR-0001 version scheme; metadata-consistency and release-preflight gates (version identities, runtime artifact, tag immutability); release-manifest + SBOM attached; signed SLSA provenance at publish; documented runbook. Cryptographic tag/asset signing is a supply-chain extra (TD-03) |
 | SUPPLY CHAIN | GREEN | every workspace Cargo.lock and the committed npm lockfiles are audited in CI (`cargo audit` x3, `npm audit`); third-party actions SHA-pinned (rust-toolchain tracked, TD-17); CycloneDX SBOM + release manifest with a dependency-lock hash attached to releases; signed SLSA build provenance at publish. Cryptographic tag/asset signing is tracked (TD-03) |
 | BACKWARD COMPAT | GREEN | `tests/compat.rs` pins the released 0.2.0 surface *and* the 0.2.1 additions behaviorally with documented intentional breaks; `crossrelease.test.mjs` runs every frozen runtime against its language line's fixtures (released behavior unchanged); compatibility policy in RELEASE_ENGINEERING.md |
-| RELEASE-READY (v1 GO) | RED | not yet met — v1 GO requires a *published, post-release-verified* 1.0 (section 110/111). Every readiness capability category is GREEN and all semantic/version decisions (HD-1…HD-4) are closed, implemented, pushed, and CI-green. Release `v0.2.1` is published (tag `v0.2.1` = commit `3f5f870`), so the release train itself is proven end to end; the remaining path is the gated prerelease→RC→1.0 train, not a capability gap |
+| RELEASE-READY (v1 GO) | RED | not yet met — v1 GO requires a *published, post-release-verified* 1.0 (section 110/111). Every readiness capability category is GREEN except WASM (YELLOW; open B-1, item 3), and all semantic/version decisions (HD-1…HD-4) are closed, implemented, pushed, and CI-green. Release `v0.2.1` is published (tag `v0.2.1` = commit `3f5f870`), so the release train itself is proven end to end; the remaining path is the gated prerelease→RC→1.0 train plus closing B-1, not a capability gap in the language or tooling |
 
 ## Current blockers toward v1 GO
 
-1. No readiness category is YELLOW. The remaining path to v1 GO is executing
-   the gated prerelease→RC→1.0 train (section 47 onward) with published-artifact
-   verification, not closing a capability gap.
+1. Exactly one readiness capability category is YELLOW: WASM, because B-1
+   remains open (item 3 below). It is an implementation nonconformance in the
+   released WebAssembly runtime, not a spec conflict and not a `v0.2.1`
+   regression. Beyond closing B-1, the remaining path to v1 GO is executing the
+   gated prerelease→RC→1.0 train (section 47 onward) with published-artifact
+   verification. This does not make the release train itself blocked: the
+   freeze/release gate is separately RED only because no post-release-verified
+   1.0 exists yet (see the RELEASE-READY row above).
 2. All semantic-freeze decisions are resolved (no open HD items); their
    implementations are committed, pushed, released in `v0.2.1`, and CI-green.
    The `v0.2.1` release train is closed (published 2026-10-01; 27/27 check-runs
