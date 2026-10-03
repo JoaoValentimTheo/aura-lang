@@ -118,8 +118,8 @@ consuming engine frames per Aura call.
    `run_sourced`, `call`, `call_value`, `call_value_pub`, `eval_globals`,
    `exec_stmt_globals`, `run_item`, `finish_global`, `host`, `native`, and
    the `Compilation` pipeline in `src/lib.rs` are unchanged for embedders.
-   The AST is public; the `Rc` sharing in §16.1 changes a few public field
-   types mechanically (pre-1.0, no compatibility promise).
+    The AST is public; the `Arc` sharing in §16.1 changes a few public field
+    types mechanically (pre-1.0, no compatibility promise).
 5. No `unsafe`; no new public API surface.
 6. Native and WebAssembly share the same engine code path; native keeps its
    64 MiB wrapper only as a safety margin for the remaining bounded recursion
@@ -139,10 +139,10 @@ For a suspendable user call, everything below must become explicit state:
 | parameter bindings | `env.define` before body | `UserFrame.env` at frame setup |
 | `self`/receiver | ordinary first parameter | same (parameter 0) |
 | module/source identity | `self.current_source` + `closure_sources` | `UserFrame.saved_source`, `frame_source` |
-| current statement/expr | Rust program counter | `Ctrl::EvalStmt{stmt}` / `Ctrl::EvalExpr{expr}` with `Rc` sharing |
+| current statement/expr | Rust program counter | `Ctrl::EvalStmt{stmt}` / `Ctrl::EvalExpr{expr}` with `Arc` sharing |
 | pending operands | Rust locals (`lv`, `out`, …) | `Cont` payload fields |
 | return destination | Rust call frame | `Cont::CallReturn` record |
-| source span/diagnostic | `Span` locals and `span_of(expr)` | recomputed from the current node (`Rc`/`&Expr`) |
+| source span/diagnostic | `Span` locals and `span_of(expr)` | recomputed from the current node (`Arc`/`&Expr`) |
 | call-depth counter | `self.depth` | `Machine.frames.len()` |
 | control-flow state | `Ctl` in `Result` | `Ctl` delivered to the machine loop |
 | try/catch/finally | Rust `Result` + `pending_throw` | `Cont::TryHandler` / `Cont::Finally` markers |
@@ -167,7 +167,7 @@ subexpressions), and the state a continuation record must retain.
 | `Binary(op, l, r)` (arith/cmp) | yes | `BinRight { op, lv, span }` then apply | left→right |
 | `Binary(And, l, r)` | yes | `BinAndRight { span }` pushed only when `lv` truthy; result `Bool(rv.truthy())` | short-circuit: RHS must not run when `lv` falsy |
 | `Binary(Or, l, r)` | yes | `BinOrRight { span }` pushed only when `lv` falsy | short-circuit |
-| `Call(callee, args, _, span)` | yes | `CallArgs { callee: Rc<Expr> or resolved, args, index, vals, env }` then `ApplyCall` | **args in source order first**, then resolve; `Name` resolution order: functions → natives → env value → `E2003`; non-`Name` callee evaluated after args |
+| `Call(callee, args, _, span)` | yes | `CallArgs { callee: Arc<Expr> or resolved, args, index, vals, env }` then `ApplyCall` | **args in source order first**, then resolve; `Name` resolution order: functions → natives → env value → `E2003`; non-`Name` callee evaluated after args |
 | `Method(recv, name, args, _, span)` | yes | `MethodRecv { name, args, env }`, `MethodArgs { recv, name, index, vals }`, then dispatch | **receiver first, then args left→right** (`eval_inner` 1316–1320); after args, struct table (`select_method_overload`) or stdlib `method` |
 | `Field(recv, name)` | yes | `FieldRecv { name, span }` | receiver first; a non-instance receiver dispatches a zero-arg builtin method (`eval_inner` 1362) |
 | `Index(base, idx)` | yes | `IndexBase { idx, env }`, `IndexKey { base, span }` | **base first, then index** (`eval_inner` 1366–1367) |
@@ -441,26 +441,43 @@ and every variant maps to at most a few step kinds.
 
 Continuations must retain pending subexpressions when a call suspends. Holding
 `&Expr` across machine steps would require self-referential borrows of
-`Rc<Closure>` bodies. The design therefore makes AST children cheap to share.
+`Closure` bodies. The design therefore makes AST children cheap to share.
+
+**Representation: `Arc`, not `Rc` (B-1R3A-ARCH-1, resolved).** The original
+design specified `Rc`. That is impossible in this architecture: the parser and
+the whole front end run on the execution-thread substrate
+(`on_parse_stack`/`on_execution_stack`, `T: Send + 'static`, `src/parse/mod.rs`,
+`src/lib.rs`), and `Compilation::execute_with_host_factory` moves the `Module`
+across that same native thread boundary. `Rc<T>` is `!Send`, so literal `Rc`
+sharing fails to compile (≈128 `E0277` "cannot be sent between threads safely"
+errors). The AST is pure owned data (no `Rc`/`RefCell`/`Cell`/raw pointer/trait
+object), so an **`Arc`**-shared AST is `Send + Sync` and keeps every existing
+boundary. Atomic refcounting is an implementation cost only; the AST stays
+immutable and there is **no** concurrent or parallel evaluation — one engine,
+one thread. `Arc` was chosen over relocating the front end off the execution
+stack (which would re-expose the parser to host-stack overflow) and over an
+arena/`u32`-handle redesign (larger, and it does not by itself solve `Send`).
+See `docs/B1R3A_AST_SHARING_DECISION.md`.
+
 The field-type changes are mechanical and complete:
 
-* `Box<Expr>` → `Rc<Expr>` (`Expr::Unary/Binary/Call/Method/Field/Index/Pipe/
+* `Box<Expr>` → `Arc<Expr>` (`Expr::Unary/Binary/Call/Method/Field/Index/Pipe/
   Range/If` operands, `ListComp/MapComp` sub-expressions, `Lambda` body);
-* `Vec<Expr>` → `Rc<[Expr]>` (`List`, `Tuple`);
-* `Vec<Stmt>` → `Rc<[Stmt]>` (`Expr::If` then-branch, `Expr::Block`,
+* `Vec<Expr>` → `Arc<[Expr]>` (`List`, `Tuple`);
+* `Vec<Stmt>` → `Arc<[Stmt]>` (`Expr::If` then-branch, `Expr::Block`,
   `Stmt::While/Loop/Try` bodies, `Closure.body`);
-* `Vec<Arg>` → `Rc<[Arg]>` (`Call`, `Method`, `Construct` args);
-* `Vec<(Expr, Expr)>` → `Rc<[(Expr, Expr)]>` (`Map` entries);
-* `Vec<FPart>` → `Rc<[FPart]>` (`FStr`);
-* `Vec<Arm>` → `Rc<[Arm]>` (`Match`).
+* `Vec<Arg>` → `Arc<[Arg]>` (`Call`, `Method`, `Construct` args);
+* `Vec<(Expr, Expr)>` → `Arc<[(Expr, Expr)]>` (`Map` entries);
+* `Vec<FPart>` → `Arc<[FPart]>` (`FStr`);
+* `Vec<Arm>` → `Arc<[Arm]>` (`Match`).
 
-`Rc` derefs like `Box`, so matcher code is unchanged; construction sites
-change mechanically. `PartialEq`/`Clone` semantics are unchanged (`Rc`
+`Arc` derefs like `Box`, so matcher code is unchanged; construction sites
+change mechanically. `PartialEq`/`Clone` semantics are unchanged (`Arc`
 compares contents). This is a pure ownership-layout change with no semantic
-effect, and it is the enabling prerequisite for suspension storage. The
-alternative (an arena with `u32` handles) is rejected as more invasive; the
-alternative of owning deep `Clone`s in continuations is rejected as
-O(program-size) per suspension.
+effect, and it is the enabling prerequisite for suspension storage. Runtime-only
+sharing that never crosses a thread boundary (`Env = Rc<RefCell<EnvData>>`,
+`Rc<Closure>` created inside the execution thread) is **not** part of §16.1 and
+is unchanged.
 
 ### 16.2 Machine state
 
@@ -474,9 +491,9 @@ struct Machine<'i> {
 }
 
 enum Ctrl {                        // what to do next
-    EvalExpr(Rc<Expr>, Env),
-    EvalStmt(Rc<Stmt>, Env),           // statement + its resolution environment
-    EnterBlock(Rc<[Stmt]>, Env, bool), // body, lexical parent, scoped
+    EvalExpr(Arc<Expr>, Env),
+    EvalStmt(Arc<Stmt>, Env),           // statement + its resolution environment
+    EnterBlock(Arc<[Stmt]>, Env, bool), // body, lexical parent, scoped
     ApplyCall { callee, args },        // after argument evaluation
     ReturnValue(Value),
     ThrowValue(Value),
@@ -520,33 +537,33 @@ enum Cont {
     UnaryApply { op: UnOp, span: Span },
     BinRight { op: BinOp, lv: Value, span: Span },
     BinAndRight { span: Span }, BinOrRight { span: Span },
-    FStrNext { parts: Rc<[FPart]>, index: usize, out: String },
-    CallArgs { callee: Rc<Expr>, args: Rc<[Arg]>, index: usize, vals: Vec<Value>, env: Env, span: Span },
+    FStrNext { parts: Arc<[FPart]>, index: usize, out: String },
+    CallArgs { callee: Arc<Expr>, args: Arc<[Arg]>, index: usize, vals: Vec<Value>, env: Env, span: Span },
     ApplyCalleeValue { vals: Vec<Value>, span: Span },
-    MethodRecv { name: String, args: Rc<[Arg]>, index: usize, vals: Vec<Value>, env: Env, span: Span },
+    MethodRecv { name: String, args: Arc<[Arg]>, index: usize, vals: Vec<Value>, env: Env, span: Span },
     FieldRecv { name: String, span: Span },
-    IndexBase { idx: Rc<Expr>, env: Env, span: Span }, IndexKey { base: Value, span: Span },
-    ListNext { items: Rc<[Expr]>, index: usize, out: Vec<Value>, env: Env },
+    IndexBase { idx: Arc<Expr>, env: Env, span: Span }, IndexKey { base: Value, span: Span },
+    ListNext { items: Arc<[Expr]>, index: usize, out: Vec<Value>, env: Env },
     MapKey { ... }, MapValue { key: MapKey, ... },
     CompNext { kind, ... }, CompFilter { ... }, CompValue { ... }, CompKey { ... },
     ConstructArgs { name: String, args: ..., index: usize, positional: Vec<Value>, named: Vec<(String, Value)>, env: Env, span: Span },
     PipeRight { arg: Value, env: Env, span: Span },
     RangeEnd { start: Value, span: Span },
-    IfBranch { then: Rc<[Stmt]>, els: Option<Rc<Expr>>, env: Env, span: Span },
-    MatchArm { subject: Value, arms: Rc<[Arm]>, index: usize, env: Env, span: Span },
+    IfBranch { then: Arc<[Stmt]>, els: Option<Arc<Expr>>, env: Env, span: Span },
+    MatchArm { subject: Value, arms: Arc<[Arm]>, index: usize, env: Env, span: Span },
     // statements
-    Block { body: Rc<[Stmt]>, index: usize, local: Env, scoped: bool, last: Value },
+    Block { body: Arc<[Stmt]>, index: usize, local: Env, scoped: bool, last: Value },
     LetBind { name: String, mutable: bool },
-    LetPatternTransfer { pattern: Rc<Pattern> },
-    AssignRhs { target: Rc<Expr>, op: Option<BinOp>, env: Env, span: Span },
-    AssignRead { target: Rc<Expr>, rhs: Value, op: BinOp, env: Env, span: Span },
-    AssignWrite { target: Rc<Expr>, value: Value, env: Env, span: Span },
+    LetPatternTransfer { pattern: Arc<Pattern> },
+    AssignRhs { target: Arc<Expr>, op: Option<BinOp>, env: Env, span: Span },
+    AssignRead { target: Arc<Expr>, rhs: Value, op: BinOp, env: Env, span: Span },
+    AssignWrite { target: Arc<Expr>, value: Value, env: Env, span: Span },
     ReturnValue, ThrowValue,
-    WhileCond { cond: Rc<Expr>, body: Rc<[Stmt]>, env: Env },
-    LoopBody { body: Rc<[Stmt]>, env: Env },
-    ForNext { pat: Rc<Pattern>, body: Rc<[Stmt]>, env: Env, state: ForState },
-    TryHandler { catch: String, catch_body: Rc<[Stmt]>, env: Env },
-    Finally { finally_body: Rc<[Stmt]>, env: Env, pending: Pending },
+    WhileCond { cond: Arc<Expr>, body: Arc<[Stmt]>, env: Env },
+    LoopBody { body: Arc<[Stmt]>, env: Env },
+    ForNext { pat: Arc<Pattern>, body: Arc<[Stmt]>, env: Env, state: ForState },
+    TryHandler { catch: String, catch_body: Arc<[Stmt]>, env: Env },
+    Finally { finally_body: Arc<[Stmt]>, env: Env, pending: Pending },
     // boundaries
     FrameBoundary { call_span: Span },   // pop UserFrame here
     LoopBoundary,
@@ -616,9 +633,9 @@ makes every temporary's owner obvious.
 
 ## 19. Memory / lifetime model
 
-* No `unsafe`. Frames and continuations own `Rc` handles (`Closure`, AST
-  nodes) and `Env` clones; dropping the machine releases them like today's
-  stack unwind.
+* No `unsafe`. Frames and continuations own shared handles (`Rc<Closure>` for
+  runtime closures; `Arc` for AST nodes) and `Env` clones; dropping the machine
+  releases them like today's stack unwind.
 * Bounds: `frames ≤ 512`. Per-frame continuation growth is bounded by the
   AST descent along the current path. The continuation stack is global, so
   when frame *k* is suspended its pending continuations sit below frame
@@ -651,7 +668,8 @@ makes every temporary's owner obvious.
 * Temporaries held in continuations keep `Value`s alive exactly while the
   evaluator would hold Rust locals today; no observable lifetime change.
 * Deep value structures (lists, maps, instances, strings) keep their current
-  `Rc`-shared identity; the machine never deep-clones values for control.
+  `Rc`-shared identity; the machine never deep-clones values for control. AST
+  nodes are `Arc`-shared and read-only.
 
 ## 20. (reserved) Multi-source/provider interaction
 
@@ -768,7 +786,7 @@ giant commit):
 * **B-1R2 — Oracle scaffolding.** Internal engine switch + normalized
   comparator + deterministic corpus; recursive engine remains the default and
   the only production path. No behavior change.
-* **B-1R3A — AST sharing + machine skeleton.** `Rc`-share AST children/bodies
+* **B-1R3A — AST sharing + machine skeleton.** `Arc`-share AST children/bodies
   (mechanical, no semantic change); `Machine`, `Ctrl`, `UserFrame`,
   `FrameBoundary`, `E4011` accounting; literals/names/expression statements,
   sequential blocks. Oracle green.
@@ -814,7 +832,7 @@ giant commit):
 
 | Risk | Severity | Mitigation |
 |---|---|---|
-| AST `Rc` conversion changes equality/clone behavior subtly | MEDIUM | Mechanical change + full gate; `PartialEq` compares contents; existing tests are extensive |
+| AST `Arc` conversion changes equality/clone behavior subtly | MEDIUM | Mechanical change + full gate; `PartialEq` compares contents; existing tests are extensive. `Arc` (not `Rc`) required by the `Send` boundary (B-1R3A-ARCH-1) |
 | Suspension state misses a semantic nuance (evaluation order, guards) | HIGH | Per-variant continuation matrix (§7/§8) + differential oracle + adversarial review |
 | `finally` pending-result handling diverges | HIGH | 15-combination matrix fixture set; dedicated oracle test group |
 | Callback protocol changes `map`/`filter`/`reduce` observable behavior | MEDIUM | Oracle + existing stdlib tests; protocol pins snapshot-at-entry iteration and call-site span; native callbacks stay frame-free, closure callbacks frame-counted |

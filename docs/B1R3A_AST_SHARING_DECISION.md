@@ -1,10 +1,19 @@
 # B-1R3A blocker — AST sharing representation decision required
 
 **Finding ID:** B-1R3A-ARCH-1
-**Status:** OPEN — BLOCKS B-1R3A. No production change made.
+**Status:** RESOLVED — OPTION A APPLIED AND VERIFIED (2026-10-03).
 **Severity:** HIGH (architectural contradiction inside the approved B-1R1 design)
-**Owners:** human reviewer / Architecture Decision Council (routine language-design
-decisions are delegated per `AGENTS.md`).
+**Decision:** OPTION A — `Arc`-based immutable AST sharing.
+**Owners:** human reviewer / Architecture Decision Council. Human approved
+Option A; this file records the resolution, the design amendment, and the
+implementation evidence.
+
+> **Resolution outcome.** §16.1 of `docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md`
+> now specifies `Arc` for AST-sharing types (with the rationale inlined); the
+> minimum `Arc` conversion is implemented; `Module`/`Expr`/`Stmt` are proven
+> `Send` at compile time; the B-1R2 oracle golden is byte-unchanged; no `unsafe`
+> was added. Details: §7 below. The original blocker analysis is preserved in
+> §1–§6 for the record.
 
 ---
 
@@ -50,8 +59,7 @@ error[E0277]: `Rc<[ast::Stmt]>` cannot be sent between threads safely
 ```
 
 (All distinct shared shapes fail: `Rc<Expr>`, `Rc<[Expr]>`, `Rc<[Stmt]>`,
-`Rc<[Arg]>`, `Rc<[TypeExpr]>`, `Rc<[(Expr, Expr)]>`, `Rc<[FPart]>`,
-`Rc<[Arm]>`.)
+`Rc<[Arg]>`, `Rc<[(Expr, Expr)]>`, `Rc<[FPart]>`, `Rc<[Arm]>`.)
 
 ### 2.2 Why `Send` is required (unconditional, all substrates)
 
@@ -107,11 +115,14 @@ tree (`src/run/mod.rs` SHA-256
 
 **Option A — `Arc` for AST-sharing types (recommended).**
 Replace `Rc` with `Arc` for the §16.1 AST-sharing types only: `Expr` children,
-`Rc<[Expr]>`, `Rc<[Stmt]>`, `Rc<[Arg]>`, `Rc<[TypeExpr]>`, `Rc<[(Expr, Expr)]>`,
-`Rc<[FPart]>`, `Rc<[Arm]>`, and `Closure.body`. `Cont`/`Machine` use the same
-`Arc`-shared nodes. Runtime-only sharing that never crosses the thread boundary
+`Rc<[Expr]>`, `Rc<[Stmt]>`, `Rc<[Arg]>`, `Rc<[(Expr, Expr)]>`, `Rc<[FPart]>`,
+`Rc<[Arm]>`, and `Closure.body`. `Cont`/`Machine` use the same `Arc`-shared
+nodes. Runtime-only sharing that never crosses the thread boundary
 (`Env = Rc<RefCell<EnvData>>`, `Rc<Closure>` created inside the execution
-thread) may remain `Rc`, or also move to `Arc` for uniformity.
+thread) may remain `Rc`, or also move to `Arc` for uniformity. `TypeExpr` and
+explicit type-argument collections (`Vec<TypeExpr>`) are **not** converted:
+§16.1 does not list them, they never need to be retained in a continuation, and
+an owned `Vec<TypeExpr>` is already `Send + Sync`.
 * Satisfies §16.1's intent (cheap shared children, no deep clone per
   suspension) and §22's `Send` requirement simultaneously.
 * Cost: atomic refcounts on AST clone/drop (cold path; front end, not the
@@ -138,7 +149,80 @@ requires explicit human/Council approval before B-1R3A proceeds; §16.1 should
 then be amended to say `Arc` (with a one-line rationale referencing this
 document).
 
-## 6. Consequence
+## 6. Consequence (at time of finding)
 
-**B-1R3A cannot proceed until this representation is chosen.** B-1 remains OPEN.
-No runtime behavior has changed and no evaluator skeleton has been committed.
+**B-1R3A could not proceed until this representation was chosen.** B-1 remains
+OPEN. No runtime behavior changed and no evaluator skeleton was committed by the
+blocker pass.
+
+## 7. Resolution — Option A applied and verified
+
+**Decision:** `std::sync::Arc` for the AST-sharing types of design §16.1.
+`Arc<T>` is `Send + Sync` when `T: Send + Sync`; the AST containment graph is
+pure owned data (`String`, `Vec`, `Box`, `Span`, plain enums) and therefore
+`Send + Sync`, so every existing boundary is preserved.
+
+**Rejected alternatives:**
+
+| Option | Description | Why rejected |
+|---|---|---|
+| B | Keep `Rc`; remove/relocate the `Send` thread boundary | Reworks the parser substrate that gives the `E1015` host-stack backstop; re-exposes the parser to stack overflow; larger and riskier than a representation swap. |
+| C | `unsafe`/custom `Send` wrappers over `Rc` | Forbidden by the brief and the design ("No `unsafe`"); would assert a false invariant (single-thread `Rc` behind a `Send` facade) and risk real UB. |
+| D | Arena / `u32` handles | Larger redesign; §16.1 already rejected it; does not by itself solve `Send`. |
+| E | IR / bytecode VM redesign | Explicitly out of scope for E1 (design §15 E3 rejected). |
+
+**Applied conversion (minimum surface):**
+
+| old | new |
+|---|---|
+| `Box<Expr>` | `Arc<Expr>` |
+| `Vec<Expr>` (`List`, `Tuple`) | `Arc<[Expr]>` |
+| `Vec<Stmt>` (bodies) | `Arc<[Stmt]>` |
+| `Vec<Arg>` (call/method/construct) | `Arc<[Arg]>` |
+| `Vec<(Expr, Expr)>` (`Map`) | `Arc<[(Expr, Expr)]>` |
+| `Vec<FPart>` (`FStr`) | `Arc<[FPart]>` |
+| `Vec<Arm>` (`Match`) | `Arc<[Arm]>` |
+| `Closure.body: Vec<Stmt>` | `Arc<[Stmt]>` |
+
+Runtime-only sharing (`Env = Rc<RefCell<EnvData>>`, `Rc<Closure>` created inside
+the execution thread) is unchanged — it never crosses a thread boundary and is
+not part of §16.1.
+
+**Evidence (see commit + validation for the current run):**
+- `parse`, `compile_owned_source`, and `Compilation::execute_with_host_factory`
+  all cross `on_execution_stack`/`on_source_execution_stack` (`T: Send + 'static`).
+- The literal `Rc` conversion produced ≈128 `E0277` "cannot be sent between
+  threads safely" errors (reproduced from current source in the blocker pass).
+- With `Arc`, native `cargo check --all-features` and MSRV `+1.83.0 check
+  --all-features` are clean; compile-time `assert_send::<Module/Expr/Stmt/Item>()`
+  hold.
+- `cargo test --test evaluator_oracle --features evaluator-oracle` is green and
+  `tests/oracle/golden.tsv` is byte-unchanged.
+- `grep -nE '\bunsafe\b|unsafe impl' src` shows no new occurrence.
+
+**B-1R3A may now proceed** to the machine skeleton without a representation
+contradiction. B-1 itself remains OPEN until the iterative engine exists and
+passes the boundary gates.
+
+### 7.1 Independent review outcome
+
+A fresh read-only reviewer attempted to falsify the representation change
+against 20 questions. Result: no `Send`, semantic, provenance, span, ordering,
+or `unsafe` regression; oracle golden byte-unchanged. Three findings were
+reproduced and addressed:
+
+* **New test violated the fmt/clippy floor** (`ptr_as_ptr`; formatting). Fixed:
+  `tests/ast_sharing.rs` now uses `std::ptr::eq(Arc::as_ptr(..), ..)` and is
+  `cargo fmt`/`clippy -D warnings` clean.
+* **Decision artifact over-stated the applied surface** (listed `TypeExpr` /
+  `Vec<TypeExpr>` as converted). Fixed: `TypeExpr` is intentionally not
+  converted (not in §16.1; never retained in a continuation; already `Send`),
+  and the tables now match the code.
+* **Design §19 edit left a duplicated dangling fragment.** Fixed.
+
+One non-blocking cost is recorded: `desugar_pipe` (`src/parse/mod.rs`) now does
+`args.to_vec()` before inserting the piped value, because `args` is `Arc<[Arg]>`
+rather than an owned `Vec`. This is parse-time only, copies the top-level `Arg`
+nodes (their `Expr` children are `Arc`, so subtrees are refcount-bumped, not
+copied), and is not on the runtime hot path. It is noted for a possible
+follow-up; it is not a correctness or `Send` issue.
