@@ -34,8 +34,8 @@ runtime means adding a version, never replacing one.
 
 B-1R — ENGINE-STACK-INDEPENDENT CALL ENGINE. B-1 is OPEN (WASM implementation
 nonconformance). The R3A baseline is pushed and remote-closed; the B-1R3B.1
-unary extension is complete locally and unpushed. Production still runs the
-recursive evaluator.
+unary and B-1R3B.2 eager-binary extensions are complete locally and unpushed.
+Production still runs the recursive evaluator.
 
 B-1R phase state:
 
@@ -52,9 +52,10 @@ B-1R phase state:
 - **B-1R3A:** COMPLETE AND REMOTELY CLOSED at `c9ade0b`. `src/run/iterative.rs`
   is a real explicit-continuation machine; the oracle has an identified R3A
   subset; all deliberate mutations detected and reverted.
-- **B-1R3B.1:** COMPLETE LOCALLY (unary `-`/`not`/`~`), unpushed. See
+- **B-1R3B.1:** COMPLETE LOCALLY (unary `-`/`not`/`~`), unpushed.
+- **B-1R3B.2:** COMPLETE LOCALLY (eager binary operators), unpushed. See
   `docs/engineering/CURRENT_HANDOFF.md`.
-- **B-1R3B.2…R3G:** NOT STARTED.
+- **B-1R3B.3…R3G:** NOT STARTED.
 
 ## Production vs experimental engine
 
@@ -62,8 +63,10 @@ B-1R phase state:
 - Experimental: iterative evaluator, compiled only under the non-default
   `evaluator-oracle` feature, not reachable from CLI/REPL/Playground/library
   production paths. Supported subset so far: literals, name lookup, expression
-  statements, blocks, `let` shadowing, `if`/`else`, and unary `-`/`not`/`~`;
-  everything else returns `E4999` and never falls back to recursion.
+  statements, blocks, `let` shadowing, `if`/`else`, unary `-`/`not`/`~`, and
+  the eager binary operators (`+ - * / % ^ == != < <= > >= & | << >>`);
+  everything else (`and`/`or`, calls, containers, …) returns `E4999` and never
+  falls back to recursion.
 
 ## Known blockers
 
@@ -116,8 +119,8 @@ Git + working tree + these documents; chat history is not authority.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: human review of B-1R3B.1,
-then B-1R3B.2 (binary operators) microphase by microphase.
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: human review of B-1R3B.2,
+then B-1R3B.3 (short-circuit / evaluation order) microphase by microphase.
 
 ## Writer
 
