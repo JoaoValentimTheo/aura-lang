@@ -30,6 +30,12 @@ json = ["dep:serde_json"]
 regex = ["dep:regex"]
 time = ["dep:chrono"]
 py = ["dep:pyo3", "dep:serde"]
+# Test-only differential evaluator oracle (B-1R2/B-1R3). Never default and
+# never user-facing: it adds no runtime behavior. It exists so the future
+# explicit-continuation engine can be selected through one internal seam while
+# the differential harness compares both engines. Removed in B-1R8. See
+# `docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md` §24.
+evaluator-oracle = []
 
 [lib]
 name = "aura"
