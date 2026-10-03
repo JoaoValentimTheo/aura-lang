@@ -29,9 +29,11 @@ work and the B-1 correction pass sit in local, unpushed commits on top of it.
 
 ## Remote HEAD
 
-`origin/rewrite/v3-rust` = `3f5f8702` (the released `v0.2.1` commit). Local
-`rewrite/v3-rust` is ahead of it by the unpushed stabilization commits; nothing
-has been pushed by this program.
+`origin/rewrite/v3-rust` = `809cab780c3cb4cfbd0b80107382f680712d3d17` (the
+post-`v0.2.1` stabilization stack, exact-SHA CI green). The B-1R design, the
+B-1R2 oracle, the B-1R3A-ARCH-1 Arc AST-sharing pass, and the B-1R3A machine
+skeleton are local, **unpushed** commits on top of it. (The released `v0.2.1`
+commit `3f5f8702` is an ancestor.)
 
 ## Released
 
@@ -55,7 +57,8 @@ has been pushed by this program.
 
 B-1R — ENGINE-STACK-INDEPENDENT CALL ENGINE (architecture designed; B-1
 reclassified as implementation nonconformance; differential oracle built and
-mutation-validated; evaluator implementation **not started**)
+mutation-validated; **B-1R3A iterative machine skeleton + first executable
+subset implemented locally, not pushed**)
 
 ### B-1R phase state
 
@@ -74,8 +77,8 @@ mutation-validated; evaluator implementation **not started**)
   (`tests/oracle/mutation_experiments.sh`). It introduces **no** evaluator, no
   `Cont`/`UserFrame`/`Ctrl`, and changes no normal runtime behavior. The only
   production file touched is `Cargo.toml` (a non-default `evaluator-oracle`
-  feature flag, no code); `src/run/mod.rs` is byte-identical to the pre-phase
-  tree (`812287ed25d7817f04cb32407293205d4c66287eb162867f4f745abd546caf32`).
+  feature flag, no code); `src/run/mod.rs` was byte-identical to the pre-phase
+  tree when B-1R2 closed.
 - **B-1R3A-ARCH-1:** RESOLVED — OPTION A / ARC AST SHARING VERIFIED
   (`docs/B1R3A_AST_SHARING_DECISION.md`). The design §16.1 was amended from
   `Rc` to `std::sync::Arc` for AST-sharing types, with the rationale inlined.
@@ -92,9 +95,36 @@ mutation-validated; evaluator implementation **not started**)
   fmt/clippy floor; decision-doc over-claimed `TypeExpr`; a duplicated design
   fragment) were fixed, and one parse-time `desugar_pipe` copy cost is recorded
   as non-blocking.
-- **B-1R3A:** AUTHORIZED TO RESUME — SKELETON NOT YET IMPLEMENTED. The
-  representation contradiction is gone; the machine skeleton is not built.
-- **B-1R3:** NOT STARTED.
+- **B-1R3A:** MACHINE SKELETON + FIRST EXECUTABLE SUBSET COMPLETE LOCALLY
+  (2026-10-03; not pushed). `src/run/iterative.rs` is a real
+  explicit-continuation machine (`Machine`, `Ctrl`, `Cont`, `UserFrame`,
+  `FrameBoundary`): one `loop` over `Ctrl` with a `Vec<Cont>` continuation
+  stack; the Rust call stack does not encode nesting for the supported subset.
+  Supported: literals, name lookup (env → single-overload function → native),
+  expression statements, sequential/scoped/unscoped blocks, `let` shadowing
+  write-back, block expressions, `if`/`else`. Every other form returns `E4999`
+  "construct is not supported by the iterative engine (B-1R3A)" and **never**
+  falls back to recursion. 512/513 frame accounting (`Machine.frames` +
+  `push_frame`/`pop_frame`, `main` = frame 1) and the `E1015` AST-depth guard
+  are implemented and unit-tested. Wired only under the non-default
+  `evaluator-oracle` feature (`run_iterative`, `execute_iterative`,
+  `eval_globals_iterative`); production stays on the recursive engine. The
+  oracle gained an identified R3A subset (`tests/oracle/r3a.rs`), strict
+  supported-subset equality (`r3a_supported_subset_agrees`), an explicit
+  no-fallback test (`iterative_unsupported_fails_explicitly`), a full-field
+  iterative golden (`tests/oracle/r3a_golden.tsv`, pinned LF in
+  `.gitattributes`), and an anti-alias test. Deliberate mutations M1–M9 (value,
+  branch, name lookup, diagnostic code/message/span, shadowing write-back,
+  block scoping, silent fallback) were each detected and reverted; two oracle
+  blind spots found this way (unsupported-case span/source; scoped block
+  confinement) were fixed before proceeding. Machine type sizes: `Machine` 112,
+  `Ctrl` 40, `Cont` 40, `UserFrame` 48 bytes. Full validation floor green; main
+  oracle golden byte-unchanged; frozen artifacts untouched; `s` absent; `.kilo`
+  untouched. **B-1 remains OPEN** (calls/loops/try not migrated; production
+  still recursive).
+- **B-1R3B…R3G:** NOT STARTED (values/operators; calls; statements/loops;
+  match/comprehensions/lambdas; try/catch/finally; callbacks/fast path).
+- **B-1R3:** NOT STARTED (full differential).
 
 
 ## Phase Namespace
@@ -249,6 +279,29 @@ contract-sync, hardening, and performance checks.
   key/never-pruned risk was probed but not reproduced as an independent defect
   (not fixed here, not folded into B-1). No runtime behavior changed; `v0.2.1`
   and all frozen artifacts untouched.
+- **B-1R3A machine-skeleton pass (2026-10-03, feature-gated; no default runtime
+  change):** implemented the first executable slice of the E1 explicit
+  continuation machine and the R3A differential subset. New:
+  `src/run/iterative.rs` (`Machine`, `Ctrl`, `Cont`, `UserFrame`,
+  `FrameBoundary`; one `loop`, `Vec<Cont>`, `Done { ctl, env }` write-back;
+  literals/names/expr-statements/blocks/`let` shadowing/`if`; `E4999` for all
+  else; 512/513 `push_frame`/`pop_frame`; `E1015` guard; per-type size unit
+  test), `tests/oracle/r3a.rs` (supported + unsupported sets),
+  `tests/oracle/r3a_golden.tsv` (full-field iterative golden). Changed:
+  `src/run/mod.rs` (`#[cfg(feature="evaluator-oracle")] mod iterative`,
+  `run_iterative`, `iterative_eval`, `eval_globals_iterative`), `src/lib.rs`
+  (`Compilation::execute_iterative`), `tests/oracle/mod.rs` (real iterative
+  seam in `run_compiled`/value path; `Const` routed through the selected
+  engine), `tests/evaluator_oracle.rs` (R3A subset equality, no-fallback,
+  iterative golden, anti-alias), `.gitattributes` (R3A golden LF). All
+  iterative code is behind the non-default `evaluator-oracle` feature; the
+  default/production path is unchanged and the recursive engine remains
+  authoritative. Deliberate mutations M1–M9 detected and reverted; two oracle
+  blind spots (unsupported-case span/source; scoped-block confinement) fixed.
+  Full validation floor green (all-targets all-features, no-default features,
+  MSRV 1.83, fuzz workspace, contract/compat/cross_subsystem/corpus, playground
+  runtime + node + build check, website tests); main oracle golden
+  byte-unchanged; frozen artifacts untouched.
 - **B-1R design pass (2026-10-02, design only; no runtime change):**
   `docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md` specifies the
   contract-preserving remediation architecture for Option B: selected
@@ -290,22 +343,24 @@ browser persistence, LSP, formatter, async, and macros remain deferred.
 
 ## Next Exact Action
 
-1. FINAL READ-ONLY PUSH GATE over the local stack (B-1R2 oracle +
-   B-1R3A-ARCH-1 Arc AST sharing) BEFORE PUSH.
-2. HUMAN REVIEW OF THE DIFFERENTIAL ORACLE
-   (`docs/engineering/B1R2_DIFFERENTIAL_ORACLE.md`) AND OF THE ARC AST-SHARING
-   CHANGE (`docs/B1R3A_AST_SHARING_DECISION.md`) BEFORE RESUMING B-1R3A.
-3. RESUME B-1R3A SKELETON (Machine/Ctrl/UserFrame/Cont) once the push gate and
-   human review are complete.
+1. HUMAN REVIEW OF THE B-1R3A MACHINE SKELETON
+   (`src/run/iterative.rs`, `tests/oracle/r3a.rs`,
+   `tests/oracle/r3a_golden.tsv`, the `evaluator-oracle`-gated wiring) BEFORE
+   RESUMING with B-1R3B.
+2. RESUME B-1R3B — VALUES AND OPERATORS (unary/binary incl. short-circuit,
+   lists/maps/tuples, index/field reads, ranges, f-strings, formatting) on the
+   same machine, keeping the oracle green.
+3. B-1R3C — CALLS (args/source order, overloads, closures, natives, methods,
+   pipes, constructors; real `UserFrame` push/pop and the 512/513 boundary on
+   the migrated call path).
 4. B-1 POLICY DECISION: Option A/B/C in
    `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (Option B recommended; its
    implementation contract is the design document above).
 
-The `0.2.1` release itself is done and unchanged. What remains is human review
-of the local, unpushed stabilization commits and the B-1R design + B-1R2 oracle
-work, then an explicit decision whether to push them or authorize B-1R3. Do not
-push, deploy, tag, change runtime behavior, or start a new development program
-without authorization.
+The `0.2.1` release itself is done and unchanged. B-1R3A is scaffolding plus a
+tiny semantic slice; B-1 stays OPEN until the full migration and the 512-frame
+boundary hold on every substrate. Do not push, deploy, tag, change runtime
+behavior, or start a new development program without authorization.
 
 ## Release Immutability
 
