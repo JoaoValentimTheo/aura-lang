@@ -1,10 +1,12 @@
 # B-1 — WASM call-frame implementation nonconformance
 
-**Status:** OPEN — **REMEDIATION BLOCKED**, human decision required. No runtime
-behavior was changed by this pass; the released language contract is preserved.
-The WebAssembly implementation does not currently satisfy it, and the
+**Status:** OPEN — IMPLEMENTATION **NOT** STARTED; **REMEDIATION ARCHITECTURE
+DESIGNED** (design-only pass 2026-10-02, no runtime behavior changed). Human
+review of the design is the gate before implementation. The WebAssembly
+implementation does not currently satisfy the released contract, and the
 contract-preserving remedy is a runtime rework outside a stabilization pass.
-**Finding:** BREAK-0.2.1 / B-1; correction pass 2026-10-02.
+**Finding:** BREAK-0.2.1 / B-1; correction pass 2026-10-02; design pass
+2026-10-02 (`docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md`).
 **Classification (corrected):** **IMPLEMENTATION NONCONFORMANCE**, WebAssembly
 substrate. `LANGUAGE_SPEC.md` §31.3 and §31.5 reinforce each other; they are not
 in conflict. §31.3 states the 512-frame limit as a language rule, "not a host
@@ -246,6 +248,14 @@ runtime redesigns or changing the released semantics automatically.
   every substrate. Cost: a dedicated runtime program; differential oracle
   against the current interpreter; performance validation. Risk: the largest
   change to the runtime since the rewrite.
+  **Design-only pass 2026-10-02:** the remediation architecture for Option B
+  has been designed and reviewed at design level; the contract for the
+  implementation is `docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md`
+  (selected architecture E1, explicit continuation machine over the AST;
+  semantic observables; differential oracle; phased migration; rollback).
+  No runtime fix is implemented and no behavior changed. B-1 remains **OPEN**;
+  the next phase is implementation/oracle work and requires human review of
+  that design first.
 * **Option A — substrate-calibrated cap (contract change).** Cap effective
   frames on WASM (safely below every measured floor, e.g. 150–192) and report
   `E4011`; amend §31.3 and the public limitations. Cost: small, testable.
@@ -257,7 +267,8 @@ runtime redesigns or changing the released semantics automatically.
 * **Do nothing (status quo).** The released defect stays; §31.5 remains
   violated in the Playground. Not acceptable as a durable state.
 
-The Council/human must choose. Nothing in this pass changes runtime behavior.
+The Council/human must choose. Nothing in any pass so far changes runtime
+behavior.
 
 ## 6. Coverage added by this pass (and what is intentionally absent)
 
@@ -298,7 +309,11 @@ node --stack-size=4000 <probe> playground/runtimes/0.2.1/aura_playground_runtime
 
 ## 8. Decision required
 
-Choose Option A, B, or C (or another explicit policy). Until then:
+Choose Option A, B, or C (or another explicit policy). For Option B, the
+implementation contract now exists
+(`docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md`); authorizing B-1R2 is the
+next human decision after reviewing that design. Until a decision and a
+remediation implementation:
 
 * `v0.2.1` remains immutable and contains the defect;
 * native behavior and the released contract are unchanged;
