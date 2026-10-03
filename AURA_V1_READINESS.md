@@ -40,9 +40,10 @@ never by schedule. Status legend: **GREEN** (ready), **YELLOW** (gaps remain),
    implementations are committed, pushed, released in `v0.2.1`, and CI-green.
    The `v0.2.1` release train is closed (published 2026-10-01; 27/27 check-runs
    green; GitHub Pages deploy green).
-3. **WASM (B-1, YELLOW — implementation nonconformance, remediation
-   blocked):** mainstream recursive programs exhaust the JavaScript engine
-   stack below the 512-frame language limit instead of reporting `E4011`
+3. **WASM (B-1, YELLOW — implementation nonconformance; remediation
+   architecture designed, implementation not started):** mainstream recursive
+   programs exhaust the JavaScript engine stack below the 512-frame language
+   limit instead of reporting `E4011`
    (§31.3 is a language rule; §31.5 forbids host failures — they reinforce
    each other, so this is an implementation defect, not a spec conflict).
    Present in every released WASM artifact and in HEAD; native conforms. The
@@ -50,14 +51,18 @@ never by schedule. Status legend: **GREEN** (ready), **YELLOW** (gaps remain),
    explicit frame/continuation stack) — a runtime-architecture program; any
    substrate-calibrated cap would change released semantics and is not
    authorized automatically. `docs/WASM_CALL_FRAME_LIMIT_DECISION.md`
-   (rewritten this pass; OPEN — Options A/B/C, recommendation B). Not a
+   (OPEN — Options A/B/C, recommendation B); the implementation contract for
+   Option B is `docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md` (design-only
+   pass 2026-10-02; no behavior change). Not a
    `v0.2.1` regression and not a release-immutability issue.
 
 ## Notes
 
 - One unresolved correctness blocker is known: **B-1** (WASM call-frame
   implementation nonconformance: the engine stack traps below the language
-  limit; `docs/WASM_CALL_FRAME_LIMIT_DECISION.md`, OPEN, remediation blocked).
+  limit; `docs/WASM_CALL_FRAME_LIMIT_DECISION.md`, OPEN; architecture
+  designed in `docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md`, implementation
+  not started).
   No unresolved CRITICAL/HIGH *security* blocker is known.
 - Frozen `0.0.2`/`0.2.0`/`0.2.1` artifacts verified byte-identical at intake;
   the published `0.2.1` release asset matches the in-repository artifact.

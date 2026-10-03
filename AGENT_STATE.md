@@ -53,8 +53,8 @@ has been pushed by this program.
 
 ## Current Track
 
-POST-v0.2.1 STABILIZATION + B-1 CORRECTION PASS (B-1 reclassified as
-implementation nonconformance; remediation blocked pending human decision)
+B-1R — ENGINE-STACK-INDEPENDENT CALL ENGINE (architecture designed; B-1
+reclassified as implementation nonconformance; implementation **not started**)
 
 ## Phase Namespace
 
@@ -126,8 +126,9 @@ the website and Pages CI jobs). Stages 4–8 attacked the language, modules, CLI
 REPL, CPython, WASM, and Playground surfaces; ran native/WASM parity,
 contract-sync, hardening, and performance checks.
 
-- **B-1 (OPEN — IMPLEMENTATION NONCONFORMANCE, remediation blocked) — WASM
-  call-frame trap below the 512-frame language limit.** Corrected
+- **B-1 (OPEN — IMPLEMENTATION NONCONFORMANCE; remediation architecture
+  designed, implementation not started) — WASM call-frame trap below the
+  512-frame language limit.** Corrected
   classification: this is an implementation defect, not a conflict between
   `LANGUAGE_SPEC` §31.3 and §31.5. Those rules reinforce each other: 512 user
   call frames is a language rule "not a host limitation", and §31.5 forbids
@@ -150,8 +151,8 @@ contract-sync, hardening, and performance checks.
   (explicit frame/continuation stack) — a runtime-architecture program, not a
   stabilization fix; any substrate-calibrated cap would change the released
   semantics, which this pass must not do automatically. Decision package:
-  `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (rewritten this pass, OPEN —
-  Remedies blocked, Options A/B/C).
+  `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (OPEN — Options A/B/C, B
+  recommended).
   Coverage added: six native boundary shapes exact at 510/511 in
   `tests/corpus/call-frames/` (else, match, method, closure, module, try);
   cross-substrate safe-depth (150) shape matrix in
@@ -160,6 +161,29 @@ contract-sync, hardening, and performance checks.
   limit−1/limit/limit+1 assertions are deliberately absent until remediation:
   they cannot pass while the defect exists, and encoding it as an expected
   failure is not acceptable coverage.
+- **B-1R design pass (2026-10-02, design only; no runtime change):**
+  `docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md` specifies the
+  contract-preserving remediation architecture for Option B: selected
+  Option E1 (explicit continuation machine over the existing AST; no IR, no
+  bytecode VM), with the full state inventory, per-variant expression and
+  statement suspension matrices, control-flow propagation rules,
+  environment/closure/`self` model, exact `try/catch/finally` semantics
+  (15 pending combinations), exact `E4011` accounting (`main` counts; frame
+  513 is the first over-limit frame), diagnostic/source-provenance
+  preservation, a differential oracle design (same `Module`, two fresh
+  `Interp`s, feature-gated test-only engine switch), a reuse-first corpus,
+  phased migration B-1R2…B-1R8, rollback strategy, and a risk register. The
+  minimum viable change is the explicit continuation machine itself; a
+  substrate-calibrated cap remains rejected as a contract change. Design
+  verification against the code corrected several draft misstatements (a
+  throw-code number, match/no-match code, two evaluation-order details, the
+  `finally` replacement rule, and statement/pattern nesting bounds). An
+  independent read-only design review was performed; its substantiated
+  findings were incorporated. Also recorded as an adjacent coverage gap
+  (independent of B-1): deeply nested list *patterns* are bounded only by the
+  substrate-calibrated parser backstop (native accepts ~2000, WASM ~700),
+  and `bind_pattern`/`match_pattern` recurse per pattern level. No runtime
+  behavior changed; `v0.2.1` and all frozen artifacts untouched.
 - All other stabilization findings classified as NON-ISSUE, EXPECTED
   DOCUMENTED LIMITATION (eager filesystem-module discovery of malformed
   reachable siblings; case-insensitive filesystem artifacts), or HISTORICAL
@@ -167,9 +191,10 @@ contract-sync, hardening, and performance checks.
 
 This reconciliation pass stages local, **unpushed** repository/doc/website
 alignment for the released `0.2.1` identity (authority docs, official website,
-a release-version drift guard), the B-1 decision package and guards. It adds no
-language semantics, no runtime bytes, and no new release. It is committed
-locally and awaits human review before push.
+a release-version drift guard), the B-1 decision package and guards, and the
+B-1R design document (`docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md`). It
+adds no language semantics, no runtime bytes, and no new release. It is
+committed locally and awaits human review before push.
 
 No post-`0.2.1` development line exists yet, and none may be invented here. The
 next major engineering direction has not been selected; package management,
@@ -177,18 +202,21 @@ browser persistence, LSP, formatter, async, and macros remain deferred.
 
 ## Next Exact Action
 
-1. HUMAN REVIEW OF POST-v0.2.1 STABILIZATION STACK BEFORE PUSH.
-2. B-1 DECISION: choose Option A/B/C in
-   `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (remediation is blocked; the
-   contract-preserving fix is an engine-independent evaluator program).
+1. HUMAN REVIEW OF THE ENGINE-STACK-INDEPENDENT EVALUATOR DESIGN
+   (`docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md`) BEFORE AUTHORIZING
+   B-1R2 IMPLEMENTATION.
+2. HUMAN REVIEW OF POST-v0.2.1 STABILIZATION STACK BEFORE PUSH.
+3. B-1 POLICY DECISION: Option A/B/C in
+   `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (Option B recommended; its
+   implementation contract is the design document above).
 
 The `0.2.1` release itself is done and unchanged. What remains is human review
 of the local, unpushed stabilization commits (state docs + website `0.2.1`
 alignment + release-version drift guard + B-1 correction pass: reclassified
 finding, native boundary corpus, cross-substrate shape matrix, Worker boundary
-assertion), then an explicit decision whether to push them. Do not push,
-deploy, tag, change runtime behavior, or start a new development program
-without authorization.
+assertion) and of the B-1R evaluator design, then an explicit decision whether
+to push them or authorize B-1R2. Do not push, deploy, tag, change runtime
+behavior, or start a new development program without authorization.
 
 ## Release Immutability
 

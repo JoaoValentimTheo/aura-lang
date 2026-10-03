@@ -1655,3 +1655,65 @@ Next exact action: **HUMAN REVIEW OF THE LOCAL STABILIZATION + B-1 CORRECTION
 STACK BEFORE PUSH**, and a decision on B-1 Option A/B/C. Nothing was pushed,
 tagged, deployed, or released; `v0.2.1` is unchanged and still contains the
 defect.
+
+## B-1R DESIGN PASS — ENGINE-STACK-INDEPENDENT EVALUATOR — 2026-10-02
+
+Design-only pass (B-1R0/R1) on top of the B-1 correction stack. No runtime
+behavior changed; no production source touched; `v0.2.1` and every frozen
+artifact untouched. B-1 remains **OPEN**.
+
+What was done:
+
+1. **Reality check + current-evaluator reconstruction.** Verified local HEAD
+   `3fbaedf` (13 local commits ahead of `origin/rewrite/v3-rust` `3f5f8702`,
+   0 behind), `s` untracked and 1 byte, `.kilo/` deletions preserved.
+   Reconstructed the production evaluator from `src/run/mod.rs` (2,303 lines)
+   and its dependencies: entry points, all call variants, all 21 `Expr` and 12
+   `Stmt` arms, recursive edges classified (user-call, AST, control-flow,
+   pattern, reentrant callback, substrate wrapper).
+2. **Design document.** `docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md`
+   (proposed Step-27 contract for B-1R2/R3): problem, released contract,
+   current architecture with real names, design requirements, semantic
+   observables, full interpreter-state inventory, per-variant expression and
+   statement suspension matrices, control-flow propagation rules, environment/
+   closure/method model, exact `try/catch/finally` semantics (15 combinations),
+   exact `E4011` accounting, diagnostic/source provenance, memory/lifetime
+   bounds, performance model, native/WASM risk, three architecture options
+   (E1 selected: explicit continuation machine over the existing AST; E2
+   boxed-closure CPS rejected; E3 IR+VM rejected — no AST lowering), proposed
+   `UserFrame`/`Cont` structures, differential-oracle design (same `Module`,
+   two fresh `Interp`s, feature-gated test-only engine switch), reuse-first
+   corpus, B-1R2…B-1R8 phase plan, rollback, risk register, definition of done.
+3. **Verification of the design against real code** corrected several draft
+   misstatements: the internal throw code is `E4099` (`E4026` is the
+   user-facing conversion); match no-arm is `E4029`; `Method`/`Index`
+   evaluation order and `Field` zero-arg dispatch; the `finally`
+   replacement rule (`return` inside `finally` replaces the pending result);
+   `Ctl::value` is called in exactly one place; 21 (not 20) `Expr` variants;
+   and the true bounds on statement/pattern nesting.
+4. **Adjacent coverage gap recorded** (independent of B-1): deeply nested
+   list *patterns* are bounded only by the substrate-calibrated parser
+   backstop (measured native accepts 2000 / rejects 2100; released `0.2.1`
+   WASM accepts ~700 / rejects 766+; both `E1015`), and `bind_pattern`/
+   `match_pattern` recurse per pattern level. Not fixed here.
+5. **Independent read-only design review** was run against the design
+   questions (host-stack removal, nested-call resumption, evaluation order,
+   short-circuit, closures/mutation, methods/`self`, control flow,
+   `try/catch/finally`, `E4011` accounting, diagnostics, modules, Python
+   reentrancy, new limits, oracle strength, simpler alternatives,
+   incrementality, dual semantics, rollback, unspecified behavior).
+   Substantiated findings were verified against code/spec and incorporated.
+6. **Decision package updated** (`docs/WASM_CALL_FRAME_LIMIT_DECISION.md`)
+   to record: design-only pass completed; Option B has a concrete design
+   contract; no runtime fix implemented; B-1 stays OPEN; next phase is
+   implementation/oracle work after human review.
+
+Validation run (no production change): `cargo fmt --check`;
+`cargo test --locked --test contract`; `--test compat`; `--test cross_subsystem`;
+`--test corpus`; `node playground/tests/node/run-all.mjs`;
+`node website/tests/run-all.mjs`; frozen-artifact hashes re-verified and
+`git diff -- playground/runtimes/` empty.
+
+Next exact action: **HUMAN REVIEW OF THE ENGINE-STACK-INDEPENDENT EVALUATOR
+DESIGN BEFORE AUTHORIZING B-1R2**. Nothing was pushed, tagged, deployed, or
+released; `v0.2.1` is unchanged and still contains the defect.
