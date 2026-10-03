@@ -76,6 +76,18 @@ mutation-validated; evaluator implementation **not started**)
   production file touched is `Cargo.toml` (a non-default `evaluator-oracle`
   feature flag, no code); `src/run/mod.rs` is byte-identical to the pre-phase
   tree (`812287ed25d7817f04cb32407293205d4c66287eb162867f4f745abd546caf32`).
+- **B-1R3A:** BLOCKED — ARCHITECTURE REVISION REQUIRED (finding B-1R3A-ARCH-1,
+  `docs/B1R3A_AST_SHARING_DECISION.md`). The B-1R1 design §16.1 mandates
+  `Rc`-shared AST children as the suspension-storage prerequisite, but the
+  existing front-end/execution pipelines require `Module: Send` (parser runs on
+  the execution-thread substrate via `on_execute/parse_stack<T: Send>`, and
+  `Compilation::execute_with_host_factory` moves the module across it).
+  `Rc` is `!Send`, so the design's own §16.1 and §22 (`Send`-compatibility)
+  cannot both hold. Applying only the §16.1 field changes yields 128 `E0277`
+  "cannot be sent between threads safely" errors. No `unsafe` escape hatch
+  exists. Not patched around; a representation decision (`Arc` for AST-sharing
+  types recommended) is required before B-1R3A proceeds. No production change,
+  no evaluator skeleton; experiment fully reverted.
 - **B-1R3:** NOT STARTED.
 
 
@@ -255,11 +267,16 @@ browser persistence, LSP, formatter, async, and macros remain deferred.
 
 ## Next Exact Action
 
-1. HUMAN REVIEW OF THE DIFFERENTIAL ORACLE
+1. B-1R3A ARCHITECTURE DECISION (finding B-1R3A-ARCH-1): choose the AST
+   shared-ownership representation — Option A (`Arc` for AST-sharing types,
+   recommended) / B / C in `docs/B1R3A_AST_SHARING_DECISION.md`. B-1R3A cannot
+   proceed until this is decided; §16.1 of the design must be amended
+   accordingly.
+2. HUMAN REVIEW OF THE DIFFERENTIAL ORACLE
    (`docs/engineering/B1R2_DIFFERENTIAL_ORACLE.md`) BEFORE AUTHORIZING B-1R3A
    ITERATIVE-EVALUATOR IMPLEMENTATION.
-2. HUMAN REVIEW OF POST-v0.2.1 STABILIZATION STACK AND B-1R COMMITS BEFORE PUSH.
-3. B-1 POLICY DECISION: Option A/B/C in
+3. HUMAN REVIEW OF POST-v0.2.1 STABILIZATION STACK AND B-1R COMMITS BEFORE PUSH.
+4. B-1 POLICY DECISION: Option A/B/C in
    `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (Option B recommended; its
    implementation contract is the design document above).
 
