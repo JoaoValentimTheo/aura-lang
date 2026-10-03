@@ -102,13 +102,132 @@ pub fn supported_cases() -> Vec<Case> {
 #[must_use]
 pub fn unsupported_cases() -> Vec<Case> {
     vec![
-        // The operand is a binary expression (R3B.2): the unary machine must
-        // not apply `-`/`not` to it, and must not fall back to recursion.
-        value("neg_of_unsupported_binary", "-(1 + 1)\n"),
-        value("not_of_unsupported_binary", "not (1 + 1)\n"),
-        // The operand is a call (R3C).
+        // The operand is a call (R3C): the unary machine must not apply
+        // `-`/`not` to it, and must not fall back to recursion.
         value("neg_of_unsupported_call", "-len([1, 2])\n"),
-        // A binary expression is still unsupported on its own.
-        value("binary_add", "1 + 1\n"),
+        value("not_of_unsupported_call", "not len([1, 2])\n"),
+        // The operand is a list literal (R3B.4).
+        value("neg_of_unsupported_list", "-[1, 2]\n"),
+        // A list literal is still unsupported on its own.
+        value("list_literal", "[1, 2]\n"),
+    ]
+}
+
+fn binary_value(name: &'static str, source: &'static str) -> Case {
+    Case {
+        group: "r3b2-value",
+        name,
+        file: "<r3b2>",
+        source,
+        kind: Kind::Value,
+    }
+}
+
+fn binary_program(name: &'static str, source: &'static str) -> Case {
+    Case {
+        group: "r3b2-program",
+        name,
+        file: "r3b2.aura",
+        source,
+        kind: Kind::ExecuteProgram,
+    }
+}
+
+/// B-1R3B.2 — eager binary operators the iterative engine supports. Recursive
+/// and iterative must agree exactly on value, type, diagnostics, and span.
+#[must_use]
+pub fn binary_supported_cases() -> Vec<Case> {
+    vec![
+        // ----- arithmetic: int -------------------------------------------
+        binary_value("add_int", "1 + 2\n"),
+        binary_value("sub_int", "5 - 3\n"),
+        binary_value("mul_int", "4 * 6\n"),
+        binary_value("div_int", "20 / 6\n"),
+        binary_value("rem_int", "20 % 6\n"),
+        binary_value("pow_int", "2 ^ 10\n"),
+        // ----- arithmetic: float and mixed -------------------------------
+        binary_value("add_float", "1.5 + 2.25\n"),
+        binary_value("mixed_int_float", "1 + 2.5\n"),
+        binary_value("mixed_float_int", "2.5 + 1\n"),
+        binary_value("div_float", "10.0 / 4.0\n"),
+        binary_value("rem_float", "10.0 % 3.0\n"),
+        binary_value("pow_float", "2.0 ^ 3.0\n"),
+        // ----- string concatenation --------------------------------------
+        binary_value("add_str", "\"a\" + \"b\"\n"),
+        // ----- comparison ------------------------------------------------
+        binary_value("eq_int_true", "1 == 1\n"),
+        binary_value("eq_int_false", "1 == 2\n"),
+        binary_value("ne_int", "1 != 2\n"),
+        binary_value("lt_int", "1 < 2\n"),
+        binary_value("le_equal", "2 <= 2\n"),
+        binary_value("gt_int", "3 > 2\n"),
+        binary_value("ge_equal", "3 >= 3\n"),
+        binary_value("eq_int_float", "1 == 1.0\n"),
+        binary_value("lt_mixed", "1 < 1.5\n"),
+        binary_value("eq_str", "\"a\" == \"a\"\n"),
+        binary_value("lt_str", "\"a\" < \"b\"\n"),
+        binary_value("eq_bool", "true == true\n"),
+        binary_value("eq_none", "none == none\n"),
+        // ----- bitwise / shifts ------------------------------------------
+        binary_value("bitand", "6 & 3\n"),
+        binary_value("bitor", "6 | 3\n"),
+        binary_value("shl", "1 << 4\n"),
+        binary_value("shr", "16 >> 2\n"),
+        // ----- overflow / divide-zero / shift-range ----------------------
+        binary_value("add_overflow", "9223372036854775807 + 1\n"),
+        binary_value("sub_overflow", "-9223372036854775808 - 1\n"),
+        binary_value("mul_overflow", "9223372036854775807 * 2\n"),
+        binary_value("div_min_by_neg_one", "-9223372036854775808 / -1\n"),
+        binary_value("rem_min_by_neg_one", "-9223372036854775808 % -1\n"),
+        binary_value("div_zero_int", "1 / 0\n"),
+        binary_value("rem_zero_int", "1 % 0\n"),
+        binary_value("div_zero_float", "1.0 / 0.0\n"),
+        binary_value("neg_pow_exponent", "2 ^ -1\n"),
+        binary_value("shift_too_large", "1 << 64\n"),
+        binary_value("shift_negative", "1 >> -1\n"),
+        // ----- invalid operand types -------------------------------------
+        binary_value("add_bool", "true + false\n"),
+        binary_value("sub_str", "\"a\" - \"b\"\n"),
+        binary_value("bitand_float", "1.5 & 2\n"),
+        binary_value("shl_float", "1 << 1.5\n"),
+        binary_value("lt_bool", "true < false\n"),
+        // ----- composition: precedence, associativity, nesting -----------
+        binary_value("precedence_mul_add", "1 + 2 * 3\n"),
+        binary_value("assoc_sub_left", "10 - 3 - 2\n"),
+        binary_value("assoc_pow_right", "2 ^ 3 ^ 2\n"),
+        binary_value("nested_binary", "(1 + 2) * (3 - 1)\n"),
+        binary_value("binary_with_unary", "-2 + -3\n"),
+        binary_value("unary_of_binary", "-(1 + 2)\n"),
+        binary_value("bitwise_precedence", "1 | 2 == 3\n"),
+        // ----- binary inside R3A constructs ------------------------------
+        binary_value("binary_in_block", "{ let x = 3\n x + 4 }\n"),
+        binary_value("binary_in_if_cond", "if 1 + 1 == 2 { 1 } else { 2 }\n"),
+        binary_value(
+            "binary_let_chain",
+            "{ let a = 1 + 1\n let b = a * 2\n b }\n",
+        ),
+        // ----- program (real frame boundary) -----------------------------
+        binary_program("main_add", "fn main() { return 1 + 2 }\n"),
+        binary_program("main_cmp", "fn main() { if 1 < 2 { return } }\n"),
+        binary_program(
+            "main_nested_binary",
+            "fn main() { let x = (2 + 3) * 4\n if x == 20 { return } }\n",
+        ),
+    ]
+}
+
+/// B-1R3B.2 — short-circuit operators (`and`/`or`) are B-1R3B.3 and must remain
+/// explicitly unsupported: the iterative engine must produce the `E4999`
+/// sentinel and never conditionally evaluate the right operand.
+#[must_use]
+pub fn binary_unsupported_cases() -> Vec<Case> {
+    vec![
+        binary_value("and_bool", "true and false\n"),
+        binary_value("or_bool", "false or true\n"),
+        // A supported eager operator whose operand is a short-circuit operator
+        // must not make the `and`/`or` work through another path.
+        binary_value("eager_over_and", "1 + (true and false)\n"),
+        // A supported eager operator whose operand remains unsupported (call).
+        binary_value("eager_over_call", "1 + len([1, 2])\n"),
     ]
 }

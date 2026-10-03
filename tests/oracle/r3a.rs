@@ -114,7 +114,6 @@ pub fn supported_cases() -> Vec<Case> {
 #[must_use]
 pub fn unsupported_cases() -> Vec<Case> {
     vec![
-        value("binary_add", "1 + 1\n"),
         value("fstring", "f\"v={1}\"\n"),
         value("list_literal", "[1, 2]\n"),
         value("map_literal", "{\"a\": 1}\n"),
