@@ -67,7 +67,7 @@ mutation-validated; evaluator implementation **not started**)
   oracle (`tests/evaluator_oracle.rs`, `tests/oracle/**`,
   `docs/engineering/B1R2_DIFFERENTIAL_ORACLE.md`) observes exact stdout,
   type-tagged final values, and normalized diagnostics (code, message, source
-  display name, span, line, column) over a 100-case corpus; runs both engines in
+  display name, span, line, column) over a 104-case corpus; runs both engines in
   isolated executions; pins current behavior in `tests/oracle/golden.tsv`;
   records the B-1 contract-boundary corpus separately from the semantic
   differential corpus; and detects 11 deliberate semantic mutations
@@ -188,7 +188,7 @@ contract-sync, hardening, and performance checks.
   change):** built the engine-stack-independent evaluator's semantic safety net
   before implementing the evaluator. New: `tests/evaluator_oracle.rs` (driver),
   `tests/oracle/mod.rs` (normalized observable model, isolated multi-engine
-  adapter, golden codec), `tests/oracle/cases.rs` (100 deterministic cases:
+  adapter, golden codec), `tests/oracle/cases.rs` (104 deterministic cases:
   core semantics; the 16-position call/evaluation-order matrix; the
   try/catch/finally pending×outcome matrix; native-vs-closure callback frame
   accounting at the 512 boundary; compound-assignment double evaluation pinned

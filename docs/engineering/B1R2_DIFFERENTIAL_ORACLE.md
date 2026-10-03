@@ -48,7 +48,7 @@ oracle can fail.
 
 ## 3. Corpus
 
-98 deterministic cases. Groups: `core`, `diag`, `provenance`, `call-position`,
+104 deterministic cases. Groups: `core`, `diag`, `provenance`, `call-position`,
 `callback`, `compound`, `finally`, `b1-boundary`, `module`, `value`.
 
 * **call-position matrix (16):** binary left/right, function argument,
@@ -77,7 +77,7 @@ oracle can fail.
 
 ## 4. Baseline self-comparison (Step 17)
 
-`oracle_corpus_matches_golden` and `engines_agree`: 100% agreement over all 98
+`oracle_corpus_matches_golden` and `engines_agree`: 100% agreement over all 104
 cases on the current engine, and recursive==recursive. `golden_manifest_is_reproducible`
 proves the committed manifest regenerates byte-for-byte.
 
@@ -167,7 +167,7 @@ expected oracle behavior.
 
 ## 9. Performance (Step 24)
 
-98 cases. Suite wall time after build: ~0.18 s of test execution, < 0.35 s
+104 cases. Suite wall time after build: ~0.18 s of test execution, < 0.35 s
 including cargo overhead (median of 3). The dual-engine run (feature build) is
 expected to be ~2× the corpus observation cost; still sub-second. Correctness
 first; no optimization attempted.
