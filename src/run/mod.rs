@@ -6,6 +6,14 @@
 
 pub mod value;
 
+/// The explicit-continuation (iterative) evaluator — B-1R3A.
+///
+/// Compiled only with the non-default `evaluator-oracle` feature so default and
+/// production builds contain no path to it (`ITERATIVE_EVALUATOR_DESIGN.md`
+/// §24). Production execution stays on the recursive engine below.
+#[cfg(feature = "evaluator-oracle")]
+pub(crate) mod iterative;
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -379,6 +387,80 @@ impl Interp {
             }
         }
         Ok(())
+    }
+
+    /// Execute a module with the experimental explicit-continuation evaluator
+    /// (B-1R3A).
+    ///
+    /// Behavior-neutral for production: this method exists only with the
+    /// non-default `evaluator-oracle` feature and is never called by the
+    /// recursive engine or any public entry point. It mirrors [`Interp::run`]'s
+    /// declaration and initialization order, and routes the entry `main` call
+    /// through the machine. It is deliberately **not** an embedder API.
+    ///
+    /// Supported subset and explicit unsupported surface: see
+    /// `src/run/iterative.rs`. Unsupported constructs return `E4999`; they never
+    /// fall back to recursion.
+    ///
+    /// # Errors
+    /// Returns the first diagnostic the iterative machine produces.
+    #[cfg(feature = "evaluator-oracle")]
+    pub fn run_iterative(&mut self, module: &Module) -> Result<()> {
+        // Pass 1: declarations (recursive helper; declaration is not
+        // expression evaluation and carries no pending execution state).
+        for item in &module.items {
+            self.declare_item(item);
+        }
+        // Pass 2: top-level constants and expressions in source order, run
+        // through the machine so an unsupported construct cannot silently use
+        // the recursive path.
+        for item in &module.items {
+            match item {
+                Item::Const { name, value, .. } => {
+                    let globals = self.globals.clone();
+                    let ctl = self.iterative_eval(value, &globals)?;
+                    let v = self.finish_global(ctl)?;
+                    self.globals.define(name.clone(), v, false);
+                }
+                Item::Expr(e, _) => {
+                    let globals = self.globals.clone();
+                    let ctl = self.iterative_eval(e, &globals)?;
+                    self.finish_global(ctl)?;
+                }
+                _ => {}
+            }
+        }
+        if let Some(main) = self.functions.get("main").and_then(|s| s.first()).cloned() {
+            if let Err(d) = iterative::call_closure_body(self, main, Vec::new(), Span::default()) {
+                return Err(self.uncaught(d));
+            }
+        }
+        Ok(())
+    }
+
+    /// Evaluate one expression with the iterative machine (feature-gated),
+    /// normalizing an internal throw exactly like `eval_toplevel`.
+    #[cfg(feature = "evaluator-oracle")]
+    pub(crate) fn iterative_eval(&mut self, e: &Expr, env: &Env) -> Result<Ctl> {
+        match iterative::eval_expr(self, e, env) {
+            Ok(c) => Ok(c),
+            Err(d) => Err(self.uncaught(d)),
+        }
+    }
+
+    /// Evaluate an expression in the global scope with the iterative machine.
+    ///
+    /// Hidden and feature-gated: used only by the differential oracle's value
+    /// path (the REPL-equivalent final-value observable). It mirrors
+    /// [`Interp::eval_globals`] including uncaught-throw normalization.
+    ///
+    /// # Errors
+    /// Returns the iterative machine's first diagnostic.
+    #[cfg(feature = "evaluator-oracle")]
+    #[doc(hidden)]
+    pub fn eval_globals_iterative(&mut self, e: &Expr) -> Result<Ctl> {
+        let globals = self.globals.clone();
+        self.iterative_eval(e, &globals)
     }
 
     pub(crate) fn run_sourced(

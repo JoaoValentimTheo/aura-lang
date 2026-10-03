@@ -337,6 +337,52 @@ impl Compilation {
         self.execute_with_host_factory(move || host::host_from_parts(stdout, args, input))
     }
 
+    /// Execute this compilation with the experimental explicit-continuation
+    /// evaluator (B-1R3A).
+    ///
+    /// Hidden and available only with the non-default `evaluator-oracle`
+    /// feature. Behavior-neutral: it is called exclusively by the differential
+    /// oracle harness and never by a production path. For B-1R3A only
+    /// single-source compilations are supported; a provider-backed compilation
+    /// returns `E4999` rather than silently using the recursive engine.
+    ///
+    /// # Errors
+    /// Returns the first diagnostic the iterative machine produces.
+    #[cfg(feature = "evaluator-oracle")]
+    #[doc(hidden)]
+    pub fn execute_iterative(
+        self,
+        stdout: Option<Output>,
+        args: Vec<String>,
+        input: Option<Input>,
+    ) -> std::result::Result<(), DiagnosticReport> {
+        let Compilation {
+            module,
+            sources,
+            entry_source,
+            item_sources,
+        } = self;
+        if item_sources.is_some() {
+            let diag = SourceDiagnostic::new(
+                error::Diag::new(
+                    error::codes::INTERNAL,
+                    "multi-source execution is not supported by the iterative engine (B-1R3A)",
+                    error::Span::default(),
+                ),
+                entry_source,
+            );
+            return Err(DiagnosticReport::new(diag, sources));
+        }
+        let outcome = on_execution_stack(move || {
+            let mut interp = run::Interp::new();
+            interp.set_host(host::host_from_parts(stdout, args, input));
+            interp.run_iterative(&module)
+        });
+        outcome.map_err(|diagnostic| {
+            DiagnosticReport::new(SourceDiagnostic::new(diagnostic, entry_source), sources)
+        })
+    }
+
     /// Execute this compilation with a host constructed on Aura's execution
     /// stack.
     ///
