@@ -31,13 +31,20 @@ PUSHES:                  …→3f5f8702 (all CI-green; tag v0.2.1)
 CI:                      GREEN on 3f5f8702 (27/27 check-runs, incl. release publish)
 RELEASES:                v0.2.1 published 2026-10-01 (WASM 1,768,322 / 48c456fc…;
                          Linux/macOS/Windows tarballs; manifest + SBOM attached)
-V1 GREEN:                every readiness capability category — LANGUAGE, TYPE
-                         SYSTEM, RUNTIME, STDLIB, MODULES, REPL, CLI, RESOURCE
-                         LIMITS, DETERMINISM, WASM, PLAYGROUND, LINUX/MACOS/
-                         WINDOWS, CI, CPYTHON, SECURITY, PERFORMANCE, DOCS,
-                         PACKAGING, RELEASE ENGINEERING, SUPPLY CHAIN,
+V1 GREEN:                every readiness capability category except WASM —
+                         LANGUAGE, TYPE SYSTEM, RUNTIME, STDLIB, MODULES, REPL,
+                         CLI, RESOURCE LIMITS, DETERMINISM, PLAYGROUND,
+                         LINUX/MACOS/WINDOWS, CI, CPYTHON, SECURITY, PERFORMANCE,
+                         DOCS, PACKAGING, RELEASE ENGINEERING, SUPPLY CHAIN,
                          BACKWARD COMPAT
-V1 YELLOW:               none
+V1 YELLOW:               WASM — open B-1 implementation nonconformance: the
+                         released WebAssembly runtime traps on the engine stack
+                         below the normative 512-frame language limit instead of
+                         reporting `E4011`; native conforms; remediation
+                         architecture designed (docs/engineering/
+                         ITERATIVE_EVALUATOR_DESIGN.md), implementation not
+                         started. See AURA_V1_READINESS.md and
+                         docs/WASM_CALL_FRAME_LIMIT_DECISION.md.
 V1 RED:                  v1 GO — requires a published, post-release-verified 1.0;
                          the prerelease→RC→1.0 train remains
 FROZEN HASHES:           0.0.2 = 1,366,621 / 5a4ad3f7…; 0.2.0 = 1,654,161 / 9937fd80…;
