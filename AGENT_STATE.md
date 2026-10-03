@@ -76,18 +76,24 @@ mutation-validated; evaluator implementation **not started**)
   production file touched is `Cargo.toml` (a non-default `evaluator-oracle`
   feature flag, no code); `src/run/mod.rs` is byte-identical to the pre-phase
   tree (`812287ed25d7817f04cb32407293205d4c66287eb162867f4f745abd546caf32`).
-- **B-1R3A:** BLOCKED — ARCHITECTURE REVISION REQUIRED (finding B-1R3A-ARCH-1,
-  `docs/B1R3A_AST_SHARING_DECISION.md`). The B-1R1 design §16.1 mandates
-  `Rc`-shared AST children as the suspension-storage prerequisite, but the
-  existing front-end/execution pipelines require `Module: Send` (parser runs on
-  the execution-thread substrate via `on_execute/parse_stack<T: Send>`, and
-  `Compilation::execute_with_host_factory` moves the module across it).
-  `Rc` is `!Send`, so the design's own §16.1 and §22 (`Send`-compatibility)
-  cannot both hold. Applying only the §16.1 field changes yields 128 `E0277`
-  "cannot be sent between threads safely" errors. No `unsafe` escape hatch
-  exists. Not patched around; a representation decision (`Arc` for AST-sharing
-  types recommended) is required before B-1R3A proceeds. No production change,
-  no evaluator skeleton; experiment fully reverted.
+- **B-1R3A-ARCH-1:** RESOLVED — OPTION A / ARC AST SHARING VERIFIED
+  (`docs/B1R3A_AST_SHARING_DECISION.md`). The design §16.1 was amended from
+  `Rc` to `std::sync::Arc` for AST-sharing types, with the rationale inlined.
+  The minimum conversion is applied (`Box<Expr>`→`Arc<Expr>`, `Vec<Stmt>`→
+  `Arc<[Stmt]>`, `Vec<Arg>`→`Arc<[Arg]>`, `Vec<Expr>`→`Arc<[Expr]>`,
+  `Vec<(Expr,Expr)>`→`Arc<[(Expr,Expr)]>`, `Vec<FPart>`→`Arc<[FPart]>`,
+  `Vec<Arm>`→`Arc<[Arm]>`, `Closure.body`; `Vec<TypeExpr>` intentionally left
+  owned). `Module`/`Item`/`Stmt`/`Expr`/… are proven `Send + Sync` by
+  compile-time assertions (`src/lib.rs`; `tests/ast_sharing.rs`). `src/run/
+  mod.rs` runtime `Rc` semantics (`Env`, `Value`, `Closure`) are unchanged; no
+  interior mutability and no `unsafe` added. B-1R2 oracle golden is
+  byte-unchanged (SHA-256 `4be877e…`); full matrix + MSRV green. A read-only
+  reviewer falsified nothing material; the three reproduced findings (test
+  fmt/clippy floor; decision-doc over-claimed `TypeExpr`; a duplicated design
+  fragment) were fixed, and one parse-time `desugar_pipe` copy cost is recorded
+  as non-blocking.
+- **B-1R3A:** AUTHORIZED TO RESUME — SKELETON NOT YET IMPLEMENTED. The
+  representation contradiction is gone; the machine skeleton is not built.
 - **B-1R3:** NOT STARTED.
 
 
@@ -196,6 +202,23 @@ contract-sync, hardening, and performance checks.
   limit−1/limit/limit+1 assertions are deliberately absent until remediation:
   they cannot pass while the defect exists, and encoding it as an expected
   failure is not acceptable coverage.
+- **B-1R3A-ARCH-1 Arc AST-sharing pass (2026-10-03, representation change; no
+  semantic change):** resolved the design §16.1 `Rc` vs required `Send`
+  contradiction by amending §16.1 to `std::sync::Arc` and applying the minimum
+  AST conversion. New: `docs/B1R3A_AST_SHARING_DECISION.md` (finding, options,
+  resolution, review outcome) and `tests/ast_sharing.rs` (compile-time
+  `Send + Sync` proof, Arc-sharing proof, parser ordering/span/collection
+  equivalence). Changed: `src/ast/mod.rs` (Arc-shared children/bodies),
+  `src/parse/mod.rs`/`src/resolve.rs`/`src/check/mod.rs`/`src/run/mod.rs`
+  (mechanical construction/iteration; the resolver's in-place body rewrite
+  became functional to satisfy `Arc` immutability), `src/lib.rs` (compile-time
+  `assert_send_sync` block), `tests/parser.rs` (`*els` → `(*els).clone()`),
+  design/decision docs. `Arc` pointers are 8 bytes (same as `Box`); `Arc<[T]>`
+  is 16 ≤ `Vec<T>`'s 24; `Closure.body` clones became refcount bumps. No
+  `unsafe`, no manual `Send`/`Sync`, no AST interior mutability, no runtime
+  `Rc` semantics changed. Oracle golden byte-unchanged; full matrix + MSRV
+  green. `desugar_pipe` gained a parse-time `args.to_vec()` (recorded,
+  non-blocking).
 - **B-1R2 differential-oracle pass (2026-10-03, test-only; no runtime
   change):** built the engine-stack-independent evaluator's semantic safety net
   before implementing the evaluator. New: `tests/evaluator_oracle.rs` (driver),
@@ -267,15 +290,13 @@ browser persistence, LSP, formatter, async, and macros remain deferred.
 
 ## Next Exact Action
 
-1. B-1R3A ARCHITECTURE DECISION (finding B-1R3A-ARCH-1): choose the AST
-   shared-ownership representation — Option A (`Arc` for AST-sharing types,
-   recommended) / B / C in `docs/B1R3A_AST_SHARING_DECISION.md`. B-1R3A cannot
-   proceed until this is decided; §16.1 of the design must be amended
-   accordingly.
+1. FINAL READ-ONLY PUSH GATE over the local stack (B-1R2 oracle +
+   B-1R3A-ARCH-1 Arc AST sharing) BEFORE PUSH.
 2. HUMAN REVIEW OF THE DIFFERENTIAL ORACLE
-   (`docs/engineering/B1R2_DIFFERENTIAL_ORACLE.md`) BEFORE AUTHORIZING B-1R3A
-   ITERATIVE-EVALUATOR IMPLEMENTATION.
-3. HUMAN REVIEW OF POST-v0.2.1 STABILIZATION STACK AND B-1R COMMITS BEFORE PUSH.
+   (`docs/engineering/B1R2_DIFFERENTIAL_ORACLE.md`) AND OF THE ARC AST-SHARING
+   CHANGE (`docs/B1R3A_AST_SHARING_DECISION.md`) BEFORE RESUMING B-1R3A.
+3. RESUME B-1R3A SKELETON (Machine/Ctrl/UserFrame/Cont) once the push gate and
+   human review are complete.
 4. B-1 POLICY DECISION: Option A/B/C in
    `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (Option B recommended; its
    implementation contract is the design document above).
