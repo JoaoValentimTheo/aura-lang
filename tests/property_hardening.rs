@@ -17,6 +17,24 @@ use proptest::prelude::*;
 #[path = "support/program_gen.rs"]
 mod program_gen;
 
+/// Run `src` against a capability-limited host (no filesystem, clock, or sleep),
+/// returning the diagnostic code on failure.
+///
+/// `registry_checker_and_runtime_agree` enumerates *every* builtin in the
+/// production registry and executes it with a literal argument pool. That
+/// includes `write_file`, whose generated call is `write_file("s", "s")`: run
+/// against the default host it wrote a 1-byte file named `s` into the process
+/// working directory (the repository root under `cargo test`). The host
+/// capability boundary is exactly the right seam — an unavailable capability is
+/// reported as a structured `E5002`, which is a permitted outcome for this
+/// property (it asserts *callable resolution*, not I/O success), while the real
+/// filesystem is never touched. This keeps the property hermetic.
+fn run_registry_hermetic(src: &str) -> Result<(), u16> {
+    let module = aura::compile_with_mode(src, aura::CompileMode::Program).map_err(|d| d.code)?;
+    let mut interp = aura::run::Interp::with_host(Box::new(aura::host::LimitedHost::silent()));
+    interp.run(&module).map_err(|d| d.code)
+}
+
 // A single deterministically chosen probe seed for the substrate-parity
 // properties: native and wasm must agree on the *same* generated programs, so
 // the seed set is fixed and enumerated, not random.
@@ -104,7 +122,9 @@ proptest! {
         let checked = aura::check::Checker::module(
             &aura::parse::parse(&src).expect("property-generated source parses"),
         );
-        let ran = aura::run_source(&src, "<registry>");
+        // Run against a capability-limited host so a generated `write_file`
+        // cannot touch the real filesystem; `E5002` is a permitted outcome.
+        let ran = run_registry_hermetic(&src);
 
         if well_shaped {
             // The checker must agree with the registry that this is legal.
@@ -117,10 +137,11 @@ proptest! {
             );
             // The runtime must resolve the callable: a checker-accepted call
             // can never be "undefined" at runtime, or the two registries have
-            // drifted. A structured runtime *content* error is permitted.
-            if let Err(d) = ran {
+            // drifted. A structured runtime *content* error (including E5002
+            // from the capability-limited host) is permitted.
+            if let Err(code) = ran {
                 prop_assert_ne!(
-                    d.code,
+                    code,
                     aura::error::codes::UNDEFINED,
                     "checker accepted `{}` but runtime says undefined",
                     name
@@ -357,4 +378,33 @@ proptest! {
         let id_src = format!("fn main() {{\n{body}    print(c == c)\n}}");
         prop_assert_eq!(aura::run_source(&id_src, "<cycle>").unwrap(), "true\n");
     }
+}
+
+/// Regression guard (PERMANENT): the registry property must stay hermetic.
+///
+/// `registry_checker_and_runtime_agree` executes every builtin, including
+/// `write_file`. Run against the default host this wrote a 1-byte file named
+/// `s` into the process working directory, so `cargo test` at the repository
+/// root left an untracked `s`. The fix routes the property through a
+/// capability-limited host. This test pins that behavior: the generated
+/// `write_file("s", "s")` call must report a structured diagnostic (`E5002`,
+/// capability unavailable) and must not create a file. Using a unique,
+/// obviously-test-only path avoids clobbering any real file and makes a leak
+/// visible.
+#[test]
+fn registry_property_write_file_is_hermetic() {
+    let sentinel = format!(".aura-property-leak-{}", std::process::id());
+    let _ = std::fs::remove_file(&sentinel);
+    let src = format!("fn main() {{ write_file(\"{sentinel}\", \"s\") }}");
+    let result = run_registry_hermetic(&src);
+    let leaked = std::path::Path::new(&sentinel).exists();
+    let _ = std::fs::remove_file(&sentinel);
+    assert!(
+        !leaked,
+        "capability-limited host must not touch the filesystem"
+    );
+    // The call is still *resolved* (never E2003 undefined); the missing
+    // capability is reported as E5002.
+    assert_eq!(result, Err(aura::error::codes::CAPABILITY_UNAVAILABLE));
+    assert!(!std::path::Path::new("s").exists(), "no root `s` artifact");
 }
