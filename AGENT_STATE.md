@@ -8,9 +8,9 @@ before continuing substantial work.
 ## Repository
 
 - Branch: `rewrite/v3-rust`
-- Remote `origin/rewrite/v3-rust`: `c9ade0b69cb5e5496a84d5cff4a51b7a1d8e0350`
-  (R3A + cleanup baseline; exact-SHA CI green and website deployed). The
-  B-1R3B.1 commits below are **local and unpushed** on top of it.
+- Remote `origin/rewrite/v3-rust`: `1a12b846264b9f1e24cb08ac7d9e1d6e1e5e7cf9`
+  (R3A + B-1R3B.1 + B-1R3B.2; pushed and remote-closed). The B-1R3B.3 commits
+  are **local and unpushed** on top of it.
 - Local/remote relationship: authoritative value is `git rev-list
   --left-right --count origin/rewrite/v3-rust...HEAD`; a tracked file cannot
   safely hardcode its own position.
@@ -33,9 +33,10 @@ runtime means adding a version, never replacing one.
 ## Current Track
 
 B-1R — ENGINE-STACK-INDEPENDENT CALL ENGINE. B-1 is OPEN (WASM implementation
-nonconformance). The R3A baseline is pushed and remote-closed; the B-1R3B.1
-unary and B-1R3B.2 eager-binary extensions are complete locally and unpushed.
-Production still runs the recursive evaluator.
+nonconformance). The R3A baseline and the B-1R3B.1 unary and B-1R3B.2
+eager-binary extensions are pushed and remote-closed; B-1R3B.3 short-circuit
+`and`/`or` is complete locally and unpushed. Production still runs the
+recursive evaluator.
 
 B-1R phase state:
 
@@ -52,10 +53,12 @@ B-1R phase state:
 - **B-1R3A:** COMPLETE AND REMOTELY CLOSED at `c9ade0b`. `src/run/iterative.rs`
   is a real explicit-continuation machine; the oracle has an identified R3A
   subset; all deliberate mutations detected and reverted.
-- **B-1R3B.1:** COMPLETE LOCALLY (unary `-`/`not`/`~`), unpushed.
-- **B-1R3B.2:** COMPLETE LOCALLY (eager binary operators), unpushed. See
-  `docs/engineering/CURRENT_HANDOFF.md`.
-- **B-1R3B.3…R3G:** NOT STARTED.
+- **B-1R3B.1:** COMPLETE AND PUSHED at `1a12b84` (unary `-`/`not`/`~`).
+- **B-1R3B.2:** COMPLETE AND PUSHED at `1a12b84` (eager binary operators).
+- **B-1R3B.3:** COMPLETE LOCALLY (short-circuit `and`/`or`;
+  differential-oracle equivalent; side effects and error suppression verified;
+  host-stack safe), unpushed. See `docs/engineering/CURRENT_HANDOFF.md`.
+- **B-1R3B.4…R3G:** NOT STARTED.
 
 ## Production vs experimental engine
 
@@ -63,10 +66,11 @@ B-1R phase state:
 - Experimental: iterative evaluator, compiled only under the non-default
   `evaluator-oracle` feature, not reachable from CLI/REPL/Playground/library
   production paths. Supported subset so far: literals, name lookup, expression
-  statements, blocks, `let` shadowing, `if`/`else`, unary `-`/`not`/`~`, and
-  the eager binary operators (`+ - * / % ^ == != < <= > >= & | << >>`);
-  everything else (`and`/`or`, calls, containers, …) returns `E4999` and never
-  falls back to recursion.
+  statements, blocks, `let` shadowing, `if`/`else`, unary `-`/`not`/`~`, the
+  eager binary operators (`+ - * / % ^ == != < <= > >= & | << >>`), and
+  short-circuit `and`/`or` (the skipped operand is never evaluated); everything
+  else (calls, containers, …) returns `E4999` and never falls back to
+  recursion.
 
 ## Known blockers
 
@@ -119,8 +123,9 @@ Git + working tree + these documents; chat history is not authority.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: human review of B-1R3B.2,
-then B-1R3B.3 (short-circuit / evaluation order) microphase by microphase.
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: human review of B-1R3B.3
+(short-circuit `and`/`or`); if accepted, push it and begin B-1R3B.4
+(list / tuple / map) microphase by microphase.
 
 ## Writer
 

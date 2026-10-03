@@ -21,10 +21,11 @@ explicit-continuation (iterative) evaluator over the existing AST
 - B-1R3A-ARCH-1 (Arc AST sharing): RESOLVED.
 - B-1R3A (machine skeleton + first executable subset): **COMPLETE AND REMOTELY
   CLOSED** at `c9ade0b` (exact-SHA CI green; website deployed).
-- B-1R3B.1 (unary `-`/`not`/`~`): **COMPLETE LOCALLY**, unpushed.
-- B-1R3B.2 (eager binary operators): **COMPLETE LOCALLY**, unpushed (local
-  commits on top of `origin/rewrite/v3-rust`).
-- B-1R3B.3…R3G: NOT STARTED.
+- B-1R3B.1 (unary `-`/`not`/`~`): **COMPLETE AND PUSHED** at `1a12b84`.
+- B-1R3B.2 (eager binary operators): **COMPLETE AND PUSHED** at `1a12b84`.
+- B-1R3B.3 (short-circuit `and`/`or`): **COMPLETE LOCALLY**, unpushed (local
+  commits on top of `origin/rewrite/v3-rust` = `1a12b84`).
+- B-1R3B.4…R3G: NOT STARTED.
 
 See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
 
@@ -34,12 +35,34 @@ See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
 - Iterative engine: exists only under the non-default `evaluator-oracle`
   Cargo feature; not reachable from the CLI, REPL, Playground, or library
   production path. It currently supports literals, name lookup, expression
-  statements, blocks, `let` shadowing, `if`/`else`, unary `-`/`not`/`~`, and
-  the eager binary operators (`+ - * / % ^ == != < <= > >= & | << >>`); every
+  statements, blocks, `let` shadowing, `if`/`else`, unary `-`/`not`/`~`, the
+  eager binary operators (`+ - * / % ^ == != < <= > >= & | << >>`), and
+  short-circuit `and`/`or` (the skipped operand is never evaluated); every
   other construct returns the deterministic `E4999` sentinel and never falls
   back to recursion.
 
-## Completed in B-1R3B.2 (local)
+## Completed in B-1R3B.3 (local)
+
+- `src/run/iterative.rs` — added `Cont::ShortCircuitLeft { op, rhs, env }` and
+  `Cont::ShortCircuitRight`; the machine evaluates the left operand exactly
+  once, and only on completion decides from `Value::truthy()` whether the right
+  operand is required (`and`: truthy left; `or`: falsy left). A skipped right
+  operand is never scheduled (no stdout, mutation, diagnostic, or signal); a
+  required right is evaluated exactly once. The result always mirrors the
+  recursive arms: `Bool(false)` / `Bool(true)` on the deciding left, otherwise
+  `Bool(rhs.truthy())`; control signals propagate via the `val!`-equivalent
+  redelivery path. No recursive AST evaluation and no fallback.
+- Oracle: new `tests/oracle/r3b3_golden.tsv` (LF-pinned) and differential tests
+  `r3b3_short_circuit_supported_subset_agrees`,
+  `iterative_short_circuit_unsupported_fails_explicitly`, and
+  `r3b3_iterative_golden_matches`. `and_bool`, `or_bool`, and `eager_over_and`
+  moved out of the R3B.2 unsupported set (now supported); the call-operand case
+  stays. The main `golden.tsv` and all earlier iteratives goldens are unchanged.
+- Verified: skipped-RHS error suppression (E4007/E4013/E3001/E4999 must not
+  occur), required-RHS exact diagnostics, control-signal propagation, deep
+  chains host-stack safe, `and`/`or` decision mutations rejected by the oracle.
+
+## Completed in B-1R3B.2 (pushed at `1a12b84`)
 
 - `src/run/iterative.rs` — added `Cont::BinaryLeft { op, rhs, env, span }` and
   `Cont::BinRight { op, lv, span }`; the machine evaluates the left operand,
@@ -117,14 +140,14 @@ At milestone closure, run the full validation floor in `AGENTS.md`.
 ## Next phase — B-1R3B (values and operators)
 
 Implement the next semantic slice on the same machine, microphase by
-microphase, keeping the oracle green and production unchanged. R3B.1 (unary)
-is complete; remaining ordered microphases; each is implement → targeted
-tests → oracle → checkpoint. Do **not** start the next one before human review
-of B-1R3B.1.
+microphase, keeping the oracle green and production unchanged. R3B.1 (unary),
+R3B.2 (eager binary), and R3B.3 (short-circuit) are complete; remaining ordered
+microphases; each is implement → targeted tests → oracle → checkpoint. Do
+**not** start the next one before human review of the current one.
 
-- R3B.1 unary operators — **COMPLETE LOCALLY**
-- R3B.2 binary operators — **COMPLETE LOCALLY**
-- R3B.3 short-circuit / evaluation order
+- R3B.1 unary operators — **COMPLETE AND PUSHED**
+- R3B.2 binary operators — **COMPLETE AND PUSHED**
+- R3B.3 short-circuit / evaluation order — **COMPLETE LOCALLY**
 - R3B.4 list / tuple / map
 - R3B.5 range
 - R3B.6 index / field reads
@@ -136,11 +159,11 @@ microphase.
 
 ## Exact next action
 
-1. Human review of the B-1R3B.2 eager-binary extension and its oracle coverage.
-2. If accepted, begin **R3B.3 (short-circuit / evaluation order)** on
-   `src/run/iterative.rs`, extending the oracle and keeping
-   `tests/oracle/golden.tsv` byte-unchanged.
-3. Then proceed through R3B.4…R3B.8 with a checkpoint at each.
+1. Human review of the B-1R3B.3 short-circuit extension and its oracle coverage.
+2. If accepted, push the B-1R3B.3 local commit stack.
+3. Then begin **R3B.4 (list / tuple / map)** on `src/run/iterative.rs`,
+   extending the oracle and keeping `tests/oracle/golden.tsv` byte-unchanged,
+   with a checkpoint at each microphase.
 
 ## Stop conditions
 
