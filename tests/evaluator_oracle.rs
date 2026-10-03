@@ -32,6 +32,10 @@ mod harness;
 #[cfg(feature = "evaluator-oracle")]
 #[path = "oracle/r3a.rs"]
 mod r3a;
+// B-1R3B.1 — unary operators on the iterative machine.
+#[cfg(feature = "evaluator-oracle")]
+#[path = "oracle/r3b.rs"]
+mod r3b;
 
 use std::collections::BTreeMap;
 
@@ -298,6 +302,134 @@ fn regenerate_r3a_golden() {
     }
     let text = harness::encode_golden(&cases, &observations);
     std::fs::write(R3A_GOLDEN_PATH, text).expect("write R3A golden");
+}
+
+/// B-1R3B.1 — the iterative machine must agree with the recursive engine on
+/// every supported unary-subset case, including diagnostics and spans.
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+fn r3b_unary_supported_subset_agrees() {
+    let rec = harness::Engine::recursive();
+    let it = harness::Engine::iterative();
+    let mut failures = Vec::new();
+    let mut count = 0;
+    for case in r3b::supported_cases() {
+        count += 1;
+        let a = observe(&case, rec)
+            .unwrap_or_else(|e| panic!("harness failure (recursive) {}: {e}", case.key()));
+        let b = observe(&case, it)
+            .unwrap_or_else(|e| panic!("harness failure (iterative) {}: {e}", case.key()));
+        if a != b {
+            failures.push(format!(
+                "{}:\n  recursive: {a:?}\n  iterative: {b:?}",
+                case.key()
+            ));
+        }
+    }
+    assert!(count > 0, "R3B unary supported subset is empty");
+    assert!(
+        failures.is_empty(),
+        "iterative machine diverged from the recursive engine on supported R3B unary cases:\n{}",
+        failures.join("\n")
+    );
+}
+
+/// B-1R3B.1 — a unary operator whose operand is an unsupported construct must
+/// fail with the deterministic `E4999` sentinel, never silently applying the
+/// operator or falling back to recursion. This is the continuation-safety
+/// anti-fallback guard for the unary extension.
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+fn iterative_unary_unsupported_fails_explicitly() {
+    let it = harness::Engine::iterative();
+    let rec = harness::Engine::recursive();
+    let cases = r3b::unsupported_cases();
+    assert!(!cases.is_empty(), "R3B unsupported set is empty");
+    for case in cases {
+        let r = observe(&case, rec)
+            .unwrap_or_else(|e| panic!("harness failure (recursive) {}: {e}", case.key()));
+        assert!(
+            matches!(r.completion, Completion::Ok | Completion::Runtime(_)),
+            "{}: recursive engine unexpectedly rejected a valid program: {r:?}",
+            case.key()
+        );
+        let obs = observe(&case, it)
+            .unwrap_or_else(|e| panic!("harness failure (iterative) {}: {e}", case.key()));
+        match obs.completion {
+            Completion::Runtime(d) => {
+                assert_eq!(
+                    d.code,
+                    4999,
+                    "{}: expected the E4999 unsupported sentinel, got {d:?}",
+                    case.key()
+                );
+                assert!(
+                    d.message.contains("not supported by the iterative engine"),
+                    "{}: unexpected iterative diagnostic: {}",
+                    case.key(),
+                    d.message
+                );
+            }
+            other => panic!(
+                "{}: unsupported unary case did not fail explicitly: {other:?}",
+                case.key()
+            ),
+        }
+    }
+}
+
+/// Regenerate the R3B unary iterative golden (ignored by default).
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+#[ignore = "regenerates the committed R3B unary iterative golden manifest"]
+fn regenerate_r3b_golden() {
+    let cases = r3b::supported_cases();
+    let mut observations = BTreeMap::new();
+    for case in &cases {
+        let obs = observe(case, harness::Engine::iterative()).unwrap();
+        observations.insert(case.key(), obs);
+    }
+    let text = harness::encode_golden(&cases, &observations);
+    std::fs::write(R3B_GOLDEN_PATH, text).expect("write R3B golden");
+}
+
+/// Path of the committed R3B unary iterative-engine golden manifest.
+#[cfg(feature = "evaluator-oracle")]
+const R3B_GOLDEN_PATH: &str = "tests/oracle/r3b_golden.tsv";
+
+/// B-1R3B.1 — full-field regression guard for the iterative unary subset.
+///
+/// Pins the complete normalized observable (code, message, source, byte span,
+/// line, column, value type and representation) of the iterative engine for
+/// every supported unary case. Without it a wrong span or type on a unary case
+/// would escape `r3b_unary_supported_subset_agrees`.
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+fn r3b_iterative_golden_matches() {
+    let committed = std::fs::read_to_string(R3B_GOLDEN_PATH)
+        .unwrap_or_else(|e| panic!("missing R3B golden {R3B_GOLDEN_PATH}: {e}"));
+    let golden = harness::parse_golden(&committed, "r3b");
+    let cases = r3b::supported_cases();
+    let mut observations = BTreeMap::new();
+    for case in &cases {
+        let obs = observe(case, harness::Engine::iterative())
+            .unwrap_or_else(|e| panic!("harness failure for {}: {e}", case.key()));
+        observations.insert(case.key(), obs);
+    }
+    let regenerated = harness::encode_golden(&cases, &observations);
+    assert_eq!(
+        committed, regenerated,
+        "R3B unary iterative golden is stale or the machine diverged; run \
+         `cargo test --locked --features evaluator-oracle --test evaluator_oracle \
+         regenerate_r3b_golden -- --ignored`"
+    );
+    for case in &cases {
+        assert!(
+            golden.contains_key(&case.key()),
+            "R3B golden missing {}",
+            case.key()
+        );
+    }
 }
 
 /// B-1R3A anti-tautology guard: the iterative engine must not be an alias of
