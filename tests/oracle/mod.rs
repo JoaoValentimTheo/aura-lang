@@ -300,10 +300,10 @@ fn run_compiled(
         "recursive" => compilation.execute_with(Some(Box::new(sink)), Vec::new(), None),
         #[cfg(feature = "evaluator-oracle")]
         "iterative" => {
-            // B-1R3A wiring point: run the explicit continuation machine here
-            // on `compilation`. Until that engine exists this is the same
-            // current path, which is the honest B-1R2 state.
-            compilation.execute_with(Some(Box::new(sink)), Vec::new(), None)
+            // B-1R3A: the real explicit-continuation machine. This is a
+            // distinct execution path; unsupported constructs return E4999 and
+            // never fall back to the recursive engine.
+            compilation.execute_iterative(Some(Box::new(sink)), Vec::new(), None)
         }
         _ => compilation.execute_with(Some(Box::new(sink)), Vec::new(), None),
     }
@@ -312,13 +312,13 @@ fn run_compiled(
 /// The value-path seam: run a main-less module's items on a fresh interpreter
 /// and return the last top-level expression's normalized value. Both engines
 /// share this entry point; B-1R3 selects the machine inside it.
-fn run_value_items(module: &Module, _engine: Engine, sink: SharedBuf) -> Result<NormValue, Diag> {
+fn run_value_items(module: &Module, engine: Engine, sink: SharedBuf) -> Result<NormValue, Diag> {
     let mut interp = Interp::with_host(host::host_from_parts(
         Some(Box::new(sink)),
         Vec::new(),
         None,
     ));
-    eval_module_items(&mut interp, module)
+    eval_module_items(&mut interp, module, engine)
 }
 
 fn observe_compile(case: &Case, mode: CompileMode) -> ObserveResult {
@@ -394,14 +394,26 @@ fn observe_value(case: &Case, engine: Engine) -> ObserveResult {
 /// Evaluate a main-less module's items on one interpreter, returning the
 /// display of the last top-level expression. Declarations register; `Const`
 /// items evaluate; expression items yield the observable value.
-fn eval_module_items(interp: &mut Interp, module: &Module) -> Result<NormValue, Diag> {
+fn eval_module_items(
+    interp: &mut Interp,
+    module: &Module,
+    engine: Engine,
+) -> Result<NormValue, Diag> {
     let mut value = NormValue {
         ty: "none".to_string(),
         repr: "(no top-level value)".to_string(),
     };
     for item in &module.items {
         match item {
-            Item::Expr(e, _) => match interp.eval_globals(e)? {
+            // A `const` initializer is expression evaluation: route it through
+            // the selected engine too, so the iterative value path cannot
+            // silently use the recursive engine via `run_item`.
+            Item::Const { name, value, .. } => {
+                let ctl = eval_globals_with(interp, value, engine)?;
+                let v = interp.finish_global(ctl)?;
+                interp.global(name, v);
+            }
+            Item::Expr(e, _) => match eval_globals_with(interp, e, engine)? {
                 Ctl::Val(v) => value = norm_value(&v),
                 Ctl::Return(_) => {
                     return Err(Diag::new(
@@ -429,6 +441,23 @@ fn eval_module_items(interp: &mut Interp, module: &Module) -> Result<NormValue, 
         }
     }
     Ok(value)
+}
+
+/// Evaluate `e` at global scope with the selected engine's value path.
+///
+/// Declaration-only items (`other`) still register through
+/// `Interp::run_item`, which is engine-independent. Only the expression
+/// evaluation differs.
+fn eval_globals_with(
+    interp: &mut Interp,
+    e: &aura::ast::Expr,
+    engine: Engine,
+) -> Result<Ctl, Diag> {
+    match engine.name() {
+        #[cfg(feature = "evaluator-oracle")]
+        "iterative" => interp.eval_globals_iterative(e),
+        _ => interp.eval_globals(e),
+    }
 }
 
 fn observe_multi(case: &Case, multi: &MultiSource, engine: Engine) -> ObserveResult {

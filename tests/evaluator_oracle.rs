@@ -28,6 +28,10 @@
 mod cases;
 #[path = "oracle/mod.rs"]
 mod harness;
+// The R3A subset is meaningful only with the iterative engine present.
+#[cfg(feature = "evaluator-oracle")]
+#[path = "oracle/r3a.rs"]
+mod r3a;
 
 use std::collections::BTreeMap;
 
@@ -99,18 +103,239 @@ fn engines_agree() {
         }
         let (first_name, first) = &observed[0];
         for (name, obs) in observed.iter().skip(1) {
-            if obs != first {
-                failures.push(format!(
-                    "{}: {first_name} != {name}\n  {first_name}: {first:?}\n  {name}: {obs:?}",
-                    case.key()
-                ));
+            // B-1R3A is a partial migration: the whole corpus includes
+            // constructs the iterative engine does not support yet, and those
+            // deliberately diverge (recursive result vs. the iterative
+            // engine's explicit E4999). The R3A subset is the meaningful
+            // comparison and is asserted by `r3a_supported_subset_agrees`.
+            // Here the baseline self-comparison must still hold for the
+            // recursive engine, so require at least the first two engines to
+            // agree only when the feature is off; with the feature on, a
+            // divergence is allowed only if the iterative side reports the
+            // unsupported diagnostic.
+            if obs == first {
+                continue;
             }
+            if is_unsupported_iterative_divergence(first, obs) {
+                continue;
+            }
+            failures.push(format!(
+                "{}: {first_name} != {name}\n  {first_name}: {first:?}\n  {name}: {obs:?}",
+                case.key()
+            ));
         }
     }
     assert!(
         failures.is_empty(),
         "engine disagreement:\n{}",
         failures.join("\n")
+    );
+}
+
+/// True when `iterative` is the explicit "not supported by the iterative
+/// engine" outcome while `recursive` ran normally (or produced a different
+/// production result). This is the only permitted whole-corpus divergence
+/// during the partial B-1R3A migration, and it must be the deterministic
+/// `E4999` sentinel — never a silent fallback that happens to match.
+fn is_unsupported_iterative_divergence(recursive: &Observable, iterative: &Observable) -> bool {
+    let Completion::Runtime(d) = &iterative.completion else {
+        return false;
+    };
+    // The recursive side must have run normally (completed, or produced its own
+    // non-sentinel diagnostic). If the recursive side already failed with the
+    // sentinel, this is not the partial-migration divergence.
+    let recursive_ran = match &recursive.completion {
+        Completion::Ok => true,
+        Completion::Runtime(rd) => rd.code != 4999,
+        Completion::Compile(_) => false,
+    };
+    recursive_ran
+        && d.code == 4999
+        && (d.message.contains("not supported by the iterative engine")
+            || d.message
+                .contains("multi-source execution is not supported"))
+}
+
+/// B-1R3A — the real iterative machine must agree with the recursive engine on
+/// every supported-subset case. This is the strict differential comparison; it
+/// is meaningful only with the `evaluator-oracle` feature (without it the
+/// iterative engine does not exist).
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+fn r3a_supported_subset_agrees() {
+    let rec = harness::Engine::recursive();
+    let it = harness::Engine::iterative();
+    let mut failures = Vec::new();
+    let mut count = 0;
+    for case in r3a::supported_cases() {
+        count += 1;
+        let a = observe(&case, rec)
+            .unwrap_or_else(|e| panic!("harness failure (recursive) {}: {e}", case.key()));
+        let b = observe(&case, it)
+            .unwrap_or_else(|e| panic!("harness failure (iterative) {}: {e}", case.key()));
+        if a != b {
+            failures.push(format!(
+                "{}:\n  recursive: {a:?}\n  iterative: {b:?}",
+                case.key()
+            ));
+        }
+    }
+    assert!(count > 0, "R3A supported subset is empty");
+    assert!(
+        failures.is_empty(),
+        "iterative machine diverged from the recursive engine on supported R3A cases:\n{}",
+        failures.join("\n")
+    );
+}
+
+/// B-1R3A — every unsupported construct must fail explicitly with the
+/// deterministic `E4999` sentinel in iterative mode. It must not silently
+/// execute the recursive engine (which would have succeeded for these valid
+/// programs).
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+fn iterative_unsupported_fails_explicitly() {
+    let it = harness::Engine::iterative();
+    let rec = harness::Engine::recursive();
+    let cases = r3a::unsupported_cases();
+    assert!(!cases.is_empty(), "unsupported set is empty");
+    for case in cases {
+        // The recursive engine accepts and runs the program (so the iterative
+        // failure cannot be attributed to the program being invalid).
+        let r = observe(&case, rec)
+            .unwrap_or_else(|e| panic!("harness failure (recursive) {}: {e}", case.key()));
+        assert!(
+            matches!(r.completion, Completion::Ok | Completion::Runtime(_)),
+            "{}: recursive engine unexpectedly rejected a valid program: {r:?}",
+            case.key()
+        );
+        let obs = observe(&case, it)
+            .unwrap_or_else(|e| panic!("harness failure (iterative) {}: {e}", case.key()));
+        match obs.completion {
+            Completion::Runtime(d) => {
+                assert_eq!(
+                    d.code,
+                    4999,
+                    "{}: expected the E4999 unsupported sentinel, got {d:?}",
+                    case.key()
+                );
+                assert!(
+                    d.message.contains("not supported by the iterative engine"),
+                    "{}: unexpected iterative diagnostic: {}",
+                    case.key(),
+                    d.message
+                );
+            }
+            other => panic!(
+                "{}: unsupported case did not fail explicitly: {other:?}",
+                case.key()
+            ),
+        }
+    }
+}
+
+/// B-1R3A — all R3A cases (supported *and* unsupported) observed through the
+/// iterative engine, in a stable order.
+#[cfg(feature = "evaluator-oracle")]
+fn r3a_all_cases() -> Vec<Case> {
+    let mut v = r3a::supported_cases();
+    v.extend(r3a::unsupported_cases());
+    v
+}
+
+/// Path of the committed R3A iterative-engine golden manifest.
+#[cfg(feature = "evaluator-oracle")]
+const R3A_GOLDEN_PATH: &str = "tests/oracle/r3a_golden.tsv";
+
+/// B-1R3A — full-field regression guard for the iterative engine.
+///
+/// Unlike `r3a_supported_subset_agrees` (which requires recursive/iterative
+/// equality on the supported subset), this pins the *complete* normalized
+/// observable — code, message, source identity, byte span, line, and column —
+/// of the iterative engine for every R3A case, including the explicit
+/// unsupported sentinel. Without it a wrong span or source on an unsupported
+/// case (which the recursive side never produces) would escape.
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+fn r3a_iterative_golden_matches() {
+    let committed = std::fs::read_to_string(R3A_GOLDEN_PATH)
+        .unwrap_or_else(|e| panic!("missing R3A golden {R3A_GOLDEN_PATH}: {e}"));
+    let golden = harness::parse_golden(&committed, "r3a");
+    let mut observations = BTreeMap::new();
+    for case in r3a_all_cases() {
+        let obs = observe(&case, harness::Engine::iterative())
+            .unwrap_or_else(|e| panic!("harness failure for {}: {e}", case.key()));
+        observations.insert(case.key(), obs);
+    }
+    let cases = r3a_all_cases();
+    let regenerated = harness::encode_golden(&cases, &observations);
+    assert_eq!(
+        committed, regenerated,
+        "R3A iterative golden is stale or the machine diverged; run \
+         `cargo test --locked --features evaluator-oracle --test evaluator_oracle \
+         regenerate_r3a_golden -- --ignored`"
+    );
+    // All keys must be present.
+    for case in &cases {
+        assert!(
+            golden.contains_key(&case.key()),
+            "R3A golden missing {}",
+            case.key()
+        );
+    }
+}
+
+/// Regenerate the R3A iterative golden (ignored by default).
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+#[ignore = "regenerates the committed R3A iterative golden manifest"]
+fn regenerate_r3a_golden() {
+    let cases = r3a_all_cases();
+    let mut observations = BTreeMap::new();
+    for case in &cases {
+        let obs = observe(case, harness::Engine::iterative()).unwrap();
+        observations.insert(case.key(), obs);
+    }
+    let text = harness::encode_golden(&cases, &observations);
+    std::fs::write(R3A_GOLDEN_PATH, text).expect("write R3A golden");
+}
+
+/// B-1R3A anti-tautology guard: the iterative engine must not be an alias of
+/// the recursive engine. A supported case must agree between the two engines,
+/// and an equivalent-but-unsupported case must diverge to the explicit
+/// `E4999` sentinel rather than silently producing the recursive result. This
+/// structural check complements the deliberate divergence experiment in the
+/// report.
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+fn iterative_engine_is_a_distinct_path() {
+    // A program valid for both engines.
+    let supported = Case {
+        group: "r3a-program",
+        name: "distinct_path",
+        file: "r3a.aura",
+        source: "fn main() { if true { return } }\n",
+        kind: harness::Kind::ExecuteProgram,
+    };
+    let a = observe(&supported, harness::Engine::recursive()).unwrap();
+    let b = observe(&supported, harness::Engine::iterative()).unwrap();
+    assert_eq!(a, b, "supported case must agree");
+
+    // An unsupported case the recursive engine accepts: if `iterative` were an
+    // alias it would also succeed; it must instead report E4999.
+    let unsupported = Case {
+        group: "r3a-value",
+        name: "distinct_path_unsupported",
+        file: "<r3a>",
+        source: "1 + 1\n",
+        kind: harness::Kind::Value,
+    };
+    let r = observe(&unsupported, harness::Engine::recursive()).unwrap();
+    assert_eq!(r.completion, Completion::Ok);
+    let i = observe(&unsupported, harness::Engine::iterative()).unwrap();
+    assert!(
+        matches!(i.completion, Completion::Runtime(ref d) if d.code == 4999),
+        "iterative engine executed a recursive path for an unsupported construct: {i:?}"
     );
 }
 
