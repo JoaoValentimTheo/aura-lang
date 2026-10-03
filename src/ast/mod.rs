@@ -1,4 +1,15 @@
 //! The abstract syntax tree.
+//!
+//! AST subexpressions and bodies are held behind [`std::sync::Arc`] so a future
+//! iterative evaluator can retain pending nodes in continuations without
+//! deep-cloning them (design `ITERATIVE_EVALUATOR_DESIGN.md` §16.1). `Arc`, not
+//! `Rc`, is required because the parser and the `Compilation` execution path
+//! move the `Module` across a native worker-thread boundary
+//! (`on_parse_stack`/`on_execution_stack`, `T: Send + 'static`); see
+//! `docs/B1R3A_AST_SHARING_DECISION.md`. The AST is immutable: `Arc` shares
+//! read-only data and introduces no interior mutability.
+
+use std::sync::Arc;
 
 use crate::error::Span;
 
@@ -287,11 +298,11 @@ pub enum Expr {
     /// A name.
     Name(String, Span),
     /// An f-string: literal and interpolated parts.
-    FStr(Vec<FPart>, Span),
+    FStr(Arc<[FPart]>, Span),
     /// `-x` / `not x`.
-    Unary(UnOp, Box<Expr>, Span),
+    Unary(UnOp, Arc<Expr>, Span),
     /// `a op b`.
-    Binary(BinOp, Box<Expr>, Box<Expr>, Span),
+    Binary(BinOp, Arc<Expr>, Arc<Expr>, Span),
     /// `callee(args)`. Arguments may be positional (`Arg { name: None, .. }`)
     /// or named (`Arg { name: Some(..), .. }`); named arguments are supported
     /// only for directly resolved user functions.
@@ -299,16 +310,16 @@ pub enum Expr {
     /// `ty_args` holds explicit generic type arguments (`f<int>(x)`), empty
     /// when none are written. They are checked against the callee's declared
     /// parameters and seed inference before the argument types are matched.
-    Call(Box<Expr>, Vec<Arg>, Vec<TypeExpr>, Span),
+    Call(Arc<Expr>, Arc<[Arg]>, Vec<TypeExpr>, Span),
     /// `recv.method(args)`, with optional explicit type arguments
     /// (`recv.map<int>(f)`).
-    Method(Box<Expr>, String, Vec<Arg>, Vec<TypeExpr>, Span),
+    Method(Arc<Expr>, String, Arc<[Arg]>, Vec<TypeExpr>, Span),
     /// `recv.field`.
-    Field(Box<Expr>, String, Span),
+    Field(Arc<Expr>, String, Span),
     /// `base[index]`.
-    Index(Box<Expr>, Box<Expr>, Span),
+    Index(Arc<Expr>, Arc<Expr>, Span),
     /// `[a, b, c]`.
-    List(Vec<Expr>, Span),
+    List(Arc<[Expr]>, Span),
     /// `[value for pattern in iterable]` or
     /// `[value for pattern in iterable if filter]`.
     ///
@@ -317,18 +328,18 @@ pub enum Expr {
     /// accounting stay exact.
     ListComp {
         /// The element expression, evaluated once per iteration.
-        value: Box<Expr>,
+        value: Arc<Expr>,
         /// The iteration pattern, with ordinary `for` semantics.
         pattern: Pattern,
         /// The iterable, evaluated exactly once.
-        iterable: Box<Expr>,
+        iterable: Arc<Expr>,
         /// An optional filter, using ordinary truthiness.
-        filter: Option<Box<Expr>>,
+        filter: Option<Arc<Expr>>,
         /// Span.
         span: Span,
     },
     /// `{k: v, ...}`.
-    Map(Vec<(Expr, Expr)>, Span),
+    Map(Arc<[(Expr, Expr)]>, Span),
     /// `{key: value for pattern in iterable}` or
     /// `{key: value for pattern in iterable if filter}`.
     ///
@@ -337,15 +348,15 @@ pub enum Expr {
     /// duplicate-key behavior apply.
     MapComp {
         /// The key expression.
-        key: Box<Expr>,
+        key: Arc<Expr>,
         /// The value expression.
-        value: Box<Expr>,
+        value: Arc<Expr>,
         /// The iteration pattern.
         pattern: Pattern,
         /// The iterable, evaluated exactly once.
-        iterable: Box<Expr>,
+        iterable: Arc<Expr>,
         /// An optional filter.
-        filter: Option<Box<Expr>>,
+        filter: Option<Arc<Expr>>,
         /// Span.
         span: Span,
     },
@@ -353,24 +364,24 @@ pub enum Expr {
     /// parser records named arguments as `Arg`. `ty_args` holds explicit
     /// generic type arguments on a parameterised construction
     /// (`Box<int> { value: 1 }`), empty when none are written.
-    Construct(String, Vec<Arg>, Vec<TypeExpr>, Span),
+    Construct(String, Arc<[Arg]>, Vec<TypeExpr>, Span),
     /// `(a, b)` tuple (kept minimal; single element is a group).
-    Tuple(Vec<Expr>, Span),
+    Tuple(Arc<[Expr]>, Span),
     /// `(x: int, mut y) -> body` or `x -> body`. A lambda shares the function
     /// parameter model (`Param`: name, optional annotation, `mut`), so
     /// functions and lambdas are one semantic model (`LANGUAGE_SPEC.md` §15.4).
-    Lambda(Vec<Param>, Box<Expr>, Span),
+    Lambda(Vec<Param>, Arc<Expr>, Span),
     /// `x |> f`.
-    Pipe(Box<Expr>, Box<Expr>, Span),
+    Pipe(Arc<Expr>, Arc<Expr>, Span),
     /// `start..end` — a Rust-style half-open range expression. Equivalent to
     /// `range(start, end)` and evaluating to the same Range value.
-    Range(Box<Expr>, Box<Expr>, Span),
+    Range(Arc<Expr>, Arc<Expr>, Span),
     /// `if c { a } else { b }` as an expression.
-    If(Box<Expr>, Vec<Stmt>, Option<Box<Expr>>, Span),
+    If(Arc<Expr>, Arc<[Stmt]>, Option<Arc<Expr>>, Span),
     /// `match value { pat -> block ... }`.
-    Match(Box<Expr>, Vec<Arm>, Span),
+    Match(Arc<Expr>, Arc<[Arm]>, Span),
     /// A block expression.
-    Block(Vec<Stmt>, Span),
+    Block(Arc<[Stmt]>, Span),
 }
 
 impl Expr {
@@ -499,7 +510,7 @@ pub struct Arm {
     /// Optional guard `if cond`.
     pub guard: Option<Expr>,
     /// The body.
-    pub body: Vec<Stmt>,
+    pub body: Arc<[Stmt]>,
 }
 
 /// A statement.
@@ -551,21 +562,21 @@ pub enum Stmt {
     /// `continue`.
     Continue(Span),
     /// `while cond { body }`.
-    While(Expr, Vec<Stmt>, Span),
+    While(Expr, Arc<[Stmt]>, Span),
     /// `loop { body }`.
-    Loop(Vec<Stmt>, Span),
+    Loop(Arc<[Stmt]>, Span),
     /// `for pat in iter { body }`.
-    For(Pattern, Expr, Vec<Stmt>, Span),
+    For(Pattern, Expr, Arc<[Stmt]>, Span),
     /// `try { } catch e { } finally { }`.
     Try {
         /// Try body.
-        body: Vec<Stmt>,
+        body: Arc<[Stmt]>,
         /// Catch binding.
         catch: String,
         /// Catch body.
-        catch_body: Vec<Stmt>,
+        catch_body: Arc<[Stmt]>,
         /// Optional finally body.
-        finally: Option<Vec<Stmt>>,
+        finally: Option<Arc<[Stmt]>>,
         /// Span.
         span: Span,
     },
@@ -627,7 +638,7 @@ pub enum Item {
         /// (`LANGUAGE_SPEC.md` §17.6, §17.7).
         ret_span: Option<Span>,
         /// Body.
-        body: Vec<Stmt>,
+        body: Arc<[Stmt]>,
         /// Public.
         public: bool,
         /// Span.

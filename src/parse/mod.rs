@@ -1,5 +1,7 @@
 //! Recursive-descent + Pratt parser.
 
+use std::sync::Arc;
+
 use crate::ast::*;
 use crate::error::{codes, Diag, Result, Span};
 use crate::lex::token::{Tok, Token};
@@ -236,13 +238,13 @@ fn check_expr_depth(root: &Expr, start: usize) -> Result<()> {
             }
             Expr::Call(f, args, _, _) => {
                 stack.push((f, d));
-                for a in args {
+                for a in args.iter() {
                     stack.push((&a.value, d));
                 }
             }
             Expr::Method(r, _, args, _, _) => {
                 stack.push((r, d));
-                for a in args {
+                for a in args.iter() {
                     stack.push((&a.value, d));
                 }
             }
@@ -252,7 +254,7 @@ fn check_expr_depth(root: &Expr, start: usize) -> Result<()> {
                 stack.push((i, d));
             }
             Expr::List(items, _) | Expr::Tuple(items, _) => {
-                for i in items {
+                for i in items.iter() {
                     stack.push((i, d));
                 }
             }
@@ -283,13 +285,13 @@ fn check_expr_depth(root: &Expr, start: usize) -> Result<()> {
                 }
             }
             Expr::Map(entries, _) => {
-                for (k, v) in entries {
+                for (k, v) in entries.iter() {
                     stack.push((k, d));
                     stack.push((v, d));
                 }
             }
             Expr::Construct(_, args, _, _) => {
-                for a in args {
+                for a in args.iter() {
                     stack.push((&a.value, d));
                 }
             }
@@ -311,7 +313,7 @@ fn check_expr_depth(root: &Expr, start: usize) -> Result<()> {
             }
             Expr::Match(subject, arms, _) => {
                 stack.push((subject, d));
-                for arm in arms {
+                for arm in arms.iter() {
                     if let Some(g) = &arm.guard {
                         stack.push((g, d));
                     }
@@ -322,7 +324,7 @@ fn check_expr_depth(root: &Expr, start: usize) -> Result<()> {
         }
         // F-string interpolations are expressions too.
         if let Expr::FStr(parts, _) = e {
-            for p in parts {
+            for p in parts.iter() {
                 if let FPart::Expr(inner, _) = p {
                     stack.push((inner, d));
                 }
@@ -1198,7 +1200,7 @@ impl Parser {
             params,
             ret,
             ret_span,
-            body: Vec::new(),
+            body: Arc::from([]),
             public,
             span,
         })
@@ -1647,7 +1649,12 @@ impl Parser {
 
     // --------------------------------------------------------------- blocks
 
-    fn block(&mut self) -> Result<Vec<Stmt>> {
+    /// Parse a `{ ... }` block into a shareable statement sequence.
+    fn block(&mut self) -> Result<Arc<[Stmt]>> {
+        Ok(self.block_vec()?.into())
+    }
+
+    fn block_vec(&mut self) -> Result<Vec<Stmt>> {
         self.enter()?;
         self.expect(&Tok::LBrace)?;
         let mut stmts = Vec::new();
@@ -2098,7 +2105,7 @@ impl Parser {
                 }
                 self.count_node(span)?;
                 let rhs = self.expr_bp(rbp)?;
-                lhs = Expr::Range(Box::new(lhs), Box::new(rhs), span);
+                lhs = Expr::Range(Arc::new(lhs), Arc::new(rhs), span);
                 continue;
             }
             let Some((lbp, rbp, op)) = infix(self.at()) else {
@@ -2119,7 +2126,7 @@ impl Parser {
                 }
                 Some(op) => {
                     let rhs = self.expr_bp(rbp)?;
-                    lhs = Expr::Binary(op, Box::new(lhs), Box::new(rhs), span);
+                    lhs = Expr::Binary(op, Arc::new(lhs), Arc::new(rhs), span);
                 }
             }
         }
@@ -2147,19 +2154,19 @@ impl Parser {
                 // stay free to accept any AST-valid program (§31.2).
                 self.count_node(span)?;
                 let e = self.unary()?;
-                Ok(Expr::Unary(UnOp::Neg, Box::new(e), span))
+                Ok(Expr::Unary(UnOp::Neg, Arc::new(e), span))
             }
             Tok::Not => {
                 self.bump();
                 self.count_node(span)?;
                 let e = self.unary()?;
-                Ok(Expr::Unary(UnOp::Not, Box::new(e), span))
+                Ok(Expr::Unary(UnOp::Not, Arc::new(e), span))
             }
             Tok::Tilde => {
                 self.bump();
                 self.count_node(span)?;
                 let e = self.unary()?;
-                Ok(Expr::Unary(UnOp::BitNot, Box::new(e), span))
+                Ok(Expr::Unary(UnOp::BitNot, Arc::new(e), span))
             }
             _ => self.postfix(),
         }
@@ -2178,7 +2185,7 @@ impl Parser {
                     self.count_node(span)?;
                     self.bump();
                     let args = self.call_args()?;
-                    e = Expr::Call(Box::new(e), args, Vec::new(), span);
+                    e = Expr::Call(Arc::new(e), args.into(), Vec::new(), span);
                 }
                 Tok::LBracket => {
                     let span = self.span();
@@ -2186,7 +2193,7 @@ impl Parser {
                     self.bump();
                     let idx = self.expr()?;
                     self.expect(&Tok::RBracket)?;
-                    e = Expr::Index(Box::new(e), Box::new(idx), span);
+                    e = Expr::Index(Arc::new(e), Arc::new(idx), span);
                 }
                 Tok::Dot => {
                     let span = self.span();
@@ -2197,7 +2204,7 @@ impl Parser {
                     if matches!(self.at(), Tok::LParen) {
                         self.bump();
                         let args = self.call_args()?;
-                        e = Expr::Method(Box::new(e), name, args, targs, span);
+                        e = Expr::Method(Arc::new(e), name, args.into(), targs, span);
                     } else if !targs.is_empty() {
                         return Err(Diag::new(
                             codes::EXPECTED,
@@ -2207,7 +2214,7 @@ impl Parser {
                             span,
                         ));
                     } else {
-                        e = Expr::Field(Box::new(e), name, span);
+                        e = Expr::Field(Arc::new(e), name, span);
                     }
                 }
                 _ => break,
@@ -2373,10 +2380,10 @@ impl Parser {
         self.skip_newlines();
         self.expect(&Tok::RBracket)?;
         Ok(Expr::ListComp {
-            value: Box::new(value),
+            value: Arc::new(value),
             pattern,
-            iterable: Box::new(iterable),
-            filter: filter.map(Box::new),
+            iterable: Arc::new(iterable),
+            filter: filter.map(Arc::new),
             span,
         })
     }
@@ -2394,11 +2401,11 @@ impl Parser {
         self.skip_newlines();
         self.expect(&Tok::RBrace)?;
         Ok(Expr::MapComp {
-            key: Box::new(key),
-            value: Box::new(value),
+            key: Arc::new(key),
+            value: Arc::new(value),
             pattern,
-            iterable: Box::new(iterable),
-            filter: filter.map(Box::new),
+            iterable: Arc::new(iterable),
+            filter: filter.map(Arc::new),
             span,
         })
     }
@@ -2440,7 +2447,7 @@ impl Parser {
             Tok::FStr(raw) => {
                 self.bump();
                 let parts = self.fstring(&raw, span)?;
-                Expr::FStr(parts, span)
+                Expr::FStr(parts.into(), span)
             }
             Tok::Ident(name) => {
                 // A `::`-qualified path names an item in another module. Join
@@ -2479,29 +2486,29 @@ impl Parser {
                         let full = format!("{name}::{variant}");
                         if matches!(self.at(), Tok::LBrace) {
                             let args = self.construct_fields(full.clone(), span)?;
-                            return Ok(Expr::Construct(full, args, targs, span));
+                            return Ok(Expr::Construct(full, args.into(), targs, span));
                         }
                         let args = self.construct_positional(span)?;
-                        return Ok(Expr::Construct(full, args, targs, span));
+                        return Ok(Expr::Construct(full, args.into(), targs, span));
                     }
                     if matches!(self.at(), Tok::LBrace) {
                         let args = self.construct_fields(name.clone(), span)?;
-                        return Ok(Expr::Construct(name, args, targs, span));
+                        return Ok(Expr::Construct(name, args.into(), targs, span));
                     }
                     // The only other suffix `at_type_args` accepts is `(`.
                     self.expect(&Tok::LParen)?;
                     let args = self.call_args()?;
-                    return Ok(Expr::Call(Box::new(Expr::Name(name, span)), args, targs, span));
+                    return Ok(Expr::Call(Arc::new(Expr::Name(name, span)), args.into(), targs, span));
                 }
                 if matches!(self.at(), Tok::LBrace) && is_type_name {
                     // struct literal `Point { x: 1 }`
                     let args = self.construct_fields(name.clone(), span)?;
-                    return Ok(Expr::Construct(name, args, Vec::new(), span));
+                    return Ok(Expr::Construct(name, args.into(), Vec::new(), span));
                 }
                 if matches!(self.at(), Tok::LParen) && is_type_name {
                     // variant constructor `Ok(x)`
                     let args = self.construct_positional(span)?;
-                    return Ok(Expr::Construct(name, args, Vec::new(), span));
+                    return Ok(Expr::Construct(name, args.into(), Vec::new(), span));
                 }
                 Expr::Name(name, span)
             }
@@ -2510,7 +2517,7 @@ impl Parser {
                 // lambda?
                 if let Some(params) = self.try_lambda_params() {
                     let body = self.expr()?;
-                    return Ok(Expr::Lambda(params, Box::new(body), span));
+                    return Ok(Expr::Lambda(params, Arc::new(body), span));
                 }
                 let first = self.expr()?;
                 if self.eat(&Tok::Comma) {
@@ -2539,7 +2546,7 @@ impl Parser {
                     }
                     self.expect(&Tok::RParen)?;
                     self.leave_container();
-                    Expr::Tuple(items, span)
+                    Expr::Tuple(items.into(), span)
                 } else {
                     self.expect(&Tok::RParen)?;
                     first
@@ -2553,7 +2560,7 @@ impl Parser {
                 self.skip_newlines();
                 if self.eat(&Tok::RBracket) {
                     self.leave_container();
-                    return Ok(Expr::List(Vec::new(), span));
+                    return Ok(Expr::List(Arc::from([]), span));
                 }
                 self.skip_newlines();
                 let first = self.expr()?;
@@ -2588,7 +2595,7 @@ impl Parser {
                         }
                         items.push(self.expr()?);
                     }
-                    Ok(Expr::List(items, span))
+                    Ok(Expr::List(items.into(), span))
                 };
                 self.leave_container();
                 result?
@@ -2609,11 +2616,11 @@ impl Parser {
                     let result = if self.eat(&Tok::Colon) {
                         self.skip_newlines();
                         self.expect(&Tok::RBrace)?;
-                        Ok(Expr::Map(entries, span))
+                        Ok(Expr::Map(entries.into(), span))
                     } else {
                         loop {
                             if self.eat(&Tok::RBrace) {
-                                break Ok(Expr::Map(entries, span));
+                                break Ok(Expr::Map(entries.into(), span));
                             }
                             let k = self.expr()?;
                             self.expect(&Tok::Colon)?;
@@ -2633,7 +2640,7 @@ impl Parser {
                             if !self.eat(&Tok::Comma) {
                                 self.skip_newlines();
                                 self.expect(&Tok::RBrace)?;
-                                break Ok(Expr::Map(entries, span));
+                                break Ok(Expr::Map(entries.into(), span));
                             }
                             self.skip_newlines();
                         }
@@ -2653,11 +2660,11 @@ impl Parser {
                     // `else` accepts an expression, and `if` is an expression,
                     // so `else if B { … }` parses as the nested `Expr::If`
                     // `else { if B { … } }` with no special handling.
-                    Some(Box::new(self.expr()?))
+                    Some(Arc::new(self.expr()?))
                 } else {
                     None
                 };
-                Expr::If(Box::new(cond), then, els, span)
+                Expr::If(Arc::new(cond), then, els, span)
             }
             Tok::Match => {
                 self.bump();
@@ -2676,7 +2683,7 @@ impl Parser {
                         None
                     };
                     self.expect(&Tok::Arrow)?;
-                    let body = if matches!(self.at(), Tok::LBrace) {
+                    let body: Arc<[Stmt]> = if matches!(self.at(), Tok::LBrace) {
                         self.block()?
                     } else {
                         let e = self.expr()?;
@@ -2697,7 +2704,7 @@ impl Parser {
                                 ))
                             }
                         }
-                        vec![Stmt::Expr(e, span)]
+                        Arc::from([Stmt::Expr(e, span)])
                     };
                     arms.push(Arm {
                         pattern: pat,
@@ -2708,7 +2715,7 @@ impl Parser {
                         self.bump();
                     }
                 }
-                Expr::Match(Box::new(subject), arms, span)
+                Expr::Match(Arc::new(subject), arms.into(), span)
             }
             Tok::Fn => {
                 self.bump();
@@ -2727,7 +2734,7 @@ impl Parser {
                 };
                 self.expect(&Tok::Arrow)?;
                 let body = self.expr()?;
-                Expr::Lambda(params, Box::new(body), span)
+                Expr::Lambda(params, Arc::new(body), span)
             }
             other => {
                 return Err(Diag::new(
@@ -2972,9 +2979,10 @@ impl Parser {
 /// right-hand side is a callable value, so it becomes `rhs(lhs)`.
 fn desugar_pipe(lhs: Expr, rhs: Expr, span: Span) -> Expr {
     match rhs {
-        Expr::Call(callee, mut args, ty_args, cspan) => {
+        Expr::Call(callee, args, ty_args, cspan) => {
             // The piped value becomes the first *positional* argument; any
             // named arguments follow (§23).
+            let mut args = args.to_vec();
             args.insert(
                 0,
                 Arg {
@@ -2982,9 +2990,10 @@ fn desugar_pipe(lhs: Expr, rhs: Expr, span: Span) -> Expr {
                     value: lhs,
                 },
             );
-            Expr::Call(callee, args, ty_args, cspan)
+            Expr::Call(callee, args.into(), ty_args, cspan)
         }
-        Expr::Method(recv, name, mut args, ty_args, mspan) => {
+        Expr::Method(recv, name, args, ty_args, mspan) => {
+            let mut args = args.to_vec();
             args.insert(
                 0,
                 Arg {
@@ -2992,18 +3001,18 @@ fn desugar_pipe(lhs: Expr, rhs: Expr, span: Span) -> Expr {
                     value: lhs,
                 },
             );
-            Expr::Method(recv, name, args, ty_args, mspan)
+            Expr::Method(recv, name, args.into(), ty_args, mspan)
         }
         Expr::Name(..) => Expr::Call(
-            Box::new(rhs),
-            vec![Arg {
+            Arc::new(rhs),
+            Arc::from([Arg {
                 name: None,
                 value: lhs,
-            }],
+            }]),
             Vec::new(),
             span,
         ),
-        other => Expr::Pipe(Box::new(lhs), Box::new(other), span),
+        other => Expr::Pipe(Arc::new(lhs), Arc::new(other), span),
     }
 }
 

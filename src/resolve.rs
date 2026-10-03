@@ -19,6 +19,7 @@
 //! access is `E2018`; an unknown module or import is `E2019`.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use crate::ast::{
     Arm, Expr, FPart, FieldDecl, Item, Module, Param, Pattern, Stmt, TypeExpr, TypeParam,
@@ -169,7 +170,7 @@ pub fn resolve_stmt(stmt: Stmt, session: &Session) -> Result<Stmt> {
             params: Vec::new(),
             ret: None,
             ret_span: None,
-            body: vec![stmt],
+            body: Arc::from([stmt]),
             public: false,
             span: Span::default(),
         }],
@@ -185,7 +186,7 @@ pub fn resolve_stmt(stmt: Stmt, session: &Session) -> Result<Stmt> {
             Span::default(),
         ));
     };
-    body.into_iter().next().ok_or_else(|| {
+    body.iter().next().cloned().ok_or_else(|| {
         Diag::new(
             codes::INTERNAL,
             "statement resolution produced no statement",
@@ -1046,8 +1047,7 @@ impl Resolver {
                     .as_ref()
                     .map(|t| self.rewrite_type(t, prefix, ret_span.unwrap_or(*span)))
                     .transpose()?;
-                let mut body = body.clone();
-                self.rewrite_block(&mut body, &mut locals, prefix)?;
+                let body = self.rewrite_block(body, &mut locals, prefix)?;
                 self.pop_type_params();
                 Item::Fn {
                     name: join(prefix, name),
@@ -1237,8 +1237,7 @@ impl Resolver {
             .as_ref()
             .map(|t| self.rewrite_type(t, prefix, ret_span.unwrap_or(*span)))
             .transpose()?;
-        let mut body = body.clone();
-        self.rewrite_block(&mut body, &mut locals, prefix)?;
+        let body = self.rewrite_block(body, &mut locals, prefix)?;
         self.pop_type_params();
         Ok(Item::Fn {
             name: name.clone(),
@@ -1503,80 +1502,117 @@ impl Resolver {
 
     fn rewrite_block(
         &self,
-        body: &mut [Stmt],
+        body: &[Stmt],
         locals: &mut Locals,
         prefix: &[String],
-    ) -> Result<()> {
+    ) -> Result<Arc<[Stmt]>> {
         locals.push();
-        for s in body.iter_mut() {
-            self.rewrite_stmt(s, locals, prefix)?;
+        let mut out = Vec::with_capacity(body.len());
+        for s in body {
+            out.push(self.rewrite_stmt(s, locals, prefix)?);
         }
         locals.pop();
-        Ok(())
+        Ok(out.into())
     }
 
-    fn rewrite_stmt(&self, s: &mut Stmt, locals: &mut Locals, prefix: &[String]) -> Result<()> {
-        match s {
+    fn rewrite_stmt(&self, s: &Stmt, locals: &mut Locals, prefix: &[String]) -> Result<Stmt> {
+        Ok(match s {
             Stmt::Let {
+                mutable,
                 name,
                 ann,
                 value,
                 span,
-                ..
             } => {
-                *value = self.rewrite_expr(value, locals, prefix)?;
-                if let Some(a) = ann {
-                    *a = self.rewrite_type(a, prefix, *span)?;
-                }
+                let value = self.rewrite_expr(value, locals, prefix)?;
+                let ann = match ann {
+                    Some(a) => Some(self.rewrite_type(a, prefix, *span)?),
+                    None => None,
+                };
                 locals.declare(name);
+                Stmt::Let {
+                    mutable: *mutable,
+                    name: name.clone(),
+                    ann,
+                    value,
+                    span: *span,
+                }
             }
-            Stmt::LetPattern { pattern, value, .. } => {
-                *value = self.rewrite_expr(value, locals, prefix)?;
+            Stmt::LetPattern {
+                pattern,
+                value,
+                span,
+            } => {
+                let value = self.rewrite_expr(value, locals, prefix)?;
                 self.collect_pattern_bindings(pattern, locals);
+                Stmt::LetPattern {
+                    pattern: pattern.clone(),
+                    value,
+                    span: *span,
+                }
             }
-            Stmt::Assign { target, value, .. } => {
-                *target = self.rewrite_expr(target, locals, prefix)?;
-                *value = self.rewrite_expr(value, locals, prefix)?;
+            Stmt::Assign {
+                target,
+                value,
+                op,
+                span,
+            } => Stmt::Assign {
+                target: self.rewrite_expr(target, locals, prefix)?,
+                value: self.rewrite_expr(value, locals, prefix)?,
+                op: *op,
+                span: *span,
+            },
+            Stmt::Expr(e, span) => Stmt::Expr(self.rewrite_expr(e, locals, prefix)?, *span),
+            Stmt::Return(Some(e), span) => {
+                Stmt::Return(Some(self.rewrite_expr(e, locals, prefix)?), *span)
             }
-            Stmt::Expr(e, _) => *e = self.rewrite_expr(e, locals, prefix)?,
-            Stmt::Return(Some(e), _) | Stmt::Throw(e, _) => {
-                *e = self.rewrite_expr(e, locals, prefix)?;
-            }
-            Stmt::Return(None, _) | Stmt::Break(_) | Stmt::Continue(_) => {}
-            Stmt::While(c, body, _) => {
-                *c = self.rewrite_expr(c, locals, prefix)?;
-                self.rewrite_block(body, locals, prefix)?;
-            }
-            Stmt::Loop(body, _) => self.rewrite_block(body, locals, prefix)?,
-            Stmt::For(pat, iter, body, _) => {
-                *iter = self.rewrite_expr(iter, locals, prefix)?;
+            Stmt::Throw(e, span) => Stmt::Throw(self.rewrite_expr(e, locals, prefix)?, *span),
+            Stmt::Return(None, _) | Stmt::Break(_) | Stmt::Continue(_) => s.clone(),
+            Stmt::While(c, body, span) => Stmt::While(
+                self.rewrite_expr(c, locals, prefix)?,
+                self.rewrite_block(body, locals, prefix)?,
+                *span,
+            ),
+            Stmt::Loop(body, span) => Stmt::Loop(self.rewrite_block(body, locals, prefix)?, *span),
+            Stmt::For(pat, iter, body, span) => {
+                let iter = self.rewrite_expr(iter, locals, prefix)?;
                 locals.push();
                 self.collect_pattern_bindings(pat, locals);
-                for st in body.iter_mut() {
-                    self.rewrite_stmt(st, locals, prefix)?;
+                let mut out = Vec::with_capacity(body.len());
+                for st in body.iter() {
+                    out.push(self.rewrite_stmt(st, locals, prefix)?);
                 }
                 locals.pop();
+                Stmt::For(pat.clone(), iter, out.into(), *span)
             }
             Stmt::Try {
                 body,
                 catch,
                 catch_body,
                 finally,
-                ..
+                span,
             } => {
-                self.rewrite_block(body, locals, prefix)?;
+                let body = self.rewrite_block(body, locals, prefix)?;
                 locals.push();
                 locals.declare(catch);
-                for st in catch_body.iter_mut() {
-                    self.rewrite_stmt(st, locals, prefix)?;
+                let mut out = Vec::with_capacity(catch_body.len());
+                for st in catch_body.iter() {
+                    out.push(self.rewrite_stmt(st, locals, prefix)?);
                 }
                 locals.pop();
-                if let Some(f) = finally {
-                    self.rewrite_block(f, locals, prefix)?;
+                let finally = match finally {
+                    Some(f) => Some(self.rewrite_block(f, locals, prefix)?),
+                    None => None,
+                };
+                Stmt::Try {
+                    body,
+                    catch: catch.clone(),
+                    catch_body: out.into(),
+                    finally,
+                    span: *span,
                 }
             }
-        }
-        Ok(())
+        })
     }
 
     fn collect_pattern_bindings(&self, p: &Pattern, locals: &mut Locals) {
@@ -1654,21 +1690,21 @@ impl Resolver {
                     })
                     .collect::<Result<Vec<_>>>()?;
                 let ty_args = self.rewrite_type_args(ty_args, prefix, *span)?;
-                Expr::Construct(canonical, args, ty_args, *span)
+                Expr::Construct(canonical, args.into(), ty_args, *span)
             }
             Expr::Unary(op, o, span) => {
-                Expr::Unary(*op, Box::new(self.rewrite_expr(o, locals, prefix)?), *span)
+                Expr::Unary(*op, Arc::new(self.rewrite_expr(o, locals, prefix)?), *span)
             }
             Expr::Binary(op, l, r, span) => Expr::Binary(
                 *op,
-                Box::new(self.rewrite_expr(l, locals, prefix)?),
-                Box::new(self.rewrite_expr(r, locals, prefix)?),
+                Arc::new(self.rewrite_expr(l, locals, prefix)?),
+                Arc::new(self.rewrite_expr(r, locals, prefix)?),
                 *span,
             ),
             Expr::Call(f, args, ty_args, span) => {
                 let ty_args = self.rewrite_type_args(ty_args, prefix, *span)?;
                 Expr::Call(
-                    Box::new(self.rewrite_expr(f, locals, prefix)?),
+                    Arc::new(self.rewrite_expr(f, locals, prefix)?),
                     self.rewrite_args(args, locals, prefix)?,
                     ty_args,
                     *span,
@@ -1677,7 +1713,7 @@ impl Resolver {
             Expr::Method(r, name, args, ty_args, span) => {
                 let ty_args = self.rewrite_type_args(ty_args, prefix, *span)?;
                 Expr::Method(
-                    Box::new(self.rewrite_expr(r, locals, prefix)?),
+                    Arc::new(self.rewrite_expr(r, locals, prefix)?),
                     name.clone(),
                     self.rewrite_args(args, locals, prefix)?,
                     ty_args,
@@ -1685,27 +1721,29 @@ impl Resolver {
                 )
             }
             Expr::Field(r, name, span) => Expr::Field(
-                Box::new(self.rewrite_expr(r, locals, prefix)?),
+                Arc::new(self.rewrite_expr(r, locals, prefix)?),
                 name.clone(),
                 *span,
             ),
             Expr::Index(b, i, span) => Expr::Index(
-                Box::new(self.rewrite_expr(b, locals, prefix)?),
-                Box::new(self.rewrite_expr(i, locals, prefix)?),
+                Arc::new(self.rewrite_expr(b, locals, prefix)?),
+                Arc::new(self.rewrite_expr(i, locals, prefix)?),
                 *span,
             ),
             Expr::List(items, span) => Expr::List(
                 items
                     .iter()
                     .map(|x| self.rewrite_expr(x, locals, prefix))
-                    .collect::<Result<Vec<_>>>()?,
+                    .collect::<Result<Vec<_>>>()?
+                    .into(),
                 *span,
             ),
             Expr::Tuple(items, span) => Expr::Tuple(
                 items
                     .iter()
                     .map(|x| self.rewrite_expr(x, locals, prefix))
-                    .collect::<Result<Vec<_>>>()?,
+                    .collect::<Result<Vec<_>>>()?
+                    .into(),
                 *span,
             ),
             Expr::Map(entries, span) => Expr::Map(
@@ -1717,7 +1755,8 @@ impl Resolver {
                             self.rewrite_expr(v, locals, prefix)?,
                         ))
                     })
-                    .collect::<Result<Vec<_>>>()?,
+                    .collect::<Result<Vec<_>>>()?
+                    .into(),
                 *span,
             ),
             Expr::Lambda(params, body, span) => {
@@ -1725,27 +1764,26 @@ impl Resolver {
                 inner.push();
                 let params = self.rewrite_params(params, &mut inner, prefix)?;
                 let body = self.rewrite_expr(body, &mut inner, prefix)?;
-                Expr::Lambda(params, Box::new(body), *span)
+                Expr::Lambda(params, Arc::new(body), *span)
             }
             Expr::Pipe(l, r, span) => Expr::Pipe(
-                Box::new(self.rewrite_expr(l, locals, prefix)?),
-                Box::new(self.rewrite_expr(r, locals, prefix)?),
+                Arc::new(self.rewrite_expr(l, locals, prefix)?),
+                Arc::new(self.rewrite_expr(r, locals, prefix)?),
                 *span,
             ),
             Expr::Range(a, b, span) => Expr::Range(
-                Box::new(self.rewrite_expr(a, locals, prefix)?),
-                Box::new(self.rewrite_expr(b, locals, prefix)?),
+                Arc::new(self.rewrite_expr(a, locals, prefix)?),
+                Arc::new(self.rewrite_expr(b, locals, prefix)?),
                 *span,
             ),
             Expr::If(c, then, els, span) => {
                 let c = self.rewrite_expr(c, locals, prefix)?;
-                let mut t = then.clone();
-                self.rewrite_block(&mut t, locals, prefix)?;
+                let t = self.rewrite_block(then, locals, prefix)?;
                 let e = match els {
-                    Some(e) => Some(Box::new(self.rewrite_expr(e, locals, prefix)?)),
+                    Some(e) => Some(Arc::new(self.rewrite_expr(e, locals, prefix)?)),
                     None => None,
                 };
-                Expr::If(Box::new(c), t, e, *span)
+                Expr::If(Arc::new(c), t, e, *span)
             }
             Expr::Match(value, arms, span) => {
                 let value = self.rewrite_expr(value, locals, prefix)?;
@@ -1753,7 +1791,7 @@ impl Resolver {
                     .iter()
                     .map(|a| self.rewrite_arm(a, locals, prefix))
                     .collect::<Result<Vec<_>>>()?;
-                Expr::Match(Box::new(value), arms, *span)
+                Expr::Match(Arc::new(value), arms.into(), *span)
             }
             Expr::ListComp {
                 value,
@@ -1773,13 +1811,13 @@ impl Resolver {
                 }
                 let value = self.rewrite_expr(value, &mut inner, prefix)?;
                 let filter = match filter {
-                    Some(f) => Some(Box::new(self.rewrite_expr(f, &mut inner, prefix)?)),
+                    Some(f) => Some(Arc::new(self.rewrite_expr(f, &mut inner, prefix)?)),
                     None => None,
                 };
                 Expr::ListComp {
-                    value: Box::new(value),
+                    value: Arc::new(value),
                     pattern,
-                    iterable: Box::new(iterable),
+                    iterable: Arc::new(iterable),
                     filter,
                     span: *span,
                 }
@@ -1802,21 +1840,20 @@ impl Resolver {
                 let key = self.rewrite_expr(key, &mut inner, prefix)?;
                 let value = self.rewrite_expr(value, &mut inner, prefix)?;
                 let filter = match filter {
-                    Some(f) => Some(Box::new(self.rewrite_expr(f, &mut inner, prefix)?)),
+                    Some(f) => Some(Arc::new(self.rewrite_expr(f, &mut inner, prefix)?)),
                     None => None,
                 };
                 Expr::MapComp {
-                    key: Box::new(key),
-                    value: Box::new(value),
+                    key: Arc::new(key),
+                    value: Arc::new(value),
                     pattern,
-                    iterable: Box::new(iterable),
+                    iterable: Arc::new(iterable),
                     filter,
                     span: *span,
                 }
             }
             Expr::Block(body, span) => {
-                let mut b = body.clone();
-                self.rewrite_block(&mut b, locals, prefix)?;
+                let b = self.rewrite_block(body, locals, prefix)?;
                 Expr::Block(b, *span)
             }
             Expr::FStr(parts, span) => {
@@ -1830,7 +1867,7 @@ impl Resolver {
                         )),
                     })
                     .collect::<Result<Vec<_>>>()?;
-                Expr::FStr(parts, *span)
+                Expr::FStr(parts.into(), *span)
             }
             // Literals and other leaves carry no names to rewrite.
             other @ Expr::Lit(..) => other.clone(),
@@ -1842,7 +1879,7 @@ impl Resolver {
         args: &[crate::ast::Arg],
         locals: &mut Locals,
         prefix: &[String],
-    ) -> Result<Vec<crate::ast::Arg>> {
+    ) -> Result<Arc<[crate::ast::Arg]>> {
         args.iter()
             .map(|a| {
                 Ok(crate::ast::Arg {
@@ -1850,7 +1887,8 @@ impl Resolver {
                     value: self.rewrite_expr(&a.value, locals, prefix)?,
                 })
             })
-            .collect()
+            .collect::<Result<Vec<_>>>()
+            .map(Arc::from)
     }
 
     fn rewrite_arm(&self, a: &Arm, locals: &mut Locals, prefix: &[String]) -> Result<Arm> {
@@ -1862,15 +1900,15 @@ impl Resolver {
             .map(|g| self.rewrite_expr(g, locals, prefix))
             .transpose()?;
         let pattern = self.rewrite_pattern(&a.pattern, prefix)?;
-        let mut body = a.body.clone();
-        for s in &mut body {
-            self.rewrite_stmt(s, locals, prefix)?;
+        let mut body = Vec::with_capacity(a.body.len());
+        for s in a.body.iter() {
+            body.push(self.rewrite_stmt(s, locals, prefix)?);
         }
         locals.pop();
         Ok(Arm {
             pattern,
             guard,
-            body,
+            body: body.into(),
         })
     }
 

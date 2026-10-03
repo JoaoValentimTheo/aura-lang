@@ -9,6 +9,7 @@ pub mod value;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::ast::*;
 use crate::error::{codes, Diag, Result, SourceDiagnostic, Span};
@@ -59,7 +60,11 @@ pub struct Closure {
     /// resolution (`LANGUAGE_SPEC.md` §15.7).
     pub param_tys: Vec<Option<crate::types::Ty>>,
     /// Body.
-    pub body: Vec<Stmt>,
+    ///
+    /// `Arc`-shared so the iterative evaluator can retain a pending body in a
+    /// continuation without deep-cloning (`ITERATIVE_EVALUATOR_DESIGN.md`
+    /// §16.1). Cloning a `Closure` body is a refcount bump, not a copy.
+    pub body: Arc<[Stmt]>,
     /// Captured environment.
     pub env: Env,
 }
@@ -1246,7 +1251,7 @@ impl Interp {
             }
             Expr::FStr(parts, _) => {
                 let mut out = String::new();
-                for p in parts {
+                for p in parts.iter() {
                     match p {
                         FPart::Lit(t) => out.push_str(t),
                         FPart::Expr(e, spec) => {
@@ -1315,7 +1320,7 @@ impl Interp {
             Expr::Method(recv, name, args, _ty_args, span) => {
                 let subject = val!(self.eval(recv, env));
                 let mut vals = Vec::with_capacity(args.len());
-                for a in args {
+                for a in args.iter() {
                     vals.push(val!(self.eval(&a.value, env)));
                 }
                 // A struct receiver resolves against its nominal method table
@@ -1369,14 +1374,14 @@ impl Interp {
             }
             Expr::List(items, _) => {
                 let mut out = Vec::with_capacity(items.len());
-                for i in items {
+                for i in items.iter() {
                     out.push(val!(self.eval(i, env)));
                 }
                 Ok(Ctl::Val(Value::list(out)))
             }
             Expr::Map(entries, _) => {
                 let mut map = std::collections::BTreeMap::new();
-                for (k, v) in entries {
+                for (k, v) in entries.iter() {
                     let kv = val!(self.eval(k, env));
                     let Some(key) = MapKey::from_value(&kv) else {
                         return Err(self.error(
@@ -1456,7 +1461,7 @@ impl Interp {
             Expr::Construct(name, args, _ty_args, span) => self.construct(name, args, env, *span),
             Expr::Tuple(items, _) => {
                 let mut out = Vec::with_capacity(items.len());
-                for i in items {
+                for i in items.iter() {
                     out.push(val!(self.eval(i, env)));
                 }
                 Ok(Ctl::Val(Value::list(out)))
@@ -1467,7 +1472,7 @@ impl Interp {
                     // body, so an explicit `return` inside it works and the
                     // last expression is the implicit return value.
                     Expr::Block(stmts, _) => stmts.clone(),
-                    expr => vec![Stmt::Return(Some(expr.clone()), Span::default())],
+                    expr => Arc::from([Stmt::Return(Some(expr.clone()), Span::default())]),
                 };
                 let closure = Rc::new(Closure {
                     name: "<lambda>".to_string(),
@@ -1533,7 +1538,7 @@ impl Interp {
             }
             Expr::Match(subject, arms, span) => {
                 let s = val!(self.eval(subject, env));
-                for arm in arms {
+                for arm in arms.iter() {
                     if self.match_pattern(&arm.pattern, &s) {
                         let scope = env.child();
                         self.bind_pattern(&arm.pattern, &s, &scope)?;

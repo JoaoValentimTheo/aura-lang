@@ -2610,7 +2610,7 @@ impl Checker {
                 // here, where the span is available.
                 let mut keys = Vec::new();
                 let mut vals = Vec::new();
-                for (k, v) in entries {
+                for (k, v) in entries.iter() {
                     let kt = self.infer(k);
                     if kt.is_key_capable() && !matches!(kt, Ty::Unknown) {
                         keys.push(kt);
@@ -4479,7 +4479,7 @@ impl Checker {
                 }
                 self.loop_depth += 1;
                 let loop_result: Result<()> = (|| {
-                    for s in body {
+                    for s in body.iter() {
                         self.stmt(s)?;
                     }
                     Ok(())
@@ -4498,7 +4498,7 @@ impl Checker {
                 self.block(body)?;
                 self.push();
                 self.declare(catch, false, Span::default())?;
-                for s in catch_body {
+                for s in catch_body.iter() {
                     self.stmt(s)?;
                 }
                 self.pop();
@@ -4555,7 +4555,7 @@ impl Checker {
                 self.used_names.entry(name.clone()).or_insert(*span);
             }
             Expr::FStr(parts, _) => {
-                for p in parts {
+                for p in parts.iter() {
                     if let FPart::Expr(inner, _) = p {
                         self.expr(inner)?;
                     }
@@ -4659,7 +4659,7 @@ impl Checker {
                         self.reject_named_args("callable", args, *span)?;
                     }
                 }
-                for a in args {
+                for a in args.iter() {
                     self.expr(&a.value)?;
                 }
             }
@@ -4799,7 +4799,7 @@ impl Checker {
                     self.reject_named_args(name, args, *span)?;
                     self.check_method_call(r, name, args, *span)?;
                 }
-                for a in args {
+                for a in args.iter() {
                     self.expr(&a.value)?;
                 }
             }
@@ -4896,12 +4896,12 @@ impl Checker {
                 }
             }
             Expr::List(vs, _) | Expr::Tuple(vs, _) => {
-                for v in vs {
+                for v in vs.iter() {
                     self.expr(v)?;
                 }
             }
             Expr::Map(kvs, span) => {
-                for (k, v) in kvs {
+                for (k, v) in kvs.iter() {
                     self.expr(k)?;
                     self.expr(v)?;
                     // A statically known non-key-capable key is rejected
@@ -4917,7 +4917,7 @@ impl Checker {
             Expr::Construct(name, args, ty_args, span) => {
                 // Every argument expression is checked regardless of which
                 // construction rule applies.
-                for a in args {
+                for a in args.iter() {
                     self.expr(&a.value)?;
                 }
                 // Explicit type arguments on a construction are validated for
@@ -5053,7 +5053,7 @@ impl Checker {
             }
             Expr::Match(subject, arms, _) => {
                 self.expr(subject)?;
-                for arm in arms {
+                for arm in arms.iter() {
                     self.check_pattern(&arm.pattern)?;
                     self.push();
                     for b in arm.pattern.bindings() {
@@ -5062,7 +5062,7 @@ impl Checker {
                     if let Some(g) = &arm.guard {
                         self.expr(g)?;
                     }
-                    for s in &arm.body {
+                    for s in arm.body.iter() {
                         self.stmt(s)?;
                     }
                     self.pop();

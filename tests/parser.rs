@@ -397,14 +397,14 @@ fn multiple_else_if_parses_as_deep_nesting() {
 fn else_if_final_else_is_optional() {
     let with_else = parse_expr("if a { 1 } else if b { 2 } else { 3 }").expect("parse");
     let inner = match with_else {
-        Expr::If(_, _, Some(els), _) => *els,
+        Expr::If(_, _, Some(els), _) => (*els).clone(),
         other => panic!("expected if, got {other:?}"),
     };
     assert!(matches!(inner, Expr::If(_, _, Some(_), _)));
 
     let no_else = parse_expr("if a { 1 } else if b { 2 }").expect("parse");
     let inner = match no_else {
-        Expr::If(_, _, Some(els), _) => *els,
+        Expr::If(_, _, Some(els), _) => (*els).clone(),
         other => panic!("expected if, got {other:?}"),
     };
     assert!(matches!(inner, Expr::If(_, _, None, _)));

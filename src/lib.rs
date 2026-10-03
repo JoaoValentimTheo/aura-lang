@@ -33,6 +33,34 @@ use std::sync::{Arc, Mutex};
 use error::{DiagnosticReport, SourceDiagnostic};
 use source::{SourceId, SourceMap};
 
+/// Compile-time proof that the AST graph stays within the native
+/// execution-thread boundary.
+///
+/// `parse` and every public `compile*`/`Compilation::execute_with*` entry point
+/// move a `Module` (and its `Item`/`Stmt`/`Expr`/`TypeExpr`/`Arm`/`Arg`/
+/// `FPart`/`Pattern` graph) across `on_parse_stack`/`on_execution_stack`
+/// (`T: Send + 'static`). The AST uses [`std::sync::Arc`] precisely so those
+/// bounds hold; these assertions fail to compile if any AST field ever reverts
+/// to a `!Send` owner (`Rc`, `RefCell`, raw pointer, …). See
+/// `docs/B1R3A_AST_SHARING_DECISION.md` and
+/// `docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md` §16.1.
+///
+/// `Sync` is asserted too: `Arc<T>` is only `Send` when `T: Send + Sync`, and
+/// these nodes are only ever shared read-only, so `Sync` is the honest bound.
+const _: fn() = || {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<ast::Module>();
+    assert_send_sync::<ast::Item>();
+    assert_send_sync::<ast::Stmt>();
+    assert_send_sync::<ast::Expr>();
+    assert_send_sync::<ast::TypeExpr>();
+    assert_send_sync::<ast::Pattern>();
+    assert_send_sync::<ast::Arm>();
+    assert_send_sync::<ast::Arg>();
+    assert_send_sync::<ast::FPart>();
+    assert_send_sync::<ast::Param>();
+};
+
 /// The release version of the Aura implementation (the package version).
 ///
 /// This tracks the *release* identity used by the CLI, the Git tag, and the
