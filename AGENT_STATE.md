@@ -54,7 +54,30 @@ has been pushed by this program.
 ## Current Track
 
 B-1R — ENGINE-STACK-INDEPENDENT CALL ENGINE (architecture designed; B-1
-reclassified as implementation nonconformance; implementation **not started**)
+reclassified as implementation nonconformance; differential oracle built and
+mutation-validated; evaluator implementation **not started**)
+
+### B-1R phase state
+
+- **B-1:** OPEN — ITERATIVE EVALUATOR NOT IMPLEMENTED. Released contract still
+  violated on WebAssembly; `v0.2.1` immutable and contains the defect.
+- **B-1R1:** DESIGN COMPLETE
+  (`docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md`).
+- **B-1R2:** DIFFERENTIAL ORACLE COMPLETE AND MUTATION-VALIDATED. The test-only
+  oracle (`tests/evaluator_oracle.rs`, `tests/oracle/**`,
+  `docs/engineering/B1R2_DIFFERENTIAL_ORACLE.md`) observes exact stdout,
+  type-tagged final values, and normalized diagnostics (code, message, source
+  display name, span, line, column) over a 100-case corpus; runs both engines in
+  isolated executions; pins current behavior in `tests/oracle/golden.tsv`;
+  records the B-1 contract-boundary corpus separately from the semantic
+  differential corpus; and detects 11 deliberate semantic mutations
+  (`tests/oracle/mutation_experiments.sh`). It introduces **no** evaluator, no
+  `Cont`/`UserFrame`/`Ctrl`, and changes no normal runtime behavior. The only
+  production file touched is `Cargo.toml` (a non-default `evaluator-oracle`
+  feature flag, no code); `src/run/mod.rs` is byte-identical to the pre-phase
+  tree (`812287ed25d7817f04cb32407293205d4c66287eb162867f4f745abd546caf32`).
+- **B-1R3:** NOT STARTED.
+
 
 ## Phase Namespace
 
@@ -161,6 +184,36 @@ contract-sync, hardening, and performance checks.
   limit−1/limit/limit+1 assertions are deliberately absent until remediation:
   they cannot pass while the defect exists, and encoding it as an expected
   failure is not acceptable coverage.
+- **B-1R2 differential-oracle pass (2026-10-03, test-only; no runtime
+  change):** built the engine-stack-independent evaluator's semantic safety net
+  before implementing the evaluator. New: `tests/evaluator_oracle.rs` (driver),
+  `tests/oracle/mod.rs` (normalized observable model, isolated multi-engine
+  adapter, golden codec), `tests/oracle/cases.rs` (100 deterministic cases:
+  core semantics; the 16-position call/evaluation-order matrix; the
+  try/catch/finally pending×outcome matrix; native-vs-closure callback frame
+  accounting at the 512 boundary; compound-assignment double evaluation pinned
+  as CURRENT OBSERVABLE BEHAVIOR PRESERVED FOR EVALUATOR MIGRATION;
+  multi-source module attribution; byte-identical sources with distinct display
+  names; the reused `call-frames` B-1 boundary fixtures; float NaN/±inf/signed
+  zero; type-preserving value cases), `tests/oracle/golden.tsv` (committed
+  current-behavior manifest), `tests/oracle/mutation_experiments.sh` (applies 11
+  deliberate semantic mutations, asserts the oracle detects each, restores and
+  hashes the files), `tests/oracle/README.md`, and
+  `docs/engineering/B1R2_DIFFERENTIAL_ORACLE.md` (findings, B-1 boundary rule,
+  CI strategy, memory plan). `Cargo.toml` gains a non-default, test-only
+  `evaluator-oracle` feature (no code; not user-facing). Baseline
+  self-comparison: 100% agreement over all cases; golden reproducible;
+  deliberate mutations M1–M11 all detected and all reverted
+  (`src/run/mod.rs` SHA-256 unchanged). A fresh read-only reviewer falsified two
+  claims (type-erased value comparison; inert engine seam); both were fixed
+  (type-tagged `NormValue`; engine threaded to a single `run_compiled` seam)
+  and the reviewer's remaining partial items (no stderr channel; native-only
+  boundary assertion, deferred to B-1R5) are documented limitations. Also
+  records: host/native synchronous reentry is **UNSPECIFIED** (no spec contract;
+  out of B-1 scope) and the pre-existing `closure_sources` raw-address
+  key/never-pruned risk was probed but not reproduced as an independent defect
+  (not fixed here, not folded into B-1). No runtime behavior changed; `v0.2.1`
+  and all frozen artifacts untouched.
 - **B-1R design pass (2026-10-02, design only; no runtime change):**
   `docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md` specifies the
   contract-preserving remediation architecture for Option B: selected
@@ -202,21 +255,19 @@ browser persistence, LSP, formatter, async, and macros remain deferred.
 
 ## Next Exact Action
 
-1. HUMAN REVIEW OF THE ENGINE-STACK-INDEPENDENT EVALUATOR DESIGN
-   (`docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md`) BEFORE AUTHORIZING
-   B-1R2 IMPLEMENTATION.
-2. HUMAN REVIEW OF POST-v0.2.1 STABILIZATION STACK BEFORE PUSH.
+1. HUMAN REVIEW OF THE DIFFERENTIAL ORACLE
+   (`docs/engineering/B1R2_DIFFERENTIAL_ORACLE.md`) BEFORE AUTHORIZING B-1R3A
+   ITERATIVE-EVALUATOR IMPLEMENTATION.
+2. HUMAN REVIEW OF POST-v0.2.1 STABILIZATION STACK AND B-1R COMMITS BEFORE PUSH.
 3. B-1 POLICY DECISION: Option A/B/C in
    `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` (Option B recommended; its
    implementation contract is the design document above).
 
 The `0.2.1` release itself is done and unchanged. What remains is human review
-of the local, unpushed stabilization commits (state docs + website `0.2.1`
-alignment + release-version drift guard + B-1 correction pass: reclassified
-finding, native boundary corpus, cross-substrate shape matrix, Worker boundary
-assertion) and of the B-1R evaluator design, then an explicit decision whether
-to push them or authorize B-1R2. Do not push, deploy, tag, change runtime
-behavior, or start a new development program without authorization.
+of the local, unpushed stabilization commits and the B-1R design + B-1R2 oracle
+work, then an explicit decision whether to push them or authorize B-1R3. Do not
+push, deploy, tag, change runtime behavior, or start a new development program
+without authorization.
 
 ## Release Immutability
 
