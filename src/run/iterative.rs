@@ -24,6 +24,12 @@
 //! * empty and multi-statement blocks;
 //! * block expressions and `if`/`else` expressions.
 //!
+//! ## B-1R3B.1 added subset
+//!
+//! * unary operators (`-`, `not`, `~`), with the operand evaluated exactly
+//!   once, before the operator, via [`Cont::UnaryApply`]. Semantics, spans,
+//!   and diagnostics mirror `Interp::eval`'s `Expr::Unary` arm exactly.
+//!
 //! ## Explicitly unsupported (R3B–R3F)
 //!
 //! Every other `Expr`/`Stmt` form fails with a deterministic
@@ -48,7 +54,7 @@ use std::sync::Arc;
 
 use super::value::Value;
 use super::{Closure, Ctl, Env, Interp, MAX_AST_DEPTH, MAX_CALL_FRAMES};
-use crate::ast::{Expr, Lit, Stmt};
+use crate::ast::{Expr, Lit, Stmt, UnOp};
 use crate::error::{codes, Result, Span};
 use crate::source::SourceId;
 
@@ -133,6 +139,8 @@ enum Cont {
         els: Option<Arc<Expr>>,
         env: Env,
     },
+    /// A unary operand finished; apply the operator (B-1R3B.1).
+    UnaryApply { op: UnOp, span: Span },
     /// A `return` operand finished; convert to the `return` signal.
     ReturnFrom,
     /// A `throw` operand finished; convert to the `throw` signal.
@@ -293,6 +301,15 @@ impl<'i> Machine<'i> {
                     Ok(Resume::Redeliver(Done::plain(done.ctl)))
                 }
             }
+            Cont::UnaryApply { op, span } => {
+                if let Ctl::Val(v) = done.ctl {
+                    Ok(Resume::Next(Ctrl::Done(self.apply_unary(op, v, span)?)))
+                } else {
+                    // A `return`/`throw`/`break`/`continue` from the operand
+                    // propagates unchanged (mirrors `val!` in `Interp::eval`).
+                    Ok(Resume::Redeliver(Done::plain(done.ctl)))
+                }
+            }
             Cont::ReturnFrom => match done.ctl {
                 Ctl::Val(v) => Ok(Resume::Next(Ctrl::ReturnValue(v))),
                 other => Ok(Resume::Redeliver(Done::plain(other))),
@@ -302,6 +319,40 @@ impl<'i> Machine<'i> {
                 other => Ok(Resume::Redeliver(Done::plain(other))),
             },
             Cont::FrameBoundary { call_span } => self.resume_frame_boundary(done, call_span),
+        }
+    }
+
+    /// Apply a unary operator to an already-evaluated operand (B-1R3B.1).
+    ///
+    /// This mirrors `Interp::eval`'s `Expr::Unary` arm exactly: same operators,
+    /// same type rules, same diagnostic codes/messages, same `E4013` overflow
+    /// handling, and the same expression span. No fallback to the recursive
+    /// evaluator.
+    fn apply_unary(&self, op: UnOp, v: Value, span: Span) -> Result<Ctl> {
+        match op {
+            UnOp::Neg => match v {
+                Value::Int(i) => Ok(Ctl::Val(Value::Int(i.checked_neg().ok_or_else(|| {
+                    self.interp.error(codes::OVERFLOW, "integer overflow", span)
+                })?))),
+                Value::Float(f) => Ok(Ctl::Val(Value::Float(-f))),
+                other => Err(self.interp.error(
+                    codes::TYPE_MISMATCH,
+                    format!("cannot negate {}", other.type_name()),
+                    span,
+                )),
+            },
+            UnOp::Not => Ok(Ctl::Val(Value::Bool(!v.truthy()))),
+            UnOp::BitNot => match v {
+                Value::Int(i) => Ok(Ctl::Val(Value::Int(!i))),
+                other => Err(self.interp.error(
+                    codes::TYPE_MISMATCH,
+                    format!(
+                        "operator `~` requires an integer, found {}",
+                        other.type_name()
+                    ),
+                    span,
+                )),
+            },
         }
     }
 
@@ -362,6 +413,15 @@ impl<'i> Machine<'i> {
                     env: env.clone(),
                 });
                 Ok(Control::Next(Ctrl::EvalExpr(cond.clone(), env.clone())))
+            }
+            Expr::Unary(op, operand, span) => {
+                // Operand first, exactly once; the operator is applied when the
+                // operand completes (`Cont::UnaryApply`).
+                self.kont.push(Cont::UnaryApply {
+                    op: *op,
+                    span: *span,
+                });
+                Ok(Control::Next(Ctrl::EvalExpr(operand.clone(), env.clone())))
             }
             other => Err(self.unsupported(expr_span(other))),
         }
@@ -871,9 +931,104 @@ mod tests {
     }
 
     #[test]
+    fn unary_neg_i64_min_overflows() {
+        // `-(-9223372036854775808)` negates i64::MIN -> E4013, same as the
+        // recursive `checked_neg`.
+        let operand = Expr::Unary(
+            UnOp::Neg,
+            Arc::new(Expr::Lit(Lit::Int(i64::MIN), Span::default())),
+            Span::default(),
+        );
+        let e = Expr::Unary(UnOp::Neg, Arc::new(operand), Span::default());
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::OVERFLOW);
+        assert_eq!(err.message, "integer overflow");
+    }
+
+    #[test]
+    fn unary_not_uses_truthiness() {
+        for (v, expected) in [
+            (Lit::Int(0), true),
+            (Lit::Int(3), false),
+            (Lit::Bool(true), false),
+            (Lit::None, true),
+            (Lit::Str(String::new()), true),
+            (Lit::Str("x".to_string()), false),
+        ] {
+            let e = Expr::Unary(
+                UnOp::Not,
+                Arc::new(Expr::Lit(v, Span::default())),
+                Span::default(),
+            );
+            match run_expr(&e).unwrap() {
+                Ctl::Val(Value::Bool(b)) => assert_eq!(b, expected),
+                _ => panic!("`not` must yield bool"),
+            }
+        }
+    }
+
+    #[test]
+    fn unary_bitnot_requires_int() {
+        let e = Expr::Unary(
+            UnOp::BitNot,
+            Arc::new(Expr::Lit(Lit::Float(1.5), Span::default())),
+            Span::default(),
+        );
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::TYPE_MISMATCH);
+        assert_eq!(err.message, "operator `~` requires an integer, found float");
+    }
+
+    #[test]
+    fn unary_operand_evaluated_once_and_first() {
+        // `- (side-effect)` style is not expressible here, but the operand's
+        // own control signal must propagate without the operator being applied:
+        // `-(return 5)` yields the `return` signal, never `Val(-5)`.
+        let operand = Expr::Unary(
+            UnOp::Not, // would produce bool if applied
+            Arc::new(Expr::Lit(Lit::Int(0), Span::default())),
+            Span::default(),
+        );
+        let e = Expr::Unary(UnOp::Neg, Arc::new(operand), Span::default());
+        // `-not 0` is `-true` -> E3001 (cannot negate bool); this proves the
+        // operator sees the operand's *value* (`bool`), not its source.
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::TYPE_MISMATCH);
+        assert_eq!(err.message, "cannot negate bool");
+    }
+
+    #[test]
+    fn deep_unary_chain_is_stack_safe() {
+        // A chain of `not` operators just below `MAX_AST_DEPTH` must evaluate
+        // without consuming the Rust call stack proportionally: the machine
+        // pushes one `Cont` per operator and loops. `not` on a final `true`
+        // flips parsimoniously, so the expected result depends only on parity.
+        let depth = MAX_AST_DEPTH - 2;
+        let mut e = Expr::Lit(Lit::Bool(true), Span::default());
+        for _ in 0..depth {
+            e = Expr::Unary(UnOp::Not, Arc::new(e), Span::default());
+        }
+        let expected = depth % 2 == 0; // even number of `not` -> true
+        match run_expr(&e).unwrap() {
+            Ctl::Val(Value::Bool(b)) => assert_eq!(b, expected),
+            _ => panic!("deep unary chain must yield bool"),
+        }
+    }
+
+    #[test]
+    fn unary_chain_beyond_ast_depth_is_e1015() {
+        // One past the guard must produce E1015, exactly like the recursive
+        // evaluator's AST-depth guard.
+        let mut e = Expr::Lit(Lit::Bool(true), Span::default());
+        for _ in 0..(MAX_AST_DEPTH + 5) {
+            e = Expr::Unary(UnOp::Not, Arc::new(e), Span::default());
+        }
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::NESTING);
+    }
+
+    #[test]
     fn machine_type_sizes_are_bounded() {
-        // B-1R3A Step 13: report concrete sizes; assert no pathological
-        // inflation (a `Cont` must stay well under 1 KiB).
         eprintln!(
             "size_of::<Machine>()    = {}",
             std::mem::size_of::<Machine>()
