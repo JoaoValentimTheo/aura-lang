@@ -19,9 +19,11 @@ explicit-continuation (iterative) evaluator over the existing AST
 - B-1R1 (design): COMPLETE.
 - B-1R2 (differential oracle): COMPLETE and mutation-validated.
 - B-1R3A-ARCH-1 (Arc AST sharing): RESOLVED.
-- B-1R3A (machine skeleton + first executable subset): **COMPLETE LOCALLY**,
-  not pushed (local commits on top of `origin/rewrite/v3-rust`).
-- B-1R3B…R3G: NOT STARTED.
+- B-1R3A (machine skeleton + first executable subset): **COMPLETE AND REMOTELY
+  CLOSED** at `c9ade0b` (exact-SHA CI green; website deployed).
+- B-1R3B.1 (unary `-`/`not`/`~`): **COMPLETE LOCALLY**, unpushed (local
+  commits on top of `origin/rewrite/v3-rust`).
+- B-1R3B.2…R3G: NOT STARTED.
 
 See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
 
@@ -31,10 +33,26 @@ See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
 - Iterative engine: exists only under the non-default `evaluator-oracle`
   Cargo feature; not reachable from the CLI, REPL, Playground, or library
   production path. It currently supports literals, name lookup, expression
-  statements, blocks, `let` shadowing, and `if`/`else`; every other construct
-  returns the deterministic `E4999` sentinel and never falls back to recursion.
+  statements, blocks, `let` shadowing, `if`/`else`, and unary `-`/`not`/`~`;
+  every other construct returns the deterministic `E4999` sentinel and never
+  falls back to recursion.
 
-## Completed in B-1R3A (local)
+## Completed in B-1R3B.1 (local)
+
+- `src/run/iterative.rs` — added `Cont::UnaryApply { op, span }`; the operand is
+  evaluated once and the operator is applied at its completion. `apply_unary`
+  mirrors `Interp::eval`'s `Expr::Unary` arm exactly (checked `int` negation with
+  `E4013`, `not` over `truthy()`, `~` on `int` only, both type errors `E3001`
+  with the same messages). Operand control signals (`return`/`throw`/…) propagate
+  without applying the operator; a deep unary chain is stack-safe.
+- Oracle: new `tests/oracle/r3b.rs` + `tests/oracle/r3b_golden.tsv` (LF-pinned)
+  and differential tests `r3b_unary_supported_subset_agrees`,
+  `iterative_unary_unsupported_fails_explicitly`, `r3b_iterative_golden_matches`.
+  The R3A unsupported case `unary_neg` was removed (now supported) and
+  `r3a_golden.tsv` regenerated accordingly; the main `golden.tsv` is unchanged.
+- Deliberate mutation of `Not` was detected by both R3B tests and reverted.
+
+## Completed in B-1R3A (remotely closed at `c9ade0b`)
 
 - `src/run/iterative.rs` — explicit `Machine`/`Ctrl`/`Cont`/`UserFrame`/
   `FrameBoundary`; one `loop` over `Ctrl` with a `Vec<Cont>` stack; 512/513
@@ -42,8 +60,6 @@ See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
 - Oracle extended with an identified R3A subset (`tests/oracle/r3a.rs`),
   strict supported-subset equality, an explicit no-fallback test, and a
   full-field iterative golden (`tests/oracle/r3a_golden.tsv`, LF-pinned).
-- Deliberate mutations M1–M9 all detected and reverted; two oracle blind
-  spots found this way were fixed.
 
 ## Current invariants — do not break
 
@@ -85,11 +101,12 @@ At milestone closure, run the full validation floor in `AGENTS.md`.
 ## Next phase — B-1R3B (values and operators)
 
 Implement the next semantic slice on the same machine, microphase by
-microphase, keeping the oracle green and production unchanged. Suggested
-ordered microphases; each is implement → targeted tests → oracle →
-checkpoint. Do **not** start any of them before human review of B-1R3A.
+microphase, keeping the oracle green and production unchanged. R3B.1 (unary)
+is complete; remaining ordered microphases; each is implement → targeted
+tests → oracle → checkpoint. Do **not** start the next one before human review
+of B-1R3B.1.
 
-- R3B.1 unary operators
+- R3B.1 unary operators — **COMPLETE LOCALLY**
 - R3B.2 binary operators
 - R3B.3 short-circuit / evaluation order
 - R3B.4 list / tuple / map
@@ -103,11 +120,10 @@ microphase.
 
 ## Exact next action
 
-1. Human review of the B-1R3A machine skeleton and its feature-gated wiring.
-2. If accepted, begin **R3B.1 (unary operators)** on `src/run/iterative.rs`,
-   extending `tests/oracle/r3a.rs` (or a new R3B oracle module) and keeping
-   `tests/oracle/golden.tsv` byte-unchanged.
-3. Then proceed through R3B.2…R3B.8 with a checkpoint at each.
+1. Human review of the B-1R3B.1 unary extension and its oracle coverage.
+2. If accepted, begin **R3B.2 (binary operators)** on `src/run/iterative.rs`,
+   extending the oracle and keeping `tests/oracle/golden.tsv` byte-unchanged.
+3. Then proceed through R3B.3…R3B.8 with a checkpoint at each.
 
 ## Stop conditions
 

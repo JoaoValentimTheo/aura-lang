@@ -8,11 +8,12 @@ before continuing substantial work.
 ## Repository
 
 - Branch: `rewrite/v3-rust`
-- Remote `origin/rewrite/v3-rust`: `809cab780c3cb4cfbd0b80107382f680712d3d17`
+- Remote `origin/rewrite/v3-rust`: `c9ade0b69cb5e5496a84d5cff4a51b7a1d8e0350`
+  (R3A + cleanup baseline; exact-SHA CI green and website deployed). The
+  B-1R3B.1 commits below are **local and unpushed** on top of it.
 - Local/remote relationship: authoritative value is `git rev-list
   --left-right --count origin/rewrite/v3-rust...HEAD`; a tracked file cannot
-  safely hardcode its own position. At the B-1R3A checkpoint the local branch
-  is 3 commits ahead (the R3A commits) and the work is **unpushed**.
+  safely hardcode its own position.
 - Current release: **`v0.2.1`**, published 2026-10-01, immutable. Tag
   `v0.2.1` = commit `3f5f8702`. Release = language = runtime = `0.2.1`;
   Host ABI 1; Playground API 1.
@@ -32,8 +33,9 @@ runtime means adding a version, never replacing one.
 ## Current Track
 
 B-1R — ENGINE-STACK-INDEPENDENT CALL ENGINE. B-1 is OPEN (WASM implementation
-nonconformance). The B-1R3A machine skeleton and first executable subset are
-complete locally and unpushed; production still runs the recursive evaluator.
+nonconformance). The R3A baseline is pushed and remote-closed; the B-1R3B.1
+unary extension is complete locally and unpushed. Production still runs the
+recursive evaluator.
 
 B-1R phase state:
 
@@ -47,11 +49,12 @@ B-1R phase state:
 - **B-1R3A-ARCH-1:** RESOLVED — AST sharing uses `Arc`
   (`docs/B1R3A_AST_SHARING_DECISION.md`). Runtime `Env`/`Value`/`Closure` stay
   `Rc` intentionally.
-- **B-1R3A:** COMPLETE LOCALLY (2026-10-03, unpushed). `src/run/iterative.rs`
+- **B-1R3A:** COMPLETE AND REMOTELY CLOSED at `c9ade0b`. `src/run/iterative.rs`
   is a real explicit-continuation machine; the oracle has an identified R3A
-  subset; all deliberate mutations detected and reverted. See
+  subset; all deliberate mutations detected and reverted.
+- **B-1R3B.1:** COMPLETE LOCALLY (unary `-`/`not`/`~`), unpushed. See
   `docs/engineering/CURRENT_HANDOFF.md`.
-- **B-1R3B…R3G:** NOT STARTED.
+- **B-1R3B.2…R3G:** NOT STARTED.
 
 ## Production vs experimental engine
 
@@ -59,8 +62,8 @@ B-1R phase state:
 - Experimental: iterative evaluator, compiled only under the non-default
   `evaluator-oracle` feature, not reachable from CLI/REPL/Playground/library
   production paths. Supported subset so far: literals, name lookup, expression
-  statements, blocks, `let` shadowing, `if`/`else`; everything else returns
-  `E4999` and never falls back to recursion.
+  statements, blocks, `let` shadowing, `if`/`else`, and unary `-`/`not`/`~`;
+  everything else returns `E4999` and never falls back to recursion.
 
 ## Known blockers
 
@@ -113,8 +116,8 @@ Git + working tree + these documents; chat history is not authority.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: human review of the B-1R3A
-machine skeleton, then B-1R3B (values and operators) microphase by microphase.
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: human review of B-1R3B.1,
+then B-1R3B.2 (binary operators) microphase by microphase.
 
 ## Writer
 
