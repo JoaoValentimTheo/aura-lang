@@ -30,6 +30,19 @@
 //!   once, before the operator, via [`Cont::UnaryApply`]. Semantics, spans,
 //!   and diagnostics mirror `Interp::eval`'s `Expr::Unary` arm exactly.
 //!
+//! ## B-1R3B.2 added subset
+//!
+//! * eager (non-short-circuit) binary operators: `+`, `-`, `*`, `/`, `%`, `^`,
+//!   `==`, `!=`, `<`, `<=`, `>`, `>=`, `&`, `|`, `<<`, `>>`. Evaluation is
+//!   left-to-right and exactly once per operand, via [`Cont::BinaryLeft`] then
+//!   [`Cont::BinRight`]; the operator is applied only after both operands
+//!   complete. Application reuses `Interp::binary` (the recursive engine's
+//!   value-level operator helper, which never evaluates an AST node), so
+//!   arithmetic, overflow, comparison, equality, and diagnostic behavior are
+//!   identical by construction.
+//! * `and`/`or` are **short-circuit** and belong to B-1R3B.3; they remain
+//!   unsupported here and fail with the deterministic `E4999` sentinel.
+//!
 //! ## Explicitly unsupported (R3B–R3F)
 //!
 //! Every other `Expr`/`Stmt` form fails with a deterministic
@@ -54,7 +67,7 @@ use std::sync::Arc;
 
 use super::value::Value;
 use super::{Closure, Ctl, Env, Interp, MAX_AST_DEPTH, MAX_CALL_FRAMES};
-use crate::ast::{Expr, Lit, Stmt, UnOp};
+use crate::ast::{BinOp, Expr, Lit, Stmt, UnOp};
 use crate::error::{codes, Result, Span};
 use crate::source::SourceId;
 
@@ -141,6 +154,16 @@ enum Cont {
     },
     /// A unary operand finished; apply the operator (B-1R3B.1).
     UnaryApply { op: UnOp, span: Span },
+    /// A binary left operand finished; remember it and evaluate the right
+    /// operand (B-1R3B.2). Only eager operators reach here.
+    BinaryLeft {
+        op: BinOp,
+        rhs: Arc<Expr>,
+        env: Env,
+        span: Span,
+    },
+    /// A binary right operand finished; apply the operator (B-1R3B.2).
+    BinRight { op: BinOp, lv: Value, span: Span },
     /// A `return` operand finished; convert to the `return` signal.
     ReturnFrom,
     /// A `throw` operand finished; convert to the `throw` signal.
@@ -310,6 +333,28 @@ impl<'i> Machine<'i> {
                     Ok(Resume::Redeliver(Done::plain(done.ctl)))
                 }
             }
+            Cont::BinaryLeft { op, rhs, env, span } => {
+                if let Ctl::Val(lv) = done.ctl {
+                    // Left completed: retain it and evaluate right exactly once.
+                    self.kont.push(Cont::BinRight { op, lv, span });
+                    Ok(Resume::Next(Ctrl::EvalExpr(rhs, env)))
+                } else {
+                    // A control signal from the left operand propagates without
+                    // evaluating the right operand (mirrors `val!`).
+                    Ok(Resume::Redeliver(Done::plain(done.ctl)))
+                }
+            }
+            Cont::BinRight { op, lv, span } => {
+                if let Ctl::Val(rv) = done.ctl {
+                    Ok(Resume::Next(Ctrl::Done(Ctl::Val(
+                        self.interp.binary(op, lv, rv, span)?,
+                    ))))
+                } else {
+                    // A control signal from the right operand propagates without
+                    // applying the operator (mirrors `val!`).
+                    Ok(Resume::Redeliver(Done::plain(done.ctl)))
+                }
+            }
             Cont::ReturnFrom => match done.ctl {
                 Ctl::Val(v) => Ok(Resume::Next(Ctrl::ReturnValue(v))),
                 other => Ok(Resume::Redeliver(Done::plain(other))),
@@ -422,6 +467,22 @@ impl<'i> Machine<'i> {
                     span: *span,
                 });
                 Ok(Control::Next(Ctrl::EvalExpr(operand.clone(), env.clone())))
+            }
+            Expr::Binary(op, l, r, span) => {
+                match op {
+                    // `and`/`or` short-circuit: B-1R3B.3. Never fall back.
+                    BinOp::And | BinOp::Or => Err(self.unsupported(*span)),
+                    // Eager binary: left first, exactly once.
+                    _ => {
+                        self.kont.push(Cont::BinaryLeft {
+                            op: *op,
+                            rhs: r.clone(),
+                            env: env.clone(),
+                            span: *span,
+                        });
+                        Ok(Control::Next(Ctrl::EvalExpr(l.clone(), env.clone())))
+                    }
+                }
             }
             other => Err(self.unsupported(expr_span(other))),
         }
@@ -767,13 +828,9 @@ mod tests {
 
     #[test]
     fn unsupported_construct_fails_explicitly() {
-        // `1 + 1` is Binary: R3B territory. The machine must not fall back.
-        let e = Expr::Binary(
-            BinOp::Add,
-            Arc::new(lit(1)),
-            Arc::new(lit(1)),
-            Span::default(),
-        );
+        // A list literal is R3B.4 territory and remains unsupported. The
+        // machine must fail explicitly, never fall back to recursion.
+        let e = Expr::List(Arc::from(vec![lit(1), lit(2)]), Span::default());
         let err = run_expr(&e).err().unwrap();
         assert_eq!(err.code, codes::INTERNAL);
         assert!(err
@@ -1042,5 +1099,122 @@ mod tests {
         eprintln!("size_of::<Done>()       = {}", std::mem::size_of::<Done>());
         assert!(std::mem::size_of::<Cont>() < 1024, "Cont variant inflated");
         assert!(std::mem::size_of::<Ctrl>() < 1024, "Ctrl variant inflated");
+    }
+
+    // ----- B-1R3B.2 binary operators ------------------------------------
+
+    fn bin(op: BinOp, l: Expr, r: Expr) -> Expr {
+        Expr::Binary(op, Arc::new(l), Arc::new(r), Span::default())
+    }
+
+    #[test]
+    fn binary_arithmetic_and_overflow() {
+        // `2 + 3 * 4` = 14, left-to-right over the parsed tree.
+        let e = bin(BinOp::Add, lit(2), bin(BinOp::Mul, lit(3), lit(4)));
+        assert!(matches!(run_expr(&e).unwrap(), Ctl::Val(Value::Int(14))));
+
+        // `i64::MAX + 1` -> E4013 integer overflow.
+        let e = bin(
+            BinOp::Add,
+            Expr::Lit(Lit::Int(i64::MAX), Span::default()),
+            lit(1),
+        );
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::OVERFLOW);
+        assert_eq!(err.message, "integer overflow");
+
+        // `1 / 0` -> E4007 division by zero.
+        let e = bin(BinOp::Div, lit(1), lit(0));
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::DIV_ZERO);
+        assert_eq!(err.message, "division by zero");
+    }
+
+    #[test]
+    fn binary_comparison_and_equality() {
+        assert!(matches!(
+            run_expr(&bin(BinOp::Eq, lit(1), lit(1))).unwrap(),
+            Ctl::Val(Value::Bool(true))
+        ));
+        assert!(matches!(
+            run_expr(&bin(BinOp::Lt, lit(1), lit(2))).unwrap(),
+            Ctl::Val(Value::Bool(true))
+        ));
+        // A genuinely incomparable pair is a type error (E3001).
+        let e = bin(
+            BinOp::Lt,
+            Expr::Lit(Lit::Bool(true), Span::default()),
+            Expr::Lit(Lit::Bool(false), Span::default()),
+        );
+        // bool < bool is *comparable* in Aura (comparable_with), so this is a
+        // bool result, not an error. The error case is a mixed incomparable
+        // pair such as none < none.
+        assert!(matches!(run_expr(&e).unwrap(), Ctl::Val(Value::Bool(_))));
+        let e = bin(
+            BinOp::Lt,
+            Expr::Lit(Lit::None, Span::default()),
+            Expr::Lit(Lit::None, Span::default()),
+        );
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::TYPE_MISMATCH);
+        assert_eq!(err.message, "cannot compare none with none");
+    }
+
+    #[test]
+    fn binary_left_signal_skips_right() {
+        // `(return 5) + (1 / 0)`: the left `return` signal must propagate
+        // without evaluating the right operand, so no E4007 is produced and no
+        // operator is applied. A binary expression cannot contain `return`
+        // syntactically here, so model it with a nested block that returns.
+        let left = Expr::Block(
+            Arc::from(vec![Stmt::Return(Some(lit(5)), Span::default())]),
+            Span::default(),
+        );
+        let e = bin(BinOp::Add, left, bin(BinOp::Div, lit(1), lit(0)));
+        match run_expr(&e).unwrap() {
+            Ctl::Return(Value::Int(5)) => {}
+            _ => panic!("left control signal must propagate"),
+        }
+    }
+
+    #[test]
+    fn deep_binary_chain_is_stack_safe() {
+        // A left-nested `+` chain just below `MAX_AST_DEPTH` must evaluate
+        // without consuming the Rust call stack per node.
+        let depth = MAX_AST_DEPTH - 2;
+        let mut e = lit(1);
+        for _ in 0..depth {
+            e = bin(BinOp::Add, e, lit(1));
+        }
+        match run_expr(&e).unwrap() {
+            Ctl::Val(Value::Int(v)) => assert_eq!(v, depth as i64 + 1),
+            _ => panic!("deep binary chain must yield int"),
+        }
+    }
+
+    #[test]
+    fn binary_chain_beyond_ast_depth_is_e1015() {
+        let mut e = lit(1);
+        for _ in 0..(MAX_AST_DEPTH + 5) {
+            e = bin(BinOp::Add, e, lit(1));
+        }
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::NESTING);
+    }
+
+    #[test]
+    fn short_circuit_operators_remain_unsupported() {
+        for op in [BinOp::And, BinOp::Or] {
+            let e = bin(
+                op,
+                Expr::Lit(Lit::Bool(true), Span::default()),
+                Expr::Lit(Lit::Bool(false), Span::default()),
+            );
+            let err = run_expr(&e).err().unwrap();
+            assert_eq!(err.code, codes::INTERNAL);
+            assert!(err
+                .message
+                .contains("not supported by the iterative engine"));
+        }
     }
 }
