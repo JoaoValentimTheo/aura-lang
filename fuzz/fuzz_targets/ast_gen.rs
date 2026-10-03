@@ -27,6 +27,8 @@
 
 #![allow(dead_code)]
 
+use std::sync::Arc;
+
 use aura::ast::*;
 use aura::error::Span;
 
@@ -211,9 +213,12 @@ fn gen_type(rng: &mut Rng, depth: usize) -> TypeExpr {
     }
 }
 
-fn gen_block(rng: &mut Rng, depth: usize, max: usize) -> Vec<Stmt> {
+fn gen_block(rng: &mut Rng, depth: usize, max: usize) -> Arc<[Stmt]> {
     let n = rng.below(max + 1);
-    (0..n).map(|_| gen_stmt(rng, depth)).collect()
+    (0..n)
+        .map(|_| gen_stmt(rng, depth))
+        .collect::<Vec<_>>()
+        .into()
 }
 
 fn gen_stmt(rng: &mut Rng, depth: usize) -> Stmt {
@@ -306,7 +311,7 @@ fn gen_expr(rng: &mut Rng, depth: usize) -> Expr {
     match rng.below(14) {
         0 => Expr::Unary(
             *rng.pick(&[UnOp::Neg, UnOp::Not, UnOp::BitNot]),
-            Box::new(gen_expr(rng, depth + 1)),
+            Arc::new(gen_expr(rng, depth + 1)),
             sp(rng),
         ),
         1 => Expr::Binary(
@@ -330,35 +335,38 @@ fn gen_expr(rng: &mut Rng, depth: usize) -> Expr {
                 BinOp::Shl,
                 BinOp::Shr,
             ]),
-            Box::new(gen_expr(rng, depth + 1)),
-            Box::new(gen_expr(rng, depth + 1)),
+            Arc::new(gen_expr(rng, depth + 1)),
+            Arc::new(gen_expr(rng, depth + 1)),
             sp(rng),
         ),
         2 => Expr::List(
             (0..rng.below(3))
                 .map(|_| gen_expr(rng, depth + 1))
-                .collect(),
+                .collect::<Vec<_>>()
+                .into(),
             sp(rng),
         ),
         3 => Expr::Map(
             (0..rng.below(3))
                 .map(|_| (gen_expr(rng, depth + 1), gen_expr(rng, depth + 1)))
-                .collect(),
+                .collect::<Vec<_>>()
+                .into(),
             sp(rng),
         ),
         4 => Expr::Call(
-            Box::new(Expr::Name(format!("f{}", rng.below(2)), sp(rng))),
+            Arc::new(Expr::Name(format!("f{}", rng.below(2)), sp(rng))),
             (0..rng.below(3))
                 .map(|_| Arg {
                     name: None,
                     value: gen_expr(rng, depth + 1),
                 })
-                .collect(),
+                .collect::<Vec<_>>()
+                .into(),
             Vec::new(),
             sp(rng),
         ),
         5 => Expr::Method(
-            Box::new(gen_expr(rng, depth + 1)),
+            Arc::new(gen_expr(rng, depth + 1)),
             rng.pick(&["len", "push", "map", "unknown_method"])
                 .to_string(),
             (0..rng.below(2))
@@ -366,38 +374,39 @@ fn gen_expr(rng: &mut Rng, depth: usize) -> Expr {
                     name: None,
                     value: gen_expr(rng, depth + 1),
                 })
-                .collect(),
+                .collect::<Vec<_>>()
+                .into(),
             Vec::new(),
             sp(rng),
         ),
         6 => Expr::Field(
-            Box::new(gen_expr(rng, depth + 1)),
+            Arc::new(gen_expr(rng, depth + 1)),
             "field0".to_string(),
             sp(rng),
         ),
         7 => Expr::Index(
-            Box::new(gen_expr(rng, depth + 1)),
-            Box::new(gen_expr(rng, depth + 1)),
+            Arc::new(gen_expr(rng, depth + 1)),
+            Arc::new(gen_expr(rng, depth + 1)),
             sp(rng),
         ),
         8 => Expr::If(
-            Box::new(gen_expr(rng, depth + 1)),
+            Arc::new(gen_expr(rng, depth + 1)),
             gen_block(rng, depth + 1, 1),
             if rng.chance(50) {
-                Some(Box::new(gen_expr(rng, depth + 1)))
+                Some(Arc::new(gen_expr(rng, depth + 1)))
             } else {
                 None
             },
             sp(rng),
         ),
         9 => Expr::Pipe(
-            Box::new(gen_expr(rng, depth + 1)),
-            Box::new(Expr::Name("len".to_string(), sp(rng))),
+            Arc::new(gen_expr(rng, depth + 1)),
+            Arc::new(Expr::Name("len".to_string(), sp(rng))),
             sp(rng),
         ),
         10 => Expr::Range(
-            Box::new(gen_expr(rng, depth + 1)),
-            Box::new(gen_expr(rng, depth + 1)),
+            Arc::new(gen_expr(rng, depth + 1)),
+            Arc::new(gen_expr(rng, depth + 1)),
             sp(rng),
         ),
         11 => Expr::Construct(
@@ -407,7 +416,8 @@ fn gen_expr(rng: &mut Rng, depth: usize) -> Expr {
                     name: Some(format!("field{j}")),
                     value: gen_expr(rng, depth + 1),
                 })
-                .collect(),
+                .collect::<Vec<_>>()
+                .into(),
             Vec::new(),
             sp(rng),
         ),
@@ -420,7 +430,7 @@ fn gen_expr(rng: &mut Rng, depth: usize) -> Expr {
                     span: sp(rng),
                 })
                 .collect(),
-            Box::new(gen_expr(rng, depth + 1)),
+            Arc::new(gen_expr(rng, depth + 1)),
             sp(rng),
         ),
         _ => gen_leaf(rng),
