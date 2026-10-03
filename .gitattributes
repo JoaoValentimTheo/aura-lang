@@ -10,6 +10,11 @@
 # Diagnostic expectation files are compared as text.
 *.out text eol=lf
 
+# The differential-oracle golden manifest is compared byte-for-byte against
+# LF-only generator output (`golden_manifest_is_reproducible`), so a Windows
+# checkout must not materialize it with CRLF.
+tests/oracle/golden.tsv text eol=lf
+
 # The line-ending fixtures must keep their exact bytes: `unicode/crlf.aura`
 # contains CRLF and `unicode/cr.aura` contains lone CR specifically to exercise
 # the lexer's handling of each. Marking them binary (`-text`) prevents git from
