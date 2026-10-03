@@ -216,18 +216,195 @@ pub fn binary_supported_cases() -> Vec<Case> {
     ]
 }
 
-/// B-1R3B.2 — short-circuit operators (`and`/`or`) are B-1R3B.3 and must remain
-/// explicitly unsupported: the iterative engine must produce the `E4999`
-/// sentinel and never conditionally evaluate the right operand.
+/// B-1R3B.2 — eager-binary cases whose operand remains unsupported. `and_bool`,
+/// `or_bool`, and `eager_over_and` were removed in B-1R3B.3 because the
+/// short-circuit operators became supported (they are asserted in
+/// [`short_circuit_supported_cases`]); the call operand remains R3C work.
 #[must_use]
 pub fn binary_unsupported_cases() -> Vec<Case> {
     vec![
-        binary_value("and_bool", "true and false\n"),
-        binary_value("or_bool", "false or true\n"),
-        // A supported eager operator whose operand is a short-circuit operator
-        // must not make the `and`/`or` work through another path.
-        binary_value("eager_over_and", "1 + (true and false)\n"),
         // A supported eager operator whose operand remains unsupported (call).
         binary_value("eager_over_call", "1 + len([1, 2])\n"),
+    ]
+}
+
+fn sc_value(name: &'static str, source: &'static str) -> Case {
+    Case {
+        group: "r3b3-value",
+        name,
+        file: "<r3b3>",
+        source,
+        kind: Kind::Value,
+    }
+}
+
+fn sc_program(name: &'static str, source: &'static str) -> Case {
+    Case {
+        group: "r3b3-program",
+        name,
+        file: "r3b3.aura",
+        source,
+        kind: Kind::ExecuteProgram,
+    }
+}
+
+/// B-1R3B.3 — short-circuit `and`/`or` cases the iterative engine supports.
+/// Recursive and iterative must agree exactly on value, type, diagnostics,
+/// spans, and stdout. The set pins the four corners of the short-circuit
+/// decision, truthiness over every value kind constructible in the subset,
+/// real skipping (unsupported constructs and runtime errors on a skipped right
+/// operand must never occur), required-operand diagnostics, control-signal
+/// propagation, and composition with the R3A/R3B.1/R3B.2 subsets.
+#[must_use]
+pub fn short_circuit_supported_cases() -> Vec<Case> {
+    vec![
+        // ----- `and` truthiness: left decides falsy -----------------------
+        sc_value("and_none", "none and true\n"),
+        sc_value("and_false", "false and true\n"),
+        // Moved verbatim from the R3B.2 unsupported set (`and_bool`/`or_bool`):
+        // both are now supported and must agree with the recursive engine.
+        sc_value("and_true_false", "true and false\n"),
+        sc_value("or_false_true", "false or true\n"),
+        sc_value("and_int_zero", "0 and true\n"),
+        sc_value("and_float_zero", "0.0 and 1\n"),
+        sc_value("and_str_empty", "\"\" and 1\n"),
+        // ----- `and` truthiness: left truthy, right decides --------------
+        sc_value("and_true", "true and true\n"),
+        sc_value("and_int_nonzero", "7 and true\n"),
+        sc_value("and_float_nonzero", "2.5 and 1\n"),
+        sc_value("and_str_nonempty", "\"x\" and 1\n"),
+        sc_value("and_fn_value", "len and true\n"),
+        sc_value("and_fn_name", "fn f() {}\nf and true\n"),
+        sc_value("and_rhs_falsy", "true and 0\n"),
+        // ----- `or` truthiness: left decides truthy ----------------------
+        sc_value("or_true", "true or false\n"),
+        sc_value("or_int_nonzero", "3 or 0\n"),
+        sc_value("or_str_nonempty", "\"a\" or \"\"\n"),
+        sc_value("or_fn_value", "len or false\n"),
+        // ----- `or` truthiness: left falsy, right decides ----------------
+        sc_value("or_none", "none or true\n"),
+        sc_value("or_false", "false or true\n"),
+        sc_value("or_int_zero", "0 or 7\n"),
+        sc_value("or_float_zero", "0.0 or 2.5\n"),
+        sc_value("or_str_empty", "\"\" or \"x\"\n"),
+        sc_value("or_rhs_falsy", "false or none\n"),
+        sc_value("or_rhs_truthy", "false or 3\n"),
+        // ----- real skipping: unsupported right operands must not run ----
+        // If the machine evaluated any of these rights it would fail with the
+        // E4999 unsupported sentinel (or, for the call, diverge from the
+        // recursive engine); short-circuit equality with the recursive engine
+        // proves the right operand never ran.
+        sc_value("and_skip_list", "false and [1, 2]\n"),
+        sc_value("and_skip_map", "false and {\"a\": 1}\n"),
+        sc_value("and_skip_range", "false and (1..3)\n"),
+        sc_value("and_skip_fstring", "false and f\"v={1}\"\n"),
+        sc_value("and_skip_call", "false and len([1, 2])\n"),
+        sc_value("or_skip_list", "true or [1, 2]\n"),
+        sc_value("or_skip_range", "true or (1..3)\n"),
+        sc_value("or_skip_fstring", "true or f\"v={1}\"\n"),
+        sc_value("or_skip_call", "true or len([1, 2])\n"),
+        sc_value("nested_skip_call", "true and (true or len([1, 2]))\n"),
+        // ----- real skipping: runtime errors must not occur --------------
+        sc_value("and_skip_div", "false and (1 / 0)\n"),
+        sc_value("and_skip_overflow", "false and (9223372036854775807 + 1)\n"),
+        sc_value("and_skip_shift", "false and (1 << 64)\n"),
+        sc_value("and_skip_badop", "false and (\"a\" - \"b\")\n"),
+        sc_value("or_skip_div", "true or (1 / 0)\n"),
+        sc_value("or_skip_overflow", "true or (9223372036854775807 + 1)\n"),
+        sc_value("or_skip_badop", "true or (\"a\" - \"b\")\n"),
+        // ----- required right operands: exact recursive diagnostics ------
+        sc_value("and_req_div", "true and (1 / 0)\n"),
+        sc_value("or_req_div", "false or (1 / 0)\n"),
+        sc_value("and_req_badop", "true and (\"a\" - \"b\")\n"),
+        sc_value("or_req_badop", "false or (\"a\" - \"b\")\n"),
+        sc_value("and_req_overflow", "true and (9223372036854775807 + 1)\n"),
+        sc_value("or_req_shift", "false or (1 << 64)\n"),
+        // ----- control signals in operands --------------------------------
+        // A signal from the left skips the right (no E4007), and a signal from
+        // a required right propagates unchanged; the value path maps the
+        // residual signal exactly like the recursive engine.
+        sc_value("and_lhs_return_skips", "{ return 5 } and (1 / 0)\n"),
+        sc_value("or_lhs_return_skips", "{ return 5 } or (1 / 0)\n"),
+        sc_value("and_lhs_throw_skips", "{ throw 5 } and (1 / 0)\n"),
+        sc_value("and_rhs_return", "true and { return 5 }\n"),
+        sc_value("or_rhs_throw", "false or { throw 5 }\n"),
+        // A skipped right operand cannot emit its signal.
+        sc_value("and_skip_rhs_throw", "false and { throw 5 }\n"),
+        sc_value("or_skip_rhs_throw", "true or { throw 5 }\n"),
+        // ----- composition with unary and eager operators -----------------
+        sc_value("unary_not_and", "not true and false\n"),
+        sc_value("and_unary_not", "true and not false\n"),
+        sc_value("or_unary_not", "false or not true\n"),
+        sc_value("not_paren_or", "not (false or true)\n"),
+        sc_value("precedence_or_and", "false or true and false\n"),
+        sc_value("paren_or_and", "(false or true) and false\n"),
+        sc_value("chain_mixed", "0 or 0 or \"x\" and true\n"),
+        sc_value(
+            "nested_both",
+            "(true and (false or true)) and (true or false)\n",
+        ),
+        sc_value("eager_lhs", "(1 + 2) and (3 * 4)\n"),
+        sc_value("eager_rhs", "true and 1 + 1 == 2\n"),
+        // Moved from the R3B.2 unsupported set: the inner `and` is supported
+        // now; the outer `+` then applies to `bool` and must produce the same
+        // E3001 the recursive engine does.
+        sc_value("eager_over_and", "1 + (true and false)\n"),
+        sc_value("and_in_if", "if (0 or 1) and (2 and 3) { 7 } else { 8 }\n"),
+        sc_value("let_binding", "{ let x = false and true\n x }\n"),
+        sc_value("block_value", "{ 1 and 2 }\n"),
+        // ----- program (real frame boundary, no calls) --------------------
+        sc_program("main_and_short", "fn main() { let x = false and true }\n"),
+        sc_program("main_or_short", "fn main() { let x = true or false }\n"),
+        sc_program(
+            "main_and_skip_unsupported",
+            "fn main() { let x = false and [1, 2] }\n",
+        ),
+        sc_program(
+            "main_or_skip_unsupported",
+            "fn main() { let x = true or [1, 2] }\n",
+        ),
+        sc_program("main_if_skip", "fn main() { if false and [1, 2] { } }\n"),
+        sc_program(
+            "main_skip_rhs_throw",
+            "fn main() { let x = false and { throw 7 } }\n",
+        ),
+        sc_program(
+            "main_return_skip_rhs",
+            "fn main() { let x = { return } and (1 / 0) }\n",
+        ),
+        sc_program(
+            "main_required_div",
+            "fn main() { let x = true and (1 / 0) }\n",
+        ),
+    ]
+}
+
+/// B-1R3B.3 — `and`/`or` whose left operand is unsupported, or whose *required*
+/// right operand is unsupported, must fail with the deterministic `E4999`
+/// sentinel in iterative mode. This is the anti-fallback guard for the
+/// short-circuit extension: a skipped right operand must not be evaluated (it
+/// is a supported case above), and a required one must not be executed through
+/// the recursive engine.
+#[must_use]
+pub fn short_circuit_unsupported_cases() -> Vec<Case> {
+    vec![
+        // Required right operand is a call (R3C).
+        sc_value("and_required_call", "true and len([1, 2])\n"),
+        sc_value("or_required_call", "false or len([1, 2])\n"),
+        // Required right operand is a container/range (R3B.4/R3B.5).
+        sc_value("and_required_list", "true and [1, 2]\n"),
+        sc_value("or_required_list", "false or [1, 2]\n"),
+        sc_value("and_required_range", "true and (1..3)\n"),
+        sc_value("or_required_map", "false or {\"a\": 1}\n"),
+        // Left operand itself is unsupported.
+        sc_value("and_lhs_unsupported", "[1, 2] and true\n"),
+        sc_value("or_lhs_unsupported", "[1, 2] or true\n"),
+        // A required nested `and` reaching an unsupported call.
+        sc_value("nested_required_call", "false or (true and len([1, 2]))\n"),
+        // Same shape inside a real user frame.
+        sc_program(
+            "main_required_call",
+            "fn main() { let x = true and len([1, 2]) }\n",
+        ),
     ]
 }

@@ -465,9 +465,10 @@ fn r3b2_binary_supported_subset_agrees() {
     );
 }
 
-/// B-1R3B.2 — `and`/`or` (B-1R3B.3) and any eager binary whose operand is
-/// unsupported must fail with the deterministic `E4999` sentinel, never
-/// silently evaluating or falling back to recursion.
+/// B-1R3B.2 — an eager binary whose operand is unsupported must fail with the
+/// deterministic `E4999` sentinel, never silently evaluating or falling back to
+/// recursion. (B-1R3B.3 removed `and`/`or` from this set; their unsupported
+/// shapes are asserted by `iterative_short_circuit_unsupported_fails_explicitly`.)
 #[test]
 #[cfg(feature = "evaluator-oracle")]
 fn iterative_binary_unsupported_fails_explicitly() {
@@ -551,6 +552,134 @@ fn regenerate_r3b2_golden() {
     }
     let text = harness::encode_golden(&cases, &observations);
     std::fs::write(R3B2_GOLDEN_PATH, text).expect("write R3B.2 golden");
+}
+
+/// Path of the committed R3B.3 short-circuit iterative-engine golden manifest.
+#[cfg(feature = "evaluator-oracle")]
+const R3B3_GOLDEN_PATH: &str = "tests/oracle/r3b3_golden.tsv";
+
+/// B-1R3B.3 — the iterative machine must agree with the recursive engine on
+/// every supported short-circuit case, including diagnostics, spans, and
+/// stdout (the skipped-operand cases are only meaningful differentially: the
+/// recursive engine's stdout is captured and both sides must match exactly).
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+fn r3b3_short_circuit_supported_subset_agrees() {
+    let rec = harness::Engine::recursive();
+    let it = harness::Engine::iterative();
+    let mut failures = Vec::new();
+    let mut count = 0;
+    for case in r3b::short_circuit_supported_cases() {
+        count += 1;
+        let a = observe(&case, rec)
+            .unwrap_or_else(|e| panic!("harness failure (recursive) {}: {e}", case.key()));
+        let b = observe(&case, it)
+            .unwrap_or_else(|e| panic!("harness failure (iterative) {}: {e}", case.key()));
+        if a != b {
+            failures.push(format!(
+                "{}:\n  recursive: {a:?}\n  iterative: {b:?}",
+                case.key()
+            ));
+        }
+    }
+    assert!(count > 0, "R3B.3 short-circuit supported subset is empty");
+    assert!(
+        failures.is_empty(),
+        "iterative machine diverged from the recursive engine on supported R3B.3 cases:\n{}",
+        failures.join("\n")
+    );
+}
+
+/// B-1R3B.3 — a *required* short-circuit operand that is unsupported, or an
+/// unsupported left operand, must fail with the deterministic `E4999`
+/// sentinel; the machine must never fall back to recursion. A skipped right
+/// operand is covered by the supported set above and must not reach this path.
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+fn iterative_short_circuit_unsupported_fails_explicitly() {
+    let it = harness::Engine::iterative();
+    let rec = harness::Engine::recursive();
+    let cases = r3b::short_circuit_unsupported_cases();
+    assert!(!cases.is_empty(), "R3B.3 unsupported set is empty");
+    for case in cases {
+        let r = observe(&case, rec)
+            .unwrap_or_else(|e| panic!("harness failure (recursive) {}: {e}", case.key()));
+        assert!(
+            matches!(r.completion, Completion::Ok | Completion::Runtime(_)),
+            "{}: recursive engine unexpectedly rejected a valid program: {r:?}",
+            case.key()
+        );
+        let obs = observe(&case, it)
+            .unwrap_or_else(|e| panic!("harness failure (iterative) {}: {e}", case.key()));
+        match obs.completion {
+            Completion::Runtime(d) => {
+                assert_eq!(
+                    d.code,
+                    4999,
+                    "{}: expected the E4999 unsupported sentinel, got {d:?}",
+                    case.key()
+                );
+                assert!(
+                    d.message.contains("not supported by the iterative engine"),
+                    "{}: unexpected iterative diagnostic: {}",
+                    case.key(),
+                    d.message
+                );
+            }
+            other => panic!(
+                "{}: unsupported short-circuit case did not fail explicitly: {other:?}",
+                case.key()
+            ),
+        }
+    }
+}
+
+/// B-1R3B.3 — full-field regression guard for the iterative short-circuit
+/// subset: pins the complete normalized observable (stdout bytes, completion,
+/// code, message, source, byte span, line, column, value type and
+/// representation) of the iterative engine for every supported case.
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+fn r3b3_iterative_golden_matches() {
+    let committed = std::fs::read_to_string(R3B3_GOLDEN_PATH)
+        .unwrap_or_else(|e| panic!("missing R3B.3 golden {R3B3_GOLDEN_PATH}: {e}"));
+    let golden = harness::parse_golden(&committed, "r3b3");
+    let cases = r3b::short_circuit_supported_cases();
+    let mut observations = BTreeMap::new();
+    for case in &cases {
+        let obs = observe(case, harness::Engine::iterative())
+            .unwrap_or_else(|e| panic!("harness failure for {}: {e}", case.key()));
+        observations.insert(case.key(), obs);
+    }
+    let regenerated = harness::encode_golden(&cases, &observations);
+    assert_eq!(
+        committed, regenerated,
+        "R3B.3 iterative golden is stale or the machine diverged; run \
+         `cargo test --locked --features evaluator-oracle --test evaluator_oracle \
+         regenerate_r3b3_golden -- --ignored`"
+    );
+    for case in &cases {
+        assert!(
+            golden.contains_key(&case.key()),
+            "R3B.3 golden missing {}",
+            case.key()
+        );
+    }
+}
+
+/// Regenerate the R3B.3 short-circuit iterative golden (ignored by default).
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+#[ignore = "regenerates the committed R3B.3 short-circuit iterative golden manifest"]
+fn regenerate_r3b3_golden() {
+    let cases = r3b::short_circuit_supported_cases();
+    let mut observations = BTreeMap::new();
+    for case in &cases {
+        let obs = observe(case, harness::Engine::iterative()).unwrap();
+        observations.insert(case.key(), obs);
+    }
+    let text = harness::encode_golden(&cases, &observations);
+    std::fs::write(R3B3_GOLDEN_PATH, text).expect("write R3B.3 golden");
 }
 
 /// B-1R3A anti-tautology guard: the iterative engine must not be an alias of
