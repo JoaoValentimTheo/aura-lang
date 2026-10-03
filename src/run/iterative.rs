@@ -40,8 +40,17 @@
 //!   value-level operator helper, which never evaluates an AST node), so
 //!   arithmetic, overflow, comparison, equality, and diagnostic behavior are
 //!   identical by construction.
-//! * `and`/`or` are **short-circuit** and belong to B-1R3B.3; they remain
-//!   unsupported here and fail with the deterministic `E4999` sentinel.
+//!
+//! ## B-1R3B.3 added subset
+//!
+//! * short-circuit `and`/`or`. The left operand is evaluated exactly once via
+//!   [`Cont::ShortCircuitLeft`]; when it completes, its truthiness decides
+//!   whether the right operand is required (`and`: truthy left; `or`: falsy
+//!   left). A skipped right operand is **never** evaluated, so it cannot
+//!   produce stdout, mutations, diagnostics, or control signals; a required
+//!   right operand is evaluated exactly once via [`Cont::ShortCircuitRight`].
+//!   Both operators yield the truthiness of the executing operand as a `bool`,
+//!   exactly matching `Interp::eval`'s `Expr::Binary` short-circuit arms.
 //!
 //! ## Explicitly unsupported (R3B–R3F)
 //!
@@ -55,6 +64,8 @@
 //! * **Calls are not implemented** (R3C). `UserFrame`/`push_frame`/`pop_frame`
 //!   and `Cont::FrameBoundary` establish the 512/513 accounting model and are
 //!   exercised synthetically by unit tests; no `Ctrl` produces a frame yet.
+//!   Short-circuit operands that contain a user call therefore still fail with
+//!   the deterministic unsupported sentinel, exactly as before.
 //! * **`try`/`finally` are not implemented** (R3F).
 //! * The shadowing write-back travels in [`Done::env`], which is exact for the
 //!   call-free R3A subset (conts run depth-first with no suspension). R3C must
@@ -164,6 +175,15 @@ enum Cont {
     },
     /// A binary right operand finished; apply the operator (B-1R3B.2).
     BinRight { op: BinOp, lv: Value, span: Span },
+    /// A short-circuit (`and`/`or`) left operand finished (B-1R3B.3); its
+    /// truthiness decides whether the right operand must run at all. The
+    /// right operand is scheduled only when it is required (`and`: truthy
+    /// left; `or`: falsy left); otherwise the machine returns the left
+    /// operand's truthiness as a `bool` without ever touching `rhs`.
+    ShortCircuitLeft { op: BinOp, rhs: Arc<Expr>, env: Env },
+    /// A required short-circuit right operand finished (B-1R3B.3); the result
+    /// is its truthiness as a `bool`.
+    ShortCircuitRight,
     /// A `return` operand finished; convert to the `return` signal.
     ReturnFrom,
     /// A `throw` operand finished; convert to the `throw` signal.
@@ -355,6 +375,38 @@ impl<'i> Machine<'i> {
                     Ok(Resume::Redeliver(Done::plain(done.ctl)))
                 }
             }
+            Cont::ShortCircuitLeft { op, rhs, env } => {
+                if let Ctl::Val(lv) = done.ctl {
+                    // Mirror `Interp::eval`'s short-circuit arms exactly: `and`
+                    // returns `false` on a falsy left, `or` returns `true` on a
+                    // truthy left. A skipped right operand is never scheduled,
+                    // so it cannot print, mutate, fail, or signal.
+                    if matches!(op, BinOp::And) && !lv.truthy() {
+                        return Ok(Resume::Next(Ctrl::Done(Ctl::Val(Value::Bool(false)))));
+                    }
+                    if matches!(op, BinOp::Or) && lv.truthy() {
+                        return Ok(Resume::Next(Ctrl::Done(Ctl::Val(Value::Bool(true)))));
+                    }
+                    // Otherwise the right operand is required: evaluate it
+                    // exactly once and take its truthiness.
+                    self.kont.push(Cont::ShortCircuitRight);
+                    Ok(Resume::Next(Ctrl::EvalExpr(rhs, env)))
+                } else {
+                    // A `return`/`throw`/`break`/`continue` from the left
+                    // operand propagates without evaluating the right operand
+                    // (mirrors `val!`).
+                    Ok(Resume::Redeliver(Done::plain(done.ctl)))
+                }
+            }
+            Cont::ShortCircuitRight => {
+                if let Ctl::Val(rv) = done.ctl {
+                    Ok(Resume::Next(Ctrl::Done(Ctl::Val(Value::Bool(rv.truthy())))))
+                } else {
+                    // A control signal from the required right operand
+                    // propagates unchanged (mirrors `val!`).
+                    Ok(Resume::Redeliver(Done::plain(done.ctl)))
+                }
+            }
             Cont::ReturnFrom => match done.ctl {
                 Ctl::Val(v) => Ok(Resume::Next(Ctrl::ReturnValue(v))),
                 other => Ok(Resume::Redeliver(Done::plain(other))),
@@ -470,8 +522,17 @@ impl<'i> Machine<'i> {
             }
             Expr::Binary(op, l, r, span) => {
                 match op {
-                    // `and`/`or` short-circuit: B-1R3B.3. Never fall back.
-                    BinOp::And | BinOp::Or => Err(self.unsupported(*span)),
+                    // Short-circuit `and`/`or`: evaluate the left operand
+                    // exactly once; the continuation decides whether the right
+                    // operand is required at all (B-1R3B.3). Never fall back.
+                    BinOp::And | BinOp::Or => {
+                        self.kont.push(Cont::ShortCircuitLeft {
+                            op: *op,
+                            rhs: r.clone(),
+                            env: env.clone(),
+                        });
+                        Ok(Control::Next(Ctrl::EvalExpr(l.clone(), env.clone())))
+                    }
                     // Eager binary: left first, exactly once.
                     _ => {
                         self.kont.push(Cont::BinaryLeft {
@@ -1202,19 +1263,239 @@ mod tests {
         assert_eq!(err.code, codes::NESTING);
     }
 
+    // ----- B-1R3B.3 short-circuit `and`/`or` ----------------------------
+
+    fn and(l: Expr, r: Expr) -> Expr {
+        bin(BinOp::And, l, r)
+    }
+
+    fn or(l: Expr, r: Expr) -> Expr {
+        bin(BinOp::Or, l, r)
+    }
+
+    fn run_bool(expr: &Expr) -> bool {
+        match run_expr(expr) {
+            Ok(Ctl::Val(Value::Bool(b))) => b,
+            Ok(_) => panic!("expected a bool completion, got a different signal"),
+            Err(d) => panic!("expected a bool completion, got diagnostic {}", d.code),
+        }
+    }
+
     #[test]
-    fn short_circuit_operators_remain_unsupported() {
-        for op in [BinOp::And, BinOp::Or] {
-            let e = bin(
-                op,
+    fn short_circuit_truth_table() {
+        for (l, r, a, o) in [
+            (true, true, true, true),
+            (true, false, false, true),
+            (false, true, false, true),
+            (false, false, false, false),
+        ] {
+            let le = Expr::Lit(Lit::Bool(l), Span::default());
+            let re = || Expr::Lit(Lit::Bool(r), Span::default());
+            assert_eq!(run_bool(&and(le.clone(), re())), a, "and({l}, {r})");
+            assert_eq!(run_bool(&or(le, re())), o, "or({l}, {r})");
+        }
+    }
+
+    #[test]
+    fn short_circuit_always_yields_bool_from_truthiness() {
+        // `and`/`or` yield `rv.truthy()` for a required right operand and the
+        // relevant constant (`false`/`true`) when the left decides. They never
+        // return an operand. Repeated from the recursion matrix: ints, floats,
+        // strings, and `none` are all accepted and coerced to bool.
+        assert!(run_bool(&and(lit(1), lit(2))));
+        assert!(!run_bool(&and(lit(0), lit(2))));
+        assert!(!run_bool(&and(lit(1), lit(0))));
+        assert!(run_bool(&or(lit(0), lit(7))));
+        assert!(!run_bool(&or(lit(0), lit(0))));
+        assert!(run_bool(&or(lit(3), lit(0))));
+        assert!(!run_bool(&and(
+            Expr::Lit(Lit::None, Span::default()),
+            Expr::Lit(Lit::Int(1), Span::default())
+        )));
+        assert!(!run_bool(&and(
+            Expr::Lit(Lit::Str(String::new()), Span::default()),
+            Expr::Lit(Lit::Int(1), Span::default())
+        )));
+        assert!(run_bool(&or(
+            Expr::Lit(Lit::Str("x".to_string()), Span::default()),
+            Expr::Lit(Lit::Int(0), Span::default())
+        )));
+    }
+
+    /// The skipped right operand is a subtree that would raise a deterministic
+    /// runtime diagnostic if evaluated. Its total absence from the result is
+    /// the observation: the machine must return the left-operand result without
+    /// ever scheduling the right operand (no E4007).
+    #[test]
+    fn skipped_rhs_error_does_not_occur() {
+        // `false and (1 / 0)` -> false; the division must never run.
+        let e = and(
+            Expr::Lit(Lit::Bool(false), Span::default()),
+            bin(BinOp::Div, lit(1), lit(0)),
+        );
+        assert!(!run_bool(&e));
+        // `true or (1 / 0)` -> true; the division must never run.
+        let e = or(
+            Expr::Lit(Lit::Bool(true), Span::default()),
+            bin(BinOp::Div, lit(1), lit(0)),
+        );
+        assert!(run_bool(&e));
+    }
+
+    #[test]
+    fn required_rhs_error_does_occur() {
+        // `true and (1 / 0)` and `false or (1 / 0)` must run the division and
+        // surface E4007 with the division's own span.
+        for e in [
+            and(
                 Expr::Lit(Lit::Bool(true), Span::default()),
+                bin(BinOp::Div, lit(1), lit(0)),
+            ),
+            or(
                 Expr::Lit(Lit::Bool(false), Span::default()),
-            );
+                bin(BinOp::Div, lit(1), lit(0)),
+            ),
+        ] {
             let err = run_expr(&e).err().unwrap();
-            assert_eq!(err.code, codes::INTERNAL);
-            assert!(err
-                .message
-                .contains("not supported by the iterative engine"));
+            assert_eq!(err.code, codes::DIV_ZERO);
+            assert_eq!(err.message, "division by zero");
+        }
+    }
+
+    #[test]
+    fn short_circuit_left_signal_skips_rhs() {
+        // A control signal from the left operand propagates without the right
+        // being evaluated: `{ return 5 } and (1 / 0)` yields the `return`
+        // signal, not E4007, and `{ return 5 } or (1 / 0)` likewise.
+        for op in [BinOp::And, BinOp::Or] {
+            let left = Expr::Block(
+                Arc::from(vec![Stmt::Return(Some(lit(5)), Span::default())]),
+                Span::default(),
+            );
+            let e = bin(op, left, bin(BinOp::Div, lit(1), lit(0)));
+            match run_expr(&e).unwrap() {
+                Ctl::Return(Value::Int(5)) => {}
+                _ => panic!("left control signal must propagate"),
+            }
+        }
+    }
+
+    #[test]
+    fn short_circuit_required_right_signal_propagates() {
+        // The required right operand's signal propagates unchanged and is not
+        // converted into a bool: `true and { return 7 }` yields `return 7`;
+        // `false or { throw 9 }` yields the `throw` signal.
+        let left_true = || Expr::Lit(Lit::Bool(true), Span::default());
+        let left_false = || Expr::Lit(Lit::Bool(false), Span::default());
+        let returning = || {
+            Expr::Block(
+                Arc::from(vec![Stmt::Return(Some(lit(7)), Span::default())]),
+                Span::default(),
+            )
+        };
+        let throwing = || {
+            Expr::Block(
+                Arc::from(vec![Stmt::Throw(lit(9), Span::default())]),
+                Span::default(),
+            )
+        };
+        match run_expr(&and(left_true(), returning())).unwrap() {
+            Ctl::Return(Value::Int(7)) => {}
+            _ => panic!("required right `return` must propagate"),
+        }
+        match run_expr(&or(left_false(), throwing())).unwrap() {
+            Ctl::Throw(Value::Int(9)) => {}
+            _ => panic!("required right `throw` must propagate"),
+        }
+    }
+
+    #[test]
+    fn short_circuit_nests_and_binds_weakest() {
+        // `true or false and false` groups as `true or (false and false)` =>
+        // true; `(true or false) and false` => false. Precedence is unchanged.
+        let t = || Expr::Lit(Lit::Bool(true), Span::default());
+        let f = || Expr::Lit(Lit::Bool(false), Span::default());
+        assert!(run_bool(&or(t(), and(f(), f()))));
+        assert!(!run_bool(&and(or(t(), f()), f())));
+    }
+
+    #[test]
+    fn short_circuit_composes_with_unary_and_eager() {
+        let t = || Expr::Lit(Lit::Bool(true), Span::default());
+        let f = || Expr::Lit(Lit::Bool(false), Span::default());
+        assert!(!run_bool(&and(
+            Expr::Unary(
+                UnOp::Not,
+                Arc::new(Expr::Lit(Lit::Bool(true), Span::default())),
+                Span::default(),
+            ),
+            t(),
+        )));
+        assert!(run_bool(&and(bin(BinOp::Eq, lit(1), lit(1)), t())));
+        assert!(!run_bool(&or(bin(BinOp::Lt, lit(2), lit(1)), f())));
+        // `not (a and b)` and `a and not b` both flow through the machine.
+        assert!(run_bool(&Expr::Unary(
+            UnOp::Not,
+            Arc::new(and(t(), f())),
+            Span::default(),
+        )));
+        assert!(!run_bool(&and(
+            t(),
+            Expr::Unary(
+                UnOp::Not,
+                Arc::new(Expr::Lit(Lit::Bool(true), Span::default())),
+                Span::default(),
+            ),
+        )));
+    }
+
+    #[test]
+    fn deep_short_circuit_chain_is_stack_safe() {
+        // A left-nested chain of `or` with a truthy leftmost operand must
+        // short-circuit every right operand and stay host-stack safe.
+        let depth = MAX_AST_DEPTH - 2;
+        let mut e = Expr::Lit(Lit::Bool(true), Span::default());
+        for _ in 0..depth {
+            e = or(e, Expr::Lit(Lit::Bool(false), Span::default()));
+        }
+        assert!(run_bool(&e));
+
+        // A chain that requires every operand: `false or ... or true` where
+        // the final operand is truthy forces each right operand to run.
+        let mut e = Expr::Lit(Lit::Bool(false), Span::default());
+        for _ in 0..(depth - 1) {
+            e = or(e, Expr::Lit(Lit::Bool(false), Span::default()));
+        }
+        e = or(e, Expr::Lit(Lit::Bool(true), Span::default()));
+        assert!(run_bool(&e));
+    }
+
+    #[test]
+    fn deep_and_chain_is_stack_safe() {
+        // `and` chains mirror `or`: a falsy leftmost short-circuits all rights.
+        let depth = MAX_AST_DEPTH - 2;
+        let mut e = Expr::Lit(Lit::Bool(false), Span::default());
+        for _ in 0..depth {
+            e = and(e, Expr::Lit(Lit::Bool(true), Span::default()));
+        }
+        assert!(!run_bool(&e));
+
+        let mut e = Expr::Lit(Lit::Bool(true), Span::default());
+        for _ in 0..depth {
+            e = and(e, Expr::Lit(Lit::Bool(true), Span::default()));
+        }
+        assert!(run_bool(&e));
+    }
+
+    #[test]
+    fn short_circuit_chain_beyond_ast_depth_is_e1015() {
+        for op in [BinOp::And, BinOp::Or] {
+            let mut e = Expr::Lit(Lit::Bool(true), Span::default());
+            for _ in 0..(MAX_AST_DEPTH + 5) {
+                e = bin(op, e, Expr::Lit(Lit::Bool(false), Span::default()));
+            }
+            let err = run_expr(&e).err().unwrap();
+            assert_eq!(err.code, codes::NESTING);
         }
     }
 }
