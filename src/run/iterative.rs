@@ -62,6 +62,18 @@
 //!   completed elements become a `Value::list` (a `list`-typed value; tuple
 //!   literals are indistinguishable from list literals by contract).
 //!
+//! ## B-1R3B.4.2 added subset
+//!
+//! * map construction: `Expr::Map` (`{k: v, ...}` and the empty `{:}`). Entries
+//!   are processed in source order; for each entry the key is evaluated and
+//!   validated **before** its value is scheduled, exactly like
+//!   `Interp::eval_inner`'s `Expr::Map` arm. A non-key-capable key is `E3001`
+//!   at the key expression's span and prevents its value from running. A
+//!   control signal or diagnostic from a key or value aborts the whole map and
+//!   propagates unchanged, so later entries never run. Duplicate keys keep the
+//!   **last** entry's value (a `BTreeMap` insert), matching the recursive
+//!   engine. Each key and each value is evaluated exactly once.
+//!
 //! ## Explicitly unsupported (R3B–R3F)
 //!
 //! Every other `Expr`/`Stmt` form fails with a deterministic
@@ -83,10 +95,12 @@
 //! * `MAX_AST_DEPTH` (`E1015`) and `MAX_CALL_FRAMES` (`E4011`) preserve the
 //!   recursive engine's semantics exactly.
 
+use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use super::value::Value;
+use super::value::{MapKey, Value};
 use super::{Closure, Ctl, Env, Interp, MAX_AST_DEPTH, MAX_CALL_FRAMES};
 use crate::ast::{BinOp, Expr, Lit, Stmt, UnOp};
 use crate::error::{codes, Result, Span};
@@ -204,6 +218,26 @@ enum Cont {
         items: Arc<[Expr]>,
         index: usize,
         out: Vec<Value>,
+        env: Env,
+    },
+    /// A map entry's key finished (B-1R3B.4.2). The key value is validated and
+    /// converted to a [`MapKey`]; only then is the corresponding value
+    /// scheduled. `index` is the entry currently being evaluated; `out` holds
+    /// the entries that already completed.
+    MapKeyNext {
+        entries: Arc<[(Expr, Expr)]>,
+        index: usize,
+        out: BTreeMap<MapKey, Value>,
+        env: Env,
+    },
+    /// A map entry's value finished (B-1R3B.4.2). `key` is the already-built
+    /// key for this entry; the pair is inserted (last write wins, exactly like
+    /// `BTreeMap::insert`) and the next entry is scheduled.
+    MapValueNext {
+        key: MapKey,
+        entries: Arc<[(Expr, Expr)]>,
+        index: usize,
+        out: BTreeMap<MapKey, Value>,
         env: Env,
     },
     /// A `return` operand finished; convert to the `return` signal.
@@ -455,6 +489,79 @@ impl<'i> Machine<'i> {
                     Ok(Resume::Next(Ctrl::Done(Ctl::Val(Value::list(out)))))
                 }
             }
+            Cont::MapKeyNext {
+                entries,
+                index,
+                out,
+                env,
+            } => {
+                let Ctl::Val(kv) = done.ctl else {
+                    // A control signal from the key aborts the whole map; the
+                    // value and every later entry are never evaluated (mirrors
+                    // `val!`). No partial map is produced.
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                // The key is validated *before* the value is scheduled; a
+                // non-key-capable key is E3001 with the key expression's span,
+                // exactly like `Interp::eval_inner`'s `Expr::Map` arm. This is
+                // also the exactly-once boundary: a failed key must never
+                // schedule its value.
+                let Some(key) = MapKey::from_value(&kv) else {
+                    return Err(self.interp.error(
+                        codes::TYPE_MISMATCH,
+                        format!(
+                            "type `{}` cannot be used as a map key; map keys must be `string`, `int`, or `bool`",
+                            kv.type_name()
+                        ),
+                        entries[index].0.span(),
+                    ));
+                };
+                self.kont.push(Cont::MapValueNext {
+                    key,
+                    entries: entries.clone(),
+                    index,
+                    out,
+                    env: env.clone(),
+                });
+                Ok(Resume::Next(Ctrl::EvalExpr(
+                    Arc::new(entries[index].1.clone()),
+                    env,
+                )))
+            }
+            Cont::MapValueNext {
+                key,
+                entries,
+                index,
+                mut out,
+                env,
+            } => {
+                let Ctl::Val(value) = done.ctl else {
+                    // A control signal from the value aborts the whole map;
+                    // later entries are never evaluated (mirrors `val!`).
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                // `BTreeMap::insert` replaces an existing key, so a duplicate
+                // key keeps the *last* entry's value: recursive semantics
+                // observed as `{1: "a", 2: "b", 1: "c"}` -> `{1: "c", 2: "b"}`.
+                out.insert(key, value);
+                let next = index + 1;
+                if next < entries.len() {
+                    self.kont.push(Cont::MapKeyNext {
+                        entries: entries.clone(),
+                        index: next,
+                        out,
+                        env: env.clone(),
+                    });
+                    Ok(Resume::Next(Ctrl::EvalExpr(
+                        Arc::new(entries[next].0.clone()),
+                        env,
+                    )))
+                } else {
+                    Ok(Resume::Next(Ctrl::Done(Ctl::Val(Value::Map(Rc::new(
+                        RefCell::new(out),
+                    ))))))
+                }
+            }
             Cont::ReturnFrom => match done.ctl {
                 Ctl::Val(v) => Ok(Resume::Next(Ctrl::ReturnValue(v))),
                 other => Ok(Resume::Redeliver(Done::plain(other))),
@@ -492,6 +599,36 @@ impl<'i> Machine<'i> {
         });
         Ok(Control::Next(Ctrl::EvalExpr(
             Arc::new(items[0].clone()),
+            env.clone(),
+        )))
+    }
+
+    /// Begin evaluating a map literal's key/value entries (B-1R3B.4.2).
+    ///
+    /// Mirrors `Interp::eval_inner`'s `Expr::Map` arm: for each entry in source
+    /// order, the key is evaluated and validated *before* its value is
+    /// scheduled; the value is then evaluated exactly once and inserted. An
+    /// empty map (`{:}`) completes immediately. The accumulated `BTreeMap`
+    /// lives in the continuations, so no `Map`-sized or `Map`-nested Rust
+    /// recursion occurs.
+    ///
+    /// `Result` is kept for a uniform `step` dispatch signature even though this
+    /// arm cannot currently fail (mirrors [`Machine::start_list`]).
+    #[allow(clippy::unnecessary_wraps)]
+    fn start_map(&mut self, entries: Arc<[(Expr, Expr)]>, env: &Env) -> Result<Control> {
+        if entries.is_empty() {
+            return Ok(Control::Next(Ctrl::Done(Ctl::Val(Value::Map(Rc::new(
+                RefCell::new(BTreeMap::new()),
+            ))))));
+        }
+        self.kont.push(Cont::MapKeyNext {
+            entries: entries.clone(),
+            index: 0,
+            out: BTreeMap::new(),
+            env: env.clone(),
+        });
+        Ok(Control::Next(Ctrl::EvalExpr(
+            Arc::new(entries[0].0.clone()),
             env.clone(),
         )))
     }
@@ -602,6 +739,11 @@ impl<'i> Machine<'i> {
                 // literal is list sugar (`LANGUAGE_SPEC.md` §21) and shares the
                 // list evaluation path, exactly like `eval_inner`.
                 self.start_list(items.clone(), env)
+            }
+            Expr::Map(entries, _) => {
+                // Key then value per entry, in source order, exactly once each
+                // (B-1R3B.4.2). An empty map (`{:}`) completes immediately.
+                self.start_map(entries.clone(), env)
             }
             Expr::Binary(op, l, r, span) => {
                 match op {
@@ -972,9 +1114,10 @@ mod tests {
 
     #[test]
     fn unsupported_construct_fails_explicitly() {
-        // A map literal is R3B.4.2 territory and remains unsupported. The
-        // machine must fail explicitly, never fall back to recursion.
-        let e = Expr::Map(Arc::from([(lit(1), lit(2))]), Span::default());
+        // A range literal is R3B.5 territory and remains unsupported (map
+        // construction became supported in B-1R3B.4.2). The machine must fail
+        // explicitly, never fall back to recursion.
+        let e = Expr::Range(Arc::new(lit(1)), Arc::new(lit(3)), Span::default());
         let err = run_expr(&e).err().unwrap();
         assert_eq!(err.code, codes::INTERNAL);
         assert!(err
@@ -1830,5 +1973,350 @@ mod tests {
             Ctl::Val(Value::List(_)) => {}
             _ => panic!("deep nested list through a frame must evaluate"),
         }
+    }
+
+    // ----- B-1R3B.4.2 map construction ----------------------------------
+
+    fn map(entries: Vec<(Expr, Expr)>) -> Expr {
+        Expr::Map(Arc::from(entries), Span::default())
+    }
+
+    fn run_map(expr: &Expr) -> Vec<(MapKey, Value)> {
+        match run_expr(expr) {
+            Ok(Ctl::Val(ref v)) => match v {
+                Value::Map(m) => m
+                    .borrow()
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+                _ => panic!("expected a map completion, got a different value"),
+            },
+            Ok(_) => panic!("expected a map completion, got a different signal"),
+            Err(d) => panic!("expected a map completion, got diagnostic {}", d.code),
+        }
+    }
+
+    #[test]
+    fn map_empty_is_empty_map() {
+        assert!(run_map(&map(Vec::new())).is_empty());
+    }
+
+    #[test]
+    fn map_single_entry() {
+        let out = run_map(&map(vec![(
+            lit(1),
+            Expr::Lit(Lit::Str("x".to_string()), Span::default()),
+        )]));
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].0, MapKey::Int(1));
+        assert!(matches!(&out[0].1, Value::Str(s) if &**s == "x"));
+    }
+
+    #[test]
+    fn map_entries_ordered_by_key_regardless_of_source_order() {
+        // Recursive semantics: a `BTreeMap` orders `int` keys ascending, so
+        // `{3: "c", 1: "a", 2: "b"}` displays `{1: "a", 2: "b", 3: "c"}`.
+        let out = run_map(&map(vec![
+            (
+                lit(3),
+                Expr::Lit(Lit::Str("c".to_string()), Span::default()),
+            ),
+            (
+                lit(1),
+                Expr::Lit(Lit::Str("a".to_string()), Span::default()),
+            ),
+            (
+                lit(2),
+                Expr::Lit(Lit::Str("b".to_string()), Span::default()),
+            ),
+        ]));
+        let keys: Vec<i64> = out
+            .iter()
+            .map(|(k, _)| match k {
+                MapKey::Int(i) => *i,
+                _ => panic!("expected int keys"),
+            })
+            .collect();
+        assert_eq!(keys, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn map_duplicate_key_last_wins() {
+        // `{1: "a", 2: "b", 1: "c"}` -> `{1: "c", 2: "b"}`: the later entry
+        // replaces the earlier one. This is the recursive `BTreeMap::insert`
+        // behavior.
+        let out = run_map(&map(vec![
+            (
+                lit(1),
+                Expr::Lit(Lit::Str("a".to_string()), Span::default()),
+            ),
+            (
+                lit(2),
+                Expr::Lit(Lit::Str("b".to_string()), Span::default()),
+            ),
+            (
+                lit(1),
+                Expr::Lit(Lit::Str("c".to_string()), Span::default()),
+            ),
+        ]));
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].0, MapKey::Int(1));
+        assert!(matches!(&out[0].1, Value::Str(s) if &**s == "c"));
+        assert_eq!(out[1].0, MapKey::Int(2));
+    }
+
+    #[test]
+    fn map_bool_and_string_keys() {
+        let out = run_map(&map(vec![
+            (Expr::Lit(Lit::Bool(true), Span::default()), lit(1)),
+            (Expr::Lit(Lit::Bool(false), Span::default()), lit(0)),
+        ]));
+        assert_eq!(out.len(), 2);
+        // MapKey order is Int < Bool < Str, and `false < true`.
+        assert_eq!(out[0].0, MapKey::Bool(false));
+        assert_eq!(out[1].0, MapKey::Bool(true));
+
+        let out = run_map(&map(vec![(
+            Expr::Lit(Lit::Str("k".to_string()), Span::default()),
+            lit(1),
+        )]));
+        assert_eq!(out[0].0, MapKey::Str(Rc::from("k")));
+    }
+
+    #[test]
+    fn map_nested_maps() {
+        let inner = map(vec![(lit(1), lit(10))]);
+        let out = run_map(&map(vec![(lit(0), inner)]));
+        assert_eq!(out.len(), 1);
+        assert!(matches!(out[0].1, Value::Map(_)));
+    }
+
+    #[test]
+    fn map_containing_and_inside_lists() {
+        // Map containing a list value and a list containing a map value.
+        let out = run_map(&map(vec![(lit(1), list(vec![lit(1), lit(2)]))]));
+        assert!(matches!(out[0].1, Value::List(_)));
+        let vals = run_list(&list(vec![map(vec![(lit(1), lit(2))])]));
+        assert_eq!(vals.len(), 1);
+        assert!(matches!(vals[0], Value::Map(_)));
+    }
+
+    #[test]
+    fn map_key_evaluated_before_value_first_error_wins() {
+        // The value of the first entry must not run before the second key:
+        // `{1: 2, 1/0: 3}` reports the second key's E4007, proving the key of
+        // the later entry is evaluated after the earlier value.
+        let e = map(vec![
+            (lit(1), lit(2)),
+            (bin(BinOp::Div, lit(1), lit(0)), lit(3)),
+        ]);
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::DIV_ZERO);
+    }
+
+    #[test]
+    fn map_invalid_key_is_e3001_at_the_key_span() {
+        // `{1.0: "x"}`: a runtime non-key-capable key is E3001 with the exact
+        // recursive message; the value must not be evaluated.
+        let span = Span { start: 7, end: 10 };
+        let e = map(vec![(
+            Expr::Lit(Lit::Float(1.0), span),
+            bin(BinOp::Div, lit(1), lit(0)),
+        )]);
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::TYPE_MISMATCH);
+        assert_eq!(
+            err.message,
+            "type `float` cannot be used as a map key; map keys must be `string`, `int`, or `bool`"
+        );
+        assert_eq!(err.span.start, 7);
+        assert_eq!(err.span.end, 10);
+    }
+
+    #[test]
+    fn map_value_suppressed_after_invalid_key() {
+        // The invalid key's value (`1 / 0`) must never run: the diagnostic is
+        // the key's E3001, not E4007.
+        let e = map(vec![(
+            Expr::Lit(Lit::None, Span::default()),
+            bin(BinOp::Div, lit(1), lit(0)),
+        )]);
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::TYPE_MISMATCH);
+    }
+
+    #[test]
+    fn map_key_signal_aborts_later_entries() {
+        // A control signal from a key aborts the whole map; the value and every
+        // later entry must never run.
+        let key = Expr::Block(
+            Arc::from(vec![Stmt::Return(Some(lit(5)), Span::default())]),
+            Span::default(),
+        );
+        let e = map(vec![
+            (key, bin(BinOp::Div, lit(1), lit(0))),
+            (lit(1), lit(2)),
+        ]);
+        match run_expr(&e).unwrap() {
+            Ctl::Return(Value::Int(5)) => {}
+            _ => panic!("key control signal must abort the map"),
+        }
+    }
+
+    #[test]
+    fn map_value_signal_aborts_later_entries() {
+        // A control signal from a value aborts the whole map; later entries
+        // must never run.
+        let value = Expr::Block(
+            Arc::from(vec![Stmt::Throw(lit(9), Span::default())]),
+            Span::default(),
+        );
+        let e = map(vec![(lit(1), value), (lit(2), lit(3))]);
+        match run_expr(&e).unwrap() {
+            Ctl::Throw(Value::Int(9)) => {}
+            _ => panic!("value control signal must abort the map"),
+        }
+    }
+
+    #[test]
+    fn map_later_value_error_wins_over_later_key() {
+        // `{1: 1/0, 1/0: 2}`: the value error of the first entry must be
+        // reported before the second entry's key runs.
+        let e = map(vec![
+            (lit(1), bin(BinOp::Div, lit(1), lit(0))),
+            (bin(BinOp::Mul, lit(1), lit(0)), lit(2)),
+        ]);
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::DIV_ZERO);
+    }
+
+    #[test]
+    fn map_unsupported_key_fails_explicitly() {
+        // A call key is R3C work: the map must fail with the E4999 sentinel,
+        // never fall back to recursion and never produce a partial map.
+        let call = Expr::Call(
+            Arc::new(Expr::Name("len".to_string(), Span::default())),
+            Arc::from([crate::ast::Arg {
+                name: None,
+                value: list(vec![lit(1)]),
+            }]),
+            Vec::new(),
+            Span::default(),
+        );
+        let e = map(vec![(call, lit(1))]);
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::INTERNAL);
+        assert!(err
+            .message
+            .contains("not supported by the iterative engine"));
+    }
+
+    #[test]
+    fn deep_nested_map_is_stack_safe() {
+        let depth = MAX_AST_DEPTH - 2;
+        let mut e = lit(1);
+        for _ in 0..depth {
+            e = map(vec![(lit(0), e)]);
+        }
+        let mut v = match run_expr(&e) {
+            Ok(Ctl::Val(v)) => v,
+            _ => panic!("deep nested map must evaluate"),
+        };
+        for _ in 0..depth {
+            match &v {
+                Value::Map(m) => {
+                    let next = m.borrow().get(&MapKey::Int(0)).cloned().unwrap();
+                    v = next;
+                }
+                _ => panic!("every level must be a map"),
+            }
+        }
+        assert!(matches!(v, Value::Int(1)));
+    }
+
+    #[test]
+    fn map_beyond_ast_depth_is_e1015() {
+        let mut e = lit(1);
+        for _ in 0..(MAX_AST_DEPTH + 5) {
+            e = map(vec![(lit(0), e)]);
+        }
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::NESTING);
+    }
+
+    #[test]
+    fn deep_nested_map_through_frame_boundary_is_stack_safe() {
+        // The real `Program` path enters through `call_closure_body` (frame 1 +
+        // `FrameBoundary`). A map nested `MAX_AST_DEPTH - 2` deep must run there
+        // without growing the host stack proportionally.
+        let depth = MAX_AST_DEPTH - 2;
+        let mut e = lit(1);
+        for _ in 0..depth {
+            e = map(vec![(lit(0), e)]);
+        }
+        let mut interp = Interp::new();
+        let globals = interp.globals.clone();
+        let closure = Rc::new(Closure {
+            name: "main".to_string(),
+            params: Vec::new(),
+            param_tys: Vec::new(),
+            body: Arc::from(vec![Stmt::Expr(e, Span::default())]),
+            env: globals,
+        });
+        match call_closure_body(&mut interp, closure, Vec::new(), Span::default()).unwrap() {
+            Ctl::Val(Value::Map(_)) => {}
+            _ => panic!("deep nested map through a frame must evaluate"),
+        }
+    }
+
+    #[test]
+    fn deep_mixed_map_list_nesting_is_stack_safe() {
+        // Alternate map/list nesting just below `MAX_AST_DEPTH`; the machine
+        // pushes one `Cont` per level regardless of container kind.
+        let depth = MAX_AST_DEPTH - 2;
+        let mut e = lit(1);
+        for i in 0..depth {
+            e = if i % 2 == 0 {
+                map(vec![(lit(0), e)])
+            } else {
+                list(vec![e])
+            };
+        }
+        let mut v = match run_expr(&e) {
+            Ok(Ctl::Val(v)) => v,
+            _ => panic!("deep mixed nesting must evaluate"),
+        };
+        for i in (0..depth).rev() {
+            v = if i % 2 == 0 {
+                match &v {
+                    Value::Map(m) => m.borrow().get(&MapKey::Int(0)).cloned().unwrap(),
+                    _ => panic!("expected a map"),
+                }
+            } else {
+                match &v {
+                    Value::List(l) => l.borrow()[0].clone(),
+                    _ => panic!("expected a list"),
+                }
+            };
+        }
+        assert!(matches!(v, Value::Int(1)));
+    }
+
+    #[test]
+    fn map_key_and_value_evaluated_exactly_once() {
+        // A shadowing `let` key advances nothing observable here, but the
+        // structural guarantee is that the key continuation schedules the value
+        // exactly once and the value continuation schedules the next key
+        // exactly once. A chain of entries with distinct values pins it.
+        let e = map(vec![
+            (lit(1), lit(10)),
+            (lit(2), lit(20)),
+            (lit(3), lit(30)),
+        ]);
+        let out = run_map(&e);
+        assert_eq!(out.len(), 3);
+        assert!(matches!(out[0].1, Value::Int(10)));
+        assert!(matches!(out[1].1, Value::Int(20)));
+        assert!(matches!(out[2].1, Value::Int(30)));
     }
 }
