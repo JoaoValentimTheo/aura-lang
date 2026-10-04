@@ -217,6 +217,27 @@ r3c1-value/mapcomp_bad_key		runtime	3001	type `list` cannot be used as a map key
 r3c1-value/mapcomp_nested		ok	0		-	0	0	0	0	map	{0: [0], 1: [0]}
 r3c1-value/mapcomp_error_key		runtime	4007	division by zero	<r3c1>	3	4	1	4	-	-
 r3c1-value/mapcomp_empty		ok	0		-	0	0	0	0	map	{}
+r3c1-value/match_int_first		ok	0		-	0	0	0	0	string	"a"
+r3c1-value/match_int_second		ok	0		-	0	0	0	0	string	"b"
+r3c1-value/match_wildcard		ok	0		-	0	0	0	0	string	"z"
+r3c1-value/match_bind		ok	0		-	0	0	0	0	int	10
+r3c1-value/match_string		ok	0		-	0	0	0	0	int	2
+r3c1-value/match_bool		ok	0		-	0	0	0	0	int	2
+r3c1-value/match_none		ok	0		-	0	0	0	0	int	1
+r3c1-value/match_list_pattern		ok	0		-	0	0	0	0	int	3
+r3c1-value/match_list_arity		ok	0		-	0	0	0	0	int	0
+r3c1-value/match_variant		ok	0		-	0	0	0	0	int	5
+r3c1-value/match_variant_second		compile	1006	expected :, found `(`	<r3c1>	32	33	2	12	-	-
+r3c1-value/match_guard_true		ok	0		-	0	0	0	0	string	"big"
+r3c1-value/match_guard_false		ok	0		-	0	0	0	0	string	"small"
+r3c1-value/match_no_arm		runtime	4029	no match arm matched the value	<r3c1>	0	5	1	1	-	-
+r3c1-value/match_subject_once	730a	ok	0		-	0	0	0	0	int	0
+r3c1-value/match_guard_scope		ok	0		-	0	0	0	0	int	16
+r3c1-value/match_body_scope_not_leak		ok	0		-	0	0	0	0	int	2
+r3c1-value/match_body_signal		ok	0		-	0	0	0	0	int	4
+r3c1-value/match_guard_error		runtime	4007	division by zero	<r3c1>	17	18	1	18	-	-
+r3c1-value/match_subject_error		runtime	4007	division by zero	<r3c1>	8	9	1	9	-	-
+r3c1-value/match_first_match_wins		ok	0		-	0	0	0	0	string	"first"
 r3c1-value/call_in_unary		ok	0		-	0	0	0	0	int	-2
 r3c1-value/call_in_binary		ok	0		-	0	0	0	0	int	3
 r3c1-value/call_in_if		ok	0		-	0	0	0	0	string	"y"

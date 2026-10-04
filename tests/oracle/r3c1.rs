@@ -394,6 +394,34 @@ pub fn supported_cases() -> Vec<Case> {
         value("mapcomp_nested", "{x: [y for y in 0..1] for x in 0..2}\n"),
         value("mapcomp_error_key", "{1 / 0: 1 for x in [1]}\n"),
         value("mapcomp_empty", "{x: x for x in []}\n"),
+        // ----- R3E.2 match ---------------------------------------------------
+        value("match_int_first", "match 1 { 1 -> { \'a\' }\n 2 -> { \'b\' } }\n"),
+        value("match_int_second", "match 2 { 1 -> { \'a\' }\n 2 -> { \'b\' } }\n"),
+        value("match_wildcard", "match 9 { 1 -> { \'a\' }\n _ -> { \'z\' } }\n"),
+        value("match_bind", "match 9 { n -> { n + 1 } }\n"),
+        value("match_string", "match \'x\' { \'y\' -> { 1 }\n \'x\' -> { 2 } }\n"),
+        value("match_bool", "match true { false -> { 1 }\n true -> { 2 } }\n"),
+        value("match_none", "match none { none -> { 1 }\n _ -> { 2 } }\n"),
+        value("match_list_pattern", "match [1, 2] { [a, b] -> { a + b } }\n"),
+        value("match_list_arity", "match [1, 2, 3] { [a, b] -> { a + b }\n _ -> { 0 } }\n"),
+        value(
+            "match_variant",
+            "enum E { A(int), B }\nmatch A(5) { A(n) -> { n }\n B -> { 0 } }\n",
+        ),
+        value(
+            "match_variant_second",
+            "enum E { A(int), B }\nmatch B { A(n) -> { n }\n B -> { 0 } }\n",
+        ),
+        value("match_guard_true", "match 5 { n if n > 3 -> { \'big\' }\n _ -> { \'small\' } }\n"),
+        value("match_guard_false", "match 2 { n if n > 3 -> { \'big\' }\n _ -> { \'small\' } }\n"),
+        value("match_no_arm", "match 9 { 1 -> { \'a\' } }\n"),
+        value("match_subject_once", "fn s() { print(\'s\')\n 1 }\nmatch s() { 1 -> { 0 } }\n"),
+        value("match_guard_scope", "match 8 { n if n > 3 -> { n * 2 }\n _ -> { 0 } }\n"),
+        value("match_body_scope_not_leak", "{ match 1 { n -> { } }\n 2 }\n"),
+        value("match_body_signal", "fn f() { match 1 { 1 -> { return 4 } } }\nf()\n"),
+        value("match_guard_error", "match 1 { _ if 1 / 0 -> { 0 } }\n"),
+        value("match_subject_error", "match 1 / 0 { _ -> { 0 } }\n"),
+        value("match_first_match_wins", "match 5 { n if n > 3 -> { \'first\' }\n n -> { \'second\' } }\n"),
         // ----- composition with R3B constructs ---------------------------
         value("call_in_unary", "-(abs(-2))\n"),
         value("call_in_binary", "1 + len([9, 9])\n"),
@@ -479,22 +507,21 @@ pub fn supported_cases() -> Vec<Case> {
 #[must_use]
 pub fn unsupported_cases() -> Vec<Case> {
     vec![
-        // A `match` argument (R3E.2) remains unsupported; comprehensions
-        // (R3E.1) are supported now, so their former probes moved to the
-        // supported set.
-        value(
-            "match_argument",
-            "fn f(x) { 0 }\nf(match 1 { 1 -> { 2 } })\n",
-        ),
-        // A `try` block (R3F.1) remains unsupported.
+        // A `try` block (R3F.1) is the last unsupported runtime construct;
+        // calls, construct/method, lambdas, comprehensions, and match are all
+        // supported now, so their former probes moved to the supported set.
         value(
             "try_argument",
             "fn f(x) { 0 }\nf({ try { 1 } catch e { 2 } })\n",
         ),
-        // Same shapes inside a real user frame.
+        value(
+            "try_callee_body",
+            "fn f() { try { 1 } catch e { 2 } }\nf()\n",
+        ),
+        // Same shape inside a real user frame.
         program(
-            "main_match_argument",
-            "fn main() { let x = f(match 1 { 1 -> { 2 } }) }\nfn f(x) { 0 }\n",
+            "main_try_block",
+            "fn main() { let x = { try { 1 } catch e { 2 } } }\n",
         ),
     ]
 }

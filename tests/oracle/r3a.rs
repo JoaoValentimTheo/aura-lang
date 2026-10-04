@@ -122,6 +122,8 @@ pub fn supported_cases() -> Vec<Case> {
         value("loop_stmt", "{ loop { break } }\n"),
         // The original R3A comprehension sentinel: supported by B-1R3E.1.
         value("list_comp", "[x for x in [1, 2]]\n"),
+        // The original R3A match sentinel: supported by B-1R3E.2. Key kept.
+        value("match", "match 1 { 1 -> { 2 } }\n"),
         // The original R3A method sentinel: builtin method calls are supported
         // by B-1R3C.2. Key preserved.
 
@@ -146,39 +148,13 @@ pub fn supported_cases() -> Vec<Case> {
 #[must_use]
 pub fn unsupported_cases() -> Vec<Case> {
     vec![
-        // `fstring` was removed in B-1R3B.7: f-string evaluation is supported
-        // now and asserted by `r3b::fstring_supported_cases`.
-        // `list_literal`/`tuple_literal` were removed in B-1R3B.4.1: list and
-        // tuple construction are supported now and asserted by
-        // `r3b::list_supported_cases`. `map_literal` was removed in
-        // B-1R3B.4.2: map construction is supported now and asserted by
-        // `r3b::map_supported_cases`. `range_literal` was removed in
-        // B-1R3B.5: range construction is supported now and asserted by
-        // `r3b::range_supported_cases`. `call` was migrated to
-        // `supported_cases` in B-1R3C.1: a native call is supported now and
-        // asserted by `r3c1::supported_cases`. `pipe` also moved: `x |> f` for
-        // a callable name desugars to a call at parse time, so it is supported
-        // by the same tranche; the remaining `Expr::Pipe` forms are still
-        // checked by the R3C.4 tranche.
-
-        // `field_access` was migrated to `supported_cases` in B-1R3C.3:
-        // struct construction is supported now, so the instance field read is
-        // reachable and asserted by `r3c1::supported_cases` (and by the
-        // migrated key below).
-        // `index` was removed in B-1R3B.6: index reads are supported now and
-        // asserted by `r3b::index_supported_cases`. `field_access` stays: it
-        // builds a struct with `Expr::Construct`, which is still unsupported,
-        // so the E4999 sentinel occurs before the field read; the reachable
-        // field surface (builtin zero-argument methods) is asserted by
-        // `r3b::field_supported_cases`.
-        // `lambda` was migrated to `supported_cases` in B-1R3C.4.
-        // `pipe` was migrated to `supported_cases` in B-1R3C.1/R3C.4.
-        value("match", "match 1 { 1 -> { 2 } }\n"),
-        // `list_comp` was migrated to `supported_cases` in B-1R3E.1.
-        // `while_stmt`/`loop_stmt` were migrated to `supported_cases` in
-        // B-1R3D.2 (loops landed); see the preserved keys there.
-        // `let_pattern` and `assign` were migrated to `supported_cases` in
-        // B-1R3D.1 (destructuring and assignment landed); see the preserved
-        // keys there.
+        // Every original R3A sentinel migrated as its construct landed:
+        // `fstring` (R3B.7), `list_literal`/`tuple_literal` (R3B.4.1),
+        // `map_literal` (R3B.4.2), `range_literal` (R3B.5), `call`/`pipe`
+        // (R3C.1), `method_call` (R3C.2), `field_access` (R3C.3), `lambda`
+        // (R3C.4), `let_pattern`/`assign` (R3D.1), `while_stmt`/`loop_stmt`
+        // (R3D.2), `list_comp` (R3E.1), `match` (R3E.2). The last remaining
+        // unsupported runtime construct is `try` (R3F.1).
+        value("try_stmt", "{ try { 1 } catch e { 2 } }\n"),
     ]
 }

@@ -1672,14 +1672,14 @@ fn iterative_engine_is_a_distinct_path() {
     assert_eq!(a, b, "supported case must agree");
 
     // An unsupported case the recursive engine accepts: if `iterative` were an
-    // alias it would also succeed; it must instead report E4999. `match`
-    // remains unsupported after R3E.1 (the probe has moved through call,
-    // lambda, comprehension, and finally match as each became supported).
+    // alias it would also succeed; it must instead report E4999. `try`
+    // remains unsupported after R3E.2 (the probe has moved through call,
+    // lambda, comprehension, match, and finally try as each became supported).
     let unsupported = Case {
         group: "r3a-value",
         name: "distinct_path_unsupported",
         file: "<r3a>",
-        source: "match 1 { 1 -> { 2 } }\n",
+        source: "{ try { 1 } catch e { 2 } }\n",
         kind: harness::Kind::Value,
     };
     let r = observe(&unsupported, harness::Engine::recursive()).unwrap();
