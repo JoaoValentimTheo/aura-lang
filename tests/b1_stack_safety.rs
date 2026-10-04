@@ -31,7 +31,7 @@ fn run_on(
 ) -> Result<harness::Observable, String> {
     std::thread::Builder::new()
         .stack_size(stack)
-        .spawn(move || observe(&case, engine).map_err(|e| e.to_string()))
+        .spawn(move || observe(&case, engine).map_err(|e| e.clone()))
         .map_err(|e| e.to_string())?
         .join()
         .map_err(|_| "thread aborted (stack overflow)".to_string())?

@@ -1,4 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+// The harness is shared by several test targets; each includes only part of
+// its API, so per-target dead-code analysis would flag the rest.
+#![allow(dead_code)]
 // `observe` and its helpers return `ObserveResult` on purpose: a harness setup
 // failure is a distinct category from a language outcome, and the future
 // iterative engine may surface one. Keeping the `Result` seam now means B-1R3
