@@ -775,29 +775,26 @@ impl<'i> Machine<'i> {
                             catch_body, scope, false,
                         ))));
                     }
-                    match finally {
-                        Some(f) => {
-                            self.kont.push(Cont::TryFinally {
-                                original: TryResult::Fatal(diag),
-                            });
-                            return Ok(Some(Control::Next(Ctrl::EnterBlock(f, env, true))));
-                        }
-                        // No `finally`: keep unwinding to an outer region.
-                        None => continue,
+                    if let Some(f) = finally {
+                        self.kont.push(Cont::TryFinally {
+                            original: TryResult::Fatal(diag),
+                        });
+                        return Ok(Some(Control::Next(Ctrl::EnterBlock(f, env, true))));
                     }
+                    // No `finally`: keep unwinding to an outer region (the
+                    // loop iterates).
                 }
                 Cont::TryCatchEnd { finally, env } => {
                     // An error in the catch body is not caught by this try; it
                     // still runs `finally` before continuing to outer regions.
-                    match finally {
-                        Some(f) => {
-                            self.kont.push(Cont::TryFinally {
-                                original: TryResult::Fatal(diag),
-                            });
-                            return Ok(Some(Control::Next(Ctrl::EnterBlock(f, env, true))));
-                        }
-                        None => continue,
+                    if let Some(f) = finally {
+                        self.kont.push(Cont::TryFinally {
+                            original: TryResult::Fatal(diag),
+                        });
+                        return Ok(Some(Control::Next(Ctrl::EnterBlock(f, env, true))));
                     }
+                    // No `finally`: keep unwinding to an outer region (the
+                    // loop iterates).
                 }
                 _ => unreachable!("marker selection matched a try region"),
             }
