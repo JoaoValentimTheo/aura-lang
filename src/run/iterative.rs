@@ -379,6 +379,11 @@ enum Cont {
     /// arm (`call_value`). A `Name` callee is resolved synchronously once its
     /// arguments complete, so this record is only pushed for other shapes.
     CallCallee { values: Vec<Value>, span: Span },
+    /// A pipe left operand finished (R3C.4); evaluate the right operand next,
+    /// exactly like `Interp::eval_inner`'s `Expr::Pipe` arm.
+    PipeRight { r: Arc<Expr>, env: Env, span: Span },
+    /// A pipe right operand finished (R3C.4); apply it to the left value.
+    PipeApply { left: Value, span: Span },
     /// A method receiver finished (R3C.2); evaluate the arguments in source
     /// order next, exactly like `Interp::eval_inner`'s `Expr::Method` arm.
     MethodReceiver {
@@ -979,6 +984,26 @@ impl<'i> Machine<'i> {
                     }
                 }
             }
+            Cont::PipeRight { r, env, span } => {
+                let Ctl::Val(left) = done.ctl else {
+                    // A control signal from the left operand propagates
+                    // without evaluating the right (mirrors `val!`).
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                self.kont.push(Cont::PipeApply { left, span });
+                Ok(Resume::Next(Ctrl::EvalExpr(r, env)))
+            }
+            Cont::PipeApply { left, span } => {
+                let Ctl::Val(f) = done.ctl else {
+                    // A control signal from the right operand propagates
+                    // without applying the pipe (mirrors `val!`).
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                match self.start_call_value(f, vec![left], span)? {
+                    Control::Next(next) => Ok(Resume::Next(next)),
+                    Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                }
+            }
             Cont::MethodReceiver {
                 name,
                 args,
@@ -1365,6 +1390,41 @@ impl<'i> Machine<'i> {
                     span: *span,
                 });
                 Ok(Control::Next(Ctrl::EvalExpr(recv.clone(), env.clone())))
+            }
+            Expr::Lambda(params, body, _) => {
+                // A lambda captures the environment **by reference** and its
+                // source for diagnostics; construction is synchronous (nothing
+                // to evaluate), exactly like `Interp::eval_inner`.
+                let body_stmts = match body.as_ref() {
+                    Expr::Block(stmts, _) => stmts.clone(),
+                    expr => Arc::from([Stmt::Return(Some(expr.clone()), Span::default())]),
+                };
+                let closure = Rc::new(Closure {
+                    name: "<lambda>".to_string(),
+                    params: params.iter().map(|p| (p.name.clone(), p.mutable)).collect(),
+                    param_tys: params
+                        .iter()
+                        .map(|p| p.ty.as_ref().map(crate::types::Ty::from_expr_lenient))
+                        .collect(),
+                    body: body_stmts,
+                    env: env.clone(),
+                });
+                if let Some(source) = self.interp.current_source {
+                    self.interp
+                        .closure_sources
+                        .insert(Rc::as_ptr(&closure) as usize, source);
+                }
+                Ok(Control::Next(Ctrl::Done(Ctl::Val(Value::Closure(closure)))))
+            }
+            Expr::Pipe(l, r, span) => {
+                // `l |> r` evaluates `l` once, then `r` once, then applies
+                // `r` to `l`'s value through the ordinary call path.
+                self.kont.push(Cont::PipeRight {
+                    r: r.clone(),
+                    env: env.clone(),
+                    span: *span,
+                });
+                Ok(Control::Next(Ctrl::EvalExpr(l.clone(), env.clone())))
             }
             Expr::Method(recv, name, args, _ty_args, span) => {
                 // The receiver is evaluated exactly once, then the arguments in
@@ -2023,11 +2083,16 @@ mod tests {
 
     #[test]
     fn unsupported_construct_fails_explicitly() {
-        // A lambda remains R3C.4 territory and is still unsupported. The
-        // machine must fail explicitly, never fall back to recursion.
-        // (Call became supported in R3C.1; map construction in B-1R3B.4.2 and
-        // range construction in B-1R3B.5.)
-        let e = Expr::Lambda(Vec::new(), Arc::new(lit(1)), Span::default());
+        // A list comprehension remains R3E.1 territory and is still
+        // unsupported. The machine must fail explicitly, never fall back to
+        // recursion. (Call became supported in R3C.1; lambda in R3C.4.)
+        let e = Expr::ListComp {
+            value: Arc::new(lit(1)),
+            pattern: crate::ast::Pattern::Bind("_".to_string(), Span::default()),
+            iterable: Arc::new(list(vec![lit(1)])),
+            filter: None,
+            span: Span::default(),
+        };
         let err = run_expr(&e).err().unwrap();
         assert_eq!(err.code, codes::INTERNAL);
         assert!(err
@@ -2177,16 +2242,20 @@ mod tests {
     fn range_out_of_if_remains_unsupported() {
         // Range support is construction-only. `if 1..3 { }` requires the
         // truthiness/condition path, which is separately supported; this test
-        // pins that an `if` whose taken branch is a still-unsupported lambda
-        // fails, proving no fallback leaked into R3B.5. (The branch used to be
-        // a `len([1])` call, which became supported in R3C.1.)
+        // pins that an `if` whose taken branch is a still-unsupported
+        // comprehension fails, proving no fallback leaked into R3B.5. (The
+        // branch used to be a `len([1])` call, supported in R3C.1, then a
+        // lambda, supported in R3C.4.)
+        let comp = Expr::ListComp {
+            value: Arc::new(lit(1)),
+            pattern: crate::ast::Pattern::Bind("_".to_string(), Span::default()),
+            iterable: Arc::new(list(vec![lit(1)])),
+            filter: None,
+            span: Span::default(),
+        };
         let e = Expr::If(
             Arc::new(Expr::Lit(Lit::Bool(true), Span::default())),
-            Arc::from([expr_stmt(Expr::Lambda(
-                Vec::new(),
-                Arc::new(lit(1)),
-                Span::default(),
-            ))]),
+            Arc::from([expr_stmt(comp)]),
             None,
             Span::default(),
         );
@@ -3165,13 +3234,20 @@ mod tests {
 
     #[test]
     fn list_unsupported_element_fails_explicitly() {
-        // A lambda element is still unsupported (R3C.4): the list must fail
-        // with the E4999 sentinel, never fall back to recursion and never
+        // A comprehension element is still unsupported (R3E.1): the list must
+        // fail with the E4999 sentinel, never fall back to recursion and never
         // produce a partial list. The first element is supported, so this also
         // proves the second element is genuinely scheduled and then fails.
-        // (The element used to be a `len([1])` call, supported since R3C.1.)
-        let lambda = Expr::Lambda(Vec::new(), Arc::new(lit(1)), Span::default());
-        let e = list(vec![lit(1), lambda]);
+        // (The element was a `len([1])` call until R3C.1, then a lambda until
+        // R3C.4.)
+        let comp = Expr::ListComp {
+            value: Arc::new(lit(1)),
+            pattern: crate::ast::Pattern::Bind("_".to_string(), Span::default()),
+            iterable: Arc::new(list(vec![lit(1)])),
+            filter: None,
+            span: Span::default(),
+        };
+        let e = list(vec![lit(1), comp]);
         let err = run_expr(&e).err().unwrap();
         assert_eq!(err.code, codes::INTERNAL);
         assert!(err
@@ -3497,12 +3573,18 @@ mod tests {
 
     #[test]
     fn map_unsupported_key_fails_explicitly() {
-        // A lambda key is still unsupported (R3C.4): the map must fail with
-        // the E4999 sentinel, never fall back to recursion and never produce a
-        // partial map. (The key used to be a `len([1])` call, supported since
-        // R3C.1.)
-        let lambda = Expr::Lambda(Vec::new(), Arc::new(lit(1)), Span::default());
-        let e = map(vec![(lambda, lit(1))]);
+        // A comprehension key is still unsupported (R3E.1): the map must fail
+        // with the E4999 sentinel, never fall back to recursion and never
+        // produce a partial map. (The key was a `len([1])` call until R3C.1,
+        // then a lambda until R3C.4.)
+        let comp = Expr::ListComp {
+            value: Arc::new(lit(1)),
+            pattern: crate::ast::Pattern::Bind("_".to_string(), Span::default()),
+            iterable: Arc::new(list(vec![lit(1)])),
+            filter: None,
+            span: Span::default(),
+        };
+        let e = map(vec![(comp, lit(1))]);
         let err = run_expr(&e).err().unwrap();
         assert_eq!(err.code, codes::INTERNAL);
         assert!(err
