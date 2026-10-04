@@ -362,16 +362,16 @@ impl Compilation {
             entry_source,
             item_sources,
         } = self;
-        if item_sources.is_some() {
-            let diag = SourceDiagnostic::new(
-                error::Diag::new(
-                    error::codes::INTERNAL,
-                    "multi-source execution is not supported by the iterative engine (B-1R3A)",
-                    error::Span::default(),
-                ),
-                entry_source,
-            );
-            return Err(DiagnosticReport::new(diag, sources));
+        // Mirror `execute_with_host_factory` exactly: a provider-backed
+        // compilation routes through the sourced machine path so per-item
+        // source ownership is preserved.
+        if let Some(item_sources) = item_sources {
+            let outcome = on_source_execution_stack(move || {
+                let mut interp = run::Interp::new();
+                interp.set_host(host::host_from_parts(stdout, args, input));
+                interp.run_iterative_sourced(&module, &item_sources, entry_source)
+            });
+            return outcome.map_err(|diagnostic| DiagnosticReport::new(diagnostic, sources));
         }
         let outcome = on_execution_stack(move || {
             let mut interp = run::Interp::new();

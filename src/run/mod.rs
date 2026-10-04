@@ -534,6 +534,67 @@ impl Interp {
         Ok(())
     }
 
+    /// Execute a resolved module with the explicit-continuation machine,
+    /// retaining per-item source provenance (the sourced counterpart of
+    /// [`Interp::run_iterative`]). The cutover path uses this so multi-source
+    /// provider compilations are attribute-compatible with the recursive
+    /// `run_sourced`.
+    pub(crate) fn run_iterative_sourced(
+        &mut self,
+        module: &Module,
+        item_sources: &[SourceId],
+        entry_source: SourceId,
+    ) -> std::result::Result<(), SourceDiagnostic> {
+        if module.items.len() != item_sources.len() {
+            return Err(SourceDiagnostic::locationless(Diag::locationless(
+                codes::INTERNAL,
+                "runtime source provenance does not match the resolved module",
+            )));
+        }
+
+        self.last_error_source = None;
+        for (item, source) in module.items.iter().zip(item_sources.iter().copied()) {
+            self.declare_item_with_source(item, Some(source));
+        }
+
+        for (item, source) in module.items.iter().zip(item_sources.iter().copied()) {
+            self.current_source = Some(source);
+            self.last_error_source = None;
+            let result = match item {
+                Item::Const { name, value, .. } => {
+                    let globals = self.globals.clone();
+                    self.iterative_eval(value, &globals).and_then(|ctl| {
+                        let value = self.finish_global(ctl)?;
+                        self.globals.define(name.clone(), value, false);
+                        Ok(())
+                    })
+                }
+                Item::Expr(expr, _) => {
+                    let globals = self.globals.clone();
+                    self.iterative_eval(expr, &globals)
+                        .and_then(|ctl| self.finish_global(ctl).map(|_| ()))
+                }
+                _ => Ok(()),
+            };
+            if let Err(diagnostic) = result {
+                let owner = self.last_error_source.take().unwrap_or(source);
+                return Err(SourceDiagnostic::new(diagnostic, owner));
+            }
+        }
+
+        if let Some(main) = self.functions.get("main").and_then(|s| s.first()).cloned() {
+            self.current_source = Some(entry_source);
+            self.last_error_source = None;
+            if let Err(diagnostic) =
+                iterative::call_closure_body(self, main, Vec::new(), Span::default())
+            {
+                let owner = self.last_error_source.take().unwrap_or(entry_source);
+                return Err(SourceDiagnostic::new(self.uncaught(diagnostic), owner));
+            }
+        }
+        Ok(())
+    }
+
     /// Evaluate one expression with the iterative machine (feature-gated),
     /// normalizing an internal throw exactly like `eval_toplevel`.
     #[cfg(feature = "evaluator-oracle")]

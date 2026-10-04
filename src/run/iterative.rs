@@ -677,6 +677,15 @@ impl<'i> Machine<'i> {
                 Ok(Control::Next(next)) => self.ctrl = next,
                 Ok(Control::Finished(ctl)) => return Ok(ctl),
                 Err(diag) => {
+                    // Source attribution (mirrors `Interp::call`): a fatal
+                    // diagnostic is attributed to the source active where it
+                    // was raised; `THROWN` is attributed like the recursive
+                    // engine (at the caller's frame, or the entry source if it
+                    // escapes entirely), so it is recorded only when it
+                    // crosses a user-frame boundary (`resume_frame_boundary`).
+                    if diag.code != codes::THROWN && self.interp.last_error_source.is_none() {
+                        self.interp.last_error_source = self.interp.current_source;
+                    }
                     // Try interception (R3F.1): an active try body may catch a
                     // `throw`; otherwise `finally` still runs before the error
                     // propagates. The recursive engine gets this from Rust's
