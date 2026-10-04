@@ -8,10 +8,11 @@ before continuing substantial work.
 ## Repository
 
 - Branch: `rewrite/v3-rust`
-- Remote `origin/rewrite/v3-rust`: `cf17689e056e6412e22bf74bf40335ec74d6e184`
-  (R3A + B-1R3B.1 through B-1R3B.6; pushed and remote-closed). The B-1R3B.7
-  commits are **local and unpushed** on top of it. (Reconcile this line with
-  `git rev-parse origin/rewrite/v3-rust` at every checkpoint: Git wins.)
+- Remote `origin/rewrite/v3-rust`: `52124a09b77f5bf6fa447450430a940516bac79f`
+  (R3A + B-1R3B.1 through B-1R3B.7; pushed and remote-closed; exact-SHA CI and
+  Pages green). Local = tracking = server; ahead/behind 0/0. (Reconcile this
+  line with `git rev-parse origin/rewrite/v3-rust` at every checkpoint: Git
+  wins.)
 - Local/remote relationship: authoritative value is `git rev-list
   --left-right --count origin/rewrite/v3-rust...HEAD`; a tracked file cannot
   safely hardcode its own position.
@@ -34,9 +35,9 @@ runtime means adding a version, never replacing one.
 ## Current Track
 
 B-1 — ENGINE-STACK-INDEPENDENT CALL ENGINE. B-1 is OPEN (WASM implementation
-nonconformance). The R3A baseline through B-1R3B.6 are pushed and remote-closed
-at `cf17689`; B-1R3B.7 (f-strings) is complete locally and unpushed on top of it.
-Production still runs the recursive evaluator.
+nonconformance). The R3A baseline through B-1R3B.7 are pushed and remote-closed
+at `52124a0`; B-1R3B.8 (completion audit + dependency graph) is COMPLETE as an
+audit (no implementation). Production still runs the recursive evaluator.
 
 B-1R phase state:
 
@@ -68,18 +69,23 @@ B-1R phase state:
   differential-oracle equivalent).
 - **B-1R3B.6:** COMPLETE AND REMOTELY CLOSED at `cf17689` (index / field
   reads; differential-oracle equivalent).
-- **B-1R3B.7:** COMPLETE LOCALLY, unpushed (f-strings; differential-oracle
-  equivalent; literal/interpolation parts left to right, exactly once each,
-  `v.display()` without a spec or `Interp::format_value` with one, raw
-  (undecoded) literal text, `{{`/`}}` escapes, the stringification matrix
-  (none/bool/int/float/string/list/tuple-sugar/map/range/`<fn>`), the format
-  mini-language with its `E3001` type and `E4013` precision/width bounds,
+- **B-1R3B.7:** COMPLETE AND REMOTELY CLOSED at `52124a0` (f-strings;
+  differential-oracle equivalent; literal/interpolation parts left to right,
+  exactly once each, `v.display()` without a spec or `Interp::format_value` with
+  one, raw (undecoded) literal text, `{{`/`}}` escapes, the stringification
+  matrix (none/bool/int/float/string/list/tuple-sugar/map/range/`<fn>`), the
+  format mini-language with its `E3001` type and `E4013` precision/width bounds,
   Unicode, one-level nested f-strings, control-signal and diagnostic abort with
   no partial string, `and`/`or` skipping of a whole f-string, composition with
   List/Map/Range/Index/Field/block/let/if, program-mode frame boundary, and
-  host-stack/AST-depth/`expr_depth` safety verified). A fresh adversarial push
-  gate is required. See `docs/engineering/CURRENT_HANDOFF.md`.
-- **B-1R3B.8:** NOT STARTED (milestone adversarial closure).
+  host-stack/AST-depth/`expr_depth` safety verified). Adversarial push gate
+  passed; a deliberate continuation-scheduling mutation was detected and
+  reverted byte-exactly.
+- **B-1R3B.8:** COMPLETE (audit only; no implementation) —
+  `docs/engineering/B1R3B8_COMPLETION_AUDIT.md` mechanically reconstructs the
+  remaining surface (8 Expr + 6 Stmt), the dependency DAG, the R3C boundary
+  (`Call`, `Method`, `Construct`, `Lambda`, `Pipe`), and the
+  deferred-strengthening ledger. R3C is **NOT STARTED**.
 - **B-1R3C…R3G:** NOT STARTED.
 
 ## Production vs experimental engine
@@ -159,10 +165,12 @@ Git + working tree + these documents; chat history is not authority.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: run a fresh adversarial
-read-only push gate over the `cf17689..HEAD` range (R3B.7); if it passes, push
-and remotely close B-1R3B.7, then run the B-1R3B milestone adversarial closure
-(R3B.8) before starting R3C.
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: R3B is complete and
+remotely closed; R3B.8 (completion audit) is complete (audit only, no
+implementation). Next: a fresh push gate over the local range, then exact
+remote closure of the B-1R3B.8 documentation checkpoint (push requires separate
+human authorization). Do not start R3C.1 (`Call`) before that remote closure
+and its own explicit authorization.
 
 ## Writer
 

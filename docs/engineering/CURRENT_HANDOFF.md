@@ -30,10 +30,13 @@ explicit-continuation (iterative) evaluator over the existing AST
 - B-1R3B.4.2 (map construction): **COMPLETE AND REMOTELY CLOSED** at `5e70677`.
 - B-1R3B.5 (range construction): **COMPLETE AND REMOTELY CLOSED** at `cf17689`.
 - B-1R3B.6 (index / field reads): **COMPLETE AND REMOTELY CLOSED** at `cf17689`.
-- B-1R3B.7 (f-strings): **COMPLETE LOCALLY**, unpushed (additive commits on top
-  of `origin/rewrite/v3-rust` = `cf17689`). A fresh adversarial push gate over
-  `cf17689..HEAD` is required before any push.
-- B-1R3B.8 (milestone adversarial closure)…R3G: NOT STARTED.
+- B-1R3B.7 (f-strings): **COMPLETE AND REMOTELY CLOSED** at `52124a0` (pushed
+  after a passing adversarial push gate; exact-SHA CI and Pages green; local =
+  tracking = server at `52124a0`, ahead/behind 0/0).
+- B-1R3B.8 (milestone completion audit + dependency graph): **COMPLETE (audit
+  only)** — `docs/engineering/B1R3B8_COMPLETION_AUDIT.md`.
+- R3C…R3G: NOT STARTED (no implementation may begin without explicit human
+  authorization).
 
 See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
 
@@ -53,7 +56,7 @@ See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
   construct returns the deterministic `E4999` sentinel and never falls back to
   recursion.
 
-## Completed in B-1R3B.7 (local)
+## Completed in B-1R3B.7 (remote-closed at `52124a0`)
 
 - `src/run/iterative.rs` — added `Cont::FStrNext { parts, index, spec, out, env }`,
   `Machine::start_fstring`/`advance_fstring`, and the `Expr::FStr` arm in
@@ -134,7 +137,7 @@ See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
   (calls/assignment/print) are still unsupported (recorded in
   `src/run/iterative.rs`).
 
-## Completed in B-1R3B.5 (local)
+## Completed in B-1R3B.5 (remote-closed at `cf17689`)
 
 - `src/run/iterative.rs` — added `Cont::RangeStart { end, env, span }` and
   `Cont::RangeEnd { start, span }`, the `Expr::Range` arm in `start_expr`, and
@@ -338,14 +341,13 @@ See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
 
 At milestone closure, run the full validation floor in `AGENTS.md`.
 
-## Next phase — B-1R3B (values and operators)
+## Phase ledger — B-1R3B (values and operators)
 
-Implement the next semantic slice on the same machine, microphase by
-microphase, keeping the oracle green and production unchanged. R3B.1 (unary),
-R3B.2 (eager binary), R3B.3 (short-circuit), and R3B.4.1 (list/tuple
-construction) are complete; remaining ordered microphases; each is implement →
-targeted tests → oracle → checkpoint. Do **not** start the next one before
-human review of the current one.
+R3B is **COMPLETE**: every planned microphase (R3B.1—R3B.7) is implemented,
+differentially oracled, and remotely closed; R3B.8 audited the milestone. The
+next implementation phase (R3C) is **NOT STARTED** and requires explicit human
+authorization. Each future microphase remains implement → targeted tests →
+oracle → checkpoint; do not start one before human review of the previous one.
 
 - R3B.1 unary operators — **COMPLETE AND PUSHED**
 - R3B.2 binary operators — **COMPLETE AND PUSHED**
@@ -354,22 +356,28 @@ human review of the current one.
 - R3B.4.2 map construction — **COMPLETE AND REMOTELY CLOSED**
 - R3B.4.3 (reserved: map-key admissibility / nesting if the code shows a
   distinct boundary)
-- R3B.5 range — **COMPLETE LOCALLY**
+- R3B.5 range — **COMPLETE AND REMOTELY CLOSED**
 - R3B.6 index / field reads — **COMPLETE AND REMOTELY CLOSED**
-- R3B.7 f-strings — **COMPLETE LOCALLY**
-- R3B.8 milestone adversarial closure
+- R3B.7 f-strings — **COMPLETE AND REMOTELY CLOSED**
+- R3B.8 milestone completion audit — **COMPLETE (audit only)**; see
+  `docs/engineering/B1R3B8_COMPLETION_AUDIT.md`
 
 Use multi-reviewer analysis mainly at milestone closure, not after each
 microphase.
 
 ## Exact next action
 
-1. Fresh adversarial read-only push gate over the `cf17689..HEAD` range (R3B.7).
-2. If the gate passes, push the exact reviewed stack and close B-1R3B.7
-   remotely.
-3. Then run B-1R3B.8, the milestone adversarial closure, including the
-   mechanically derived remaining unsupported-surface inventory, before starting
-   any R3C work. Keep `tests/oracle/golden.tsv` byte-unchanged.
+1. R3B is COMPLETE and remotely closed; R3B.8 (completion audit) is COMPLETE
+   (audit only, no implementation) and checkpointed as one documentation-only
+   commit on top of `52124a0`.
+2. Next authorized action: a fresh push gate over the local
+   `52124a0..HEAD` range, then exact remote closure of the B-1R3B.8
+   documentation checkpoint (push requires separate human authorization).
+3. **Do not start R3C** before that remote closure and its own explicit human
+   authorization. The recommended first implementation microphase is R3C.1
+   (`Call`) per `docs/engineering/B1R3B8_COMPLETION_AUDIT.md`.
+4. Keep `tests/oracle/golden.tsv` byte-unchanged and production on the
+   recursive engine.
 
 ## Stop conditions
 
