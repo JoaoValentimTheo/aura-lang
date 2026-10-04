@@ -112,15 +112,10 @@ fn engines_agree() {
         let (first_name, first) = &observed[0];
         for (name, obs) in observed.iter().skip(1) {
             // B-1R3F.1 closed the current-language runtime surface: the
-            // iterative engine now supports every construct, so the whole
-            // corpus must agree between engines with no unsupported-sentinel
-            // exception. (`is_unsupported_iterative_divergence` is retained
-            // only for the multi-source compile-path case, which is a
-            // compilation surface, not an evaluator construct.)
+            // iterative engine supports every construct and the machine
+            // handles multi-source provider compilations, so the whole corpus
+            // must agree between engines with **no** exception.
             if obs == first {
-                continue;
-            }
-            if is_unsupported_iterative_divergence(first, obs) {
                 continue;
             }
             failures.push(format!(
@@ -135,31 +130,6 @@ fn engines_agree() {
         failures.join("\n")
     );
 }
-
-/// True when `iterative` is the explicit "not supported by the iterative
-/// engine" outcome while `recursive` ran normally (or produced a different
-/// production result). This is the only permitted whole-corpus divergence
-/// during the partial B-1R3A migration, and it must be the deterministic
-/// `E4999` sentinel — never a silent fallback that happens to match.
-fn is_unsupported_iterative_divergence(recursive: &Observable, iterative: &Observable) -> bool {
-    let Completion::Runtime(d) = &iterative.completion else {
-        return false;
-    };
-    // The recursive side must have run normally (completed, or produced its own
-    // non-sentinel diagnostic). If the recursive side already failed with the
-    // sentinel, this is not the partial-migration divergence.
-    let recursive_ran = match &recursive.completion {
-        Completion::Ok => true,
-        Completion::Runtime(rd) => rd.code != 4999,
-        Completion::Compile(_) => false,
-    };
-    recursive_ran
-        && d.code == 4999
-        && (d.message.contains("not supported by the iterative engine")
-            || d.message
-                .contains("multi-source execution is not supported"))
-}
-
 /// B-1R3A — the real iterative machine must agree with the recursive engine on
 /// every supported-subset case. This is the strict differential comparison; it
 /// is meaningful only with the `evaluator-oracle` feature (without it the
