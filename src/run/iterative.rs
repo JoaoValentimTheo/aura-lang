@@ -427,6 +427,21 @@ enum Cont {
     /// arm (`call_value`). A `Name` callee is resolved synchronously once its
     /// arguments complete, so this record is only pushed for other shapes.
     CallCallee { values: Vec<Value>, span: Span },
+    /// A `match` subject finished (R3E.2); find the first matching arm.
+    MatchSubject {
+        arms: Arc<[crate::ast::Arm]>,
+        env: Env,
+        span: Span,
+    },
+    /// A `match` arm guard finished (R3E.2); enter the body when truthy, else
+    /// try the next arm.
+    MatchGuard {
+        arms: Arc<[crate::ast::Arm]>,
+        subject: Value,
+        next: usize,
+        scope: Env,
+        span: Span,
+    },
     /// A comprehension iterable finished (R3E.1); start the first item. The
     /// `Env` is the per-item scope for the item currently in flight.
     CompIterable(Box<CompState>, Env),
@@ -696,6 +711,41 @@ impl<'i> Machine<'i> {
                     Ok(Resume::Next(Ctrl::EvalStmt(stmt, local)))
                 } else {
                     Ok(Resume::Redeliver(Done::plain(Ctl::Val(value))))
+                }
+            }
+            Cont::MatchSubject { arms, env, span } => {
+                let Ctl::Val(subject) = done.ctl else {
+                    // A signal from the subject propagates without matching.
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                match self.try_match_arms(arms, subject, 0, env, span)? {
+                    Control::Next(next) => Ok(Resume::Next(next)),
+                    Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                }
+            }
+            Cont::MatchGuard {
+                arms,
+                subject,
+                next,
+                scope,
+                span,
+            } => {
+                let Ctl::Val(g) = done.ctl else {
+                    // A signal from the guard propagates; the arm is not
+                    // entered and later arms are not tried (mirrors `val!`).
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                if g.truthy() {
+                    Ok(Resume::Next(Ctrl::EnterBlock(
+                        arms[next - 1].body.clone(),
+                        scope,
+                        true,
+                    )))
+                } else {
+                    match self.try_match_arms(arms, subject, next, scope, span)? {
+                        Control::Next(next) => Ok(Resume::Next(next)),
+                        Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                    }
                 }
             }
             Cont::CompIterable(mut state, env) => {
@@ -1865,8 +1915,18 @@ impl<'i> Machine<'i> {
                 // argument or, for a zero-argument call, dispatches directly.
                 self.start_call(callee.clone(), args.clone(), env.clone(), *span)
             }
-            // `match` is the last remaining unsupported expression (R3E.2).
-            other @ Expr::Match(..) => Err(self.unsupported(expr_span(other))),
+            Expr::Match(subject, arms, span) => {
+                // The subject is evaluated exactly once; arms are tried in
+                // order with `match_pattern`; the first matching (and,
+                // if present, truthy-guarded) arm's body runs in a fresh child
+                // scope; no match is `E4025` (`Interp::eval_inner`).
+                self.kont.push(Cont::MatchSubject {
+                    arms: arms.clone(),
+                    env: env.clone(),
+                    span: *span,
+                });
+                Ok(Control::Next(Ctrl::EvalExpr(subject.clone(), env.clone())))
+            }
         }
     }
 
@@ -1995,6 +2055,45 @@ impl<'i> Machine<'i> {
         Ok(Control::Next(Ctrl::Done(Ctl::Val(
             self.interp.method(&subject, name, values, span)?,
         ))))
+    }
+
+    /// Find the first `match` arm whose pattern matches (and whose guard, if
+    /// any, is truthy) and run its body (R3E.2). Pattern/binding semantics are
+    /// the shared `Interp` implementations. No match is `E4025`.
+    fn try_match_arms(
+        &mut self,
+        arms: Arc<[crate::ast::Arm]>,
+        subject: Value,
+        start: usize,
+        env: Env,
+        span: Span,
+    ) -> Result<Control> {
+        for (i, arm) in arms.iter().enumerate().skip(start) {
+            if !self.interp.match_pattern(&arm.pattern, &subject) {
+                continue;
+            }
+            let scope = env.child();
+            self.interp.bind_pattern(&arm.pattern, &subject, &scope)?;
+            if let Some(g) = &arm.guard {
+                let guard = Arc::new(g.clone());
+                self.kont.push(Cont::MatchGuard {
+                    arms: arms.clone(),
+                    subject: subject.clone(),
+                    next: i + 1,
+                    scope: scope.clone(),
+                    span,
+                });
+                return Ok(Control::Next(Ctrl::EvalExpr(guard, scope)));
+            }
+            return Ok(Control::Next(Ctrl::EnterBlock(
+                arm.body.clone(),
+                scope,
+                true,
+            )));
+        }
+        Err(self
+            .interp
+            .error(codes::NO_MATCH, "no match arm matched the value", span))
     }
 
     /// Begin a comprehension (R3E.1): evaluate the iterable exactly once, then
