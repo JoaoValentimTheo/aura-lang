@@ -197,6 +197,29 @@ impl Done {
 }
 
 /// The outcome of resuming one continuation.
+/// One comprehension's static parts (R3E.1). `key` is `Some` only for a map
+/// comprehension; the iterable materializes with `Interp::iterate`, exactly
+/// like the recursive engine (comprehensions have no lazy-range path).
+struct CompSpec {
+    key: Option<Arc<Expr>>,
+    value: Arc<Expr>,
+    pattern: Pattern,
+    filter: Option<Arc<Expr>>,
+    iterable: Arc<Expr>,
+    span: Span,
+    is_map: bool,
+}
+
+/// The iteration state carried across a comprehension's continuations.
+struct CompState {
+    spec: CompSpec,
+    env: Env,
+    items: Vec<Value>,
+    index: usize,
+    out: Vec<Value>,
+    map: std::collections::BTreeMap<crate::run::value::MapKey, Value>,
+}
+
 /// A lazy `for` cursor over a range: `next < end`.
 #[derive(Clone, Copy)]
 struct RangeCursor {
@@ -404,6 +427,17 @@ enum Cont {
     /// arm (`call_value`). A `Name` callee is resolved synchronously once its
     /// arguments complete, so this record is only pushed for other shapes.
     CallCallee { values: Vec<Value>, span: Span },
+    /// A comprehension iterable finished (R3E.1); start the first item. The
+    /// `Env` is the per-item scope for the item currently in flight.
+    CompIterable(Box<CompState>, Env),
+    /// A comprehension filter finished (R3E.1) for the current item.
+    CompFilter(Box<CompState>, Env),
+    /// A map comprehension's key finished (R3E.1); evaluate the value next.
+    CompKey(Box<CompState>, Env),
+    /// A comprehension value finished (R3E.1); record it and advance. The
+    /// `Option<MapKey>` is `Some` for a map comprehension; the `Env` is the
+    /// per-item scope.
+    CompValue(Box<CompState>, Env, Option<crate::run::value::MapKey>),
     /// A `for` iterable finished (R3D.4); start iteration (lazy for ranges).
     ForIterable {
         pattern: Pattern,
@@ -662,6 +696,72 @@ impl<'i> Machine<'i> {
                     Ok(Resume::Next(Ctrl::EvalStmt(stmt, local)))
                 } else {
                     Ok(Resume::Redeliver(Done::plain(Ctl::Val(value))))
+                }
+            }
+            Cont::CompIterable(mut state, env) => {
+                let Ctl::Val(subject) = done.ctl else {
+                    // A signal from the iterable propagates before iteration.
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                state.items = self.interp.iterate(&subject, state.spec.span)?;
+                state.env = env;
+                match self.step_comp(state)? {
+                    Control::Next(next) => Ok(Resume::Next(next)),
+                    Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                }
+            }
+            Cont::CompFilter(state, scope) => {
+                let Ctl::Val(pred) = done.ctl else {
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                if pred.truthy() {
+                    match self.after_comp_filter(state, scope) {
+                        Control::Next(next) => Ok(Resume::Next(next)),
+                        Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                    }
+                } else {
+                    match self.step_comp(state)? {
+                        Control::Next(next) => Ok(Resume::Next(next)),
+                        Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                    }
+                }
+            }
+            Cont::CompKey(state, scope) => {
+                let Ctl::Val(kv) = done.ctl else {
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                let Some(mk) = crate::run::value::MapKey::from_value(&kv) else {
+                    return Err(self.interp.error(
+                        codes::TYPE_MISMATCH,
+                        format!(
+                            "type `{}` cannot be used as a map key; map keys must be `string`, `int`, or `bool`",
+                            kv.type_name()
+                        ),
+                        state
+                            .spec
+                            .key
+                            .as_ref()
+                            .map_or(state.spec.span, |k| expr_span(k)),
+                    ));
+                };
+                let value = state.spec.value.clone();
+                self.kont
+                    .push(Cont::CompValue(state, scope.clone(), Some(mk)));
+                Ok(Resume::Next(Ctrl::EvalExpr(value, scope)))
+            }
+            Cont::CompValue(mut state, _scope, mk) => {
+                let Ctl::Val(v) = done.ctl else {
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                match mk {
+                    Some(key) => {
+                        state.map.insert(key, v);
+                    }
+                    None => state.out.push(v),
+                }
+                match self.step_comp(state)? {
+                    Control::Next(next) => Ok(Resume::Next(next)),
+                    Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
                 }
             }
             Cont::ForIterable {
@@ -1701,6 +1801,43 @@ impl<'i> Machine<'i> {
                 });
                 Ok(Control::Next(Ctrl::EvalExpr(l.clone(), env.clone())))
             }
+            Expr::ListComp {
+                value,
+                pattern,
+                iterable,
+                filter,
+                span,
+            } => {
+                let spec = CompSpec {
+                    key: None,
+                    value: value.clone(),
+                    pattern: pattern.clone(),
+                    filter: filter.clone(),
+                    iterable: iterable.clone(),
+                    span: *span,
+                    is_map: false,
+                };
+                Ok(self.start_comp(spec, env.clone(), *span))
+            }
+            Expr::MapComp {
+                key,
+                value,
+                pattern,
+                iterable,
+                filter,
+                span,
+            } => {
+                let spec = CompSpec {
+                    key: Some(key.clone()),
+                    value: value.clone(),
+                    pattern: pattern.clone(),
+                    filter: filter.clone(),
+                    iterable: iterable.clone(),
+                    span: *span,
+                    is_map: true,
+                };
+                Ok(self.start_comp(spec, env.clone(), *span))
+            }
             Expr::Method(recv, name, args, _ty_args, span) => {
                 // The receiver is evaluated exactly once, then the arguments in
                 // source order (`Interp::eval_inner`'s `Expr::Method` arm has
@@ -1728,7 +1865,8 @@ impl<'i> Machine<'i> {
                 // argument or, for a zero-argument call, dispatches directly.
                 self.start_call(callee.clone(), args.clone(), env.clone(), *span)
             }
-            other => Err(self.unsupported(expr_span(other))),
+            // `match` is the last remaining unsupported expression (R3E.2).
+            other @ Expr::Match(..) => Err(self.unsupported(expr_span(other))),
         }
     }
 
@@ -1857,6 +1995,62 @@ impl<'i> Machine<'i> {
         Ok(Control::Next(Ctrl::Done(Ctl::Val(
             self.interp.method(&subject, name, values, span)?,
         ))))
+    }
+
+    /// Begin a comprehension (R3E.1): evaluate the iterable exactly once, then
+    /// iterate. A signal from the iterable propagates before any iteration.
+    fn start_comp(&mut self, spec: CompSpec, env: Env, span: Span) -> Control {
+        let _ = span;
+        let iterable = spec.iterable.clone();
+        self.kont.push(Cont::CompIterable(
+            Box::new(CompState {
+                spec,
+                env: env.clone(),
+                items: Vec::new(),
+                index: 0,
+                out: Vec::new(),
+                map: std::collections::BTreeMap::new(),
+            }),
+            env.clone(),
+        ));
+        Control::Next(Ctrl::EvalExpr(iterable, env))
+    }
+
+    /// Advance a comprehension (R3E.1): take the next materialized item, bind
+    /// it in a fresh child scope, evaluate the filter then the value. Mirrors
+    /// `Interp::eval_inner`'s comprehension arms exactly.
+    fn step_comp(&mut self, mut state: Box<CompState>) -> Result<Control> {
+        if state.index >= state.items.len() {
+            return Ok(Control::Finished(Ctl::Val(if state.spec.is_map {
+                Value::Map(Rc::new(std::cell::RefCell::new(state.map)))
+            } else {
+                Value::list(state.out)
+            })));
+        }
+        let item = state.items[state.index].clone();
+        state.index += 1;
+        let scope = state.env.child();
+        self.interp
+            .bind_pattern(&state.spec.pattern, &item, &scope)?;
+        if let Some(f) = state.spec.filter.clone() {
+            self.kont.push(Cont::CompFilter(state, scope.clone()));
+            Ok(Control::Next(Ctrl::EvalExpr(f, scope)))
+        } else {
+            Ok(self.after_comp_filter(state, scope))
+        }
+    }
+
+    /// The filter passed (or is absent): evaluate the map key first, or the
+    /// value directly for a list comprehension (R3E.1).
+    fn after_comp_filter(&mut self, state: Box<CompState>, scope: Env) -> Control {
+        if let Some(key) = state.spec.key.clone() {
+            self.kont.push(Cont::CompKey(state, scope.clone()));
+            Control::Next(Ctrl::EvalExpr(key, scope))
+        } else {
+            let value = state.spec.value.clone();
+            self.kont.push(Cont::CompValue(state, scope.clone(), None));
+            Control::Next(Ctrl::EvalExpr(value, scope))
+        }
     }
 
     /// Run one `for` iteration step (R3D.4): take the next Range item or the
@@ -2571,16 +2765,19 @@ mod tests {
 
     #[test]
     fn unsupported_construct_fails_explicitly() {
-        // A list comprehension remains R3E.1 territory and is still
-        // unsupported. The machine must fail explicitly, never fall back to
-        // recursion. (Call became supported in R3C.1; lambda in R3C.4.)
-        let e = Expr::ListComp {
-            value: Arc::new(lit(1)),
-            pattern: crate::ast::Pattern::Bind("_".to_string(), Span::default()),
-            iterable: Arc::new(list(vec![lit(1)])),
-            filter: None,
-            span: Span::default(),
-        };
+        // `try` is the last remaining unsupported statement (R3F.1). The
+        // machine must fail explicitly, never fall back to recursion. (Call,
+        // lambda, and comprehensions became supported in R3C/R3E.)
+        let e = Expr::Block(
+            Arc::from([Stmt::Try {
+                body: Arc::from([]),
+                catch: "e".to_string(),
+                catch_body: Arc::from([]),
+                finally: None,
+                span: Span::default(),
+            }]),
+            Span::default(),
+        );
         let err = run_expr(&e).err().unwrap();
         assert_eq!(err.code, codes::INTERNAL);
         assert!(err
@@ -2734,16 +2931,19 @@ mod tests {
         // comprehension fails, proving no fallback leaked into R3B.5. (The
         // branch used to be a `len([1])` call, supported in R3C.1, then a
         // lambda, supported in R3C.4.)
-        let comp = Expr::ListComp {
-            value: Arc::new(lit(1)),
-            pattern: crate::ast::Pattern::Bind("_".to_string(), Span::default()),
-            iterable: Arc::new(list(vec![lit(1)])),
-            filter: None,
-            span: Span::default(),
-        };
+        let unsupported = Expr::Block(
+            Arc::from([Stmt::Try {
+                body: Arc::from([]),
+                catch: "e".to_string(),
+                catch_body: Arc::from([]),
+                finally: None,
+                span: Span::default(),
+            }]),
+            Span::default(),
+        );
         let e = Expr::If(
             Arc::new(Expr::Lit(Lit::Bool(true), Span::default())),
-            Arc::from([expr_stmt(comp)]),
+            Arc::from([expr_stmt(unsupported)]),
             None,
             Span::default(),
         );
@@ -3722,20 +3922,23 @@ mod tests {
 
     #[test]
     fn list_unsupported_element_fails_explicitly() {
-        // A comprehension element is still unsupported (R3E.1): the list must
+        // A `try` block element is still unsupported (R3F.1): the list must
         // fail with the E4999 sentinel, never fall back to recursion and never
         // produce a partial list. The first element is supported, so this also
         // proves the second element is genuinely scheduled and then fails.
-        // (The element was a `len([1])` call until R3C.1, then a lambda until
-        // R3C.4.)
-        let comp = Expr::ListComp {
-            value: Arc::new(lit(1)),
-            pattern: crate::ast::Pattern::Bind("_".to_string(), Span::default()),
-            iterable: Arc::new(list(vec![lit(1)])),
-            filter: None,
-            span: Span::default(),
-        };
-        let e = list(vec![lit(1), comp]);
+        // (The element has moved through call, lambda, and comprehension
+        // probes as each became supported.)
+        let unsupported = Expr::Block(
+            Arc::from([Stmt::Try {
+                body: Arc::from([]),
+                catch: "e".to_string(),
+                catch_body: Arc::from([]),
+                finally: None,
+                span: Span::default(),
+            }]),
+            Span::default(),
+        );
+        let e = list(vec![lit(1), unsupported]);
         let err = run_expr(&e).err().unwrap();
         assert_eq!(err.code, codes::INTERNAL);
         assert!(err
@@ -4061,18 +4264,21 @@ mod tests {
 
     #[test]
     fn map_unsupported_key_fails_explicitly() {
-        // A comprehension key is still unsupported (R3E.1): the map must fail
+        // A `try` block key is still unsupported (R3F.1): the map must fail
         // with the E4999 sentinel, never fall back to recursion and never
-        // produce a partial map. (The key was a `len([1])` call until R3C.1,
-        // then a lambda until R3C.4.)
-        let comp = Expr::ListComp {
-            value: Arc::new(lit(1)),
-            pattern: crate::ast::Pattern::Bind("_".to_string(), Span::default()),
-            iterable: Arc::new(list(vec![lit(1)])),
-            filter: None,
-            span: Span::default(),
-        };
-        let e = map(vec![(comp, lit(1))]);
+        // produce a partial map. (The key has moved through call, lambda, and
+        // comprehension probes as each became supported.)
+        let unsupported = Expr::Block(
+            Arc::from([Stmt::Try {
+                body: Arc::from([]),
+                catch: "e".to_string(),
+                catch_body: Arc::from([]),
+                finally: None,
+                span: Span::default(),
+            }]),
+            Span::default(),
+        );
+        let e = map(vec![(unsupported, lit(1))]);
         let err = run_expr(&e).err().unwrap();
         assert_eq!(err.code, codes::INTERNAL);
         assert!(err
