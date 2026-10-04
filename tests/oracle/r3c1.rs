@@ -475,6 +475,39 @@ pub fn supported_cases() -> Vec<Case> {
             "try_throw_three_regions",
             "fn g() { throw 3 }\n{ try { try { try { throw 1 } catch e { g() } } catch e2 { 0 } } catch e3 { e3 } }\n",
         ),
+        // A fatal raised in a catch body through a callee frame must restore
+        // the frame/depth accounting before `finally`/outer regions continue.
+        // Regression for the adversarial review finding (frame leak ->
+        // spurious E4011 / `expr_depth` underflow). Program mode: the deep
+        // call needs the production execution stack.
+        program(
+            "try_catch_fatal_frame_recovery",
+            "fn boom() { 1 / 0 }\nfn rec(n) { if n { rec(n - 1) } else { 0 } }\nfn main() { try { try { throw 1 } catch e { boom() } finally { throw 99 } } catch e2 { 0 }\n rec(510) }\n",
+        ),
+        program(
+            "try_catch_fatal_return_finally",
+            "fn boom() { 1 / 0 }\nfn g() { try { try { throw 1 } catch e { boom() } finally { return 7 } } catch e2 { 0 } }\nfn main() { let x = g() }\n",
+        ),
+        program(
+            "try_catch_fatal_continue_finally",
+            "fn boom() { 1 / 0 }\nfn main() { let mut i = 0\n while i < 3 { i = i + 1\n try { try { throw 1 } catch e { boom() } finally { continue } } catch e2 { 0 } } }\n",
+        ),
+        program(
+            "try_catch_fatal_two_callee_frames",
+            "fn boom() { b2() }\nfn b2() { 1 / 0 }\nfn rec(n) { if n { rec(n - 1) } else { 0 } }\nfn main() { try { try { throw 1 } catch e { boom() } finally { throw 99 } } catch e2 { 0 }\n rec(510) }\n",
+        ),
+        // A fatal in a `finally` body while unwinding a pending fatal discards
+        // the pending outcome and keeps unwinding, exactly like the recursive
+        // engine's `?` on the finalizer.
+        value("try_fatal_in_finally", "{ try { 1 / 0 } finally { 2 / 0 } }\n"),
+        value(
+            "try_throw_then_fatal_in_finally",
+            "{ try { throw 1 } finally { 2 / 0 } }\n",
+        ),
+        value(
+            "try_three_regions_fatal_chain",
+            "{ try { try { try { 1 / 0 } finally { print(\'a\') } } finally { print(\'b\') } } catch e { 0 } }\n",
+        ),
         value("try_throw_value_uncaught_after", "{ try { throw 1 } catch e { throw e + 1 } }\n"),
         value("try_error_in_catch_propagates", "{ try { throw 1 } catch e { 1 / 0 } }\n"),
         value("try_finally_continue_signal", "{ let mut i = 0\n while i < 2 { i = i + 1\n try { continue } finally { } }\n i }\n"),

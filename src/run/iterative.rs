@@ -455,10 +455,22 @@ enum Cont {
     TryCatchEnd {
         finally: Option<Arc<[Stmt]>>,
         env: Env,
+        /// Machine state when the catch body was entered, restored if an error
+        /// interrupts it (the recursive engine's Rust-stack unwind balances
+        /// this exactly).
+        frames_len: usize,
+        depth: usize,
+        saved_expr_depth: usize,
     },
     /// A `try` `finally` block finished (R3F.1); the pending outcome may be
-    /// overridden by a non-`Val` completion.
-    TryFinally { original: TryResult },
+    /// overridden by a non-`Val` completion. The snapshot restores machine
+    /// state if an error interrupts the `finally` body.
+    TryFinally {
+        original: TryResult,
+        frames_len: usize,
+        depth: usize,
+        saved_expr_depth: usize,
+    },
     /// A `match` subject finished (R3E.2); find the first matching arm.
     MatchSubject {
         arms: Arc<[crate::ast::Arm]>,
@@ -734,11 +746,12 @@ impl<'i> Machine<'i> {
         // Rust's `?` in `Interp::exec_stmt`'s `Try` arm. Iterate rather than
         // returning early so nested regions are all considered.
         loop {
-            let Some(pos) = self
-                .kont
-                .iter()
-                .rposition(|c| matches!(c, Cont::TryBody { .. } | Cont::TryCatchEnd { .. }))
-            else {
+            let Some(pos) = self.kont.iter().rposition(|c| {
+                matches!(
+                    c,
+                    Cont::TryBody { .. } | Cont::TryCatchEnd { .. } | Cont::TryFinally { .. }
+                )
+            }) else {
                 return Err(diag);
             };
             let mut tail = self.kont.split_off(pos);
@@ -770,7 +783,13 @@ impl<'i> Machine<'i> {
                             .unwrap_or_else(|| Value::str(diag.message.clone()));
                         let scope = env.child();
                         scope.define(catch, thrown, false);
-                        self.kont.push(Cont::TryCatchEnd { finally, env });
+                        self.kont.push(Cont::TryCatchEnd {
+                            finally,
+                            env,
+                            frames_len: self.frames.len(),
+                            depth: self.interp.depth,
+                            saved_expr_depth: self.expr_depth,
+                        });
                         return Ok(Some(Control::Next(Ctrl::EnterBlock(
                             catch_body, scope, false,
                         ))));
@@ -778,23 +797,58 @@ impl<'i> Machine<'i> {
                     if let Some(f) = finally {
                         self.kont.push(Cont::TryFinally {
                             original: TryResult::Fatal(diag),
+                            frames_len: self.frames.len(),
+                            depth: self.interp.depth,
+                            saved_expr_depth: self.expr_depth,
                         });
                         return Ok(Some(Control::Next(Ctrl::EnterBlock(f, env, true))));
                     }
                     // No `finally`: keep unwinding to an outer region (the
                     // loop iterates).
                 }
-                Cont::TryCatchEnd { finally, env } => {
-                    // An error in the catch body is not caught by this try; it
-                    // still runs `finally` before continuing to outer regions.
+                Cont::TryCatchEnd {
+                    finally,
+                    env,
+                    frames_len,
+                    depth,
+                    saved_expr_depth,
+                } => {
+                    // An error in the catch body is not caught by this try.
+                    // Restore the state captured when the catch body was
+                    // entered (popping any frames it opened), then run
+                    // `finally` or keep unwinding outward.
+                    while self.frames.len() > frames_len {
+                        self.pop_frame();
+                    }
+                    self.interp.depth = depth;
+                    self.expr_depth = saved_expr_depth;
                     if let Some(f) = finally {
                         self.kont.push(Cont::TryFinally {
                             original: TryResult::Fatal(diag),
+                            frames_len: self.frames.len(),
+                            depth: self.interp.depth,
+                            saved_expr_depth: self.expr_depth,
                         });
                         return Ok(Some(Control::Next(Ctrl::EnterBlock(f, env, true))));
                     }
                     // No `finally`: keep unwinding to an outer region (the
                     // loop iterates).
+                }
+                Cont::TryFinally {
+                    frames_len,
+                    depth,
+                    saved_expr_depth,
+                    ..
+                } => {
+                    // An error interrupted a `finally` body: drop any frames
+                    // it opened, discard the pending outcome (the recursive
+                    // engine's `?` on `exec_block(f)` does exactly this), and
+                    // keep unwinding outward.
+                    while self.frames.len() > frames_len {
+                        self.pop_frame();
+                    }
+                    self.interp.depth = depth;
+                    self.expr_depth = saved_expr_depth;
                 }
                 _ => unreachable!("marker selection matched a try region"),
             }
@@ -885,6 +939,9 @@ impl<'i> Machine<'i> {
                         self.kont.push(Cont::TryCatchEnd {
                             finally: finally.clone(),
                             env: env.clone(),
+                            frames_len: self.frames.len(),
+                            depth: self.interp.depth,
+                            saved_expr_depth: self.expr_depth,
                         });
                         return Ok(Resume::Next(Ctrl::EnterBlock(catch_body, scope, false)));
                     }
@@ -894,22 +951,28 @@ impl<'i> Machine<'i> {
                     Some(f) => {
                         self.kont.push(Cont::TryFinally {
                             original: TryResult::Body(original),
+                            frames_len: self.frames.len(),
+                            depth: self.interp.depth,
+                            saved_expr_depth: self.expr_depth,
                         });
                         Ok(Resume::Next(Ctrl::EnterBlock(f, env, true)))
                     }
                     None => Ok(Resume::Redeliver(Done::plain(original))),
                 }
             }
-            Cont::TryCatchEnd { finally, env } => match finally {
+            Cont::TryCatchEnd { finally, env, .. } => match finally {
                 Some(f) => {
                     self.kont.push(Cont::TryFinally {
                         original: TryResult::Caught(done.ctl),
+                        frames_len: self.frames.len(),
+                        depth: self.interp.depth,
+                        saved_expr_depth: self.expr_depth,
                     });
                     Ok(Resume::Next(Ctrl::EnterBlock(f, env, true)))
                 }
                 None => Ok(Resume::Redeliver(Done::plain(done.ctl))),
             },
-            Cont::TryFinally { original } => {
+            Cont::TryFinally { original, .. } => {
                 // A non-`Val` completion in `finally` overrides the pending
                 // outcome; otherwise the pending outcome survives (including a
                 // pending fatal, which propagates by returning `Err`).

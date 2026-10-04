@@ -269,6 +269,13 @@ r3c1-value/try_prefix_value		ok	0		-	0	0	0	0	int	15
 r3c1-value/try_throw_from_catch_to_outer		ok	0		-	0	0	0	0	int	2
 r3c1-value/try_fatal_through_outer_finally	460a	runtime	4007	division by zero	<r3c1>	16	17	1	17	-	-
 r3c1-value/try_throw_three_regions		ok	0		-	0	0	0	0	int	0
+r3c1-program/try_catch_fatal_frame_recovery		ok	0		-	0	0	0	0	-	-
+r3c1-program/try_catch_fatal_return_finally		ok	0		-	0	0	0	0	-	-
+r3c1-program/try_catch_fatal_continue_finally		ok	0		-	0	0	0	0	-	-
+r3c1-program/try_catch_fatal_two_callee_frames		ok	0		-	0	0	0	0	-	-
+r3c1-value/try_fatal_in_finally		compile	1006	expected catch, found `finally`	<r3c1>	16	23	1	17	-	-
+r3c1-value/try_throw_then_fatal_in_finally		compile	1006	expected catch, found `finally`	<r3c1>	18	25	1	19	-	-
+r3c1-value/try_three_regions_fatal_chain		compile	1006	expected catch, found `finally`	<r3c1>	28	35	1	29	-	-
 r3c1-value/try_throw_value_uncaught_after		runtime	4026	uncaught value: 2	<r3c1>	0	0	1	1	-	-
 r3c1-value/try_error_in_catch_propagates		runtime	4007	division by zero	<r3c1>	30	31	1	31	-	-
 r3c1-value/try_finally_continue_signal		compile	1006	expected catch, found `finally`	<r3c1>	59	66	3	19	-	-
