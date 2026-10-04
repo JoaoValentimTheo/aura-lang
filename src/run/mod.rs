@@ -1964,6 +1964,25 @@ impl Interp {
                 other => return Ok(other),
             }
         }
+        Ok(Ctl::Val(
+            self.construct_from_values(name, named, positional, span)?,
+        ))
+    }
+
+    /// Build a struct instance or enum variant from already-evaluated field
+    /// values (`Expr::Construct`'s resolution half).
+    ///
+    /// Field-argument order, named/positional rules, duplicate/missing field
+    /// diagnostics, and variant arity are the single implementation shared by
+    /// `Interp::construct` (recursive engine) and the explicit-continuation
+    /// machine, which evaluates the arguments as machine work and calls this.
+    pub(crate) fn construct_from_values(
+        &mut self,
+        name: &str,
+        named: Vec<(String, Value)>,
+        positional: Vec<Value>,
+        span: Span,
+    ) -> Result<Value> {
         if let Some(fields) = self.structs.get(name).cloned() {
             let mut values = Vec::new();
             if !named.is_empty() && !positional.is_empty() {
@@ -2021,10 +2040,10 @@ impl Interp {
                     values.push((f.clone(), v));
                 }
             }
-            return Ok(Ctl::Val(Value::Instance(Rc::new(Instance {
+            return Ok(Value::Instance(Rc::new(Instance {
                 ty: name.to_string(),
                 fields: RefCell::new(values),
-            }))));
+            })));
         }
         if let Some((ty, arity)) = self.variants.get(name).cloned() {
             if let Some((n, _)) = named.first() {
@@ -2041,11 +2060,11 @@ impl Interp {
                     span,
                 ));
             }
-            return Ok(Ctl::Val(Value::Variant(Rc::new(Variant {
+            return Ok(Value::Variant(Rc::new(Variant {
                 ty,
                 tag: name.to_string(),
                 payload: positional,
-            }))));
+            })));
         }
         Err(self.error(
             codes::UNKNOWN_TYPE,

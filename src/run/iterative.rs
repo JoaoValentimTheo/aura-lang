@@ -379,6 +379,38 @@ enum Cont {
     /// arm (`call_value`). A `Name` callee is resolved synchronously once its
     /// arguments complete, so this record is only pushed for other shapes.
     CallCallee { values: Vec<Value>, span: Span },
+    /// A method receiver finished (R3C.2); evaluate the arguments in source
+    /// order next, exactly like `Interp::eval_inner`'s `Expr::Method` arm.
+    MethodReceiver {
+        name: String,
+        args: Arc<[Arg]>,
+        env: Env,
+        span: Span,
+    },
+    /// A method argument finished (R3C.2). `subject` is the already-evaluated
+    /// receiver (evaluated exactly once, before any argument).
+    MethodArgs {
+        subject: Value,
+        name: String,
+        args: Arc<[Arg]>,
+        index: usize,
+        values: Vec<Value>,
+        env: Env,
+        span: Span,
+    },
+    /// A constructor argument finished (R3C.3). Struct and enum arguments are
+    /// evaluated strictly in source order, exactly once each, before any field
+    /// or variant resolution — mirroring `Interp::construct`'s argument loop.
+    /// `index` is the next argument to schedule.
+    ConstructArgs {
+        name: String,
+        args: Arc<[Arg]>,
+        index: usize,
+        positional: Vec<Value>,
+        named: Vec<(String, Value)>,
+        env: Env,
+        span: Span,
+    },
     /// A resumable native is mid-call (`map`/`filter`/`reduce`,
     /// `ITERATIVE_EVALUATOR_DESIGN.md` §13). The callback's result is fed back
     /// to the native-owned `resume` token, which produces the next
@@ -909,6 +941,94 @@ impl<'i> Machine<'i> {
                     }
                 }
             }
+            Cont::ConstructArgs {
+                name,
+                args,
+                index,
+                mut positional,
+                mut named,
+                env,
+                span,
+            } => {
+                let Ctl::Val(v) = done.ctl else {
+                    // A control signal from a field argument aborts the
+                    // construction with no partial instance escaping,
+                    // exactly like `Interp::construct`'s `other => return`.
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                match &args[index - 1].name {
+                    Some(n) => named.push((n.clone(), v)),
+                    None => positional.push(v),
+                }
+                if index < args.len() {
+                    let next = Arc::new(args[index].value.clone());
+                    self.kont.push(Cont::ConstructArgs {
+                        name,
+                        args: args.clone(),
+                        index: index + 1,
+                        positional,
+                        named,
+                        env: env.clone(),
+                        span,
+                    });
+                    Ok(Resume::Next(Ctrl::EvalExpr(next, env)))
+                } else {
+                    match self.finish_construct(&name, positional, named, span)? {
+                        Control::Next(next) => Ok(Resume::Next(next)),
+                        Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                    }
+                }
+            }
+            Cont::MethodReceiver {
+                name,
+                args,
+                env,
+                span,
+            } => {
+                let Ctl::Val(subject) = done.ctl else {
+                    // A control signal from the receiver propagates without
+                    // evaluating any argument (mirrors `val!`).
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                match self.start_method(subject, name, args, env, span)? {
+                    Control::Next(next) => Ok(Resume::Next(next)),
+                    Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                }
+            }
+            Cont::MethodArgs {
+                subject,
+                name,
+                args,
+                index,
+                mut values,
+                env,
+                span,
+            } => {
+                let Ctl::Val(v) = done.ctl else {
+                    // A control signal from an argument aborts the method call
+                    // before dispatch (mirrors `val!`).
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                values.push(v);
+                if index < args.len() {
+                    let next = Arc::new(args[index].value.clone());
+                    self.kont.push(Cont::MethodArgs {
+                        subject,
+                        name,
+                        args: args.clone(),
+                        index: index + 1,
+                        values,
+                        env: env.clone(),
+                        span,
+                    });
+                    Ok(Resume::Next(Ctrl::EvalExpr(next, env)))
+                } else {
+                    match self.finish_method(subject, &name, values, span)? {
+                        Control::Next(next) => Ok(Resume::Next(next)),
+                        Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                    }
+                }
+            }
             Cont::CallCallee { values, span } => {
                 let Ctl::Val(f) = done.ctl else {
                     // A control signal from the callee expression propagates
@@ -1246,6 +1366,25 @@ impl<'i> Machine<'i> {
                 });
                 Ok(Control::Next(Ctrl::EvalExpr(recv.clone(), env.clone())))
             }
+            Expr::Method(recv, name, args, _ty_args, span) => {
+                // The receiver is evaluated exactly once, then the arguments in
+                // source order (`Interp::eval_inner`'s `Expr::Method` arm has
+                // the identical order).
+                self.kont.push(Cont::MethodReceiver {
+                    name: name.clone(),
+                    args: args.clone(),
+                    env: env.clone(),
+                    span: *span,
+                });
+                Ok(Control::Next(Ctrl::EvalExpr(recv.clone(), env.clone())))
+            }
+            Expr::Construct(name, args, _ty_args, span) => {
+                // Field arguments are evaluated strictly in source order,
+                // exactly once each, before struct/variant resolution
+                // (`Interp::construct` has the identical prerequisite). A
+                // zero-argument constructor resolves immediately.
+                self.start_construct(name.clone(), args.clone(), env.clone(), *span)
+            }
             Expr::Call(callee, args, _ty_args, span) => {
                 // Arguments are evaluated strictly in source order, exactly
                 // once each, *before* any callee resolution or parameter
@@ -1280,6 +1419,109 @@ impl<'i> Machine<'i> {
             span,
         });
         Ok(Control::Next(Ctrl::EvalExpr(first, env)))
+    }
+
+    /// Begin a constructor: schedule the first field argument, or resolve a
+    /// zero-argument constructor immediately (R3C.3). Mirrors
+    /// `Interp::construct`'s argument loop.
+    fn start_construct(
+        &mut self,
+        name: String,
+        args: Arc<[Arg]>,
+        env: Env,
+        span: Span,
+    ) -> Result<Control> {
+        if args.is_empty() {
+            return Ok(Control::Next(Ctrl::Done(Ctl::Val(
+                self.interp
+                    .construct_from_values(&name, Vec::new(), Vec::new(), span)?,
+            ))));
+        }
+        let first = Arc::new(args[0].value.clone());
+        self.kont.push(Cont::ConstructArgs {
+            name,
+            args: args.clone(),
+            index: 1,
+            positional: Vec::new(),
+            named: Vec::new(),
+            env: env.clone(),
+            span,
+        });
+        Ok(Control::Next(Ctrl::EvalExpr(first, env)))
+    }
+
+    /// Resolve a constructor whose arguments have all completed, exactly like
+    /// `Interp::construct`'s resolution half (shared implementation).
+    fn finish_construct(
+        &mut self,
+        name: &str,
+        positional: Vec<Value>,
+        named: Vec<(String, Value)>,
+        span: Span,
+    ) -> Result<Control> {
+        Ok(Control::Next(Ctrl::Done(Ctl::Val(
+            self.interp
+                .construct_from_values(name, named, positional, span)?,
+        ))))
+    }
+
+    /// Begin a method call once the receiver is known (R3C.2): schedule the
+    /// first argument, or dispatch immediately for a zero-argument method.
+    fn start_method(
+        &mut self,
+        subject: Value,
+        name: String,
+        args: Arc<[Arg]>,
+        env: Env,
+        span: Span,
+    ) -> Result<Control> {
+        if args.is_empty() {
+            return self.finish_method(subject, &name, Vec::new(), span);
+        }
+        let first = Arc::new(args[0].value.clone());
+        self.kont.push(Cont::MethodArgs {
+            subject,
+            name,
+            args: args.clone(),
+            index: 1,
+            values: Vec::with_capacity(args.len()),
+            env: env.clone(),
+            span,
+        });
+        Ok(Control::Next(Ctrl::EvalExpr(first, env)))
+    }
+
+    /// Resolve a method call whose arguments have all completed, exactly like
+    /// `Interp::eval_inner`'s `Expr::Method` arm: a struct receiver resolves
+    /// against its nominal method table (crossing the ordinary call frame with
+    /// `self` bound first); any other receiver uses the built-in registry.
+    fn finish_method(
+        &mut self,
+        subject: Value,
+        name: &str,
+        values: Vec<Value>,
+        span: Span,
+    ) -> Result<Control> {
+        if let Value::Instance(i) = &subject {
+            let key = (i.ty.clone(), name.to_string());
+            if let Some(set) = self.interp.methods.get(&key).cloned() {
+                let c = self
+                    .interp
+                    .select_method_overload(&i.ty, name, &set, &values, span)?;
+                let mut full = Vec::with_capacity(values.len() + 1);
+                full.push(subject.clone());
+                full.extend(values);
+                return Ok(Control::Next(self.enter_call(c, full, span)?));
+            }
+            return Err(self.interp.error(
+                codes::UNDEFINED,
+                format!("struct {} has no method `{name}`", i.ty),
+                span,
+            ));
+        }
+        Ok(Control::Next(Ctrl::Done(Ctl::Val(
+            self.interp.method(&subject, name, values, span)?,
+        ))))
     }
 
     /// Resolve a call whose arguments have all completed, exactly like
