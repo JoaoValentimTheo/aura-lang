@@ -82,6 +82,16 @@ B-1R phase state:
   both wildcard fall-throughs removed. Whole-corpus engine agreement required
   (`tests/evaluator_oracle.rs::engines_agree`).
 - **B-1R3G.1 (callback protocol):** COMPLETE LOCALLY (folded into B-1R3C.1).
+- **Adversarial hardening (R3C–R3F):** three genuine bug families found by
+  independent read-only reviews and fixed with mutation-tested regression
+  coverage: (1) a false `match` guard retried later arms in the failed arm's
+  scope instead of the match environment; (2) a fatal crossing an inner `try`
+  without `finally` skipped outer regions (and their `finally`s); (3) an error
+  raised in a catch/finally body through a callee frame leaked the frame and
+  corrupted `interp.depth`/`expr_depth` (fixed with `frames_len`/`depth`/
+  `saved_expr_depth` snapshots on `Cont::TryCatchEnd`/`Cont::TryFinally`).
+  Eleven vacuous compile-error oracle cases were also replaced with
+  runtime-exercising shapes.
 - **B-1R4–B-1R7:** IN PROGRESS/PENDING — stack/resource campaign committed
   (`tests/b1_stack_safety.rs`); full validation, adversarial review, cutover.
 - **B-1R8:** NOT STARTED — remove the recursive engine and the oracle switch
