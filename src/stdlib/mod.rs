@@ -750,6 +750,7 @@ use crate::run::{NativeOutcome, NativeResume};
 ///
 /// Returns `None` when the receiver/name/arity is not one of these three
 /// builtins, so all other methods keep the ordinary synchronous path.
+#[cfg(feature = "evaluator-oracle")]
 #[must_use]
 pub(crate) fn resumable_method(
     recv: &Value,
