@@ -275,6 +275,13 @@ r3c1-program/try_catch_fatal_continue_finally		ok	0		-	0	0	0	0	-	-
 r3c1-program/try_catch_fatal_two_callee_frames		ok	0		-	0	0	0	0	-	-
 r3c1-value/try_fatal_in_finally		compile	1006	expected catch, found `finally`	<r3c1>	16	23	1	17	-	-
 r3c1-value/try_throw_then_fatal_in_finally		compile	1006	expected catch, found `finally`	<r3c1>	18	25	1	19	-	-
+r3c1-value/try_fatal_catch_frame_uncaught_outer		runtime	4007	division by zero	<r3c1>	14	15	1	15	-	-
+r3c1-value/try_fatal_finally_frame_uncaught_outer		compile	1006	expected catch, found `finally`	<r3c1>	39	46	2	20	-	-
+r3c1-value/try_fatal_finally_unwind_outer_finally		compile	1006	expected catch, found `finally`	<r3c1>	45	52	2	26	-	-
+r3c1-value/try_return_finally_after_fatal		compile	1006	expected catch, found `finally`	<r3c1>	23	30	1	24	-	-
+r3c1-value/try_fatal_inside_catch_expression		runtime	4007	division by zero	<r3c1>	31	32	2	13	-	-
+r3c1-value/try_middle_catch_throw_outer_catch		ok	0		-	0	0	0	0	string	"x12"
+r3c1-program/try_depth_recovery_after_catch_error		runtime	4007	division by zero	r3c1.aura	14	15	1	15	-	-
 r3c1-value/try_three_regions_fatal_chain		compile	1006	expected catch, found `finally`	<r3c1>	28	35	1	29	-	-
 r3c1-value/try_throw_value_uncaught_after		runtime	4026	uncaught value: 2	<r3c1>	0	0	1	1	-	-
 r3c1-value/try_error_in_catch_propagates		runtime	4007	division by zero	<r3c1>	30	31	1	31	-	-

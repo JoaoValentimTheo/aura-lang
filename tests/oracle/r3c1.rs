@@ -504,6 +504,36 @@ pub fn supported_cases() -> Vec<Case> {
             "try_throw_then_fatal_in_finally",
             "{ try { throw 1 } finally { 2 / 0 } }\n",
         ),
+        // Systematic frame-accounting matrix: signals through callee frames in
+        // body/catch/finally across 1-3 nested regions, plus depth recovery.
+        value(
+            "try_fatal_catch_frame_uncaught_outer",
+            "fn boom() { 1 / 0 }\nfn g() { try { throw 1 } catch e { boom() } }\n{ try { g() } catch e { 0 } }\n",
+        ),
+        value(
+            "try_fatal_finally_frame_uncaught_outer",
+            "fn boom() { 1 / 0 }\nfn g() { try { 1 } finally { boom() } }\n{ try { g() } catch e { 0 } }\n",
+        ),
+        value(
+            "try_fatal_finally_unwind_outer_finally",
+            "fn boom() { 1 / 0 }\nfn g() { try { throw 1 } finally { boom() } }\n{ try { g() } finally { print(\'outer\') } }\n",
+        ),
+        value(
+            "try_return_finally_after_fatal",
+            "fn g() { try { 1 / 0 } finally { return 3 } }\n{ g() }\n",
+        ),
+        value(
+            "try_fatal_inside_catch_expression",
+            "fn boom() { b2() }\nfn b2() { 1 / 0 }\n{ try { throw 1 } catch e { 1 + boom() + 2 } }\n",
+        ),
+        value(
+            "try_middle_catch_throw_outer_catch",
+            "{ try { try { try { throw \'x\' } catch e { throw e + \'1\' } } catch e2 { throw e2 + \'2\' } } catch e3 { e3 } }\n",
+        ),
+        program(
+            "try_depth_recovery_after_catch_error",
+            "fn boom() { 1 / 0 }\nfn rec(n) { if n { rec(n - 1) } else { 0 } }\nfn main() { try { try { throw 1 } catch e { boom() } } catch e2 { 0 }\n rec(509) }\n",
+        ),
         value(
             "try_three_regions_fatal_chain",
             "{ try { try { try { 1 / 0 } finally { print(\'a\') } } finally { print(\'b\') } } catch e { 0 } }\n",
