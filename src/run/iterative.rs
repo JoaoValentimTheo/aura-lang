@@ -74,6 +74,22 @@
 //!   **last** entry's value (a `BTreeMap` insert), matching the recursive
 //!   engine. Each key and each value is evaluated exactly once.
 //!
+//! ## B-1R3B.5 added subset
+//!
+//! * range construction: `Expr::Range` (`a..b`). The start operand is
+//!   evaluated first and exactly once, then the end operand exactly once, via
+//!   [`Cont::RangeStart`] then [`Cont::RangeEnd`]; a control signal from either
+//!   operand aborts construction and propagates unchanged. **Both** operands
+//!   complete before either bound is validated, exactly like
+//!   `Interp::eval_inner`'s `Expr::Range` arm, and validation is start-first,
+//!   so a non-int start wins over a non-int end (an end signal/error still
+//!   preempts a runtime-invalid start, because the end is evaluated before
+//!   either is validated). A valid pair becomes `Value::Range` — the same
+//!   runtime representation `range(a, b)` builds (`RangeVal { start, end }`,
+//!   end exclusive). The current implementation is the step-1, half-open Range
+//!   only; the planned Aura 0.3 `step`/inclusive extensions are **not**
+//!   introduced.
+//!
 //! ## Explicitly unsupported (R3B–R3F)
 //!
 //! Every other `Expr`/`Stmt` form fails with a deterministic
@@ -94,6 +110,14 @@
 //!   keep this carrier explicit across suspensions.
 //! * `MAX_AST_DEPTH` (`E1015`) and `MAX_CALL_FRAMES` (`E4011`) preserve the
 //!   recursive engine's semantics exactly.
+//! * **Exactly-once evaluation is structural, not differentially falsifiable
+//!   in this subset.** The continuation design schedules each range operand in
+//!   exactly one place, but the only constructs that could make a double
+//!   evaluation observable (a call, an assignment, or a `print`) are still
+//!   unsupported (R3C/R3D), so no supported case can distinguish it. Order is
+//!   observable and pinned (a start error/`E4999` preempts the end, and a
+//!   runtime start error beats a runtime end error); once side-effecting
+//!   bounds exist, the oracle should add a print-counting range case.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -240,6 +264,20 @@ enum Cont {
         out: BTreeMap<MapKey, Value>,
         env: Env,
     },
+    /// A range start operand finished (B-1R3B.5). The value is retained and the
+    /// end operand is scheduled; **no** type validation happens here, because
+    /// the recursive engine validates neither bound until both operands have
+    /// completed. A control signal from the start aborts before the end runs.
+    RangeStart {
+        end: Arc<Expr>,
+        env: Env,
+        span: Span,
+    },
+    /// A range end operand finished (B-1R3B.5). Both operands have now
+    /// completed exactly once; the start is validated first, then the end,
+    /// producing the same `E3001` messages and the same expression span as
+    /// `Interp::eval_inner`'s `Expr::Range` arm.
+    RangeEnd { start: Value, span: Span },
     /// A `return` operand finished; convert to the `return` signal.
     ReturnFrom,
     /// A `throw` operand finished; convert to the `throw` signal.
@@ -562,6 +600,54 @@ impl<'i> Machine<'i> {
                     ))))))
                 }
             }
+            Cont::RangeStart { end, env, span } => {
+                if let Ctl::Val(start) = done.ctl {
+                    // Start completed: retain it and evaluate the end exactly
+                    // once. The start is **not** validated yet; the recursive
+                    // engine evaluates both operands before checking either,
+                    // then checks the start first.
+                    self.kont.push(Cont::RangeEnd { start, span });
+                    Ok(Resume::Next(Ctrl::EvalExpr(end, env)))
+                } else {
+                    // A control signal from the start aborts before the end is
+                    // scheduled (mirrors `val!`).
+                    Ok(Resume::Redeliver(Done::plain(done.ctl)))
+                }
+            }
+            Cont::RangeEnd { start, span } => {
+                if let Ctl::Val(end) = done.ctl {
+                    // Both operands completed; validate start then end exactly
+                    // like `Interp::eval_inner`'s `Expr::Range` arm.
+                    let s = match start {
+                        Value::Int(i) => i,
+                        other => {
+                            return Err(self.interp.error(
+                                codes::TYPE_MISMATCH,
+                                format!("range start expects an int, found {}", other.type_name()),
+                                span,
+                            ))
+                        }
+                    };
+                    let e = match end {
+                        Value::Int(i) => i,
+                        other => {
+                            return Err(self.interp.error(
+                                codes::TYPE_MISMATCH,
+                                format!("range end expects an int, found {}", other.type_name()),
+                                span,
+                            ))
+                        }
+                    };
+                    Ok(Resume::Next(Ctrl::Done(Ctl::Val(Value::Range(Rc::new(
+                        super::value::RangeVal { start: s, end: e },
+                    ))))))
+                } else {
+                    // A control signal from the end propagates without
+                    // constructing a range (mirrors `val!`). The start value is
+                    // not validated, exactly as recursion does not validate it.
+                    Ok(Resume::Redeliver(Done::plain(done.ctl)))
+                }
+            }
             Cont::ReturnFrom => match done.ctl {
                 Ctl::Val(v) => Ok(Resume::Next(Ctrl::ReturnValue(v))),
                 other => Ok(Resume::Redeliver(Done::plain(other))),
@@ -769,6 +855,22 @@ impl<'i> Machine<'i> {
                         Ok(Control::Next(Ctrl::EvalExpr(l.clone(), env.clone())))
                     }
                 }
+            }
+            Expr::Range(start, end, span) => {
+                // `a..b` builds the same lazy, half-open, start-inclusive
+                // `Value::Range` as `range(a, b)` (`LANGUAGE_SPEC.md` §22.1).
+                // The start operand runs first and exactly once; the end runs
+                // next and exactly once; neither is validated until both have
+                // completed, mirroring `Interp::eval_inner`'s `Expr::Range` arm
+                // (which validates start before end after evaluating both).
+                // Both type errors are `E3001` with the recursive messages at
+                // the range's span.
+                self.kont.push(Cont::RangeStart {
+                    end: end.clone(),
+                    env: env.clone(),
+                    span: *span,
+                });
+                Ok(Control::Next(Ctrl::EvalExpr(start.clone(), env.clone())))
             }
             other => Err(self.unsupported(expr_span(other))),
         }
@@ -1114,15 +1216,213 @@ mod tests {
 
     #[test]
     fn unsupported_construct_fails_explicitly() {
-        // A range literal is R3B.5 territory and remains unsupported (map
-        // construction became supported in B-1R3B.4.2). The machine must fail
-        // explicitly, never fall back to recursion.
-        let e = Expr::Range(Arc::new(lit(1)), Arc::new(lit(3)), Span::default());
+        // A call is R3C territory and remains unsupported. The machine must
+        // fail explicitly, never fall back to recursion. (Map construction
+        // became supported in B-1R3B.4.2 and range construction in B-1R3B.5.)
+        let e = Expr::Call(
+            Arc::new(Expr::Name("len".to_string(), Span::default())),
+            Arc::from([crate::ast::Arg {
+                name: None,
+                value: lit(1),
+            }]),
+            Vec::new(),
+            Span::default(),
+        );
         let err = run_expr(&e).err().unwrap();
         assert_eq!(err.code, codes::INTERNAL);
         assert!(err
             .message
             .contains("not supported by the iterative engine"));
+    }
+
+    #[test]
+    fn range_constructs_range_value() {
+        // `1..3` builds `RangeVal { start: 1, end: 3 }`.
+        let e = Expr::Range(Arc::new(lit(1)), Arc::new(lit(3)), Span::default());
+        match run_expr(&e).unwrap() {
+            Ctl::Val(Value::Range(ref r)) => {
+                assert_eq!(r.start, 1);
+                assert_eq!(r.end, 3);
+                assert_eq!(r.len(), 2);
+            }
+            _ => panic!("expected a range value"),
+        }
+    }
+
+    #[test]
+    fn range_descending_is_empty() {
+        let e = Expr::Range(Arc::new(lit(5)), Arc::new(lit(1)), Span::default());
+        match run_expr(&e).unwrap() {
+            Ctl::Val(Value::Range(ref r)) => {
+                assert!(r.is_empty());
+                assert_eq!(r.len(), 0);
+            }
+            _ => panic!("expected a range value"),
+        }
+    }
+
+    #[test]
+    fn range_equal_bounds_is_empty() {
+        let e = Expr::Range(Arc::new(lit(4)), Arc::new(lit(4)), Span::default());
+        match run_expr(&e).unwrap() {
+            Ctl::Val(Value::Range(ref r)) => assert!(r.is_empty()),
+            _ => panic!("expected a range value"),
+        }
+    }
+
+    #[test]
+    fn range_len_saturates_at_i64_extremes() {
+        // `len` uses saturating arithmetic, so extreme bounds never overflow.
+        let e = Expr::Range(
+            Arc::new(Expr::Lit(Lit::Int(i64::MIN), Span::default())),
+            Arc::new(Expr::Lit(Lit::Int(i64::MAX), Span::default())),
+            Span::default(),
+        );
+        match run_expr(&e).unwrap() {
+            Ctl::Val(Value::Range(ref r)) => assert_eq!(r.len(), i64::MAX),
+            _ => panic!("expected a range value"),
+        }
+    }
+
+    #[test]
+    fn range_start_type_error_is_e3001() {
+        let e = Expr::Range(
+            Arc::new(Expr::Lit(Lit::Bool(true), Span::default())),
+            Arc::new(lit(3)),
+            Span::default(),
+        );
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::TYPE_MISMATCH);
+        assert_eq!(err.message, "range start expects an int, found bool");
+    }
+
+    #[test]
+    fn range_end_type_error_is_e3001() {
+        let e = Expr::Range(
+            Arc::new(lit(1)),
+            Arc::new(Expr::Lit(Lit::Str("x".to_string()), Span::default())),
+            Span::default(),
+        );
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::TYPE_MISMATCH);
+        assert_eq!(err.message, "range end expects an int, found string");
+    }
+
+    #[test]
+    fn range_bad_start_wins_over_bad_end() {
+        // Both operands are evaluated before either is validated, but
+        // validation is start-first (like `eval_inner`'s two sequential
+        // `match` arms), so the start's diagnostic is reported.
+        let e = Expr::Range(
+            Arc::new(Expr::Lit(Lit::Bool(true), Span::default())),
+            Arc::new(Expr::Lit(Lit::Str("x".to_string()), Span::default())),
+            Span::default(),
+        );
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::TYPE_MISMATCH);
+        assert_eq!(err.message, "range start expects an int, found bool");
+    }
+
+    #[test]
+    fn range_end_signal_wins_over_bad_start() {
+        // The end operand is evaluated even when the start is non-int, so a
+        // control signal from the end propagates and no type error is
+        // produced. This is the exact recursive `val!` ordering.
+        let e = Expr::Range(
+            Arc::new(Expr::Lit(Lit::Bool(true), Span::default())),
+            Arc::new(Expr::Block(
+                Arc::from([Stmt::Return(Some(lit(5)), Span::default())]),
+                Span::default(),
+            )),
+            Span::default(),
+        );
+        assert!(matches!(run_expr(&e).unwrap(), Ctl::Return(Value::Int(5))));
+    }
+
+    #[test]
+    fn range_signal_from_start_skips_end() {
+        let e = Expr::Range(
+            Arc::new(Expr::Block(
+                Arc::from([Stmt::Return(Some(lit(5)), Span::default())]),
+                Span::default(),
+            )),
+            Arc::new(Expr::Binary(
+                crate::ast::BinOp::Div,
+                Arc::new(lit(1)),
+                Arc::new(lit(0)),
+                Span::default(),
+            )),
+            Span::default(),
+        );
+        assert!(matches!(run_expr(&e).unwrap(), Ctl::Return(Value::Int(5))));
+    }
+
+    #[test]
+    fn range_signal_from_end_propagates() {
+        let e = Expr::Range(
+            Arc::new(lit(1)),
+            Arc::new(Expr::Block(
+                Arc::from([
+                    Stmt::Throw(lit(9), Span::default()),
+                    Stmt::Expr(lit(0), Span::default()),
+                ]),
+                Span::default(),
+            )),
+            Span::default(),
+        );
+        assert!(matches!(run_expr(&e).unwrap(), Ctl::Throw(Value::Int(9))));
+    }
+
+    #[test]
+    fn range_out_of_if_remains_unsupported() {
+        // Range support is construction-only. `if 1..3 { }` requires the
+        // truthiness/condition path, which is separately supported; this test
+        // pins that an `if` whose taken branch is a call still fails, proving
+        // no fallback leaked into R3B.5.
+        let e = Expr::If(
+            Arc::new(Expr::Lit(Lit::Bool(true), Span::default())),
+            Arc::from([expr_stmt(Expr::Call(
+                Arc::new(Expr::Name("len".to_string(), Span::default())),
+                Arc::from([crate::ast::Arg {
+                    name: None,
+                    value: lit(1),
+                }]),
+                Vec::new(),
+                Span::default(),
+            ))]),
+            None,
+            Span::default(),
+        );
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::INTERNAL);
+    }
+
+    #[test]
+    fn deep_nested_range_is_stack_safe() {
+        // Nest a range `MAX_AST_DEPTH - 2` deep in the *start* position. The
+        // innermost bound is an int; every outer start is itself a range, so
+        // the machine reaches a `range start expects an int` diagnostic. What
+        // matters is that it descends iteratively (one `Cont` per level) and
+        // never grows the host stack proportionally to the nesting.
+        let depth = MAX_AST_DEPTH - 2;
+        let mut v = lit(1);
+        for _ in 0..depth {
+            v = Expr::Range(Arc::new(v), Arc::new(lit(0)), Span::default());
+        }
+        let err = run_expr(&v).err().unwrap();
+        assert_eq!(err.code, codes::TYPE_MISMATCH);
+        assert_eq!(err.message, "range start expects an int, found range");
+    }
+
+    #[test]
+    fn range_beyond_ast_depth_is_e1015() {
+        let depth = MAX_AST_DEPTH + 5;
+        let mut v = lit(1);
+        for _ in 0..depth {
+            v = Expr::Range(Arc::new(v), Arc::new(lit(0)), Span::default());
+        }
+        let err = run_expr(&v).err().unwrap();
+        assert_eq!(err.code, codes::NESTING);
     }
 
     #[test]
