@@ -254,6 +254,72 @@ pub fn supported_cases() -> Vec<Case> {
         value("pipe_left_error_first", "1 / 0 |> ((x) -> x)\n"),
         value("pipe_right_error", "1 |> ((x) -> x / 0)\n"),
         value("pipe_non_callable", "1 |> 2\n"),
+        // ----- R3D.1 assignment and destructuring ----------------------------
+        value("assign_simple", "{ let mut x = 1\n x = 2\n x }\n"),
+        value("assign_immutable", "{ let x = 1\n x = 2\n x }\n"),
+        value("assign_undefined", "{ missing = 1 }\n"),
+        value("assign_compound_add", "{ let mut x = 1\n x += 2\n x }\n"),
+        value("assign_compound_mul", "{ let mut x = 3\n x *= 4\n x }\n"),
+        value("assign_compound_sub", "{ let mut x = 3\n x -= 4\n x }\n"),
+        value("assign_compound_div", "{ let mut x = 8\n x /= 2\n x }\n"),
+        value("assign_compound_rem", "{ let mut x = 7\n x %= 4\n x }\n"),
+        value("assign_index_simple", "{ let mut xs = [1]\n xs[0] = 9\n xs }\n"),
+        value(
+            "assign_index_compound",
+            "{ let mut xs = [1]\n xs[0] += 9\n xs }\n",
+        ),
+        value(
+            "assign_field_simple",
+            "struct P { x: int }\n{ let mut p = P { x: 1 }\n p.x = 5\n p.x }\n",
+        ),
+        value(
+            "assign_invalid_target",
+            "{ let mut x = 1\n (x + 1) = 2 }\n",
+        ),
+        value(
+            "assign_rhs_signal",
+            "{ let mut x = 1\n x = { throw 3 } }\n",
+        ),
+        // Compound assignment deliberately evaluates the target's index
+        // expression twice (read then write), matching the recursive engine's
+        // documented behavior.
+        value(
+            "assign_compound_double_index",
+            "fn idx() { print(\'i\')\n 0 }\n{ let mut xs = [1]\n xs[idx()] += 10\n xs }\n",
+        ),
+        value(
+            "assign_compound_single_index_name",
+            "fn d() { print(\'d\') }\n{ let mut x = 1\n x += { d()\n 2 }\n x }\n",
+        ),
+        value("let_pattern_list", "{ let [a, b] = [1, 2]\n a + b }\n"),
+        value("let_pattern_nested", "{ let [a, [b]] = [1, [2]]\n a + b }\n"),
+        value("let_pattern_wildcard", "{ let [_, b] = [1, 2]\n b }\n"),
+        value("let_pattern_arity_mismatch", "{ let [a, b] = [1]\n a }\n"),
+        value("let_pattern_type_mismatch", "{ let [a] = 1\n a }\n"),
+        value(
+            "let_pattern_variant",
+            "enum E { A(int, int) }\n{ let A(a, b) = A(1, 2)\n a + b }\n",
+        ),
+        value(
+            "let_pattern_variant_mismatch",
+            "enum E { A(int), B }\n{ let A(a) = B\n 0 }\n",
+        ),
+        value(
+            "let_pattern_shadow",
+            "{ let a = 1\n let [a] = [2]\n a }\n",
+        ),
+        value(
+            "let_pattern_rhs_signal",
+            "{ let [a] = { throw 1 }\n a }\n",
+        ),
+        value(
+            "let_pattern_atomic",
+            "{ let mut a = 1\n let [a, b] = [2]\n a }\n",
+        ),
+        value(
+            "assign_then_read",
+            "{ let mut x = 1\n x = x + 1\n x = x * 3\n x }\n",
+        ),
         // ----- composition with R3B constructs ---------------------------
         value("call_in_unary", "-(abs(-2))\n"),
         value("call_in_binary", "1 + len([9, 9])\n"),

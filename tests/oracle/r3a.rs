@@ -113,6 +113,10 @@ pub fn supported_cases() -> Vec<Case> {
         // The original R3A lambda sentinel: lambdas are supported by
         // B-1R3C.4. Key preserved.
         value("lambda", "() -> 1\n"),
+        // The original R3A destructuring/assignment sentinels: supported by
+        // B-1R3D.1. Keys preserved.
+        value("let_pattern", "{ let [a] = [1]\n a }\n"),
+        value("assign", "{ let mut x = 1\n x = 2\n x }\n"),
         // The original R3A method sentinel: builtin method calls are supported
         // by B-1R3C.2. Key preserved.
 
@@ -168,7 +172,8 @@ pub fn unsupported_cases() -> Vec<Case> {
         value("list_comp", "[x for x in [1, 2]]\n"),
         value("while_stmt", "{ while false { 1 } }\n"),
         value("loop_stmt", "{ loop { break } }\n"),
-        value("let_pattern", "{ let [a] = [1]\n a }\n"),
-        value("assign", "{ let mut x = 1\n x = 2\n x }\n"),
+        // `let_pattern` and `assign` were migrated to `supported_cases` in
+        // B-1R3D.1 (destructuring and assignment landed); see the preserved
+        // keys there.
     ]
 }

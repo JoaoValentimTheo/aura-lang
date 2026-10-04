@@ -129,6 +129,32 @@ r3c1-value/pipe_left_once	700a	ok	0		-	0	0	0	0	int	0
 r3c1-value/pipe_left_error_first		runtime	4007	division by zero	<r3c1>	2	3	1	3	-	-
 r3c1-value/pipe_right_error		runtime	4007	division by zero	<r3c1>	15	16	1	16	-	-
 r3c1-value/pipe_non_callable		runtime	3001	int is not callable	<r3c1>	2	4	1	3	-	-
+r3c1-value/assign_simple		ok	0		-	0	0	0	0	int	2
+r3c1-value/assign_immutable		compile	2001	cannot assign to `x`: it is immutable (declare it `let mut`)	<r3c1>	13	14	2	2	-	-
+r3c1-value/assign_undefined		compile	2003	undefined variable `missing`	<r3c1>	2	9	1	3	-	-
+r3c1-value/assign_compound_add		ok	0		-	0	0	0	0	int	3
+r3c1-value/assign_compound_mul		ok	0		-	0	0	0	0	int	12
+r3c1-value/assign_compound_sub		ok	0		-	0	0	0	0	int	-1
+r3c1-value/assign_compound_div		ok	0		-	0	0	0	0	int	4
+r3c1-value/assign_compound_rem		ok	0		-	0	0	0	0	int	3
+r3c1-value/assign_index_simple		ok	0		-	0	0	0	0	list	[9]
+r3c1-value/assign_index_compound		ok	0		-	0	0	0	0	list	[10]
+r3c1-value/assign_field_simple		ok	0		-	0	0	0	0	int	5
+r3c1-value/assign_invalid_target		compile	2010	invalid assignment target	<r3c1>	20	21	2	5	-	-
+r3c1-value/assign_rhs_signal		runtime	4026	uncaught value: 3	<r3c1>	0	0	1	1	-	-
+r3c1-value/assign_compound_double_index	690a690a	ok	0		-	0	0	0	0	list	[11]
+r3c1-value/assign_compound_single_index_name	640a	ok	0		-	0	0	0	0	int	3
+r3c1-value/let_pattern_list		ok	0		-	0	0	0	0	int	3
+r3c1-value/let_pattern_nested		ok	0		-	0	0	0	0	int	3
+r3c1-value/let_pattern_wildcard		ok	0		-	0	0	0	0	int	2
+r3c1-value/let_pattern_arity_mismatch		runtime	3001	list pattern arity mismatch	<r3c1>	6	7	1	7	-	-
+r3c1-value/let_pattern_type_mismatch		runtime	3001	pattern expects a list	<r3c1>	6	7	1	7	-	-
+r3c1-value/let_pattern_variant		ok	0		-	0	0	0	0	int	3
+r3c1-value/let_pattern_variant_mismatch		compile	2003	undefined variable `B`	<r3c1>	34	35	2	14	-	-
+r3c1-value/let_pattern_shadow		ok	0		-	0	0	0	0	int	2
+r3c1-value/let_pattern_rhs_signal		runtime	4026	uncaught value: 1	<r3c1>	0	0	1	1	-	-
+r3c1-value/let_pattern_atomic		runtime	3001	list pattern arity mismatch	<r3c1>	21	22	2	6	-	-
+r3c1-value/assign_then_read		ok	0		-	0	0	0	0	int	6
 r3c1-value/call_in_unary		ok	0		-	0	0	0	0	int	-2
 r3c1-value/call_in_binary		ok	0		-	0	0	0	0	int	3
 r3c1-value/call_in_if		ok	0		-	0	0	0	0	string	"y"
