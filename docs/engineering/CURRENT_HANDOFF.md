@@ -28,12 +28,12 @@ explicit-continuation (iterative) evaluator over the existing AST
 - B-1R3B.4.1 (list/tuple construction): **COMPLETE AND PUSHED** at `efc66bd`
   (remote-closed).
 - B-1R3B.4.2 (map construction): **COMPLETE AND REMOTELY CLOSED** at `5e70677`.
-- B-1R3B.5 (range construction): **COMPLETE LOCALLY**, unpushed (three additive
-  commits on top of `origin/rewrite/v3-rust` = `5e70677`). A fresh adversarial
-  push gate over `5e70677..HEAD` is required before any push.
-- B-1R3B.6 (index / field reads): **COMPLETE LOCALLY**, unpushed, additive on
-  top of B-1R3B.5. Same push gate covers it.
-- B-1R3B.7…R3G: NOT STARTED.
+- B-1R3B.5 (range construction): **COMPLETE AND REMOTELY CLOSED** at `cf17689`.
+- B-1R3B.6 (index / field reads): **COMPLETE AND REMOTELY CLOSED** at `cf17689`.
+- B-1R3B.7 (f-strings): **COMPLETE LOCALLY**, unpushed (additive commits on top
+  of `origin/rewrite/v3-rust` = `cf17689`). A fresh adversarial push gate over
+  `cf17689..HEAD` is required before any push.
+- B-1R3B.8 (milestone adversarial closure)…R3G: NOT STARTED.
 
 See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
 
@@ -48,11 +48,54 @@ See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
   short-circuit `and`/`or` (the skipped operand is never evaluated), list/tuple
   construction (left-to-right, exactly once per element), map construction
   (per entry key then value in source order, exactly once), range
-  construction (`a..b`), and index / field reads (`base[index]`, `recv.name`);
-  every other construct returns the deterministic `E4999` sentinel and never
-  falls back to recursion.
+  construction (`a..b`), index / field reads (`base[index]`, `recv.name`), and
+  f-strings (`f"..."`, literal/interpolation parts left to right); every other
+  construct returns the deterministic `E4999` sentinel and never falls back to
+  recursion.
 
-## Completed in B-1R3B.6 (local)
+## Completed in B-1R3B.7 (local)
+
+- `src/run/iterative.rs` — added `Cont::FStrNext { parts, index, spec, out, env }`,
+  `Machine::start_fstring`/`advance_fstring`, and the `Expr::FStr` arm in
+  `start_expr` plus the `Cont::FStrNext` `resume` arm. Parts are consumed left
+  to right, exactly once each, mirroring `Interp::eval_inner`'s `Expr::FStr`
+  arm: each `FPart::Lit` is appended verbatim (raw text; `{{`/`}}` already
+  resolved by the parser), each `FPart::Expr` is evaluated exactly once and
+  appended with `v.display()` (no spec) or `Interp::format_value` (with a
+  spec). The accumulator `String` lives in the continuation, so nesting does
+  not grow the Rust stack. A control signal or diagnostic from an interpolation
+  aborts the whole f-string and propagates unchanged, so later parts never run
+  and no partial string is observable. No recursive AST evaluation and no
+  fallback.
+- Oracle: new `tests/oracle/r3b7_golden.tsv` (LF-pinned; 112 supported cases)
+  and differential tests `r3b7_fstring_supported_subset_agrees`,
+  `iterative_fstring_unsupported_fails_explicitly`, `r3b7_iterative_golden_matches`,
+  plus `r3b7_golden_has_lf_pin` and 11 crate-internal f-string unit tests.
+  Boundary movements: `fstring` removed from the R3A unsupported set
+  (`r3a_golden.tsv` −1 row); `and_skip_fstring`/`or_skip_fstring` moved from the
+  R3B.3 supported set into the R3B.7 set (`r3b3_golden.tsv` −2 rows);
+  `nested_unsupported_element` (R3B.4.1), `fstring_value` (R3B.4.2), and
+  `fstring_index` (R3B.6) moved out of their unsupported sets into supported
+  R3B.7 cases. The main `golden.tsv` is byte-unchanged.
+- Verified: empty/text-only/escaped-brace shapes; raw (undecoded) literal text;
+  the stringification matrix (none/bool/int/float/string/list/tuple-sugar/map/
+  range/`<fn>`); the format mini-language (`d b o x X f F e E %`, sign, width,
+  fill/align, zero-pad, precision) and its `E3001` type and `E4013`
+  precision/width bounds; Unicode; one-level nested f-strings; interpolation
+  source order with first-error-wins; control-signal abort; `and`/`or` skipping
+  of a whole f-string; composition with List/Map/Range/Index/Field/block/let/
+  if; program-mode frame boundary; `E4999` no-fallback unsupported surface;
+  host-stack/AST-depth safety and `expr_depth` restoration. A deliberate
+  `display`→`debug_repr` stringification mutation was detected by seven R3B.7
+  cases and reverted byte-exactly.
+- Honest gaps: exactly-once is structural, not differentially falsifiable in the
+  current subset (the only side-effecting interpolation constructs — calls,
+  assignment, `print` — are still unsupported). Two-level f-string nesting is
+  not expressible in the grammar (the innermost level would need the outer
+  delimiter, which terminates it). Struct-instance/variant stringification is
+  unreachable (`Expr::Construct` unsupported).
+
+## Completed in B-1R3B.6 (remote-closed at `cf17689`)
 
 - `src/run/iterative.rs` — added `Cont::IndexTarget { idx, env, span }`,
   `Cont::IndexApply { base, span }`, and `Cont::FieldReceiver { name, span }`,
@@ -312,8 +355,8 @@ human review of the current one.
 - R3B.4.3 (reserved: map-key admissibility / nesting if the code shows a
   distinct boundary)
 - R3B.5 range — **COMPLETE LOCALLY**
-- R3B.6 index / field reads — **COMPLETE LOCALLY**
-- R3B.7 f-strings
+- R3B.6 index / field reads — **COMPLETE AND REMOTELY CLOSED**
+- R3B.7 f-strings — **COMPLETE LOCALLY**
 - R3B.8 milestone adversarial closure
 
 Use multi-reviewer analysis mainly at milestone closure, not after each
@@ -321,13 +364,12 @@ microphase.
 
 ## Exact next action
 
-1. Fresh adversarial read-only push gate over the `5e70677..HEAD` range (R3A
-   through B-1R3B.6).
-2. If the gate passes, push the exact reviewed stack and close B-1R3B.5 and
-   B-1R3B.6 remotely.
-3. Then begin the next ordered microphase on `src/run/iterative.rs` (R3B.7
-   f-strings), extending the oracle and keeping `tests/oracle/golden.tsv`
-   byte-unchanged, with a checkpoint at each microphase.
+1. Fresh adversarial read-only push gate over the `cf17689..HEAD` range (R3B.7).
+2. If the gate passes, push the exact reviewed stack and close B-1R3B.7
+   remotely.
+3. Then run B-1R3B.8, the milestone adversarial closure, including the
+   mechanically derived remaining unsupported-surface inventory, before starting
+   any R3C work. Keep `tests/oracle/golden.tsv` byte-unchanged.
 
 ## Stop conditions
 

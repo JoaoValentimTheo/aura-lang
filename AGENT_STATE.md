@@ -8,9 +8,10 @@ before continuing substantial work.
 ## Repository
 
 - Branch: `rewrite/v3-rust`
-- Remote `origin/rewrite/v3-rust`: `5e7067749c6010c9e03c7d902ed2dd682098702e`
-  (R3A + B-1R3B.1 through B-1R3B.4.2; pushed and remote-closed). The B-1R3B.5
-  commits are **local and unpushed** on top of it.
+- Remote `origin/rewrite/v3-rust`: `cf17689e056e6412e22bf74bf40335ec74d6e184`
+  (R3A + B-1R3B.1 through B-1R3B.6; pushed and remote-closed). The B-1R3B.7
+  commits are **local and unpushed** on top of it. (Reconcile this line with
+  `git rev-parse origin/rewrite/v3-rust` at every checkpoint: Git wins.)
 - Local/remote relationship: authoritative value is `git rev-list
   --left-right --count origin/rewrite/v3-rust...HEAD`; a tracked file cannot
   safely hardcode its own position.
@@ -32,11 +33,10 @@ runtime means adding a version, never replacing one.
 
 ## Current Track
 
-B-1R — ENGINE-STACK-INDEPENDENT CALL ENGINE. B-1 is OPEN (WASM implementation
-nonconformance). The R3A baseline through B-1R3B.4.2 are pushed and remote-closed
-at `5e70677`; B-1R3B.5 (range construction) and B-1R3B.6 (index / field reads)
-are complete locally and unpushed on top of it. Production still runs the
-recursive evaluator.
+B-1 — ENGINE-STACK-INDEPENDENT CALL ENGINE. B-1 is OPEN (WASM implementation
+nonconformance). The R3A baseline through B-1R3B.6 are pushed and remote-closed
+at `cf17689`; B-1R3B.7 (f-strings) is complete locally and unpushed on top of it.
+Production still runs the recursive evaluator.
 
 B-1R phase state:
 
@@ -64,26 +64,23 @@ B-1R phase state:
   last-wins duplicates, runtime invalid-key `E3001` at the key span, control
   propagation, diagnostics/spans, and host-stack safety verified; program-mode
   `main_map_element` restored; `r3b42_golden.tsv` LF-pinned; 57 supported cases).
-- **B-1R3B.5:** COMPLETE LOCALLY (range construction; differential-oracle
-  equivalent; start-before-end exactly-once order, both-bounds-evaluated then
-  start-first validation, `E3001` bound diagnostics at the range span with
-  check-time/runtime split, control-signal propagation, half-open/descending/
-  empty/`i64`-extreme semantics, `len()` saturation, list/map/if/let/program
-  composition, no-fallback unsupported surface, and host-stack/AST-depth safety
-  verified). The current step-1 half-open Range only; future 0.3
-  `step`/inclusive semantics deliberately not introduced. Unpushed; a fresh
-  adversarial push gate is required. See `docs/engineering/CURRENT_HANDOFF.md`.
-- **B-1R3B.6:** COMPLETE LOCALLY (index / field reads; differential-oracle
-  equivalent; target-before-index exactly-once order, field receiver exactly
-  once, list/tuple/string/map lookup with negative normalization, `E4019`
-  out-of-range, `E2003` missing key/field/unknown member, non-key-capable key
-  `E3001`, unsupported base/index combination `E3001`, control-signal
-  propagation from target/index/receiver, Index/Field/Range composition,
-  program-mode frame boundary, no-fallback unsupported surface, and
-  host-stack/AST-depth safety verified). Struct instances are not reachable
-  (`Expr::Construct` still unsupported); the reachable field surface is the
-  zero-argument builtin registry. Unpushed.
-- **B-1R3B.7…R3G:** NOT STARTED.
+- **B-1R3B.5:** COMPLETE AND REMOTELY CLOSED at `cf17689` (range construction;
+  differential-oracle equivalent).
+- **B-1R3B.6:** COMPLETE AND REMOTELY CLOSED at `cf17689` (index / field
+  reads; differential-oracle equivalent).
+- **B-1R3B.7:** COMPLETE LOCALLY, unpushed (f-strings; differential-oracle
+  equivalent; literal/interpolation parts left to right, exactly once each,
+  `v.display()` without a spec or `Interp::format_value` with one, raw
+  (undecoded) literal text, `{{`/`}}` escapes, the stringification matrix
+  (none/bool/int/float/string/list/tuple-sugar/map/range/`<fn>`), the format
+  mini-language with its `E3001` type and `E4013` precision/width bounds,
+  Unicode, one-level nested f-strings, control-signal and diagnostic abort with
+  no partial string, `and`/`or` skipping of a whole f-string, composition with
+  List/Map/Range/Index/Field/block/let/if, program-mode frame boundary, and
+  host-stack/AST-depth/`expr_depth` safety verified). A fresh adversarial push
+  gate is required. See `docs/engineering/CURRENT_HANDOFF.md`.
+- **B-1R3B.8:** NOT STARTED (milestone adversarial closure).
+- **B-1R3C…R3G:** NOT STARTED.
 
 ## Production vs experimental engine
 
@@ -99,13 +96,17 @@ B-1R phase state:
   runtime invalid keys are `E3001` at the key span), range construction
   (`a..b`; start then end, each exactly once; both evaluated before either is
   validated, start-first; non-int bounds are `E3001` at the range span; a valid
-  pair is the same `RangeVal { start, end }` `range(a, b)` builds), and index /
+  pair is the same `RangeVal { start, end }` `range(a, b)` builds), index /
   field reads (`base[index]`: target then index, each exactly once, delegated to
   `Interp::index_get`; `recv.name`: receiver once, then struct-field or
   zero-argument builtin method resolution mirroring `eval_inner`'s `Expr::Field`
-  arm); everything
+  arm), and f-strings (`f"..."`: literal/interpolation parts left to right,
+  exactly once each; display or `format_value` stringification); everything
   else (calls, comprehensions, struct construction, …) returns `E4999` and never
-  falls back to recursion.
+  falls back to recursion. Mechanically derived remaining unsupported surface:
+  expression `Call`, `Method`, `ListComp`, `MapComp`, `Construct`, `Lambda`,
+  `Pipe`, `Match`; statement `LetPattern`, `Assign`, `While`, `Loop`, `For`,
+  `Try`.
 
 ## Known blockers
 
@@ -159,9 +160,9 @@ Git + working tree + these documents; chat history is not authority.
 ## Exact Next Action
 
 See `docs/engineering/CURRENT_HANDOFF.md`. In short: run a fresh adversarial
-read-only push gate over the `5e70677..HEAD` range (R3A through R3B.5); if it
-passes, push and remotely close B-1R3B.5, then begin the next microphase per the
-handoff ordering (R3B.6 index/field reads).
+read-only push gate over the `cf17689..HEAD` range (R3B.7); if it passes, push
+and remotely close B-1R3B.7, then run the B-1R3B milestone adversarial closure
+(R3B.8) before starting R3C.
 
 ## Writer
 
