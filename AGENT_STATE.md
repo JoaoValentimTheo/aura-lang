@@ -58,10 +58,16 @@ B-1R phase state:
 - **B-1R3B.4.1:** COMPLETE AND PUSHED at `efc66bd` (list/tuple construction;
   differential-oracle equivalent; tuple is list sugar per `LANGUAGE_SPEC.md`
   §21).
-- **B-1R3B.4.2:** COMPLETE LOCALLY (map construction; differential-oracle
-  equivalent; key-before-value source order, exactly-once, last-wins duplicates,
-  runtime invalid-key `E3001` at the key span, control propagation,
-  diagnostics/spans, and host-stack safety verified), unpushed. See
+- **B-1R3B.4.2:** COMPLETE LOCALLY; PUSH BLOCKERS REMEDIATED (map construction;
+  differential-oracle equivalent; key-before-value source order, exactly-once,
+  last-wins duplicates, runtime invalid-key `E3001` at the key span, control
+  propagation, diagnostics/spans, and host-stack safety verified). A first
+  adversarial push gate found and this remediation closed: the program-mode
+  `main_map_element` case (list containing a Map through a real frame boundary)
+  was restored to the R3B.4.2 supported set, the `r3b42_golden.tsv` LF pin was
+  added, and the R3B.4.2 counts were reconciled (57 supported cases = 49
+  value-mode + 8 program-mode; 7 unsupported cases; 57 golden rows). Unpushed;
+  a fresh gate over the expanded range is required. See
   `docs/engineering/CURRENT_HANDOFF.md`.
 - **B-1R3B.4.3/R3B.5…R3G:** NOT STARTED.
 
@@ -130,9 +136,10 @@ Git + working tree + these documents; chat history is not authority.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: human review of B-1R3B.4.2
-(map construction); if accepted, push it and begin the next microphase per the
-handoff ordering (R3B.5 range).
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: run a fresh adversarial
+read-only push gate over the expanded range (R3B.4.2 plus push-blocker
+remediation); if it passes, push and remotely close B-1R3B.4.2, then begin the
+next microphase per the handoff ordering (R3B.5 range).
 
 ## Writer
 

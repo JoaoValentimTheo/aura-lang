@@ -27,8 +27,10 @@ explicit-continuation (iterative) evaluator over the existing AST
   the intermediate commits `58a1b16`/`31e313a`/`2f34b9c`.
 - B-1R3B.4.1 (list/tuple construction): **COMPLETE AND PUSHED** at `efc66bd`
   (remote-closed).
-- B-1R3B.4.2 (map construction): **COMPLETE LOCALLY**, unpushed (local commits
-  on top of `origin/rewrite/v3-rust` = `efc66bd`).
+- B-1R3B.4.2 (map construction): **COMPLETE LOCALLY, PUSH BLOCKERS REMEDIATED**,
+  unpushed (original three commits plus additive remediation commits on top of
+  `origin/rewrite/v3-rust` = `efc66bd`). A fresh adversarial push gate over the
+  expanded range is required before any push.
 - B-1R3B.4.3/R3B.5…R3G: NOT STARTED.
 
 See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
@@ -62,8 +64,9 @@ See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
   Empty `{:}` completes immediately. The accumulated `BTreeMap` lives in the
   continuations; no `Map`-sized or nested Rust recursion. No recursive AST
   evaluation and no fallback.
-- Oracle: new `tests/oracle/r3b42_golden.tsv` (LF; 59 supported cases) and
-  differential tests `r3b42_map_supported_subset_agrees`,
+- Oracle: new `tests/oracle/r3b42_golden.tsv` (LF-pinned; 57 supported cases:
+  49 value-mode and 8 program-mode; 57 golden rows) and differential tests
+  `r3b42_map_supported_subset_agrees`,
   `iterative_map_unsupported_fails_explicitly`,
   `r3b42_iterative_golden_matches`. Boundary movements: `map_literal` removed
   from the R3A unsupported set (now supported); `or_required_map`/`and_lhs_map`/
@@ -71,6 +74,12 @@ See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
   `map_element` moved from the R3B.4.1 unsupported set into the supported set
   (new rows in `r3b3_golden.tsv`/`r3b4_golden.tsv`; `r3a_golden.tsv` −1 row).
   The main `golden.tsv` is byte-unchanged.
+- Push-blocker remediation: the R3B.4.1 `main_map_element` program-mode case
+  (list containing a Map through a real frame boundary) was dropped without
+  replacement when map elements moved to supported coverage; it is restored in
+  the R3B.4.2 supported set (`r3b42-program/main_map_element`) with a guard test,
+  and `tests/oracle/r3b42_golden.tsv` is now pinned `text eol=lf` in
+  `.gitattributes` like every sibling golden.
 - Verified: key-before-value and entry-by-entry order; exactly-once key/value;
   runtime invalid-key `E3001` at the key span with value suppression;
   first-error-wins; key/value control-signal abort with later-entry and
@@ -228,9 +237,11 @@ microphase.
 
 ## Exact next action
 
-1. Human review of the B-1R3B.4.2 map-construction extension and its oracle
-   coverage.
-2. If accepted, push the B-1R3B.4.2 local commit stack.
+1. Fresh adversarial read-only push gate over the expanded
+   `efc66bd..HEAD` range (original R3B.4.2 stack plus the push-blocker
+   remediation commits).
+2. If the gate passes, push the exact reviewed stack and close B-1R3B.4.2
+   remotely.
 3. Then begin the next ordered microphase on `src/run/iterative.rs` (R3B.5
    range), extending the oracle and keeping `tests/oracle/golden.tsv`
    byte-unchanged, with a checkpoint at each microphase.
