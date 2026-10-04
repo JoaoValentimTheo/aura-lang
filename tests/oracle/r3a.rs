@@ -128,7 +128,12 @@ pub fn unsupported_cases() -> Vec<Case> {
             "field_access",
             "struct P { x: int }\n{ let p = P { x: 1 }\n p.x }\n",
         ),
-        value("index", "[1][0]\n"),
+        // `index` was removed in B-1R3B.6: index reads are supported now and
+        // asserted by `r3b::index_supported_cases`. `field_access` stays: it
+        // builds a struct with `Expr::Construct`, which is still unsupported,
+        // so the E4999 sentinel occurs before the field read; the reachable
+        // field surface (builtin zero-argument methods) is asserted by
+        // `r3b::field_supported_cases`.
         value("lambda", "() -> 1\n"),
         value("pipe", "[1, 2] |> len\n"),
         value("match", "match 1 { 1 -> { 2 } }\n"),

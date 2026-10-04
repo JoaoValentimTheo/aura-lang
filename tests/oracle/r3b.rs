@@ -897,3 +897,239 @@ pub fn range_unsupported_cases() -> Vec<Case> {
         range_program("main_range_call", "fn main() { let r = 0..len([1, 2]) }\n"),
     ]
 }
+
+fn index_value(name: &'static str, source: &'static str) -> Case {
+    Case {
+        group: "r3b6-index-value",
+        name,
+        file: "<r3b6>",
+        source,
+        kind: Kind::Value,
+    }
+}
+
+fn index_program(name: &'static str, source: &'static str) -> Case {
+    Case {
+        group: "r3b6-index-program",
+        name,
+        file: "r3b6.aura",
+        source,
+        kind: Kind::ExecuteProgram,
+    }
+}
+
+fn field_value(name: &'static str, source: &'static str) -> Case {
+    Case {
+        group: "r3b6-field-value",
+        name,
+        file: "<r3b6>",
+        source,
+        kind: Kind::Value,
+    }
+}
+
+fn field_program(name: &'static str, source: &'static str) -> Case {
+    Case {
+        group: "r3b6-field-program",
+        name,
+        file: "r3b6.aura",
+        source,
+        kind: Kind::ExecuteProgram,
+    }
+}
+
+/// B-1R3B.6 — index-read cases the iterative engine supports. Recursive and
+/// iterative must agree exactly on value, type, diagnostics, spans, and stdout.
+/// The set pins the current `Expr::Index` surface: list (including current
+/// tuple sugar), string (code-point indexing), and map (int/string/bool keys)
+/// lookup; negative-index normalization; out-of-range `E4019`; missing-key
+/// `E2003`; non-key-capable key `E3001`; unsupported base/index combinations
+/// `E3001`; target-before-index evaluation order; control-signal propagation;
+/// nested index and Index/Field/Range composition; and a real frame boundary.
+/// Struct-instance indexing is deliberately absent: struct construction is
+/// `Expr::Construct`, still unsupported, so no instance is reachable in this
+/// subset.
+#[must_use]
+pub fn index_supported_cases() -> Vec<Case> {
+    vec![
+        // ----- list: shape and negative normalization ---------------------
+        index_value("list_first", "[10, 20, 30][0]\n"),
+        index_value("list_middle", "[10, 20, 30][1]\n"),
+        index_value("list_last", "[10, 20, 30][2]\n"),
+        index_value("list_neg_last", "[10, 20, 30][-1]\n"),
+        index_value("list_neg_first", "[10, 20, 30][-3]\n"),
+        index_value("list_single", "[7][0]\n"),
+        index_value("list_element_is_list", "[[10, 20]][0]\n"),
+        index_value("tuple_sugar", "(10, 20)[1]\n"),
+        // Extreme `i64` indices fail with the exact recursive message; the
+        // negative normalization is sign-safe by construction (`normalize`
+        // computes in `i128`).
+        index_value("list_max_index", "[1][9223372036854775807]\n"),
+        index_value("list_min_index", "[1][-9223372036854775808]\n"),
+        // ----- string: code-point indexing --------------------------------
+        index_value("string_first", "\"abc\"[0]\n"),
+        index_value("string_neg", "\"abc\"[-1]\n"),
+        index_value("string_unicode", "\"h\u{e9}llo\"[1]\n"),
+        // ----- map key families -------------------------------------------
+        index_value("map_int_key", "{1: \"a\", 2: \"b\"}[2]\n"),
+        index_value("map_str_key", "{\"a\": 1, \"b\": 2}[\"b\"]\n"),
+        index_value("map_bool_key", "{true: 1, false: 2}[false]\n"),
+        index_value("map_nested_value", "{1: {2: 3}}[1][2]\n"),
+        index_value("map_list_value", "{1: [10, 20]}[1][0]\n"),
+        index_value("map_range_value", "{1: (1..4)}[1].len\n"),
+        // ----- expressions as target and index ----------------------------
+        index_value("base_expr", "([1] + [2, 3])[2]\n"),
+        index_value("index_expr", "[10, 20, 30][0 - 1]\n"),
+        index_value("expr_key", "{1 + 1: \"two\"}[2]\n"),
+        index_value("nested_index", "[[1, 2], [3, 4]][1][0]\n"),
+        index_value("range_in_list", "[1..3, 4..5][1].len\n"),
+        // ----- composition with R3A/R3B constructs ------------------------
+        index_value("in_block", "{ [1, 2][1] }\n"),
+        index_value("in_if", "if true { [1, 2][1] } else { 0 }\n"),
+        index_value("in_let", "{ let xs = [1, 2, 3]\n xs[2] }\n"),
+        index_value("in_range_bound", "{ [1, 2][1]..[3][0] }\n"),
+        // ----- diagnostics: out of range, E4019 ---------------------------
+        index_value("list_oob", "[10, 20][5]\n"),
+        index_value("list_neg_oob", "[10, 20][-3]\n"),
+        index_value("list_empty_oob", "[][0]\n"),
+        index_value("string_oob", "\"ab\"[5]\n"),
+        index_value("nested_oob", "[[1]][1][0]\n"),
+        // ----- diagnostics: missing map key, E2003 ------------------------
+        index_value("map_missing_int", "{1: \"a\"}[9]\n"),
+        index_value("map_missing_str", "{\"a\": 1}[\"z\"]\n"),
+        index_value("map_missing_bool", "{true: 1}[false]\n"),
+        // ----- diagnostics: unsupported base/index combinations, E3001 ----
+        index_value("bool_base", "true[0]\n"),
+        index_value("float_base", "2.5[0]\n"),
+        index_value("range_base", "(1..3)[0]\n"),
+        index_value("list_bool_index", "[1, 2][true]\n"),
+        index_value("list_float_index", "[1, 2][1.5]\n"),
+        // Runtime-invalid index through an untyped binding (`none` infers
+        // `Unknown`, so the checker leaves it to the runtime).
+        index_value("list_none_index", "{ let x = none\n [1, 2][x] }\n"),
+        index_value("map_none_key", "{ let x = none\n {1: 2}[x] }\n"),
+        // A statically known map with an incompatible index kind is a
+        // check-time E3001, identical in both engines.
+        index_value("map_key_kind_mismatch", "{\"a\": 1}[1]\n"),
+        // ----- evaluation order: target before index ----------------------
+        // Both operands fail: the target's E4007 must win (if the index ran
+        // first, its column would be reported instead).
+        index_value("target_error_before_index", "{ 1 / 0 }[1 / 0]\n"),
+        // The index is evaluated only after a *successful* target.
+        index_value("index_error_after_target", "[1, 2][1 / 0]\n"),
+        // ----- control signals in target and index ------------------------
+        // A target signal must skip the failing index (the E4007 must never
+        // surface).
+        index_value("target_signal_skips_index", "{ return 5 }[1 / 0]\n"),
+        index_value("target_throw_skips_index", "{ throw 5 }[1 / 0]\n"),
+        // An index signal propagates (the target already succeeded).
+        index_value("index_signal_return", "[1, 2][{ return 6 }]\n"),
+        index_value("index_signal_throw", "[1, 2][{ throw 9 }]\n"),
+        // ----- program mode (real frame boundary) -------------------------
+        index_program(
+            "main_index_let",
+            "fn main() { let xs = [1, 2, 3]\n let y = xs[1] }\n",
+        ),
+        index_program(
+            "main_index_error",
+            "fn main() { let xs = [1]\n let y = xs[5] }\n",
+        ),
+        index_program(
+            "main_index_map_nested",
+            "fn main() { let m = {1: [10, 20]}\n let y = m[1][0] }\n",
+        ),
+        index_program(
+            "main_index_range",
+            "fn main() { let xs = [1..3, 4..5]\n let y = xs[0] }\n",
+        ),
+        index_program("main_index_signal", "fn main() { let y = { return }[0] }\n"),
+    ]
+}
+
+/// B-1R3B.6 — field-read cases the iterative engine supports. The field name is
+/// syntactic; the receiver is evaluated exactly once and resolution mirrors
+/// `Interp::eval_inner`'s `Expr::Field` arm. Struct instances are unreachable
+/// (construction is still unsupported), so the reachable surface is the
+/// zero-argument builtin registry and its `E2003` unknown-member diagnostic.
+#[must_use]
+pub fn field_supported_cases() -> Vec<Case> {
+    vec![
+        // ----- builtin zero-argument members ------------------------------
+        field_value("list_len", "[1, 2, 3].len\n"),
+        field_value("string_len", "\"abcd\".len\n"),
+        field_value("map_len", "{1: 2, 3: 4}.len\n"),
+        field_value("range_len", "(1..4).len\n"),
+        field_value("chained_sort_len", "[3, 1, 2].sort.len\n"),
+        // ----- composition with R3A/R3B constructs ------------------------
+        field_value("in_block", "{ [1, 2].len }\n"),
+        field_value("in_if_condition", "if [1].len { 7 } else { 8 }\n"),
+        field_value("in_let", "{ let xs = [1, 2]\n xs.len }\n"),
+        field_value("index_then_field", "[[1, 2], [3, 4]][0].len\n"),
+        field_value("field_then_index", "[3, 1, 2].sort[0]\n"),
+        // ----- diagnostics: receiver error wins over member resolution ----
+        field_value("receiver_error", "{ 1 / 0 }.len\n"),
+        field_value("receiver_throw", "{ throw 5 }.len\n"),
+        field_value("receiver_return", "{ return 5 }.len\n"),
+        // ----- unknown members: E2003, exact recursive message -----------
+        field_value("unknown_on_list", "[1, 2].foo\n"),
+        field_value("unknown_on_int", "42.foo\n"),
+        field_value("len_on_bool", "true.len\n"),
+        field_value("len_on_none", "none.len\n"),
+        field_value("len_on_indexed_int", "[1, 2][0].len\n"),
+        // An untyped binding (`none` infers `Unknown`) defers member
+        // resolution to the runtime, so this exercises the iterative builtin
+        // dispatch's runtime `E2003` differentially.
+        field_value("unknown_on_untyped_none", "{ let x = none\n x.len }\n"),
+        field_value("unknown_member_untyped_none", "{ let x = none\n x.foo }\n"),
+        // ----- program mode (real frame boundary) -------------------------
+        field_program(
+            "main_field_let",
+            "fn main() { let xs = [1, 2]\n let n = xs.len }\n",
+        ),
+        field_program(
+            "main_field_map",
+            "fn main() { let m = {1: 2}\n let n = m.len }\n",
+        ),
+        field_program("main_field_error", "fn main() { let n = [1].foo }\n"),
+    ]
+}
+
+/// B-1R3B.6 — index reads whose target or index remains unsupported (calls are
+/// R3C, f-strings R3B.7) must fail with the deterministic `E4999` sentinel in
+/// iterative mode, never fall back to recursion, and never produce a partial
+/// read. The unsupported construct is always on the evaluated path.
+#[must_use]
+pub fn index_unsupported_cases() -> Vec<Case> {
+    vec![
+        // An unsupported call target is reached and fails.
+        index_value("call_base", "len([1, 2])[0]\n"),
+        // An unsupported call index is reached and fails after the target.
+        index_value("call_index", "[1, 2][len([1])]\n"),
+        // An unsupported f-string index is reached and fails.
+        index_value("fstring_index", "[1, 2][f\"v={1}\"]\n"),
+        // An unsupported construct nested one level under a supported target.
+        index_value("nested_call_base", "([1] + len([2]))[0]\n"),
+        // Same shapes inside a real user frame.
+        index_program("main_index_call", "fn main() { let y = len([1])[0] }\n"),
+    ]
+}
+
+/// B-1R3B.6 — field reads whose receiver remains unsupported must fail with the
+/// deterministic `E4999` sentinel, never fall back to recursion.
+#[must_use]
+pub fn field_unsupported_cases() -> Vec<Case> {
+    vec![
+        // A struct literal is `Expr::Construct` (still unsupported), so the
+        // receiver fails before the field is read.
+        field_value(
+            "struct_construct_receiver",
+            "struct P { x: int }\n{ P { x: 1 }.x }\n",
+        ),
+        // An unsupported call receiver is reached and fails before the member
+        // is resolved (the recursive engine reports the receiver's own runtime
+        // type error, so this program is valid for it).
+        field_value("call_receiver", "{ len([1, 2]) }.len\n"),
+        // An unsupported construct nested one level under the receiver.
+        field_value("nested_call_receiver", "{ (1 + len([2])) }.len\n"),
+    ]
+}

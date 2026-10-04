@@ -39,7 +39,6 @@ r3a-value/fstring		runtime	4999	construct is not supported by the iterative engi
 r3a-value/call		runtime	4999	construct is not supported by the iterative engine (B-1R3A)	<r3a>	3	4	1	4	-	-
 r3a-value/method_call		runtime	4999	construct is not supported by the iterative engine (B-1R3A)	<r3a>	6	7	1	7	-	-
 r3a-value/field_access		runtime	4999	construct is not supported by the iterative engine (B-1R3A)	<r3a>	30	31	2	11	-	-
-r3a-value/index		runtime	4999	construct is not supported by the iterative engine (B-1R3A)	<r3a>	3	4	1	4	-	-
 r3a-value/lambda		runtime	4999	construct is not supported by the iterative engine (B-1R3A)	<r3a>	0	1	1	1	-	-
 r3a-value/pipe		runtime	4999	construct is not supported by the iterative engine (B-1R3A)	<r3a>	7	9	1	8	-	-
 r3a-value/match		runtime	4999	construct is not supported by the iterative engine (B-1R3A)	<r3a>	0	5	1	1	-	-
