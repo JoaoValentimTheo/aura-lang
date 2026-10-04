@@ -57,3 +57,4 @@ r3b42-program/main_map_error		runtime	4007	division by zero	r3b42.aura	26	27	1	2
 r3b42-program/main_map_dup		ok	0		-	0	0	0	0	-	-
 r3b42-program/main_map_signal		ok	0		-	0	0	0	0	-	-
 r3b42-program/main_map_invalid_key		runtime	3001	type `none` cannot be used as a map key; map keys must be `string`, `int`, or `bool`	r3b42.aura	35	36	2	11	-	-
+r3b42-program/main_map_element		ok	0		-	0	0	0	0	-	-

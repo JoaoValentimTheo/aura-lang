@@ -678,6 +678,14 @@ pub fn map_supported_cases() -> Vec<Case> {
             "main_map_invalid_key",
             "fn main() { let x = none\n let m = {x: 1} }\n",
         ),
+        // Restored by the R3B.4.2 push-blocker remediation: a list whose
+        // element is a Map, executed through a real frame boundary. It is the
+        // only R3B.4.2 case crossing the frame boundary with a Map nested in a
+        // List; no value-mode case substitutes for it.
+        map_program(
+            "main_map_element",
+            "fn main() { let xs = [1, {\"a\": 1}] }\n",
+        ),
     ]
 }
 

@@ -941,6 +941,70 @@ fn regenerate_r3b42_golden() {
     std::fs::write(R3B42_GOLDEN_PATH, text).expect("write R3B.4.2 golden");
 }
 
+/// Push-blocker remediation guard (B-1R3B.4.2): the program-mode
+/// list-contains-map case must exist in the supported set, must cross a real
+/// frame boundary, and must be pinned in the R3B.4.2 golden. The case was
+/// silently dropped when map elements moved from the R3B.4.1 unsupported set to
+/// supported coverage; this guard keeps the frame-boundary coverage from being
+/// lost again.
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+fn r3b42_program_map_element_coverage_is_present() {
+    let cases = r3b::map_supported_cases();
+    let case = cases
+        .iter()
+        .find(|c| c.key() == "r3b42-program/main_map_element")
+        .expect("R3B.4.2 supported set is missing program-mode main_map_element");
+    assert!(
+        matches!(case.kind, harness::Kind::ExecuteProgram),
+        "main_map_element must execute in program mode through `main`"
+    );
+    assert!(
+        case.source.contains("fn main()") && case.source.contains("[1, {\"a\": 1}]"),
+        "main_map_element must construct a list containing a map inside `main`: {:?}",
+        case.source
+    );
+    // Both engines must agree: the iterative machine must really evaluate the
+    // nested Map through the frame boundary, not fall back to recursion.
+    let rec = observe(case, harness::Engine::recursive()).unwrap();
+    let it = observe(case, harness::Engine::iterative()).unwrap();
+    assert_eq!(
+        rec, it,
+        "program-mode map element diverged between the engines"
+    );
+    // The case must be pinned in the committed golden.
+    let committed = std::fs::read_to_string(R3B42_GOLDEN_PATH)
+        .unwrap_or_else(|e| panic!("missing R3B.4.2 golden {R3B42_GOLDEN_PATH}: {e}"));
+    let golden = harness::parse_golden(&committed, "r3b42");
+    assert!(
+        golden.contains_key(&case.key()),
+        "R3B.4.2 golden missing {}",
+        case.key()
+    );
+}
+
+/// Push-blocker remediation guard (B-1R3B.4.2): the R3B.4.2 golden is compared
+/// byte-for-byte against LF-only generator output, so `.gitattributes` must
+/// force LF on every checkout. Without the pin a Windows `core.autocrlf=true`
+/// checkout materializes CRLF and the byte-exact golden test fails for a
+/// non-semantic reason; this guard fails loudly if the pin is ever removed.
+#[test]
+fn r3b42_golden_has_lf_pin() {
+    let attrs = std::fs::read_to_string(".gitattributes").expect("read .gitattributes");
+    assert!(
+        attrs
+            .lines()
+            .any(|l| l.trim() == "tests/oracle/r3b42_golden.tsv text eol=lf"),
+        "tests/oracle/r3b42_golden.tsv must be pinned to `text eol=lf`"
+    );
+    let golden = std::fs::read("tests/oracle/r3b42_golden.tsv")
+        .expect("missing tests/oracle/r3b42_golden.tsv");
+    assert!(
+        !golden.contains(&b'\r'),
+        "R3B.4.2 golden must be physically LF-only"
+    );
+}
+
 /// B-1R3A anti-tautology guard: the iterative engine must not be an alias of
 /// the recursive engine. A supported case must agree between the two engines,
 /// and an equivalent-but-unsupported case must diverge to the explicit
