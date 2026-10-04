@@ -385,6 +385,20 @@ enum Cont {
     /// arm (`call_value`). A `Name` callee is resolved synchronously once its
     /// arguments complete, so this record is only pushed for other shapes.
     CallCallee { values: Vec<Value>, span: Span },
+    /// A `while` condition finished (R3D.2); enter the body or finish.
+    WhileCond {
+        cond: Arc<Expr>,
+        body: Arc<[Stmt]>,
+        env: Env,
+    },
+    /// A `while` body block finished (R3D.2); re-test the condition.
+    WhileLoop {
+        cond: Arc<Expr>,
+        body: Arc<[Stmt]>,
+        env: Env,
+    },
+    /// A `loop` body block finished (R3D.2); run it again.
+    LoopBody { body: Arc<[Stmt]>, env: Env },
     /// A destructuring `let` initializer finished (R3D.1); bind atomically.
     LetPatternBind { pattern: Pattern, env: Env },
     /// An assignment RHS finished (R3D.1); start the target read/write.
@@ -622,6 +636,46 @@ impl<'i> Machine<'i> {
                     Ok(Resume::Redeliver(Done::plain(Ctl::Val(value))))
                 }
             }
+            Cont::WhileCond { cond, body, env } => {
+                let Ctl::Val(c) = done.ctl else {
+                    // A signal from the condition propagates without entering
+                    // the body.
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                if c.truthy() {
+                    self.kont.push(Cont::WhileLoop {
+                        cond,
+                        body: body.clone(),
+                        env: env.clone(),
+                    });
+                    Ok(Resume::Next(Ctrl::EnterBlock(body, env, true)))
+                } else {
+                    Ok(Resume::Next(Ctrl::Done(Ctl::Val(Value::None))))
+                }
+            }
+            Cont::WhileLoop { cond, body, env } => match done.ctl {
+                Ctl::Break => Ok(Resume::Next(Ctrl::Done(Ctl::Val(Value::None)))),
+                Ctl::Continue | Ctl::Val(_) => {
+                    self.kont.push(Cont::WhileCond {
+                        cond: cond.clone(),
+                        body: body.clone(),
+                        env: env.clone(),
+                    });
+                    Ok(Resume::Next(Ctrl::EvalExpr(cond, env)))
+                }
+                other => Ok(Resume::Redeliver(Done::plain(other))),
+            },
+            Cont::LoopBody { body, env } => match done.ctl {
+                Ctl::Break => Ok(Resume::Next(Ctrl::Done(Ctl::Val(Value::None)))),
+                Ctl::Continue | Ctl::Val(_) => {
+                    self.kont.push(Cont::LoopBody {
+                        body: body.clone(),
+                        env: env.clone(),
+                    });
+                    Ok(Resume::Next(Ctrl::EnterBlock(body, env, true)))
+                }
+                other => Ok(Resume::Redeliver(Done::plain(other))),
+            },
             Cont::LetPatternBind { pattern, env } => {
                 let Ctl::Val(value) = done.ctl else {
                     // A signal from the initializer propagates; nothing binds.
@@ -2062,6 +2116,33 @@ impl<'i> Machine<'i> {
                 Ok(Control::Next(Ctrl::EvalExpr(
                     Arc::new(value.clone()),
                     env.clone(),
+                )))
+            }
+            Stmt::While(cond, body, _) => {
+                // The condition is re-evaluated once per iteration in the
+                // enclosing environment; the body runs in a fresh child scope;
+                // `break` yields `none` and `continue` re-tests.
+                self.kont.push(Cont::WhileCond {
+                    cond: Arc::new(cond.clone()),
+                    body: body.clone(),
+                    env: env.clone(),
+                });
+                Ok(Control::Next(Ctrl::EvalExpr(
+                    Arc::new(cond.clone()),
+                    env.clone(),
+                )))
+            }
+            Stmt::Loop(body, _) => {
+                // `loop` repeats until `break`; `continue` starts the next
+                // iteration; any other signal propagates.
+                self.kont.push(Cont::LoopBody {
+                    body: body.clone(),
+                    env: env.clone(),
+                });
+                Ok(Control::Next(Ctrl::EnterBlock(
+                    body.clone(),
+                    env.clone(),
+                    true,
                 )))
             }
             other => Err(self.unsupported(other.span())),
