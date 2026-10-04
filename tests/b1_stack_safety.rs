@@ -1,6 +1,9 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 //! B-1 stack-safety and resource-boundary campaign.
 //!
+//! The whole file is gated on the differential-oracle feature because it
+//! drives `Engine::iterative`; without the feature it compiles to nothing.
+//!
 //! Pins the properties the iterative engine exists for: user-frame recursion
 //! and loop iteration must not consume host stack proportional to depth or
 //! iteration count, the 512-frame boundary stays exact (E4011 at 513, from
@@ -9,11 +12,14 @@
 //! unchanged. These run on deliberately small thread stacks so a regression to
 //! host-stack recursion fails loudly.
 
+#[cfg(feature = "evaluator-oracle")]
 #[path = "oracle/mod.rs"]
 mod harness;
 
+#[cfg(feature = "evaluator-oracle")]
 use harness::{observe, Case, Completion, Kind};
 
+#[cfg(feature = "evaluator-oracle")]
 fn p(name: &'static str, source: &'static str) -> Case {
     Case {
         group: "campaign",
@@ -24,6 +30,7 @@ fn p(name: &'static str, source: &'static str) -> Case {
     }
 }
 
+#[cfg(feature = "evaluator-oracle")]
 fn run_on(
     engine: harness::Engine,
     case: Case,
@@ -38,6 +45,7 @@ fn run_on(
 }
 
 #[test]
+#[cfg(feature = "evaluator-oracle")]
 fn stack_and_resource_campaign() {
     // Deep recursion at the legal limit through a real frame boundary.
     let deep_ok = "fn main() { f(510) }\nfn f(n) { if n { f(n - 1) } else { 0 } }\n";
