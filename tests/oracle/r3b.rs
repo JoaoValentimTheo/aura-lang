@@ -1135,12 +1135,10 @@ pub fn index_unsupported_cases() -> Vec<Case> {
 #[must_use]
 pub fn field_unsupported_cases() -> Vec<Case> {
     vec![
-        // A struct literal is `Expr::Construct` (still unsupported), so the
-        // receiver fails before the field is read.
-        field_value(
-            "struct_construct_receiver",
-            "struct P { x: int }\n{ P { x: 1 }.x }\n",
-        ),
+        // `struct_construct_receiver` became supported in B-1R3C.3 (struct
+        // construction landed) and is asserted by `r3c1::supported_cases` as
+        // `field_instance_read`; the field unsupported set now probes a lambda
+        // receiver only.
         // An unsupported lambda receiver is reached and fails before the member
         // is resolved (the recursive engine reports the receiver's own runtime
         // type error, so this program is valid for it). The original

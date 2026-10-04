@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-//! B-1R3C.1 — the iterative-engine oracle subset for user and native calls.
+//! B-1R3C.1/R3C.3 — the iterative-engine oracle subset for user and native
+//! calls and for struct/enum construction (`Expr::Construct`).
 //!
 //! These cases exercise **only** `Expr::Call` layered on the constructs the
 //! explicit-continuation machine already supports (R3A, R3B.1–R3B.7). Every
@@ -158,6 +159,73 @@ pub fn supported_cases() -> Vec<Case> {
             "reduce_callback_error",
             "fn div(a, b) { a / b }\nreduce([1, 0], div, 8)\n",
         ),
+        // ----- R3C.3 construct: struct and enum construction ------------
+        value("construct_positional", "struct P { x: int }\nP { x: 1 }\n"),
+        value(
+            "construct_named",
+            "struct P { x: int, y: int }\nP { x: 1, y: 2 }\n",
+        ),
+        value("construct_zero_fields", "struct U {}\nU {}\n"),
+        value("construct_wrong_count", "struct P { x: int }\nP { x: 1, y: 2 }\n"),
+        value("construct_missing_field", "struct P { x: int, y: int }\nP { x: 1 }\n"),
+        value(
+            "construct_unknown_field",
+            "struct P { x: int }\nP { z: 1 }\n",
+        ),
+        value("construct_duplicate_field", "struct P { x: int }\nP { x: 1, x: 2 }\n"),
+        value(
+            "construct_mixed_forms",
+            "struct P { x: int, y: int }\nP { x: 1, 2 }\n",
+        ),
+        value("construct_unknown_type", "Nope { x: 1 }\n"),
+        value(
+            "construct_used_as_call_argument",
+            "struct P { x: int }\nfn f(x) { 0 }\nf(P { x: 1 })\n",
+        ),
+        program(
+            "main_construct_argument",
+            "struct P { x: int }\nfn main() { let x = f(P { x: 1 }) }\nfn f(x) { 0 }\n",
+        ),
+        value("construct_enum_variant", "enum E { A(int), B }\nA(5)\n"),
+        value("construct_enum_nullary", "enum E { A(int), B }\nB\n"),
+        value("construct_variant_arity", "enum E { A(int) }\nA(1, 2)\n"),
+        value("construct_arg_order", "struct P { x: int }\nP { x: print(\'c\') }\n"),
+        value(
+            "construct_arg_error_first",
+            "struct P { x: int, y: int }\nP { x: 1 / 0, y: print(\'z\') }\n",
+        ),
+        // ----- R3C.3 field reads (instance arm was unreachable before) ---
+        value("field_instance_read", "struct P { x: int }\nP { x: 1 }.x\n"),
+        value(
+            "field_instance_read_named",
+            "struct P { x: int, y: int }\nP { x: 1, y: 2 }.y\n",
+        ),
+        value(
+            "field_instance_missing",
+            "struct P { x: int }\nP { x: 1 }.z\n",
+        ),
+        value(
+            "field_method_not_value",
+            "struct P { x: int }\nimpl P { fn get(self) { self.x } }\nP { x: 1 }.get\n",
+        ),
+        value(
+            "field_instance_read_after_new",
+            "struct P { x: int }\n{ let a = P { x: 1 }\n let b = P { x: 2 }\n a.x + b.x }\n",
+        ),
+
+        // ----- R3C.2 methods -------------------------------------------------
+        value("method_instance_call", "struct P { x: int }\nimpl P { fn get(self) { self.x } }\nP { x: 7 }.get()\n"),
+        value("method_builtin_len", "[1, 2, 3].len()\n"),
+        value("method_builtin_upper", "\'abc\'.upper()\n"),
+        value("method_call_migrated", "[1, 2].len()\n"),
+        value("method_builtin_map_call", "fn d(x) { x * 2 }\n[1, 2, 3].map(d)\n"),
+        value("method_builtin_filter_call", "fn odd(x) { x % 2 == 1 }\n[1, 2, 3, 4].filter(odd)\n"),
+        value("method_builtin_reduce_call", "fn add(a, b) { a + b }\n[1, 2, 3].reduce(add, 0)\n"),
+        value("method_unknown", "[1].no_such_method()\n"),
+        value("method_struct_unknown", "struct P { x: int }\nimpl P { fn get(self) { self.x } }\nP { x: 1 }.nope()\n"),
+        value("method_arg_count", "struct P { x: int }\nimpl P { fn add(self, n) { self.x + n } }\nP { x: 1 }.add()\n"),
+        value("method_arg_order", "struct P { x: int }\nimpl P { fn f(self, a, b) { a - b } }\nP { x: 0 }.f(print(\'1\'), print(\'2\'))\n"),
+        value("method_arity_mismatch", "\'a\'.replace()\n"),
         // ----- composition with R3B constructs ---------------------------
         value("call_in_unary", "-(abs(-2))\n"),
         value("call_in_binary", "1 + len([9, 9])\n"),
@@ -247,26 +315,18 @@ pub fn unsupported_cases() -> Vec<Case> {
         value("lambda_argument", "fn f(x) { 0 }\nf(() -> 1)\n"),
         // A comprehension argument.
         value("listcomp_argument", "fn f(x) { 0 }\nf([x for x in [1]])\n"),
-        // A construct argument.
-        value(
-            "construct_argument",
-            "struct P { x: int }\nfn f(x) { 0 }\nf(P { x: 1 })\n",
-        ),
+        // R3C.3 made construct receivers and arguments supported, so the
+        // former `construct_argument` sentinel moved to the supported set
+        // (see `construct_used_as_call_argument`).
         // A lambda callee.
         value("lambda_callee", "(() -> 1)()\n"),
-        // A construct receiver (method call on a struct literal).
-        value(
-            "construct_method_receiver",
-            "struct P { x: int }\nimpl P { fn get(self) { self.x } }\nP { x: 1 }.get()\n",
-        ),
+        // R3C.3 made construct receivers and instance methods supported, so
+        // the former `construct_method_receiver` sentinel moved to the
+        // supported set above as `method_instance_call`.
         // Same shapes inside a real user frame.
         program(
             "main_lambda_argument",
             "fn main() { let x = f(() -> 1) }\nfn f(x) { 0 }\n",
-        ),
-        program(
-            "main_construct_argument",
-            "struct P { x: int }\nfn main() { let x = f(P { x: 1 }) }\nfn f(x) { 0 }\n",
         ),
     ]
 }

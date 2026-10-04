@@ -101,6 +101,18 @@ pub fn supported_cases() -> Vec<Case> {
         // The original R3A pipe sentinel: `x |> f` desugars to a call at parse
         // time, so it became supported by B-1R3C.1. Key preserved.
         value("pipe", "[1, 2] |> len\n"),
+        // The original R3A field sentinel: struct construction is supported by
+        // B-1R3C.3, so the instance field read is reachable. Key preserved.
+        value(
+            "field_access",
+            "struct P { x: int }\n{ let p = P { x: 1 }\n p.x }\n",
+        ),
+        // The original R3A method sentinel: builtin method calls are supported
+        // by B-1R3C.2. Key preserved.
+        value("method_call", "[1, 2].len()\n"),
+        // The original R3A method sentinel: builtin method calls are supported
+        // by B-1R3C.2. Key preserved.
+
         // ----- top-level constants (value-path `Const` routing) ---------
         value("const_literal", "const X = 5\nX\n"),
         value("const_from_const", "const X = 5\nconst Y = X\nY\n"),
@@ -136,11 +148,11 @@ pub fn unsupported_cases() -> Vec<Case> {
         // a callable name desugars to a call at parse time, so it is supported
         // by the same tranche; the remaining `Expr::Pipe` forms are still
         // checked by the R3C.4 tranche.
-        value("method_call", "[1, 2].len()\n"),
-        value(
-            "field_access",
-            "struct P { x: int }\n{ let p = P { x: 1 }\n p.x }\n",
-        ),
+
+        // `field_access` was migrated to `supported_cases` in B-1R3C.3:
+        // struct construction is supported now, so the instance field read is
+        // reachable and asserted by `r3c1::supported_cases` (and by the
+        // migrated key below).
         // `index` was removed in B-1R3B.6: index reads are supported now and
         // asserted by `r3b::index_supported_cases`. `field_access` stays: it
         // builds a struct with `Expr::Construct`, which is still unsupported,
