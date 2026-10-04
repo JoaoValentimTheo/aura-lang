@@ -204,6 +204,18 @@ struct RangeCursor {
     end: i64,
 }
 
+/// The iteration state of one `for` statement (R3D.4): either a remaining
+/// materialized item list or a lazy range cursor.
+struct ForState {
+    pattern: Pattern,
+    body: Arc<[Stmt]>,
+    env: Env,
+    span: Span,
+    items: Vec<Value>,
+    index: usize,
+    range: Option<RangeCursor>,
+}
+
 /// Whether a target traversal is reading the current value or writing one.
 enum TargetPhase {
     Read,
@@ -400,18 +412,7 @@ enum Cont {
         span: Span,
     },
     /// A `for` body/iteration step finished (R3D.4); advance to the next item.
-    ForNext {
-        pattern: Pattern,
-        body: Arc<[Stmt]>,
-        env: Env,
-        span: Span,
-        /// Remaining items for a materialized iterable.
-        items: Vec<Value>,
-        /// Next index for a materialized iterable.
-        index: usize,
-        /// Lazy range cursor (`None` for a materialized iterable).
-        range: Option<RangeCursor>,
-    },
+    ForNext(ForState),
     /// A `while` condition finished (R3D.2); enter the body or finish.
     WhileCond {
         cond: Arc<Expr>,
@@ -685,23 +686,19 @@ impl<'i> Machine<'i> {
                 } else {
                     self.interp.iterate(&subject, span)?
                 };
-                Ok(Resume::Next(
-                    self.step_for(pattern, body, env, span, items, 0, range)?,
-                ))
+                Ok(Resume::Next(self.step_for(ForState {
+                    pattern,
+                    body,
+                    env,
+                    span,
+                    items,
+                    index: 0,
+                    range,
+                })?))
             }
-            Cont::ForNext {
-                pattern,
-                body,
-                env,
-                span,
-                items,
-                index,
-                range,
-            } => match done.ctl {
+            Cont::ForNext(state) => match done.ctl {
                 Ctl::Break => Ok(Resume::Next(Ctrl::Done(Ctl::Val(Value::None)))),
-                Ctl::Continue | Ctl::Val(_) => Ok(Resume::Next(
-                    self.step_for(pattern, body, env, span, items, index, range)?,
-                )),
+                Ctl::Continue | Ctl::Val(_) => Ok(Resume::Next(self.step_for(state)?)),
                 other => Ok(Resume::Redeliver(Done::plain(other))),
             },
             Cont::WhileCond { cond, body, env } => {
@@ -1865,16 +1862,16 @@ impl<'i> Machine<'i> {
     /// Run one `for` iteration step (R3D.4): take the next Range item or the
     /// next materialized item, bind it in a fresh child scope, and enter the
     /// body. Exhaustion yields `none`. Mirrors `Interp::exec_stmt`'s `For`.
-    fn step_for(
-        &mut self,
-        pattern: Pattern,
-        body: Arc<[Stmt]>,
-        env: Env,
-        span: Span,
-        items: Vec<Value>,
-        index: usize,
-        range: Option<RangeCursor>,
-    ) -> Result<Ctrl> {
+    fn step_for(&mut self, state: ForState) -> Result<Ctrl> {
+        let ForState {
+            pattern,
+            body,
+            env,
+            span,
+            items,
+            index,
+            range,
+        } = state;
         let item = if let Some(cursor) = range {
             if cursor.next < cursor.end {
                 let item = Value::Int(cursor.next);
@@ -1883,7 +1880,7 @@ impl<'i> Machine<'i> {
                     next: cursor.next + 1,
                     end: cursor.end,
                 };
-                self.kont.push(Cont::ForNext {
+                self.kont.push(Cont::ForNext(ForState {
                     pattern: pattern.clone(),
                     body: body.clone(),
                     env: env.clone(),
@@ -1891,14 +1888,14 @@ impl<'i> Machine<'i> {
                     items: Vec::new(),
                     index: 0,
                     range: Some(next_cursor),
-                });
+                }));
                 item
             } else {
                 return Ok(Ctrl::Done(Ctl::Val(Value::None)));
             }
         } else if index < items.len() {
             let item = items[index].clone();
-            self.kont.push(Cont::ForNext {
+            self.kont.push(Cont::ForNext(ForState {
                 pattern: pattern.clone(),
                 body: body.clone(),
                 env: env.clone(),
@@ -1906,7 +1903,7 @@ impl<'i> Machine<'i> {
                 items,
                 index: index + 1,
                 range: None,
-            });
+            }));
             item
         } else {
             return Ok(Ctrl::Done(Ctl::Val(Value::None)));
@@ -2283,7 +2280,8 @@ impl<'i> Machine<'i> {
                     true,
                 )))
             }
-            other => Err(self.unsupported(other.span())),
+            // `try` is the last remaining unsupported statement (R3F.1).
+            other @ Stmt::Try { .. } => Err(self.unsupported(other.span())),
         }
     }
 
