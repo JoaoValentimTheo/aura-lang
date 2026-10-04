@@ -113,6 +113,24 @@
 //!   `Value::Instance` field path is reachable only indirectly today; the
 //!   non-instance method path is reachable directly.
 //!
+//! ## B-1R3B.7 added subset
+//!
+//! * f-strings: `Expr::FStr` (`f"..."`), including empty/text-only strings,
+//!   interpolations with an optional format specification, adjacent parts, and
+//!   Unicode text. Parts are evaluated left to right, exactly once each, via
+//!   [`Cont::FStrNext`]; the accumulator `String` lives in the continuation, so
+//!   no `String`-sized or nesting-proportional Rust recursion occurs. A literal
+//!   part is appended directly; an interpolation expression is evaluated exactly
+//!   once and then either appended with its display form (`v.display()`) or
+//!   rendered through [`Interp::format_value`] with its format specification,
+//!   exactly like `Interp::eval_inner`'s `Expr::FStr` arm. A control signal or
+//!   diagnostic from an interpolation aborts the whole f-string and propagates
+//!   unchanged, so later parts are never evaluated and no partial string is
+//!   observable; a failed `format_value` (for example `E3001` for a
+//!   presentation type applied to an incompatible value, or `E4013` for an
+//!   out-of-range precision/width) is reported at the specification's span,
+//!   exactly as recursion does.
+//!
 //! ## Explicitly unsupported (R3B–R3F)
 //!
 //! Every other `Expr`/`Stmt` form fails with a deterministic
@@ -149,7 +167,7 @@ use std::sync::Arc;
 
 use super::value::{MapKey, Value};
 use super::{Closure, Ctl, Env, Interp, MAX_AST_DEPTH, MAX_CALL_FRAMES};
-use crate::ast::{BinOp, Expr, Lit, Stmt, UnOp};
+use crate::ast::{BinOp, Expr, FPart, FormatSpec, Lit, Stmt, UnOp};
 use crate::error::{codes, Result, Span};
 use crate::source::SourceId;
 
@@ -322,6 +340,23 @@ enum Cont {
     /// `Expr::Field` arm exactly (struct field read, missing-field `E2003`, the
     /// method-not-a-value guard, or zero-argument builtin method dispatch).
     FieldReceiver { name: String, span: Span },
+    /// An f-string part in progress (B-1R3B.7). `parts` and `index` identify the
+    /// interpolation currently being evaluated (the completion belongs to
+    /// `parts[index].1`); `spec` is that interpolation's optional format
+    /// specification, copied out of the AST. `out` is the accumulator and
+    /// `parts`/`index` also advance the remaining literal and interpolation
+    /// parts. Mirrors `Interp::eval_inner`'s `Expr::FStr` arm: literal text is
+    /// appended verbatim; an interpolation is appended with `v.display()` (no
+    /// spec) or `Interp::format_value` (with a spec). A control signal or
+    /// diagnostic from an interpolation aborts the whole f-string, so later
+    /// parts never run and no partial string escapes.
+    FStrNext {
+        parts: Arc<[FPart]>,
+        index: usize,
+        spec: Option<FormatSpec>,
+        out: String,
+        env: Env,
+    },
     /// A `return` operand finished; convert to the `return` signal.
     ReturnFrom,
     /// A `throw` operand finished; convert to the `throw` signal.
@@ -757,6 +792,29 @@ impl<'i> Machine<'i> {
                     Ok(Resume::Redeliver(Done::plain(done.ctl)))
                 }
             }
+            Cont::FStrNext {
+                parts,
+                index,
+                spec,
+                mut out,
+                env,
+            } => {
+                let Ctl::Val(v) = done.ctl else {
+                    // A control signal from an interpolation aborts the whole
+                    // f-string; later parts are never evaluated and no partial
+                    // string is produced (mirrors `val!`).
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                match spec {
+                    None => out.push_str(&v.display()),
+                    // A `format_value` diagnostic (E3001 incompatible type,
+                    // E4013 precision/width bound) aborts the f-string exactly
+                    // as recursion does; the accumulator is dropped.
+                    Some(s) => out.push_str(&self.interp.format_value(&v, &s)?),
+                }
+                let next = index + 1;
+                Ok(Resume::Next(self.advance_fstring(parts, next, out, &env)))
+            }
             Cont::ReturnFrom => match done.ctl {
                 Ctl::Val(v) => Ok(Resume::Next(Ctrl::ReturnValue(v))),
                 other => Ok(Resume::Redeliver(Done::plain(other))),
@@ -826,6 +884,65 @@ impl<'i> Machine<'i> {
             Arc::new(entries[0].0.clone()),
             env.clone(),
         )))
+    }
+
+    /// Begin evaluating an f-string's parts (B-1R3B.7).
+    ///
+    /// Mirrors `Interp::eval_inner`'s `Expr::FStr` arm: parts are consumed left
+    /// to right; each [`FPart::Lit`] is appended verbatim and each
+    /// [`FPart::Expr`] is evaluated exactly once in source order and appended
+    /// with its display form or its format specification. An empty or text-only
+    /// f-string terminates here with no scheduled expression. The accumulator
+    /// lives in the continuation, so nesting does not grow the Rust stack.
+    ///
+    /// `Result` is kept for a uniform `step` dispatch signature even though this
+    /// arm cannot currently fail (mirrors [`Machine::start_list`]).
+    #[allow(clippy::unnecessary_wraps)]
+    fn start_fstring(&mut self, parts: Arc<[FPart]>, env: &Env) -> Result<Control> {
+        Ok(Control::Next(self.advance_fstring(
+            parts,
+            0,
+            String::new(),
+            env,
+        )))
+    }
+
+    /// Advance an f-string from part `start`, appending literal text into `out`
+    /// until the next interpolation, which is scheduled exactly once.
+    ///
+    /// Returns the next work item: an [`Ctrl::EvalExpr`] for the next
+    /// interpolation (with [`Cont::FStrNext`] pushed to append its stringified
+    /// value and resume), or [`Ctrl::Done`] with the completed `string` when no
+    /// interpolation remains. `env` is retained across parts, so later
+    /// interpolations observe the same environment (and any shadowing that
+    /// occurred before the f-string).
+    fn advance_fstring(
+        &mut self,
+        parts: Arc<[FPart]>,
+        start: usize,
+        mut out: String,
+        env: &Env,
+    ) -> Ctrl {
+        for index in start..parts.len() {
+            match &parts[index] {
+                FPart::Lit(t) => out.push_str(t),
+                FPart::Expr(e, spec) => {
+                    // Extract the owned pieces before moving `parts` into the
+                    // continuation.
+                    let expr = Arc::new(e.clone());
+                    let spec = spec.clone();
+                    self.kont.push(Cont::FStrNext {
+                        parts,
+                        index,
+                        spec,
+                        out,
+                        env: env.clone(),
+                    });
+                    return Ctrl::EvalExpr(expr, env.clone());
+                }
+            }
+        }
+        Ctrl::Done(Ctl::Val(Value::str(out)))
     }
 
     /// Apply a unary operator to an already-evaluated operand (B-1R3B.1).
@@ -907,6 +1024,14 @@ impl<'i> Machine<'i> {
         match &**e {
             Expr::Lit(l, _) => Ok(Control::Next(Ctrl::Done(Ctl::Val(literal(l))))),
             Expr::Name(name, span) => self.eval_name(name, *span, env),
+            Expr::FStr(parts, _) => {
+                // Parts left to right, exactly once each (B-1R3B.7). Literal
+                // text is appended verbatim; each interpolation is evaluated
+                // exactly once and appended with its display form or format
+                // specification. An empty or text-only f-string completes
+                // without scheduling any expression.
+                self.start_fstring(parts.clone(), env)
+            }
             Expr::Block(body, _) => Ok(Control::Next(Ctrl::EnterBlock(
                 body.clone(),
                 env.clone(),
@@ -2966,5 +3091,166 @@ mod tests {
         assert!(matches!(out[0].1, Value::Int(10)));
         assert!(matches!(out[1].1, Value::Int(20)));
         assert!(matches!(out[2].1, Value::Int(30)));
+    }
+
+    // ----- B-1R3B.7 f-strings --------------------------------------------
+
+    fn fstr(parts: Vec<FPart>) -> Expr {
+        Expr::FStr(Arc::from(parts), Span::default())
+    }
+
+    fn text(t: &str) -> FPart {
+        FPart::Lit(t.to_string())
+    }
+
+    fn interp(e: Expr) -> FPart {
+        FPart::Expr(e, None)
+    }
+
+    fn expect_string(expr: &Expr) -> String {
+        match run_expr(expr) {
+            Ok(Ctl::Val(Value::Str(ref s))) => s.to_string(),
+            Ok(_) => panic!("expected a string completion, got a different signal"),
+            Err(d) => panic!("expected a string completion, got diagnostic {}", d.code),
+        }
+    }
+
+    #[test]
+    fn fstring_empty_is_empty_string() {
+        assert_eq!(expect_string(&fstr(Vec::new())), "");
+    }
+
+    #[test]
+    fn fstring_text_only() {
+        assert_eq!(
+            expect_string(&fstr(vec![text("hello "), text("world")])),
+            "hello world"
+        );
+    }
+
+    #[test]
+    fn fstring_interpolations_in_order() {
+        let e = fstr(vec![
+            text("a="),
+            interp(lit(1)),
+            text(", b="),
+            interp(lit(2)),
+            text(", c="),
+            interp(lit(3)),
+        ]);
+        assert_eq!(expect_string(&e), "a=1, b=2, c=3");
+    }
+
+    #[test]
+    fn fstring_adjacent_interpolations() {
+        let e = fstr(vec![interp(lit(1)), interp(lit(2))]);
+        assert_eq!(expect_string(&e), "12");
+    }
+
+    #[test]
+    fn fstring_interpolation_error_aborts() {
+        // The middle interpolation divides by zero; later text must not appear
+        // in any partial value, and the diagnostic wins.
+        let e = fstr(vec![
+            text("x"),
+            interp(Expr::Binary(
+                BinOp::Div,
+                Arc::new(lit(1)),
+                Arc::new(lit(0)),
+                Span::default(),
+            )),
+            text("y"),
+        ]);
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::DIV_ZERO);
+    }
+
+    #[test]
+    fn fstring_control_signal_aborts() {
+        let e = fstr(vec![
+            text("x"),
+            interp(Expr::Block(
+                Arc::from(vec![Stmt::Return(Some(lit(5)), Span::default())]),
+                Span::default(),
+            )),
+            text("y"),
+        ]);
+        assert!(matches!(run_expr(&e), Ok(Ctl::Return(Value::Int(5)))));
+    }
+
+    #[test]
+    fn fstring_format_spec_renders() {
+        let e = fstr(vec![FPart::Expr(
+            lit(42),
+            Some(FormatSpec {
+                ty: Some(crate::ast::FormatType::Hex { upper: false }),
+                ..FormatSpec::default()
+            }),
+        )]);
+        assert_eq!(expect_string(&e), "2a");
+    }
+
+    #[test]
+    fn deep_nested_fstring_is_stack_safe() {
+        // Nest f-strings each interpolating the next; one `Cont::FStrNext` per
+        // level, no host-stack growth.
+        let depth = MAX_AST_DEPTH - 2;
+        let mut e = lit(1);
+        for _ in 0..depth {
+            e = fstr(vec![text("["), interp(e), text("]")]);
+        }
+        let s = expect_string(&e);
+        assert_eq!(s, format!("{}1{}", "[".repeat(depth), "]".repeat(depth)));
+    }
+
+    #[test]
+    fn fstring_beyond_ast_depth_is_e1015() {
+        let mut e = lit(1);
+        for _ in 0..(MAX_AST_DEPTH + 5) {
+            e = fstr(vec![interp(e)]);
+        }
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::NESTING);
+    }
+
+    #[test]
+    fn fstring_expr_depth_returns_after_completion() {
+        // A completed f-string must restore `expr_depth`, so a following deep
+        // chain still fits the budget. Run a sequential pair through the block
+        // statement runner; if the f-string leaked depth the second expression
+        // would be E1015.
+        let deep = {
+            let depth = MAX_AST_DEPTH - 5;
+            let mut e = lit(1);
+            for _ in 0..depth {
+                e = Expr::Unary(UnOp::Not, Arc::new(e), Span::default());
+            }
+            e
+        };
+        let stmts = vec![expr_stmt(fstr(vec![interp(lit(7))])), expr_stmt(deep)];
+        let (ctl, _) = run_stmts(stmts).unwrap();
+        assert!(matches!(ctl, Ctl::Val(Value::Bool(_))));
+    }
+
+    #[test]
+    fn deep_nested_fstring_through_frame_boundary_is_stack_safe() {
+        let depth = MAX_AST_DEPTH - 2;
+        let mut e = lit(1);
+        for _ in 0..depth {
+            e = fstr(vec![text("<"), interp(e), text(">")]);
+        }
+        let mut interp = Interp::new();
+        let globals = interp.globals.clone();
+        let closure = Rc::new(Closure {
+            name: "main".to_string(),
+            params: Vec::new(),
+            param_tys: Vec::new(),
+            body: Arc::from(vec![Stmt::Expr(e, Span::default())]),
+            env: globals,
+        });
+        match call_closure_body(&mut interp, closure, Vec::new(), Span::default()).unwrap() {
+            Ctl::Val(Value::Str(_)) => {}
+            _ => panic!("deep nested f-string through a frame must evaluate"),
+        }
     }
 }
