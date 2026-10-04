@@ -429,6 +429,17 @@ pub fn supported_cases() -> Vec<Case> {
         value("match_guard_error", "match 1 { _ if 1 / 0 -> { 0 } }\n"),
         value("match_subject_error", "match 1 / 0 { _ -> { 0 } }\n"),
         value("match_first_match_wins", "match 5 { n if n > 3 -> { \'first\' }\n n -> { \'second\' } }\n"),
+        // A false guard discards the failed arm's scope: later arms bind from
+        // the match's original environment (`Interp::eval_inner`'s fresh
+        // per-arm child scope). Regression for the adversarial review finding.
+        value(
+            "match_guard_false_scope_reset",
+            "{ let x = 1\n match 0 { x if false -> { 0 }\n _ -> { x } } }\n",
+        ),
+        value(
+            "match_guard_false_mutation_reset",
+            "{ let mut x = 1\n match 0 { x if false -> { 0 }\n _ -> { x = 50 } }\n x }\n",
+        ),
         // ----- R3F.1 try / catch / finally ------------------------------------
         value("try_no_throw", "{ try { 1 } catch e { 2 } }\n"),
         value("try_catches_throw", "{ try { throw 5 } catch e { e } }\n"),
@@ -449,6 +460,21 @@ pub fn supported_cases() -> Vec<Case> {
         value("try_call_throw_deep", "fn g() { h() }\nfn h() { throw 4 }\n{ try { g() } catch e { e } }\n"),
         value("try_catch_calls", "fn f(x) { x + 1 }\n{ try { throw 1 } catch e { f(e) } }\n"),
         value("try_prefix_value", "{ try { 10 } catch e { 0 } } + 5\n"),
+        // A throw from a catch, and a fatal passing a region without
+        // `finally`, must keep unwinding to outer try regions. Regression for
+        // the adversarial review finding.
+        value(
+            "try_throw_from_catch_to_outer",
+            "fn g() { throw 2 }\n{ try { try { throw 1 } catch e { g() } } catch e2 { e2 } }\n",
+        ),
+        value(
+            "try_fatal_through_outer_finally",
+            "{ try { try { 1 / 0 } catch e { 0 } } catch e { 0 } finally { print(\'F\') } }\n",
+        ),
+        value(
+            "try_throw_three_regions",
+            "fn g() { throw 3 }\n{ try { try { try { throw 1 } catch e { g() } } catch e2 { 0 } } catch e3 { e3 } }\n",
+        ),
         value("try_throw_value_uncaught_after", "{ try { throw 1 } catch e { throw e + 1 } }\n"),
         value("try_error_in_catch_propagates", "{ try { throw 1 } catch e { 1 / 0 } }\n"),
         value("try_finally_continue_signal", "{ let mut i = 0\n while i < 2 { i = i + 1\n try { continue } finally { } }\n i }\n"),

@@ -245,6 +245,8 @@ r3c1-value/match_body_signal		ok	0		-	0	0	0	0	int	4
 r3c1-value/match_guard_error		runtime	4007	division by zero	<r3c1>	17	18	1	18	-	-
 r3c1-value/match_subject_error		runtime	4007	division by zero	<r3c1>	8	9	1	9	-	-
 r3c1-value/match_first_match_wins		ok	0		-	0	0	0	0	string	"first"
+r3c1-value/match_guard_false_scope_reset		ok	0		-	0	0	0	0	int	1
+r3c1-value/match_guard_false_mutation_reset		ok	0		-	0	0	0	0	int	50
 r3c1-value/try_no_throw		ok	0		-	0	0	0	0	int	1
 r3c1-value/try_catches_throw		ok	0		-	0	0	0	0	int	5
 r3c1-value/try_catch_binding		ok	0		-	0	0	0	0	string	"x!"
@@ -264,6 +266,9 @@ r3c1-value/try_call_throw_crosses_frame		ok	0		-	0	0	0	0	int	9
 r3c1-value/try_call_throw_deep		ok	0		-	0	0	0	0	int	4
 r3c1-value/try_catch_calls		ok	0		-	0	0	0	0	int	2
 r3c1-value/try_prefix_value		ok	0		-	0	0	0	0	int	15
+r3c1-value/try_throw_from_catch_to_outer		ok	0		-	0	0	0	0	int	2
+r3c1-value/try_fatal_through_outer_finally	460a	runtime	4007	division by zero	<r3c1>	16	17	1	17	-	-
+r3c1-value/try_throw_three_regions		ok	0		-	0	0	0	0	int	0
 r3c1-value/try_throw_value_uncaught_after		runtime	4026	uncaught value: 2	<r3c1>	0	0	1	1	-	-
 r3c1-value/try_error_in_catch_propagates		runtime	4007	division by zero	<r3c1>	30	31	1	31	-	-
 r3c1-value/try_finally_continue_signal		compile	1006	expected catch, found `finally`	<r3c1>	59	66	3	19	-	-

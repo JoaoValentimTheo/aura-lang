@@ -471,7 +471,13 @@ enum Cont {
         arms: Arc<[crate::ast::Arm]>,
         subject: Value,
         next: usize,
+        /// The failed arm's scope, used only when the guard is truthy (the
+        /// body runs in the arm's scope).
         scope: Env,
+        /// The match's original environment. A false guard continues the arm
+        /// search from here, exactly like `Interp::eval_inner`'s `Expr::Match`
+        /// arm, which creates a fresh child scope per arm.
+        env: Env,
         span: Span,
     },
     /// A comprehension iterable finished (R3E.1); start the first item. The
@@ -723,77 +729,78 @@ impl<'i> Machine<'i> {
     /// (for a `THROWN` signal) and/or `finally`, mirroring
     /// `Interp::exec_stmt`'s `Stmt::Try` arm exactly.
     fn intercept_try_error(&mut self, diag: Diag) -> Result<Option<Control>> {
-        let Some(pos) = self
-            .kont
-            .iter()
-            .rposition(|c| matches!(c, Cont::TryBody { .. } | Cont::TryCatchEnd { .. }))
-        else {
-            return Err(diag);
-        };
-        let mut tail = self.kont.split_off(pos);
-        let marker = tail.swap_remove(0);
-        // Restore the snapshot: pop any frames the body entered and recover
-        // the nesting budget and shared depth. (Any `Done.env` in flight is
-        // irrelevant on the error path: the try's own environment is restored
-        // from the snapshot.)
-        match marker {
-            Cont::TryBody {
-                catch,
-                catch_body,
-                finally,
-                env,
-                frames_len,
-                depth,
-                saved_expr_depth,
-            } => {
-                while self.frames.len() > frames_len {
-                    self.pop_frame();
+        // A diagnostic that passes through an active `try` region without a
+        // `finally` must keep unwinding to any *outer* region, exactly like
+        // Rust's `?` in `Interp::exec_stmt`'s `Try` arm. Iterate rather than
+        // returning early so nested regions are all considered.
+        loop {
+            let Some(pos) = self
+                .kont
+                .iter()
+                .rposition(|c| matches!(c, Cont::TryBody { .. } | Cont::TryCatchEnd { .. }))
+            else {
+                return Err(diag);
+            };
+            let mut tail = self.kont.split_off(pos);
+            let marker = tail.swap_remove(0);
+            // Restore the snapshot: pop any frames the body entered and
+            // recover the nesting budget and shared depth. (Any `Done.env` in
+            // flight is irrelevant on the error path: the try's own
+            // environment is restored from the snapshot.)
+            match marker {
+                Cont::TryBody {
+                    catch,
+                    catch_body,
+                    finally,
+                    env,
+                    frames_len,
+                    depth,
+                    saved_expr_depth,
+                } => {
+                    while self.frames.len() > frames_len {
+                        self.pop_frame();
+                    }
+                    self.interp.depth = depth;
+                    self.expr_depth = saved_expr_depth;
+                    if diag.code == codes::THROWN {
+                        let thrown = self
+                            .interp
+                            .pending_throw
+                            .take()
+                            .unwrap_or_else(|| Value::str(diag.message.clone()));
+                        let scope = env.child();
+                        scope.define(catch, thrown, false);
+                        self.kont.push(Cont::TryCatchEnd { finally, env });
+                        return Ok(Some(Control::Next(Ctrl::EnterBlock(
+                            catch_body, scope, false,
+                        ))));
+                    }
+                    match finally {
+                        Some(f) => {
+                            self.kont.push(Cont::TryFinally {
+                                original: TryResult::Fatal(diag),
+                            });
+                            return Ok(Some(Control::Next(Ctrl::EnterBlock(f, env, true))));
+                        }
+                        // No `finally`: keep unwinding to an outer region.
+                        None => continue,
+                    }
                 }
-                self.interp.depth = depth;
-                self.expr_depth = saved_expr_depth;
-                if diag.code == codes::THROWN {
-                    let thrown = self
-                        .interp
-                        .pending_throw
-                        .take()
-                        .unwrap_or_else(|| Value::str(diag.message.clone()));
-                    let scope = env.child();
-                    scope.define(catch, thrown, false);
-                    self.kont.push(Cont::TryCatchEnd { finally, env });
-                    Ok(Some(Control::Next(Ctrl::EnterBlock(
-                        catch_body, scope, false,
-                    ))))
-                } else {
-                    self.finish_fatal(finally, env, diag)
+                Cont::TryCatchEnd { finally, env } => {
+                    // An error in the catch body is not caught by this try; it
+                    // still runs `finally` before continuing to outer regions.
+                    match finally {
+                        Some(f) => {
+                            self.kont.push(Cont::TryFinally {
+                                original: TryResult::Fatal(diag),
+                            });
+                            return Ok(Some(Control::Next(Ctrl::EnterBlock(f, env, true))));
+                        }
+                        None => continue,
+                    }
                 }
+                _ => unreachable!("marker selection matched a try region"),
             }
-            Cont::TryCatchEnd { finally, env } => {
-                // An error in the catch body is not caught by this try; it
-                // still runs `finally` before propagating.
-                self.finish_fatal(finally, env, diag)
-            }
-            _ => unreachable!("marker selection matched a try region"),
-        }
-    }
-
-    /// Run `finally` (if any) before propagating a fatal diagnostic, or
-    /// propagate immediately when there is no `finally` (R3F.1). Propagating
-    /// here returns `Err` out of [`Machine::run`], which is exactly how a
-    /// fatal diagnostic escapes the machine.
-    fn finish_fatal(
-        &mut self,
-        finally: Option<Arc<[Stmt]>>,
-        env: Env,
-        diag: Diag,
-    ) -> Result<Option<Control>> {
-        match finally {
-            Some(f) => {
-                self.kont.push(Cont::TryFinally {
-                    original: TryResult::Fatal(diag),
-                });
-                Ok(Some(Control::Next(Ctrl::EnterBlock(f, env, true))))
-            }
-            None => Err(diag),
         }
     }
 
@@ -934,6 +941,7 @@ impl<'i> Machine<'i> {
                 subject,
                 next,
                 scope,
+                env,
                 span,
             } => {
                 let Ctl::Val(g) = done.ctl else {
@@ -948,7 +956,9 @@ impl<'i> Machine<'i> {
                         true,
                     )))
                 } else {
-                    match self.try_match_arms(arms, subject, next, scope, span)? {
+                    // A false guard discards the failed arm's scope; later arms
+                    // bind fresh from the match's original environment.
+                    match self.try_match_arms(arms, subject, next, env, span)? {
                         Control::Next(next) => Ok(Resume::Next(next)),
                         Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
                     }
@@ -2294,6 +2304,7 @@ impl<'i> Machine<'i> {
                     subject: subject.clone(),
                     next: i + 1,
                     scope: scope.clone(),
+                    env: env.clone(),
                     span,
                 });
                 return Ok(Control::Next(Ctrl::EvalExpr(guard, scope)));
