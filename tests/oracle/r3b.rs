@@ -106,10 +106,6 @@ pub fn unsupported_cases() -> Vec<Case> {
         // `-`/`not` to it, and must not fall back to recursion.
         value("neg_of_unsupported_call", "-len([1, 2])\n"),
         value("not_of_unsupported_call", "not len([1, 2])\n"),
-        // The operand is a list literal (R3B.4).
-        value("neg_of_unsupported_list", "-[1, 2]\n"),
-        // A list literal is still unsupported on its own.
-        value("list_literal", "[1, 2]\n"),
     ]
 }
 
@@ -296,6 +292,15 @@ pub fn short_circuit_supported_cases() -> Vec<Case> {
         // proves the right operand never ran.
         sc_value("and_skip_list", "false and [1, 2]\n"),
         sc_value("and_skip_map", "false and {\"a\": 1}\n"),
+        // Moved from the R3B.3 unsupported set in B-1R3B.4.1: list literals are
+        // supported now, so a required list operand and list-typed left
+        // operands agree with the recursive engine (truthiness of a list).
+        sc_value("and_required_list", "true and [1, 2]\n"),
+        sc_value("or_required_list", "false or [1, 2]\n"),
+        sc_value("and_lhs_list_falsy", "[] and true\n"),
+        sc_value("and_lhs_list_truthy", "[1] and true\n"),
+        sc_value("or_lhs_list_truthy", "[1] or false\n"),
+        sc_value("or_lhs_list_falsy", "[] or 7\n"),
         sc_value("and_skip_range", "false and (1..3)\n"),
         sc_value("and_skip_fstring", "false and f\"v={1}\"\n"),
         sc_value("and_skip_call", "false and len([1, 2])\n"),
@@ -391,20 +396,150 @@ pub fn short_circuit_unsupported_cases() -> Vec<Case> {
         // Required right operand is a call (R3C).
         sc_value("and_required_call", "true and len([1, 2])\n"),
         sc_value("or_required_call", "false or len([1, 2])\n"),
-        // Required right operand is a container/range (R3B.4/R3B.5).
-        sc_value("and_required_list", "true and [1, 2]\n"),
-        sc_value("or_required_list", "false or [1, 2]\n"),
+        // Required right operand is a range/map (R3B.5/R3B.4.2). The list
+        // forms were moved to the supported set in B-1R3B.4.1.
         sc_value("and_required_range", "true and (1..3)\n"),
         sc_value("or_required_map", "false or {\"a\": 1}\n"),
-        // Left operand itself is unsupported.
-        sc_value("and_lhs_unsupported", "[1, 2] and true\n"),
-        sc_value("or_lhs_unsupported", "[1, 2] or true\n"),
+        // Left operand itself is an unsupported map literal.
+        sc_value("and_lhs_map_unsupported", "{\"a\": 1} and true\n"),
+        sc_value("or_lhs_map_unsupported", "{\"a\": 1} or true\n"),
         // A required nested `and` reaching an unsupported call.
         sc_value("nested_required_call", "false or (true and len([1, 2]))\n"),
         // Same shape inside a real user frame.
         sc_program(
             "main_required_call",
             "fn main() { let x = true and len([1, 2]) }\n",
+        ),
+    ]
+}
+
+fn list_value(name: &'static str, source: &'static str) -> Case {
+    Case {
+        group: "r3b4-value",
+        name,
+        file: "<r3b4>",
+        source,
+        kind: Kind::Value,
+    }
+}
+
+fn list_program(name: &'static str, source: &'static str) -> Case {
+    Case {
+        group: "r3b4-program",
+        name,
+        file: "r3b4.aura",
+        source,
+        kind: Kind::ExecuteProgram,
+    }
+}
+
+/// B-1R3B.4.1 — list/tuple construction cases the iterative engine supports.
+/// Recursive and iterative must agree exactly on value, type, diagnostics,
+/// spans, and stdout. `Expr::Tuple` is list sugar (`LANGUAGE_SPEC.md` §21), so
+/// tuple cases assert the same list-valued result.
+#[must_use]
+pub fn list_supported_cases() -> Vec<Case> {
+    vec![
+        // ----- shape: empty / one / many ----------------------------------
+        list_value("empty", "[]\n"),
+        list_value("single", "[7]\n"),
+        list_value("multi", "[1, 2, 3]\n"),
+        list_value("trailing_comma", "[1, 2,]\n"),
+        // ----- element kinds ----------------------------------------------
+        list_value("mixed_values", "[1, \"x\", true, none, 2.5]\n"),
+        list_value("nested", "[[1, 2], [3], []]\n"),
+        list_value("deep_nested_value", "[[[[1]]]]\n"),
+        // ----- names and expressions inside ---------------------------------
+        list_value("name_element", "{ let x = 3\n [x, x + 1] }\n"),
+        list_value("unary_inside", "[-1, not false, ~0]\n"),
+        list_value("binary_inside", "[1 + 2, 3 * 4, 1 < 2]\n"),
+        list_value("short_circuit_inside", "[false and true, true or false]\n"),
+        // A skipped short-circuit right operand inside an element must not run.
+        list_value(
+            "skipped_rhs_inside",
+            "[true or (1 / 0), false and (1 / 0)]\n",
+        ),
+        // ----- tuple sugar -------------------------------------------------
+        list_value("tuple_two", "(1, 2)\n"),
+        list_value("tuple_one_trailing", "(1,)\n"),
+        list_value("tuple_mixed", "(1, \"a\", true)\n"),
+        list_value("tuple_nested", "((1, 2), (3, 4))\n"),
+        // ----- composition with R3A constructs -----------------------------
+        list_value("in_block", "{ [1, 2] }\n"),
+        list_value("in_if_taken", "if true { [1, 2] } else { [] }\n"),
+        list_value("in_if_condition", "if [1] { 7 } else { 8 }\n"),
+        list_value("empty_in_if_condition", "if [] { 7 } else { 8 }\n"),
+        list_value("let_binding", "{ let xs = [1, 2]\n xs }\n"),
+        list_value("let_shadow", "{ let xs = [1]\n let ys = [xs, 2]\n ys }\n"),
+        // ----- element evaluation: errors and spans ------------------------
+        // First element fails: E4007 with the division's own span.
+        list_value("first_element_div", "[1 / 0, 2]\n"),
+        // Intermediate element fails.
+        list_value("middle_element_div", "[1, 2 / 0, 3]\n"),
+        // Last element fails.
+        list_value("last_element_div", "[1, 2, 3 / 0]\n"),
+        // First error wins: the earlier element's E4007 is reported, not the
+        // later element's E3001.
+        list_value("first_error_wins", "[1 / 0, \"a\" - \"b\"]\n"),
+        // A type error inside an element keeps the operator's span.
+        list_value("element_type_error", "[1, -true]\n"),
+        // ----- element signals ---------------------------------------------
+        // A signal from an element aborts the list; later elements must not
+        // run (the E4007 must never occur).
+        list_value("element_return_aborts", "[{ return 5 }, 1 / 0]\n"),
+        list_value("element_throw_aborts", "[{ throw 9 }, 1 / 0]\n"),
+        // The abort also skips an *unsupported* later element: if the machine
+        // scheduled it, the E4999 sentinel would be reported instead of the
+        // signal-derived outcome the recursive engine produces.
+        list_value(
+            "skipped_unsupported_after_return",
+            "[{ return 5 }, len([1, 2])]\n",
+        ),
+        list_value(
+            "skipped_unsupported_after_throw",
+            "[{ throw 9 }, len([1, 2])]\n",
+        ),
+        // A signal from a later element still propagates.
+        list_value("later_element_return", "[1, { return 6 }]\n"),
+        // ----- program mode (real frame boundary) --------------------------
+        list_program("main_list_let", "fn main() { let xs = [1, 2, 3] }\n"),
+        list_program("main_tuple_let", "fn main() { let xs = (1, 2) }\n"),
+        list_program("main_list_error", "fn main() { let xs = [1, 1 / 0] }\n"),
+        list_program("main_list_in_if", "fn main() { if [1] { let xs = [] } }\n"),
+        list_program(
+            "main_list_signal",
+            "fn main() { let xs = [{ return }, 1 / 0] }\n",
+        ),
+    ]
+}
+
+/// B-1R3B.4.1 — list/tuple elements that remain unsupported (calls are R3C,
+/// maps are R3B.4.2, ranges R3B.5) must fail with the deterministic `E4999`
+/// sentinel in iterative mode, never fall back to recursion, and never yield a
+/// partial list. An unsupported construct on a path that is *not* reached
+/// cannot be tested with list construction (every element of a list literal is
+/// reached); the unreachable case is covered by the short-circuit set above.
+#[must_use]
+pub fn list_unsupported_cases() -> Vec<Case> {
+    vec![
+        // An unsupported call element is reached and fails; the supported
+        // first element must not let the machine fall back.
+        list_value("call_element", "[1, len([1, 2])]\n"),
+        // An unsupported map element is reached and fails.
+        list_value("map_element", "[1, {\"a\": 1}]\n"),
+        // An unsupported range element is reached and fails.
+        list_value("range_element", "[1, 1..3]\n"),
+        // An unsupported construct *inside* a supported element expression
+        // (an f-string operand in a binary) is reached and fails.
+        list_value("nested_unsupported_element", "[1 + f\"v={1}\"]\n"),
+        // Same shapes inside a real user frame.
+        list_program(
+            "main_call_element",
+            "fn main() { let xs = [1, len([1, 2])] }\n",
+        ),
+        list_program(
+            "main_map_element",
+            "fn main() { let xs = [1, {\"a\": 1}] }\n",
         ),
     ]
 }

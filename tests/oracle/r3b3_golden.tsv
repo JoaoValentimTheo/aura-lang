@@ -28,6 +28,12 @@ r3b3-value/or_rhs_falsy		ok	0		-	0	0	0	0	bool	false
 r3b3-value/or_rhs_truthy		ok	0		-	0	0	0	0	bool	true
 r3b3-value/and_skip_list		ok	0		-	0	0	0	0	bool	false
 r3b3-value/and_skip_map		ok	0		-	0	0	0	0	bool	false
+r3b3-value/and_required_list		ok	0		-	0	0	0	0	bool	true
+r3b3-value/or_required_list		ok	0		-	0	0	0	0	bool	true
+r3b3-value/and_lhs_list_falsy		ok	0		-	0	0	0	0	bool	false
+r3b3-value/and_lhs_list_truthy		ok	0		-	0	0	0	0	bool	true
+r3b3-value/or_lhs_list_truthy		ok	0		-	0	0	0	0	bool	true
+r3b3-value/or_lhs_list_falsy		ok	0		-	0	0	0	0	bool	true
 r3b3-value/and_skip_range		ok	0		-	0	0	0	0	bool	false
 r3b3-value/and_skip_fstring		ok	0		-	0	0	0	0	bool	false
 r3b3-value/and_skip_call		ok	0		-	0	0	0	0	bool	false
