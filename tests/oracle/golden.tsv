@@ -97,6 +97,9 @@ module/runtime_error_in_child		runtime	4007	division by zero	child.aura	32	33	1	
 module/return_to_caller	34320a	ok	0		-	0	0	0	0	-	-
 module/init_order	656e7472792d696e69740a6368696c642d696e69740a6d61696e0a	ok	0		-	0	0	0	0	-	-
 module/chain_error_in_leaf		runtime	4007	division by zero	leaf.aura	32	33	1	33	-	-
+module/uncaught_throw_in_child		runtime	4026	uncaught value: 7	main.aura	12	17	1	13	-	-
+module/uncaught_throw_in_leaf		runtime	4026	uncaught value: 9	mid.aura	23	27	1	24	-	-
+module/throw_in_child_caught	350a	ok	0		-	0	0	0	0	-	-
 value/int_expression		ok	0		-	0	0	0	0	int	7
 value/list_expression		ok	0		-	0	0	0	0	list	[1, 2, 3]
 value/map_expression		ok	0		-	0	0	0	0	map	{"a": 1, "b": 2}

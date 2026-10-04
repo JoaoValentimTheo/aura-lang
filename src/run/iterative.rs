@@ -694,7 +694,21 @@ impl<'i> Machine<'i> {
                         Ok(Some(Control::Next(next))) => self.ctrl = next,
                         Ok(Some(Control::Finished(ctl))) => return Ok(ctl),
                         Ok(None) => unreachable!("interception always routes or errors"),
-                        Err(propagated) => return Err(propagated),
+                        Err(propagated) => {
+                            // A `THROWN` signal that escapes every `try` is
+                            // attributed like the recursive engine: the first
+                            // frame whose body contained the throwing call
+                            // already popped, so `current_source` is now that
+                            // caller's body source (or the entry source).
+                            // Runtime fatals were attributed at their raise
+                            // site above.
+                            if propagated.code == codes::THROWN
+                                && self.interp.last_error_source.is_none()
+                            {
+                                self.interp.last_error_source = self.interp.current_source;
+                            }
+                            return Err(propagated);
+                        }
                     }
                 }
             }

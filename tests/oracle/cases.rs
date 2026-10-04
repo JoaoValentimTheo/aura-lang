@@ -73,6 +73,48 @@ pub static MULTI_CHURN: MultiSource = MultiSource {
     edges: &[("entry", "child", "child-key")],
 };
 
+/// Uncaught `throw` from a module function: the recursive engine attributes
+/// the user-facing `E4026` to the caller's frame source, not the entry source.
+pub static MULTI_UNCAUGHT_THROW: MultiSource = MultiSource {
+    entry: ("entry", "main.aura", "fn main() { child::raises() }"),
+    extra: &[(
+        "child-key",
+        "child.aura",
+        "pub fn raises() -> int { throw 7 }",
+    )],
+    edges: &[("entry", "child", "child-key")],
+};
+
+/// Uncaught `throw` two frames deep: attribution lands on the intermediate
+/// frame (`mid.aura`), matching the recursive engine's per-frame recovery.
+pub static MULTI_UNCAUGHT_THROW_NESTED: MultiSource = MultiSource {
+    entry: ("entry", "main.aura", "fn main() { mid::call() }"),
+    extra: &[
+        (
+            "mid-key",
+            "mid.aura",
+            "pub fn call() -> int { leaf::boom() }",
+        ),
+        ("leaf-key", "leaf.aura", "pub fn boom() -> int { throw 9 }"),
+    ],
+    edges: &[("entry", "mid", "mid-key"), ("mid-key", "leaf", "leaf-key")],
+};
+
+/// A `throw` raised in a child module but caught by a `try` in the entry.
+pub static MULTI_THROW_CAUGHT: MultiSource = MultiSource {
+    entry: (
+        "entry",
+        "main.aura",
+        "fn main() { let x = { try { child::raises() } catch e { e } }\n print(x) }",
+    ),
+    extra: &[(
+        "child-key",
+        "child.aura",
+        "pub fn raises() -> int { throw 5 }",
+    )],
+    edges: &[("entry", "child", "child-key")],
+};
+
 /// Three sources, entry → mid → leaf, with a runtime diagnostic in the leaf.
 pub static MULTI_CHAIN: MultiSource = MultiSource {
     entry: ("entry", "main.aura", "fn main() { print(mid::call()) }"),
@@ -671,6 +713,27 @@ fn main() {
         file: "main.aura",
         source: "",
         kind: Kind::Multi(&MULTI_CHAIN),
+    });
+    out.push(Case {
+        group: "module",
+        name: "uncaught_throw_in_child",
+        file: "main.aura",
+        source: "",
+        kind: Kind::Multi(&MULTI_UNCAUGHT_THROW),
+    });
+    out.push(Case {
+        group: "module",
+        name: "uncaught_throw_in_leaf",
+        file: "main.aura",
+        source: "",
+        kind: Kind::Multi(&MULTI_UNCAUGHT_THROW_NESTED),
+    });
+    out.push(Case {
+        group: "module",
+        name: "throw_in_child_caught",
+        file: "main.aura",
+        source: "",
+        kind: Kind::Multi(&MULTI_THROW_CAUGHT),
     });
 
     // ----- value observables (REPL-equivalent final value) ----------------
