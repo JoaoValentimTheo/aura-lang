@@ -249,6 +249,10 @@ pub fn supported_cases() -> Vec<Case> {
         value("lambda_reduce", "reduce([1, 2, 3], (a, b) -> a + b, 0)\n"),
         value("lambda_throw", "((() -> throw 3))()\n"),
         value(
+            "lambda_throw_block",
+            "((() -> { throw 3 }))()\n",
+        ),
+        value(
             "lambda_arg_order",
             "((a, b) -> a)(print(\'l\'), print(\'r\'))\n",
         ),
@@ -419,6 +423,11 @@ pub fn supported_cases() -> Vec<Case> {
             "match_variant_second",
             "enum E { A(int), B }\nmatch B { A(n) -> { n }\n B -> { 0 } }\n",
         ),
+        // Nullary variant as a callable constructor, matching `tests/repl.rs`.
+        value(
+            "match_variant_nullary_call",
+            "enum E { A(int), B }\nmatch B() { A(n) -> { n }\n B -> { 0 } }\n",
+        ),
         value("match_guard_true", "match 5 { n if n > 3 -> { \'big\' }\n _ -> { \'small\' } }\n"),
         value("match_guard_false", "match 2 { n if n > 3 -> { \'big\' }\n _ -> { \'small\' } }\n"),
         value("match_no_arm", "match 9 { 1 -> { \'a\' } }\n"),
@@ -447,13 +456,25 @@ pub fn supported_cases() -> Vec<Case> {
         value("try_no_throw_catch_unreached", "{ try { 7 } catch e { 1 / 0 } }\n"),
         value("try_catch_rethrow", "{ try { try { throw 1 } catch e { throw e + 1 } } catch f { f } }\n"),
         value("try_nested", "{ try { try { throw 1 } catch e { e + 1 } } catch f { 0 } }\n"),
-        value("try_finally_runs", "{ let mut n = 0\n try { n = 1 } finally { n = n + 1 }\n n }\n"),
+        value(
+            "try_finally_runs",
+            "{ let mut n = 0\n try { n = 1 } catch e { n = 9 } finally { n = n + 1 }\n n }\n",
+        ),
         value("try_finally_after_throw", "{ let mut n = 0\n try { throw 1 } catch e { n = e } finally { n = n + 10 }\n n }\n"),
-        value("try_finally_override_return", "fn f() { try { return 1 } finally { return 2 } }\nf()\n"),
-        value("try_finally_override_throw", "{ try { throw 1 } finally { throw 2 } }\n"),
+        value(
+            "try_finally_override_return",
+            "fn f() { try { return 1 } catch e { 0 } finally { return 2 } }\nf()\n",
+        ),
+        value(
+            "try_finally_override_throw",
+            "{ try { throw 1 } catch e { e } finally { throw 2 } }\n",
+        ),
         value("try_fatal_not_caught", "{ try { 1 / 0 } catch e { 99 } }\n"),
         value("try_fatal_still_finally", "{ let mut n = 0\n try { 1 / 0 } catch e { n = 1 } }\n"),
-        value("try_throw_in_finally", "{ try { 1 } finally { throw 3 } }\n"),
+        value(
+            "try_throw_in_finally",
+            "{ try { 1 } catch e { 0 } finally { throw 3 } }\n",
+        ),
         value("try_return_through_catch", "fn f() { try { throw 1 } catch e { return e + 1 } }\nf()\n"),
         value("try_catch_scope", "{ try { throw 3 } catch e { let x = e + 1\n x } }\n"),
         value("try_call_throw_crosses_frame", "fn g() { throw 9 }\n{ try { g() } catch e { e } }\n"),
@@ -499,10 +520,13 @@ pub fn supported_cases() -> Vec<Case> {
         // A fatal in a `finally` body while unwinding a pending fatal discards
         // the pending outcome and keeps unwinding, exactly like the recursive
         // engine's `?` on the finalizer.
-        value("try_fatal_in_finally", "{ try { 1 / 0 } finally { 2 / 0 } }\n"),
+        value(
+            "try_fatal_in_finally",
+            "{ try { 1 / 0 } catch e { 0 } finally { 2 / 0 } }\n",
+        ),
         value(
             "try_throw_then_fatal_in_finally",
-            "{ try { throw 1 } finally { 2 / 0 } }\n",
+            "{ try { throw 1 } catch e { e } finally { 2 / 0 } }\n",
         ),
         // Systematic frame-accounting matrix: signals through callee frames in
         // body/catch/finally across 1-3 nested regions, plus depth recovery.
@@ -512,15 +536,15 @@ pub fn supported_cases() -> Vec<Case> {
         ),
         value(
             "try_fatal_finally_frame_uncaught_outer",
-            "fn boom() { 1 / 0 }\nfn g() { try { 1 } finally { boom() } }\n{ try { g() } catch e { 0 } }\n",
+            "fn boom() { 1 / 0 }\nfn g() { try { 1 } catch e { 0 } finally { boom() } }\n{ try { g() } catch e { 0 } }\n",
         ),
         value(
             "try_fatal_finally_unwind_outer_finally",
-            "fn boom() { 1 / 0 }\nfn g() { try { throw 1 } finally { boom() } }\n{ try { g() } finally { print(\'outer\') } }\n",
+            "fn boom() { 1 / 0 }\nfn g() { try { throw 1 } catch e { e } finally { boom() } }\n{ try { g() } catch e { 0 } finally { print(\'outer\') } }\n",
         ),
         value(
             "try_return_finally_after_fatal",
-            "fn g() { try { 1 / 0 } finally { return 3 } }\n{ g() }\n",
+            "fn g() { try { 1 / 0 } catch e { 0 } finally { return 3 } }\n{ g() }\n",
         ),
         value(
             "try_fatal_inside_catch_expression",
@@ -536,11 +560,14 @@ pub fn supported_cases() -> Vec<Case> {
         ),
         value(
             "try_three_regions_fatal_chain",
-            "{ try { try { try { 1 / 0 } finally { print(\'a\') } } finally { print(\'b\') } } catch e { 0 } }\n",
+            "{ try { try { try { 1 / 0 } catch e { 0 } finally { print(\'a\') } } catch e2 { 0 } finally { print(\'b\') } } catch e3 { 0 } finally { print(\'c\') } }\n",
         ),
         value("try_throw_value_uncaught_after", "{ try { throw 1 } catch e { throw e + 1 } }\n"),
         value("try_error_in_catch_propagates", "{ try { throw 1 } catch e { 1 / 0 } }\n"),
-        value("try_finally_continue_signal", "{ let mut i = 0\n while i < 2 { i = i + 1\n try { continue } finally { } }\n i }\n"),
+        value(
+            "try_finally_continue_signal",
+            "{ let mut i = 0\n while i < 2 { i = i + 1\n try { continue } catch e { 0 } finally { } }\n i }\n",
+        ),
         // ----- composition with R3B constructs ---------------------------
         value("call_in_unary", "-(abs(-2))\n"),
         value("call_in_binary", "1 + len([9, 9])\n"),

@@ -126,6 +126,7 @@ r3c1-value/lambda_map		ok	0		-	0	0	0	0	list	[2, 4, 6]
 r3c1-value/lambda_filter		ok	0		-	0	0	0	0	list	[2, 4]
 r3c1-value/lambda_reduce		ok	0		-	0	0	0	0	int	6
 r3c1-value/lambda_throw		compile	1006	expected an expression, found `throw`	<r3c1>	8	13	1	9	-	-
+r3c1-value/lambda_throw_block		runtime	4026	uncaught value: 3	<r3c1>	21	22	1	22	-	-
 r3c1-value/lambda_arg_order	6c0a720a	ok	0		-	0	0	0	0	none	none
 r3c1-value/pipe_native		ok	0		-	0	0	0	0	int	3
 r3c1-value/pipe_named_fn		ok	0		-	0	0	0	0	int	2
@@ -235,6 +236,7 @@ r3c1-value/match_list_pattern		ok	0		-	0	0	0	0	int	3
 r3c1-value/match_list_arity		ok	0		-	0	0	0	0	int	0
 r3c1-value/match_variant		ok	0		-	0	0	0	0	int	5
 r3c1-value/match_variant_second		compile	1006	expected :, found `(`	<r3c1>	32	33	2	12	-	-
+r3c1-value/match_variant_nullary_call		ok	0		-	0	0	0	0	int	0
 r3c1-value/match_guard_true		ok	0		-	0	0	0	0	string	"big"
 r3c1-value/match_guard_false		ok	0		-	0	0	0	0	string	"small"
 r3c1-value/match_no_arm		runtime	4029	no match arm matched the value	<r3c1>	0	5	1	1	-	-
@@ -253,13 +255,13 @@ r3c1-value/try_catch_binding		ok	0		-	0	0	0	0	string	"x!"
 r3c1-value/try_no_throw_catch_unreached		ok	0		-	0	0	0	0	int	7
 r3c1-value/try_catch_rethrow		ok	0		-	0	0	0	0	int	2
 r3c1-value/try_nested		ok	0		-	0	0	0	0	int	2
-r3c1-value/try_finally_runs		compile	1006	expected catch, found `finally`	<r3c1>	31	38	2	16	-	-
+r3c1-value/try_finally_runs		ok	0		-	0	0	0	0	int	2
 r3c1-value/try_finally_after_throw		ok	0		-	0	0	0	0	int	11
-r3c1-value/try_finally_override_return		compile	1006	expected catch, found `finally`	<r3c1>	26	33	1	27	-	-
-r3c1-value/try_finally_override_throw		compile	1006	expected catch, found `finally`	<r3c1>	18	25	1	19	-	-
+r3c1-value/try_finally_override_return		ok	0		-	0	0	0	0	int	2
+r3c1-value/try_finally_override_throw		runtime	4026	uncaught value: 2	<r3c1>	0	0	1	1	-	-
 r3c1-value/try_fatal_not_caught		runtime	4007	division by zero	<r3c1>	10	11	1	11	-	-
 r3c1-value/try_fatal_still_finally		runtime	4007	division by zero	<r3c1>	25	26	2	10	-	-
-r3c1-value/try_throw_in_finally		compile	1006	expected catch, found `finally`	<r3c1>	12	19	1	13	-	-
+r3c1-value/try_throw_in_finally		runtime	4026	uncaught value: 3	<r3c1>	0	0	1	1	-	-
 r3c1-value/try_return_through_catch		ok	0		-	0	0	0	0	int	2
 r3c1-value/try_catch_scope		ok	0		-	0	0	0	0	int	4
 r3c1-value/try_call_throw_crosses_frame		ok	0		-	0	0	0	0	int	9
@@ -273,19 +275,19 @@ r3c1-program/try_catch_fatal_frame_recovery		ok	0		-	0	0	0	0	-	-
 r3c1-program/try_catch_fatal_return_finally		ok	0		-	0	0	0	0	-	-
 r3c1-program/try_catch_fatal_continue_finally		ok	0		-	0	0	0	0	-	-
 r3c1-program/try_catch_fatal_two_callee_frames		ok	0		-	0	0	0	0	-	-
-r3c1-value/try_fatal_in_finally		compile	1006	expected catch, found `finally`	<r3c1>	16	23	1	17	-	-
-r3c1-value/try_throw_then_fatal_in_finally		compile	1006	expected catch, found `finally`	<r3c1>	18	25	1	19	-	-
+r3c1-value/try_fatal_in_finally		runtime	4007	division by zero	<r3c1>	42	43	1	43	-	-
+r3c1-value/try_throw_then_fatal_in_finally		runtime	4007	division by zero	<r3c1>	44	45	1	45	-	-
 r3c1-value/try_fatal_catch_frame_uncaught_outer		runtime	4007	division by zero	<r3c1>	14	15	1	15	-	-
-r3c1-value/try_fatal_finally_frame_uncaught_outer		compile	1006	expected catch, found `finally`	<r3c1>	39	46	2	20	-	-
-r3c1-value/try_fatal_finally_unwind_outer_finally		compile	1006	expected catch, found `finally`	<r3c1>	45	52	2	26	-	-
-r3c1-value/try_return_finally_after_fatal		compile	1006	expected catch, found `finally`	<r3c1>	23	30	1	24	-	-
+r3c1-value/try_fatal_finally_frame_uncaught_outer		runtime	4007	division by zero	<r3c1>	14	15	1	15	-	-
+r3c1-value/try_fatal_finally_unwind_outer_finally	6f757465720a	runtime	4007	division by zero	<r3c1>	14	15	1	15	-	-
+r3c1-value/try_return_finally_after_fatal		ok	0		-	0	0	0	0	int	3
 r3c1-value/try_fatal_inside_catch_expression		runtime	4007	division by zero	<r3c1>	31	32	2	13	-	-
 r3c1-value/try_middle_catch_throw_outer_catch		ok	0		-	0	0	0	0	string	"x12"
 r3c1-program/try_depth_recovery_after_catch_error		runtime	4007	division by zero	r3c1.aura	14	15	1	15	-	-
-r3c1-value/try_three_regions_fatal_chain		compile	1006	expected catch, found `finally`	<r3c1>	28	35	1	29	-	-
+r3c1-value/try_three_regions_fatal_chain	610a620a630a	runtime	4007	division by zero	<r3c1>	22	23	1	23	-	-
 r3c1-value/try_throw_value_uncaught_after		runtime	4026	uncaught value: 2	<r3c1>	0	0	1	1	-	-
 r3c1-value/try_error_in_catch_propagates		runtime	4007	division by zero	<r3c1>	30	31	1	31	-	-
-r3c1-value/try_finally_continue_signal		compile	1006	expected catch, found `finally`	<r3c1>	59	66	3	19	-	-
+r3c1-value/try_finally_continue_signal		ok	0		-	0	0	0	0	int	2
 r3c1-value/call_in_unary		ok	0		-	0	0	0	0	int	-2
 r3c1-value/call_in_binary		ok	0		-	0	0	0	0	int	3
 r3c1-value/call_in_if		ok	0		-	0	0	0	0	string	"y"
