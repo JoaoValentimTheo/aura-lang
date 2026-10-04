@@ -539,6 +539,7 @@ impl Interp {
     /// [`Interp::run_iterative`]). The cutover path uses this so multi-source
     /// provider compilations are attribute-compatible with the recursive
     /// `run_sourced`.
+    #[cfg(feature = "evaluator-oracle")]
     pub(crate) fn run_iterative_sourced(
         &mut self,
         module: &Module,
