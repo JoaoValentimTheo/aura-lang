@@ -1005,6 +1005,155 @@ fn r3b42_golden_has_lf_pin() {
     );
 }
 
+/// Path of the committed R3B.5 range-construction iterative-engine golden.
+#[cfg(feature = "evaluator-oracle")]
+const R3B5_GOLDEN_PATH: &str = "tests/oracle/r3b5_golden.tsv";
+
+/// B-1R3B.5 — the iterative machine must agree with the recursive engine on
+/// every supported range-construction case, including diagnostics, spans,
+/// value representation, and stdout (endpoint, ordering, exactly-once, and
+/// signal cases are only meaningful differentially).
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+fn r3b5_range_supported_subset_agrees() {
+    let rec = harness::Engine::recursive();
+    let it = harness::Engine::iterative();
+    let mut failures = Vec::new();
+    let mut count = 0;
+    for case in r3b::range_supported_cases() {
+        count += 1;
+        let a = observe(&case, rec)
+            .unwrap_or_else(|e| panic!("harness failure (recursive) {}: {e}", case.key()));
+        let b = observe(&case, it)
+            .unwrap_or_else(|e| panic!("harness failure (iterative) {}: {e}", case.key()));
+        if a != b {
+            failures.push(format!(
+                "{}:\n  recursive: {a:?}\n  iterative: {b:?}",
+                case.key()
+            ));
+        }
+    }
+    assert!(count > 0, "R3B.5 range supported subset is empty");
+    assert!(
+        failures.is_empty(),
+        "iterative machine diverged from the recursive engine on supported R3B.5 range cases:\n{}",
+        failures.join("\n")
+    );
+}
+
+/// B-1R3B.5 — a range bound that is an unsupported construct, or that merely
+/// contains one, must fail with the deterministic `E4999` sentinel; the
+/// machine must never fall back to recursion and never return a partial Range.
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+fn iterative_range_unsupported_fails_explicitly() {
+    let it = harness::Engine::iterative();
+    let rec = harness::Engine::recursive();
+    let cases = r3b::range_unsupported_cases();
+    assert!(!cases.is_empty(), "R3B.5 unsupported set is empty");
+    for case in cases {
+        let r = observe(&case, rec)
+            .unwrap_or_else(|e| panic!("harness failure (recursive) {}: {e}", case.key()));
+        assert!(
+            matches!(r.completion, Completion::Ok | Completion::Runtime(_)),
+            "{}: recursive engine unexpectedly rejected a valid program: {r:?}",
+            case.key()
+        );
+        let obs = observe(&case, it)
+            .unwrap_or_else(|e| panic!("harness failure (iterative) {}: {e}", case.key()));
+        match obs.completion {
+            Completion::Runtime(d) => {
+                assert_eq!(
+                    d.code,
+                    4999,
+                    "{}: expected the E4999 unsupported sentinel, got {d:?}",
+                    case.key()
+                );
+                assert!(
+                    d.message.contains("not supported by the iterative engine"),
+                    "{}: unexpected iterative diagnostic: {}",
+                    case.key(),
+                    d.message
+                );
+            }
+            other => panic!(
+                "{}: unsupported range case did not fail explicitly: {other:?}",
+                case.key()
+            ),
+        }
+    }
+}
+
+/// B-1R3B.5 — full-field regression guard for the iterative range-construction
+/// subset: pins the complete normalized observable (stdout bytes, completion,
+/// code, message, source, byte span, line, column, value type and
+/// representation) of the iterative engine for every supported case.
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+fn r3b5_iterative_golden_matches() {
+    let committed = std::fs::read_to_string(R3B5_GOLDEN_PATH)
+        .unwrap_or_else(|e| panic!("missing R3B.5 golden {R3B5_GOLDEN_PATH}: {e}"));
+    let golden = harness::parse_golden(&committed, "r3b5");
+    let cases = r3b::range_supported_cases();
+    let mut observations = BTreeMap::new();
+    for case in &cases {
+        let obs = observe(case, harness::Engine::iterative())
+            .unwrap_or_else(|e| panic!("harness failure for {}: {e}", case.key()));
+        observations.insert(case.key(), obs);
+    }
+    let regenerated = harness::encode_golden(&cases, &observations);
+    assert_eq!(
+        committed, regenerated,
+        "R3B.5 range iterative golden is stale or the machine diverged; run \
+         `cargo test --locked --features evaluator-oracle --test evaluator_oracle \
+         regenerate_r3b5_golden -- --ignored`"
+    );
+    for case in &cases {
+        assert!(
+            golden.contains_key(&case.key()),
+            "R3B.5 golden missing {}",
+            case.key()
+        );
+    }
+}
+
+/// Regenerate the R3B.5 range-construction iterative golden (ignored by
+/// default).
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+#[ignore = "regenerates the committed R3B.5 range iterative golden manifest"]
+fn regenerate_r3b5_golden() {
+    let cases = r3b::range_supported_cases();
+    let mut observations = BTreeMap::new();
+    for case in &cases {
+        let obs = observe(case, harness::Engine::iterative()).unwrap();
+        observations.insert(case.key(), obs);
+    }
+    let text = harness::encode_golden(&cases, &observations);
+    std::fs::write(R3B5_GOLDEN_PATH, text).expect("write R3B.5 golden");
+}
+
+/// B-1R3B.5 — the R3B.5 golden is compared byte-for-byte against LF-only
+/// generator output, so `.gitattributes` must force LF on every checkout (the
+/// same policy every sibling golden uses, and the fix for the R3B.4.2 LF
+/// omission). This guard fails loudly if the pin is ever removed.
+#[test]
+fn r3b5_golden_has_lf_pin() {
+    let attrs = std::fs::read_to_string(".gitattributes").expect("read .gitattributes");
+    assert!(
+        attrs
+            .lines()
+            .any(|l| l.trim() == "tests/oracle/r3b5_golden.tsv text eol=lf"),
+        "tests/oracle/r3b5_golden.tsv must be pinned to `text eol=lf`"
+    );
+    let golden = std::fs::read("tests/oracle/r3b5_golden.tsv")
+        .expect("missing tests/oracle/r3b5_golden.tsv");
+    assert!(
+        !golden.contains(&b'\r'),
+        "R3B.5 golden must be physically LF-only"
+    );
+}
+
 /// B-1R3A anti-tautology guard: the iterative engine must not be an alias of
 /// the recursive engine. A supported case must agree between the two engines,
 /// and an equivalent-but-unsupported case must diverge to the explicit
@@ -1027,13 +1176,13 @@ fn iterative_engine_is_a_distinct_path() {
     assert_eq!(a, b, "supported case must agree");
 
     // An unsupported case the recursive engine accepts: if `iterative` were an
-    // alias it would also succeed; it must instead report E4999. A range
-    // literal (R3B.5) remains unsupported after R3B.4.2.
+    // alias it would also succeed; it must instead report E4999. A call (R3C)
+    // remains unsupported after R3B.5.
     let unsupported = Case {
         group: "r3a-value",
         name: "distinct_path_unsupported",
         file: "<r3a>",
-        source: "1..3\n",
+        source: "len([1, 2])\n",
         kind: harness::Kind::Value,
     };
     let r = observe(&unsupported, harness::Engine::recursive()).unwrap();

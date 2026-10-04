@@ -119,8 +119,9 @@ pub fn unsupported_cases() -> Vec<Case> {
         // tuple construction are supported now and asserted by
         // `r3b::list_supported_cases`. `map_literal` was removed in
         // B-1R3B.4.2: map construction is supported now and asserted by
-        // `r3b::map_supported_cases`.
-        value("range_literal", "1..3\n"),
+        // `r3b::map_supported_cases`. `range_literal` was removed in
+        // B-1R3B.5: range construction is supported now and asserted by
+        // `r3b::range_supported_cases`.
         value("call", "len([1, 2])\n"),
         value("method_call", "[1, 2].len()\n"),
         value(

@@ -27,6 +27,7 @@ r3b42-value/duplicate_str		ok	0		-	0	0	0	0	map	{"k": 2}
 r3b42-value/nested_map		ok	0		-	0	0	0	0	map	{1: {2: 3}}
 r3b42-value/map_of_lists		ok	0		-	0	0	0	0	map	{1: [1, 2], 2: [3]}
 r3b42-value/list_of_maps		ok	0		-	0	0	0	0	list	[{"a": 1}, {"b": 2}]
+r3b42-value/range_value		ok	0		-	0	0	0	0	map	{1: 1..3}
 r3b42-value/deep_nested_value		ok	0		-	0	0	0	0	map	{1: {2: {3: 4}}}
 r3b42-value/first_key_error_wins		runtime	4007	division by zero	<r3b42>	3	4	1	4	-	-
 r3b42-value/first_value_error_wins		runtime	4007	division by zero	<r3b42>	6	7	1	7	-	-
@@ -58,3 +59,4 @@ r3b42-program/main_map_dup		ok	0		-	0	0	0	0	-	-
 r3b42-program/main_map_signal		ok	0		-	0	0	0	0	-	-
 r3b42-program/main_map_invalid_key		runtime	3001	type `none` cannot be used as a map key; map keys must be `string`, `int`, or `bool`	r3b42.aura	35	36	2	11	-	-
 r3b42-program/main_map_element		ok	0		-	0	0	0	0	-	-
+r3b42-program/main_map_range		ok	0		-	0	0	0	0	-	-

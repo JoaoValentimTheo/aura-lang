@@ -307,6 +307,14 @@ pub fn short_circuit_supported_cases() -> Vec<Case> {
         sc_value("or_required_map", "false or {\"a\": 1}\n"),
         sc_value("and_lhs_map", "{\"a\": 1} and true\n"),
         sc_value("or_lhs_map", "{\"a\": 1} or true\n"),
+        // Moved from the R3B.3 unsupported set in B-1R3B.5: range construction
+        // is supported now, so a required range operand and range-typed left
+        // operands agree with the recursive engine (a range is truthy).
+        sc_value("and_required_range", "true and (1..3)\n"),
+        sc_value("or_required_range", "false or (1..3)\n"),
+        sc_value("and_lhs_range", "(1..3) and true\n"),
+        sc_value("or_lhs_range", "(1..3) or false\n"),
+        sc_value("or_lhs_empty_range", "(3..1) or 7\n"),
         sc_value("and_skip_range", "false and (1..3)\n"),
         sc_value("and_skip_fstring", "false and f\"v={1}\"\n"),
         sc_value("and_skip_call", "false and len([1, 2])\n"),
@@ -402,9 +410,7 @@ pub fn short_circuit_unsupported_cases() -> Vec<Case> {
         // Required right operand is a call (R3C).
         sc_value("and_required_call", "true and len([1, 2])\n"),
         sc_value("or_required_call", "false or len([1, 2])\n"),
-        // Required right operand is a range (R3B.5). The list forms were moved
-        // to the supported set in B-1R3B.4.1; the map forms in B-1R3B.4.2.
-        sc_value("and_required_range", "true and (1..3)\n"),
+        // Range right operands moved to the supported set in B-1R3B.5.
         // A required nested `and` reaching an unsupported call.
         sc_value("nested_required_call", "false or (true and len([1, 2]))\n"),
         // Same shape inside a real user frame.
@@ -506,6 +512,10 @@ pub fn list_supported_cases() -> Vec<Case> {
         // Moved from the R3B.4.1 unsupported set in B-1R3B.4.2: a map element
         // is supported now, so list/map composition agrees with recursion.
         list_value("map_element", "[1, {\"a\": 1}]\n"),
+        // Moved from the R3B.4.1 unsupported set in B-1R3B.5: a range element
+        // is supported now, so a list containing a Range agrees with recursion
+        // (`LANGUAGE_SPEC.md` §22.1: `[1..3]` is a one-element list).
+        list_value("range_element", "[1, 1..3]\n"),
         // ----- program mode (real frame boundary) --------------------------
         list_program("main_list_let", "fn main() { let xs = [1, 2, 3] }\n"),
         list_program("main_tuple_let", "fn main() { let xs = (1, 2) }\n"),
@@ -515,23 +525,25 @@ pub fn list_supported_cases() -> Vec<Case> {
             "main_list_signal",
             "fn main() { let xs = [{ return }, 1 / 0] }\n",
         ),
+        // Moved from the R3B.4.1 unsupported set in B-1R3B.5: a list containing
+        // a Range through a real frame boundary.
+        list_program("main_list_range", "fn main() { let xs = [1..3] }\n"),
     ]
 }
 
 /// B-1R3B.4.1 — list/tuple elements that remain unsupported (calls are R3C,
-/// maps are R3B.4.2, ranges R3B.5) must fail with the deterministic `E4999`
-/// sentinel in iterative mode, never fall back to recursion, and never yield a
-/// partial list. An unsupported construct on a path that is *not* reached
-/// cannot be tested with list construction (every element of a list literal is
-/// reached); the unreachable case is covered by the short-circuit set above.
+/// f-strings R3B.7; ranges moved to supported in R3B.5) must fail with the
+/// deterministic `E4999` sentinel in iterative mode, never fall back to
+/// recursion, and never yield a partial list. An unsupported construct on a
+/// path that is *not* reached cannot be tested with list construction (every
+/// element of a list literal is reached); the unreachable case is covered by
+/// the short-circuit set above.
 #[must_use]
 pub fn list_unsupported_cases() -> Vec<Case> {
     vec![
         // An unsupported call element is reached and fails; the supported
         // first element must not let the machine fall back.
         list_value("call_element", "[1, len([1, 2])]\n"),
-        // An unsupported range element is reached and fails.
-        list_value("range_element", "[1, 1..3]\n"),
         // An unsupported construct *inside* a supported element expression
         // (an f-string operand in a binary) is reached and fails.
         list_value("nested_unsupported_element", "[1 + f\"v={1}\"]\n"),
@@ -612,6 +624,10 @@ pub fn map_supported_cases() -> Vec<Case> {
         map_value("nested_map", "{1: {2: 3}}\n"),
         map_value("map_of_lists", "{1: [1, 2], 2: [3]}\n"),
         map_value("list_of_maps", "[{\"a\": 1}, {\"b\": 2}]\n"),
+        // Moved from the R3B.4.2 unsupported set in B-1R3B.5: a range value is
+        // supported now, so a map containing a Range value agrees with
+        // recursion.
+        map_value("range_value", "{1: (1..3)}\n"),
         map_value("deep_nested_value", "{1: {2: {3: 4}}}\n"),
         // ----- evaluation order: key before value, entry by entry ---------
         // If entries were reordered, the first error would differ.
@@ -686,15 +702,18 @@ pub fn map_supported_cases() -> Vec<Case> {
             "main_map_element",
             "fn main() { let xs = [1, {\"a\": 1}] }\n",
         ),
+        // Moved from the R3B.4.2 unsupported set in B-1R3B.5: a Map whose value
+        // is a Range through a real frame boundary.
+        map_program("main_map_range", "fn main() { let m = {1: (2..5)} }\n"),
     ]
 }
 
 /// B-1R3B.4.2 — map keys/values that remain unsupported (calls are R3C,
-/// ranges R3B.5, f-strings R3B.7) must fail with the deterministic `E4999`
-/// sentinel in iterative mode, never fall back to recursion, and never yield a
-/// partial map. A *skipped* unsupported construct cannot be tested with map
-/// construction (every key and value of a literal is reached); the
-/// unreachable case is covered by the short-circuit set above.
+/// f-strings R3B.7; ranges moved to supported in R3B.5) must fail with the
+/// deterministic `E4999` sentinel in iterative mode, never fall back to
+/// recursion, and never yield a partial map. A *skipped* unsupported construct
+/// cannot be tested with map construction (every key and value of a literal is
+/// reached); the unreachable case is covered by the short-circuit set above.
 #[must_use]
 pub fn map_unsupported_cases() -> Vec<Case> {
     vec![
@@ -702,8 +721,6 @@ pub fn map_unsupported_cases() -> Vec<Case> {
         map_value("call_key", "{len([1, 2]): 1}\n"),
         // An unsupported call value is reached and fails.
         map_value("call_value", "{1: len([1, 2])}\n"),
-        // An unsupported range value is reached and fails.
-        map_value("range_value", "{1: (1..3)}\n"),
         // An unsupported f-string value is reached and fails.
         map_value("fstring_value", "{1: f\"v={1}\"}\n"),
         // A supported first entry must not let the machine fall back on a
@@ -715,5 +732,168 @@ pub fn map_unsupported_cases() -> Vec<Case> {
             "fn main() { let m = {1: len([1, 2])} }\n",
         ),
         map_program("main_call_key", "fn main() { let m = {len([1, 2]): 1} }\n"),
+    ]
+}
+
+fn range_value(name: &'static str, source: &'static str) -> Case {
+    Case {
+        group: "r3b5-value",
+        name,
+        file: "<r3b5>",
+        source,
+        kind: Kind::Value,
+    }
+}
+
+fn range_program(name: &'static str, source: &'static str) -> Case {
+    Case {
+        group: "r3b5-program",
+        name,
+        file: "r3b5.aura",
+        source,
+        kind: Kind::ExecuteProgram,
+    }
+}
+
+/// B-1R3B.5 — range-construction cases the iterative engine supports.
+/// Recursive and iterative must agree exactly on value, type, diagnostics,
+/// spans, and stdout. The set pins the value representation (start/end), the
+/// half-open endpoint semantics (`b <= a` empty; no materialization), the
+/// start-then-end evaluation order and exactly-once behavior, the E3001
+/// diagnostics and span, control-signal propagation, extreme `i64` bounds, and
+/// composition with R3A/R3B.1–R3B.4.2 and program mode. This is the current
+/// step-1, half-open Range only; the planned Aura 0.3 `step`/inclusive
+/// extensions are deliberately absent.
+#[must_use]
+pub fn range_supported_cases() -> Vec<Case> {
+    vec![
+        // ----- endpoints and shape ----------------------------------------
+        range_value("ascending", "1..4\n"),
+        range_value("single", "3..4\n"),
+        range_value("one_before", "0..1\n"),
+        range_value("equal_bounds_empty", "4..4\n"),
+        range_value("descending_empty", "5..1\n"),
+        range_value("zero_start", "0..3\n"),
+        range_value("negative_ascending", "-3..1\n"),
+        range_value("negative_to_zero", "-3..0\n"),
+        range_value("negative_descending", "1..-3\n"),
+        range_value("both_negative", "-5..-1\n"),
+        // ----- extreme i64 bounds (len saturates; representation exact) ----
+        range_value("min_to_max", "-9223372036854775808..9223372036854775807\n"),
+        range_value("max_bound", "0..9223372036854775807\n"),
+        range_value("min_bound", "-9223372036854775808..0\n"),
+        range_value(
+            "max_to_min_empty",
+            "9223372036854775807..-9223372036854775808\n",
+        ),
+        // ----- expressions as bounds --------------------------------------
+        range_value("arithmetic_bounds", "1 + 1..2 * 3\n"),
+        range_value("unary_bound", "-2..3\n"),
+        range_value("bitnot_bound", "~0..2\n"),
+        range_value("cmp_bound", "1..2 + 1\n"),
+        range_value("name_bounds", "{ let a = 1\n let b = 5\n a..b }\n"),
+        range_value("computed_end_from_name", "{ let n = 4\n 0..n - 1 }\n"),
+        // ----- precedence: `..` binds looser than additive, tighter than cmp -
+        range_value("precedence_add", "{ let n = 4\n 1 + 2..n - 1 }\n"),
+        // ----- composition with R3A/R3B constructs ------------------------
+        range_value("in_block", "{ 1..3 }\n"),
+        range_value("in_if_taken", "if true { 1..3 } else { 4..5 }\n"),
+        range_value("in_if_condition", "if 1..3 { 7 } else { 8 }\n"),
+        range_value("empty_in_if_condition", "if 4..4 { 7 } else { 8 }\n"),
+        range_value("let_binding", "{ let r = 1..3\n r }\n"),
+        range_value("in_list", "[1..3, 4..6]\n"),
+        range_value("in_tuple", "(1..3, 4..6)\n"),
+        range_value("in_map_value", "{1: 0..2, 2: 3..5}\n"),
+        // ----- equality/identity by start/end -----------------------------
+        range_value("equal_literals", "(1..3) == (1..3)\n"),
+        range_value("unequal_end", "(1..3) == (1..4)\n"),
+        range_value("descending_eq", "(5..1) == (5..1)\n"),
+        // ----- diagnostics: bounds must be int, E3001 at the range span ----
+        range_value("float_start_check", "1.5..3\n"),
+        range_value("float_end_check", "1..2.0\n"),
+        range_value("bool_start_check", "true..3\n"),
+        range_value("str_end_check", "1..\"x\"\n"),
+        range_value("none_start_check", "none..3\n"),
+        // Both bounds bad: start is validated first, so its message is
+        // reported (matching `eval_inner`'s sequential match arms).
+        range_value("both_bad_start_wins", "true..\"x\"\n"),
+        // Runtime-invalid bound reached through an untyped binding: `none`
+        // infers `Unknown`, so the checker cannot prove the type and the
+        // runtime E3001 is exercised. A statically-typed binding (`1.5`, `true`)
+        // is instead rejected at check time, so those spellings appear above.
+        range_value("runtime_start_none", "{ let x = none\n x..3 }\n"),
+        range_value("runtime_end_none", "{ let x = none\n 1..x }\n"),
+        // Both bounds runtime-invalid and untyped: the start is validated
+        // first, so the start's message is reported.
+        range_value(
+            "runtime_both_bad_start_wins",
+            "{ let a = none\n let b = none\n a..b }\n",
+        ),
+        // A statically-known non-int binding is a check-time E3001.
+        range_value("typed_binding_start_check", "{ let x = 1.5\n x..3 }\n"),
+        range_value("typed_binding_end_check", "{ let x = true\n 1..x }\n"),
+        // ----- first-error-wins and evaluation order ----------------------
+        // A bad start still evaluates the end: the end's error wins only when
+        // the start is a *valid* int. Here both are evaluated and the start is
+        // validated first.
+        range_value("first_error_wins_start", "1 / 0..3\n"),
+        range_value("first_error_wins_end", "1..1 / 0\n"),
+        // Left-to-right, exactly-once order proven by composition with an
+        // *unsupported* end: if the end ran before the start (or at all, for a
+        // signal from the start) the E4999 sentinel would surface instead of
+        // the start's own E4007 / error.
+        range_value("start_error_before_call_end", "1 / 0..len([1, 2])\n"),
+        // ----- control signals in bounds ----------------------------------
+        range_value("start_return_skips_end", "{ return 5 }..(1 / 0)\n"),
+        range_value("end_return", "1..{ return 6 }\n"),
+        range_value("end_throw", "1..{ throw 9 }\n"),
+        // A signal from the end wins over a *runtime*-invalid start: the end
+        // still evaluates even though the start is `none` (untyped), so it
+        // propagates and no E3001 is produced. A `true` start would be a
+        // check-time rejection, not this runtime ordering.
+        range_value(
+            "end_signal_over_bad_start",
+            "{ let x = none\n x..{ return 5 } }\n",
+        ),
+        // ----- program mode (real frame boundary) -------------------------
+        range_program("main_range_let", "fn main() { let r = 1..3 }\n"),
+        range_program(
+            "main_range_in_if",
+            "fn main() { if 1..3 { let r = 9..9 } }\n",
+        ),
+        range_program("main_range_error", "fn main() { let r = 1..2.0 }\n"),
+        range_program(
+            "main_range_signal",
+            "fn main() { let r = { return }..(1 / 0) }\n",
+        ),
+        range_program(
+            "main_range_in_list",
+            "fn main() { let xs = [1..3, 4..6] }\n",
+        ),
+        range_program("main_range_in_map", "fn main() { let m = {\"a\": 1..3} }\n"),
+    ]
+}
+
+/// B-1R3B.5 — range bounds that remain unsupported (calls are R3C) must fail
+/// with the deterministic `E4999` sentinel in iterative mode, never fall back
+/// to recursion, and never yield a partial Range. The unsupported construct
+/// must be on the *evaluated* path (a range always evaluates both bounds), so
+/// every case here is reached. An f-string bound is not usable here: the
+/// checker types an f-string as `string`, so the recursive engine rejects it
+/// statically (`E3001`) and the runtime path is unreachable.
+#[must_use]
+pub fn range_unsupported_cases() -> Vec<Case> {
+    vec![
+        // An unsupported call as the start bound is reached and fails.
+        range_value("call_start", "len([1, 2])..3\n"),
+        // An unsupported call as the end bound is reached and fails.
+        range_value("call_end", "1..len([1, 2])\n"),
+        // A supported start must not let the machine fall back on an
+        // unsupported end.
+        range_value("call_end_after_int", "0..len([1, 2])\n"),
+        // An unsupported construct nested one level under a supported bound.
+        range_value("nested_call_start", "(1 + len([1, 2]))..3\n"),
+        // Same shapes inside a real user frame.
+        range_program("main_range_call", "fn main() { let r = 0..len([1, 2]) }\n"),
     ]
 }
