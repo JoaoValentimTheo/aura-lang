@@ -494,9 +494,9 @@ impl Interp {
     /// declaration and initialization order, and routes the entry `main` call
     /// through the machine. It is deliberately **not** an embedder API.
     ///
-    /// Supported subset and explicit unsupported surface: see
-    /// `src/run/iterative.rs`. Unsupported constructs return `E4999`; they never
-    /// fall back to recursion.
+    /// Surface and semantics: see `src/run/iterative.rs`. Every current
+    /// language construct is handled; the machine never falls back to
+    /// recursion.
     ///
     /// # Errors
     /// Returns the first diagnostic the iterative machine produces.

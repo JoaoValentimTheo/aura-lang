@@ -341,10 +341,11 @@ impl Compilation {
     /// evaluator (B-1R3A).
     ///
     /// Hidden and available only with the non-default `evaluator-oracle`
-    /// feature. Behavior-neutral: it is called exclusively by the differential
-    /// oracle harness and never by a production path. For B-1R3A only
-    /// single-source compilations are supported; a provider-backed compilation
-    /// returns `E4999` rather than silently using the recursive engine.
+    /// feature. It is called by the differential oracle harness (and, after
+    /// the gated cutover, by the production path). Single-source and
+    /// provider-backed (multi-source) compilations both execute on the
+    /// machine; a provider-backed compilation retains per-item source
+    /// provenance. It never falls back to the recursive engine.
     ///
     /// # Errors
     /// Returns the first diagnostic the iterative machine produces.

@@ -109,9 +109,8 @@
 //!   declared field (missing field `E2003`; a method name used without `(...)`
 //!   is the recursive `E2003` guard), and every other receiver dispatches to the
 //!   zero-argument builtin registry with the same `E2003` for an unknown member.
-//!   Because struct construction is `Expr::Construct` (still unsupported), the
-//!   `Value::Instance` field path is reachable only indirectly today; the
-//!   non-instance method path is reachable directly.
+//!   The `Value::Instance` field path is reachable since B-1R3C.3
+//!   (`Expr::Construct`); the non-instance method path is reachable directly.
 //!
 //! ## B-1R3B.7 added subset
 //!
@@ -131,34 +130,34 @@
 //!   out-of-range precision/width) is reported at the specification's span,
 //!   exactly as recursion does.
 //!
-//! ## Explicitly unsupported (R3B–R3F)
+//! ## Complete surface (B-1R3F.1)
 //!
-//! Every other `Expr`/`Stmt` form fails with a deterministic
-//! `E4999` (`codes::INTERNAL`) "not supported by the iterative engine". It
-//! **never** falls back to the recursive evaluator, so the differential oracle
-//! cannot mistake recursive execution for iterative progress.
+//! The machine handles **every** `Expr` (21 variants) and `Stmt` (12 variants)
+//! form: literals, names, blocks, `let`/shadowing, `let` patterns, assignment
+//! (simple/compound, name/index/field targets), `if`/`while`/`loop`/`for`
+//! (lazy ranges), `break`/`continue`, `return`/`throw`, unary/binary/
+//! short-circuit operators, list/tuple/map/range construction, index/field
+//! reads, f-strings, user/native/closure/method calls, struct/enum
+//! construction, lambdas, pipes, list/map comprehensions, `match`, and
+//! `try`/`catch`/`finally`. There is **no recursive fallback**: value-level
+//! helpers (`binary`, `index_get`, `field_get`, `method`, `format_value`,
+//! `bind_pattern`, `match_pattern`, `iterate`, `error`) are shared with the
+//! recursive engine, but no AST-evaluating entry point is ever re-entered.
+//! Higher-order callbacks (`map`/`filter`/`reduce` in both free-function and
+//! method form) use the resumable `NativeOutcome` protocol so a callback runs
+//! as machine work.
 //!
-//! ## Honest gaps
+//! ## Honest notes
 //!
-//! * **Calls are not implemented** (R3C). `UserFrame`/`push_frame`/`pop_frame`
-//!   and `Cont::FrameBoundary` establish the 512/513 accounting model and are
-//!   exercised synthetically by unit tests; no `Ctrl` produces a frame yet.
-//!   Short-circuit operands that contain a user call therefore still fail with
-//!   the deterministic unsupported sentinel, exactly as before.
-//! * **`try`/`finally` are not implemented** (R3F).
-//! * The shadowing write-back travels in [`Done::env`], which is exact for the
-//!   call-free R3A subset (conts run depth-first with no suspension). R3C must
-//!   keep this carrier explicit across suspensions.
 //! * `MAX_AST_DEPTH` (`E1015`) and `MAX_CALL_FRAMES` (`E4011`) preserve the
 //!   recursive engine's semantics exactly.
-//! * **Exactly-once evaluation is structural, not differentially falsifiable
-//!   in this subset.** The continuation design schedules each range operand in
-//!   exactly one place, but the only constructs that could make a double
-//!   evaluation observable (a call, an assignment, or a `print`) are still
-//!   unsupported (R3C/R3D), so no supported case can distinguish it. Order is
-//!   observable and pinned (a start error/`E4999` preempts the end, and a
-//!   runtime start error beats a runtime end error); once side-effecting
-//!   bounds exist, the oracle should add a print-counting range case.
+//! * Exactly-once and evaluation order are differentially falsifiable since
+//!   B-1R3C.1 made `print`-observable calls reachable; the R3B.2–R3B.7
+//!   structural claims are strengthened by the `print`-sequence cases in
+//!   `tests/oracle/r3c1.rs`.
+//! * `bind_pattern`/`match_pattern` recurse on the host stack proportional to
+//!   pattern nesting (a pre-existing shared property recorded in the R3B.8
+//!   audit); both engines use the identical helper, so behavior matches.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -2896,9 +2895,9 @@ pub(crate) fn eval_expr(interp: &mut Interp, e: &Expr, env: &Env) -> Result<Ctl>
 }
 
 /// Enter a user closure's body as Aura user frame 1 and run it with the
-/// machine. This is the R3A entry for a module's `main`; general first-class
-/// calls (arguments, overloads) are R3C work, so this only supports the
-/// parameterless entry call, which is exactly `main`'s contract.
+/// machine. This is the module `main` entry; general first-class calls go
+/// through `Machine::start_call`/`enter_call`, which reuse the same frame
+/// machinery.
 ///
 /// The body runs as an unscoped block, exactly like `Interp::call`'s
 /// `exec_block(&closure.body, &env, false)`.
