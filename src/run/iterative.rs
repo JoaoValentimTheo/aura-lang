@@ -167,7 +167,7 @@ use std::sync::Arc;
 
 use super::value::{MapKey, Value};
 use super::{Closure, Ctl, Env, Interp, NativeOutcome, MAX_AST_DEPTH, MAX_CALL_FRAMES};
-use crate::ast::{Arg, BinOp, Expr, FPart, FormatSpec, Lit, Stmt, UnOp};
+use crate::ast::{Arg, BinOp, Expr, FPart, FormatSpec, Lit, Pattern, Stmt, UnOp};
 use crate::error::{codes, Result, Span};
 use crate::source::SourceId;
 
@@ -197,6 +197,12 @@ impl Done {
 }
 
 /// The outcome of resuming one continuation.
+/// Whether a target traversal is reading the current value or writing one.
+enum TargetPhase {
+    Read,
+    Write(Value),
+}
+
 enum Resume {
     /// Hand this completion to the next outer continuation.
     Redeliver(Done),
@@ -379,6 +385,41 @@ enum Cont {
     /// arm (`call_value`). A `Name` callee is resolved synchronously once its
     /// arguments complete, so this record is only pushed for other shapes.
     CallCallee { values: Vec<Value>, span: Span },
+    /// A destructuring `let` initializer finished (R3D.1); bind atomically.
+    LetPatternBind { pattern: Pattern, env: Env },
+    /// An assignment RHS finished (R3D.1); start the target read/write.
+    AssignRhs {
+        target: Arc<Expr>,
+        op: Option<BinOp>,
+        env: Env,
+        span: Span,
+    },
+    /// A compound assignment's target read finished (R3D.1); apply the binary
+    /// operator and start the target write. The write re-evaluates the
+    /// target's base/index subexpressions, preserving the recursive engine's
+    /// documented double evaluation.
+    AssignRead {
+        target: Arc<Expr>,
+        op: BinOp,
+        rhs: Value,
+        env: Env,
+        span: Span,
+    },
+    /// A target's base expression finished (R3D.1): resolve a `Field` write or
+    /// schedule the index expression of an `Index` target.
+    TargetBase {
+        name: Option<String>,
+        index: Option<Arc<Expr>>,
+        phase: TargetPhase,
+        env: Env,
+        span: Span,
+    },
+    /// A target's index expression finished (R3D.1).
+    TargetIndex {
+        base: Value,
+        phase: TargetPhase,
+        span: Span,
+    },
     /// A pipe left operand finished (R3C.4); evaluate the right operand next,
     /// exactly like `Interp::eval_inner`'s `Expr::Pipe` arm.
     PipeRight { r: Arc<Expr>, env: Env, span: Span },
@@ -579,6 +620,121 @@ impl<'i> Machine<'i> {
                     Ok(Resume::Next(Ctrl::EvalStmt(stmt, local)))
                 } else {
                     Ok(Resume::Redeliver(Done::plain(Ctl::Val(value))))
+                }
+            }
+            Cont::LetPatternBind { pattern, env } => {
+                let Ctl::Val(value) = done.ctl else {
+                    // A signal from the initializer propagates; nothing binds.
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                let tmp = env.child();
+                self.interp.bind_pattern(&pattern, &value, &tmp)?;
+                let mut advanced = env.clone();
+                for name in pattern.bindings() {
+                    if let Some(bound) = tmp.get(name.as_str()) {
+                        advanced = advanced.define_shadowing(name.clone(), bound, false);
+                    }
+                }
+                Ok(Resume::Redeliver(Done {
+                    ctl: Ctl::Val(Value::None),
+                    env: Some(advanced),
+                }))
+            }
+            Cont::AssignRhs {
+                target,
+                op,
+                env,
+                span,
+            } => {
+                let Ctl::Val(rhs) = done.ctl else {
+                    // A signal from the RHS propagates out of the statement.
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                match op {
+                    None => {
+                        // Simple assignment: write the RHS.
+                        self.start_target_write(target, rhs, env, span)
+                    }
+                    Some(op) => {
+                        // Compound: read the target, apply the operator, then
+                        // write. The read and write each traverse (and
+                        // re-evaluate) the target's subexpressions, exactly
+                        // like `read_target` + `write_target`.
+                        self.kont.push(Cont::AssignRead {
+                            target: target.clone(),
+                            op,
+                            rhs,
+                            env: env.clone(),
+                            span,
+                        });
+                        self.start_target_traverse(target, TargetPhase::Read, env, span)
+                    }
+                }
+            }
+            Cont::AssignRead {
+                target,
+                op,
+                rhs,
+                env,
+                span,
+            } => {
+                let Ctl::Val(cur) = done.ctl else {
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                let new = self.interp.binary(op, cur, rhs, span)?;
+                self.start_target_write(target, new, env, span)
+            }
+            Cont::TargetBase {
+                name,
+                index,
+                phase,
+                env,
+                span,
+            } => {
+                let Ctl::Val(base) = done.ctl else {
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                match index {
+                    Some(ix) => {
+                        self.kont.push(Cont::TargetIndex { base, phase, span });
+                        Ok(Resume::Next(Ctrl::EvalExpr(ix, env)))
+                    }
+                    None => {
+                        // Field target: `write_target`'s `Field` arm reads only
+                        // the subject and then sets the field.
+                        match phase {
+                            TargetPhase::Read => {
+                                Ok(Resume::Next(Ctrl::Done(Ctl::Val(self.interp.field_get(
+                                    &base,
+                                    name.as_deref().unwrap_or_default(),
+                                    span,
+                                )?))))
+                            }
+                            TargetPhase::Write(v) => {
+                                self.interp.field_set(
+                                    &base,
+                                    name.as_deref().unwrap_or_default(),
+                                    v,
+                                    span,
+                                )?;
+                                Ok(Resume::Next(Ctrl::Done(Ctl::Val(Value::None))))
+                            }
+                        }
+                    }
+                }
+            }
+            Cont::TargetIndex { base, phase, span } => {
+                let Ctl::Val(idx) = done.ctl else {
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                match phase {
+                    TargetPhase::Read => Ok(Resume::Next(Ctrl::Done(Ctl::Val(
+                        self.interp.index_get(&base, &idx, span)?,
+                    )))),
+                    TargetPhase::Write(v) => {
+                        self.interp.index_set(&base, &idx, v, span)?;
+                        Ok(Resume::Next(Ctrl::Done(Ctl::Val(Value::None))))
+                    }
                 }
             }
             Cont::LetBind { name, mutable, env } => {
@@ -1584,6 +1740,88 @@ impl<'i> Machine<'i> {
         ))))
     }
 
+    /// Start a target read or write (R3D.1). `Name` targets resolve
+    /// synchronously; `Index`/`Field` targets traverse their subexpressions in
+    /// the same order as `read_target`/`write_target` (base then index), with
+    /// the phase carried in the continuation so a write re-traverses exactly
+    /// like the recursive engine.
+    fn start_target_traverse(
+        &mut self,
+        target: Arc<Expr>,
+        phase: TargetPhase,
+        env: Env,
+        span: Span,
+    ) -> Result<Resume> {
+        match &*target {
+            Expr::Name(name, nspan) => match phase {
+                TargetPhase::Read => {
+                    let v = env.get(name).ok_or_else(|| {
+                        self.interp.error(
+                            codes::UNDEFINED,
+                            format!("undefined variable `{name}`"),
+                            *nspan,
+                        )
+                    })?;
+                    Ok(Resume::Next(Ctrl::Done(Ctl::Val(v))))
+                }
+                TargetPhase::Write(value) => {
+                    env.assign(name, value).map_err(|e| match e {
+                        crate::run::AssignError::Immutable => self.interp.error(
+                            codes::ASSIGN_IMMUTABLE,
+                            format!(
+                                "cannot assign to `{name}`: it is immutable (declare it `let mut`)"
+                            ),
+                            *nspan,
+                        ),
+                        crate::run::AssignError::Undefined => self.interp.error(
+                            codes::UNDEFINED,
+                            format!("undefined variable `{name}`"),
+                            *nspan,
+                        ),
+                    })?;
+                    Ok(Resume::Next(Ctrl::Done(Ctl::Val(Value::None))))
+                }
+            },
+            Expr::Index(b, i, _) => {
+                self.kont.push(Cont::TargetBase {
+                    name: None,
+                    index: Some(i.clone()),
+                    phase,
+                    env: env.clone(),
+                    span,
+                });
+                Ok(Resume::Next(Ctrl::EvalExpr(b.clone(), env)))
+            }
+            Expr::Field(b, name, _) => {
+                self.kont.push(Cont::TargetBase {
+                    name: Some(name.clone()),
+                    index: None,
+                    phase,
+                    env: env.clone(),
+                    span,
+                });
+                Ok(Resume::Next(Ctrl::EvalExpr(b.clone(), env)))
+            }
+            other => Err(self.interp.error(
+                codes::INVALID_ASSIGN,
+                "invalid assignment target",
+                expr_span(other),
+            )),
+        }
+    }
+
+    /// Start a target write (R3D.1), preserving the recursive engine's
+    /// evaluation order (base, then index for `Index` targets).
+    fn start_target_write(
+        &mut self,
+        target: Arc<Expr>,
+        value: Value,
+        env: Env,
+        span: Span,
+    ) -> Result<Resume> {
+        self.start_target_traverse(target, TargetPhase::Write(value), env, span)
+    }
+
     /// Resolve a call whose arguments have all completed, exactly like
     /// `Interp::eval_call`: a `Name` callee checks the function overload set,
     /// then the native registry, then the environment (`call_value`); any
@@ -1793,6 +2031,39 @@ impl<'i> Machine<'i> {
             }
             Stmt::Break(_) => Ok(Control::Next(Ctrl::Done(Ctl::Break))),
             Stmt::Continue(_) => Ok(Control::Next(Ctrl::Done(Ctl::Continue))),
+            Stmt::LetPattern { pattern, value, .. } => {
+                // RHS once, then atomic destructure into a temporary child
+                // scope, then transfer each binding with shadowing semantics
+                // (`Interp::exec_stmt`'s `LetPattern`).
+                self.kont.push(Cont::LetPatternBind {
+                    pattern: pattern.clone(),
+                    env: env.clone(),
+                });
+                Ok(Control::Next(Ctrl::EvalExpr(
+                    Arc::new(value.clone()),
+                    env.clone(),
+                )))
+            }
+            Stmt::Assign {
+                target,
+                value,
+                op,
+                span,
+            } => {
+                // RHS evaluated first, once; then (for a compound assignment)
+                // the target is read and written, re-evaluating its base/index
+                // subexpressions exactly like `read_target`/`write_target`.
+                self.kont.push(Cont::AssignRhs {
+                    target: Arc::new(target.clone()),
+                    op: *op,
+                    env: env.clone(),
+                    span: *span,
+                });
+                Ok(Control::Next(Ctrl::EvalExpr(
+                    Arc::new(value.clone()),
+                    env.clone(),
+                )))
+            }
             other => Err(self.unsupported(other.span())),
         }
     }
