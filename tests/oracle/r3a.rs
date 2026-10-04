@@ -124,6 +124,8 @@ pub fn supported_cases() -> Vec<Case> {
         value("list_comp", "[x for x in [1, 2]]\n"),
         // The original R3A match sentinel: supported by B-1R3E.2. Key kept.
         value("match", "match 1 { 1 -> { 2 } }\n"),
+        // The original R3A try sentinel: supported by B-1R3F.1. Key kept.
+        value("try_stmt", "{ try { 1 } catch e { 2 } }\n"),
         // The original R3A method sentinel: builtin method calls are supported
         // by B-1R3C.2. Key preserved.
 
@@ -147,14 +149,12 @@ pub fn supported_cases() -> Vec<Case> {
 /// must **not** silently recurse.
 #[must_use]
 pub fn unsupported_cases() -> Vec<Case> {
-    vec![
-        // Every original R3A sentinel migrated as its construct landed:
-        // `fstring` (R3B.7), `list_literal`/`tuple_literal` (R3B.4.1),
-        // `map_literal` (R3B.4.2), `range_literal` (R3B.5), `call`/`pipe`
-        // (R3C.1), `method_call` (R3C.2), `field_access` (R3C.3), `lambda`
-        // (R3C.4), `let_pattern`/`assign` (R3D.1), `while_stmt`/`loop_stmt`
-        // (R3D.2), `list_comp` (R3E.1), `match` (R3E.2). The last remaining
-        // unsupported runtime construct is `try` (R3F.1).
-        value("try_stmt", "{ try { 1 } catch e { 2 } }\n"),
-    ]
+    // B-1R3F.1: every original R3A sentinel migrated to `supported_cases` as
+    // its construct landed (`fstring` R3B.7, `list_literal`/`tuple_literal`
+    // R3B.4.1, `map_literal` R3B.4.2, `range_literal` R3B.5, `call`/`pipe`
+    // R3C.1, `method_call` R3C.2, `field_access` R3C.3, `lambda` R3C.4,
+    // `let_pattern`/`assign` R3D.1, `while_stmt`/`loop_stmt` R3D.2,
+    // `list_comp` R3E.1, `match` R3E.2, `try` R3F.1). The current-language
+    // runtime surface is fully iterative, so this set is intentionally empty.
+    vec![]
 }

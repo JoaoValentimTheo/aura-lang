@@ -39,6 +39,7 @@ r3a-value/while_stmt		ok	0		-	0	0	0	0	none	none
 r3a-value/loop_stmt		ok	0		-	0	0	0	0	none	none
 r3a-value/list_comp		ok	0		-	0	0	0	0	list	[1, 2]
 r3a-value/match		ok	0		-	0	0	0	0	int	2
+r3a-value/try_stmt		ok	0		-	0	0	0	0	int	1
 r3a-value/const_literal		ok	0		-	0	0	0	0	int	5
 r3a-value/const_from_const		ok	0		-	0	0	0	0	int	5
 r3a-program/main_empty		ok	0		-	0	0	0	0	-	-
@@ -46,4 +47,3 @@ r3a-program/main_if_false		ok	0		-	0	0	0	0	-	-
 r3a-program/main_return		ok	0		-	0	0	0	0	-	-
 r3a-program/main_if_return		ok	0		-	0	0	0	0	-	-
 r3a-program/main_nested_block		ok	0		-	0	0	0	0	-	-
-r3a-value/try_stmt		runtime	4999	construct is not supported by the iterative engine (B-1R3A)	<r3a>	2	5	1	3	-	-

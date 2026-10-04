@@ -238,6 +238,28 @@ r3c1-value/match_body_signal		ok	0		-	0	0	0	0	int	4
 r3c1-value/match_guard_error		runtime	4007	division by zero	<r3c1>	17	18	1	18	-	-
 r3c1-value/match_subject_error		runtime	4007	division by zero	<r3c1>	8	9	1	9	-	-
 r3c1-value/match_first_match_wins		ok	0		-	0	0	0	0	string	"first"
+r3c1-value/try_no_throw		ok	0		-	0	0	0	0	int	1
+r3c1-value/try_catches_throw		ok	0		-	0	0	0	0	int	5
+r3c1-value/try_catch_binding		ok	0		-	0	0	0	0	string	"x!"
+r3c1-value/try_no_throw_catch_unreached		ok	0		-	0	0	0	0	int	7
+r3c1-value/try_catch_rethrow		ok	0		-	0	0	0	0	int	2
+r3c1-value/try_nested		ok	0		-	0	0	0	0	int	2
+r3c1-value/try_finally_runs		compile	1006	expected catch, found `finally`	<r3c1>	31	38	2	16	-	-
+r3c1-value/try_finally_after_throw		ok	0		-	0	0	0	0	int	11
+r3c1-value/try_finally_override_return		compile	1006	expected catch, found `finally`	<r3c1>	26	33	1	27	-	-
+r3c1-value/try_finally_override_throw		compile	1006	expected catch, found `finally`	<r3c1>	18	25	1	19	-	-
+r3c1-value/try_fatal_not_caught		runtime	4007	division by zero	<r3c1>	10	11	1	11	-	-
+r3c1-value/try_fatal_still_finally		runtime	4007	division by zero	<r3c1>	25	26	2	10	-	-
+r3c1-value/try_throw_in_finally		compile	1006	expected catch, found `finally`	<r3c1>	12	19	1	13	-	-
+r3c1-value/try_return_through_catch		ok	0		-	0	0	0	0	int	2
+r3c1-value/try_catch_scope		ok	0		-	0	0	0	0	int	4
+r3c1-value/try_call_throw_crosses_frame		ok	0		-	0	0	0	0	int	9
+r3c1-value/try_call_throw_deep		ok	0		-	0	0	0	0	int	4
+r3c1-value/try_catch_calls		ok	0		-	0	0	0	0	int	2
+r3c1-value/try_prefix_value		ok	0		-	0	0	0	0	int	15
+r3c1-value/try_throw_value_uncaught_after		runtime	4026	uncaught value: 2	<r3c1>	0	0	1	1	-	-
+r3c1-value/try_error_in_catch_propagates		runtime	4007	division by zero	<r3c1>	30	31	1	31	-	-
+r3c1-value/try_finally_continue_signal		compile	1006	expected catch, found `finally`	<r3c1>	59	66	3	19	-	-
 r3c1-value/call_in_unary		ok	0		-	0	0	0	0	int	-2
 r3c1-value/call_in_binary		ok	0		-	0	0	0	0	int	3
 r3c1-value/call_in_if		ok	0		-	0	0	0	0	string	"y"

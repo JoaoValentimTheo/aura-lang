@@ -196,50 +196,18 @@ fn r3a_supported_subset_agrees() {
     );
 }
 
-/// B-1R3A — every unsupported construct must fail explicitly with the
-/// deterministic `E4999` sentinel in iterative mode. It must not silently
-/// execute the recursive engine (which would have succeeded for these valid
-/// programs).
+/// B-1R3F.1 — the current-language runtime surface is fully iterative:
+/// this phase's unsupported sentinel set must be empty, and there must be no
+/// construct left to fall back on the recursive engine for.
 #[test]
 #[cfg(feature = "evaluator-oracle")]
 fn iterative_unsupported_fails_explicitly() {
-    let it = harness::Engine::iterative();
-    let rec = harness::Engine::recursive();
     let cases = r3a::unsupported_cases();
-    assert!(!cases.is_empty(), "unsupported set is empty");
-    for case in cases {
-        // The recursive engine accepts and runs the program (so the iterative
-        // failure cannot be attributed to the program being invalid).
-        let r = observe(&case, rec)
-            .unwrap_or_else(|e| panic!("harness failure (recursive) {}: {e}", case.key()));
-        assert!(
-            matches!(r.completion, Completion::Ok | Completion::Runtime(_)),
-            "{}: recursive engine unexpectedly rejected a valid program: {r:?}",
-            case.key()
-        );
-        let obs = observe(&case, it)
-            .unwrap_or_else(|e| panic!("harness failure (iterative) {}: {e}", case.key()));
-        match obs.completion {
-            Completion::Runtime(d) => {
-                assert_eq!(
-                    d.code,
-                    4999,
-                    "{}: expected the E4999 unsupported sentinel, got {d:?}",
-                    case.key()
-                );
-                assert!(
-                    d.message.contains("not supported by the iterative engine"),
-                    "{}: unexpected iterative diagnostic: {}",
-                    case.key(),
-                    d.message
-                );
-            }
-            other => panic!(
-                "{}: unsupported case did not fail explicitly: {other:?}",
-                case.key()
-            ),
-        }
-    }
+    assert!(
+        cases.is_empty(),
+        "unsupported set must be empty after B-1R3F.1; found {} case(s)",
+        cases.len()
+    );
 }
 
 /// B-1R3A — all R3A cases (supported *and* unsupported) observed through the
@@ -338,48 +306,18 @@ fn r3b_unary_supported_subset_agrees() {
     );
 }
 
-/// B-1R3B.1 — a unary operator whose operand is an unsupported construct must
-/// fail with the deterministic `E4999` sentinel, never silently applying the
-/// operator or falling back to recursion. This is the continuation-safety
-/// anti-fallback guard for the unary extension.
+/// B-1R3F.1 — the current-language runtime surface is fully iterative:
+/// this phase's unsupported sentinel set must be empty, and there must be no
+/// construct left to fall back on the recursive engine for.
 #[test]
 #[cfg(feature = "evaluator-oracle")]
 fn iterative_unary_unsupported_fails_explicitly() {
-    let it = harness::Engine::iterative();
-    let rec = harness::Engine::recursive();
     let cases = r3b::unsupported_cases();
-    assert!(!cases.is_empty(), "R3B unsupported set is empty");
-    for case in cases {
-        let r = observe(&case, rec)
-            .unwrap_or_else(|e| panic!("harness failure (recursive) {}: {e}", case.key()));
-        assert!(
-            matches!(r.completion, Completion::Ok | Completion::Runtime(_)),
-            "{}: recursive engine unexpectedly rejected a valid program: {r:?}",
-            case.key()
-        );
-        let obs = observe(&case, it)
-            .unwrap_or_else(|e| panic!("harness failure (iterative) {}: {e}", case.key()));
-        match obs.completion {
-            Completion::Runtime(d) => {
-                assert_eq!(
-                    d.code,
-                    4999,
-                    "{}: expected the E4999 unsupported sentinel, got {d:?}",
-                    case.key()
-                );
-                assert!(
-                    d.message.contains("not supported by the iterative engine"),
-                    "{}: unexpected iterative diagnostic: {}",
-                    case.key(),
-                    d.message
-                );
-            }
-            other => panic!(
-                "{}: unsupported unary case did not fail explicitly: {other:?}",
-                case.key()
-            ),
-        }
-    }
+    assert!(
+        cases.is_empty(),
+        "unsupported set must be empty after B-1R3F.1; found {} case(s)",
+        cases.len()
+    );
 }
 
 /// Regenerate the R3B unary iterative golden (ignored by default).
@@ -469,48 +407,18 @@ fn r3b2_binary_supported_subset_agrees() {
     );
 }
 
-/// B-1R3B.2 — an eager binary whose operand is unsupported must fail with the
-/// deterministic `E4999` sentinel, never silently evaluating or falling back to
-/// recursion. (B-1R3B.3 removed `and`/`or` from this set; their unsupported
-/// shapes are asserted by `iterative_short_circuit_unsupported_fails_explicitly`.)
+/// B-1R3F.1 — the current-language runtime surface is fully iterative:
+/// this phase's unsupported sentinel set must be empty, and there must be no
+/// construct left to fall back on the recursive engine for.
 #[test]
 #[cfg(feature = "evaluator-oracle")]
 fn iterative_binary_unsupported_fails_explicitly() {
-    let it = harness::Engine::iterative();
-    let rec = harness::Engine::recursive();
     let cases = r3b::binary_unsupported_cases();
-    assert!(!cases.is_empty(), "R3B.2 unsupported set is empty");
-    for case in cases {
-        let r = observe(&case, rec)
-            .unwrap_or_else(|e| panic!("harness failure (recursive) {}: {e}", case.key()));
-        assert!(
-            matches!(r.completion, Completion::Ok | Completion::Runtime(_)),
-            "{}: recursive engine unexpectedly rejected a valid program: {r:?}",
-            case.key()
-        );
-        let obs = observe(&case, it)
-            .unwrap_or_else(|e| panic!("harness failure (iterative) {}: {e}", case.key()));
-        match obs.completion {
-            Completion::Runtime(d) => {
-                assert_eq!(
-                    d.code,
-                    4999,
-                    "{}: expected the E4999 unsupported sentinel, got {d:?}",
-                    case.key()
-                );
-                assert!(
-                    d.message.contains("not supported by the iterative engine"),
-                    "{}: unexpected iterative diagnostic: {}",
-                    case.key(),
-                    d.message
-                );
-            }
-            other => panic!(
-                "{}: unsupported binary case did not fail explicitly: {other:?}",
-                case.key()
-            ),
-        }
-    }
+    assert!(
+        cases.is_empty(),
+        "unsupported set must be empty after B-1R3F.1; found {} case(s)",
+        cases.len()
+    );
 }
 
 /// B-1R3B.2 — full-field regression guard for the iterative eager-binary subset.
@@ -594,48 +502,18 @@ fn r3b3_short_circuit_supported_subset_agrees() {
     );
 }
 
-/// B-1R3B.3 — a *required* short-circuit operand that is unsupported, or an
-/// unsupported left operand, must fail with the deterministic `E4999`
-/// sentinel; the machine must never fall back to recursion. A skipped right
-/// operand is covered by the supported set above and must not reach this path.
+/// B-1R3F.1 — the current-language runtime surface is fully iterative:
+/// this phase's unsupported sentinel set must be empty, and there must be no
+/// construct left to fall back on the recursive engine for.
 #[test]
 #[cfg(feature = "evaluator-oracle")]
 fn iterative_short_circuit_unsupported_fails_explicitly() {
-    let it = harness::Engine::iterative();
-    let rec = harness::Engine::recursive();
     let cases = r3b::short_circuit_unsupported_cases();
-    assert!(!cases.is_empty(), "R3B.3 unsupported set is empty");
-    for case in cases {
-        let r = observe(&case, rec)
-            .unwrap_or_else(|e| panic!("harness failure (recursive) {}: {e}", case.key()));
-        assert!(
-            matches!(r.completion, Completion::Ok | Completion::Runtime(_)),
-            "{}: recursive engine unexpectedly rejected a valid program: {r:?}",
-            case.key()
-        );
-        let obs = observe(&case, it)
-            .unwrap_or_else(|e| panic!("harness failure (iterative) {}: {e}", case.key()));
-        match obs.completion {
-            Completion::Runtime(d) => {
-                assert_eq!(
-                    d.code,
-                    4999,
-                    "{}: expected the E4999 unsupported sentinel, got {d:?}",
-                    case.key()
-                );
-                assert!(
-                    d.message.contains("not supported by the iterative engine"),
-                    "{}: unexpected iterative diagnostic: {}",
-                    case.key(),
-                    d.message
-                );
-            }
-            other => panic!(
-                "{}: unsupported short-circuit case did not fail explicitly: {other:?}",
-                case.key()
-            ),
-        }
-    }
+    assert!(
+        cases.is_empty(),
+        "unsupported set must be empty after B-1R3F.1; found {} case(s)",
+        cases.len()
+    );
 }
 
 /// B-1R3B.3 — full-field regression guard for the iterative short-circuit
@@ -723,48 +601,18 @@ fn r3b4_list_supported_subset_agrees() {
     );
 }
 
-/// B-1R3B.4.1 — a list/tuple element that is an unsupported construct, or that
-/// merely contains one, must fail with the deterministic `E4999` sentinel;
-/// the machine must never fall back to recursion and never return a partial
-/// list.
+/// B-1R3F.1 — the current-language runtime surface is fully iterative:
+/// this phase's unsupported sentinel set must be empty, and there must be no
+/// construct left to fall back on the recursive engine for.
 #[test]
 #[cfg(feature = "evaluator-oracle")]
 fn iterative_list_unsupported_fails_explicitly() {
-    let it = harness::Engine::iterative();
-    let rec = harness::Engine::recursive();
     let cases = r3b::list_unsupported_cases();
-    assert!(!cases.is_empty(), "R3B.4 unsupported set is empty");
-    for case in cases {
-        let r = observe(&case, rec)
-            .unwrap_or_else(|e| panic!("harness failure (recursive) {}: {e}", case.key()));
-        assert!(
-            matches!(r.completion, Completion::Ok | Completion::Runtime(_)),
-            "{}: recursive engine unexpectedly rejected a valid program: {r:?}",
-            case.key()
-        );
-        let obs = observe(&case, it)
-            .unwrap_or_else(|e| panic!("harness failure (iterative) {}: {e}", case.key()));
-        match obs.completion {
-            Completion::Runtime(d) => {
-                assert_eq!(
-                    d.code,
-                    4999,
-                    "{}: expected the E4999 unsupported sentinel, got {d:?}",
-                    case.key()
-                );
-                assert!(
-                    d.message.contains("not supported by the iterative engine"),
-                    "{}: unexpected iterative diagnostic: {}",
-                    case.key(),
-                    d.message
-                );
-            }
-            other => panic!(
-                "{}: unsupported list case did not fail explicitly: {other:?}",
-                case.key()
-            ),
-        }
-    }
+    assert!(
+        cases.is_empty(),
+        "unsupported set must be empty after B-1R3F.1; found {} case(s)",
+        cases.len()
+    );
 }
 
 /// B-1R3B.4.1 — full-field regression guard for the iterative
@@ -853,47 +701,18 @@ fn r3b42_map_supported_subset_agrees() {
     );
 }
 
-/// B-1R3B.4.2 — a map key or value that is an unsupported construct must fail
-/// with the deterministic `E4999` sentinel; the machine must never fall back to
-/// recursion and never return a partial map.
+/// B-1R3F.1 — the current-language runtime surface is fully iterative:
+/// this phase's unsupported sentinel set must be empty, and there must be no
+/// construct left to fall back on the recursive engine for.
 #[test]
 #[cfg(feature = "evaluator-oracle")]
 fn iterative_map_unsupported_fails_explicitly() {
-    let it = harness::Engine::iterative();
-    let rec = harness::Engine::recursive();
     let cases = r3b::map_unsupported_cases();
-    assert!(!cases.is_empty(), "R3B.4.2 unsupported set is empty");
-    for case in cases {
-        let r = observe(&case, rec)
-            .unwrap_or_else(|e| panic!("harness failure (recursive) {}: {e}", case.key()));
-        assert!(
-            matches!(r.completion, Completion::Ok | Completion::Runtime(_)),
-            "{}: recursive engine unexpectedly rejected a valid program: {r:?}",
-            case.key()
-        );
-        let obs = observe(&case, it)
-            .unwrap_or_else(|e| panic!("harness failure (iterative) {}: {e}", case.key()));
-        match obs.completion {
-            Completion::Runtime(d) => {
-                assert_eq!(
-                    d.code,
-                    4999,
-                    "{}: expected the E4999 unsupported sentinel, got {d:?}",
-                    case.key()
-                );
-                assert!(
-                    d.message.contains("not supported by the iterative engine"),
-                    "{}: unexpected iterative diagnostic: {}",
-                    case.key(),
-                    d.message
-                );
-            }
-            other => panic!(
-                "{}: unsupported map case did not fail explicitly: {other:?}",
-                case.key()
-            ),
-        }
-    }
+    assert!(
+        cases.is_empty(),
+        "unsupported set must be empty after B-1R3F.1; found {} case(s)",
+        cases.len()
+    );
 }
 
 /// B-1R3B.4.2 — full-field regression guard for the iterative
@@ -1045,47 +864,18 @@ fn r3b5_range_supported_subset_agrees() {
     );
 }
 
-/// B-1R3B.5 — a range bound that is an unsupported construct, or that merely
-/// contains one, must fail with the deterministic `E4999` sentinel; the
-/// machine must never fall back to recursion and never return a partial Range.
+/// B-1R3F.1 — the current-language runtime surface is fully iterative:
+/// this phase's unsupported sentinel set must be empty, and there must be no
+/// construct left to fall back on the recursive engine for.
 #[test]
 #[cfg(feature = "evaluator-oracle")]
 fn iterative_range_unsupported_fails_explicitly() {
-    let it = harness::Engine::iterative();
-    let rec = harness::Engine::recursive();
     let cases = r3b::range_unsupported_cases();
-    assert!(!cases.is_empty(), "R3B.5 unsupported set is empty");
-    for case in cases {
-        let r = observe(&case, rec)
-            .unwrap_or_else(|e| panic!("harness failure (recursive) {}: {e}", case.key()));
-        assert!(
-            matches!(r.completion, Completion::Ok | Completion::Runtime(_)),
-            "{}: recursive engine unexpectedly rejected a valid program: {r:?}",
-            case.key()
-        );
-        let obs = observe(&case, it)
-            .unwrap_or_else(|e| panic!("harness failure (iterative) {}: {e}", case.key()));
-        match obs.completion {
-            Completion::Runtime(d) => {
-                assert_eq!(
-                    d.code,
-                    4999,
-                    "{}: expected the E4999 unsupported sentinel, got {d:?}",
-                    case.key()
-                );
-                assert!(
-                    d.message.contains("not supported by the iterative engine"),
-                    "{}: unexpected iterative diagnostic: {}",
-                    case.key(),
-                    d.message
-                );
-            }
-            other => panic!(
-                "{}: unsupported range case did not fail explicitly: {other:?}",
-                case.key()
-            ),
-        }
-    }
+    assert!(
+        cases.is_empty(),
+        "unsupported set must be empty after B-1R3F.1; found {} case(s)",
+        cases.len()
+    );
 }
 
 /// B-1R3B.5 — full-field regression guard for the iterative range-construction
@@ -1235,50 +1025,24 @@ fn r3b6_field_supported_subset_agrees() {
     );
 }
 
-/// B-1R3B.6 — an index target/index or a field receiver that is an unsupported
-/// construct must fail with the deterministic `E4999` sentinel; the machine
-/// must never fall back to recursion and never return a partial read.
+/// B-1R3F.1 — the current-language runtime surface is fully iterative:
+/// this phase's unsupported sentinel set must be empty, and there must be no
+/// construct left to fall back on the recursive engine for.
 #[test]
 #[cfg(feature = "evaluator-oracle")]
 fn iterative_index_field_unsupported_fails_explicitly() {
-    let it = harness::Engine::iterative();
-    let rec = harness::Engine::recursive();
-    let cases: Vec<Case> = r3b::index_unsupported_cases()
-        .into_iter()
-        .chain(r3b::field_unsupported_cases())
-        .collect();
-    assert!(!cases.is_empty(), "R3B.6 unsupported set is empty");
-    for case in cases {
-        let r = observe(&case, rec)
-            .unwrap_or_else(|e| panic!("harness failure (recursive) {}: {e}", case.key()));
-        assert!(
-            matches!(r.completion, Completion::Ok | Completion::Runtime(_)),
-            "{}: recursive engine unexpectedly rejected a valid program: {r:?}",
-            case.key()
-        );
-        let obs = observe(&case, it)
-            .unwrap_or_else(|e| panic!("harness failure (iterative) {}: {e}", case.key()));
-        match obs.completion {
-            Completion::Runtime(d) => {
-                assert_eq!(
-                    d.code,
-                    4999,
-                    "{}: expected the E4999 unsupported sentinel, got {d:?}",
-                    case.key()
-                );
-                assert!(
-                    d.message.contains("not supported by the iterative engine"),
-                    "{}: unexpected iterative diagnostic: {}",
-                    case.key(),
-                    d.message
-                );
-            }
-            other => panic!(
-                "{}: unsupported index/field case did not fail explicitly: {other:?}",
-                case.key()
-            ),
-        }
-    }
+    let cases = r3b::index_unsupported_cases();
+    assert!(
+        cases.is_empty(),
+        "unsupported set must be empty after B-1R3F.1; found {} case(s)",
+        cases.len()
+    );
+    let field = r3b::field_unsupported_cases();
+    assert!(
+        field.is_empty(),
+        "unsupported field set must be empty after B-1R3F.1; found {} case(s)",
+        field.len()
+    );
 }
 
 /// B-1R3B.6 — full-field regression guard for the iterative index/field subset:
@@ -1391,47 +1155,18 @@ fn r3b7_fstring_supported_subset_agrees() {
     );
 }
 
-/// B-1R3B.7 — an f-string interpolation that is an unsupported construct must
-/// fail with the deterministic `E4999` sentinel; the machine must never fall
-/// back to recursion and never return a partial string.
+/// B-1R3F.1 — the current-language runtime surface is fully iterative:
+/// this phase's unsupported sentinel set must be empty, and there must be no
+/// construct left to fall back on the recursive engine for.
 #[test]
 #[cfg(feature = "evaluator-oracle")]
 fn iterative_fstring_unsupported_fails_explicitly() {
-    let it = harness::Engine::iterative();
-    let rec = harness::Engine::recursive();
     let cases = r3b::fstring_unsupported_cases();
-    assert!(!cases.is_empty(), "R3B.7 unsupported set is empty");
-    for case in cases {
-        let r = observe(&case, rec)
-            .unwrap_or_else(|e| panic!("harness failure (recursive) {}: {e}", case.key()));
-        assert!(
-            matches!(r.completion, Completion::Ok | Completion::Runtime(_)),
-            "{}: recursive engine unexpectedly rejected a valid program: {r:?}",
-            case.key()
-        );
-        let obs = observe(&case, it)
-            .unwrap_or_else(|e| panic!("harness failure (iterative) {}: {e}", case.key()));
-        match obs.completion {
-            Completion::Runtime(d) => {
-                assert_eq!(
-                    d.code,
-                    4999,
-                    "{}: expected the E4999 unsupported sentinel, got {d:?}",
-                    case.key()
-                );
-                assert!(
-                    d.message.contains("not supported by the iterative engine"),
-                    "{}: unexpected iterative diagnostic: {}",
-                    case.key(),
-                    d.message
-                );
-            }
-            other => panic!(
-                "{}: unsupported f-string case did not fail explicitly: {other:?}",
-                case.key()
-            ),
-        }
-    }
+    assert!(
+        cases.is_empty(),
+        "unsupported set must be empty after B-1R3F.1; found {} case(s)",
+        cases.len()
+    );
 }
 
 /// B-1R3B.7 — full-field regression guard for the iterative f-string subset:
@@ -1545,42 +1280,18 @@ fn r3c1_call_supported_subset_agrees() {
     );
 }
 
-/// B-1R3C.1 anti-fallback guard: a call whose subexpression is a construct
-/// that is still unsupported must produce the deterministic `E4999` sentinel
-/// on the iterative engine while the recursive engine runs it (or reports its
-/// own runtime diagnostic).
+/// B-1R3F.1 — the current-language runtime surface is fully iterative:
+/// this phase's unsupported sentinel set must be empty, and there must be no
+/// construct left to fall back on the recursive engine for.
 #[test]
 #[cfg(feature = "evaluator-oracle")]
 fn r3c1_unsupported_fails_explicitly() {
-    let it = harness::Engine::iterative();
-    let rec = harness::Engine::recursive();
     let cases = r3c1::unsupported_cases();
-    assert!(!cases.is_empty(), "R3C.1 unsupported set is empty");
-    for case in cases {
-        let r = observe(&case, rec)
-            .unwrap_or_else(|e| panic!("harness failure (recursive) {}: {e}", case.key()));
-        assert!(
-            matches!(r.completion, Completion::Ok | Completion::Runtime(_)),
-            "{}: recursive engine unexpectedly rejected a valid program: {r:?}",
-            case.key()
-        );
-        let i = observe(&case, it)
-            .unwrap_or_else(|e| panic!("harness failure (iterative) {}: {e}", case.key()));
-        match &i.completion {
-            Completion::Runtime(d) if d.code == 4999 => {
-                assert!(
-                    d.message.contains("not supported by the iterative engine"),
-                    "{}: unexpected iterative diagnostic: {}",
-                    case.key(),
-                    d.message
-                );
-            }
-            other => panic!(
-                "{}: unsupported call case did not fail explicitly: {other:?}",
-                case.key()
-            ),
-        }
-    }
+    assert!(
+        cases.is_empty(),
+        "unsupported set must be empty after B-1R3F.1; found {} case(s)",
+        cases.len()
+    );
 }
 
 /// B-1R3C.1 — full-field regression guard for the iterative call subset: pins
@@ -1659,7 +1370,7 @@ fn r3c1_golden_has_lf_pin() {
 #[test]
 #[cfg(feature = "evaluator-oracle")]
 fn iterative_engine_is_a_distinct_path() {
-    // A program valid for both engines.
+    // A program valid for both engines must agree.
     let supported = Case {
         group: "r3a-program",
         name: "distinct_path",
@@ -1671,24 +1382,24 @@ fn iterative_engine_is_a_distinct_path() {
     let b = observe(&supported, harness::Engine::iterative()).unwrap();
     assert_eq!(a, b, "supported case must agree");
 
-    // An unsupported case the recursive engine accepts: if `iterative` were an
-    // alias it would also succeed; it must instead report E4999. `try`
-    // remains unsupported after R3E.2 (the probe has moved through call,
-    // lambda, comprehension, match, and finally try as each became supported).
-    let unsupported = Case {
-        group: "r3a-value",
-        name: "distinct_path_unsupported",
-        file: "<r3a>",
-        source: "{ try { 1 } catch e { 2 } }\n",
-        kind: harness::Kind::Value,
+    // B-1R3F.1: the current-language runtime surface is fully iterative, so
+    // the former "equivalent-but-unsupported diverges to E4999" probe no
+    // longer has a construct to use. Distinguish the engines structurally
+    // instead: every case in the phase subsets (which exercise only the
+    // machine's own scheduling) must agree with the recursive engine, and the
+    // full-language differential campaign in `engines_agree` covers the
+    // composed surface. A call-heavy program that only the machine's explicit
+    // frames can run without host recursion is checked here as a smoke case.
+    let deep = Case {
+        group: "r3a-program",
+        name: "distinct_path_deep",
+        file: "r3a.aura",
+        source: "fn main() { let x = f(300) }\nfn f(n) { if n { f(n - 1) } else { 0 } }\n",
+        kind: harness::Kind::ExecuteProgram,
     };
-    let r = observe(&unsupported, harness::Engine::recursive()).unwrap();
-    assert_eq!(r.completion, Completion::Ok);
-    let i = observe(&unsupported, harness::Engine::iterative()).unwrap();
-    assert!(
-        matches!(i.completion, Completion::Runtime(ref d) if d.code == 4999),
-        "iterative engine executed a recursive path for an unsupported construct: {i:?}"
-    );
+    let a = observe(&deep, harness::Engine::recursive()).unwrap();
+    let b = observe(&deep, harness::Engine::iterative()).unwrap();
+    assert_eq!(a, b, "deep call case must agree between engines");
 }
 
 #[test]

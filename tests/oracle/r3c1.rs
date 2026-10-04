@@ -422,6 +422,29 @@ pub fn supported_cases() -> Vec<Case> {
         value("match_guard_error", "match 1 { _ if 1 / 0 -> { 0 } }\n"),
         value("match_subject_error", "match 1 / 0 { _ -> { 0 } }\n"),
         value("match_first_match_wins", "match 5 { n if n > 3 -> { \'first\' }\n n -> { \'second\' } }\n"),
+        // ----- R3F.1 try / catch / finally ------------------------------------
+        value("try_no_throw", "{ try { 1 } catch e { 2 } }\n"),
+        value("try_catches_throw", "{ try { throw 5 } catch e { e } }\n"),
+        value("try_catch_binding", "{ try { throw \'x\' } catch e { e + \'!\' } }\n"),
+        value("try_no_throw_catch_unreached", "{ try { 7 } catch e { 1 / 0 } }\n"),
+        value("try_catch_rethrow", "{ try { try { throw 1 } catch e { throw e + 1 } } catch f { f } }\n"),
+        value("try_nested", "{ try { try { throw 1 } catch e { e + 1 } } catch f { 0 } }\n"),
+        value("try_finally_runs", "{ let mut n = 0\n try { n = 1 } finally { n = n + 1 }\n n }\n"),
+        value("try_finally_after_throw", "{ let mut n = 0\n try { throw 1 } catch e { n = e } finally { n = n + 10 }\n n }\n"),
+        value("try_finally_override_return", "fn f() { try { return 1 } finally { return 2 } }\nf()\n"),
+        value("try_finally_override_throw", "{ try { throw 1 } finally { throw 2 } }\n"),
+        value("try_fatal_not_caught", "{ try { 1 / 0 } catch e { 99 } }\n"),
+        value("try_fatal_still_finally", "{ let mut n = 0\n try { 1 / 0 } catch e { n = 1 } }\n"),
+        value("try_throw_in_finally", "{ try { 1 } finally { throw 3 } }\n"),
+        value("try_return_through_catch", "fn f() { try { throw 1 } catch e { return e + 1 } }\nf()\n"),
+        value("try_catch_scope", "{ try { throw 3 } catch e { let x = e + 1\n x } }\n"),
+        value("try_call_throw_crosses_frame", "fn g() { throw 9 }\n{ try { g() } catch e { e } }\n"),
+        value("try_call_throw_deep", "fn g() { h() }\nfn h() { throw 4 }\n{ try { g() } catch e { e } }\n"),
+        value("try_catch_calls", "fn f(x) { x + 1 }\n{ try { throw 1 } catch e { f(e) } }\n"),
+        value("try_prefix_value", "{ try { 10 } catch e { 0 } } + 5\n"),
+        value("try_throw_value_uncaught_after", "{ try { throw 1 } catch e { throw e + 1 } }\n"),
+        value("try_error_in_catch_propagates", "{ try { throw 1 } catch e { 1 / 0 } }\n"),
+        value("try_finally_continue_signal", "{ let mut i = 0\n while i < 2 { i = i + 1\n try { continue } finally { } }\n i }\n"),
         // ----- composition with R3B constructs ---------------------------
         value("call_in_unary", "-(abs(-2))\n"),
         value("call_in_binary", "1 + len([9, 9])\n"),
@@ -506,22 +529,10 @@ pub fn supported_cases() -> Vec<Case> {
 /// recursion.
 #[must_use]
 pub fn unsupported_cases() -> Vec<Case> {
-    vec![
-        // A `try` block (R3F.1) is the last unsupported runtime construct;
-        // calls, construct/method, lambdas, comprehensions, and match are all
-        // supported now, so their former probes moved to the supported set.
-        value(
-            "try_argument",
-            "fn f(x) { 0 }\nf({ try { 1 } catch e { 2 } })\n",
-        ),
-        value(
-            "try_callee_body",
-            "fn f() { try { 1 } catch e { 2 } }\nf()\n",
-        ),
-        // Same shape inside a real user frame.
-        program(
-            "main_try_block",
-            "fn main() { let x = { try { 1 } catch e { 2 } } }\n",
-        ),
-    ]
+    // B-1R3F.1 made `try` supported: the R3A–R3F current-language runtime
+    // surface is now fully iterative. This set intentionally stays empty; the
+    // `r3c1_unsupported_fails_explicitly` test is replaced by a zero-probe
+    // assertion below (an unsupported sentinel must no longer exist for any
+    // valid current-language construct).
+    vec![]
 }

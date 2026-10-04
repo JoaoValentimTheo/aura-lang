@@ -94,25 +94,12 @@ pub fn supported_cases() -> Vec<Case> {
     ]
 }
 
-/// Unary operators whose operand is an unsupported construct (or an unsupported
-/// expression that merely *contains* the operator) must still fail with the
-/// deterministic `E4999` sentinel. In particular the operator must not be
-/// applied after an unsupported operand fails: the machine propagates the
-/// failure and never applies the operator or recurses.
+/// B-1R3F.1 — this phase's former unsupported sentinels all migrated as
+/// their constructs became supported; the current-language runtime surface
+/// is fully iterative, so the set is intentionally empty.
 #[must_use]
 pub fn unsupported_cases() -> Vec<Case> {
-    vec![
-        // The operand is a lambda (R3C.4): the unary machine must not apply
-        // `-`/`not` to it, and must not fall back to recursion. (These probes
-        // used a call operand until B-1R3C.1 made calls supported; the
-        // call-operand shapes are now supported cases in
-        // `r3c1::supported_cases`.)
-        value("neg_of_unsupported_try", "-{ try { 1 } catch e { 2 } }\n"),
-        value(
-            "not_of_unsupported_try",
-            "not { try { 1 } catch e { 2 } }\n",
-        ),
-    ]
+    vec![]
 }
 
 fn binary_value(name: &'static str, source: &'static str) -> Case {
@@ -218,18 +205,12 @@ pub fn binary_supported_cases() -> Vec<Case> {
     ]
 }
 
-/// B-1R3B.2 — eager-binary cases whose operand remains unsupported. `and_bool`,
-/// `or_bool`, and `eager_over_and` were removed in B-1R3B.3 because the
-/// short-circuit operators became supported (they are asserted in
-/// [`short_circuit_supported_cases`]); the call operand remains R3C work.
+/// B-1R3F.1 — this phase's former unsupported sentinels all migrated as
+/// their constructs became supported; the current-language runtime surface
+/// is fully iterative, so the set is intentionally empty.
 #[must_use]
 pub fn binary_unsupported_cases() -> Vec<Case> {
-    vec![
-        // A supported eager operator whose operand remains unsupported (a
-        // lambda). The original `eager_over_call` (`1 + len([1, 2])`) became
-        // supported in B-1R3C.1 and is asserted by `r3c1::supported_cases`.
-        binary_value("eager_over_try", "1 + { try { 1 } catch e { 2 } }\n"),
-    ]
+    vec![]
 }
 
 fn sc_value(name: &'static str, source: &'static str) -> Case {
@@ -407,32 +388,12 @@ pub fn short_circuit_supported_cases() -> Vec<Case> {
     ]
 }
 
-/// B-1R3B.3 — `and`/`or` whose left operand is unsupported, or whose *required*
-/// right operand is unsupported, must fail with the deterministic `E4999`
-/// sentinel in iterative mode. This is the anti-fallback guard for the
-/// short-circuit extension: a skipped right operand must not be evaluated (it
-/// is a supported case above), and a required one must not be executed through
-/// the recursive engine.
+/// B-1R3F.1 — this phase's former unsupported sentinels all migrated as
+/// their constructs became supported; the current-language runtime surface
+/// is fully iterative, so the set is intentionally empty.
 #[must_use]
 pub fn short_circuit_unsupported_cases() -> Vec<Case> {
-    vec![
-        // Required right operand is a lambda (R3C.4). The original call-shaped
-        // probes (`and_required_call`, `or_required_call`, `nested_required_call`,
-        // `main_required_call`) became supported in B-1R3C.1 and are asserted by
-        // `r3c1::supported_cases`.
-        sc_value("and_required_try", "true and { try { 1 } catch e { 2 } }\n"),
-        sc_value("or_required_try", "false or { try { 1 } catch e { 2 } }\n"),
-        // A required nested `and` reaching an unsupported lambda.
-        sc_value(
-            "nested_required_try",
-            "false or (true and { try { 1 } catch e { 2 } })\n",
-        ),
-        // Same shape inside a real user frame.
-        sc_program(
-            "main_required_try",
-            "fn main() { let x = true and { try { 1 } catch e { 2 } } }\n",
-        ),
-    ]
+    vec![]
 }
 
 fn list_value(name: &'static str, source: &'static str) -> Case {
@@ -545,31 +506,12 @@ pub fn list_supported_cases() -> Vec<Case> {
     ]
 }
 
-/// B-1R3B.4.1 — list/tuple elements that remain unsupported (calls are R3C,
-/// f-strings R3B.7; ranges moved to supported in R3B.5) must fail with the
-/// deterministic `E4999` sentinel in iterative mode, never fall back to
-/// recursion, and never yield a partial list. An unsupported construct on a
-/// path that is *not* reached cannot be tested with list construction (every
-/// element of a list literal is reached); the unreachable case is covered by
-/// the short-circuit set above.
+/// B-1R3F.1 — this phase's former unsupported sentinels all migrated as
+/// their constructs became supported; the current-language runtime surface
+/// is fully iterative, so the set is intentionally empty.
 #[must_use]
 pub fn list_unsupported_cases() -> Vec<Case> {
-    vec![
-        // An unsupported lambda element is reached and fails; the supported
-        // first element must not let the machine fall back. The original
-        // `call_element` (`[1, len([1, 2])]`) became supported in B-1R3C.1 and
-        // is asserted by `r3c1::supported_cases`.
-        list_value("try_element", "[1, { try { 1 } catch e { 2 } }]\n"),
-        // `nested_unsupported_element` (`[1 + f"v={1}"]`) moved to
-        // `r3b::fstring_supported_cases` in B-1R3B.7: the f-string is supported
-        // now and the element's `int + string` is a real E3001 both engines
-        // agree on.
-        // Same shapes inside a real user frame.
-        list_program(
-            "main_try_element",
-            "fn main() { let xs = [1, { try { 1 } catch e { 2 } }] }\n",
-        ),
-    ]
+    vec![]
 }
 
 fn map_value(name: &'static str, source: &'static str) -> Case {
@@ -725,36 +667,12 @@ pub fn map_supported_cases() -> Vec<Case> {
     ]
 }
 
-/// B-1R3B.4.2 — map keys/values that remain unsupported (calls are R3C,
-/// f-strings R3B.7; ranges moved to supported in R3B.5) must fail with the
-/// deterministic `E4999` sentinel in iterative mode, never fall back to
-/// recursion, and never yield a partial map. A *skipped* unsupported construct
-/// cannot be tested with map construction (every key and value of a literal is
-/// reached); the unreachable case is covered by the short-circuit set above.
+/// B-1R3F.1 — this phase's former unsupported sentinels all migrated as
+/// their constructs became supported; the current-language runtime surface
+/// is fully iterative, so the set is intentionally empty.
 #[must_use]
 pub fn map_unsupported_cases() -> Vec<Case> {
-    vec![
-        // An unsupported lambda value is reached and fails. The original
-        // `call_key`/`call_value` probes became supported in B-1R3C.1 and are
-        // asserted by `r3c1::supported_cases`. (A lambda cannot be a map key:
-        // the checker rejects it as a key type, so the value position is the
-        // reachable shape.)
-        map_value("try_value", "{1: { try { 1 } catch e { 2 } }}\n"),
-        // `fstring_value` (`{1: f"v={1}"}`) moved to
-        // `r3b::fstring_supported_cases` in B-1R3B.7: the f-string is a
-        // supported value now, and a string map value agrees with recursion.
-        // A supported first entry must not let the machine fall back on a
-        // later unsupported one.
-        map_value(
-            "later_try_value",
-            "{1: 2, 2: { try { 1 } catch e { 3 } }}\n",
-        ),
-        // Same shapes inside a real user frame.
-        map_program(
-            "main_try_value",
-            "fn main() { let m = {1: { try { 1 } catch e { 2 } }} }\n",
-        ),
-    ]
+    vec![]
 }
 
 fn range_value(name: &'static str, source: &'static str) -> Case {
@@ -896,25 +814,12 @@ pub fn range_supported_cases() -> Vec<Case> {
     ]
 }
 
-/// B-1R3B.5 — range bounds that remain unsupported (calls are R3C) must fail
-/// with the deterministic `E4999` sentinel in iterative mode, never fall back
-/// to recursion, and never yield a partial Range. The unsupported construct
-/// must be on the *evaluated* path (a range always evaluates both bounds), so
-/// every case here is reached. An f-string bound is not usable here: the
-/// checker types an f-string as `string`, so the recursive engine rejects it
-/// statically (`E3001`) and the runtime path is unreachable.
+/// B-1R3F.1 — this phase's former unsupported sentinels all migrated as
+/// their constructs became supported; the current-language runtime surface
+/// is fully iterative, so the set is intentionally empty.
 #[must_use]
 pub fn range_unsupported_cases() -> Vec<Case> {
-    vec![
-        // An unsupported construct nested one level under a supported bound.
-        // The original call-bound probes (`call_start`, `call_end`,
-        // `call_end_after_int`, `nested_call_start`, `main_range_call`) became
-        // supported in B-1R3C.1 and are asserted by `r3c1::supported_cases`. A
-        // lambda is not an int, so the checker rejects it as a range bound
-        // before execution; the reachable shape is a nested unsupported
-        // construct under a bound, probed through an unsupported index instead.
-        range_value("nested_try_start", "(1 + { try { 1 } catch e { 2 } })..3\n"),
-    ]
+    vec![]
 }
 
 fn index_value(name: &'static str, source: &'static str) -> Case {
@@ -1113,53 +1018,20 @@ pub fn field_supported_cases() -> Vec<Case> {
     ]
 }
 
-/// B-1R3B.6 — index reads whose target or index remains unsupported (calls are
-/// R3C, f-strings R3B.7) must fail with the deterministic `E4999` sentinel in
-/// iterative mode, never fall back to recursion, and never produce a partial
-/// read. The unsupported construct is always on the evaluated path.
+/// B-1R3F.1 — this phase's former unsupported sentinels all migrated as
+/// their constructs became supported; the current-language runtime surface
+/// is fully iterative, so the set is intentionally empty.
 #[must_use]
 pub fn index_unsupported_cases() -> Vec<Case> {
-    vec![
-        // An unsupported lambda target/index is not reachable as written (the
-        // checker requires an indexable/keyable type), so the reachable shapes
-        // are nested under a supported target/index. The original call-shaped
-        // probes (`call_base`, `call_index`, `nested_call_base`,
-        // `main_index_call`) became supported in B-1R3C.1 and are asserted by
-        // `r3c1::supported_cases`.
-        index_value("try_in_base", "([1] + { try { 1 } catch e { 2 } })[0]\n"),
-        // `fstring_index` (`[1, 2][f"v={1}"]`) moved to
-        // `r3b::fstring_supported_cases` in B-1R3B.7: the f-string is a
-        // supported index now, and the runtime `E3001` non-key-capable index
-        // agrees with recursion.
-        // Same shape inside a real user frame.
-        index_program(
-            "main_try_in_base",
-            "fn main() { let y = ([1] + { try { 1 } catch e { 2 } })[0] }\n",
-        ),
-    ]
+    vec![]
 }
 
-/// B-1R3B.6 — field reads whose receiver remains unsupported must fail with the
-/// deterministic `E4999` sentinel, never fall back to recursion.
+/// B-1R3F.1 — this phase's former unsupported sentinels all migrated as
+/// their constructs became supported; the current-language runtime surface
+/// is fully iterative, so the set is intentionally empty.
 #[must_use]
 pub fn field_unsupported_cases() -> Vec<Case> {
-    vec![
-        // `struct_construct_receiver` became supported in B-1R3C.3 (struct
-        // construction landed) and is asserted by `r3c1::supported_cases` as
-        // `field_instance_read`; the field unsupported set now probes a lambda
-        // receiver only.
-        // An unsupported lambda receiver is reached and fails before the member
-        // is resolved (the recursive engine reports the receiver's own runtime
-        // type error, so this program is valid for it). The original
-        // call-receiver probes became supported in B-1R3C.1 and are asserted
-        // by `r3c1::supported_cases`.
-        field_value("try_receiver", "{ { try { 1 } catch e { 2 } } }.len\n"),
-        // An unsupported construct nested one level under the receiver.
-        field_value(
-            "nested_try_receiver",
-            "{ (1 + { try { 1 } catch e { 2 } }) }.len\n",
-        ),
-    ]
+    vec![]
 }
 
 fn fstring_value(name: &'static str, source: &'static str) -> Case {
@@ -1379,38 +1251,10 @@ pub fn fstring_supported_cases() -> Vec<Case> {
     ]
 }
 
-/// B-1R3B.7 — f-string interpolations that remain unsupported (calls are R3C)
-/// must fail with the deterministic `E4999` sentinel in iterative mode, never
-/// fall back to recursion, and never produce a partial string. A *skipped*
-/// f-string (short-circuit) is a supported case above; every f-string here is
-/// on the evaluated path.
+/// B-1R3F.1 — this phase's former unsupported sentinels all migrated as
+/// their constructs became supported; the current-language runtime surface
+/// is fully iterative, so the set is intentionally empty.
 #[must_use]
 pub fn fstring_unsupported_cases() -> Vec<Case> {
-    vec![
-        // An unsupported lambda interpolation is reached and fails. The
-        // original call-interpolation probes (`call_interp`,
-        // `nested_call_interp`, `later_call_interp`, `list_call_interp`,
-        // `spec_call_interp`, `main_fstring_call`, `main_fstring_later_call`)
-        // became supported in B-1R3C.1 and are asserted by
-        // `r3c1::supported_cases`.
-        fstring_value("try_interp", "f\"{ { try { 1 } catch e { 2 } } }\"\n"),
-        // An unsupported lambda nested one level under a supported expression.
-        fstring_value(
-            "nested_try_interp",
-            "f\"{1 + { try { 1 } catch e { 2 } }}\"\n",
-        ),
-        // A supported first interpolation must not let the machine fall back on
-        // a later unsupported one.
-        fstring_value(
-            "later_try_interp",
-            "f\"{1}{ { try { 1 } catch e { 2 } } }\"\n",
-        ),
-        // An unsupported construct in a format-spec interpolation.
-        fstring_value("spec_try_interp", "f\"{ { try { 1 } catch e { 2 } }:d}\"\n"),
-        // Same shape inside a real user frame.
-        fstring_program(
-            "main_fstring_try",
-            "fn main() { let s = f\"{ { try { 1 } catch e { 2 } } }\" }\n",
-        ),
-    ]
+    vec![]
 }
