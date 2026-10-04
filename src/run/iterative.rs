@@ -166,7 +166,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use super::value::{MapKey, Value};
-use super::{Closure, Ctl, Env, Interp, NativeOutcome, MAX_AST_DEPTH, MAX_CALL_FRAMES};
+use super::{Closure, Ctl, Diag, Env, Interp, NativeOutcome, MAX_AST_DEPTH, MAX_CALL_FRAMES};
 use crate::ast::{Arg, BinOp, Expr, FPart, FormatSpec, Lit, Pattern, Stmt, UnOp};
 use crate::error::{codes, Result, Span};
 use crate::source::SourceId;
@@ -218,6 +218,17 @@ struct CompState {
     index: usize,
     out: Vec<Value>,
     map: std::collections::BTreeMap<crate::run::value::MapKey, Value>,
+}
+
+/// The pending outcome of a `try` statement (R3F.1), finalized by `finally`.
+enum TryResult {
+    /// The try body's non-throw outcome (`Ctl::Val`/`Return`/`Break`/`Continue`).
+    Body(Ctl),
+    /// The catch body's outcome.
+    Caught(Ctl),
+    /// The body (or catch) errored fatally; only a non-`Val` `finally` can
+    /// override it, exactly like `Interp::exec_stmt`'s `Try`.
+    Fatal(Diag),
 }
 
 /// A lazy `for` cursor over a range: `next < end`.
@@ -427,6 +438,28 @@ enum Cont {
     /// arm (`call_value`). A `Name` callee is resolved synchronously once its
     /// arguments complete, so this record is only pushed for other shapes.
     CallCallee { values: Vec<Value>, span: Span },
+    /// A `try` body block finished (R3F.1); catch a `throw`, and run `finally`.
+    /// The snapshot fields restore machine state when an error aborts the body
+    /// mid-expression (the body's own continuations are discarded): the
+    /// recursive engine's unwind balances `ast_depth` and pops frame state,
+    /// which the machine reproduces from these snapshots.
+    TryBody {
+        catch: String,
+        catch_body: Arc<[Stmt]>,
+        finally: Option<Arc<[Stmt]>>,
+        env: Env,
+        frames_len: usize,
+        depth: usize,
+        saved_expr_depth: usize,
+    },
+    /// A `try` catch body finished (R3F.1); run `finally` or deliver.
+    TryCatchEnd {
+        finally: Option<Arc<[Stmt]>>,
+        env: Env,
+    },
+    /// A `try` `finally` block finished (R3F.1); the pending outcome may be
+    /// overridden by a non-`Val` completion.
+    TryFinally { original: TryResult },
     /// A `match` subject finished (R3E.2); find the first matching arm.
     MatchSubject {
         arms: Arc<[crate::ast::Arm]>,
@@ -640,10 +673,105 @@ impl<'i> Machine<'i> {
         loop {
             // The current focus is machine state, not a Rust call frame.
             let ctrl = std::mem::replace(&mut self.ctrl, Ctrl::Done(Ctl::Val(Value::None)));
-            match self.step(ctrl)? {
-                Control::Next(next) => self.ctrl = next,
-                Control::Finished(ctl) => return Ok(ctl),
+            match self.step(ctrl) {
+                Ok(Control::Next(next)) => self.ctrl = next,
+                Ok(Control::Finished(ctl)) => return Ok(ctl),
+                Err(diag) => {
+                    // Try interception (R3F.1): an active try body may catch a
+                    // `throw`; otherwise `finally` still runs before the error
+                    // propagates. The recursive engine gets this from Rust's
+                    // unwind (`?`) plus its own frame bookkeeping; the machine
+                    // reproduces it by restoring the try's snapshot.
+                    match self.intercept_try_error(diag) {
+                        Ok(Some(Control::Next(next))) => self.ctrl = next,
+                        Ok(Some(Control::Finished(ctl))) => return Ok(ctl),
+                        Ok(None) => unreachable!("interception always routes or errors"),
+                        Err(propagated) => return Err(propagated),
+                    }
+                }
             }
+        }
+    }
+
+    /// Route an error through the innermost active `try` region (R3F.1).
+    ///
+    /// `Err(diag)` means no try region is active (or `finally` re-propagated)
+    /// and the diagnostic escapes the machine. Otherwise the discarded
+    /// continuations above the region are dropped and the try runs its catch
+    /// (for a `THROWN` signal) and/or `finally`, mirroring
+    /// `Interp::exec_stmt`'s `Stmt::Try` arm exactly.
+    fn intercept_try_error(&mut self, diag: Diag) -> Result<Option<Control>> {
+        let Some(pos) = self
+            .kont
+            .iter()
+            .rposition(|c| matches!(c, Cont::TryBody { .. } | Cont::TryCatchEnd { .. }))
+        else {
+            return Err(diag);
+        };
+        let mut tail = self.kont.split_off(pos);
+        let marker = tail.swap_remove(0);
+        // Restore the snapshot: pop any frames the body entered and recover
+        // the nesting budget and shared depth. (Any `Done.env` in flight is
+        // irrelevant on the error path: the try's own environment is restored
+        // from the snapshot.)
+        match marker {
+            Cont::TryBody {
+                catch,
+                catch_body,
+                finally,
+                env,
+                frames_len,
+                depth,
+                saved_expr_depth,
+            } => {
+                while self.frames.len() > frames_len {
+                    self.pop_frame();
+                }
+                self.interp.depth = depth;
+                self.expr_depth = saved_expr_depth;
+                if diag.code == codes::THROWN {
+                    let thrown = self
+                        .interp
+                        .pending_throw
+                        .take()
+                        .unwrap_or_else(|| Value::str(diag.message.clone()));
+                    let scope = env.child();
+                    scope.define(catch, thrown, false);
+                    self.kont.push(Cont::TryCatchEnd { finally, env });
+                    Ok(Some(Control::Next(Ctrl::EnterBlock(
+                        catch_body, scope, false,
+                    ))))
+                } else {
+                    self.finish_fatal(finally, env, diag)
+                }
+            }
+            Cont::TryCatchEnd { finally, env } => {
+                // An error in the catch body is not caught by this try; it
+                // still runs `finally` before propagating.
+                self.finish_fatal(finally, env, diag)
+            }
+            _ => unreachable!("marker selection matched a try region"),
+        }
+    }
+
+    /// Run `finally` (if any) before propagating a fatal diagnostic, or
+    /// propagate immediately when there is no `finally` (R3F.1). Propagating
+    /// here returns `Err` out of [`Machine::run`], which is exactly how a
+    /// fatal diagnostic escapes the machine.
+    fn finish_fatal(
+        &mut self,
+        finally: Option<Arc<[Stmt]>>,
+        env: Env,
+        diag: Diag,
+    ) -> Result<Option<Control>> {
+        match finally {
+            Some(f) => {
+                self.kont.push(Cont::TryFinally {
+                    original: TryResult::Fatal(diag),
+                });
+                Ok(Some(Control::Next(Ctrl::EnterBlock(f, env, true))))
+            }
+            None => Err(diag),
         }
     }
 
@@ -711,6 +839,62 @@ impl<'i> Machine<'i> {
                     Ok(Resume::Next(Ctrl::EvalStmt(stmt, local)))
                 } else {
                     Ok(Resume::Redeliver(Done::plain(Ctl::Val(value))))
+                }
+            }
+            Cont::TryBody {
+                catch,
+                catch_body,
+                finally,
+                env,
+                ..
+            } => {
+                let original = match done.ctl {
+                    Ctl::Throw(v) => {
+                        // Only an explicit `throw` is catchable; the catch
+                        // scope binds the thrown value and the catch body runs
+                        // unscoped (it aliases that scope), exactly like
+                        // `Interp::exec_stmt`'s `Try`.
+                        let scope = env.child();
+                        scope.define(catch, v, false);
+                        self.kont.push(Cont::TryCatchEnd {
+                            finally: finally.clone(),
+                            env: env.clone(),
+                        });
+                        return Ok(Resume::Next(Ctrl::EnterBlock(catch_body, scope, false)));
+                    }
+                    other => other,
+                };
+                match finally {
+                    Some(f) => {
+                        self.kont.push(Cont::TryFinally {
+                            original: TryResult::Body(original),
+                        });
+                        Ok(Resume::Next(Ctrl::EnterBlock(f, env, true)))
+                    }
+                    None => Ok(Resume::Redeliver(Done::plain(original))),
+                }
+            }
+            Cont::TryCatchEnd { finally, env } => match finally {
+                Some(f) => {
+                    self.kont.push(Cont::TryFinally {
+                        original: TryResult::Caught(done.ctl),
+                    });
+                    Ok(Resume::Next(Ctrl::EnterBlock(f, env, true)))
+                }
+                None => Ok(Resume::Redeliver(Done::plain(done.ctl))),
+            },
+            Cont::TryFinally { original } => {
+                // A non-`Val` completion in `finally` overrides the pending
+                // outcome; otherwise the pending outcome survives (including a
+                // pending fatal, which propagates by returning `Err`).
+                if !matches!(done.ctl, Ctl::Val(_)) {
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                }
+                match original {
+                    TryResult::Body(ctl) | TryResult::Caught(ctl) => {
+                        Ok(Resume::Redeliver(Done::plain(ctl)))
+                    }
+                    TryResult::Fatal(diag) => Err(diag),
                 }
             }
             Cont::MatchSubject { arms, env, span } => {
@@ -2456,6 +2640,9 @@ impl<'i> Machine<'i> {
     }
 
     /// Begin executing a statement.
+    /// `Result` is kept for a uniform `step` dispatch signature even though
+    /// this arm cannot currently fail; every statement variant is handled.
+    #[allow(clippy::unnecessary_wraps)]
     fn start_stmt(&mut self, s: &Arc<Stmt>, env: &Env) -> Result<Control> {
         match &**s {
             Stmt::Expr(e, _) => Ok(Control::Next(Ctrl::EvalExpr(
@@ -2573,8 +2760,32 @@ impl<'i> Machine<'i> {
                     true,
                 )))
             }
-            // `try` is the last remaining unsupported statement (R3F.1).
-            other @ Stmt::Try { .. } => Err(self.unsupported(other.span())),
+            Stmt::Try {
+                body,
+                catch,
+                catch_body,
+                finally,
+                ..
+            } => {
+                // Only an explicit `throw` is catchable; runtime diagnostics
+                // propagate as fatal but still run `finally`. The body runs in
+                // a fresh scope; the catch scope binds the thrown value; the
+                // finally block runs in the try's enclosing environment.
+                self.kont.push(Cont::TryBody {
+                    catch: catch.clone(),
+                    catch_body: catch_body.clone(),
+                    finally: finally.clone(),
+                    env: env.clone(),
+                    frames_len: self.frames.len(),
+                    depth: self.interp.depth,
+                    saved_expr_depth: self.expr_depth,
+                });
+                Ok(Control::Next(Ctrl::EnterBlock(
+                    body.clone(),
+                    env.clone(),
+                    true,
+                )))
+            }
         }
     }
 
@@ -2598,15 +2809,6 @@ impl<'i> Machine<'i> {
             scoped,
         });
         Ok(Control::Next(Ctrl::EvalStmt(stmt, local)))
-    }
-
-    /// The deterministic "unsupported in the iterative engine" diagnostic.
-    fn unsupported(&self, span: Span) -> crate::error::Diag {
-        self.interp.error(
-            codes::INTERNAL,
-            "construct is not supported by the iterative engine (B-1R3A)",
-            span,
-        )
     }
 
     /// Push a user frame, enforcing the 512/513 contract (`§17`).
@@ -2864,12 +3066,14 @@ mod tests {
 
     #[test]
     fn unsupported_construct_fails_explicitly() {
-        // `try` is the last remaining unsupported statement (R3F.1). The
-        // machine must fail explicitly, never fall back to recursion. (Call,
-        // lambda, and comprehensions became supported in R3C/R3E.)
+        // B-1R3F.1 closed the current-language runtime surface: every `Expr`
+        // and `Stmt` variant is handled by the machine, so there is no
+        // construct left that could fall back to recursion. This test pins
+        // that a construct which *used* to be unsupported (`try`) now
+        // evaluates in the machine.
         let e = Expr::Block(
             Arc::from([Stmt::Try {
-                body: Arc::from([]),
+                body: Arc::from([expr_stmt(lit(1))]),
                 catch: "e".to_string(),
                 catch_body: Arc::from([]),
                 finally: None,
@@ -2877,11 +3081,9 @@ mod tests {
             }]),
             Span::default(),
         );
-        let err = run_expr(&e).err().unwrap();
-        assert_eq!(err.code, codes::INTERNAL);
-        assert!(err
-            .message
-            .contains("not supported by the iterative engine"));
+        let ctl = run_expr(&e).unwrap();
+        // `try` yields its body's last value (`1`).
+        assert!(matches!(ctl, Ctl::Val(Value::Int(1))));
     }
 
     #[test]
@@ -3026,13 +3228,11 @@ mod tests {
     fn range_out_of_if_remains_unsupported() {
         // Range support is construction-only. `if 1..3 { }` requires the
         // truthiness/condition path, which is separately supported; this test
-        // pins that an `if` whose taken branch is a still-unsupported
-        // comprehension fails, proving no fallback leaked into R3B.5. (The
-        // branch used to be a `len([1])` call, supported in R3C.1, then a
-        // lambda, supported in R3C.4.)
-        let unsupported = Expr::Block(
+        // pins that an `if` whose taken branch is the formerly-unsupported
+        // `try` now evaluates in the machine (B-1R3F.1).
+        let branch = Expr::Block(
             Arc::from([Stmt::Try {
-                body: Arc::from([]),
+                body: Arc::from([expr_stmt(lit(7))]),
                 catch: "e".to_string(),
                 catch_body: Arc::from([]),
                 finally: None,
@@ -3042,12 +3242,12 @@ mod tests {
         );
         let e = Expr::If(
             Arc::new(Expr::Lit(Lit::Bool(true), Span::default())),
-            Arc::from([expr_stmt(unsupported)]),
+            Arc::from([expr_stmt(branch)]),
             None,
             Span::default(),
         );
-        let err = run_expr(&e).err().unwrap();
-        assert_eq!(err.code, codes::INTERNAL);
+        let ctl = run_expr(&e).unwrap();
+        assert!(matches!(ctl, Ctl::Val(Value::Int(7))));
     }
 
     #[test]
@@ -4021,15 +4221,11 @@ mod tests {
 
     #[test]
     fn list_unsupported_element_fails_explicitly() {
-        // A `try` block element is still unsupported (R3F.1): the list must
-        // fail with the E4999 sentinel, never fall back to recursion and never
-        // produce a partial list. The first element is supported, so this also
-        // proves the second element is genuinely scheduled and then fails.
-        // (The element has moved through call, lambda, and comprehension
-        // probes as each became supported.)
-        let unsupported = Expr::Block(
+        // B-1R3F.1: the formerly-unsupported `try` element now evaluates, and
+        // the whole list is produced (no partial-list or fallback path).
+        let try_expr = Expr::Block(
             Arc::from([Stmt::Try {
-                body: Arc::from([]),
+                body: Arc::from([expr_stmt(lit(2))]),
                 catch: "e".to_string(),
                 catch_body: Arc::from([]),
                 finally: None,
@@ -4037,12 +4233,12 @@ mod tests {
             }]),
             Span::default(),
         );
-        let e = list(vec![lit(1), unsupported]);
-        let err = run_expr(&e).err().unwrap();
-        assert_eq!(err.code, codes::INTERNAL);
-        assert!(err
-            .message
-            .contains("not supported by the iterative engine"));
+        let e = list(vec![lit(1), try_expr]);
+        let ctl = run_expr(&e).unwrap();
+        match &ctl {
+            Ctl::Val(Value::List(l)) => assert_eq!(l.borrow().len(), 2),
+            _ => panic!("expected a two-element list"),
+        }
     }
 
     #[test]
@@ -4363,11 +4559,11 @@ mod tests {
 
     #[test]
     fn map_unsupported_key_fails_explicitly() {
-        // A `try` block key is still unsupported (R3F.1): the map must fail
-        // with the E4999 sentinel, never fall back to recursion and never
-        // produce a partial map. (The key has moved through call, lambda, and
-        // comprehension probes as each became supported.)
-        let unsupported = Expr::Block(
+        // B-1R3F.1: the formerly-unsupported `try` key now evaluates. A
+        // `try` yielding `none` is not an admissible map key, so the map
+        // reports the ordinary key-type diagnostic (E3001) from shared code,
+        // not a fallback sentinel.
+        let try_expr = Expr::Block(
             Arc::from([Stmt::Try {
                 body: Arc::from([]),
                 catch: "e".to_string(),
@@ -4377,12 +4573,10 @@ mod tests {
             }]),
             Span::default(),
         );
-        let e = map(vec![(unsupported, lit(1))]);
+        let e = map(vec![(try_expr, lit(1))]);
         let err = run_expr(&e).err().unwrap();
-        assert_eq!(err.code, codes::INTERNAL);
-        assert!(err
-            .message
-            .contains("not supported by the iterative engine"));
+        assert_eq!(err.code, codes::TYPE_MISMATCH);
+        assert!(err.message.contains("cannot be used as a map key"));
     }
 
     #[test]
