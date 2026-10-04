@@ -301,41 +301,28 @@ pub fn install(it: &mut Interp) {
             )),
         }
     });
-    it.native("map", |it, args, span| {
+    it.native_resumable("map", |_it, args, span| {
         arity(&args, 2, 2, "map", span)?;
         let list = arg(&args, 0, "map", span)?.clone();
         let f = arg(&args, 1, "map", span)?.clone();
         let snapshot = as_list(&list, "map", span)?;
-        let mut out = Vec::with_capacity(snapshot.len());
-        for item in snapshot {
-            out.push(it.call_value_pub(f.clone(), vec![item], span)?);
-        }
-        Ok(Value::list(out))
+        let cap = snapshot.len();
+        Ok(map_step(f, snapshot, 0, Vec::with_capacity(cap), span))
     });
-    it.native("filter", |it, args, span| {
+    it.native_resumable("filter", |_it, args, span| {
         arity(&args, 2, 2, "filter", span)?;
         let list = arg(&args, 0, "filter", span)?.clone();
         let f = arg(&args, 1, "filter", span)?.clone();
         let snapshot = as_list(&list, "filter", span)?;
-        let mut out = Vec::new();
-        for item in snapshot {
-            let keep = it.call_value_pub(f.clone(), vec![item.clone()], span)?;
-            if keep.truthy() {
-                out.push(item);
-            }
-        }
-        Ok(Value::list(out))
+        Ok(filter_step(f, snapshot, 0, Vec::new(), span))
     });
-    it.native("reduce", |it, args, span| {
+    it.native_resumable("reduce", |_it, args, span| {
         arity(&args, 3, 3, "reduce", span)?;
         let list = arg(&args, 0, "reduce", span)?.clone();
         let f = arg(&args, 1, "reduce", span)?.clone();
-        let mut acc = arg(&args, 2, "reduce", span)?.clone();
+        let acc = arg(&args, 2, "reduce", span)?.clone();
         let snapshot = as_list(&list, "reduce", span)?;
-        for item in snapshot {
-            acc = it.call_value_pub(f.clone(), vec![acc, item], span)?;
-        }
-        Ok(acc)
+        Ok(reduce_step(f, snapshot, 0, acc, span))
     });
     it.native("sum", |_it, args, span| {
         arity(&args, 1, 1, "sum", span)?;
@@ -736,5 +723,160 @@ fn map_method(
             Ok(m.borrow_mut().remove(&k).unwrap_or(Value::None))
         }
         _ => Err(no_method("map", name, span)),
+    }
+}
+
+// ------------------------------------------------- resumable callback natives
+//
+// `map`, `filter`, and `reduce` are the only builtins that call an Aura
+// value back. They are registered through `Interp::native_resumable`, which
+// installs both an ordinary adapter (driving the same states via the
+// recursive `call_value`, preserving frame accounting) and a resumable form
+// the explicit-continuation machine drives as machine work
+// (`ITERATIVE_EVALUATOR_DESIGN.md` §13). The state tokens below implement the
+// native side of that protocol; continuation order, snapshot semantics, and
+// spans are identical for both engines.
+
+use crate::run::{NativeOutcome, NativeResume};
+
+/// One `map` iteration step: call `f` on `items[index]`, then continue.
+fn map_step(
+    f: Value,
+    items: Vec<Value>,
+    index: usize,
+    mut out: Vec<Value>,
+    span: Span,
+) -> NativeOutcome {
+    if index >= items.len() {
+        return NativeOutcome::Done(Value::list(out));
+    }
+    let item = items[index].clone();
+    NativeOutcome::InvokeCallback {
+        f: f.clone(),
+        args: vec![item],
+        resume: Box::new(MapResume {
+            f,
+            items,
+            index,
+            out: std::mem::take(&mut out),
+            span,
+        }),
+    }
+}
+
+struct MapResume {
+    f: Value,
+    items: Vec<Value>,
+    index: usize,
+    out: Vec<Value>,
+    span: Span,
+}
+
+impl NativeResume for MapResume {
+    fn resume(
+        mut self: Box<Self>,
+        _it: &mut Interp,
+        result: Result<Value>,
+    ) -> Result<NativeOutcome> {
+        self.out.push(result?);
+        Ok(map_step(
+            self.f,
+            self.items,
+            self.index + 1,
+            self.out,
+            self.span,
+        ))
+    }
+}
+
+/// One `filter` iteration step: call `f` on `items[index]`, keep the item when
+/// the result is truthy, then continue.
+fn filter_step(
+    f: Value,
+    items: Vec<Value>,
+    index: usize,
+    mut out: Vec<Value>,
+    span: Span,
+) -> NativeOutcome {
+    if index >= items.len() {
+        return NativeOutcome::Done(Value::list(out));
+    }
+    let item = items[index].clone();
+    NativeOutcome::InvokeCallback {
+        f: f.clone(),
+        args: vec![item.clone()],
+        resume: Box::new(FilterResume {
+            f,
+            items,
+            index,
+            out: std::mem::take(&mut out),
+            item,
+            span,
+        }),
+    }
+}
+
+struct FilterResume {
+    f: Value,
+    items: Vec<Value>,
+    index: usize,
+    out: Vec<Value>,
+    item: Value,
+    span: Span,
+}
+
+impl NativeResume for FilterResume {
+    fn resume(
+        mut self: Box<Self>,
+        _it: &mut Interp,
+        result: Result<Value>,
+    ) -> Result<NativeOutcome> {
+        if result?.truthy() {
+            self.out.push(self.item.clone());
+        }
+        Ok(filter_step(
+            self.f,
+            self.items,
+            self.index + 1,
+            self.out,
+            self.span,
+        ))
+    }
+}
+
+/// One `reduce` iteration step: call `f(acc, items[index])`, then continue.
+fn reduce_step(f: Value, items: Vec<Value>, index: usize, acc: Value, span: Span) -> NativeOutcome {
+    if index >= items.len() {
+        return NativeOutcome::Done(acc);
+    }
+    let item = items[index].clone();
+    NativeOutcome::InvokeCallback {
+        f: f.clone(),
+        args: vec![acc, item],
+        resume: Box::new(ReduceResume {
+            f,
+            items,
+            index,
+            span,
+        }),
+    }
+}
+
+struct ReduceResume {
+    f: Value,
+    items: Vec<Value>,
+    index: usize,
+    span: Span,
+}
+
+impl NativeResume for ReduceResume {
+    fn resume(self: Box<Self>, _it: &mut Interp, result: Result<Value>) -> Result<NativeOutcome> {
+        Ok(reduce_step(
+            self.f,
+            self.items,
+            self.index + 1,
+            result?,
+            self.span,
+        ))
     }
 }

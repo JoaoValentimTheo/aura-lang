@@ -215,6 +215,13 @@ impl Ctl {
 pub struct Interp {
     globals: Env,
     natives: HashMap<String, Native>,
+    /// Resumable natives (`map`/`filter`/`reduce`), keyed by name
+    /// (`ITERATIVE_EVALUATOR_DESIGN.md` §13). The ordinary `natives` entry for
+    /// each of these names is an adapter that drives the same implementation
+    /// through [`Interp::call_value`], so the recursive engine is unchanged;
+    /// the iterative machine drives the resumable form directly so a closure
+    /// callback runs as machine work with no nested host stack.
+    resumable_natives: HashMap<String, ResumableNative>,
 
     /// Top-level functions, by name, as an ordered overload set
     /// (`LANGUAGE_SPEC.md` §15.7).
@@ -243,6 +250,69 @@ pub struct Interp {
 
 type Native = Rc<dyn Fn(&mut Interp, Vec<Value>, Span) -> Result<Value>>;
 
+/// One step of a *resumable* native (`ITERATIVE_EVALUATOR_DESIGN.md` §13).
+///
+/// A native that needs to call back into Aura (today only `map`, `filter`, and
+/// `reduce`) returns [`NativeOutcome::InvokeCallback`] instead of blocking on
+/// a nested evaluator call. The iterative machine turns that request into
+/// machine work (a user frame for a `Closure` callback, an inline invocation
+/// for a `Native` one) and feeds the callback's result back into the same
+/// `resume` token. The recursive engine drives the identical protocol through
+/// [`Interp::drive_resumable`], so both engines share one implementation and
+/// one callback order, and a machine-driven native never re-enters the
+/// recursive AST evaluator.
+pub(crate) enum NativeOutcome {
+    /// The native finished with this value.
+    Done(Value),
+    /// A callback call is required before the native can continue.
+    InvokeCallback {
+        /// The callable value (`Closure` or `Native`).
+        f: Value,
+        /// The callback's arguments, already evaluated.
+        args: Vec<Value>,
+        /// Native-owned continuation state; consumed by `resume`.
+        resume: Box<dyn NativeResume>,
+    },
+}
+
+/// Native-owned resumable state (`ITERATIVE_EVALUATOR_DESIGN.md` §13).
+pub(crate) trait NativeResume {
+    /// Consume the callback's result and produce the native's next step.
+    ///
+    /// # Errors
+    /// Propagates the callback's diagnostic or a native-owned diagnostic.
+    fn resume(self: Box<Self>, it: &mut Interp, result: Result<Value>) -> Result<NativeOutcome>;
+}
+
+/// A native that can suspend on a callback (private registration path).
+type ResumableNative = Rc<dyn Fn(&mut Interp, Vec<Value>, Span) -> Result<NativeOutcome>>;
+
+impl Interp {
+    /// Drive a resumable native to completion with the recursive call path.
+    ///
+    /// This is the recursive engine's adapter for the callback protocol
+    /// (`ITERATIVE_EVALUATOR_DESIGN.md` §13): each `InvokeCallback` is executed
+    /// through [`Interp::call_value`], preserving the recursive frame
+    /// accounting (`Closure` spends a frame, `Native` does not). The iterative
+    /// machine drives the same `NativeOutcome` states directly as machine
+    /// work instead of calling this helper.
+    pub(crate) fn drive_resumable(
+        &mut self,
+        mut step: Result<NativeOutcome>,
+        span: Span,
+    ) -> Result<Value> {
+        loop {
+            match step? {
+                NativeOutcome::Done(v) => return Ok(v),
+                NativeOutcome::InvokeCallback { f, args, resume } => {
+                    let result = self.call_value(f, args, span);
+                    step = resume.resume(self, result);
+                }
+            }
+        }
+    }
+}
+
 impl Interp {
     /// Create an interpreter with the standard library installed.
     #[must_use]
@@ -250,6 +320,7 @@ impl Interp {
         let mut it = Interp {
             globals: Env::root(),
             natives: HashMap::new(),
+            resumable_natives: HashMap::new(),
             functions: HashMap::new(),
             methods: HashMap::new(),
             structs: HashMap::new(),
@@ -308,6 +379,31 @@ impl Interp {
         F: Fn(&mut Interp, Vec<Value>, Span) -> Result<Value> + 'static,
     {
         self.natives.insert(name.to_string(), Rc::new(f));
+    }
+
+    /// Register a resumable native and its recursive-engine adapter.
+    ///
+    /// The adapter drives the same implementation with
+    /// [`Interp::call_value`], so the recursive engine's observable behavior
+    /// (including the callback frame accounting of a `Closure` versus a
+    /// `Native` callback) is exactly the pre-protocol behavior. The iterative
+    /// machine looks the name up in `resumable_natives` instead and schedules
+    /// each [`NativeOutcome::InvokeCallback`] as machine work.
+    pub(crate) fn native_resumable(
+        &mut self,
+        name: &str,
+        f: impl Fn(&mut Interp, Vec<Value>, Span) -> Result<NativeOutcome> + 'static,
+    ) {
+        let f: ResumableNative = Rc::new(f);
+        let adapter = f.clone();
+        self.natives.insert(
+            name.to_string(),
+            Rc::new(move |it: &mut Interp, args: Vec<Value>, span: Span| {
+                let step = adapter(it, args, span);
+                it.drive_resumable(step, span)
+            }),
+        );
+        self.resumable_natives.insert(name.to_string(), f);
     }
 
     /// Register a global value.

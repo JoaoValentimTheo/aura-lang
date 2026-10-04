@@ -166,8 +166,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use super::value::{MapKey, Value};
-use super::{Closure, Ctl, Env, Interp, MAX_AST_DEPTH, MAX_CALL_FRAMES};
-use crate::ast::{BinOp, Expr, FPart, FormatSpec, Lit, Stmt, UnOp};
+use super::{Closure, Ctl, Env, Interp, NativeOutcome, MAX_AST_DEPTH, MAX_CALL_FRAMES};
+use crate::ast::{Arg, BinOp, Expr, FPart, FormatSpec, Lit, Stmt, UnOp};
 use crate::error::{codes, Result, Span};
 use crate::source::SourceId;
 
@@ -361,24 +361,59 @@ enum Cont {
     ReturnFrom,
     /// A `throw` operand finished; convert to the `throw` signal.
     ThrowFrom,
+    /// A call argument finished (R3C.1). Arguments are evaluated strictly in
+    /// source order, exactly once each, *before* any callee resolution or
+    /// parameter binding — mirroring `Interp::eval_call`'s argument loop. The
+    /// accepted prefix (including this one) rides in `values`; scheduling the
+    /// next argument or dispatching the call is decided here.
+    CallArgs {
+        callee: Arc<Expr>,
+        args: Arc<[Arg]>,
+        index: usize,
+        values: Vec<Value>,
+        env: Env,
+        span: Span,
+    },
+    /// A non-`Name` callee expression finished (R3C.1); apply it to the
+    /// already-evaluated arguments exactly like `Interp::eval_call`'s `other`
+    /// arm (`call_value`). A `Name` callee is resolved synchronously once its
+    /// arguments complete, so this record is only pushed for other shapes.
+    CallCallee { values: Vec<Value>, span: Span },
+    /// A resumable native is mid-call (`map`/`filter`/`reduce`,
+    /// `ITERATIVE_EVALUATOR_DESIGN.md` §13). The callback's result is fed back
+    /// to the native-owned `resume` token, which produces the next
+    /// [`NativeOutcome`] step, driven as machine work rather than a nested
+    /// evaluator call.
+    NativeResume {
+        resume: Box<dyn super::NativeResume>,
+        span: Span,
+    },
     /// A user-frame boundary (R3C): pop one [`UserFrame`] and map the call's
-    /// completion. Not produced by the R3A subset.
-    #[allow(dead_code)]
+    /// completion.
     FrameBoundary { call_span: Span },
 }
 
 /// An explicit Aura user call frame (`ITERATIVE_EVALUATOR_DESIGN.md` §16.2).
 ///
 /// `Machine::frames.len()` **is** the active-frame count checked against
-/// `MAX_CALL_FRAMES`; `main` occupies frame 1. The fields beyond the accounting
-/// model are established for R3C (calls).
-#[allow(dead_code)]
+/// `MAX_CALL_FRAMES`; `main` occupies frame 1. Every field mirrors the state
+/// `Interp::call` saves and restores around `exec_block` for one call.
 struct UserFrame {
+    #[allow(dead_code)]
     closure: Rc<Closure>,
+    #[allow(dead_code)]
     env: Env,
+    /// Caller's `current_source`, restored when the frame is popped.
     saved_source: Option<SourceId>,
+    /// The callee's source, if known (diagnostics/source attribution).
+    #[allow(dead_code)]
     frame_source: Option<SourceId>,
+    /// The call's span, used for boundary diagnostics (`E4099`/`E4028`).
+    #[allow(dead_code)]
     call_span: Span,
+    /// Caller's expression-nesting budget, restored at the frame boundary.
+    /// `Interp::call` resets `ast_depth` for the callee and restores it after.
+    saved_expr_depth: usize,
 }
 
 /// The explicit continuation machine.
@@ -388,8 +423,15 @@ struct Machine<'i> {
     ctrl: Ctrl,
     /// Continuations, innermost last.
     kont: Vec<Cont>,
-    /// Aura user call frames; `len()` **is** the active-frame count.
+    /// Aura user call frames, innermost last. `interp.depth` is the
+    /// authoritative active-frame count shared with `Interp::call` (so a
+    /// native callback that re-enters recursion sees the correct base); this
+    /// stack holds the saved/restored frame state.
     frames: Vec<UserFrame>,
+    /// `interp.depth` when the machine started; restored when the machine
+    /// finishes (Ok or Err), because every un-popped frame is discarded with
+    /// the machine.
+    base_depth: usize,
     /// Expression nesting depth of the expression currently being evaluated
     /// (mirrors `Interp::ast_depth`, including its per-frame reset in R3C).
     expr_depth: usize,
@@ -402,11 +444,13 @@ struct Machine<'i> {
 impl<'i> Machine<'i> {
     /// Create a machine over `interp`.
     fn new(interp: &'i mut Interp) -> Machine<'i> {
+        let base_depth = interp.depth;
         Machine {
             interp,
             ctrl: Ctrl::Done(Ctl::Val(Value::None)),
             kont: Vec::new(),
             frames: Vec::new(),
+            base_depth,
             expr_depth: 0,
             top_env: None,
         }
@@ -415,6 +459,15 @@ impl<'i> Machine<'i> {
     /// Drive the machine to completion.
     fn run(&mut self, initial: Ctrl) -> Result<Ctl> {
         self.ctrl = initial;
+        let result = self.run_inner();
+        // Any frames still on the stack are discarded with the machine; the
+        // shared call-depth accounting returns to its entry value so a
+        // subsequent machine (or a native re-entry) sees a consistent count.
+        self.interp.depth = self.base_depth;
+        result
+    }
+
+    fn run_inner(&mut self) -> Result<Ctl> {
         loop {
             // The current focus is machine state, not a Rust call frame.
             let ctrl = std::mem::replace(&mut self.ctrl, Ctrl::Done(Ctl::Val(Value::None)));
@@ -823,6 +876,69 @@ impl<'i> Machine<'i> {
                 Ctl::Val(v) => Ok(Resume::Next(Ctrl::ThrowValue(v))),
                 other => Ok(Resume::Redeliver(Done::plain(other))),
             },
+            Cont::CallArgs {
+                callee,
+                args,
+                index,
+                mut values,
+                env,
+                span,
+            } => {
+                let Ctl::Val(v) = done.ctl else {
+                    // A control signal from an argument aborts the call before
+                    // any callee resolution, exactly like `eval_call`'s
+                    // argument loop (`?`/`other => return Ok(other)`).
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                values.push(v);
+                if index < args.len() {
+                    let next = Arc::new(args[index].value.clone());
+                    self.kont.push(Cont::CallArgs {
+                        callee,
+                        args: args.clone(),
+                        index: index + 1,
+                        values,
+                        env: env.clone(),
+                        span,
+                    });
+                    Ok(Resume::Next(Ctrl::EvalExpr(next, env)))
+                } else {
+                    match self.dispatch_call(callee, args, values, env, span)? {
+                        Control::Next(next) => Ok(Resume::Next(next)),
+                        Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                    }
+                }
+            }
+            Cont::CallCallee { values, span } => {
+                let Ctl::Val(f) = done.ctl else {
+                    // A control signal from the callee expression propagates
+                    // without applying the call (mirrors `eval_call`'s `other`
+                    // arm).
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                match self.start_call_value(f, values, span)? {
+                    Control::Next(next) => Ok(Resume::Next(next)),
+                    Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                }
+            }
+            Cont::NativeResume { resume, span } => {
+                let result = match done.ctl {
+                    Ctl::Val(v) => Ok(v),
+                    // A control signal from the callback aborts the native and
+                    // propagates unchanged (the recursive adapter's
+                    // `call_value` returns `Err` only for diagnostics; a
+                    // `Ctl` signal cannot escape a frame boundary, so a signal
+                    // here means the callback body produced it directly).
+                    other => {
+                        return Ok(Resume::Redeliver(Done::plain(other)));
+                    }
+                };
+                let step = resume.resume(self.interp, result)?;
+                match self.start_native_resume(step, span)? {
+                    Control::Next(next) => Ok(Resume::Next(next)),
+                    Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                }
+            }
             Cont::FrameBoundary { call_span } => self.resume_frame_boundary(done, call_span),
         }
     }
@@ -1130,7 +1246,179 @@ impl<'i> Machine<'i> {
                 });
                 Ok(Control::Next(Ctrl::EvalExpr(recv.clone(), env.clone())))
             }
+            Expr::Call(callee, args, _ty_args, span) => {
+                // Arguments are evaluated strictly in source order, exactly
+                // once each, *before* any callee resolution or parameter
+                // binding (`LANGUAGE_SPEC.md` §13); `Interp::eval_call` has the
+                // identical prerequisite. `start_call` schedules the first
+                // argument or, for a zero-argument call, dispatches directly.
+                self.start_call(callee.clone(), args.clone(), env.clone(), *span)
+            }
             other => Err(self.unsupported(expr_span(other))),
+        }
+    }
+
+    /// Begin a call: schedule the first argument, or dispatch immediately when
+    /// there are none (R3C.1). Mirrors `Interp::eval_call`'s argument loop.
+    fn start_call(
+        &mut self,
+        callee: Arc<Expr>,
+        args: Arc<[Arg]>,
+        env: Env,
+        span: Span,
+    ) -> Result<Control> {
+        if args.is_empty() {
+            return self.dispatch_call(callee, args, Vec::new(), env, span);
+        }
+        let first = Arc::new(args[0].value.clone());
+        self.kont.push(Cont::CallArgs {
+            callee,
+            args: args.clone(),
+            index: 1,
+            values: Vec::with_capacity(args.len()),
+            env: env.clone(),
+            span,
+        });
+        Ok(Control::Next(Ctrl::EvalExpr(first, env)))
+    }
+
+    /// Resolve a call whose arguments have all completed, exactly like
+    /// `Interp::eval_call`: a `Name` callee checks the function overload set,
+    /// then the native registry, then the environment (`call_value`); any
+    /// other callee shape is itself evaluated first and then applied through
+    /// `call_value`. A user `Closure` executes in the same machine loop as an
+    /// explicit frame (`start_call_frame`) — never a nested evaluator.
+    fn dispatch_call(
+        &mut self,
+        callee: Arc<Expr>,
+        args: Arc<[Arg]>,
+        values: Vec<Value>,
+        env: Env,
+        span: Span,
+    ) -> Result<Control> {
+        let Expr::Name(name, nspan) = &*callee else {
+            self.kont.push(Cont::CallCallee { values, span });
+            return Ok(Control::Next(Ctrl::EvalExpr(callee.clone(), env)));
+        };
+        let nspan = *nspan;
+        if let Some(set) = self.interp.functions.get(name.as_str()).cloned() {
+            // Static overload resolution uses the checker's own selector.
+            let c = self.interp.select_overload(name, &set, &values, nspan)?;
+            let call_vals = super::bind_arguments(&args, &values, &c.params, span)?;
+            return Ok(Control::Next(self.enter_call(c, call_vals, nspan)?));
+        }
+        if self.interp.natives.contains_key(name.as_str()) {
+            // A builtin called directly: arity is enforced by the shared
+            // registry, then either the resumable protocol (machine work) or
+            // the ordinary native runs.
+            self.interp.check_native_arity(name, values.len(), nspan)?;
+            if let Some(n) = self.interp.resumable_natives.get(name.as_str()).cloned() {
+                let step = n(self.interp, values, nspan)?;
+                return self.start_native_resume(step, nspan);
+            }
+            let n = self
+                .interp
+                .natives
+                .get(name.as_str())
+                .cloned()
+                .ok_or_else(|| {
+                    self.interp
+                        .error(codes::UNDEFINED, format!("unknown `{name}`"), nspan)
+                })?;
+            return Ok(Control::Next(Ctrl::Done(Ctl::Val(n(
+                self.interp,
+                values,
+                nspan,
+            )?))));
+        }
+        if let Some(f) = env.get(name) {
+            return self.start_call_value(f, values, nspan);
+        }
+        Err(self.interp.error(
+            codes::UNDEFINED,
+            format!("undefined function `{name}`"),
+            nspan,
+        ))
+    }
+
+    /// Apply an already-evaluated callee value to already-evaluated arguments
+    /// (`Interp::call_value`): a `Closure` enters a machine frame, a `Native`
+    /// checks arity and runs, anything else is `E3001`.
+    fn start_call_value(&mut self, f: Value, values: Vec<Value>, span: Span) -> Result<Control> {
+        match &f {
+            Value::Closure(c) => {
+                let c = c.clone();
+                Ok(Control::Next(self.enter_call(c, values, span)?))
+            }
+            Value::Native(name) => {
+                let name = name.clone();
+                self.interp.check_native_arity(&name, values.len(), span)?;
+                if let Some(n) = self.interp.resumable_natives.get(name.as_str()).cloned() {
+                    let step = n(self.interp, values, span)?;
+                    return self.start_native_resume(step, span);
+                }
+                let n = self
+                    .interp
+                    .natives
+                    .get(name.as_str())
+                    .cloned()
+                    .ok_or_else(|| {
+                        self.interp
+                            .error(codes::UNDEFINED, format!("unknown `{name}`"), span)
+                    })?;
+                Ok(Control::Next(Ctrl::Done(Ctl::Val(n(
+                    self.interp,
+                    values,
+                    span,
+                )?))))
+            }
+            other => Err(self.interp.error(
+                codes::TYPE_MISMATCH,
+                format!("{} is not callable", other.type_name()),
+                span,
+            )),
+        }
+    }
+
+    /// Enter a user closure call as an explicit frame (`Interp::call`'s body
+    /// setup) and return the `Ctrl` that starts its body in this same machine
+    /// loop. Argument count, parameter binding, frame accounting, source
+    /// attribution, and per-frame nesting reset are all established here.
+    fn enter_call(&mut self, closure: Rc<Closure>, args: Vec<Value>, span: Span) -> Result<Ctrl> {
+        if args.len() != closure.params.len() {
+            return Err(self.interp.error(
+                codes::TYPE_MISMATCH,
+                format!(
+                    "`{}` expects {} argument(s), got {}",
+                    closure.name,
+                    closure.params.len(),
+                    args.len()
+                ),
+                span,
+            ));
+        }
+        let env = closure.env.child();
+        for ((p, mutable), v) in closure.params.iter().zip(args) {
+            env.define(p.clone(), v, *mutable);
+        }
+        self.push_frame(closure.clone(), env.clone(), span)?;
+        self.kont.push(Cont::FrameBoundary { call_span: span });
+        Ok(Ctrl::EnterBlock(closure.body.clone(), env, false))
+    }
+
+    /// Consume one [`NativeOutcome`] step from a resumable native
+    /// (`ITERATIVE_EVALUATOR_DESIGN.md` §13). A callback request becomes
+    /// machine work: a `Closure` callback enters a normal user frame (with
+    /// frame accounting), a `Native` callback runs inline with no frame —
+    /// exactly the recursive `call_value` asymmetry. The native's `resume`
+    /// token rides in [`Cont::NativeResume`].
+    fn start_native_resume(&mut self, step: NativeOutcome, span: Span) -> Result<Control> {
+        match step {
+            NativeOutcome::Done(v) => Ok(Control::Next(Ctrl::Done(Ctl::Val(v)))),
+            NativeOutcome::InvokeCallback { f, args, resume } => {
+                self.kont.push(Cont::NativeResume { resume, span });
+                self.start_call_value(f, args, span)
+            }
         }
     }
 
@@ -1239,9 +1527,16 @@ impl<'i> Machine<'i> {
     }
 
     /// Push a user frame, enforcing the 512/513 contract (`§17`).
-    #[allow(dead_code)]
+    ///
+    /// This owns the shared call-depth accounting exactly like
+    /// `Interp::call`: increment `interp.depth`, reject with `E4011` when it
+    /// would exceed `MAX_CALL_FRAMES`, and record the caller's restorable
+    /// state (source, per-frame expression-nesting budget) before adopting the
+    /// callee's source.
     fn push_frame(&mut self, closure: Rc<Closure>, env: Env, call_span: Span) -> Result<()> {
-        if self.frames.len() >= MAX_CALL_FRAMES {
+        self.interp.depth += 1;
+        if self.interp.depth > MAX_CALL_FRAMES {
+            self.interp.depth -= 1;
             return Err(self.interp.error(
                 codes::RECURSION,
                 "call depth limit exceeded",
@@ -1253,20 +1548,32 @@ impl<'i> Machine<'i> {
             .closure_sources
             .get(&(Rc::as_ptr(&closure) as usize))
             .copied();
+        let saved_source = self.interp.current_source;
+        if let Some(source) = frame_source {
+            self.interp.current_source = Some(source);
+        }
         self.frames.push(UserFrame {
             closure,
             env,
-            saved_source: self.interp.current_source,
+            saved_source,
             frame_source,
             call_span,
+            saved_expr_depth: std::mem::take(&mut self.expr_depth),
         });
         Ok(())
     }
 
-    /// Pop a user frame (idempotent at zero; no underflow).
-    #[allow(dead_code)]
+    /// Pop a user frame and restore the caller's source/nesting budget.
+    ///
+    /// Mirrors `Interp::call`'s restore step: `current_source` and `ast_depth`
+    /// return to their caller values whatever the callee's completion was.
+    /// Idempotent at zero; no underflow.
     fn pop_frame(&mut self) -> Option<UserFrame> {
-        self.frames.pop()
+        let frame = self.frames.pop()?;
+        self.interp.current_source = frame.saved_source;
+        self.expr_depth = frame.saved_expr_depth;
+        self.interp.depth -= 1;
+        Some(frame)
     }
 }
 
@@ -1474,18 +1781,11 @@ mod tests {
 
     #[test]
     fn unsupported_construct_fails_explicitly() {
-        // A call is R3C territory and remains unsupported. The machine must
-        // fail explicitly, never fall back to recursion. (Map construction
-        // became supported in B-1R3B.4.2 and range construction in B-1R3B.5.)
-        let e = Expr::Call(
-            Arc::new(Expr::Name("len".to_string(), Span::default())),
-            Arc::from([crate::ast::Arg {
-                name: None,
-                value: lit(1),
-            }]),
-            Vec::new(),
-            Span::default(),
-        );
+        // A lambda remains R3C.4 territory and is still unsupported. The
+        // machine must fail explicitly, never fall back to recursion.
+        // (Call became supported in R3C.1; map construction in B-1R3B.4.2 and
+        // range construction in B-1R3B.5.)
+        let e = Expr::Lambda(Vec::new(), Arc::new(lit(1)), Span::default());
         let err = run_expr(&e).err().unwrap();
         assert_eq!(err.code, codes::INTERNAL);
         assert!(err
@@ -1635,17 +1935,14 @@ mod tests {
     fn range_out_of_if_remains_unsupported() {
         // Range support is construction-only. `if 1..3 { }` requires the
         // truthiness/condition path, which is separately supported; this test
-        // pins that an `if` whose taken branch is a call still fails, proving
-        // no fallback leaked into R3B.5.
+        // pins that an `if` whose taken branch is a still-unsupported lambda
+        // fails, proving no fallback leaked into R3B.5. (The branch used to be
+        // a `len([1])` call, which became supported in R3C.1.)
         let e = Expr::If(
             Arc::new(Expr::Lit(Lit::Bool(true), Span::default())),
-            Arc::from([expr_stmt(Expr::Call(
-                Arc::new(Expr::Name("len".to_string(), Span::default())),
-                Arc::from([crate::ast::Arg {
-                    name: None,
-                    value: lit(1),
-                }]),
+            Arc::from([expr_stmt(Expr::Lambda(
                 Vec::new(),
+                Arc::new(lit(1)),
                 Span::default(),
             ))]),
             None,
@@ -2626,20 +2923,13 @@ mod tests {
 
     #[test]
     fn list_unsupported_element_fails_explicitly() {
-        // A call element is R3C work: the list must fail with the E4999
-        // sentinel, never fall back to recursion and never produce a partial
-        // list. The first element is supported, so this also proves the second
-        // element is genuinely scheduled and then fails.
-        let call = Expr::Call(
-            Arc::new(Expr::Name("len".to_string(), Span::default())),
-            Arc::from([crate::ast::Arg {
-                name: None,
-                value: list(vec![lit(1)]),
-            }]),
-            Vec::new(),
-            Span::default(),
-        );
-        let e = list(vec![lit(1), call]);
+        // A lambda element is still unsupported (R3C.4): the list must fail
+        // with the E4999 sentinel, never fall back to recursion and never
+        // produce a partial list. The first element is supported, so this also
+        // proves the second element is genuinely scheduled and then fails.
+        // (The element used to be a `len([1])` call, supported since R3C.1.)
+        let lambda = Expr::Lambda(Vec::new(), Arc::new(lit(1)), Span::default());
+        let e = list(vec![lit(1), lambda]);
         let err = run_expr(&e).err().unwrap();
         assert_eq!(err.code, codes::INTERNAL);
         assert!(err
@@ -2965,18 +3255,12 @@ mod tests {
 
     #[test]
     fn map_unsupported_key_fails_explicitly() {
-        // A call key is R3C work: the map must fail with the E4999 sentinel,
-        // never fall back to recursion and never produce a partial map.
-        let call = Expr::Call(
-            Arc::new(Expr::Name("len".to_string(), Span::default())),
-            Arc::from([crate::ast::Arg {
-                name: None,
-                value: list(vec![lit(1)]),
-            }]),
-            Vec::new(),
-            Span::default(),
-        );
-        let e = map(vec![(call, lit(1))]);
+        // A lambda key is still unsupported (R3C.4): the map must fail with
+        // the E4999 sentinel, never fall back to recursion and never produce a
+        // partial map. (The key used to be a `len([1])` call, supported since
+        // R3C.1.)
+        let lambda = Expr::Lambda(Vec::new(), Arc::new(lit(1)), Span::default());
+        let e = map(vec![(lambda, lit(1))]);
         let err = run_expr(&e).err().unwrap();
         assert_eq!(err.code, codes::INTERNAL);
         assert!(err
@@ -3252,5 +3536,204 @@ mod tests {
             Ctl::Val(Value::Str(_)) => {}
             _ => panic!("deep nested f-string through a frame must evaluate"),
         }
+    }
+
+    // ----- B-1R3C.1 calls -----------------------------------------------
+
+    fn call(name: &str, args: Vec<Expr>) -> Expr {
+        Expr::Call(
+            Arc::new(Expr::Name(name.to_string(), Span::default())),
+            Arc::from(
+                args.into_iter()
+                    .map(|value| Arg { name: None, value })
+                    .collect::<Vec<_>>(),
+            ),
+            Vec::new(),
+            Span::default(),
+        )
+    }
+
+    fn user_call(expr: &Expr, program: &str) -> Result<Ctl> {
+        // Compile a real module so declarations, overloads, and sources are
+        // populated exactly like production, then evaluate `expr` through the
+        // machine.
+        let module = crate::parse::parse(program).expect("parse program");
+        let mut interp = Interp::new();
+        for item in &module.items {
+            interp.declare_item(item);
+        }
+        let globals = interp.globals.clone();
+        eval_expr(&mut interp, expr, &globals)
+    }
+
+    #[test]
+    fn call_user_function_binds_arguments() {
+        let ctl = user_call(
+            &call("add", vec![lit(20), lit(22)]),
+            "fn add(a, b) { a + b }\n",
+        )
+        .expect("call evaluates");
+        assert!(matches!(ctl, Ctl::Val(Value::Int(42))));
+    }
+
+    #[test]
+    fn call_native_checks_shared_arity() {
+        let mut interp = Interp::new();
+        let globals = interp.globals.clone();
+        let err = match eval_expr(&mut interp, &call("len", vec![]), &globals) {
+            Err(d) => d,
+            Ok(_) => panic!("arity violation must be rejected"),
+        };
+        assert_eq!(err.code, codes::TYPE_MISMATCH);
+        assert!(err.message.contains("at least 1 argument"));
+    }
+
+    #[test]
+    fn call_undefined_name_is_e2003() {
+        let mut interp = Interp::new();
+        let globals = interp.globals.clone();
+        let err = match eval_expr(&mut interp, &call("missing", vec![lit(1)]), &globals) {
+            Err(d) => d,
+            Ok(_) => panic!("undefined function must be rejected"),
+        };
+        assert_eq!(err.code, codes::UNDEFINED);
+        assert!(err.message.contains("undefined function `missing`"));
+    }
+
+    #[test]
+    fn call_argument_order_is_source_order() {
+        // Two arguments, each an f-string that observes order through a
+        // failure: the first argument's error must win.
+        let args = vec![
+            Expr::Binary(
+                BinOp::Div,
+                Arc::new(lit(1)),
+                Arc::new(lit(0)),
+                Span::default(),
+            ),
+            call("len", vec![]),
+        ];
+        let mut interp = Interp::new();
+        let globals = interp.globals.clone();
+        let e = Expr::Call(
+            Arc::new(Expr::Name("print".to_string(), Span::default())),
+            Arc::from(
+                args.into_iter()
+                    .map(|value| Arg { name: None, value })
+                    .collect::<Vec<_>>(),
+            ),
+            Vec::new(),
+            Span::default(),
+        );
+        let err = match eval_expr(&mut interp, &e, &globals) {
+            Err(d) => d,
+            Ok(_) => panic!("first argument must fail before the second runs"),
+        };
+        assert_eq!(err.code, codes::DIV_ZERO);
+    }
+
+    #[test]
+    fn call_frame_depth_boundary_is_512_513() {
+        // From a top-level expression there is no `main` frame, so the first
+        // user frame is call 1 and a chain of 512 calls fills the limit; 513
+        // exceed it. (The production module path, where `main` occupies frame
+        // 1, is pinned by the R3C.1 oracle program cases at 511/512.)
+        let program = "fn f(n) { if n { f(n - 1) } else { 0 } }\n";
+        let module = crate::parse::parse(program).expect("parse");
+        for (n, expected_e4011) in [(510i64, false), (511, false), (512, true)] {
+            let mut interp = Interp::new();
+            for item in &module.items {
+                interp.declare_item(item);
+            }
+            let globals = interp.globals.clone();
+            match eval_expr(&mut interp, &call("f", vec![lit(n)]), &globals) {
+                Ok(_) if !expected_e4011 => {}
+                Ok(_) => panic!("n={n} must exceed the call-depth limit"),
+                Err(d) if expected_e4011 => assert_eq!(d.code, codes::RECURSION, "n={n}"),
+                Err(d) => panic!("n={n} unexpectedly failed: {d:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn call_recovers_depth_after_completion() {
+        // The shared call-depth accounting must return to its entry value, so
+        // a second machine at the same base can still reach the same depth.
+        let program = "fn f(n) { if n { f(n - 1) } else { 0 } }\n";
+        let module = crate::parse::parse(program).expect("parse");
+        let mut interp = Interp::new();
+        for item in &module.items {
+            interp.declare_item(item);
+        }
+        let globals = interp.globals.clone();
+        for _ in 0..3 {
+            assert!(eval_expr(&mut interp, &call("f", vec![lit(509)]), &globals).is_ok());
+        }
+        assert_eq!(interp.depth, 0, "depth did not recover between machines");
+    }
+
+    #[test]
+    fn call_throw_crosses_frame_as_e4099_then_e4026() {
+        let program = "fn f() { throw 5 }\n";
+        let module = crate::parse::parse(program).expect("parse");
+        let mut interp = Interp::new();
+        for item in &module.items {
+            interp.declare_item(item);
+        }
+        let globals = interp.globals.clone();
+        let err = match eval_expr(&mut interp, &call("f", vec![]), &globals) {
+            Err(d) => d,
+            Ok(_) => panic!("throw must cross the frame boundary as an internal signal"),
+        };
+        assert_eq!(err.code, codes::THROWN);
+        assert!(matches!(interp.pending_throw.as_ref(), Some(Value::Int(5))));
+        let user = interp.uncaught_diag(err);
+        assert_eq!(user.code, codes::FOREIGN);
+        assert!(user.message.contains("uncaught value: 5"));
+    }
+
+    #[test]
+    fn call_return_becomes_value() {
+        let ctl =
+            user_call(&call("f", vec![]), "fn f() { return 7\n 8 }\n").expect("call evaluates");
+        assert!(matches!(ctl, Ctl::Val(Value::Int(7))));
+    }
+
+    #[test]
+    fn callback_protocol_drives_map_without_recursive_fallback() {
+        // `map` with a named-function callback: the machine must drive the
+        // callback as machine work. A recursive fallback would still produce
+        // the right value, so the observable we additionally pin is that the
+        // shared depth returns to zero and the result is correct.
+        let program = "fn d(x) { x * 2 }\n";
+        let module = crate::parse::parse(program).expect("parse");
+        let mut interp = Interp::new();
+        for item in &module.items {
+            interp.declare_item(item);
+        }
+        let globals = interp.globals.clone();
+        let e = call(
+            "map",
+            vec![
+                list(vec![lit(1), lit(2), lit(3)]),
+                Expr::Name("d".to_string(), Span::default()),
+            ],
+        );
+        let ctl = eval_expr(&mut interp, &e, &globals).unwrap();
+        match &ctl {
+            Ctl::Val(Value::List(l)) => {
+                let got: Vec<i64> = l
+                    .borrow()
+                    .iter()
+                    .map(|v| match v {
+                        Value::Int(i) => *i,
+                        _ => panic!("unexpected list element"),
+                    })
+                    .collect();
+                assert_eq!(got, vec![2, 4, 6]);
+            }
+            _ => panic!("expected a list from map"),
+        }
+        assert_eq!(interp.depth, 0);
     }
 }
