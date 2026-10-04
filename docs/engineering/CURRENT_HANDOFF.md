@@ -25,9 +25,11 @@ explicit-continuation (iterative) evaluator over the existing AST
 - B-1R3B.2 (eager binary operators): **COMPLETE AND PUSHED** at `1a12b84`.
 - B-1R3B.3 (short-circuit `and`/`or`): **COMPLETE AND PUSHED** at `2f34b9c` via
   the intermediate commits `58a1b16`/`31e313a`/`2f34b9c`.
-- B-1R3B.4.1 (list/tuple construction): **COMPLETE LOCALLY**, unpushed (local
-  commits on top of `origin/rewrite/v3-rust` = `2f34b9c`).
-- B-1R3B.4.2…R3G: NOT STARTED.
+- B-1R3B.4.1 (list/tuple construction): **COMPLETE AND PUSHED** at `efc66bd`
+  (remote-closed).
+- B-1R3B.4.2 (map construction): **COMPLETE LOCALLY**, unpushed (local commits
+  on top of `origin/rewrite/v3-rust` = `efc66bd`).
+- B-1R3B.4.3/R3B.5…R3G: NOT STARTED.
 
 See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
 
@@ -39,12 +41,46 @@ See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
   production path. It currently supports literals, name lookup, expression
   statements, blocks, `let` shadowing, `if`/`else`, unary `-`/`not`/`~`, the
   eager binary operators (`+ - * / % ^ == != < <= > >= & | << >>`),
-  short-circuit `and`/`or` (the skipped operand is never evaluated), and
-  list/tuple construction (left-to-right, exactly once per element); every
-  other construct returns the deterministic `E4999` sentinel and never falls
-  back to recursion.
+  short-circuit `and`/`or` (the skipped operand is never evaluated), list/tuple
+  construction (left-to-right, exactly once per element), and map construction
+  (per entry key then value in source order, exactly once); every other
+  construct returns the deterministic `E4999` sentinel and never falls back to
+  recursion.
 
-## Completed in B-1R3B.4.1 (local)
+## Completed in B-1R3B.4.2 (local)
+
+- `src/run/iterative.rs` — added `Cont::MapKeyNext { entries, index, out, env }`
+  and `Cont::MapValueNext { key, entries, index, out, env }`, `Machine::start_map`,
+  and the `Expr::Map` arm in `start_expr`. Entries run in source order; for each
+  entry the key is evaluated and validated with `MapKey::from_value` **before**
+  its value is scheduled, exactly like `Interp::eval_inner`'s `Expr::Map` arm
+  (`src/run/mod.rs:1464`). An invalid runtime key is `E3001` with the exact
+  recursive message at the key expression's span; the value never runs. A
+  control signal or diagnostic from a key or value aborts the map and propagates
+  unchanged, so later entries never run and no partial map is observable.
+  Duplicate keys keep the last value (`BTreeMap::insert`), matching recursion.
+  Empty `{:}` completes immediately. The accumulated `BTreeMap` lives in the
+  continuations; no `Map`-sized or nested Rust recursion. No recursive AST
+  evaluation and no fallback.
+- Oracle: new `tests/oracle/r3b42_golden.tsv` (LF; 59 supported cases) and
+  differential tests `r3b42_map_supported_subset_agrees`,
+  `iterative_map_unsupported_fails_explicitly`,
+  `r3b42_iterative_golden_matches`. Boundary movements: `map_literal` removed
+  from the R3A unsupported set (now supported); `or_required_map`/`and_lhs_map`/
+  `or_lhs_map` moved from the R3B.3 unsupported set into the supported set;
+  `map_element` moved from the R3B.4.1 unsupported set into the supported set
+  (new rows in `r3b3_golden.tsv`/`r3b4_golden.tsv`; `r3a_golden.tsv` −1 row).
+  The main `golden.tsv` is byte-unchanged.
+- Verified: key-before-value and entry-by-entry order; exactly-once key/value;
+  runtime invalid-key `E3001` at the key span with value suppression;
+  first-error-wins; key/value control-signal abort with later-entry and
+  later-unsupported skipping; last-wins duplicate keys; nested maps,
+  Map-in-List, List-in-Map; `{:}`; unsupported keys/values → `E4999` with no
+  fallback; AST-depth `E1015` below/above limit; deep nesting through a real
+  frame boundary and mixed Map/List nesting host-stack safe; and a deliberate
+  key/value-order mutation detected by the map oracle tests and reverted.
+
+## Completed in B-1R3B.4.1 (pushed at `efc66bd`)
 
 - `src/run/iterative.rs` — added `Cont::ListNext { items, index, out, env }`,
   `Machine::start_list`, the `Expr::List`/`Expr::Tuple` arm in `start_expr`, and
@@ -178,8 +214,8 @@ human review of the current one.
 - R3B.1 unary operators — **COMPLETE AND PUSHED**
 - R3B.2 binary operators — **COMPLETE AND PUSHED**
 - R3B.3 short-circuit / evaluation order — **COMPLETE AND PUSHED**
-- R3B.4.1 list / tuple construction — **COMPLETE LOCALLY**
-- R3B.4.2 map construction — NOT STARTED
+- R3B.4.1 list / tuple construction — **COMPLETE AND PUSHED**
+- R3B.4.2 map construction — **COMPLETE LOCALLY**
 - R3B.4.3 (reserved: map-key admissibility / nesting if the code shows a
   distinct boundary)
 - R3B.5 range
@@ -192,12 +228,12 @@ microphase.
 
 ## Exact next action
 
-1. Human review of the B-1R3B.4.1 list/tuple-construction extension and its
-   oracle coverage.
-2. If accepted, push the B-1R3B.4.1 local commit stack.
-3. Then begin **R3B.4.2 (map construction)** on `src/run/iterative.rs`,
-   extending the oracle and keeping `tests/oracle/golden.tsv` byte-unchanged,
-   with a checkpoint at each microphase.
+1. Human review of the B-1R3B.4.2 map-construction extension and its oracle
+   coverage.
+2. If accepted, push the B-1R3B.4.2 local commit stack.
+3. Then begin the next ordered microphase on `src/run/iterative.rs` (R3B.5
+   range), extending the oracle and keeping `tests/oracle/golden.tsv`
+   byte-unchanged, with a checkpoint at each microphase.
 
 ## Stop conditions
 
