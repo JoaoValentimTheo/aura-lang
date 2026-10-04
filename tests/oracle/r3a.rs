@@ -110,6 +110,9 @@ pub fn supported_cases() -> Vec<Case> {
         // The original R3A method sentinel: builtin method calls are supported
         // by B-1R3C.2. Key preserved.
         value("method_call", "[1, 2].len()\n"),
+        // The original R3A lambda sentinel: lambdas are supported by
+        // B-1R3C.4. Key preserved.
+        value("lambda", "() -> 1\n"),
         // The original R3A method sentinel: builtin method calls are supported
         // by B-1R3C.2. Key preserved.
 
@@ -159,10 +162,8 @@ pub fn unsupported_cases() -> Vec<Case> {
         // so the E4999 sentinel occurs before the field read; the reachable
         // field surface (builtin zero-argument methods) is asserted by
         // `r3b::field_supported_cases`.
-        value("lambda", "() -> 1\n"),
-        // `pipe` was migrated to `supported_cases` in B-1R3C.1: `[1, 2] |> len`
-        // desugars to `len([1, 2])` at parse time and is asserted by
-        // `r3c1::supported_cases` as `pipe_native_call`.
+        // `lambda` was migrated to `supported_cases` in B-1R3C.4.
+        // `pipe` was migrated to `supported_cases` in B-1R3C.1/R3C.4.
         value("match", "match 1 { 1 -> { 2 } }\n"),
         value("list_comp", "[x for x in [1, 2]]\n"),
         value("while_stmt", "{ while false { 1 } }\n"),

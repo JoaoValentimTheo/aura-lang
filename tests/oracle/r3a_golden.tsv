@@ -32,6 +32,7 @@ r3a-value/call		ok	0		-	0	0	0	0	int	2
 r3a-value/pipe		ok	0		-	0	0	0	0	int	2
 r3a-value/field_access		ok	0		-	0	0	0	0	int	1
 r3a-value/method_call		ok	0		-	0	0	0	0	int	2
+r3a-value/lambda		ok	0		-	0	0	0	0	fn	<fn>
 r3a-value/const_literal		ok	0		-	0	0	0	0	int	5
 r3a-value/const_from_const		ok	0		-	0	0	0	0	int	5
 r3a-program/main_empty		ok	0		-	0	0	0	0	-	-
@@ -39,7 +40,6 @@ r3a-program/main_if_false		ok	0		-	0	0	0	0	-	-
 r3a-program/main_return		ok	0		-	0	0	0	0	-	-
 r3a-program/main_if_return		ok	0		-	0	0	0	0	-	-
 r3a-program/main_nested_block		ok	0		-	0	0	0	0	-	-
-r3a-value/lambda		runtime	4999	construct is not supported by the iterative engine (B-1R3A)	<r3a>	0	1	1	1	-	-
 r3a-value/match		runtime	4999	construct is not supported by the iterative engine (B-1R3A)	<r3a>	0	5	1	1	-	-
 r3a-value/list_comp		runtime	4999	construct is not supported by the iterative engine (B-1R3A)	<r3a>	0	1	1	1	-	-
 r3a-value/while_stmt		runtime	4999	construct is not supported by the iterative engine (B-1R3A)	<r3a>	2	7	1	3	-	-

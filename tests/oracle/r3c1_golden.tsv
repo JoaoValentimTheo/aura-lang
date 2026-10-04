@@ -105,6 +105,30 @@ r3c1-value/method_struct_unknown		compile	2003	struct `P` has no method `nope`	<
 r3c1-value/method_arg_count		compile	3001	no overload of `P.add` accepts (); 1 candidate(s) declared	<r3c1>	72	73	3	11	-	-
 r3c1-value/method_arg_order	310a320a	runtime	3001	expected a number, found none	<r3c1>	50	51	2	31	-	-
 r3c1-value/method_arity_mismatch		compile	3001	`replace` expects at least 2 argument(s), got 0	<r3c1>	3	4	1	4	-	-
+r3c1-value/lambda_expression_body		ok	0		-	0	0	0	0	int	1
+r3c1-value/lambda_called_direct		ok	0		-	0	0	0	0	int	42
+r3c1-value/lambda_block_body		ok	0		-	0	0	0	0	int	4
+r3c1-value/lambda_return_inside		ok	0		-	0	0	0	0	int	9
+r3c1-value/lambda_param		ok	0		-	0	0	0	0	int	42
+r3c1-value/lambda_two_params		ok	0		-	0	0	0	0	int	42
+r3c1-value/lambda_capture		ok	0		-	0	0	0	0	int	6
+r3c1-value/lambda_capture_after		ok	0		-	0	0	0	0	int	6
+r3c1-value/lambda_as_display		ok	0		-	0	0	0	0	fn	<fn>
+r3c1-value/lambda_call_as_argument		ok	0		-	0	0	0	0	int	5
+r3c1-value/lambda_map		ok	0		-	0	0	0	0	list	[2, 4, 6]
+r3c1-value/lambda_filter		ok	0		-	0	0	0	0	list	[2, 4]
+r3c1-value/lambda_reduce		ok	0		-	0	0	0	0	int	6
+r3c1-value/lambda_throw		compile	1006	expected an expression, found `throw`	<r3c1>	8	13	1	9	-	-
+r3c1-value/lambda_arg_order	6c0a720a	ok	0		-	0	0	0	0	none	none
+r3c1-value/pipe_native		ok	0		-	0	0	0	0	int	3
+r3c1-value/pipe_named_fn		ok	0		-	0	0	0	0	int	2
+r3c1-value/pipe_lambda		ok	0		-	0	0	0	0	int	3
+r3c1-value/pipe_lambda_map		ok	0		-	0	0	0	0	int	2
+r3c1-value/pipe_chained		ok	0		-	0	0	0	0	int	4
+r3c1-value/pipe_left_once	700a	ok	0		-	0	0	0	0	int	0
+r3c1-value/pipe_left_error_first		runtime	4007	division by zero	<r3c1>	2	3	1	3	-	-
+r3c1-value/pipe_right_error		runtime	4007	division by zero	<r3c1>	15	16	1	16	-	-
+r3c1-value/pipe_non_callable		runtime	3001	int is not callable	<r3c1>	2	4	1	3	-	-
 r3c1-value/call_in_unary		ok	0		-	0	0	0	0	int	-2
 r3c1-value/call_in_binary		ok	0		-	0	0	0	0	int	3
 r3c1-value/call_in_if		ok	0		-	0	0	0	0	string	"y"

@@ -226,6 +226,34 @@ pub fn supported_cases() -> Vec<Case> {
         value("method_arg_count", "struct P { x: int }\nimpl P { fn add(self, n) { self.x + n } }\nP { x: 1 }.add()\n"),
         value("method_arg_order", "struct P { x: int }\nimpl P { fn f(self, a, b) { a - b } }\nP { x: 0 }.f(print(\'1\'), print(\'2\'))\n"),
         value("method_arity_mismatch", "\'a\'.replace()\n"),
+        // ----- R3C.4 lambdas and pipes ---------------------------------------
+        value("lambda_expression_body", "(() -> 1)()\n"),
+        value("lambda_called_direct", "(() -> 21 * 2)()\n"),
+        value("lambda_block_body", "(() -> { let x = 3\n x + 1 })()\n"),
+        value("lambda_return_inside", "(() -> { return 9\n 0 })()\n"),
+        value("lambda_param", "((x) -> x + 1)(41)\n"),
+        value("lambda_two_params", "((a, b) -> a * b)(6, 7)\n"),
+        value("lambda_capture", "{ let n = 5\n ((x) -> x + n)(1) }\n"),
+        value("lambda_capture_after", "{ let n = 5\n let f = (x) -> x + n\n f(1) }\n"),
+        value("lambda_as_display", "(() -> 1)\n"),
+        value("lambda_call_as_argument", "fn apply(f, x) { f(x) }\napply((y) -> y + 1, 4)\n"),
+        value("lambda_map", "map([1, 2, 3], (x) -> x * 2)\n"),
+        value("lambda_filter", "filter([1, 2, 3, 4], (x) -> x % 2 == 0)\n"),
+        value("lambda_reduce", "reduce([1, 2, 3], (a, b) -> a + b, 0)\n"),
+        value("lambda_throw", "((() -> throw 3))()\n"),
+        value(
+            "lambda_arg_order",
+            "((a, b) -> a)(print(\'l\'), print(\'r\'))\n",
+        ),
+        value("pipe_native", "[3, 1, 2] |> len\n"),
+        value("pipe_named_fn", "fn d(xs) { len(xs) }\n[1, 2] |> d\n"),
+        value("pipe_lambda", "[1, 2, 3] |> ((xs) -> len(xs))\n"),
+        value("pipe_lambda_map", "[1, 2] |> ((xs) -> len(xs))\n"),
+        value("pipe_chained", "[1, 2, 3] |> len |> ((n) -> n + 1)\n"),
+        value("pipe_left_once", "fn d(x) { 0 }\nprint(\'p\') |> d\n"),
+        value("pipe_left_error_first", "1 / 0 |> ((x) -> x)\n"),
+        value("pipe_right_error", "1 |> ((x) -> x / 0)\n"),
+        value("pipe_non_callable", "1 |> 2\n"),
         // ----- composition with R3B constructs ---------------------------
         value("call_in_unary", "-(abs(-2))\n"),
         value("call_in_binary", "1 + len([9, 9])\n"),
@@ -311,22 +339,19 @@ pub fn supported_cases() -> Vec<Case> {
 #[must_use]
 pub fn unsupported_cases() -> Vec<Case> {
     vec![
-        // A lambda argument: the lambda itself is R3C.4 work.
-        value("lambda_argument", "fn f(x) { 0 }\nf(() -> 1)\n"),
-        // A comprehension argument.
+        // A comprehension argument (R3E.1) remains unsupported; lambdas
+        // (R3C.4) and constructors (R3C.3) are supported now, so their former
+        // probes moved to the supported set.
         value("listcomp_argument", "fn f(x) { 0 }\nf([x for x in [1]])\n"),
-        // R3C.3 made construct receivers and arguments supported, so the
-        // former `construct_argument` sentinel moved to the supported set
-        // (see `construct_used_as_call_argument`).
-        // A lambda callee.
-        value("lambda_callee", "(() -> 1)()\n"),
-        // R3C.3 made construct receivers and instance methods supported, so
-        // the former `construct_method_receiver` sentinel moved to the
-        // supported set above as `method_instance_call`.
+        // A `match` argument (R3E.2) remains unsupported.
+        value(
+            "match_argument",
+            "fn f(x) { 0 }\nf(match 1 { 1 -> { 2 } })\n",
+        ),
         // Same shapes inside a real user frame.
         program(
-            "main_lambda_argument",
-            "fn main() { let x = f(() -> 1) }\nfn f(x) { 0 }\n",
+            "main_listcomp_argument",
+            "fn main() { let x = f([y for y in [1]]) }\nfn f(x) { 0 }\n",
         ),
     ]
 }
