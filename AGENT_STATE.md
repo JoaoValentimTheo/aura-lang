@@ -34,16 +34,19 @@ runtime means adding a version, never replacing one.
 
 ## Current Track
 
-B-1 — ENGINE-STACK-INDEPENDENT CALL ENGINE. B-1 is OPEN (WASM implementation
-nonconformance). The R3A baseline through B-1R3B.7 are pushed and remote-closed
-at `52124a0`; B-1R3B.8 (completion audit + dependency graph) is COMPLETE as an
-audit (no implementation). Production still runs the recursive evaluator.
+B-1 — ENGINE-STACK-INDEPENDENT CALL ENGINE. B-1 is OPEN. The R3A baseline
+through B-1R3B.8 are pushed and remote-closed (`52124a0` for R3B.7, `9cb5e28`
+for the R3B.8 checkpoint). The full B-1R3C–B-1R3F evaluator migration is
+**implemented and validated locally but NOT pushed** (see the local commit
+range and the super-transaction report). Production still runs the recursive
+evaluator until the explicitly gated cutover.
 
 B-1R phase state:
 
-- **B-1:** OPEN — full iterative evaluator not implemented. Released WASM
-  runtime still traps on the engine stack below the 512-frame language limit;
-  `v0.2.1` is immutable and contains the defect. Native conforms.
+- **B-1:** OPEN — evaluator migration complete locally; production cutover and
+  final push gate pending. Released WASM runtime still traps on the engine
+  stack below the 512-frame language limit; `v0.2.1` is immutable and contains
+  the defect. Native conforms.
 - **B-1R1:** DESIGN COMPLETE (`docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md`).
 - **B-1R2:** DIFFERENTIAL ORACLE COMPLETE AND MUTATION-VALIDATED
   (`docs/engineering/B1R2_DIFFERENTIAL_ORACLE.md`; 104-case corpus; isolated
@@ -54,65 +57,56 @@ B-1R phase state:
 - **B-1R3A:** COMPLETE AND REMOTELY CLOSED at `c9ade0b`. `src/run/iterative.rs`
   is a real explicit-continuation machine; the oracle has an identified R3A
   subset; all deliberate mutations detected and reverted.
-- **B-1R3B.1:** COMPLETE AND PUSHED at `1a12b84` (unary `-`/`not`/`~`).
-- **B-1R3B.2:** COMPLETE AND PUSHED at `1a12b84` (eager binary operators).
-- **B-1R3B.3:** COMPLETE AND PUSHED at `2f34b9c` (short-circuit `and`/`or`).
-- **B-1R3B.4.1:** COMPLETE AND PUSHED at `efc66bd` (list/tuple construction;
-  differential-oracle equivalent; tuple is list sugar per `LANGUAGE_SPEC.md`
-  §21).
-- **B-1R3B.4.2:** COMPLETE AND REMOTELY CLOSED at `5e70677` (map construction;
-  differential-oracle equivalent; key-before-value source order, exactly-once,
-  last-wins duplicates, runtime invalid-key `E3001` at the key span, control
-  propagation, diagnostics/spans, and host-stack safety verified; program-mode
-  `main_map_element` restored; `r3b42_golden.tsv` LF-pinned; 57 supported cases).
-- **B-1R3B.5:** COMPLETE AND REMOTELY CLOSED at `cf17689` (range construction;
-  differential-oracle equivalent).
-- **B-1R3B.6:** COMPLETE AND REMOTELY CLOSED at `cf17689` (index / field
-  reads; differential-oracle equivalent).
-- **B-1R3B.7:** COMPLETE AND REMOTELY CLOSED at `52124a0` (f-strings;
-  differential-oracle equivalent; literal/interpolation parts left to right,
-  exactly once each, `v.display()` without a spec or `Interp::format_value` with
-  one, raw (undecoded) literal text, `{{`/`}}` escapes, the stringification
-  matrix (none/bool/int/float/string/list/tuple-sugar/map/range/`<fn>`), the
-  format mini-language with its `E3001` type and `E4013` precision/width bounds,
-  Unicode, one-level nested f-strings, control-signal and diagnostic abort with
-  no partial string, `and`/`or` skipping of a whole f-string, composition with
-  List/Map/Range/Index/Field/block/let/if, program-mode frame boundary, and
-  host-stack/AST-depth/`expr_depth` safety verified). Adversarial push gate
-  passed; a deliberate continuation-scheduling mutation was detected and
-  reverted byte-exactly.
-- **B-1R3B.8:** COMPLETE (audit only; no implementation) —
-  `docs/engineering/B1R3B8_COMPLETION_AUDIT.md` mechanically reconstructs the
-  remaining surface (8 Expr + 6 Stmt), the dependency DAG, the R3C boundary
-  (`Call`, `Method`, `Construct`, `Lambda`, `Pipe`), and the
-  deferred-strengthening ledger. R3C is **NOT STARTED**.
-- **B-1R3C…R3G:** NOT STARTED.
+- **B-1R3B.1–B-1R3B.7:** COMPLETE AND REMOTELY CLOSED (R3B.1/B.2 at `1a12b84`,
+  B.3 at `2f34b9c`, B.4.1 at `efc66bd`, B.4.2 at `5e70677`, B.5/B.6 at
+  `cf17689`, B.7 at `52124a0`).
+- **B-1R3B.8:** COMPLETE AND REMOTELY CLOSED at `9cb5e28` (completion audit +
+  dependency graph; `docs/engineering/B1R3B8_COMPLETION_AUDIT.md`).
+- **B-1R3C.1 (Call):** COMPLETE LOCALLY — `61180e7`/`2064022`. User and native
+  calls, argument source order and exactly-once, overloads/named args, the
+  512-frame accounting, resumable `map`/`filter`/`reduce` callback protocol
+  (machine work; no nested recursion), side-effect-observable differentials.
+- **B-1R3C.2/C.3 (Method, Construct):** COMPLETE LOCALLY — `ecfd522`/`85e64fc`.
+  `Value::Instance`/`Variant`, instance field reads, builtin/instance methods,
+  receiver-before-arguments order.
+- **B-1R3C.4 (Lambda, Pipe):** COMPLETE LOCALLY — `cf7c53f`/`9f415cd`.
+- **B-1R3D.1 (Assign, LetPattern):** COMPLETE LOCALLY — `00f126c`/`fd53da7`.
+  Includes the documented compound-target double evaluation.
+- **B-1R3D.2 (While, Loop):** COMPLETE LOCALLY — `07caba0`/`81a745f`.
+- **B-1R3D.4 (For):** COMPLETE LOCALLY — `e983a0d`/`32def41`/`95c90c0`.
+- **B-1R3E.1 (ListComp, MapComp):** COMPLETE LOCALLY — `675ac76`/`f750c53`.
+- **B-1R3E.2 (Match):** COMPLETE LOCALLY — `bab56bc`/`f982c53`.
+- **B-1R3F.1 (Try):** COMPLETE LOCALLY — `a58c84f`/`71d0780`. Fatal-vs-catch,
+  finally override, cross-frame `THROWN`/`pending_throw`, source attribution.
+- **B-1R3F.1 unsupported=zero:** all 21 `Expr` + 12 `Stmt` variants handled;
+  both wildcard fall-throughs removed. Whole-corpus engine agreement required
+  (`tests/evaluator_oracle.rs::engines_agree`).
+- **B-1R3G.1 (callback protocol):** COMPLETE LOCALLY (folded into B-1R3C.1).
+- **B-1R4–B-1R7:** IN PROGRESS/PENDING — stack/resource campaign committed
+  (`tests/b1_stack_safety.rs`); full validation, adversarial review, cutover.
+- **B-1R8:** NOT STARTED — remove the recursive engine and the oracle switch
+  only after cutover validation and a human release decision.
 
 ## Production vs experimental engine
 
-- Production / default: **recursive** evaluator, unchanged and authoritative.
+- Production / default: **recursive** evaluator, unchanged and authoritative
+  until the explicit cutover.
 - Experimental: iterative evaluator, compiled only under the non-default
-  `evaluator-oracle` feature, not reachable from CLI/REPL/Playground/library
-  production paths. Supported subset so far: literals, name lookup, expression
-  statements, blocks, `let` shadowing, `if`/`else`, unary `-`/`not`/`~`, the
-  eager binary operators (`+ - * / % ^ == != < <= > >= & | << >>`),
-  short-circuit `and`/`or` (the skipped operand is never evaluated), list/tuple
-  construction (left-to-right, exactly once per element), map construction
-  (per entry key then value in source order, exactly once; last-wins duplicates;
-  runtime invalid keys are `E3001` at the key span), range construction
-  (`a..b`; start then end, each exactly once; both evaluated before either is
-  validated, start-first; non-int bounds are `E3001` at the range span; a valid
-  pair is the same `RangeVal { start, end }` `range(a, b)` builds), index /
-  field reads (`base[index]`: target then index, each exactly once, delegated to
-  `Interp::index_get`; `recv.name`: receiver once, then struct-field or
-  zero-argument builtin method resolution mirroring `eval_inner`'s `Expr::Field`
-  arm), and f-strings (`f"..."`: literal/interpolation parts left to right,
-  exactly once each; display or `format_value` stringification); everything
-  else (calls, comprehensions, struct construction, …) returns `E4999` and never
-  falls back to recursion. Mechanically derived remaining unsupported surface:
-  expression `Call`, `Method`, `ListComp`, `MapComp`, `Construct`, `Lambda`,
-  `Pipe`, `Match`; statement `LetPattern`, `Assign`, `While`, `Loop`, `For`,
-  `Try`.
+  `evaluator-oracle` feature. It now handles **every** `Expr` (21) and `Stmt`
+  (12) variant with no recursive fallback; the unsupported-sentinel surface is
+  empty and the whole corpus is required to agree between engines
+  (`tests/evaluator_oracle.rs::engines_agree`). It supports literals, names,
+  blocks, `let`/shadowing, `let` patterns, assignment (simple/compound,
+  name/index/field targets), `if`/`while`/`loop`/`for` (lazy ranges),
+  `break`/`continue` boundaries, `return`/`throw`, unary/binary/short-circuit
+  operators, list/tuple/map/range construction, index/field reads, f-strings,
+  user/native/closure/method calls (including the resumable
+  `map`/`filter`/`reduce` callback protocol), struct/enum construction,
+  lambdas, pipes, list/map comprehensions, `match`, and `try`/`catch`/`finally`
+  (fatal diagnostics propagate but always run `finally`; only explicit
+  `throw` is caught; cross-frame throws recover the value via
+  `pending_throw`). `tests/b1_stack_safety.rs` pins host-stack independence for
+  deep call frames, long loops, and deep expressions.
 
 ## Known blockers
 
@@ -165,12 +159,14 @@ Git + working tree + these documents; chat history is not authority.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: R3B is complete and
-remotely closed; R3B.8 (completion audit) is complete (audit only, no
-implementation). Next: a fresh push gate over the local range, then exact
-remote closure of the B-1R3B.8 documentation checkpoint (push requires separate
-human authorization). Do not start R3C.1 (`Call`) before that remote closure
-and its own explicit authorization.
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: the complete B-1R3C–B-1R3F
+evaluator migration is implemented, oracle-covered, and validated locally on
+top of the remotely closed `9cb5e28` checkpoint, but is **not pushed**.
+Remaining before B-1 can close: finish the adversarial review, run the final
+validation matrix, and — only if the cutover pre-gate passes — perform the
+local production cutover, then present the commit range for one final
+human-authorized push gate. Do not push implementation commits and do not start
+unrelated Aura 0.3 work.
 
 ## Writer
 

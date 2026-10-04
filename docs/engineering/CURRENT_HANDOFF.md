@@ -33,10 +33,12 @@ explicit-continuation (iterative) evaluator over the existing AST
 - B-1R3B.7 (f-strings): **COMPLETE AND REMOTELY CLOSED** at `52124a0` (pushed
   after a passing adversarial push gate; exact-SHA CI and Pages green; local =
   tracking = server at `52124a0`, ahead/behind 0/0).
-- B-1R3B.8 (milestone completion audit + dependency graph): **COMPLETE (audit
-  only)** — `docs/engineering/B1R3B8_COMPLETION_AUDIT.md`.
-- R3C…R3G: NOT STARTED (no implementation may begin without explicit human
-  authorization).
+- B-1R3B.8 (milestone completion audit + dependency graph): **COMPLETE AND
+  REMOTELY CLOSED** at `9cb5e28` — `docs/engineering/B1R3B8_COMPLETION_AUDIT.md`.
+- B-1R3C–B-1R3F (Call, Method, Construct, Lambda, Pipe, Assign, LetPattern,
+  While, Loop, For, ListComp, MapComp, Match, Try): **IMPLEMENTED, ORACLE-
+  COVERED, AND LOCALLY VALIDATED**; not pushed. Production remains recursive
+  until the gated cutover.
 
 See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
 
@@ -130,12 +132,12 @@ See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
   boundary (Index and Field); unsupported→`E4999` with no fallback; and
   host-stack/AST-depth safety. A deliberate base/index-swap mutation was
   detected by three R3B.6 tests and reverted byte-exactly.
-- Honest gap: struct-instance field reads and struct-instance indexing cannot be
-  differentially exercised yet, because struct construction (`Expr::Construct`)
-  remains unsupported (R3C/R3G). Exactly-once is structural, not
-  differentially falsifiable, since the only side-effecting operand constructs
-  (calls/assignment/print) are still unsupported (recorded in
-  `src/run/iterative.rs`).
+- Historical note (now resolved): struct-instance field reads and
+  struct-instance indexing could not be differentially exercised until
+  `Expr::Construct` landed in B-1R3C.3, and exactly-once was structural until
+  calls/assignment/`print` landed in B-1R3C.1/B-1R3D.1; both gaps are closed by
+  the R3C–R3F migration and the `print`-observable order cases in
+  `tests/oracle/r3c1.rs`.
 
 ## Completed in B-1R3B.5 (remote-closed at `cf17689`)
 
@@ -345,9 +347,9 @@ At milestone closure, run the full validation floor in `AGENTS.md`.
 
 R3B is **COMPLETE**: every planned microphase (R3B.1—R3B.7) is implemented,
 differentially oracled, and remotely closed; R3B.8 audited the milestone. The
-next implementation phase (R3C) is **NOT STARTED** and requires explicit human
-authorization. Each future microphase remains implement → targeted tests →
-oracle → checkpoint; do not start one before human review of the previous one.
+B-1R3C–B-1R3F evaluator migration that R3B.8 planned is now implemented,
+oracle-covered, and locally validated on top of `9cb5e28`; it is not pushed and
+production remains recursive until the gated cutover.
 
 - R3B.1 unary operators — **COMPLETE AND PUSHED**
 - R3B.2 binary operators — **COMPLETE AND PUSHED**
@@ -367,17 +369,24 @@ microphase.
 
 ## Exact next action
 
-1. R3B is COMPLETE and remotely closed; R3B.8 (completion audit) is COMPLETE
-   (audit only, no implementation) and checkpointed as one documentation-only
-   commit on top of `52124a0`.
-2. Next authorized action: a fresh push gate over the local
-   `52124a0..HEAD` range, then exact remote closure of the B-1R3B.8
-   documentation checkpoint (push requires separate human authorization).
-3. **Do not start R3C** before that remote closure and its own explicit human
-   authorization. The recommended first implementation microphase is R3C.1
-   (`Call`) per `docs/engineering/B1R3B8_COMPLETION_AUDIT.md`.
-4. Keep `tests/oracle/golden.tsv` byte-unchanged and production on the
-   recursive engine.
+1. R3B is COMPLETE and remotely closed; R3B.8 is COMPLETE and remotely closed
+   at `9cb5e28`.
+2. The full B-1R3C–B-1R3F evaluator migration is **implemented, oracle-covered,
+   and locally validated** on top of `9cb5e28`, with all four gates below
+   green:
+   - every `Expr` (21) and `Stmt` (12) variant handled by the machine, no
+     recursive fallback, empty unsupported-sentinel surface;
+   - whole-corpus recursive-vs-iterative agreement required by
+     `engines_agree`;
+   - stack-safety/resource campaign committed (`tests/b1_stack_safety.rs`);
+   - deferred exactly-once claims strengthened with `print`-observable order.
+3. Remaining work before B-1 can close: finish the adversarial review, run the
+   complete validation matrix, and — only if the cutover pre-gate passes —
+   perform the reversible local production cutover. **Do not push
+   implementation commits**; at the end present the commit range for a single
+   human-authorized push gate.
+4. Do not start unrelated Aura 0.3 work. Keep frozen runtimes, `v0.2.1`, and
+   `.kilo/**` untouched.
 
 ## Stop conditions
 
