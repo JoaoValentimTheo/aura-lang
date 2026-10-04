@@ -197,6 +197,13 @@ impl Done {
 }
 
 /// The outcome of resuming one continuation.
+/// A lazy `for` cursor over a range: `next < end`.
+#[derive(Clone, Copy)]
+struct RangeCursor {
+    next: i64,
+    end: i64,
+}
+
 /// Whether a target traversal is reading the current value or writing one.
 enum TargetPhase {
     Read,
@@ -385,6 +392,26 @@ enum Cont {
     /// arm (`call_value`). A `Name` callee is resolved synchronously once its
     /// arguments complete, so this record is only pushed for other shapes.
     CallCallee { values: Vec<Value>, span: Span },
+    /// A `for` iterable finished (R3D.4); start iteration (lazy for ranges).
+    ForIterable {
+        pattern: Pattern,
+        body: Arc<[Stmt]>,
+        env: Env,
+        span: Span,
+    },
+    /// A `for` body/iteration step finished (R3D.4); advance to the next item.
+    ForNext {
+        pattern: Pattern,
+        body: Arc<[Stmt]>,
+        env: Env,
+        span: Span,
+        /// Remaining items for a materialized iterable.
+        items: Vec<Value>,
+        /// Next index for a materialized iterable.
+        index: usize,
+        /// Lazy range cursor (`None` for a materialized iterable).
+        range: Option<RangeCursor>,
+    },
     /// A `while` condition finished (R3D.2); enter the body or finish.
     WhileCond {
         cond: Arc<Expr>,
@@ -636,6 +663,47 @@ impl<'i> Machine<'i> {
                     Ok(Resume::Redeliver(Done::plain(Ctl::Val(value))))
                 }
             }
+            Cont::ForIterable {
+                pattern,
+                body,
+                env,
+                span,
+            } => {
+                let Ctl::Val(subject) = done.ctl else {
+                    // A signal from the iterable propagates without iterating.
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                let range = match &subject {
+                    Value::Range(r) => Some(RangeCursor {
+                        next: r.start,
+                        end: r.end,
+                    }),
+                    _ => None,
+                };
+                let items = if range.is_some() {
+                    Vec::new()
+                } else {
+                    self.interp.iterate(&subject, span)?
+                };
+                Ok(Resume::Next(
+                    self.step_for(pattern, body, env, span, items, 0, range)?,
+                ))
+            }
+            Cont::ForNext {
+                pattern,
+                body,
+                env,
+                span,
+                items,
+                index,
+                range,
+            } => match done.ctl {
+                Ctl::Break => Ok(Resume::Next(Ctrl::Done(Ctl::Val(Value::None)))),
+                Ctl::Continue | Ctl::Val(_) => Ok(Resume::Next(
+                    self.step_for(pattern, body, env, span, items, index, range)?,
+                )),
+                other => Ok(Resume::Redeliver(Done::plain(other))),
+            },
             Cont::WhileCond { cond, body, env } => {
                 let Ctl::Val(c) = done.ctl else {
                     // A signal from the condition propagates without entering
@@ -1794,6 +1862,60 @@ impl<'i> Machine<'i> {
         ))))
     }
 
+    /// Run one `for` iteration step (R3D.4): take the next Range item or the
+    /// next materialized item, bind it in a fresh child scope, and enter the
+    /// body. Exhaustion yields `none`. Mirrors `Interp::exec_stmt`'s `For`.
+    fn step_for(
+        &mut self,
+        pattern: Pattern,
+        body: Arc<[Stmt]>,
+        env: Env,
+        span: Span,
+        items: Vec<Value>,
+        index: usize,
+        range: Option<RangeCursor>,
+    ) -> Result<Ctrl> {
+        let item = if let Some(cursor) = range {
+            if cursor.next < cursor.end {
+                let item = Value::Int(cursor.next);
+                // The cursor advances via the continuation, not by mutation.
+                let next_cursor = RangeCursor {
+                    next: cursor.next + 1,
+                    end: cursor.end,
+                };
+                self.kont.push(Cont::ForNext {
+                    pattern: pattern.clone(),
+                    body: body.clone(),
+                    env: env.clone(),
+                    span,
+                    items: Vec::new(),
+                    index: 0,
+                    range: Some(next_cursor),
+                });
+                item
+            } else {
+                return Ok(Ctrl::Done(Ctl::Val(Value::None)));
+            }
+        } else if index < items.len() {
+            let item = items[index].clone();
+            self.kont.push(Cont::ForNext {
+                pattern: pattern.clone(),
+                body: body.clone(),
+                env: env.clone(),
+                span,
+                items,
+                index: index + 1,
+                range: None,
+            });
+            item
+        } else {
+            return Ok(Ctrl::Done(Ctl::Val(Value::None)));
+        };
+        let scope = env.child();
+        self.interp.bind_pattern(&pattern, &item, &scope)?;
+        Ok(Ctrl::EnterBlock(body, scope, false))
+    }
+
     /// Start a target read or write (R3D.1). `Name` targets resolve
     /// synchronously; `Index`/`Field` targets traverse their subexpressions in
     /// the same order as `read_target`/`write_target` (base then index), with
@@ -2129,6 +2251,22 @@ impl<'i> Machine<'i> {
                 });
                 Ok(Control::Next(Ctrl::EvalExpr(
                     Arc::new(cond.clone()),
+                    env.clone(),
+                )))
+            }
+            Stmt::For(pattern, iter, body, span) => {
+                // The iterable is evaluated exactly once. A `Range` iterates
+                // lazily (a `break` on a huge range never materializes it);
+                // every other iterable goes through `Interp::iterate`, which
+                // applies the materialization cap.
+                self.kont.push(Cont::ForIterable {
+                    pattern: pattern.clone(),
+                    body: body.clone(),
+                    env: env.clone(),
+                    span: *span,
+                });
+                Ok(Control::Next(Ctrl::EvalExpr(
+                    Arc::new(iter.clone()),
                     env.clone(),
                 )))
             }
