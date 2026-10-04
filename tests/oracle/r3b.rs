@@ -107,8 +107,8 @@ pub fn unsupported_cases() -> Vec<Case> {
         // used a call operand until B-1R3C.1 made calls supported; the
         // call-operand shapes are now supported cases in
         // `r3c1::supported_cases`.)
-        value("neg_of_unsupported_listcomp", "-[x for x in [1]]\n"),
-        value("not_of_unsupported_listcomp", "not [x for x in [1]]\n"),
+        value("neg_of_unsupported_match", "-match 1 { 1 -> { 2 } }\n"),
+        value("not_of_unsupported_match", "not match 1 { 1 -> { 2 } }\n"),
     ]
 }
 
@@ -225,7 +225,7 @@ pub fn binary_unsupported_cases() -> Vec<Case> {
         // A supported eager operator whose operand remains unsupported (a
         // lambda). The original `eager_over_call` (`1 + len([1, 2])`) became
         // supported in B-1R3C.1 and is asserted by `r3c1::supported_cases`.
-        binary_value("eager_over_listcomp", "1 + [x for x in [1]]\n"),
+        binary_value("eager_over_match", "1 + match 1 { 1 -> { 2 } }\n"),
     ]
 }
 
@@ -417,17 +417,17 @@ pub fn short_circuit_unsupported_cases() -> Vec<Case> {
         // probes (`and_required_call`, `or_required_call`, `nested_required_call`,
         // `main_required_call`) became supported in B-1R3C.1 and are asserted by
         // `r3c1::supported_cases`.
-        sc_value("and_required_listcomp", "true and [x for x in [1]]\n"),
-        sc_value("or_required_listcomp", "false or [x for x in [1]]\n"),
+        sc_value("and_required_match", "true and match 1 { 1 -> { 2 } }\n"),
+        sc_value("or_required_match", "false or match 1 { 1 -> { 2 } }\n"),
         // A required nested `and` reaching an unsupported lambda.
         sc_value(
-            "nested_required_listcomp",
-            "false or (true and [x for x in [1]])\n",
+            "nested_required_match",
+            "false or (true and match 1 { 1 -> { 2 } })\n",
         ),
         // Same shape inside a real user frame.
         sc_program(
-            "main_required_listcomp",
-            "fn main() { let x = true and [y for y in [1]] }\n",
+            "main_required_match",
+            "fn main() { let x = true and match 1 { 1 -> { 2 } } }\n",
         ),
     ]
 }
@@ -556,15 +556,15 @@ pub fn list_unsupported_cases() -> Vec<Case> {
         // first element must not let the machine fall back. The original
         // `call_element` (`[1, len([1, 2])]`) became supported in B-1R3C.1 and
         // is asserted by `r3c1::supported_cases`.
-        list_value("listcomp_element", "[1, [x for x in [2]]]\n"),
+        list_value("match_element", "[1, match 1 { 1 -> { 2 } }]\n"),
         // `nested_unsupported_element` (`[1 + f"v={1}"]`) moved to
         // `r3b::fstring_supported_cases` in B-1R3B.7: the f-string is supported
         // now and the element's `int + string` is a real E3001 both engines
         // agree on.
         // Same shapes inside a real user frame.
         list_program(
-            "main_listcomp_element",
-            "fn main() { let xs = [1, [y for y in [2]]] }\n",
+            "main_match_element",
+            "fn main() { let xs = [1, match 1 { 1 -> { 2 } }] }\n",
         ),
     ]
 }
@@ -736,17 +736,17 @@ pub fn map_unsupported_cases() -> Vec<Case> {
         // asserted by `r3c1::supported_cases`. (A lambda cannot be a map key:
         // the checker rejects it as a key type, so the value position is the
         // reachable shape.)
-        map_value("listcomp_value", "{1: [x for x in [2]]}\n"),
+        map_value("match_value", "{1: match 1 { 1 -> { 2 } }}\n"),
         // `fstring_value` (`{1: f"v={1}"}`) moved to
         // `r3b::fstring_supported_cases` in B-1R3B.7: the f-string is a
         // supported value now, and a string map value agrees with recursion.
         // A supported first entry must not let the machine fall back on a
         // later unsupported one.
-        map_value("later_listcomp_value", "{1: 2, 2: [x for x in [3]]}\n"),
+        map_value("later_match_value", "{1: 2, 2: match 1 { 1 -> { 3 } }}\n"),
         // Same shapes inside a real user frame.
         map_program(
-            "main_listcomp_value",
-            "fn main() { let m = {1: [x for x in [2]]} }\n",
+            "main_match_value",
+            "fn main() { let m = {1: match 1 { 1 -> { 2 } }} }\n",
         ),
     ]
 }
@@ -907,7 +907,7 @@ pub fn range_unsupported_cases() -> Vec<Case> {
         // lambda is not an int, so the checker rejects it as a range bound
         // before execution; the reachable shape is a nested unsupported
         // construct under a bound, probed through an unsupported index instead.
-        range_value("nested_listcomp_start", "(1 + [x for x in [1]][0])..3\n"),
+        range_value("nested_match_start", "(1 + match 1 { 1 -> { 2 } })..3\n"),
     ]
 }
 
@@ -1120,15 +1120,15 @@ pub fn index_unsupported_cases() -> Vec<Case> {
         // probes (`call_base`, `call_index`, `nested_call_base`,
         // `main_index_call`) became supported in B-1R3C.1 and are asserted by
         // `r3c1::supported_cases`.
-        index_value("listcomp_in_base", "([1] + [x for x in [2]])[0]\n"),
+        index_value("match_in_base", "([1] + match 1 { 1 -> { 2 } })[0]\n"),
         // `fstring_index` (`[1, 2][f"v={1}"]`) moved to
         // `r3b::fstring_supported_cases` in B-1R3B.7: the f-string is a
         // supported index now, and the runtime `E3001` non-key-capable index
         // agrees with recursion.
         // Same shape inside a real user frame.
         index_program(
-            "main_listcomp_in_base",
-            "fn main() { let y = ([1] + [x for x in [2]])[0] }\n",
+            "main_match_in_base",
+            "fn main() { let y = ([1] + match 1 { 1 -> { 2 } })[0] }\n",
         ),
     ]
 }
@@ -1147,11 +1147,11 @@ pub fn field_unsupported_cases() -> Vec<Case> {
         // type error, so this program is valid for it). The original
         // call-receiver probes became supported in B-1R3C.1 and are asserted
         // by `r3c1::supported_cases`.
-        field_value("listcomp_receiver", "{ [x for x in [1]] }.len\n"),
+        field_value("match_receiver", "{ match 1 { 1 -> { 2 } } }.len\n"),
         // An unsupported construct nested one level under the receiver.
         field_value(
-            "nested_listcomp_receiver",
-            "{ (1 + [x for x in [1]][0]) }.len\n",
+            "nested_match_receiver",
+            "{ (1 + match 1 { 1 -> { 2 } }) }.len\n",
         ),
     ]
 }
@@ -1387,18 +1387,18 @@ pub fn fstring_unsupported_cases() -> Vec<Case> {
         // `spec_call_interp`, `main_fstring_call`, `main_fstring_later_call`)
         // became supported in B-1R3C.1 and are asserted by
         // `r3c1::supported_cases`.
-        fstring_value("listcomp_interp", "f\"{[x for x in [1]]}\"\n"),
+        fstring_value("match_interp", "f\"{match 1 { 1 -> { 2 } }}\"\n"),
         // An unsupported lambda nested one level under a supported expression.
-        fstring_value("nested_listcomp_interp", "f\"{1 + [x for x in [1]][0]}\"\n"),
+        fstring_value("nested_match_interp", "f\"{1 + match 1 { 1 -> { 2 } }}\"\n"),
         // A supported first interpolation must not let the machine fall back on
         // a later unsupported one.
-        fstring_value("later_listcomp_interp", "f\"{1}{[x for x in [2]]}\"\n"),
+        fstring_value("later_match_interp", "f\"{1}{match 1 { 1 -> { 2 } }}\"\n"),
         // An unsupported construct in a format-spec interpolation.
-        fstring_value("spec_listcomp_interp", "f\"{[x for x in [1]]:d}\"\n"),
+        fstring_value("spec_match_interp", "f\"{match 1 { 1 -> { 2 } }:d}\"\n"),
         // Same shape inside a real user frame.
         fstring_program(
-            "main_fstring_listcomp",
-            "fn main() { let s = f\"{[x for x in [1]]}\" }\n",
+            "main_fstring_match",
+            "fn main() { let s = f\"{match 1 { 1 -> { 2 } }}\" }\n",
         ),
     ]
 }

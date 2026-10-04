@@ -365,6 +365,35 @@ pub fn supported_cases() -> Vec<Case> {
         value("for_not_iterable", "{ for x in 1 { } }\n"),
         value("for_mutation_accumulator", "{ let mut acc = []\n for x in 0..3 { acc = acc + [x] }\n acc }\n"),
         value("for_range_cap_break_early", "{ for i in 0..20000000 { break }\n 1 }\n"),
+        // ----- R3E.1 comprehensions ------------------------------------------
+        value("listcomp_identity", "[x for x in [1, 2, 3]]\n"),
+        value("listcomp_range", "[x * 2 for x in 0..4]\n"),
+        value("listcomp_filter", "[x for x in 0..6 if x % 2 == 0]\n"),
+        value("listcomp_string", "[c for c in \'ab\']\n"),
+        value("listcomp_map_keys", "[k for k in {1: \'a\', 2: \'b\'}]\n"),
+        value("listcomp_pattern", "[[a, b] for [a, b] in [[1, 2], [3, 4]]]\n"),
+        value("listcomp_pattern_partial", "[b for [_, b] in [[1, 2], [3, 4]]]\n"),
+        value("listcomp_nested", "[[y for y in 0..x] for x in 0..3]\n"),
+        value("listcomp_empty", "[x for x in []]\n"),
+        value("listcomp_calls", "[len(xs) for xs in [[1], [1, 2]]]\n"),
+        value("listcomp_scope", "{ let x = 9\n [x for x in [1, 2]] }\n"),
+        value("listcomp_shadow_outer", "{ let x = 9\n [x for x in [1]]\n x }\n"),
+        value("listcomp_filter_error", "[x for x in [1] if 1 / 0]\n"),
+        value("listcomp_value_error", "[1 / 0 for x in [1]]\n"),
+        value("listcomp_iterable_error", "[x for x in 1 / 0]\n"),
+        value("listcomp_not_iterable", "[x for x in 1]\n"),
+        value("listcomp_pattern_mismatch", "[a for [a] in [1]]\n"),
+        value("listcomp_side_effect_order", "[print(x) for x in [1, 2]]\n"),
+        value("listcomp_filter_skips_value", "[print(x) for x in [1, 2] if x > 1]\n"),
+        value("mapcomp_identity", "{x: x * 2 for x in [1, 2]}\n"),
+        value("mapcomp_filter", "{x: x for x in 0..4 if x % 2 == 1}\n"),
+        value("mapcomp_key_order", "{k: v for [k, v] in [[1, \'a\'], [2, \'b\']]}\n"),
+        value("mapcomp_duplicate_key", "{1: x for x in [10, 20]}\n"),
+        value("mapcomp_key_before_value", "{print(\'k\'): print(\'v\') for x in [1]}\n"),
+        value("mapcomp_bad_key", "{xs: 1 for xs in [[1]]}\n"),
+        value("mapcomp_nested", "{x: [y for y in 0..1] for x in 0..2}\n"),
+        value("mapcomp_error_key", "{1 / 0: 1 for x in [1]}\n"),
+        value("mapcomp_empty", "{x: x for x in []}\n"),
         // ----- composition with R3B constructs ---------------------------
         value("call_in_unary", "-(abs(-2))\n"),
         value("call_in_binary", "1 + len([9, 9])\n"),
@@ -450,19 +479,22 @@ pub fn supported_cases() -> Vec<Case> {
 #[must_use]
 pub fn unsupported_cases() -> Vec<Case> {
     vec![
-        // A comprehension argument (R3E.1) remains unsupported; lambdas
-        // (R3C.4) and constructors (R3C.3) are supported now, so their former
-        // probes moved to the supported set.
-        value("listcomp_argument", "fn f(x) { 0 }\nf([x for x in [1]])\n"),
-        // A `match` argument (R3E.2) remains unsupported.
+        // A `match` argument (R3E.2) remains unsupported; comprehensions
+        // (R3E.1) are supported now, so their former probes moved to the
+        // supported set.
         value(
             "match_argument",
             "fn f(x) { 0 }\nf(match 1 { 1 -> { 2 } })\n",
         ),
+        // A `try` block (R3F.1) remains unsupported.
+        value(
+            "try_argument",
+            "fn f(x) { 0 }\nf({ try { 1 } catch e { 2 } })\n",
+        ),
         // Same shapes inside a real user frame.
         program(
-            "main_listcomp_argument",
-            "fn main() { let x = f([y for y in [1]]) }\nfn f(x) { 0 }\n",
+            "main_match_argument",
+            "fn main() { let x = f(match 1 { 1 -> { 2 } }) }\nfn f(x) { 0 }\n",
         ),
     ]
 }

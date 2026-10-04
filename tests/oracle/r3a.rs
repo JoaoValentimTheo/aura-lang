@@ -120,6 +120,8 @@ pub fn supported_cases() -> Vec<Case> {
         // The original R3A loop sentinels: supported by B-1R3D.2. Keys kept.
         value("while_stmt", "{ while false { 1 } }\n"),
         value("loop_stmt", "{ loop { break } }\n"),
+        // The original R3A comprehension sentinel: supported by B-1R3E.1.
+        value("list_comp", "[x for x in [1, 2]]\n"),
         // The original R3A method sentinel: builtin method calls are supported
         // by B-1R3C.2. Key preserved.
 
@@ -172,7 +174,7 @@ pub fn unsupported_cases() -> Vec<Case> {
         // `lambda` was migrated to `supported_cases` in B-1R3C.4.
         // `pipe` was migrated to `supported_cases` in B-1R3C.1/R3C.4.
         value("match", "match 1 { 1 -> { 2 } }\n"),
-        value("list_comp", "[x for x in [1, 2]]\n"),
+        // `list_comp` was migrated to `supported_cases` in B-1R3E.1.
         // `while_stmt`/`loop_stmt` were migrated to `supported_cases` in
         // B-1R3D.2 (loops landed); see the preserved keys there.
         // `let_pattern` and `assign` were migrated to `supported_cases` in
