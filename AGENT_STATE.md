@@ -34,8 +34,9 @@ runtime means adding a version, never replacing one.
 
 B-1R — ENGINE-STACK-INDEPENDENT CALL ENGINE. B-1 is OPEN (WASM implementation
 nonconformance). The R3A baseline through B-1R3B.4.2 are pushed and remote-closed
-at `5e70677`; B-1R3B.5 range construction is complete locally and unpushed.
-Production still runs the recursive evaluator.
+at `5e70677`; B-1R3B.5 (range construction) and B-1R3B.6 (index / field reads)
+are complete locally and unpushed on top of it. Production still runs the
+recursive evaluator.
 
 B-1R phase state:
 
@@ -72,7 +73,17 @@ B-1R phase state:
   verified). The current step-1 half-open Range only; future 0.3
   `step`/inclusive semantics deliberately not introduced. Unpushed; a fresh
   adversarial push gate is required. See `docs/engineering/CURRENT_HANDOFF.md`.
-- **B-1R3B.4.3/R3B.6…R3G:** NOT STARTED.
+- **B-1R3B.6:** COMPLETE LOCALLY (index / field reads; differential-oracle
+  equivalent; target-before-index exactly-once order, field receiver exactly
+  once, list/tuple/string/map lookup with negative normalization, `E4019`
+  out-of-range, `E2003` missing key/field/unknown member, non-key-capable key
+  `E3001`, unsupported base/index combination `E3001`, control-signal
+  propagation from target/index/receiver, Index/Field/Range composition,
+  program-mode frame boundary, no-fallback unsupported surface, and
+  host-stack/AST-depth safety verified). Struct instances are not reachable
+  (`Expr::Construct` still unsupported); the reachable field surface is the
+  zero-argument builtin registry. Unpushed.
+- **B-1R3B.7…R3G:** NOT STARTED.
 
 ## Production vs experimental engine
 
@@ -85,12 +96,16 @@ B-1R phase state:
   short-circuit `and`/`or` (the skipped operand is never evaluated), list/tuple
   construction (left-to-right, exactly once per element), map construction
   (per entry key then value in source order, exactly once; last-wins duplicates;
-  runtime invalid keys are `E3001` at the key span), and range construction
+  runtime invalid keys are `E3001` at the key span), range construction
   (`a..b`; start then end, each exactly once; both evaluated before either is
   validated, start-first; non-int bounds are `E3001` at the range span; a valid
-  pair is the same `RangeVal { start, end }` `range(a, b)` builds); everything
-  else (calls, comprehensions, …) returns `E4999` and never falls back to
-  recursion.
+  pair is the same `RangeVal { start, end }` `range(a, b)` builds), and index /
+  field reads (`base[index]`: target then index, each exactly once, delegated to
+  `Interp::index_get`; `recv.name`: receiver once, then struct-field or
+  zero-argument builtin method resolution mirroring `eval_inner`'s `Expr::Field`
+  arm); everything
+  else (calls, comprehensions, struct construction, …) returns `E4999` and never
+  falls back to recursion.
 
 ## Known blockers
 

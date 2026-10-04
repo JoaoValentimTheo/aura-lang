@@ -31,7 +31,9 @@ explicit-continuation (iterative) evaluator over the existing AST
 - B-1R3B.5 (range construction): **COMPLETE LOCALLY**, unpushed (three additive
   commits on top of `origin/rewrite/v3-rust` = `5e70677`). A fresh adversarial
   push gate over `5e70677..HEAD` is required before any push.
-- B-1R3B.6…R3G: NOT STARTED.
+- B-1R3B.6 (index / field reads): **COMPLETE LOCALLY**, unpushed, additive on
+  top of B-1R3B.5. Same push gate covers it.
+- B-1R3B.7…R3G: NOT STARTED.
 
 See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
 
@@ -45,9 +47,49 @@ See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
   eager binary operators (`+ - * / % ^ == != < <= > >= & | << >>`),
   short-circuit `and`/`or` (the skipped operand is never evaluated), list/tuple
   construction (left-to-right, exactly once per element), map construction
-  (per entry key then value in source order, exactly once), and range
-  construction (`a..b`); every other construct returns the deterministic
-  `E4999` sentinel and never falls back to recursion.
+  (per entry key then value in source order, exactly once), range
+  construction (`a..b`), and index / field reads (`base[index]`, `recv.name`);
+  every other construct returns the deterministic `E4999` sentinel and never
+  falls back to recursion.
+
+## Completed in B-1R3B.6 (local)
+
+- `src/run/iterative.rs` — added `Cont::IndexTarget { idx, env, span }`,
+  `Cont::IndexApply { base, span }`, and `Cont::FieldReceiver { name, span }`,
+  the `Expr::Index` / `Expr::Field` arms in `start_expr`, and the three `resume`
+  arms. Index evaluates the target first and exactly once, then the index
+  exactly once, then applies the lookup through `Interp::index_get`; a control
+  signal from either operand is redelivered and the lookup never runs. Field
+  evaluates the receiver once and resolves it exactly like `eval_inner`'s
+  `Expr::Field` arm (struct field read with the method-not-a-value `E2003`
+  guard, or zero-argument builtin method dispatch). Because struct construction
+  is `Expr::Construct` (still unsupported), `Value::Instance` field reads are
+  unreachable in this subset; the reachable field surface is the builtin method
+  registry and its `E2003` unknown-member diagnostic. No recursive AST
+  evaluation and no fallback.
+- Oracle: new `tests/oracle/r3b6_golden.tsv` (LF-pinned; 55 index + 23 field =
+  78 supported cases) and differential tests
+  `r3b6_index_supported_subset_agrees`, `r3b6_field_supported_subset_agrees`,
+  `iterative_index_field_unsupported_fails_explicitly`,
+  `r3b6_iterative_golden_matches`, plus `r3b6_golden_has_lf_pin`. Boundary
+  movement: `index` removed from the R3A unsupported set (now supported;
+  `r3a_golden.tsv` −1 row). `field_access` stays in R3A unsupported: it is a
+  struct literal via `Expr::Construct`. The main `golden.tsv` is byte-unchanged.
+- Verified: target-before-index order and exactly-once; list/tuple/string/map
+  lookup; negative-index normalization; `E4019` out-of-range; `E2003` missing
+  map key and unknown member; `E3001` non-key-capable map key, unsupported
+  base/index combination, and check-time map key-kind mismatch; receiver error
+  wins over member resolution; control-signal propagation from target, index,
+  and receiver; nested Index/Field and Range composition; program-mode frame
+  boundary (Index and Field); unsupported→`E4999` with no fallback; and
+  host-stack/AST-depth safety. A deliberate base/index-swap mutation was
+  detected by three R3B.6 tests and reverted byte-exactly.
+- Honest gap: struct-instance field reads and struct-instance indexing cannot be
+  differentially exercised yet, because struct construction (`Expr::Construct`)
+  remains unsupported (R3C/R3G). Exactly-once is structural, not
+  differentially falsifiable, since the only side-effecting operand constructs
+  (calls/assignment/print) are still unsupported (recorded in
+  `src/run/iterative.rs`).
 
 ## Completed in B-1R3B.5 (local)
 
@@ -270,7 +312,7 @@ human review of the current one.
 - R3B.4.3 (reserved: map-key admissibility / nesting if the code shows a
   distinct boundary)
 - R3B.5 range — **COMPLETE LOCALLY**
-- R3B.6 index / field reads
+- R3B.6 index / field reads — **COMPLETE LOCALLY**
 - R3B.7 f-strings
 - R3B.8 milestone adversarial closure
 
@@ -280,13 +322,12 @@ microphase.
 ## Exact next action
 
 1. Fresh adversarial read-only push gate over the `5e70677..HEAD` range (R3A
-   through B-1R3B.5).
-2. If the gate passes, push the exact reviewed stack and close B-1R3B.5
-   remotely.
-3. Then begin the next ordered microphase on `src/run/iterative.rs` (R3B.6
-   index / field reads), extending the oracle and keeping
-   `tests/oracle/golden.tsv` byte-unchanged, with a checkpoint at each
-   microphase.
+   through B-1R3B.6).
+2. If the gate passes, push the exact reviewed stack and close B-1R3B.5 and
+   B-1R3B.6 remotely.
+3. Then begin the next ordered microphase on `src/run/iterative.rs` (R3B.7
+   f-strings), extending the oracle and keeping `tests/oracle/golden.tsv`
+   byte-unchanged, with a checkpoint at each microphase.
 
 ## Stop conditions
 
