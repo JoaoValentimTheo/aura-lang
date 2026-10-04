@@ -90,6 +90,29 @@
 //!   only; the planned Aura 0.3 `step`/inclusive extensions are **not**
 //!   introduced.
 //!
+//! ## B-1R3B.6 added subset
+//!
+//! * index reads: `Expr::Index` (`base[index]`). The target is evaluated first
+//!   and exactly once, then the index exactly once, via [`Cont::IndexTarget`]
+//!   then [`Cont::IndexApply`]; a control signal from either operand aborts the
+//!   read and propagates unchanged, so the lookup never runs. The lookup itself
+//!   is delegated to `Interp::index_get` (the recursive engine's value-level
+//!   helper, which evaluates no AST node), so list (including current-tuple
+//!   sugar), string, map, and struct-instance indexing — and every diagnostic
+//!   (out-of-range `E4019`, missing-key `E2003`, non-key-capable key `E3001`,
+//!   unsupported base/index combination `E3001`) — are identical by
+//!   construction. Negative indices normalize exactly as recursion does.
+//! * field reads: `Expr::Field` (`recv.name`). The field name is syntactic, so
+//!   the receiver is evaluated exactly once via [`Cont::FieldReceiver`] and the
+//!   name is copied into the continuation. Resolution mirrors
+//!   `Interp::eval_inner`'s `Expr::Field` arm exactly: a struct instance reads a
+//!   declared field (missing field `E2003`; a method name used without `(...)`
+//!   is the recursive `E2003` guard), and every other receiver dispatches to the
+//!   zero-argument builtin registry with the same `E2003` for an unknown member.
+//!   Because struct construction is `Expr::Construct` (still unsupported), the
+//!   `Value::Instance` field path is reachable only indirectly today; the
+//!   non-instance method path is reachable directly.
+//!
 //! ## Explicitly unsupported (R3B–R3F)
 //!
 //! Every other `Expr`/`Stmt` form fails with a deterministic
@@ -278,6 +301,27 @@ enum Cont {
     /// producing the same `E3001` messages and the same expression span as
     /// `Interp::eval_inner`'s `Expr::Range` arm.
     RangeEnd { start: Value, span: Span },
+    /// An index expression's target finished (B-1R3B.6). The target value is
+    /// retained unvalidated and the index operand is scheduled exactly once.
+    /// This mirrors `Interp::eval_inner`'s `Expr::Index` arm, which evaluates
+    /// the target before the index and reports the target's own failure first.
+    IndexTarget {
+        idx: Arc<Expr>,
+        env: Env,
+        span: Span,
+    },
+    /// An index expression's index operand finished (B-1R3B.6). The target was
+    /// produced exactly once and is applied here through
+    /// `Interp::index_get`, so list/string/map/instance lookup and every
+    /// diagnostic (including out-of-range `E4019` and missing-key `E2003`) are
+    /// byte-identical to recursion. A control signal from the index is
+    /// redelivered and never reaches `index_get`.
+    IndexApply { base: Value, span: Span },
+    /// A field receiver finished (B-1R3B.6). The receiver was produced exactly
+    /// once; field/method resolution mirrors `Interp::eval_inner`'s
+    /// `Expr::Field` arm exactly (struct field read, missing-field `E2003`, the
+    /// method-not-a-value guard, or zero-argument builtin method dispatch).
+    FieldReceiver { name: String, span: Span },
     /// A `return` operand finished; convert to the `return` signal.
     ReturnFrom,
     /// A `throw` operand finished; convert to the `throw` signal.
@@ -648,6 +692,71 @@ impl<'i> Machine<'i> {
                     Ok(Resume::Redeliver(Done::plain(done.ctl)))
                 }
             }
+            Cont::IndexTarget { idx, env, span } => {
+                if let Ctl::Val(base) = done.ctl {
+                    // The target completed: retain it (unvalidated) and
+                    // evaluate the index exactly once, mirroring
+                    // `eval_inner`'s `Expr::Index` arm order. Validation is
+                    // deferred to `Cont::IndexApply`.
+                    self.kont.push(Cont::IndexApply { base, span });
+                    Ok(Resume::Next(Ctrl::EvalExpr(idx, env)))
+                } else {
+                    // A control signal from the target propagates and the index
+                    // is never evaluated (mirrors `val!`).
+                    Ok(Resume::Redeliver(Done::plain(done.ctl)))
+                }
+            }
+            Cont::IndexApply { base, span } => {
+                if let Ctl::Val(idx) = done.ctl {
+                    Ok(Resume::Next(Ctrl::Done(Ctl::Val(
+                        self.interp.index_get(&base, &idx, span)?,
+                    ))))
+                } else {
+                    // A control signal from the index propagates without
+                    // applying the lookup (mirrors `val!`).
+                    Ok(Resume::Redeliver(Done::plain(done.ctl)))
+                }
+            }
+            Cont::FieldReceiver { name, span } => {
+                if let Ctl::Val(subject) = done.ctl {
+                    // Resolve the field/method exactly like
+                    // `Interp::eval_inner`'s `Expr::Field` arm. A control
+                    // signal from the receiver is redelivered above and never
+                    // reaches this resolution.
+                    match &subject {
+                        Value::Instance(i) => {
+                            // A method is not a bound value: `s.m` names only a
+                            // field, and a missing field is `E2003`.
+                            if self
+                                .interp
+                                .methods
+                                .contains_key(&(i.ty.clone(), name.clone()))
+                                && !i.fields.borrow().iter().any(|(k, _)| k == &name)
+                            {
+                                return Err(self.interp.error(
+                                    codes::UNDEFINED,
+                                    format!(
+                                        "struct {} has method `{name}`; call it as `{name}(...)`",
+                                        i.ty
+                                    ),
+                                    span,
+                                ));
+                            }
+                            Ok(Resume::Next(Ctrl::Done(Ctl::Val(
+                                self.interp.field_get(&subject, &name, span)?,
+                            ))))
+                        }
+                        _ => Ok(Resume::Next(Ctrl::Done(Ctl::Val(self.interp.method(
+                            &subject,
+                            &name,
+                            Vec::new(),
+                            span,
+                        )?)))),
+                    }
+                } else {
+                    Ok(Resume::Redeliver(Done::plain(done.ctl)))
+                }
+            }
             Cont::ReturnFrom => match done.ctl {
                 Ctl::Val(v) => Ok(Resume::Next(Ctrl::ReturnValue(v))),
                 other => Ok(Resume::Redeliver(Done::plain(other))),
@@ -871,6 +980,30 @@ impl<'i> Machine<'i> {
                     span: *span,
                 });
                 Ok(Control::Next(Ctrl::EvalExpr(start.clone(), env.clone())))
+            }
+            Expr::Index(base, idx, span) => {
+                // `base[index]` evaluates the target first and exactly once,
+                // then the index exactly once, then applies the lookup. This is
+                // the `eval_inner`'s `Expr::Index` arm order; the lookup itself
+                // is delegated to `Interp::index_get` so list/string/map/instance
+                // semantics and every diagnostic are identical by construction.
+                self.kont.push(Cont::IndexTarget {
+                    idx: idx.clone(),
+                    env: env.clone(),
+                    span: *span,
+                });
+                Ok(Control::Next(Ctrl::EvalExpr(base.clone(), env.clone())))
+            }
+            Expr::Field(recv, name, span) => {
+                // `recv.name` evaluates the receiver once, then resolves the
+                // field or zero-argument method with `eval_inner`'s exact rules
+                // (`Cont::FieldReceiver`). The name is syntactic, so it is
+                // copied into the continuation rather than evaluated.
+                self.kont.push(Cont::FieldReceiver {
+                    name: name.clone(),
+                    span: *span,
+                });
+                Ok(Control::Next(Ctrl::EvalExpr(recv.clone(), env.clone())))
             }
             other => Err(self.unsupported(expr_span(other))),
         }
@@ -1420,6 +1553,221 @@ mod tests {
         let mut v = lit(1);
         for _ in 0..depth {
             v = Expr::Range(Arc::new(v), Arc::new(lit(0)), Span::default());
+        }
+        let err = run_expr(&v).err().unwrap();
+        assert_eq!(err.code, codes::NESTING);
+    }
+
+    fn list2() -> Expr {
+        Expr::List(Arc::from([lit(10), lit(20)]), Span::default())
+    }
+
+    fn index(base: Expr, idx: Expr) -> Expr {
+        Expr::Index(Arc::new(base), Arc::new(idx), Span::default())
+    }
+
+    fn field(recv: Expr, name: &str) -> Expr {
+        Expr::Field(Arc::new(recv), name.to_string(), Span::default())
+    }
+
+    #[test]
+    fn index_reads_list_element() {
+        match run_expr(&index(list2(), lit(1))).unwrap() {
+            Ctl::Val(Value::Int(v)) => assert_eq!(v, 20),
+            _ => panic!("expected 20, got a different completion"),
+        }
+    }
+
+    #[test]
+    fn index_target_signal_skips_index() {
+        // The target is a block that returns; the index is a division by zero.
+        // If the index ran, the result would be an `E4007` error. The target's
+        // control signal must preempt it, exactly like `eval_inner`'s `val!`.
+        let target = Expr::Block(
+            Arc::from([Stmt::Return(Some(lit(5)), Span::default())]),
+            Span::default(),
+        );
+        let idx = Expr::Binary(
+            BinOp::Div,
+            Arc::new(lit(1)),
+            Arc::new(lit(0)),
+            Span::default(),
+        );
+        match run_expr(&index(target, idx)).unwrap() {
+            Ctl::Return(Value::Int(5)) => {}
+            _ => panic!("expected the target's return signal"),
+        }
+    }
+
+    #[test]
+    fn index_signal_from_index_propagates() {
+        let idx = Expr::Block(
+            Arc::from([Stmt::Throw(lit(7), Span::default())]),
+            Span::default(),
+        );
+        match run_expr(&index(list2(), idx)).unwrap() {
+            Ctl::Throw(Value::Int(7)) => {}
+            _ => panic!("expected the index's throw signal"),
+        }
+    }
+
+    #[test]
+    fn index_out_of_range_is_e4019() {
+        let err = run_expr(&index(list2(), lit(9))).err().unwrap();
+        assert_eq!(err.code, codes::INDEX);
+        assert_eq!(err.message, "list index 9 out of range");
+    }
+
+    #[test]
+    fn field_reads_builtin_method() {
+        // A list receiver reports its length through the zero-argument builtin
+        // registry, exactly like `eval_inner`'s non-instance `Expr::Field` arm.
+        match run_expr(&field(list2(), "len")).unwrap() {
+            Ctl::Val(Value::Int(v)) => assert_eq!(v, 2),
+            _ => panic!("expected 2, got a different completion"),
+        }
+    }
+
+    #[test]
+    fn field_unknown_member_is_e2003() {
+        let err = run_expr(&field(lit(1), "nope")).err().unwrap();
+        assert_eq!(err.code, codes::UNDEFINED);
+        assert_eq!(err.message, "int has no method `nope`");
+    }
+
+    #[test]
+    fn field_receiver_signal_propagates() {
+        // The receiver returns; the member is never resolved (an `E2003` must
+        // not surface). This mirrors `eval_inner`'s receiver-first `val!`.
+        let recv = Expr::Block(
+            Arc::from([Stmt::Return(Some(lit(5)), Span::default())]),
+            Span::default(),
+        );
+        match run_expr(&field(recv, "len")).unwrap() {
+            Ctl::Return(Value::Int(5)) => {}
+            _ => panic!("expected the receiver's return signal"),
+        }
+    }
+
+    fn instance(fields: Vec<(&str, Value)>) -> Value {
+        Value::Instance(Rc::new(super::super::value::Instance {
+            ty: "P".to_string(),
+            fields: RefCell::new(
+                fields
+                    .into_iter()
+                    .map(|(n, v)| (n.to_string(), v))
+                    .collect(),
+            ),
+        }))
+    }
+
+    /// Run a field expression against an environment binding `p` to an
+    /// instance, exercising the `Value::Instance` branch of
+    /// `Cont::FieldReceiver` (unreachable from source while `Expr::Construct`
+    /// is unsupported, so it is covered structurally here).
+    fn run_field_on_instance(name: &str, inst: Value, methods: &[(&str, &str)]) -> Result<Ctl> {
+        let mut interp = Interp::new();
+        for (ty, m) in methods {
+            interp
+                .methods
+                .insert((ty.to_string(), m.to_string()), Vec::new());
+        }
+        let globals = interp.globals.clone();
+        globals.define("p".to_string(), inst, false);
+        let e = Expr::Field(
+            Arc::new(Expr::Name("p".to_string(), Span::default())),
+            name.to_string(),
+            Span::default(),
+        );
+        eval_expr(&mut interp, &e, &globals)
+    }
+
+    #[test]
+    fn instance_field_reads_declared_field() {
+        match run_field_on_instance("x", instance(vec![("x", Value::Int(7))]), &[]).unwrap() {
+            Ctl::Val(Value::Int(v)) => assert_eq!(v, 7),
+            _ => panic!("expected 7, got a different completion"),
+        }
+    }
+
+    #[test]
+    fn instance_missing_field_is_e2003() {
+        let err = run_field_on_instance("y", instance(vec![("x", Value::Int(7))]), &[])
+            .err()
+            .unwrap();
+        assert_eq!(err.code, codes::UNDEFINED);
+        assert_eq!(err.message, "P has no field `y`");
+    }
+
+    #[test]
+    fn instance_method_name_is_not_a_field_value() {
+        // A method registered for `(P, m)` that is not a declared field is the
+        // recursive method-not-a-value guard, not a plain missing field.
+        let err = run_field_on_instance("m", instance(vec![("x", Value::Int(1))]), &[("P", "m")])
+            .err()
+            .unwrap();
+        assert_eq!(err.code, codes::UNDEFINED);
+        assert_eq!(err.message, "struct P has method `m`; call it as `m(...)`");
+    }
+
+    #[test]
+    fn instance_field_wins_over_registered_method() {
+        // If a field and a method share a name, the field is read (mirrors the
+        // recursive `!fields.any` guard).
+        match run_field_on_instance("m", instance(vec![("m", Value::Int(3))]), &[("P", "m")])
+            .unwrap()
+        {
+            Ctl::Val(Value::Int(v)) => assert_eq!(v, 3),
+            _ => panic!("expected 3, got a different completion"),
+        }
+    }
+
+    #[test]
+    fn deep_nested_index_is_stack_safe() {
+        // Nest an index chain `MAX_AST_DEPTH - 2` deep in the target position.
+        // The innermost target is an int, so the first applied lookup is
+        // `cannot index int with int`. What matters is that the machine descends
+        // iteratively (one `Cont` per level) and never grows the host stack
+        // proportionally to the nesting.
+        let depth = MAX_AST_DEPTH - 2;
+        let mut v = lit(1);
+        for _ in 0..depth {
+            v = index(v, lit(0));
+        }
+        let err = run_expr(&v).err().unwrap();
+        assert_eq!(err.code, codes::TYPE_MISMATCH);
+        assert_eq!(err.message, "cannot index int with int");
+    }
+
+    #[test]
+    fn index_beyond_ast_depth_is_e1015() {
+        let depth = MAX_AST_DEPTH + 5;
+        let mut v = lit(1);
+        for _ in 0..depth {
+            v = index(v, lit(0));
+        }
+        let err = run_expr(&v).err().unwrap();
+        assert_eq!(err.code, codes::NESTING);
+    }
+
+    #[test]
+    fn deep_nested_field_is_stack_safe() {
+        let depth = MAX_AST_DEPTH - 2;
+        let mut v = lit(1);
+        for _ in 0..depth {
+            v = field(v, "len");
+        }
+        let err = run_expr(&v).err().unwrap();
+        assert_eq!(err.code, codes::UNDEFINED);
+        assert_eq!(err.message, "int has no method `len`");
+    }
+
+    #[test]
+    fn field_beyond_ast_depth_is_e1015() {
+        let depth = MAX_AST_DEPTH + 5;
+        let mut v = lit(1);
+        for _ in 0..depth {
+            v = field(v, "len");
         }
         let err = run_expr(&v).err().unwrap();
         assert_eq!(err.code, codes::NESTING);
