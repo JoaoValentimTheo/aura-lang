@@ -111,16 +111,12 @@ fn engines_agree() {
         }
         let (first_name, first) = &observed[0];
         for (name, obs) in observed.iter().skip(1) {
-            // B-1R3A is a partial migration: the whole corpus includes
-            // constructs the iterative engine does not support yet, and those
-            // deliberately diverge (recursive result vs. the iterative
-            // engine's explicit E4999). The R3A subset is the meaningful
-            // comparison and is asserted by `r3a_supported_subset_agrees`.
-            // Here the baseline self-comparison must still hold for the
-            // recursive engine, so require at least the first two engines to
-            // agree only when the feature is off; with the feature on, a
-            // divergence is allowed only if the iterative side reports the
-            // unsupported diagnostic.
+            // B-1R3F.1 closed the current-language runtime surface: the
+            // iterative engine now supports every construct, so the whole
+            // corpus must agree between engines with no unsupported-sentinel
+            // exception. (`is_unsupported_iterative_divergence` is retained
+            // only for the multi-source compile-path case, which is a
+            // compilation surface, not an evaluator construct.)
             if obs == first {
                 continue;
             }
