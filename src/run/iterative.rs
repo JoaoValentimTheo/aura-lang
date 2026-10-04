@@ -2245,6 +2245,13 @@ impl<'i> Machine<'i> {
                 span,
             ));
         }
+        // Method-style higher-order callbacks (`[1, 2].map(f)`, `.filter(f)`,
+        // `.reduce(f, acc)`) must run as machine work; otherwise
+        // `Interp::method` would re-enter the recursive evaluator through
+        // `call_value_pub`. Any other method takes the ordinary path.
+        if let Some(step) = crate::stdlib::resumable_method(&subject, name, &values, span) {
+            return self.start_native_resume(step?, span);
+        }
         Ok(Control::Next(Ctrl::Done(Ctl::Val(
             self.interp.method(&subject, name, values, span)?,
         ))))

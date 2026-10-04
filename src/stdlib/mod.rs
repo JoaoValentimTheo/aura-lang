@@ -739,6 +739,49 @@ fn map_method(
 
 use crate::run::{NativeOutcome, NativeResume};
 
+/// Resumable conversion for method-style callbacks (R3G.1).
+///
+/// `[list].map(f)`, `.filter(f)`, and `.reduce(f, acc)` are the method forms
+/// of the higher-order builtins. The recursive engine evaluates their
+/// callbacks through [`Interp::method`]'s ordinary `call_value_pub`; the
+/// iterative machine must not re-enter the recursive evaluator, so it calls
+/// this converter before `Interp::method` and drives the same
+/// [`NativeOutcome`] states as machine work.
+///
+/// Returns `None` when the receiver/name/arity is not one of these three
+/// builtins, so all other methods keep the ordinary synchronous path.
+#[must_use]
+pub(crate) fn resumable_method(
+    recv: &Value,
+    name: &str,
+    args: &[Value],
+    span: Span,
+) -> Option<Result<NativeOutcome>> {
+    let Value::List(l) = recv else {
+        return None;
+    };
+    match name {
+        "map" if args.len() == 1 => {
+            let f = args[0].clone();
+            let snapshot = l.borrow().clone();
+            let cap = snapshot.len();
+            Some(Ok(map_step(f, snapshot, 0, Vec::with_capacity(cap), span)))
+        }
+        "filter" if args.len() == 1 => {
+            let f = args[0].clone();
+            let snapshot = l.borrow().clone();
+            Some(Ok(filter_step(f, snapshot, 0, Vec::new(), span)))
+        }
+        "reduce" if args.len() == 2 => {
+            let f = args[0].clone();
+            let acc = args[1].clone();
+            let snapshot = l.borrow().clone();
+            Some(Ok(reduce_step(f, snapshot, 0, acc, span)))
+        }
+        _ => None,
+    }
+}
+
 /// One `map` iteration step: call `f` on `items[index]`, then continue.
 fn map_step(
     f: Value,
