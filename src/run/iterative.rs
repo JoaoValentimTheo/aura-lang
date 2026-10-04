@@ -2938,7 +2938,7 @@ pub(crate) fn exec_stmt(interp: &mut Interp, s: &Stmt, env: &Env) -> Result<(Ctl
     Ok((ctl, machine.top_env.take()))
 }
 
-/// Span accessor used only for the unsupported diagnostic.
+/// Span accessor for expression diagnostics.
 fn expr_span(e: &Expr) -> Span {
     e.span()
 }
@@ -3398,8 +3398,8 @@ mod tests {
 
     /// Run a field expression against an environment binding `p` to an
     /// instance, exercising the `Value::Instance` branch of
-    /// `Cont::FieldReceiver` (unreachable from source while `Expr::Construct`
-    /// is unsupported, so it is covered structurally here).
+    /// `Cont::FieldReceiver`. Source-level instance reads are covered by the
+    /// oracle (`field_instance_read`).
     fn run_field_on_instance(name: &str, inst: Value, methods: &[(&str, &str)]) -> Result<Ctl> {
         let mut interp = Interp::new();
         for (ty, m) in methods {
