@@ -52,6 +52,16 @@
 //!   Both operators yield the truthiness of the executing operand as a `bool`,
 //!   exactly matching `Interp::eval`'s `Expr::Binary` short-circuit arms.
 //!
+//! ## B-1R3B.4.1 added subset
+//!
+//! * list construction: `Expr::List` (`[a, b, c]`) and `Expr::Tuple`
+//!   (`(a, b)`), which is list sugar (`LANGUAGE_SPEC.md` §21). Elements are
+//!   evaluated left to right, exactly once each, via [`Cont::ListNext`]; the
+//!   first control signal or diagnostic from an element aborts the list and
+//!   propagates unchanged, so later elements are never evaluated. The
+//!   completed elements become a `Value::list` (a `list`-typed value; tuple
+//!   literals are indistinguishable from list literals by contract).
+//!
 //! ## Explicitly unsupported (R3B–R3F)
 //!
 //! Every other `Expr`/`Stmt` form fails with a deterministic
@@ -184,6 +194,18 @@ enum Cont {
     /// A required short-circuit right operand finished (B-1R3B.3); the result
     /// is its truthiness as a `bool`.
     ShortCircuitRight,
+    /// A list/tuple element finished (B-1R3B.4.1). `index` is the element that
+    /// produced the last entry of `out`; the next element is scheduled with the
+    /// same environment, or the completed elements become a `Value::list`.
+    /// `Expr::Tuple` uses this same record: a tuple literal is list sugar
+    /// (`LANGUAGE_SPEC.md` §21) and its recursive arm is byte-identical to
+    /// `Expr::List`.
+    ListNext {
+        items: Arc<[Expr]>,
+        index: usize,
+        out: Vec<Value>,
+        env: Env,
+    },
     /// A `return` operand finished; convert to the `return` signal.
     ReturnFrom,
     /// A `throw` operand finished; convert to the `throw` signal.
@@ -407,6 +429,32 @@ impl<'i> Machine<'i> {
                     Ok(Resume::Redeliver(Done::plain(done.ctl)))
                 }
             }
+            Cont::ListNext {
+                items,
+                index,
+                mut out,
+                env,
+            } => {
+                let Ctl::Val(value) = done.ctl else {
+                    // A control signal from an element aborts the whole list;
+                    // later elements are never evaluated (mirrors `val!`).
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                out.push(value);
+                let next = index + 1;
+                if next < items.len() {
+                    let elem = Arc::new(items[next].clone());
+                    self.kont.push(Cont::ListNext {
+                        items,
+                        index: next,
+                        out,
+                        env: env.clone(),
+                    });
+                    Ok(Resume::Next(Ctrl::EvalExpr(elem, env)))
+                } else {
+                    Ok(Resume::Next(Ctrl::Done(Ctl::Val(Value::list(out)))))
+                }
+            }
             Cont::ReturnFrom => match done.ctl {
                 Ctl::Val(v) => Ok(Resume::Next(Ctrl::ReturnValue(v))),
                 other => Ok(Resume::Redeliver(Done::plain(other))),
@@ -417,6 +465,35 @@ impl<'i> Machine<'i> {
             },
             Cont::FrameBoundary { call_span } => self.resume_frame_boundary(done, call_span),
         }
+    }
+
+    /// Begin evaluating a list/tuple element sequence (B-1R3B.4.1).
+    ///
+    /// Mirrors `Interp::eval_inner`'s `Expr::List`/`Expr::Tuple` arms: each
+    /// element is evaluated in source order with the same environment, exactly
+    /// once; the values are collected and become `Value::list`. An empty list
+    /// completes immediately.
+    ///
+    /// `Result` is kept for a uniform `step` dispatch signature even though this
+    /// arm cannot currently fail; later container forms may (mirrors
+    /// [`Machine::start_block`]).
+    #[allow(clippy::unnecessary_wraps)]
+    fn start_list(&mut self, items: Arc<[Expr]>, env: &Env) -> Result<Control> {
+        if items.is_empty() {
+            return Ok(Control::Next(Ctrl::Done(Ctl::Val(Value::list(Vec::new())))));
+        }
+        // `index` is the element currently being evaluated; `out` holds the
+        // elements that already completed.
+        self.kont.push(Cont::ListNext {
+            items: items.clone(),
+            index: 0,
+            out: Vec::with_capacity(items.len()),
+            env: env.clone(),
+        });
+        Ok(Control::Next(Ctrl::EvalExpr(
+            Arc::new(items[0].clone()),
+            env.clone(),
+        )))
     }
 
     /// Apply a unary operator to an already-evaluated operand (B-1R3B.1).
@@ -519,6 +596,12 @@ impl<'i> Machine<'i> {
                     span: *span,
                 });
                 Ok(Control::Next(Ctrl::EvalExpr(operand.clone(), env.clone())))
+            }
+            Expr::List(items, _) | Expr::Tuple(items, _) => {
+                // Left to right, exactly once per element (B-1R3B.4.1). A tuple
+                // literal is list sugar (`LANGUAGE_SPEC.md` §21) and shares the
+                // list evaluation path, exactly like `eval_inner`.
+                self.start_list(items.clone(), env)
             }
             Expr::Binary(op, l, r, span) => {
                 match op {
@@ -889,9 +972,9 @@ mod tests {
 
     #[test]
     fn unsupported_construct_fails_explicitly() {
-        // A list literal is R3B.4 territory and remains unsupported. The
+        // A map literal is R3B.4.2 territory and remains unsupported. The
         // machine must fail explicitly, never fall back to recursion.
-        let e = Expr::List(Arc::from(vec![lit(1), lit(2)]), Span::default());
+        let e = Expr::Map(Arc::from([(lit(1), lit(2))]), Span::default());
         let err = run_expr(&e).err().unwrap();
         assert_eq!(err.code, codes::INTERNAL);
         assert!(err
@@ -1496,6 +1579,256 @@ mod tests {
             }
             let err = run_expr(&e).err().unwrap();
             assert_eq!(err.code, codes::NESTING);
+        }
+    }
+
+    // ----- B-1R3B.4.1 list / tuple construction -------------------------
+
+    fn list(items: Vec<Expr>) -> Expr {
+        Expr::List(Arc::from(items), Span::default())
+    }
+
+    fn tuple(items: Vec<Expr>) -> Expr {
+        Expr::Tuple(Arc::from(items), Span::default())
+    }
+
+    fn run_list(expr: &Expr) -> Vec<Value> {
+        match run_expr(expr) {
+            Ok(Ctl::Val(ref v)) => match v {
+                Value::List(l) => l.borrow().clone(),
+                _ => panic!("expected a list completion, got a different value"),
+            },
+            Ok(_) => panic!("expected a list completion, got a different signal"),
+            Err(d) => panic!("expected a list completion, got diagnostic {}", d.code),
+        }
+    }
+
+    #[test]
+    fn list_empty_is_empty_list() {
+        assert!(run_list(&list(Vec::new())).is_empty());
+    }
+
+    #[test]
+    fn list_single_element() {
+        let vals = run_list(&list(vec![lit(7)]));
+        assert_eq!(vals.len(), 1);
+        assert!(matches!(vals[0], Value::Int(7)));
+    }
+
+    #[test]
+    fn list_elements_keep_source_order() {
+        let vals = run_list(&list(vec![
+            lit(1),
+            Expr::Lit(Lit::Str("x".to_string()), Span::default()),
+            Expr::Lit(Lit::Bool(true), Span::default()),
+            Expr::Lit(Lit::None, Span::default()),
+        ]));
+        assert!(matches!(vals[0], Value::Int(1)));
+        assert!(matches!(&vals[1], Value::Str(s) if &**s == "x"));
+        assert!(matches!(vals[2], Value::Bool(true)));
+        assert!(matches!(vals[3], Value::None));
+    }
+
+    #[test]
+    fn tuple_is_list_sugar() {
+        // `(a, b)` is list sugar (`LANGUAGE_SPEC.md` §21): a list value,
+        // indistinguishable from `[a, b]` (type `list`, same contents).
+        let vals = run_list(&tuple(vec![lit(1), lit(2)]));
+        assert_eq!(vals.len(), 2);
+        assert!(matches!(vals[0], Value::Int(1)));
+        assert!(matches!(vals[1], Value::Int(2)));
+    }
+
+    #[test]
+    fn list_of_lists_nests() {
+        let inner1 = list(vec![lit(1)]);
+        let inner2 = list(vec![lit(2), lit(3)]);
+        let vals = run_list(&list(vec![inner1, inner2]));
+        assert_eq!(vals.len(), 2);
+        match (&vals[0], &vals[1]) {
+            (Value::List(a), Value::List(b)) => {
+                assert_eq!(a.borrow().len(), 1);
+                assert_eq!(b.borrow().len(), 2);
+            }
+            _ => panic!("nested elements must remain lists"),
+        }
+    }
+
+    #[test]
+    fn list_evaluates_elements_left_to_right_first_error_wins() {
+        // `[1 / 0, "a" - "b"]`: if evaluation were right-to-left (or otherwise
+        // reordered) the E3001 subtraction would be reported instead of the
+        // first element's E4007. The recursive arm reports the first element.
+        let e = list(vec![
+            bin(BinOp::Div, lit(1), lit(0)),
+            bin(
+                BinOp::Sub,
+                Expr::Lit(Lit::Str("a".to_string()), Span::default()),
+                Expr::Lit(Lit::Str("b".to_string()), Span::default()),
+            ),
+        ]);
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::DIV_ZERO);
+        assert_eq!(err.message, "division by zero");
+    }
+
+    #[test]
+    fn list_later_element_error_still_reported() {
+        // The intermediate and last elements must actually be evaluated.
+        let e = list(vec![lit(1), bin(BinOp::Div, lit(1), lit(0))]);
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::DIV_ZERO);
+        let e = list(vec![lit(1), lit(2), bin(BinOp::Div, lit(1), lit(0))]);
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::DIV_ZERO);
+    }
+
+    #[test]
+    fn list_element_signal_aborts_later_elements() {
+        // A control signal from the first element must stop the list: the
+        // second element's E4007 must never occur (mirrors `val!`).
+        let first = Expr::Block(
+            Arc::from(vec![Stmt::Return(Some(lit(5)), Span::default())]),
+            Span::default(),
+        );
+        let e = list(vec![first, bin(BinOp::Div, lit(1), lit(0))]);
+        match run_expr(&e).unwrap() {
+            Ctl::Return(Value::Int(5)) => {}
+            _ => panic!("element control signal must abort the list"),
+        }
+        // A `throw` element likewise propagates unchanged.
+        let first = Expr::Block(
+            Arc::from(vec![Stmt::Throw(lit(9), Span::default())]),
+            Span::default(),
+        );
+        let e = list(vec![first, bin(BinOp::Div, lit(1), lit(0))]);
+        match run_expr(&e).unwrap() {
+            Ctl::Throw(Value::Int(9)) => {}
+            _ => panic!("element throw must abort the list"),
+        }
+    }
+
+    #[test]
+    fn list_unsupported_element_fails_explicitly() {
+        // A call element is R3C work: the list must fail with the E4999
+        // sentinel, never fall back to recursion and never produce a partial
+        // list. The first element is supported, so this also proves the second
+        // element is genuinely scheduled and then fails.
+        let call = Expr::Call(
+            Arc::new(Expr::Name("len".to_string(), Span::default())),
+            Arc::from([crate::ast::Arg {
+                name: None,
+                value: list(vec![lit(1)]),
+            }]),
+            Vec::new(),
+            Span::default(),
+        );
+        let e = list(vec![lit(1), call]);
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::INTERNAL);
+        assert!(err
+            .message
+            .contains("not supported by the iterative engine"));
+    }
+
+    #[test]
+    fn list_inside_r3a_constructs() {
+        // List inside a block, bound with `let`, used as an `if` condition.
+        let e = Expr::Block(
+            Arc::from(vec![
+                Stmt::Let {
+                    mutable: false,
+                    name: "xs".to_string(),
+                    ann: None,
+                    value: list(vec![lit(1), lit(2)]),
+                    span: Span::default(),
+                },
+                Stmt::Expr(
+                    Expr::If(
+                        Arc::new(Expr::Name("xs".to_string(), Span::default())),
+                        Arc::from([Stmt::Expr(lit(7), Span::default())]),
+                        Some(Arc::new(lit(8))),
+                        Span::default(),
+                    ),
+                    Span::default(),
+                ),
+            ]),
+            Span::default(),
+        );
+        match run_expr(&e).unwrap() {
+            Ctl::Val(Value::Int(7)) => {}
+            _ => panic!("non-empty list must be truthy"),
+        }
+        // An empty list is falsy (mirrors `Value::truthy`).
+        let e = Expr::If(
+            Arc::new(list(Vec::new())),
+            Arc::from([Stmt::Expr(lit(7), Span::default())]),
+            Some(Arc::new(lit(8))),
+            Span::default(),
+        );
+        match run_expr(&e).unwrap() {
+            Ctl::Val(Value::Int(8)) => {}
+            _ => panic!("empty list must be falsy"),
+        }
+    }
+
+    #[test]
+    fn deep_nested_list_is_stack_safe() {
+        let depth = MAX_AST_DEPTH - 2;
+        let mut e = lit(1);
+        for _ in 0..depth {
+            e = list(vec![e]);
+        }
+        // The value is a list nested `depth` levels; unwrap structurally.
+        let mut v = match run_expr(&e) {
+            Ok(Ctl::Val(v)) => v,
+            _ => panic!("deep nested list must evaluate"),
+        };
+        for _ in 0..depth {
+            match &v {
+                Value::List(inner) => {
+                    let next = inner.borrow()[0].clone();
+                    v = next;
+                }
+                _ => panic!("every level must be a list"),
+            }
+        }
+        assert!(matches!(v, Value::Int(1)));
+    }
+
+    #[test]
+    fn list_beyond_ast_depth_is_e1015() {
+        let mut e = lit(1);
+        for _ in 0..(MAX_AST_DEPTH + 5) {
+            e = list(vec![e]);
+        }
+        let err = run_expr(&e).err().unwrap();
+        assert_eq!(err.code, codes::NESTING);
+    }
+
+    #[test]
+    fn deep_nested_list_through_frame_boundary_is_stack_safe() {
+        // The real `Program` path enters through `call_closure_body` (frame 1 +
+        // `FrameBoundary`). A list nested `MAX_AST_DEPTH - 2` deep must run
+        // there without growing the host stack proportionally: the machine
+        // pushes one `Cont` per level and loops.
+        let depth = MAX_AST_DEPTH - 2;
+        let mut e = lit(1);
+        for _ in 0..depth {
+            e = list(vec![e]);
+        }
+        let mut interp = Interp::new();
+        let globals = interp.globals.clone();
+        let closure = Rc::new(Closure {
+            name: "main".to_string(),
+            params: Vec::new(),
+            param_tys: Vec::new(),
+            body: Arc::from(vec![Stmt::Expr(e, Span::default())]),
+            env: globals,
+        });
+        match call_closure_body(&mut interp, closure, Vec::new(), Span::default()).unwrap() {
+            Ctl::Val(Value::List(_)) => {}
+            _ => panic!("deep nested list through a frame must evaluate"),
         }
     }
 }
