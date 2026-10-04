@@ -8,9 +8,9 @@ before continuing substantial work.
 ## Repository
 
 - Branch: `rewrite/v3-rust`
-- Remote `origin/rewrite/v3-rust`: `efc66bde46a69c164f256254c47f58b96ad1e4b4`
-  (R3A + B-1R3B.1 + B-1R3B.2 + B-1R3B.3 + B-1R3B.4.1; pushed and remote-closed).
-  The B-1R3B.4.2 commits are **local and unpushed** on top of it.
+- Remote `origin/rewrite/v3-rust`: `5e7067749c6010c9e03c7d902ed2dd682098702e`
+  (R3A + B-1R3B.1 through B-1R3B.4.2; pushed and remote-closed). The B-1R3B.5
+  commits are **local and unpushed** on top of it.
 - Local/remote relationship: authoritative value is `git rev-list
   --left-right --count origin/rewrite/v3-rust...HEAD`; a tracked file cannot
   safely hardcode its own position.
@@ -33,9 +33,9 @@ runtime means adding a version, never replacing one.
 ## Current Track
 
 B-1R — ENGINE-STACK-INDEPENDENT CALL ENGINE. B-1 is OPEN (WASM implementation
-nonconformance). The R3A baseline through B-1R3B.4.1 are pushed and remote-closed;
-B-1R3B.4.2 map construction is complete locally and unpushed. Production still
-runs the recursive evaluator.
+nonconformance). The R3A baseline through B-1R3B.4.2 are pushed and remote-closed
+at `5e70677`; B-1R3B.5 range construction is complete locally and unpushed.
+Production still runs the recursive evaluator.
 
 B-1R phase state:
 
@@ -58,18 +58,21 @@ B-1R phase state:
 - **B-1R3B.4.1:** COMPLETE AND PUSHED at `efc66bd` (list/tuple construction;
   differential-oracle equivalent; tuple is list sugar per `LANGUAGE_SPEC.md`
   §21).
-- **B-1R3B.4.2:** COMPLETE LOCALLY; PUSH BLOCKERS REMEDIATED (map construction;
+- **B-1R3B.4.2:** COMPLETE AND REMOTELY CLOSED at `5e70677` (map construction;
   differential-oracle equivalent; key-before-value source order, exactly-once,
   last-wins duplicates, runtime invalid-key `E3001` at the key span, control
-  propagation, diagnostics/spans, and host-stack safety verified). A first
-  adversarial push gate found and this remediation closed: the program-mode
-  `main_map_element` case (list containing a Map through a real frame boundary)
-  was restored to the R3B.4.2 supported set, the `r3b42_golden.tsv` LF pin was
-  added, and the R3B.4.2 counts were reconciled (57 supported cases = 49
-  value-mode + 8 program-mode; 7 unsupported cases; 57 golden rows). Unpushed;
-  a fresh gate over the expanded range is required. See
-  `docs/engineering/CURRENT_HANDOFF.md`.
-- **B-1R3B.4.3/R3B.5…R3G:** NOT STARTED.
+  propagation, diagnostics/spans, and host-stack safety verified; program-mode
+  `main_map_element` restored; `r3b42_golden.tsv` LF-pinned; 57 supported cases).
+- **B-1R3B.5:** COMPLETE LOCALLY (range construction; differential-oracle
+  equivalent; start-before-end exactly-once order, both-bounds-evaluated then
+  start-first validation, `E3001` bound diagnostics at the range span with
+  check-time/runtime split, control-signal propagation, half-open/descending/
+  empty/`i64`-extreme semantics, `len()` saturation, list/map/if/let/program
+  composition, no-fallback unsupported surface, and host-stack/AST-depth safety
+  verified). The current step-1 half-open Range only; future 0.3
+  `step`/inclusive semantics deliberately not introduced. Unpushed; a fresh
+  adversarial push gate is required. See `docs/engineering/CURRENT_HANDOFF.md`.
+- **B-1R3B.4.3/R3B.6…R3G:** NOT STARTED.
 
 ## Production vs experimental engine
 
@@ -80,10 +83,14 @@ B-1R phase state:
   statements, blocks, `let` shadowing, `if`/`else`, unary `-`/`not`/`~`, the
   eager binary operators (`+ - * / % ^ == != < <= > >= & | << >>`),
   short-circuit `and`/`or` (the skipped operand is never evaluated), list/tuple
-  construction (left-to-right, exactly once per element), and map construction
+  construction (left-to-right, exactly once per element), map construction
   (per entry key then value in source order, exactly once; last-wins duplicates;
-  runtime invalid keys are `E3001` at the key span); everything else (calls,
-  ranges, comprehensions, …) returns `E4999` and never falls back to recursion.
+  runtime invalid keys are `E3001` at the key span), and range construction
+  (`a..b`; start then end, each exactly once; both evaluated before either is
+  validated, start-first; non-int bounds are `E3001` at the range span; a valid
+  pair is the same `RangeVal { start, end }` `range(a, b)` builds); everything
+  else (calls, comprehensions, …) returns `E4999` and never falls back to
+  recursion.
 
 ## Known blockers
 
@@ -137,9 +144,9 @@ Git + working tree + these documents; chat history is not authority.
 ## Exact Next Action
 
 See `docs/engineering/CURRENT_HANDOFF.md`. In short: run a fresh adversarial
-read-only push gate over the expanded range (R3B.4.2 plus push-blocker
-remediation); if it passes, push and remotely close B-1R3B.4.2, then begin the
-next microphase per the handoff ordering (R3B.5 range).
+read-only push gate over the `5e70677..HEAD` range (R3A through R3B.5); if it
+passes, push and remotely close B-1R3B.5, then begin the next microphase per the
+handoff ordering (R3B.6 index/field reads).
 
 ## Writer
 

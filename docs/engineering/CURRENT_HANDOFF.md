@@ -27,11 +27,11 @@ explicit-continuation (iterative) evaluator over the existing AST
   the intermediate commits `58a1b16`/`31e313a`/`2f34b9c`.
 - B-1R3B.4.1 (list/tuple construction): **COMPLETE AND PUSHED** at `efc66bd`
   (remote-closed).
-- B-1R3B.4.2 (map construction): **COMPLETE LOCALLY, PUSH BLOCKERS REMEDIATED**,
-  unpushed (original three commits plus additive remediation commits on top of
-  `origin/rewrite/v3-rust` = `efc66bd`). A fresh adversarial push gate over the
-  expanded range is required before any push.
-- B-1R3B.4.3/R3B.5…R3G: NOT STARTED.
+- B-1R3B.4.2 (map construction): **COMPLETE AND REMOTELY CLOSED** at `5e70677`.
+- B-1R3B.5 (range construction): **COMPLETE LOCALLY**, unpushed (three additive
+  commits on top of `origin/rewrite/v3-rust` = `5e70677`). A fresh adversarial
+  push gate over `5e70677..HEAD` is required before any push.
+- B-1R3B.6…R3G: NOT STARTED.
 
 See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
 
@@ -44,12 +44,54 @@ See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
   statements, blocks, `let` shadowing, `if`/`else`, unary `-`/`not`/`~`, the
   eager binary operators (`+ - * / % ^ == != < <= > >= & | << >>`),
   short-circuit `and`/`or` (the skipped operand is never evaluated), list/tuple
-  construction (left-to-right, exactly once per element), and map construction
-  (per entry key then value in source order, exactly once); every other
-  construct returns the deterministic `E4999` sentinel and never falls back to
-  recursion.
+  construction (left-to-right, exactly once per element), map construction
+  (per entry key then value in source order, exactly once), and range
+  construction (`a..b`); every other construct returns the deterministic
+  `E4999` sentinel and never falls back to recursion.
 
-## Completed in B-1R3B.4.2 (local)
+## Completed in B-1R3B.5 (local)
+
+- `src/run/iterative.rs` — added `Cont::RangeStart { end, env, span }` and
+  `Cont::RangeEnd { start, span }`, the `Expr::Range` arm in `start_expr`, and
+  the two `resume` arms. The start operand is evaluated first and exactly once;
+  its completion retains the value (unvalidated) and schedules the end exactly
+  once. **Both** operands complete before either bound is validated, and
+  validation is start-first, exactly like `Interp::eval_inner`'s `Expr::Range`
+  arm (`src/run/mod.rs:1583`): a non-int bound is `E3001` with the recursive
+  message (`range start/end expects an int, found {type}`) at the range
+  expression's span, and a start error beats a runtime end error, while an end
+  signal/error preempts a runtime-invalid start (the end is evaluated first).
+  A valid pair becomes the same `Value::Range(RangeVal { start, end })` that
+  `range(a, b)` builds (half-open, end-exclusive). A control signal from either
+  operand aborts construction and propagates unchanged; no partial Range
+  escapes. No recursive AST evaluation and no fallback.
+- Oracle: new `tests/oracle/r3b5_golden.tsv` (LF-pinned; 55 supported cases)
+  and differential tests `r3b5_range_supported_subset_agrees`,
+  `iterative_range_unsupported_fails_explicitly`, `r3b5_iterative_golden_matches`,
+  plus `r3b5_golden_has_lf_pin`. Boundary movements: `range_literal` removed
+  from the R3A unsupported set (`r3a_golden.tsv` −1 row); `and_required_range`
+  removed from the R3B.3 unsupported set and replaced by six supported range
+  short-circuit cases (`r3b3_golden.tsv` +5 rows); `range_element` moved from
+  the R3B.4.1 unsupported set into the supported set plus a new program-mode
+  `main_list_range` (`r3b4_golden.tsv` +2 rows); `range_value` moved from the
+  R3B.4.2 unsupported set into the supported set plus a new program-mode
+  `main_map_range` (`r3b42_golden.tsv` +2 rows). The main `golden.tsv` is
+  byte-unchanged.
+- Verified: start-before-end order and exactly-once scheduling; both-bounds
+  evaluated then start-first validation; `E3001` runtime/check-time split;
+  `E3001` at the exact range span; control propagation from either bound;
+  `i64` extremes (`len()` saturates), descending/equal/empty, negative bounds;
+  list/map/if/let/block/program composition; no fallback on unsupported bounds
+  (`E4999`); AST-depth `E1015` below/above the limit; deep nesting host-stack
+  safe. A deliberate start/end endpoint-swap mutation was detected by the R3B.5
+  differential + golden tests and the composite R3B.4/R3B.4.2 tests, then
+  reverted byte-exactly.
+- Honest gap: exactly-once is structural but not differentially falsifiable in
+  the current subset, because the only side-effecting bound constructs
+  (calls/assignment/print) are still unsupported (recorded in
+  `src/run/iterative.rs`).
+
+## Completed in B-1R3B.4.2 (remote-closed at `5e70677`)
 
 - `src/run/iterative.rs` — added `Cont::MapKeyNext { entries, index, out, env }`
   and `Cont::MapValueNext { key, entries, index, out, env }`, `Machine::start_map`,
@@ -224,10 +266,10 @@ human review of the current one.
 - R3B.2 binary operators — **COMPLETE AND PUSHED**
 - R3B.3 short-circuit / evaluation order — **COMPLETE AND PUSHED**
 - R3B.4.1 list / tuple construction — **COMPLETE AND PUSHED**
-- R3B.4.2 map construction — **COMPLETE LOCALLY**
+- R3B.4.2 map construction — **COMPLETE AND REMOTELY CLOSED**
 - R3B.4.3 (reserved: map-key admissibility / nesting if the code shows a
   distinct boundary)
-- R3B.5 range
+- R3B.5 range — **COMPLETE LOCALLY**
 - R3B.6 index / field reads
 - R3B.7 f-strings
 - R3B.8 milestone adversarial closure
@@ -237,14 +279,14 @@ microphase.
 
 ## Exact next action
 
-1. Fresh adversarial read-only push gate over the expanded
-   `efc66bd..HEAD` range (original R3B.4.2 stack plus the push-blocker
-   remediation commits).
-2. If the gate passes, push the exact reviewed stack and close B-1R3B.4.2
+1. Fresh adversarial read-only push gate over the `5e70677..HEAD` range (R3A
+   through B-1R3B.5).
+2. If the gate passes, push the exact reviewed stack and close B-1R3B.5
    remotely.
-3. Then begin the next ordered microphase on `src/run/iterative.rs` (R3B.5
-   range), extending the oracle and keeping `tests/oracle/golden.tsv`
-   byte-unchanged, with a checkpoint at each microphase.
+3. Then begin the next ordered microphase on `src/run/iterative.rs` (R3B.6
+   index / field reads), extending the oracle and keeping
+   `tests/oracle/golden.tsv` byte-unchanged, with a checkpoint at each
+   microphase.
 
 ## Stop conditions
 
