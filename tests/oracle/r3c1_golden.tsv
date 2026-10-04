@@ -289,6 +289,15 @@ r3c1-value/range_bounds_order	730a650a	runtime	3001	range start expects an int, 
 r3c1-value/index_target_then_index	740a690a	runtime	3001	cannot index list with none	<r3c1>	12	13	1	13	-	-
 r3c1-value/fstring_interp_order	310a320a	ok	0		-	0	0	0	0	string	"nonenone"
 r3c1-value/unary_operand_once	750a	runtime	3001	cannot negate none	<r3c1>	0	1	1	1	-	-
+r3c1-value/binary_order_both_operands	6c0a720a	ok	0		-	0	0	0	0	bool	false
+r3c1-value/unary_operand_order	750a	ok	0		-	0	0	0	0	int	-3
+r3c1-value/map_entry_order_both	6b0a760a	ok	0		-	0	0	0	0	map	{1: 2}
+r3c1-value/range_bounds_order_both	730a650a	ok	0		-	0	0	0	0	range	0..2
+r3c1-value/index_order_both	740a690a	ok	0		-	0	0	0	0	int	9
+r3c1-value/list_elements_order_both	610a620a	ok	0		-	0	0	0	0	list	[1, 2]
+r3c1-value/fstring_interp_order_both	610a620a	ok	0		-	0	0	0	0	string	"12"
+r3c1-value/short_circuit_skip_observable		ok	0		-	0	0	0	0	bool	false
+r3c1-value/short_circuit_run_observable	730a	ok	0		-	0	0	0	0	bool	true
 r3c1-value/short_circuit_skips_print		ok	0		-	0	0	0	0	bool	false
 r3c1-value/short_circuit_prints_when_required	646f6e650a	ok	0		-	0	0	0	0	bool	false
 r3c1-program/call_depth_509_ok		ok	0		-	0	0	0	0	-	-

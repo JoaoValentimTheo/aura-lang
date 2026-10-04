@@ -481,6 +481,41 @@ pub fn supported_cases() -> Vec<Case> {
             "f\"{print(\'1\')}{print(\'2\')}\"\n",
         ),
         value("unary_operand_once", "-print(\"u\")\n"),
+        // Sharper order witnesses: helpers that print and then return a usable
+        // value, so both operands of an eager operator are observed.
+        value(
+            "binary_order_both_operands",
+            "fn l() { print(\'l\')\n true }\nfn r() { print(\'r\')\n false }\nl() == r()\n",
+        ),
+        value("unary_operand_order", "fn u() { print(\'u\')\n 3 }\n-u()\n"),
+        value(
+            "map_entry_order_both",
+            "fn k() { print(\'k\')\n 1 }\nfn v() { print(\'v\')\n 2 }\n{k(): v()}\n",
+        ),
+        value(
+            "range_bounds_order_both",
+            "fn s() { print(\'s\')\n 0 }\nfn e() { print(\'e\')\n 2 }\ns()..e()\n",
+        ),
+        value(
+            "index_order_both",
+            "fn t() { print(\'t\')\n [9] }\nfn i() { print(\'i\')\n 0 }\nt()[i()]\n",
+        ),
+        value(
+            "list_elements_order_both",
+            "fn a() { print(\'a\')\n 1 }\nfn b() { print(\'b\')\n 2 }\n[a(), b()]\n",
+        ),
+        value(
+            "fstring_interp_order_both",
+            "fn a() { print(\'a\')\n 1 }\nfn b() { print(\'b\')\n 2 }\nf\"{a()}{b()}\"\n",
+        ),
+        value(
+            "short_circuit_skip_observable",
+            "fn s() { print(\'s\')\n true }\nfalse and s()\n",
+        ),
+        value(
+            "short_circuit_run_observable",
+            "fn s() { print(\'s\')\n true }\ntrue and s()\n",
+        ),
         value("short_circuit_skips_print", "false and print(\"skipped\")\n"),
         value("short_circuit_prints_when_required", "true and print(\"done\")\n"),
         // ----- call depth boundary ---------------------------------------
