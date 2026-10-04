@@ -42,6 +42,9 @@ tests/oracle/r3b5_golden.tsv text eol=lf
 # The B-1R3B.6 index/field iterative-engine golden is likewise byte-for-byte.
 tests/oracle/r3b6_golden.tsv text eol=lf
 
+# The B-1R3B.7 f-string iterative-engine golden is likewise byte-for-byte.
+tests/oracle/r3b7_golden.tsv text eol=lf
+
 # The line-ending fixtures must keep their exact bytes: `unicode/crlf.aura`
 # contains CRLF and `unicode/cr.aura` contains lone CR specifically to exercise
 # the lexer's handling of each. Marking them binary (`-text`) prevents git from

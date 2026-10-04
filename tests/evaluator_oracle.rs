@@ -1344,6 +1344,159 @@ fn r3b6_golden_has_lf_pin() {
     );
 }
 
+/// Path of the committed R3B.7 f-string iterative-engine golden.
+#[cfg(feature = "evaluator-oracle")]
+const R3B7_GOLDEN_PATH: &str = "tests/oracle/r3b7_golden.tsv";
+
+/// All supported R3B.7 f-string cases in a stable order.
+#[cfg(feature = "evaluator-oracle")]
+fn r3b7_all_cases() -> Vec<Case> {
+    r3b::fstring_supported_cases()
+}
+
+/// B-1R3B.7 — the iterative machine must agree with the recursive engine on
+/// every supported f-string case, including diagnostics, spans, value
+/// representation, and stdout. Part order, exactly-once scheduling, the
+/// stringification matrix, format-spec rendering/bounds, Unicode, raw literal
+/// text, and short-circuit skipping are only meaningful differentially.
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+fn r3b7_fstring_supported_subset_agrees() {
+    let rec = harness::Engine::recursive();
+    let it = harness::Engine::iterative();
+    let mut failures = Vec::new();
+    let mut count = 0;
+    for case in r3b::fstring_supported_cases() {
+        count += 1;
+        let a = observe(&case, rec)
+            .unwrap_or_else(|e| panic!("harness failure (recursive) {}: {e}", case.key()));
+        let b = observe(&case, it)
+            .unwrap_or_else(|e| panic!("harness failure (iterative) {}: {e}", case.key()));
+        if a != b {
+            failures.push(format!(
+                "{}:\n  recursive: {a:?}\n  iterative: {b:?}",
+                case.key()
+            ));
+        }
+    }
+    assert!(count > 0, "R3B.7 f-string supported subset is empty");
+    assert!(
+        failures.is_empty(),
+        "iterative machine diverged from the recursive engine on supported R3B.7 f-string cases:\n{}",
+        failures.join("\n")
+    );
+}
+
+/// B-1R3B.7 — an f-string interpolation that is an unsupported construct must
+/// fail with the deterministic `E4999` sentinel; the machine must never fall
+/// back to recursion and never return a partial string.
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+fn iterative_fstring_unsupported_fails_explicitly() {
+    let it = harness::Engine::iterative();
+    let rec = harness::Engine::recursive();
+    let cases = r3b::fstring_unsupported_cases();
+    assert!(!cases.is_empty(), "R3B.7 unsupported set is empty");
+    for case in cases {
+        let r = observe(&case, rec)
+            .unwrap_or_else(|e| panic!("harness failure (recursive) {}: {e}", case.key()));
+        assert!(
+            matches!(r.completion, Completion::Ok | Completion::Runtime(_)),
+            "{}: recursive engine unexpectedly rejected a valid program: {r:?}",
+            case.key()
+        );
+        let obs = observe(&case, it)
+            .unwrap_or_else(|e| panic!("harness failure (iterative) {}: {e}", case.key()));
+        match obs.completion {
+            Completion::Runtime(d) => {
+                assert_eq!(
+                    d.code,
+                    4999,
+                    "{}: expected the E4999 unsupported sentinel, got {d:?}",
+                    case.key()
+                );
+                assert!(
+                    d.message.contains("not supported by the iterative engine"),
+                    "{}: unexpected iterative diagnostic: {}",
+                    case.key(),
+                    d.message
+                );
+            }
+            other => panic!(
+                "{}: unsupported f-string case did not fail explicitly: {other:?}",
+                case.key()
+            ),
+        }
+    }
+}
+
+/// B-1R3B.7 — full-field regression guard for the iterative f-string subset:
+/// pins the complete normalized observable (stdout bytes, completion, code,
+/// message, source, byte span, line, column, value type and representation) of
+/// the iterative engine for every supported case.
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+fn r3b7_iterative_golden_matches() {
+    let committed = std::fs::read_to_string(R3B7_GOLDEN_PATH)
+        .unwrap_or_else(|e| panic!("missing R3B.7 golden {R3B7_GOLDEN_PATH}: {e}"));
+    let golden = harness::parse_golden(&committed, "r3b7");
+    let cases = r3b7_all_cases();
+    let mut observations = BTreeMap::new();
+    for case in &cases {
+        let obs = observe(case, harness::Engine::iterative())
+            .unwrap_or_else(|e| panic!("harness failure for {}: {e}", case.key()));
+        observations.insert(case.key(), obs);
+    }
+    let regenerated = harness::encode_golden(&cases, &observations);
+    assert_eq!(
+        committed, regenerated,
+        "R3B.7 f-string iterative golden is stale or the machine diverged; run \
+         `cargo test --locked --features evaluator-oracle --test evaluator_oracle \
+         regenerate_r3b7_golden -- --ignored`"
+    );
+    for case in &cases {
+        assert!(
+            golden.contains_key(&case.key()),
+            "R3B.7 golden missing {}",
+            case.key()
+        );
+    }
+}
+
+/// Regenerate the R3B.7 f-string iterative golden (ignored by default).
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+#[ignore = "regenerates the committed R3B.7 f-string iterative golden manifest"]
+fn regenerate_r3b7_golden() {
+    let cases = r3b7_all_cases();
+    let mut observations = BTreeMap::new();
+    for case in &cases {
+        let obs = observe(case, harness::Engine::iterative()).unwrap();
+        observations.insert(case.key(), obs);
+    }
+    let text = harness::encode_golden(&cases, &observations);
+    std::fs::write(R3B7_GOLDEN_PATH, text).expect("write R3B.7 golden");
+}
+
+/// B-1R3B.7 — the R3B.7 golden is compared byte-for-byte against LF-only
+/// generator output, so `.gitattributes` must force LF on every checkout.
+#[test]
+fn r3b7_golden_has_lf_pin() {
+    let attrs = std::fs::read_to_string(".gitattributes").expect("read .gitattributes");
+    assert!(
+        attrs
+            .lines()
+            .any(|l| l.trim() == "tests/oracle/r3b7_golden.tsv text eol=lf"),
+        "tests/oracle/r3b7_golden.tsv must be pinned to `text eol=lf`"
+    );
+    let golden = std::fs::read("tests/oracle/r3b7_golden.tsv")
+        .expect("missing tests/oracle/r3b7_golden.tsv");
+    assert!(
+        !golden.contains(&b'\r'),
+        "R3B.7 golden must be physically LF-only"
+    );
+}
+
 /// B-1R3A anti-tautology guard: the iterative engine must not be an alias of
 /// the recursive engine. A supported case must agree between the two engines,
 /// and an equivalent-but-unsupported case must diverge to the explicit

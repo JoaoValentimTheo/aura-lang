@@ -114,7 +114,8 @@ pub fn supported_cases() -> Vec<Case> {
 #[must_use]
 pub fn unsupported_cases() -> Vec<Case> {
     vec![
-        value("fstring", "f\"v={1}\"\n"),
+        // `fstring` was removed in B-1R3B.7: f-string evaluation is supported
+        // now and asserted by `r3b::fstring_supported_cases`.
         // `list_literal`/`tuple_literal` were removed in B-1R3B.4.1: list and
         // tuple construction are supported now and asserted by
         // `r3b::list_supported_cases`. `map_literal` was removed in

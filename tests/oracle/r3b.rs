@@ -316,11 +316,12 @@ pub fn short_circuit_supported_cases() -> Vec<Case> {
         sc_value("or_lhs_range", "(1..3) or false\n"),
         sc_value("or_lhs_empty_range", "(3..1) or 7\n"),
         sc_value("and_skip_range", "false and (1..3)\n"),
-        sc_value("and_skip_fstring", "false and f\"v={1}\"\n"),
+        // The f-string skip cases (`and_skip_fstring`/`or_skip_fstring`) moved
+        // to `r3b::fstring_supported_cases` in B-1R3B.7, where they additionally
+        // assert that a skipped f-string is never evaluated.
         sc_value("and_skip_call", "false and len([1, 2])\n"),
         sc_value("or_skip_list", "true or [1, 2]\n"),
         sc_value("or_skip_range", "true or (1..3)\n"),
-        sc_value("or_skip_fstring", "true or f\"v={1}\"\n"),
         sc_value("or_skip_call", "true or len([1, 2])\n"),
         sc_value("nested_skip_call", "true and (true or len([1, 2]))\n"),
         // ----- real skipping: runtime errors must not occur --------------
@@ -544,9 +545,10 @@ pub fn list_unsupported_cases() -> Vec<Case> {
         // An unsupported call element is reached and fails; the supported
         // first element must not let the machine fall back.
         list_value("call_element", "[1, len([1, 2])]\n"),
-        // An unsupported construct *inside* a supported element expression
-        // (an f-string operand in a binary) is reached and fails.
-        list_value("nested_unsupported_element", "[1 + f\"v={1}\"]\n"),
+        // `nested_unsupported_element` (`[1 + f"v={1}"]`) moved to
+        // `r3b::fstring_supported_cases` in B-1R3B.7: the f-string is supported
+        // now and the element's `int + string` is a real E3001 both engines
+        // agree on.
         // Same shapes inside a real user frame.
         list_program(
             "main_call_element",
@@ -721,8 +723,9 @@ pub fn map_unsupported_cases() -> Vec<Case> {
         map_value("call_key", "{len([1, 2]): 1}\n"),
         // An unsupported call value is reached and fails.
         map_value("call_value", "{1: len([1, 2])}\n"),
-        // An unsupported f-string value is reached and fails.
-        map_value("fstring_value", "{1: f\"v={1}\"}\n"),
+        // `fstring_value` (`{1: f"v={1}"}`) moved to
+        // `r3b::fstring_supported_cases` in B-1R3B.7: the f-string is a
+        // supported value now, and a string map value agrees with recursion.
         // A supported first entry must not let the machine fall back on a
         // later unsupported one.
         map_value("later_call_value", "{1: 2, 2: len([1, 2])}\n"),
@@ -1105,8 +1108,10 @@ pub fn index_unsupported_cases() -> Vec<Case> {
         index_value("call_base", "len([1, 2])[0]\n"),
         // An unsupported call index is reached and fails after the target.
         index_value("call_index", "[1, 2][len([1])]\n"),
-        // An unsupported f-string index is reached and fails.
-        index_value("fstring_index", "[1, 2][f\"v={1}\"]\n"),
+        // `fstring_index` (`[1, 2][f"v={1}"]`) moved to
+        // `r3b::fstring_supported_cases` in B-1R3B.7: the f-string is a
+        // supported index now, and the runtime `E3001` non-key-capable index
+        // agrees with recursion.
         // An unsupported construct nested one level under a supported target.
         index_value("nested_call_base", "([1] + len([2]))[0]\n"),
         // Same shapes inside a real user frame.
@@ -1131,5 +1136,253 @@ pub fn field_unsupported_cases() -> Vec<Case> {
         field_value("call_receiver", "{ len([1, 2]) }.len\n"),
         // An unsupported construct nested one level under the receiver.
         field_value("nested_call_receiver", "{ (1 + len([2])) }.len\n"),
+    ]
+}
+
+fn fstring_value(name: &'static str, source: &'static str) -> Case {
+    Case {
+        group: "r3b7-value",
+        name,
+        file: "<r3b7>",
+        source,
+        kind: Kind::Value,
+    }
+}
+
+fn fstring_program(name: &'static str, source: &'static str) -> Case {
+    Case {
+        group: "r3b7-program",
+        name,
+        file: "r3b7.aura",
+        source,
+        kind: Kind::ExecuteProgram,
+    }
+}
+
+/// B-1R3B.7 — f-string cases the iterative engine supports. Recursive and
+/// iterative must agree exactly on value, type, diagnostics, spans, and stdout.
+/// The set pins the part model (empty/text-only/literal/interpolation), source
+/// order, exactly-once scheduling, the stringification matrix, the format-spec
+/// mini-language and its bounds, real skipping inside `and`/`or`, Unicode, raw
+/// (undecoded) literal text, and the malformed-syntax boundary that is rejected
+/// by the parser before the evaluator ever runs.
+#[must_use]
+pub fn fstring_supported_cases() -> Vec<Case> {
+    vec![
+        // ----- shape: empty / text-only / escaped braces -------------------
+        fstring_value("empty", "f\"\"\n"),
+        fstring_value("text_only", "f\"hello\"\n"),
+        fstring_value("text_only_spaces", "f\"a b c\"\n"),
+        fstring_value("escaped_open", "f\"{{}}\"\n"),
+        fstring_value("escaped_close", "f\"a}}b\"\n"),
+        fstring_value("escaped_both", "f\"{{literal}}\"\n"),
+        // ----- raw literal text: no escape decoding in an f-string --------
+        fstring_value("raw_backslash_n", "f\"a\\nb\"\n"),
+        fstring_value("raw_backslash_t", "f\"a\\tb\"\n"),
+        fstring_value("raw_trailing_backslash", "f\"a\\\\\"\n"),
+        // ----- single interpolation: stringification matrix -----------------
+        fstring_value("int", "f\"{1}\"\n"),
+        fstring_value("int_negative", "f\"{-5}\"\n"),
+        fstring_value("float", "f\"{1.5}\"\n"),
+        fstring_value("float_integral", "f\"{1.0}\"\n"),
+        fstring_value("bool_true", "f\"{true}\"\n"),
+        fstring_value("bool_false", "f\"{false}\"\n"),
+        fstring_value("none", "f\"{none}\"\n"),
+        // An inner string/interpolation uses the other quote: a double-quoted
+        // f-string ends at the first unescaped `"` in its body, so a nested
+        // string or nested f-string must be single-quoted.
+        fstring_value("string", "f\"{'hi'}\"\n"),
+        fstring_value("list", "f\"{[1, 2, 3]}\"\n"),
+        fstring_value("tuple_sugar", "f\"{(1, 2)}\"\n"),
+        fstring_value("nested_list", "f\"{[[1], [2]]}\"\n"),
+        fstring_value("map", "f\"{ {1: 'a', 2: 'b'} }\"\n"),
+        fstring_value("range", "f\"{(1..3)}\"\n"),
+        // A native and a closure value display as `<fn>` (reachable without a
+        // call; this is the `Value::Native`/`Value::Closure` display path).
+        fstring_value("native_value", "f\"{len}\"\n"),
+        fstring_value("closure_value", "fn f() { }\nf\"{f}\"\n"),
+        // ----- interpolation positions ------------------------------------
+        fstring_value("at_start", "f\"{1} end\"\n"),
+        fstring_value("at_end", "f\"start {1}\"\n"),
+        fstring_value("at_middle", "f\"a{1}b\"\n"),
+        fstring_value("adjacent", "f\"{1}{2}\"\n"),
+        fstring_value("empty_text_boundaries", "f\"{1}{2}{3}\"\n"),
+        // ----- multiple interpolations: source order ----------------------
+        fstring_value("two", "f\"{1}-{2}\"\n"),
+        fstring_value("three", "f\"{1}{2}{3}\"\n"),
+        fstring_value("mixed_kinds", "f\"{1}{1.5}{true}{none}{'s'}\"\n"),
+        // ----- evaluation order: first error wins --------------------------
+        // The first interpolation fails; a later one would also fail.
+        fstring_value("first_error_wins", "f\"{1 / 0}{2 / 0}\"\n"),
+        // A middle interpolation fails after the first succeeded.
+        fstring_value("middle_error", "f\"{1}{2 / 0}{3}\"\n"),
+        // A later interpolation fails; the first is fine.
+        fstring_value("later_error", "f\"{1}{2}{3 / 0}\"\n"),
+        // An earlier expression error versus a later unsupported expression:
+        // the E4007 must win over the E4999 (shown by the unsupported set for
+        // the converse), proving source order.
+        fstring_value("error_before_unsupported", "f\"{1 / 0}{len([1])}\"\n"),
+        // ----- format specification: presentation types --------------------
+        fstring_value("spec_dec", "f\"{42:d}\"\n"),
+        fstring_value("spec_binary", "f\"{10:b}\"\n"),
+        fstring_value("spec_octal", "f\"{8:o}\"\n"),
+        fstring_value("spec_hex", "f\"{255:x}\"\n"),
+        fstring_value("spec_hex_upper", "f\"{255:X}\"\n"),
+        fstring_value("spec_fixed", "f\"{3.14159:.2f}\"\n"),
+        fstring_value("spec_fixed_upper", "f\"{3.5:F}\"\n"),
+        fstring_value("spec_exp", "f\"{1234.0:.2e}\"\n"),
+        fstring_value("spec_percent", "f\"{0.5:.1%}\"\n"),
+        // `int` coerces to float for `f`.
+        fstring_value("spec_int_as_fixed", "f\"{3:f}\"\n"),
+        fstring_value("spec_precision_plain", "f\"{3.14159:.3}\"\n"),
+        // ----- format specification: sign / width / fill / align -----------
+        fstring_value("spec_sign_plus", "f\"{42:+d}\"\n"),
+        fstring_value("spec_sign_plus_negative", "f\"{-42:+d}\"\n"),
+        fstring_value("spec_sign_space", "f\"{42: d}\"\n"),
+        fstring_value("spec_width", "f\"[{7:6}]\"\n"),
+        fstring_value("spec_width_left", "f\"[{7:<6}]\"\n"),
+        fstring_value("spec_width_right", "f\"[{7:>6}]\"\n"),
+        fstring_value("spec_width_center", "f\"[{7:^6}]\"\n"),
+        fstring_value("spec_fill_align", "f\"[{7:*>6}]\"\n"),
+        fstring_value("spec_zero_pad", "f\"{42:06d}\"\n"),
+        fstring_value("spec_string_width", "f\"[{'ab':>5}]\"\n"),
+        // ----- format specification: type applied to an incompatible value -
+        fstring_value("spec_type_mismatch_bool", "f\"{true:d}\"\n"),
+        fstring_value("spec_type_mismatch_float_dec", "f\"{1.5:d}\"\n"),
+        fstring_value("spec_type_mismatch_string", "f\"{'s':f}\"\n"),
+        fstring_value("spec_type_mismatch_list", "f\"{[1]:x}\"\n"),
+        // ----- format specification: bounds (E4013) ------------------------
+        fstring_value("spec_precision_over_bound", "f\"{1.0:.70000f}\"\n"),
+        fstring_value("spec_width_over_bound", "f\"{1:10000001}\"\n"),
+        // ----- composition with arithmetic / unary -------------------------
+        fstring_value("expr_add", "f\"{1 + 2}\"\n"),
+        fstring_value("expr_unary_neg", "f\"{-5}\"\n"),
+        fstring_value("expr_not", "f\"{not false}\"\n"),
+        fstring_value("expr_bitnot", "f\"{~0}\"\n"),
+        fstring_value("expr_nested_binary", "f\"{(1 + 2) * 3}\"\n"),
+        // ----- composition with short-circuit (`and` / `or`) ---------------
+        fstring_value("and_expr", "f\"{true and false}\"\n"),
+        fstring_value("or_expr", "f\"{false or true}\"\n"),
+        // A skipped short-circuit right operand inside an interpolation must
+        // not run: the E4007 must never occur.
+        fstring_value("skipped_rhs_in_interp", "f\"{true or (1 / 0)}\"\n"),
+        fstring_value("skipped_rhs_and_in_interp", "f\"{false and (1 / 0)}\"\n"),
+        // Real skipping of a whole f-string operand (moved from the R3B.3
+        // supported set to keep the R3B.7 golden self-contained). Short-circuit
+        // precedence is weaker than `and`/`or`, so the parse is
+        // `false and (f"...")` and the f-string is never reached.
+        fstring_value("and_skip", "false and f\"{1}\"\n"),
+        fstring_value("or_skip", "true or f\"{1}\"\n"),
+        // ----- composition with List / current-Tuple -----------------------
+        fstring_value("list_element", "[f\"v={1}\"]\n"),
+        fstring_value("list_element_after_int", "[1, f\"v={2}\"]\n"),
+        fstring_value("nested_list_fstring", "[[f\"{1}\"]]\n"),
+        // The element's `int + string` is a real E3001 both engines agree on
+        // (moved from the R3B.4.1 unsupported set).
+        fstring_value("list_element_type_error", "[1 + f\"v={1}\"]\n"),
+        // ----- composition with Map ---------------------------------------
+        fstring_value("map_value", "{1: f\"v={1}\"}\n"),
+        fstring_value("map_key_string", "{f\"k{1}\": 2}\n"),
+        fstring_value("map_value_nested", "{1: {2: f\"{3}\"}}\n"),
+        // ----- composition with Range -------------------------------------
+        fstring_value("range_end", "1..f\"3\"\n"),
+        // ----- composition with Index / Field (R3B.6 boundary) -------------
+        fstring_value("index_string_target", "f\"abc\"[0]\n"),
+        fstring_value("index_fstring_index", "[1, 2][f\"{1}\"]\n"),
+        fstring_value("field_len_of_fstring", "f\"abcd\".len\n"),
+        fstring_value("fstring_in_index_base", "[f\"{1}\", 2][0]\n"),
+        // ----- composition with block / let / if ---------------------------
+        // A `throw` from an interpolation aborts the f-string; the value path
+        // maps the residual signal exactly like recursion (`E4026`).
+        fstring_value("throw_interp", "f\"{ {throw 5} }\"\n"),
+        // Two f-strings as the operands of an eager binary: each is evaluated
+        // exactly once, in source order.
+        fstring_value("two_fstrings_binary", "f\"{1}\" + f\"{2}\"\n"),
+        // An f-string used as an index target (the target is the `string`).
+        fstring_value("fstring_index_target", "f\"{1}\"[0]\n"),
+        fstring_value("in_block", "{ f\"{1}\" }\n"),
+        fstring_value("let_binding", "{ let x = f\"v={1}\"\n x }\n"),
+        fstring_value("let_shadow_in_interp", "{ let x = 2\n f\"{x}\" }\n"),
+        fstring_value("if_taken", "if true { f\"{1}\" } else { f\"{2}\" }\n"),
+        fstring_value("if_condition", "if f\"\" { 1 } else { 2 }\n"),
+        // ----- Unicode ----------------------------------------------------
+        fstring_value("unicode_accent", "f\"caf\u{e9} {1}\"\n"),
+        fstring_value("unicode_cjk", "f\"\u{65e5}\u{672c} {1}\"\n"),
+        fstring_value("unicode_emoji", "f\"\u{1f389} {1}\"\n"),
+        fstring_value("unicode_combining", "f\"e\u{301} {1}\"\n"),
+        fstring_value("unicode_interpolated_string", "f\"{'caf\u{e9}'}\"\n"),
+        // Outer single quotes so the inner string uses the other delimiter; the
+        // CJK string is width-padded by character count.
+        fstring_value("unicode_width", "f'[{\"\u{65e5}\":^5}]'\n"),
+        // ----- nested f-string --------------------------------------------
+        // The inner f-string is single-quoted because the outer one uses `"`.
+        // Two levels of nesting are not expressible: the innermost level would
+        // need the same delimiter as the outer one, which terminates it, so the
+        // grammar admits at most one nested f-string level.
+        fstring_value("nested_fstring", "f\"a{f'{1}'}b\"\n"),
+        fstring_value("nested_fstring_around_expr", "f\"{f'{1 + 1}'}\"\n"),
+        fstring_value("nested_fstring_outer_inner_text", "f\"[{f'x={2}'}]\"\n"),
+        // ----- program mode (real frame boundary) --------------------------
+        fstring_program("main_fstring", "fn main() { let s = f\"v={1}\" }\n"),
+        fstring_program(
+            "main_fstring_multi",
+            "fn main() { let s = f\"{1}{2}{3}\" }\n",
+        ),
+        fstring_program(
+            "main_fstring_format",
+            "fn main() { let s = f\"{42:06d}\" }\n",
+        ),
+        fstring_program("main_fstring_error", "fn main() { let s = f\"{1 / 0}\" }\n"),
+        fstring_program(
+            "main_fstring_signal",
+            "fn main() { let s = f\"{ {return} }\" }\n",
+        ),
+        fstring_program(
+            "main_fstring_in_list",
+            "fn main() { let xs = [f\"{1}\", f\"{2}\"] }\n",
+        ),
+        fstring_program(
+            "main_fstring_in_map",
+            "fn main() { let m = {1: f\"{2}\"} }\n",
+        ),
+        fstring_program(
+            "main_fstring_unicode",
+            "fn main() { let s = f\"caf\u{e9} {1}\" }\n",
+        ),
+        fstring_program(
+            "main_fstring_nested",
+            "fn main() { let s = f\"{f'{1}'}\" }\n",
+        ),
+    ]
+}
+
+/// B-1R3B.7 — f-string interpolations that remain unsupported (calls are R3C)
+/// must fail with the deterministic `E4999` sentinel in iterative mode, never
+/// fall back to recursion, and never produce a partial string. A *skipped*
+/// f-string (short-circuit) is a supported case above; every f-string here is
+/// on the evaluated path.
+#[must_use]
+pub fn fstring_unsupported_cases() -> Vec<Case> {
+    vec![
+        // An unsupported call interpolation is reached and fails.
+        fstring_value("call_interp", "f\"{len([1, 2])}\"\n"),
+        // An unsupported call nested one level under a supported expression.
+        fstring_value("nested_call_interp", "f\"{1 + len([1, 2])}\"\n"),
+        // A supported first interpolation must not let the machine fall back on
+        // a later unsupported one.
+        fstring_value("later_call_interp", "f\"{1}{len([1])}\"\n"),
+        // An unsupported construct inside a list inside an interpolation.
+        fstring_value("list_call_interp", "f\"{[len([1])]}\"\n"),
+        // An unsupported construct in a format-spec interpolation.
+        fstring_value("spec_call_interp", "f\"{len([1]):d}\"\n"),
+        // Same shapes inside a real user frame.
+        fstring_program(
+            "main_fstring_call",
+            "fn main() { let s = f\"{len([1])}\" }\n",
+        ),
+        fstring_program(
+            "main_fstring_later_call",
+            "fn main() { let s = f\"{1}{len([1])}\" }\n",
+        ),
     ]
 }
