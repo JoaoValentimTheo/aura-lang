@@ -320,6 +320,32 @@ pub fn supported_cases() -> Vec<Case> {
             "assign_then_read",
             "{ let mut x = 1\n x = x + 1\n x = x * 3\n x }\n",
         ),
+        // ----- R3D.2 while / loop --------------------------------------------
+        value("while_zero_iterations", "{ while false { print(\'x\') }\n 1 }\n"),
+        value("while_counts", "{ let mut i = 0\n while i < 3 { i = i + 1 }\n i }\n"),
+        value("while_break", "{ let mut i = 0\n while true { i = i + 1\n if i == 2 { break } }\n i }\n"),
+        value("while_continue", "{ let mut i = 0\n let mut s = 0\n while i < 4 { i = i + 1\n if i == 2 { continue }\n s = s + i }\n s }\n"),
+        value("while_nested", "{ let mut n = 0\n let mut i = 0\n while i < 2 { let mut j = 0\n while j < 2 { n = n + 1\n j = j + 1 }\n i = i + 1 }\n n }\n"),
+        value("while_shadow_scope", "{ let x = 1\n let mut i = 0\n while i < 1 { let x = 2\n i = i + 1 }\n x }\n"),
+        value("while_return_propagates", "fn f() { while true { return 5 } }\nf()\n"),
+        value("while_throw_propagates", "fn f() { while true { throw 7 } }\nf()\n"),
+        value("while_condition_error", "{ while 1 / 0 { } }\n"),
+        value("loop_zero", "{ loop { break }\n 1 }\n"),
+        value("loop_counts", "{ let mut i = 0\n loop { i = i + 1\n if i == 3 { break } }\n i }\n"),
+        value("loop_continue", "{ let mut i = 0\n let mut n = 0\n loop { i = i + 1\n if i > 3 { break }\n if i == 2 { continue }\n n = n + i }\n n }\n"),
+        value("loop_return", "fn f() { loop { return 3 } }\nf()\n"),
+        value("loop_print_trace", "{ let mut i = 0\n while i < 2 { print(\'w\')\n i = i + 1 } }\n"),
+        // Constant continuation growth: a long loop must not accumulate
+        // continuations or host stack. 100k iterations exercise the
+        // scheduling without a memory/stack blow-up.
+        value(
+            "while_large_iteration_count",
+            "{ let mut i = 0\n let mut s = 0\n while i < 100000 { s = s + 1\n i = i + 1 }\n s }\n",
+        ),
+        value(
+            "loop_large_iteration_count",
+            "{ let mut i = 0\n loop { i = i + 1\n if i == 100000 { break } }\n i }\n",
+        ),
         // ----- composition with R3B constructs ---------------------------
         value("call_in_unary", "-(abs(-2))\n"),
         value("call_in_binary", "1 + len([9, 9])\n"),

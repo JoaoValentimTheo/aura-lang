@@ -117,6 +117,9 @@ pub fn supported_cases() -> Vec<Case> {
         // B-1R3D.1. Keys preserved.
         value("let_pattern", "{ let [a] = [1]\n a }\n"),
         value("assign", "{ let mut x = 1\n x = 2\n x }\n"),
+        // The original R3A loop sentinels: supported by B-1R3D.2. Keys kept.
+        value("while_stmt", "{ while false { 1 } }\n"),
+        value("loop_stmt", "{ loop { break } }\n"),
         // The original R3A method sentinel: builtin method calls are supported
         // by B-1R3C.2. Key preserved.
 
@@ -170,8 +173,8 @@ pub fn unsupported_cases() -> Vec<Case> {
         // `pipe` was migrated to `supported_cases` in B-1R3C.1/R3C.4.
         value("match", "match 1 { 1 -> { 2 } }\n"),
         value("list_comp", "[x for x in [1, 2]]\n"),
-        value("while_stmt", "{ while false { 1 } }\n"),
-        value("loop_stmt", "{ loop { break } }\n"),
+        // `while_stmt`/`loop_stmt` were migrated to `supported_cases` in
+        // B-1R3D.2 (loops landed); see the preserved keys there.
         // `let_pattern` and `assign` were migrated to `supported_cases` in
         // B-1R3D.1 (destructuring and assignment landed); see the preserved
         // keys there.

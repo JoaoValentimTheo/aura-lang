@@ -155,6 +155,22 @@ r3c1-value/let_pattern_shadow		ok	0		-	0	0	0	0	int	2
 r3c1-value/let_pattern_rhs_signal		runtime	4026	uncaught value: 1	<r3c1>	0	0	1	1	-	-
 r3c1-value/let_pattern_atomic		runtime	3001	list pattern arity mismatch	<r3c1>	21	22	2	6	-	-
 r3c1-value/assign_then_read		ok	0		-	0	0	0	0	int	6
+r3c1-value/while_zero_iterations		ok	0		-	0	0	0	0	int	1
+r3c1-value/while_counts		ok	0		-	0	0	0	0	int	3
+r3c1-value/while_break		ok	0		-	0	0	0	0	int	2
+r3c1-value/while_continue		ok	0		-	0	0	0	0	int	8
+r3c1-value/while_nested		ok	0		-	0	0	0	0	int	4
+r3c1-value/while_shadow_scope		ok	0		-	0	0	0	0	int	1
+r3c1-value/while_return_propagates		ok	0		-	0	0	0	0	int	5
+r3c1-value/while_throw_propagates		runtime	4026	uncaught value: 7	<r3c1>	34	35	2	1	-	-
+r3c1-value/while_condition_error		runtime	4007	division by zero	<r3c1>	10	11	1	11	-	-
+r3c1-value/loop_zero		ok	0		-	0	0	0	0	int	1
+r3c1-value/loop_counts		ok	0		-	0	0	0	0	int	3
+r3c1-value/loop_continue		ok	0		-	0	0	0	0	int	4
+r3c1-value/loop_return		ok	0		-	0	0	0	0	int	3
+r3c1-value/loop_print_trace	770a770a	ok	0		-	0	0	0	0	none	none
+r3c1-value/while_large_iteration_count		ok	0		-	0	0	0	0	int	100000
+r3c1-value/loop_large_iteration_count		ok	0		-	0	0	0	0	int	100000
 r3c1-value/call_in_unary		ok	0		-	0	0	0	0	int	-2
 r3c1-value/call_in_binary		ok	0		-	0	0	0	0	int	3
 r3c1-value/call_in_if		ok	0		-	0	0	0	0	string	"y"
