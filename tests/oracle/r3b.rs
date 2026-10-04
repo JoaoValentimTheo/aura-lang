@@ -301,6 +301,12 @@ pub fn short_circuit_supported_cases() -> Vec<Case> {
         sc_value("and_lhs_list_truthy", "[1] and true\n"),
         sc_value("or_lhs_list_truthy", "[1] or false\n"),
         sc_value("or_lhs_list_falsy", "[] or 7\n"),
+        // Moved from the R3B.3 unsupported set in B-1R3B.4.2: map construction
+        // is supported now, so a required map operand and map-typed left
+        // operands agree with the recursive engine (truthiness of a map).
+        sc_value("or_required_map", "false or {\"a\": 1}\n"),
+        sc_value("and_lhs_map", "{\"a\": 1} and true\n"),
+        sc_value("or_lhs_map", "{\"a\": 1} or true\n"),
         sc_value("and_skip_range", "false and (1..3)\n"),
         sc_value("and_skip_fstring", "false and f\"v={1}\"\n"),
         sc_value("and_skip_call", "false and len([1, 2])\n"),
@@ -396,13 +402,9 @@ pub fn short_circuit_unsupported_cases() -> Vec<Case> {
         // Required right operand is a call (R3C).
         sc_value("and_required_call", "true and len([1, 2])\n"),
         sc_value("or_required_call", "false or len([1, 2])\n"),
-        // Required right operand is a range/map (R3B.5/R3B.4.2). The list
-        // forms were moved to the supported set in B-1R3B.4.1.
+        // Required right operand is a range (R3B.5). The list forms were moved
+        // to the supported set in B-1R3B.4.1; the map forms in B-1R3B.4.2.
         sc_value("and_required_range", "true and (1..3)\n"),
-        sc_value("or_required_map", "false or {\"a\": 1}\n"),
-        // Left operand itself is an unsupported map literal.
-        sc_value("and_lhs_map_unsupported", "{\"a\": 1} and true\n"),
-        sc_value("or_lhs_map_unsupported", "{\"a\": 1} or true\n"),
         // A required nested `and` reaching an unsupported call.
         sc_value("nested_required_call", "false or (true and len([1, 2]))\n"),
         // Same shape inside a real user frame.
@@ -501,6 +503,9 @@ pub fn list_supported_cases() -> Vec<Case> {
         ),
         // A signal from a later element still propagates.
         list_value("later_element_return", "[1, { return 6 }]\n"),
+        // Moved from the R3B.4.1 unsupported set in B-1R3B.4.2: a map element
+        // is supported now, so list/map composition agrees with recursion.
+        list_value("map_element", "[1, {\"a\": 1}]\n"),
         // ----- program mode (real frame boundary) --------------------------
         list_program("main_list_let", "fn main() { let xs = [1, 2, 3] }\n"),
         list_program("main_tuple_let", "fn main() { let xs = (1, 2) }\n"),
@@ -525,8 +530,6 @@ pub fn list_unsupported_cases() -> Vec<Case> {
         // An unsupported call element is reached and fails; the supported
         // first element must not let the machine fall back.
         list_value("call_element", "[1, len([1, 2])]\n"),
-        // An unsupported map element is reached and fails.
-        list_value("map_element", "[1, {\"a\": 1}]\n"),
         // An unsupported range element is reached and fails.
         list_value("range_element", "[1, 1..3]\n"),
         // An unsupported construct *inside* a supported element expression
@@ -537,9 +540,172 @@ pub fn list_unsupported_cases() -> Vec<Case> {
             "main_call_element",
             "fn main() { let xs = [1, len([1, 2])] }\n",
         ),
-        list_program(
-            "main_map_element",
-            "fn main() { let xs = [1, {\"a\": 1}] }\n",
+    ]
+}
+
+fn map_value(name: &'static str, source: &'static str) -> Case {
+    Case {
+        group: "r3b42-value",
+        name,
+        file: "<r3b42>",
+        source,
+        kind: Kind::Value,
+    }
+}
+
+fn map_program(name: &'static str, source: &'static str) -> Case {
+    Case {
+        group: "r3b42-program",
+        name,
+        file: "r3b42.aura",
+        source,
+        kind: Kind::ExecuteProgram,
+    }
+}
+
+/// B-1R3B.4.2 — map-construction cases the iterative engine supports.
+/// Recursive and iterative must agree exactly on value, type, diagnostics,
+/// spans, and stdout. The set pins construction shape, valid key kinds, the
+/// exact key→value→next-entry order, invalid-key diagnostics and spans,
+/// value suppression after a failed key, later-entry suppression after a
+/// failed value, control-signal abort, duplicate-key last-wins, nesting and
+/// Map/List composition, and unsupported-surface non-reachability.
+#[must_use]
+pub fn map_supported_cases() -> Vec<Case> {
+    vec![
+        // ----- shape: empty / one / many ----------------------------------
+        map_value("empty", "{:}\n"),
+        map_value("empty_spaced", "{ : }\n"),
+        map_value("single_int_key", "{1: \"a\"}\n"),
+        map_value("single_str_key", "{\"a\": 1}\n"),
+        map_value("single_bool_key", "{true: 1}\n"),
+        map_value("multi_str", "{\"a\": 1, \"b\": 2, \"c\": 3}\n"),
+        // ----- display/iteration order is by key, not source order --------
+        map_value("int_keys_order", "{3: \"c\", 1: \"a\", 2: \"b\"}\n"),
+        map_value("bool_keys_order", "{true: 1, false: 0}\n"),
+        map_value("mixed_key_kinds", "{true: 1, \"a\": 2, 1: 3}\n"),
+        // ----- valid value kinds ------------------------------------------
+        map_value("mixed_values", "{1: \"x\", 2: true, 3: none, 4: 2.5}\n"),
+        // ----- expressions as keys and values -----------------------------
+        map_value("expr_key", "{1 + 1: \"two\"}\n"),
+        map_value("expr_value", "{1: 2 * 3}\n"),
+        map_value("name_key", "{ let k = 7\n {k: k} }\n"),
+        map_value("name_value", "{ let v = 9\n {1: v} }\n"),
+        map_value("unary_key", "{-1: \"neg\"}\n"),
+        map_value("unary_value", "{1: -2}\n"),
+        map_value("binary_value", "{1: 1 + 2, 2: 3 * 4}\n"),
+        map_value(
+            "short_circuit_value",
+            "{1: false and true, 2: true or false}\n",
         ),
+        // A skipped short-circuit right operand inside a value must not run.
+        map_value(
+            "skipped_rhs_value",
+            "{1: true or (1 / 0), 2: false and (1 / 0)}\n",
+        ),
+        // ----- duplicates: last write wins --------------------------------
+        map_value("duplicate_int", "{1: \"first\", 1: \"second\"}\n"),
+        map_value("duplicate_with_other", "{1: \"a\", 2: \"b\", 1: \"c\"}\n"),
+        map_value("duplicate_bool", "{true: 1, true: 2}\n"),
+        map_value("duplicate_str", "{\"k\": 1, \"k\": 2}\n"),
+        // ----- nesting / composition --------------------------------------
+        map_value("nested_map", "{1: {2: 3}}\n"),
+        map_value("map_of_lists", "{1: [1, 2], 2: [3]}\n"),
+        map_value("list_of_maps", "[{\"a\": 1}, {\"b\": 2}]\n"),
+        map_value("deep_nested_value", "{1: {2: {3: 4}}}\n"),
+        // ----- evaluation order: key before value, entry by entry ---------
+        // If entries were reordered, the first error would differ.
+        map_value("first_key_error_wins", "{1 / 0: 2, \"a\" - \"b\": 3}\n"),
+        map_value("first_value_error_wins", "{1: 1 / 0, \"a\" - \"b\": 3}\n"),
+        // The first value must complete before the second key runs: the
+        // division is in the *second* entry's key.
+        map_value("later_key_error", "{1: 2, 1 / 0: 3}\n"),
+        map_value("later_value_error", "{1: 2, 3: 1 / 0}\n"),
+        // Key before value on the same entry: the key's error wins.
+        map_value("key_before_value", "{\"a\" - \"b\": 1 / 0}\n"),
+        // ----- invalid keys: E3001 at the key expression's span -----------
+        // `float`, `none`, `[int]`, and `{int: int}` keys are rejected by the
+        // checker for literal keys; the runtime-invalid paths are reached via
+        // an untyped binding whose static type is `Unknown`.
+        map_value("invalid_float_key_check", "{1.0: \"x\"}\n"),
+        map_value("invalid_none_key_check", "{none: \"x\"}\n"),
+        map_value("invalid_list_key_check", "{[1]: \"x\"}\n"),
+        map_value("invalid_range_key_check", "{(1..3): 1}\n"),
+        map_value("invalid_runtime_none_key", "{ let x = none\n {x: 1} }\n"),
+        // A runtime-invalid key must suppress its value: the diagnostic is the
+        // key's E3001, never the value's E4007.
+        map_value(
+            "invalid_key_suppresses_value",
+            "{ let x = none\n {x: 1 / 0} }\n",
+        ),
+        // ----- control signals in keys and values -------------------------
+        // A signal from a key aborts the map and skips the value and every
+        // later entry (the E4007 must never occur).
+        map_value("key_return_aborts", "{ {return 5}: 1 / 0 }\n"),
+        map_value("key_throw_aborts", "{ {throw 5}: 1 / 0 }\n"),
+        // A signal from a value aborts the map and skips later entries.
+        map_value("value_return_aborts", "{1: {return 5}, 2: 1 / 0}\n"),
+        map_value("value_throw_aborts", "{1: {throw 9}, 2: 1 / 0}\n"),
+        // A signal from a later entry's key still propagates once reached.
+        map_value("later_key_return", "{1: 2, {return 6}: 3}\n"),
+        // ----- composition with R3A/R3B constructs ------------------------
+        map_value("in_block", "{ {1: 2} }\n"),
+        map_value("in_if_taken", "if true { {1: 2} } else { {:} }\n"),
+        map_value("in_if_condition", "if {1: 2} { 7 } else { 8 }\n"),
+        map_value("empty_in_if_condition", "if {:} { 7 } else { 8 }\n"),
+        map_value("let_binding", "{ let m = {\"a\": 1}\n m }\n"),
+        map_value("let_shadow", "{ let k = 1\n let m = {k: 2}\n m }\n"),
+        // ----- program mode (real frame boundary) --------------------------
+        map_program(
+            "main_map_let",
+            "fn main() { let m = {1: \"a\", 2: \"b\"} }\n",
+        ),
+        map_program(
+            "main_map_in_if",
+            "fn main() { if {3: \"c\", 1: \"a\"} { let m = {:} } }\n",
+        ),
+        map_program("main_map_empty", "fn main() { let m = {:} }\n"),
+        map_program("main_map_error", "fn main() { let m = {1: 1 / 0} }\n"),
+        map_program(
+            "main_map_dup",
+            "fn main() { let m = {1: \"a\", 1: \"b\"} }\n",
+        ),
+        map_program(
+            "main_map_signal",
+            "fn main() { let m = {1: {return}, 2: 1 / 0} }\n",
+        ),
+        map_program(
+            "main_map_invalid_key",
+            "fn main() { let x = none\n let m = {x: 1} }\n",
+        ),
+    ]
+}
+
+/// B-1R3B.4.2 — map keys/values that remain unsupported (calls are R3C,
+/// ranges R3B.5, f-strings R3B.7) must fail with the deterministic `E4999`
+/// sentinel in iterative mode, never fall back to recursion, and never yield a
+/// partial map. A *skipped* unsupported construct cannot be tested with map
+/// construction (every key and value of a literal is reached); the
+/// unreachable case is covered by the short-circuit set above.
+#[must_use]
+pub fn map_unsupported_cases() -> Vec<Case> {
+    vec![
+        // An unsupported call key is reached and fails.
+        map_value("call_key", "{len([1, 2]): 1}\n"),
+        // An unsupported call value is reached and fails.
+        map_value("call_value", "{1: len([1, 2])}\n"),
+        // An unsupported range value is reached and fails.
+        map_value("range_value", "{1: (1..3)}\n"),
+        // An unsupported f-string value is reached and fails.
+        map_value("fstring_value", "{1: f\"v={1}\"}\n"),
+        // A supported first entry must not let the machine fall back on a
+        // later unsupported one.
+        map_value("later_call_value", "{1: 2, 2: len([1, 2])}\n"),
+        // Same shapes inside a real user frame.
+        map_program(
+            "main_call_value",
+            "fn main() { let m = {1: len([1, 2])} }\n",
+        ),
+        map_program("main_call_key", "fn main() { let m = {len([1, 2]): 1} }\n"),
     ]
 }

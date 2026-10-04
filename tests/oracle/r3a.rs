@@ -117,8 +117,9 @@ pub fn unsupported_cases() -> Vec<Case> {
         value("fstring", "f\"v={1}\"\n"),
         // `list_literal`/`tuple_literal` were removed in B-1R3B.4.1: list and
         // tuple construction are supported now and asserted by
-        // `r3b::list_supported_cases`.
-        value("map_literal", "{\"a\": 1}\n"),
+        // `r3b::list_supported_cases`. `map_literal` was removed in
+        // B-1R3B.4.2: map construction is supported now and asserted by
+        // `r3b::map_supported_cases`.
         value("range_literal", "1..3\n"),
         value("call", "len([1, 2])\n"),
         value("method_call", "[1, 2].len()\n"),

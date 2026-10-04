@@ -812,6 +812,135 @@ fn regenerate_r3b4_golden() {
     std::fs::write(R3B4_GOLDEN_PATH, text).expect("write R3B.4 golden");
 }
 
+/// Path of the committed R3B.4.2 map-construction iterative-engine golden
+/// manifest.
+#[cfg(feature = "evaluator-oracle")]
+const R3B42_GOLDEN_PATH: &str = "tests/oracle/r3b42_golden.tsv";
+
+/// B-1R3B.4.2 — the iterative machine must agree with the recursive engine on
+/// every supported map-construction case, including diagnostics, spans, and
+/// stdout (invalid-key, duplicate-key, order, and signal cases are only
+/// meaningful differentially).
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+fn r3b42_map_supported_subset_agrees() {
+    let rec = harness::Engine::recursive();
+    let it = harness::Engine::iterative();
+    let mut failures = Vec::new();
+    let mut count = 0;
+    for case in r3b::map_supported_cases() {
+        count += 1;
+        let a = observe(&case, rec)
+            .unwrap_or_else(|e| panic!("harness failure (recursive) {}: {e}", case.key()));
+        let b = observe(&case, it)
+            .unwrap_or_else(|e| panic!("harness failure (iterative) {}: {e}", case.key()));
+        if a != b {
+            failures.push(format!(
+                "{}:\n  recursive: {a:?}\n  iterative: {b:?}",
+                case.key()
+            ));
+        }
+    }
+    assert!(count > 0, "R3B.4.2 map supported subset is empty");
+    assert!(
+        failures.is_empty(),
+        "iterative machine diverged from the recursive engine on supported R3B.4.2 map cases:\n{}",
+        failures.join("\n")
+    );
+}
+
+/// B-1R3B.4.2 — a map key or value that is an unsupported construct must fail
+/// with the deterministic `E4999` sentinel; the machine must never fall back to
+/// recursion and never return a partial map.
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+fn iterative_map_unsupported_fails_explicitly() {
+    let it = harness::Engine::iterative();
+    let rec = harness::Engine::recursive();
+    let cases = r3b::map_unsupported_cases();
+    assert!(!cases.is_empty(), "R3B.4.2 unsupported set is empty");
+    for case in cases {
+        let r = observe(&case, rec)
+            .unwrap_or_else(|e| panic!("harness failure (recursive) {}: {e}", case.key()));
+        assert!(
+            matches!(r.completion, Completion::Ok | Completion::Runtime(_)),
+            "{}: recursive engine unexpectedly rejected a valid program: {r:?}",
+            case.key()
+        );
+        let obs = observe(&case, it)
+            .unwrap_or_else(|e| panic!("harness failure (iterative) {}: {e}", case.key()));
+        match obs.completion {
+            Completion::Runtime(d) => {
+                assert_eq!(
+                    d.code,
+                    4999,
+                    "{}: expected the E4999 unsupported sentinel, got {d:?}",
+                    case.key()
+                );
+                assert!(
+                    d.message.contains("not supported by the iterative engine"),
+                    "{}: unexpected iterative diagnostic: {}",
+                    case.key(),
+                    d.message
+                );
+            }
+            other => panic!(
+                "{}: unsupported map case did not fail explicitly: {other:?}",
+                case.key()
+            ),
+        }
+    }
+}
+
+/// B-1R3B.4.2 — full-field regression guard for the iterative
+/// map-construction subset: pins the complete normalized observable (stdout
+/// bytes, completion, code, message, source, byte span, line, column, value
+/// type and representation) of the iterative engine for every supported case.
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+fn r3b42_iterative_golden_matches() {
+    let committed = std::fs::read_to_string(R3B42_GOLDEN_PATH)
+        .unwrap_or_else(|e| panic!("missing R3B.4.2 golden {R3B42_GOLDEN_PATH}: {e}"));
+    let golden = harness::parse_golden(&committed, "r3b42");
+    let cases = r3b::map_supported_cases();
+    let mut observations = BTreeMap::new();
+    for case in &cases {
+        let obs = observe(case, harness::Engine::iterative())
+            .unwrap_or_else(|e| panic!("harness failure for {}: {e}", case.key()));
+        observations.insert(case.key(), obs);
+    }
+    let regenerated = harness::encode_golden(&cases, &observations);
+    assert_eq!(
+        committed, regenerated,
+        "R3B.4.2 map iterative golden is stale or the machine diverged; run \
+         `cargo test --locked --features evaluator-oracle --test evaluator_oracle \
+         regenerate_r3b42_golden -- --ignored`"
+    );
+    for case in &cases {
+        assert!(
+            golden.contains_key(&case.key()),
+            "R3B.4.2 golden missing {}",
+            case.key()
+        );
+    }
+}
+
+/// Regenerate the R3B.4.2 map-construction iterative golden (ignored by
+/// default).
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+#[ignore = "regenerates the committed R3B.4.2 map iterative golden manifest"]
+fn regenerate_r3b42_golden() {
+    let cases = r3b::map_supported_cases();
+    let mut observations = BTreeMap::new();
+    for case in &cases {
+        let obs = observe(case, harness::Engine::iterative()).unwrap();
+        observations.insert(case.key(), obs);
+    }
+    let text = harness::encode_golden(&cases, &observations);
+    std::fs::write(R3B42_GOLDEN_PATH, text).expect("write R3B.4.2 golden");
+}
+
 /// B-1R3A anti-tautology guard: the iterative engine must not be an alias of
 /// the recursive engine. A supported case must agree between the two engines,
 /// and an equivalent-but-unsupported case must diverge to the explicit
@@ -834,13 +963,13 @@ fn iterative_engine_is_a_distinct_path() {
     assert_eq!(a, b, "supported case must agree");
 
     // An unsupported case the recursive engine accepts: if `iterative` were an
-    // alias it would also succeed; it must instead report E4999. A map literal
-    // (R3B.4.2) remains unsupported after R3B.4.1.
+    // alias it would also succeed; it must instead report E4999. A range
+    // literal (R3B.5) remains unsupported after R3B.4.2.
     let unsupported = Case {
         group: "r3a-value",
         name: "distinct_path_unsupported",
         file: "<r3a>",
-        source: "{\"a\": 1}\n",
+        source: "1..3\n",
         kind: harness::Kind::Value,
     };
     let r = observe(&unsupported, harness::Engine::recursive()).unwrap();

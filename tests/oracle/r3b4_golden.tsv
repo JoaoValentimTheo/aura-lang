@@ -33,6 +33,7 @@ r3b4-value/element_throw_aborts		runtime	4026	uncaught value: 9	<r3b4>	0	0	1	1	-
 r3b4-value/skipped_unsupported_after_return		runtime	4030	`return` cannot be used here	<r3b4>	0	0	1	1	-	-
 r3b4-value/skipped_unsupported_after_throw		runtime	4026	uncaught value: 9	<r3b4>	0	0	1	1	-	-
 r3b4-value/later_element_return		runtime	4030	`return` cannot be used here	<r3b4>	0	0	1	1	-	-
+r3b4-value/map_element		ok	0		-	0	0	0	0	list	[1, {"a": 1}]
 r3b4-program/main_list_let		ok	0		-	0	0	0	0	-	-
 r3b4-program/main_tuple_let		ok	0		-	0	0	0	0	-	-
 r3b4-program/main_list_error		runtime	4007	division by zero	r3b4.aura	27	28	1	28	-	-
