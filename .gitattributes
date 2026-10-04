@@ -51,3 +51,4 @@ tests/oracle/r3b7_golden.tsv text eol=lf
 # normalizing them on checkout on any platform.
 tests/corpus/unicode/crlf.aura -text
 tests/corpus/unicode/cr.aura -text
+tests/oracle/r3c1_golden.tsv text eol=lf

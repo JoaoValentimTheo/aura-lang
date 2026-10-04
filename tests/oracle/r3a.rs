@@ -93,6 +93,14 @@ pub fn supported_cases() -> Vec<Case> {
         // the checker rejects an over-deep *source* before execution; a
         // differential case here would compare two compile rejections, not the
         // engines.
+        // ----- calls (migrated from the unsupported set in B-1R3C.1) -----
+        // A native call was the original R3A unsupported sentinel; it is
+        // supported now, and the full call surface is asserted by
+        // `r3c1::supported_cases`. The key is preserved for conservation.
+        value("call", "len([1, 2])\n"),
+        // The original R3A pipe sentinel: `x |> f` desugars to a call at parse
+        // time, so it became supported by B-1R3C.1. Key preserved.
+        value("pipe", "[1, 2] |> len\n"),
         // ----- top-level constants (value-path `Const` routing) ---------
         value("const_literal", "const X = 5\nX\n"),
         value("const_from_const", "const X = 5\nconst Y = X\nY\n"),
@@ -122,8 +130,12 @@ pub fn unsupported_cases() -> Vec<Case> {
         // B-1R3B.4.2: map construction is supported now and asserted by
         // `r3b::map_supported_cases`. `range_literal` was removed in
         // B-1R3B.5: range construction is supported now and asserted by
-        // `r3b::range_supported_cases`.
-        value("call", "len([1, 2])\n"),
+        // `r3b::range_supported_cases`. `call` was migrated to
+        // `supported_cases` in B-1R3C.1: a native call is supported now and
+        // asserted by `r3c1::supported_cases`. `pipe` also moved: `x |> f` for
+        // a callable name desugars to a call at parse time, so it is supported
+        // by the same tranche; the remaining `Expr::Pipe` forms are still
+        // checked by the R3C.4 tranche.
         value("method_call", "[1, 2].len()\n"),
         value(
             "field_access",
@@ -136,7 +148,9 @@ pub fn unsupported_cases() -> Vec<Case> {
         // field surface (builtin zero-argument methods) is asserted by
         // `r3b::field_supported_cases`.
         value("lambda", "() -> 1\n"),
-        value("pipe", "[1, 2] |> len\n"),
+        // `pipe` was migrated to `supported_cases` in B-1R3C.1: `[1, 2] |> len`
+        // desugars to `len([1, 2])` at parse time and is asserted by
+        // `r3c1::supported_cases` as `pipe_native_call`.
         value("match", "match 1 { 1 -> { 2 } }\n"),
         value("list_comp", "[x for x in [1, 2]]\n"),
         value("while_stmt", "{ while false { 1 } }\n"),

@@ -36,6 +36,10 @@ mod r3a;
 #[cfg(feature = "evaluator-oracle")]
 #[path = "oracle/r3b.rs"]
 mod r3b;
+// B-1R3C.1 — user and native calls on the iterative machine.
+#[cfg(feature = "evaluator-oracle")]
+#[path = "oracle/r3c1.rs"]
+mod r3c1;
 
 use std::collections::BTreeMap;
 
@@ -1497,6 +1501,155 @@ fn r3b7_golden_has_lf_pin() {
     );
 }
 
+/// Path of the committed R3C.1 call iterative-engine golden.
+#[cfg(feature = "evaluator-oracle")]
+const R3C1_GOLDEN_PATH: &str = "tests/oracle/r3c1_golden.tsv";
+
+/// All supported R3C.1 call cases in a stable order.
+#[cfg(feature = "evaluator-oracle")]
+fn r3c1_all_cases() -> Vec<Case> {
+    r3c1::supported_cases()
+}
+
+/// B-1R3C.1 — the iterative machine must agree with the recursive engine on
+/// every supported call case, including stdout (side-effect order and
+/// exactly-once), diagnostics, spans, value representation, and control
+/// outcomes. This is also the first phase where the R3B exactly-once claims
+/// become differentially falsifiable, which the side-effect cases pin.
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+fn r3c1_call_supported_subset_agrees() {
+    let rec = harness::Engine::recursive();
+    let it = harness::Engine::iterative();
+    let mut failures = Vec::new();
+    let mut count = 0;
+    for case in r3c1::supported_cases() {
+        count += 1;
+        let a = observe(&case, rec)
+            .unwrap_or_else(|e| panic!("harness failure (recursive) {}: {e}", case.key()));
+        let b = observe(&case, it)
+            .unwrap_or_else(|e| panic!("harness failure (iterative) {}: {e}", case.key()));
+        if a != b {
+            failures.push(format!(
+                "{}:\n  recursive: {a:?}\n  iterative: {b:?}",
+                case.key()
+            ));
+        }
+    }
+    assert!(count > 0, "R3C.1 call supported subset is empty");
+    assert!(
+        failures.is_empty(),
+        "R3C.1 call differential failures ({}):\n{}",
+        failures.len(),
+        failures.join("\n\n")
+    );
+}
+
+/// B-1R3C.1 anti-fallback guard: a call whose subexpression is a construct
+/// that is still unsupported must produce the deterministic `E4999` sentinel
+/// on the iterative engine while the recursive engine runs it (or reports its
+/// own runtime diagnostic).
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+fn r3c1_unsupported_fails_explicitly() {
+    let it = harness::Engine::iterative();
+    let rec = harness::Engine::recursive();
+    let cases = r3c1::unsupported_cases();
+    assert!(!cases.is_empty(), "R3C.1 unsupported set is empty");
+    for case in cases {
+        let r = observe(&case, rec)
+            .unwrap_or_else(|e| panic!("harness failure (recursive) {}: {e}", case.key()));
+        assert!(
+            matches!(r.completion, Completion::Ok | Completion::Runtime(_)),
+            "{}: recursive engine unexpectedly rejected a valid program: {r:?}",
+            case.key()
+        );
+        let i = observe(&case, it)
+            .unwrap_or_else(|e| panic!("harness failure (iterative) {}: {e}", case.key()));
+        match &i.completion {
+            Completion::Runtime(d) if d.code == 4999 => {
+                assert!(
+                    d.message.contains("not supported by the iterative engine"),
+                    "{}: unexpected iterative diagnostic: {}",
+                    case.key(),
+                    d.message
+                );
+            }
+            other => panic!(
+                "{}: unsupported call case did not fail explicitly: {other:?}",
+                case.key()
+            ),
+        }
+    }
+}
+
+/// B-1R3C.1 — full-field regression guard for the iterative call subset: pins
+/// the complete normalized observable (stdout bytes, completion, code,
+/// message, source, byte span, line, column, value type and representation) of
+/// the iterative engine for every supported case.
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+fn r3c1_iterative_golden_matches() {
+    let committed = std::fs::read_to_string(R3C1_GOLDEN_PATH)
+        .unwrap_or_else(|e| panic!("missing R3C.1 golden {R3C1_GOLDEN_PATH}: {e}"));
+    let golden = harness::parse_golden(&committed, "r3c1");
+    let cases = r3c1_all_cases();
+    let mut observations = BTreeMap::new();
+    for case in &cases {
+        let obs = observe(case, harness::Engine::iterative())
+            .unwrap_or_else(|e| panic!("harness failure for {}: {e}", case.key()));
+        observations.insert(case.key(), obs);
+    }
+    let regenerated = harness::encode_golden(&cases, &observations);
+    assert_eq!(
+        committed, regenerated,
+        "R3C.1 call iterative golden is stale or the machine diverged; run \
+         `cargo test --locked --features evaluator-oracle --test evaluator_oracle \
+         regenerate_r3c1_golden -- --ignored`"
+    );
+    for case in &cases {
+        assert!(
+            golden.contains_key(&case.key()),
+            "R3C.1 golden missing {}",
+            case.key()
+        );
+    }
+}
+
+/// Regenerate the R3C.1 call iterative golden (ignored by default).
+#[test]
+#[cfg(feature = "evaluator-oracle")]
+#[ignore = "regenerates the committed R3C.1 call iterative golden manifest"]
+fn regenerate_r3c1_golden() {
+    let cases = r3c1_all_cases();
+    let mut observations = BTreeMap::new();
+    for case in &cases {
+        let obs = observe(case, harness::Engine::iterative()).unwrap();
+        observations.insert(case.key(), obs);
+    }
+    let text = harness::encode_golden(&cases, &observations);
+    std::fs::write(R3C1_GOLDEN_PATH, text).expect("write R3C.1 golden");
+}
+
+/// B-1R3C.1 — the R3C.1 golden is compared byte-for-byte against LF-only
+/// generator output, so `.gitattributes` must force LF on every checkout.
+#[test]
+fn r3c1_golden_has_lf_pin() {
+    let attrs = std::fs::read_to_string(".gitattributes").expect("read .gitattributes");
+    assert!(
+        attrs
+            .lines()
+            .any(|l| l.trim() == "tests/oracle/r3c1_golden.tsv text eol=lf"),
+        "tests/oracle/r3c1_golden.tsv must be pinned to `text eol=lf`"
+    );
+    let golden = std::fs::read("tests/oracle/r3c1_golden.tsv")
+        .expect("missing tests/oracle/r3c1_golden.tsv");
+    assert!(
+        !golden.contains(&b'\r'),
+        "R3C.1 golden must be physically LF-only"
+    );
+}
+
 /// B-1R3A anti-tautology guard: the iterative engine must not be an alias of
 /// the recursive engine. A supported case must agree between the two engines,
 /// and an equivalent-but-unsupported case must diverge to the explicit
@@ -1519,13 +1672,14 @@ fn iterative_engine_is_a_distinct_path() {
     assert_eq!(a, b, "supported case must agree");
 
     // An unsupported case the recursive engine accepts: if `iterative` were an
-    // alias it would also succeed; it must instead report E4999. A call (R3C)
-    // remains unsupported after R3B.5.
+    // alias it would also succeed; it must instead report E4999. A lambda
+    // remains unsupported after R3C.1 (calls became supported there, so the
+    // probe moved from `len([1, 2])` to a lambda).
     let unsupported = Case {
         group: "r3a-value",
         name: "distinct_path_unsupported",
         file: "<r3a>",
-        source: "len([1, 2])\n",
+        source: "(() -> 1)\n",
         kind: harness::Kind::Value,
     };
     let r = observe(&unsupported, harness::Engine::recursive()).unwrap();

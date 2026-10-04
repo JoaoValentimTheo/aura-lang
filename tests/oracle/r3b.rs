@@ -102,10 +102,13 @@ pub fn supported_cases() -> Vec<Case> {
 #[must_use]
 pub fn unsupported_cases() -> Vec<Case> {
     vec![
-        // The operand is a call (R3C): the unary machine must not apply
-        // `-`/`not` to it, and must not fall back to recursion.
-        value("neg_of_unsupported_call", "-len([1, 2])\n"),
-        value("not_of_unsupported_call", "not len([1, 2])\n"),
+        // The operand is a lambda (R3C.4): the unary machine must not apply
+        // `-`/`not` to it, and must not fall back to recursion. (These probes
+        // used a call operand until B-1R3C.1 made calls supported; the
+        // call-operand shapes are now supported cases in
+        // `r3c1::supported_cases`.)
+        value("neg_of_unsupported_lambda", "-(() -> 1)\n"),
+        value("not_of_unsupported_lambda", "not (() -> 1)\n"),
     ]
 }
 
@@ -219,8 +222,10 @@ pub fn binary_supported_cases() -> Vec<Case> {
 #[must_use]
 pub fn binary_unsupported_cases() -> Vec<Case> {
     vec![
-        // A supported eager operator whose operand remains unsupported (call).
-        binary_value("eager_over_call", "1 + len([1, 2])\n"),
+        // A supported eager operator whose operand remains unsupported (a
+        // lambda). The original `eager_over_call` (`1 + len([1, 2])`) became
+        // supported in B-1R3C.1 and is asserted by `r3c1::supported_cases`.
+        binary_value("eager_over_lambda", "1 + (() -> 1)\n"),
     ]
 }
 
@@ -408,16 +413,18 @@ pub fn short_circuit_supported_cases() -> Vec<Case> {
 #[must_use]
 pub fn short_circuit_unsupported_cases() -> Vec<Case> {
     vec![
-        // Required right operand is a call (R3C).
-        sc_value("and_required_call", "true and len([1, 2])\n"),
-        sc_value("or_required_call", "false or len([1, 2])\n"),
-        // Range right operands moved to the supported set in B-1R3B.5.
-        // A required nested `and` reaching an unsupported call.
-        sc_value("nested_required_call", "false or (true and len([1, 2]))\n"),
+        // Required right operand is a lambda (R3C.4). The original call-shaped
+        // probes (`and_required_call`, `or_required_call`, `nested_required_call`,
+        // `main_required_call`) became supported in B-1R3C.1 and are asserted by
+        // `r3c1::supported_cases`.
+        sc_value("and_required_lambda", "true and (() -> 1)\n"),
+        sc_value("or_required_lambda", "false or (() -> 1)\n"),
+        // A required nested `and` reaching an unsupported lambda.
+        sc_value("nested_required_lambda", "false or (true and (() -> 1))\n"),
         // Same shape inside a real user frame.
         sc_program(
-            "main_required_call",
-            "fn main() { let x = true and len([1, 2]) }\n",
+            "main_required_lambda",
+            "fn main() { let x = true and (() -> 1) }\n",
         ),
     ]
 }
@@ -542,17 +549,19 @@ pub fn list_supported_cases() -> Vec<Case> {
 #[must_use]
 pub fn list_unsupported_cases() -> Vec<Case> {
     vec![
-        // An unsupported call element is reached and fails; the supported
-        // first element must not let the machine fall back.
-        list_value("call_element", "[1, len([1, 2])]\n"),
+        // An unsupported lambda element is reached and fails; the supported
+        // first element must not let the machine fall back. The original
+        // `call_element` (`[1, len([1, 2])]`) became supported in B-1R3C.1 and
+        // is asserted by `r3c1::supported_cases`.
+        list_value("lambda_element", "[1, (() -> 1)]\n"),
         // `nested_unsupported_element` (`[1 + f"v={1}"]`) moved to
         // `r3b::fstring_supported_cases` in B-1R3B.7: the f-string is supported
         // now and the element's `int + string` is a real E3001 both engines
         // agree on.
         // Same shapes inside a real user frame.
         list_program(
-            "main_call_element",
-            "fn main() { let xs = [1, len([1, 2])] }\n",
+            "main_lambda_element",
+            "fn main() { let xs = [1, (() -> 1)] }\n",
         ),
     ]
 }
@@ -719,22 +728,23 @@ pub fn map_supported_cases() -> Vec<Case> {
 #[must_use]
 pub fn map_unsupported_cases() -> Vec<Case> {
     vec![
-        // An unsupported call key is reached and fails.
-        map_value("call_key", "{len([1, 2]): 1}\n"),
-        // An unsupported call value is reached and fails.
-        map_value("call_value", "{1: len([1, 2])}\n"),
+        // An unsupported lambda value is reached and fails. The original
+        // `call_key`/`call_value` probes became supported in B-1R3C.1 and are
+        // asserted by `r3c1::supported_cases`. (A lambda cannot be a map key:
+        // the checker rejects it as a key type, so the value position is the
+        // reachable shape.)
+        map_value("lambda_value", "{1: (() -> 1)}\n"),
         // `fstring_value` (`{1: f"v={1}"}`) moved to
         // `r3b::fstring_supported_cases` in B-1R3B.7: the f-string is a
         // supported value now, and a string map value agrees with recursion.
         // A supported first entry must not let the machine fall back on a
         // later unsupported one.
-        map_value("later_call_value", "{1: 2, 2: len([1, 2])}\n"),
+        map_value("later_lambda_value", "{1: 2, 2: (() -> 1)}\n"),
         // Same shapes inside a real user frame.
         map_program(
-            "main_call_value",
-            "fn main() { let m = {1: len([1, 2])} }\n",
+            "main_lambda_value",
+            "fn main() { let m = {1: (() -> 1)} }\n",
         ),
-        map_program("main_call_key", "fn main() { let m = {len([1, 2]): 1} }\n"),
     ]
 }
 
@@ -887,17 +897,14 @@ pub fn range_supported_cases() -> Vec<Case> {
 #[must_use]
 pub fn range_unsupported_cases() -> Vec<Case> {
     vec![
-        // An unsupported call as the start bound is reached and fails.
-        range_value("call_start", "len([1, 2])..3\n"),
-        // An unsupported call as the end bound is reached and fails.
-        range_value("call_end", "1..len([1, 2])\n"),
-        // A supported start must not let the machine fall back on an
-        // unsupported end.
-        range_value("call_end_after_int", "0..len([1, 2])\n"),
         // An unsupported construct nested one level under a supported bound.
-        range_value("nested_call_start", "(1 + len([1, 2]))..3\n"),
-        // Same shapes inside a real user frame.
-        range_program("main_range_call", "fn main() { let r = 0..len([1, 2]) }\n"),
+        // The original call-bound probes (`call_start`, `call_end`,
+        // `call_end_after_int`, `nested_call_start`, `main_range_call`) became
+        // supported in B-1R3C.1 and are asserted by `r3c1::supported_cases`. A
+        // lambda is not an int, so the checker rejects it as a range bound
+        // before execution; the reachable shape is a nested unsupported
+        // construct under a bound, probed through an unsupported index instead.
+        range_value("nested_lambda_start", "(1 + (() -> 1))..3\n"),
     ]
 }
 
@@ -1104,18 +1111,22 @@ pub fn field_supported_cases() -> Vec<Case> {
 #[must_use]
 pub fn index_unsupported_cases() -> Vec<Case> {
     vec![
-        // An unsupported call target is reached and fails.
-        index_value("call_base", "len([1, 2])[0]\n"),
-        // An unsupported call index is reached and fails after the target.
-        index_value("call_index", "[1, 2][len([1])]\n"),
+        // An unsupported lambda target/index is not reachable as written (the
+        // checker requires an indexable/keyable type), so the reachable shapes
+        // are nested under a supported target/index. The original call-shaped
+        // probes (`call_base`, `call_index`, `nested_call_base`,
+        // `main_index_call`) became supported in B-1R3C.1 and are asserted by
+        // `r3c1::supported_cases`.
+        index_value("lambda_in_base", "([1] + (() -> 1))[0]\n"),
         // `fstring_index` (`[1, 2][f"v={1}"]`) moved to
         // `r3b::fstring_supported_cases` in B-1R3B.7: the f-string is a
         // supported index now, and the runtime `E3001` non-key-capable index
         // agrees with recursion.
-        // An unsupported construct nested one level under a supported target.
-        index_value("nested_call_base", "([1] + len([2]))[0]\n"),
-        // Same shapes inside a real user frame.
-        index_program("main_index_call", "fn main() { let y = len([1])[0] }\n"),
+        // Same shape inside a real user frame.
+        index_program(
+            "main_lambda_in_base",
+            "fn main() { let y = ([1] + (() -> 1))[0] }\n",
+        ),
     ]
 }
 
@@ -1130,12 +1141,14 @@ pub fn field_unsupported_cases() -> Vec<Case> {
             "struct_construct_receiver",
             "struct P { x: int }\n{ P { x: 1 }.x }\n",
         ),
-        // An unsupported call receiver is reached and fails before the member
+        // An unsupported lambda receiver is reached and fails before the member
         // is resolved (the recursive engine reports the receiver's own runtime
-        // type error, so this program is valid for it).
-        field_value("call_receiver", "{ len([1, 2]) }.len\n"),
+        // type error, so this program is valid for it). The original
+        // call-receiver probes became supported in B-1R3C.1 and are asserted
+        // by `r3c1::supported_cases`.
+        field_value("lambda_receiver", "{ (() -> 1) }.len\n"),
         // An unsupported construct nested one level under the receiver.
-        field_value("nested_call_receiver", "{ (1 + len([2])) }.len\n"),
+        field_value("nested_lambda_receiver", "{ (1 + (() -> 1)) }.len\n"),
     ]
 }
 
@@ -1364,25 +1377,24 @@ pub fn fstring_supported_cases() -> Vec<Case> {
 #[must_use]
 pub fn fstring_unsupported_cases() -> Vec<Case> {
     vec![
-        // An unsupported call interpolation is reached and fails.
-        fstring_value("call_interp", "f\"{len([1, 2])}\"\n"),
-        // An unsupported call nested one level under a supported expression.
-        fstring_value("nested_call_interp", "f\"{1 + len([1, 2])}\"\n"),
+        // An unsupported lambda interpolation is reached and fails. The
+        // original call-interpolation probes (`call_interp`,
+        // `nested_call_interp`, `later_call_interp`, `list_call_interp`,
+        // `spec_call_interp`, `main_fstring_call`, `main_fstring_later_call`)
+        // became supported in B-1R3C.1 and are asserted by
+        // `r3c1::supported_cases`.
+        fstring_value("lambda_interp", "f\"{(() -> 1)}\"\n"),
+        // An unsupported lambda nested one level under a supported expression.
+        fstring_value("nested_lambda_interp", "f\"{1 + (() -> 1)}\"\n"),
         // A supported first interpolation must not let the machine fall back on
         // a later unsupported one.
-        fstring_value("later_call_interp", "f\"{1}{len([1])}\"\n"),
-        // An unsupported construct inside a list inside an interpolation.
-        fstring_value("list_call_interp", "f\"{[len([1])]}\"\n"),
+        fstring_value("later_lambda_interp", "f\"{1}{(() -> 1)}\"\n"),
         // An unsupported construct in a format-spec interpolation.
-        fstring_value("spec_call_interp", "f\"{len([1]):d}\"\n"),
-        // Same shapes inside a real user frame.
+        fstring_value("spec_lambda_interp", "f\"{(() -> 1):d}\"\n"),
+        // Same shape inside a real user frame.
         fstring_program(
-            "main_fstring_call",
-            "fn main() { let s = f\"{len([1])}\" }\n",
-        ),
-        fstring_program(
-            "main_fstring_later_call",
-            "fn main() { let s = f\"{1}{len([1])}\" }\n",
+            "main_fstring_lambda",
+            "fn main() { let s = f\"{(() -> 1)}\" }\n",
         ),
     ]
 }
