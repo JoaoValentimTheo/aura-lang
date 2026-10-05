@@ -395,9 +395,10 @@ microphase.
    independently reproduced and fixed (see Current status).
 2. The residual-seam closures, production-path tests, and review-driven fixes
    are committed at `11abad2`.
-3. Present the full local commit range (42 commits, ending with the seam
-   closure `11abad2` on top of the cutover `62dd592`) for a single
-   human-authorized push gate. **Do not push** before that authorization.
+3. Present the full unpushed local commit range (the production cutover
+   `62dd592`, the residual-seam closures and tests `11abad2`, and the state
+   reconciliation on top) for a single human-authorized push gate. **Do not
+   push** before that authorization.
 4. Do not start unrelated Aura 0.3 work. Keep frozen runtimes, `v0.2.1`, and
    `.kilo/**` untouched.
 

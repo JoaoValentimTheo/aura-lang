@@ -1759,9 +1759,11 @@ operators) — see `docs/engineering/CURRENT_HANDOFF.md`.
 
 ## B-1R3B.1–B-1R3B.8, R3C–R3F MIGRATION, AND LOCAL PRODUCTION CUTOVER (2026-10-03…10-05)
 
-Local-only chronology for the range now 42 commits ahead of
-`origin/rewrite/v3-rust` (`9cb5e28`). Nothing in this range is pushed; frozen
-runtimes, `v0.2.1`, and `.kilo/**` were untouched throughout.
+Local-only chronology for the unpushed range atop
+`origin/rewrite/v3-rust` (`9cb5e28`); the exact ahead count is whatever
+`git rev-list --left-right --count origin/rewrite/v3-rust...HEAD` reports.
+Nothing in this range is pushed; frozen runtimes, `v0.2.1`, and `.kilo/**`
+were untouched throughout.
 
 - **B-1R3B.1–B-1R3B.7 (remote-closed):** machine subsets for unary operators,
   eager binary operators, short-circuit `and`/`or`, list/tuple construction,

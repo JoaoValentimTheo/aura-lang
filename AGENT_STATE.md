@@ -10,10 +10,11 @@ before continuing substantial work.
 - Branch: `rewrite/v3-rust`
 - Remote `origin/rewrite/v3-rust`: `9cb5e28ce17cba652b48faa4ebbf682ec6029519`
   (B-1R3B.8 checkpoint; pushed and remote-closed; exact-SHA CI and Pages
-  green). Local `HEAD` is the seam-closure commit `11abad2` on top of the
-  production cutover `62dd592`; the local range is **not pushed** and the
-  remote is 42 commits behind. (Reconcile this line with `git rev-parse
-  origin/rewrite/v3-rust` at every checkpoint: Git wins.)
+  green). Local `HEAD` is the tip of the unpushed B-1 cutover range
+  (`62dd592` production cutover, `11abad2` residual-seam closures, plus
+  state-doc reconciliation); the local range is **not pushed**. Do not
+  hardcode the ahead count: read it from `git rev-list --left-right --count
+  origin/rewrite/v3-rust...HEAD`.
 - Local/remote relationship: authoritative value is `git rev-list
   --left-right --count origin/rewrite/v3-rust...HEAD`; a tracked file cannot
   safely hardcode its own position.
