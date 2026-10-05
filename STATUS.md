@@ -1759,7 +1759,7 @@ operators) — see `docs/engineering/CURRENT_HANDOFF.md`.
 
 ## B-1R3B.1–B-1R3B.8, R3C–R3F MIGRATION, AND LOCAL PRODUCTION CUTOVER (2026-10-03…10-05)
 
-Local-only chronology for the range now 41 commits ahead of
+Local-only chronology for the range now 42 commits ahead of
 `origin/rewrite/v3-rust` (`9cb5e28`). Nothing in this range is pushed; frozen
 runtimes, `v0.2.1`, and `.kilo/**` were untouched throughout.
 

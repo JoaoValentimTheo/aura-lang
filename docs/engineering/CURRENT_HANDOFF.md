@@ -393,11 +393,11 @@ microphase.
 
 1. B-1R6 adversarial review is complete; its one substantiated finding was
    independently reproduced and fixed (see Current status).
-2. Commit the residual-seam closures, production-path tests, and review-driven
-   fixes in the current worktree, then re-run the focused suites.
-3. Present the full local commit range (41 commits, ending with the cutover
-   `62dd592` plus the seam-closure commit) for a single human-authorized push
-   gate. **Do not push** before that authorization.
+2. The residual-seam closures, production-path tests, and review-driven fixes
+   are committed at `11abad2`.
+3. Present the full local commit range (42 commits, ending with the seam
+   closure `11abad2` on top of the cutover `62dd592`) for a single
+   human-authorized push gate. **Do not push** before that authorization.
 4. Do not start unrelated Aura 0.3 work. Keep frozen runtimes, `v0.2.1`, and
    `.kilo/**` untouched.
 

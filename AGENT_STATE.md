@@ -10,9 +10,9 @@ before continuing substantial work.
 - Branch: `rewrite/v3-rust`
 - Remote `origin/rewrite/v3-rust`: `9cb5e28ce17cba652b48faa4ebbf682ec6029519`
   (B-1R3B.8 checkpoint; pushed and remote-closed; exact-SHA CI and Pages
-  green). Local `HEAD` is the production cutover `62dd592` plus 40 earlier
-  local commits; the local range is **not pushed** and the remote is 41
-  commits behind. (Reconcile this line with `git rev-parse
+  green). Local `HEAD` is the seam-closure commit `11abad2` on top of the
+  production cutover `62dd592`; the local range is **not pushed** and the
+  remote is 42 commits behind. (Reconcile this line with `git rev-parse
   origin/rewrite/v3-rust` at every checkpoint: Git wins.)
 - Local/remote relationship: authoritative value is `git rev-list
   --left-right --count origin/rewrite/v3-rust...HEAD`; a tracked file cannot
@@ -46,8 +46,10 @@ and rollback path (B-1R8 removes it after the release decision).
 
 B-1R phase state:
 
-- **B-1:** OPEN — evaluator migration complete and cut over locally; final
-  adversarial review, validation matrix, and push gate pending. The released
+- **B-1:** OPEN — evaluator migration complete and cut over locally
+  (`62dd592` + seam closure `11abad2`); adversarial review and validation
+  matrix done; the human-authorized push gate is pending, and B-1R8
+  (recursive-engine removal) follows a release decision. The released
   WASM runtime still traps on the engine stack below the 512-frame language
   limit; `v0.2.1` is immutable and contains the defect. The freshly built
   machine-backed WASM holds the boundary (proven by
