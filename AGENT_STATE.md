@@ -8,13 +8,14 @@ before continuing substantial work.
 ## Repository
 
 - Branch: `rewrite/v3-rust`
-- Remote `origin/rewrite/v3-rust`: **`bb736fc1091a904caaa68919c1a95ab57d2f31d7`**
-  — the B-1 production cutover range **pushed, remote-closed, exact-SHA CI
-  green** (all 20 jobs) and Pages deployed. Local = tracking = server. The
-  prior B-1R3B.8 checkpoint was `9cb5e28`; the B-1 closure tip adds
-  `9fa70c6` (review outcome) and `bb736fc` (additive miri fix). Do not
-  hardcode the ahead count: read it from `git rev-list --left-right --count
-  origin/rewrite/v3-rust...HEAD`.
+- Remote `origin/rewrite/v3-rust`: **`089dffe917212c5e3de0c380a918f3cf684aaef5`**
+  (`docs(state): record B-1 remote closure at bb736fc`) — pushed and
+  remote-closed. Local `HEAD` carries the **post-B1 runtime/WASM edge-closure**
+  commits on top (local only, **not pushed**; exact push gate pending). The
+  B-1 closure itself (cutover `62dd592`, seam closures `11abad2`, routing
+  tripwire `a45d1ec`, review fixes `39caf6f`, checkout `9fa70c6`, miri fix
+  `bb736fc`) is inside the pushed history. Do not hardcode the ahead count:
+  read it from `git rev-list --left-right --count origin/rewrite/v3-rust...HEAD`.
 - Local/remote relationship: authoritative value is `git rev-list
   --left-right --count origin/rewrite/v3-rust...HEAD`; a tracked file cannot
   safely hardcode its own position.
@@ -37,7 +38,7 @@ runtime means adding a version, never replacing one.
 ## Current Track
 
 B-1 — ENGINE-STACK-INDEPENDENT CALL ENGINE. **B-1 IS REMOTELY CLOSED** at
-`bb736fc` (exact-SHA CI green, all 20 jobs; Pages deployed). The complete
+`bb736fc` (inside the pushed history at remote `089dffe`). The complete
 B-1R3C–B-1R3F evaluator migration plus the production cutover (`62dd592`),
 the residual seam closures (`11abad2`), the mechanical routing tripwire
 (`a45d1ec`), the review-driven fixes (`39caf6f`), the review-outcome
@@ -45,6 +46,23 @@ checkpoint (`9fa70c6`), and the additive miri fix (`bb736fc`) are pushed.
 Production runs the explicit-continuation machine on every entry point; the
 recursive evaluator is retained only as the differential reference and
 rollback path (B-1R8 removes it after the release decision).
+
+POST-B1 RUNTIME/WASM EDGE CLOSURE — **COMPLETE LOCALLY, NOT PUSHED**. A
+narrow audit of the production machine and its host boundaries (triggered by
+the Playground `E4020` at 1 MiB stdout on the frozen `0.2.1` artifact). Key
+results: the 1 MiB `MAX_STDOUT_BYTES` bound is a `BrowserHost` application
+resource policy since the first wasm runtime (identical on `0.0.2`/`0.2.0`/
+`0.2.1`), enforced atomically at the host accept step, with `E4020` fatal but
+`finally`-running and a per-execution budget; native/REPL/library stdout stays
+unbounded process stdout; long computation is independent of capture (50M
+iterations complete; heap plateaus); stdin/args/virtual-project/clock
+boundaries verified; machine endurance, unwinding, recovery, and deep-value
+edges verified on fresh wasm; no recursive production seam. The previously
+unpinned `with_stdout_limit` contract is now pinned by nine tests in
+`playground/runtime/tests/execute.rs`, three in `tests/host.rs`, and ten
+fresh-wasm checks in `playground/tests/node/b1_boundary.test.mjs`; the capture
+contract is documented in `docs/playground.md` §2. Full validation matrix
+green; frozen artifacts and `.kilo/**` unchanged.
 
 B-1R phase state:
 
@@ -235,11 +253,13 @@ Git + working tree + these documents; chat history is not authority.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: B-1 is **remotely closed**
-at `bb736fc` (exact-SHA CI green — all 20 jobs; Pages deployed). No further B-1
-implementation commits are authorized without a new human gate. Do not start
-unrelated Aura 0.3 work. B-1R8 (remove the recursive engine and the oracle
-switch) and any runtime publication remain separately human-gated.
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: the **post-B1 runtime/WASM
+edge closure is complete locally and not pushed** (remote is `089dffe`). Request
+one explicit human push authorization for the closure commits; after they are
+remotely closed, the already-planned PRE-0.3 FOUNDATION super-transaction may
+begin. B-1R8 (remove the recursive engine and the oracle switch) and any runtime
+publication remain separately human-gated. Do not start unrelated Aura 0.3 work
+before the push gate.
 
 ## Writer
 

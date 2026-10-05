@@ -1894,3 +1894,68 @@ debt: browser/Worker boundary against a machine-backed runtime.
 Exact next action: none for B-1. B-1R8 (recursive-engine removal) and any
 runtime publication require a new human gate. Do not start Aura 0.3 work
 without explicit authorization.
+
+## POST-B1 RUNTIME/WASM EDGE CLOSURE (2026-10-05, local, not pushed)
+
+Narrow post-B-1 audit of the production machine and its native/WASM host
+boundaries, triggered by the Playground incident
+`for i in 1..10000000 { print(i) }` → `E4020` (`standard output exceeded the
+1048576 byte limit`) on the frozen `0.2.1` artifact. Baseline: local = remote
+= `089dffe` (which records B-1 remote closure at `bb736fc`), ahead/behind 0/0.
+
+- **Output path reconstructed.** `print` → `Interp::host_mut()`
+  (`src/stdlib/mod.rs`) → `Host::write_stdout`; native `StdHost` writes process
+  stdout directly (unbounded, streaming); REPL/library use the same host
+  trait; the Playground runtime installs `BrowserHost` with
+  `limits::MAX_STDOUT_BYTES = 1 MiB` on every execution entry
+  (`playground/runtime/src/lib.rs`). No evaluator-owned output string exists.
+- **E4020 authority:** `BrowserHost::write_stdout` refuses atomically any write
+  that would cross the bound — an application/host resource policy, a
+  deliberate design since the first wasm runtime (`5a5add1`), not a language
+  rule and not a B-1 regression. Frozen control: `0.0.2`, `0.2.0`, `0.2.1` all
+  accept exactly 1 MiB and refuse the next byte identically.
+- **Measured behavior (fresh machine-backed wasm):** one oversized write is
+  refused whole (no partial bytes); prior output is retained; UTF-8 writes are
+  atomic (4-byte char landing on the bound valid and intact, one byte over
+  refused whole); `E4020` is not catchable while `finally` still runs; the
+  budget is per execution. Boundaries: limit−1, exactly limit, limit+1.
+- **Long computation is independent of capture:** 50M-iteration loops with no
+  or tiny output complete (native ~25 s; wasm ~30 s); repeated executions of
+  small, limit-sized, and deep-recursion workloads reach a stable linear-memory
+  plateau (e.g. 289 pages after big-output churn); deep runtime-built values
+  (200k-deep) render truncated, compare iteratively, and drop iteratively.
+- **Host-boundary audits:** stdin (empty/ASCII/Unicode/CRLF/EOF/absent — none),
+  args (zero/empty/Unicode/16 KiB; 16 KiB+1 is a structured E4020 host input
+  error), virtual multi-file projects (imports, diagnostics in non-entry files,
+  Unicode names, duplicate/unknown/path-like keys rejected), clock/sleep/
+  filesystem all `E5002` on wasm, no randomness runtime exists. Fresh wasm ABI:
+  zero imports, 16 exports, unchanged.
+- **Machine edges:** deep blocks/lists/parens/maps/match/if/try/while/calls/
+  index chains all handled within the AST budget — structured `E1015` at the
+  bound, never a guest trap; call endurance (200k calls ×6), near-limit
+  recursion ×10, throw/return unwinding, 1000-cycle error recovery, callbacks
+  (map/filter/reduce 50k ×3) all stable; no continuation leak observed.
+  `bind_pattern`/`match_pattern` residual re-verified as bounded by the
+  calibrated parser budget.
+- **Found and closed the coverage gap:** the `with_stdout_limit` boundary had
+  no direct test pin. Added nine native tests in
+  `playground/runtime/tests/execute.rs`, three `BrowserHost` API tests in
+  `tests/host.rs`, and ten fresh-wasm checks in
+  `playground/tests/node/b1_boundary.test.mjs`; documented the exact capture
+  contract in `docs/playground.md` §2. Mutation-checked: an off-by-one bound
+  and a non-atomic refusal mutation were each caught by the new tests, then
+  reverted byte-exact.
+- **Validation:** fmt, clippy ×2 (plus runtime crate), 51 test targets
+  all-features and the no-default matrix, MSRV 1.83, nightly fuzz check,
+  playground suite (manifest/ABI/integrity/differential 228/boundary 53/
+  browser 66/worker 12/multi-file 42/cache 7), `build --check`, website build
+  + suites (372 browser, 70 a11y, 22 examples), artifact smoke 12/12.
+- **Frozen/protected:** `0.0.2`/`0.2.0`/`0.2.1` hashes byte-identical;
+  `v0.2.1` = `3f5f8702` unchanged; no `0.2.2`, tag, release, or version bump;
+  `.kilo/**` churn untouched and unstaged; root `s` absent.
+
+**Outcome:** no STOP condition. The production iterative machine, its
+native/WASM host boundaries, and the stdout/input/host resource policy are
+verified; no unexplained recursive production seam; no further runtime/WASM
+edge required before Pre-0.3. The closure commits are local only; one explicit
+human push authorization is required.

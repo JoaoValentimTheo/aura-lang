@@ -14,10 +14,24 @@ explicit-continuation (iterative) evaluator over the existing AST
 
 ## Current status
 
-- B-1: **REMOTELY CLOSED** at `bb736fc` — the evaluator migration and
-  production cutover are pushed; exact-SHA CI green (all 20 jobs) and Pages
-  deployed. Released `0.2.1` runtime still contains the defect; the freshly
-  built machine-backed runtime holds the language boundary.
+- B-1: **REMOTELY CLOSED** at `bb736fc` (inside pushed history; remote tip
+  `089dffe` records the closure). The evaluator migration and production
+  cutover are pushed; exact-SHA CI green (all 20 jobs) and Pages deployed.
+  Released `0.2.1` runtime still contains the defect; the freshly built
+  machine-backed runtime holds the language boundary.
+- POST-B1 RUNTIME/WASM EDGE CLOSURE: **COMPLETE LOCALLY, NOT PUSHED**. Narrow
+  audit of the production machine and its native/WASM host boundaries,
+  triggered by the Playground `E4020` at the 1 MiB stdout bound. Result: the
+  bound is a `BrowserHost` application resource policy since the first wasm
+  runtime (identical behavior on `0.0.2`/`0.2.0`/`0.2.1`), enforced atomically
+  before acceptance, fatal-but-`finally`-running, per execution; native/REPL/
+  library stdout is unbounded process stdout; long computation is independent
+  of capture; stdin/args/virtual-project/clock boundaries, machine endurance,
+  unwinding, recovery, and deep-value edges verified on fresh wasm; no
+  recursive production seam. The `with_stdout_limit` contract is now pinned by
+  `playground/runtime/tests/execute.rs`, `tests/host.rs`, and
+  `playground/tests/node/b1_boundary.test.mjs`, and documented in
+  `docs/playground.md` §2. One explicit human push authorization is required.
 - B-1R1 (design): COMPLETE.
 - B-1R2 (differential oracle): COMPLETE and mutation-validated.
 - B-1R3A-ARCH-1 (Arc AST sharing): RESOLVED.
@@ -47,11 +61,11 @@ explicit-continuation (iterative) evaluator over the existing AST
 - B-1R4 (full differential): DONE (whole-corpus `engines_agree`; differential
   228/228; syntax conformance 43/43).
 - B-1R5 (substrate boundary): PARTIALLY DONE — fresh machine-backed wasm pinned
-  by `playground/tests/node/b1_boundary.test.mjs` (43 checks: Node cold path
-  boundary matrix plus the pattern-depth calibration) and native CLI/REPL
-  canaries. The Chromium main-thread and production-Worker boundary matrix
-  needs the fresh artifact published to close (human-gated; frozen
-  `playground/runtimes/**`).
+  by `playground/tests/node/b1_boundary.test.mjs` (53 checks: the frame/pattern
+  boundary matrix, the pattern-depth calibration, and the post-B1 stdout
+  capture-bound checks) and native CLI/REPL canaries. The Chromium main-thread
+  and production-Worker boundary matrix needs the fresh artifact published to
+  close (human-gated; frozen `playground/runtimes/**`).
 - B-1R6 (red team): DONE — independent read-only review of the full range; all
   fifteen claims confirmed with no falsification; six minor findings, A/B/C/D/F
   fixed in `39caf6f` (field-receiver and tuple order differentials,
@@ -339,8 +353,9 @@ See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
 - Frozen release runtimes (`0.0.2`, `0.2.0`, `0.2.1`) are immutable, byte for
   byte.
 - No `unsafe`; no manual `Send`/`Sync`.
-- B-1 must stay OPEN until the full migration and the 512-frame boundary hold
-  on every substrate.
+- B-1 is REMOTELY CLOSED: the full migration and the 512-frame boundary hold
+  on every substrate (fresh wasm proven; frozen `0.2.1` remains the historical
+  artifact). Do not reopen B-1 without a new human gate.
 
 ## Do not touch
 
@@ -393,16 +408,18 @@ microphase.
 
 ## Exact next action
 
-1. B-1 is **REMOTELY CLOSED** at `bb736fc`: pushed, local = tracking = server
-   (ahead/behind 0/0), exact-SHA CI green (all 20 jobs), Pages deployed.
-2. No further B-1 implementation commits are authorized without a new human
-   gate. B-1R8 (remove the recursive engine and the oracle switch) and any
-   runtime publication remain separately human-gated.
-3. Do not start unrelated Aura 0.3 work. Keep frozen runtimes, `v0.2.1`, and
-   `.kilo/**` untouched.
-4. Publication-gated validation debt: the Chromium/Worker boundary against a
+1. B-1 is **REMOTELY CLOSED**; the post-B1 runtime/WASM edge closure is
+   **complete locally** on top of `089dffe` and **not pushed**. Request one
+   explicit human push authorization for the closure commits (small additive
+   commits: `fix(wasm)`-scope test pins + `docs`). Do not push without it.
+2. After the closure is remotely closed, the already-planned PRE-0.3
+   FOUNDATION super-transaction may begin. Do not begin it before that.
+3. B-1R8 (remove the recursive engine and the oracle switch) and any runtime
+   publication remain separately human-gated.
+4. Keep frozen runtimes, `v0.2.1`, and `.kilo/**` untouched.
+5. Publication-gated validation debt: the Chromium/Worker boundary against a
    machine-backed runtime awaits a published runtime (release-gated); the
-   fresh-wasm boundary is already pinned in Node.
+   fresh-wasm boundary is already pinned in Node (53 checks).
 
 ## Stop conditions
 
