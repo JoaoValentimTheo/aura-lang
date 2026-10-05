@@ -1939,8 +1939,8 @@ boundaries, triggered by the Playground incident
   calibrated parser budget.
 - **Found and closed the coverage gap:** the `with_stdout_limit` boundary had
   no direct test pin. Added nine native tests in
-  `playground/runtime/tests/execute.rs`, three `BrowserHost` API tests in
-  `tests/host.rs`, and ten fresh-wasm checks in
+  `playground/runtime/tests/execute.rs`, a three-scenario `BrowserHost` API test
+  in `tests/host.rs`, and ten fresh-wasm checks in
   `playground/tests/node/b1_boundary.test.mjs`; documented the exact capture
   contract in `docs/playground.md` §2. Mutation-checked: an off-by-one bound
   and a non-atomic refusal mutation were each caught by the new tests, then
@@ -1953,6 +1953,23 @@ boundaries, triggered by the Playground incident
 - **Frozen/protected:** `0.0.2`/`0.2.0`/`0.2.1` hashes byte-identical;
   `v0.2.1` = `3f5f8702` unchanged; no `0.2.2`, tag, release, or version bump;
   `.kilo/**` churn untouched and unstaged; root `s` absent.
+- **Independent adversarial review (fresh read-only reviewer, out-of-repo
+  snapshot):** all ten closure claims CONFIRMED with no falsification —
+  production routing (entry-by-entry trace plus a live reroute mutation that
+  failed the routing tripwire), host-only stdout bound, exact boundary
+  contract on fresh wasm and frozen controls (`0.0.2`/`0.2.0`/`0.2.1` all
+  byte-identically: 1 MiB accepted, next byte E4020), test discrimination
+  (three mutations: `>=` bound, buffer-clear refusal, partial write — each
+  caught), memory plateau, machine edges, zero-import ABI, frozen hashes, and
+  doc accuracy. One doc imprecision corrected ("three tests" was one test
+  with three scenarios). Two INFO-level, non-blocking observations recorded:
+  (a) the parser AST-depth budget is a counter, and an f-string
+  interpolation's fresh sub-parser can compose such that the physical frame
+  count exceeds the counter (measured composition still completed without a
+  trap on fresh wasm and frozen `0.2.1`; note for the next parser-hardening
+  touch, not a current defect); (b) `BrowserHost::write_stdout` silently
+  ignores a poisoned stdout mutex (pre-existing, unreachable in practice,
+  out of scope).
 
 **Outcome:** no STOP condition. The production iterative machine, its
 native/WASM host boundaries, and the stdout/input/host resource policy are

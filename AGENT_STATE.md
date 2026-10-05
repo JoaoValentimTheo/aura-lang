@@ -59,7 +59,8 @@ iterations complete; heap plateaus); stdin/args/virtual-project/clock
 boundaries verified; machine endurance, unwinding, recovery, and deep-value
 edges verified on fresh wasm; no recursive production seam. The previously
 unpinned `with_stdout_limit` contract is now pinned by nine tests in
-`playground/runtime/tests/execute.rs`, three in `tests/host.rs`, and ten
+`playground/runtime/tests/execute.rs`, a three-scenario `BrowserHost` test in
+`tests/host.rs`, and ten
 fresh-wasm checks in `playground/tests/node/b1_boundary.test.mjs`; the capture
 contract is documented in `docs/playground.md` §2. Full validation matrix
 green; frozen artifacts and `.kilo/**` unchanged.
