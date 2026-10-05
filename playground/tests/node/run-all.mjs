@@ -85,6 +85,35 @@ try {
   run("syntax conformance", [join(here, "syntax.test.mjs"), wasm, nativeBin]);
   differentialRan = true;
 }
+
+// B-1R5 substrate boundary: the freshly built wasm runtime (the machine-backed
+// candidate) must hold the 512-frame language limit exactly and never trap
+// below it. Always rebuild here (incremental) so the boundary runs against
+// current source, never a stale artifact; a build failure is a hard failure,
+// like the differential step.
+{
+  const freshWasm = join(
+    playground,
+    "runtime/target/wasm32-unknown-unknown/release/aura_playground_runtime.wasm",
+  );
+  try {
+    execFileSync(
+      "cargo",
+      ["build", "--release", "--target", "wasm32-unknown-unknown"],
+      { cwd: join(playground, "runtime"), stdio: "pipe" },
+    );
+  } catch (err) {
+    console.error(
+      `\n=== b1 boundary ===\nFAILED: could not build the fresh wasm runtime: ${String(err.message || err)}`,
+    );
+    process.exit(1);
+  }
+  if (!existsSync(freshWasm)) {
+    console.error(`\n=== b1 boundary ===\nFAILED: fresh wasm missing at ${freshWasm}`);
+    process.exit(1);
+  }
+  run("b1 boundary", [join(here, "b1_boundary.test.mjs"), freshWasm]);
+}
 if (!differentialRan) {
   console.error("\n=== differential ===\nFAILED: not run");
   process.exit(1);

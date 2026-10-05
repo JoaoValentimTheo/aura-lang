@@ -247,3 +247,54 @@ fn regex_argument_order_is_pattern_then_text() {
         "abc\n"
     );
 }
+
+/// Callback-taking builtins must stay on the resumable-method whitelist.
+///
+/// `map`, `filter`, and `reduce` are the only builtins that call an Aura value
+/// back. The explicit-continuation machine (the production engine since the
+/// B-1 cutover) drives exactly these three through the resumable protocol
+/// (`src/stdlib/mod.rs::resumable_method` and `Interp::native_resumable`);
+/// any *other* builtin that invoked a callback would re-enter the recursive
+/// evaluator through `Interp::call_value` and reintroduce host-stack recursion
+/// proportional to callback nesting on WebAssembly — the defect class B-1
+/// exists to remove.
+///
+/// This registry-shaped tripwire fails when a callback-taking builtin or
+/// method is added without extending the resumable protocol, so the gap can
+/// never appear silently.
+#[test]
+fn only_the_resumable_builtins_accept_callbacks() {
+    use aura::stdlib::signatures::{builtins, methods, Accepts, TypeClass};
+
+    fn takes_function(accepts: Accepts) -> bool {
+        match accepts {
+            Accepts::One(TypeClass::Function) => true,
+            Accepts::AnyOf(cs) => cs.contains(&TypeClass::Function),
+            Accepts::Any | Accepts::One(_) => false,
+        }
+    }
+
+    let builtin_names: Vec<&str> = builtins()
+        .iter()
+        .filter(|s| s.params.iter().any(|p| takes_function(p.accepts)))
+        .map(|s| s.name)
+        .collect();
+    assert_eq!(
+        builtin_names,
+        ["map", "filter", "reduce"],
+        "a callback-taking builtin was added or removed: extend \
+         `Interp::native_resumable` and `resumable_method`, then update this list"
+    );
+
+    let method_names: Vec<(&str, &str)> = methods()
+        .iter()
+        .filter(|s| s.params.iter().any(|p| takes_function(p.accepts)))
+        .map(|s| (s.name, s.receiver.name()))
+        .collect();
+    assert_eq!(
+        method_names,
+        [("map", "list"), ("filter", "list"), ("reduce", "list")],
+        "a callback-taking method was added or removed: extend \
+         `resumable_method`, then update this list"
+    );
+}

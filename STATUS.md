@@ -1756,3 +1756,84 @@ throughout.
 
 Current exact next action: **HUMAN REVIEW OF B-1R3A, THEN B-1R3B** (values and
 operators) — see `docs/engineering/CURRENT_HANDOFF.md`.
+
+## B-1R3B.1–B-1R3B.8, R3C–R3F MIGRATION, AND LOCAL PRODUCTION CUTOVER (2026-10-03…10-05)
+
+Local-only chronology for the range now 41 commits ahead of
+`origin/rewrite/v3-rust` (`9cb5e28`). Nothing in this range is pushed; frozen
+runtimes, `v0.2.1`, and `.kilo/**` were untouched throughout.
+
+- **B-1R3B.1–B-1R3B.7 (remote-closed):** machine subsets for unary operators,
+  eager binary operators, short-circuit `and`/`or`, list/tuple construction,
+  map construction, range construction, index/field reads, and f-strings. Each
+  microphase added continuations, an LF-pinned iterative golden, strict
+  supported-subset differentials, and an explicit no-fallback test; boundary
+  rows moved between goldens as constructs became supported. Deliberate
+  mutations were detected and reverted byte-exactly. R3B.7 is at `52124a0`.
+- **B-1R3B.8 (remote-closed at `9cb5e28`):** milestone completion audit plus
+  dependency graph (`docs/engineering/B1R3B8_COMPLETION_AUDIT.md`) planning the
+  remaining R3C–R3F migration.
+- **B-1R3C–B-1R3F (local, unpushed):** call (user/native/method/closure,
+  overloads/named args, resumable `map`/`filter`/`reduce`), construct
+  (struct/enum), lambda/pipe, assign/`let` patterns, `while`/`loop`/`for`,
+  comprehensions, `match`, `try`/`catch`/`finally`. All 21 `Expr` and 12 `Stmt`
+  variants are handled with no recursive fallback and no unsupported sentinel;
+  whole-corpus engine agreement is required (`engines_agree`). Three genuine
+  bug families were found by independent read-only reviews and fixed with
+  mutation-tested regression coverage (match-guard scope; a fatal crossing an
+  inner `try` skipping outer `finally`s; catch/finally error frame leakage
+  corrupting `depth`/`expr_depth`).
+- **Stack-safety campaign:** `tests/b1_stack_safety.rs` pins host-stack
+  independence for deep frames, long loops, and deep expressions on small
+  stacks, plus the shared resource caps (`E4013`).
+- **Local production cutover `62dd592` (local, unpushed):**
+  `Compilation::execute_with`/`execute_with_host_factory` (including the
+  sourced branch), the REPL statement/expression/const paths, the free
+  `aura::execute_with`, and the Playground WASM wrapper were routed to the
+  machine. The recursive engine is retained as the differential reference and
+  rollback path. The source-side `evaluator-oracle` gate was removed from the
+  machine module; the feature now isolates the oracle's second engine only.
+- **Residual-seam closure (worktree, uncommitted at this checkpoint):** free
+  `aura::execute_with`, REPL `Item::Const` via the new
+  `Interp::run_item_iterative`, and the Playground `execute`/
+  `run_module_capture` paths were routed to the machine; `run-all.mjs` now
+  always rebuilds the fresh wasm and runs `b1_boundary.test.mjs` against it.
+- **B-1R4 (full differential):** whole-corpus agreement; differential 228/228;
+  syntax conformance 43/43.
+- **B-1R5 (substrate boundary):** partially closed — the fresh machine-backed
+  wasm holds 510 frames for every mainstream recursion shape and reports
+  structured `E4011` at 511 (module mode: 511 legal, 512 `E4011`) with instance
+  recovery; pinned by `playground/tests/node/b1_boundary.test.mjs`. Native
+  canaries in `tests/cli.rs` and `tests/b1_production_path.rs`. The
+  Chromium/Worker limit boundary awaits publication of a fresh runtime
+  (human-gated; the frozen `0.2.1` artifact is what the browser suites still
+  load).
+- **B-1R6 (red team):** complete. The independent read-only review confirmed no
+  production path reaches the recursive engine, exact `run_item_iterative`
+  parity, exact playground ordering, and exact host-factory mirroring. It
+  produced one genuine finding — the CLI boundary test cannot discriminate an
+  engine revert because the 64 MiB native execution substrate masks recursion
+  — which was independently reproduced (with the seam reverted, the test still
+  passed; the seam was restored byte-exact) and fixed by correcting the test
+  comment and documenting that discrimination rests on the REPL canary
+  (`tests/b1_production_path.rs`) and the fresh-wasm boundary
+  (`playground/tests/node/b1_boundary.test.mjs`). Stale "feature-gated /
+  experimental" doc comments on the machine and the retained recursive APIs
+  were corrected, the retained recursive REPL methods marked `#[doc(hidden)]`,
+  and a registry tripwire
+  (`tests/builtins.rs::only_the_resumable_builtins_accept_callbacks`) now fails
+  if a callback-taking builtin or method is added without extending the
+  resumable protocol. The review's pattern-depth figure did not reproduce
+  exactly, but the qualitative claim is pre-existing and already disclosed:
+  `bind_pattern`/`match_pattern` recurse per pattern level, accepted depths
+  bind without trap, and over-deep input is the structured `E1015`.
+- **B-1R7 (validation gate):** fmt, clippy (default and no-default feature
+  configurations), 50 test suites on each configuration, MSRV 1.83, nightly
+  fuzz check, playground suite, website suite, artifact smoke — all green;
+  frozen artifact hashes re-verified byte-exact.
+- **B-1R8:** not started (removes the recursive engine only after the release
+  decision).
+
+Exact next action: commit the residual-seam closures and production-path tests,
+then present the full local commit range for one human-authorized push gate. Do
+not push before that authorization.

@@ -702,7 +702,7 @@ pub fn execute_with(
     on_execution_stack(move || {
         let mut interp = run::Interp::new();
         interp.set_host(host::host_from_parts(stdout, args, input));
-        interp.run(&module)
+        interp.run_iterative(&module)
     })
 }
 

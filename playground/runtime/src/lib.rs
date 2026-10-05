@@ -644,7 +644,7 @@ pub fn execute(source: &str, options_raw: &[u8]) -> (String, u32, &'static str) 
         let host = BrowserHost::with_stdout(outcome_out, opts.stdin, opts.args)
             .with_stdout_limit(limits::MAX_STDOUT_BYTES);
         let mut interp = Interp::with_host(Box::new(host));
-        interp.run(&program)
+        interp.run_iterative(&program)
     })
     .map_err(|d| aura::error::SourceDiagnostic::new(d, source_id));
     // Keep the source map alive through runtime diagnostic production. The
@@ -713,19 +713,19 @@ fn run_module_capture(
     use aura::ast::Item;
     for item in &module.items {
         if !matches!(item, Item::Const { .. } | Item::Expr(..)) {
-            interp.run_item(item)?;
+            interp.run_item_iterative(item)?;
         }
     }
     let mut last: Option<String> = None;
     for item in &module.items {
         match item {
             Item::Const { name, value, .. } => {
-                let ctl = interp.eval_globals(value)?;
+                let ctl = interp.eval_globals_iterative(value)?;
                 let v = interp.finish_global(ctl)?;
                 interp.global(name, v);
             }
             Item::Expr(e, _) => {
-                let ctl = interp.eval_globals(e)?;
+                let ctl = interp.eval_globals_iterative(e)?;
                 let v = interp.finish_global(ctl)?;
                 last = Some(v.display());
             }

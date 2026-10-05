@@ -1,10 +1,10 @@
 //! Explicit-continuation (iterative) evaluator — B-1R3A.
 //!
 //! This is the **real** explicit continuation machine from
-//! `docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md` §16. It is compiled only
-//! with the non-default `evaluator-oracle` feature, so default and production
-//! builds contain no path to it (`§24`, `§5.6`). Production execution stays on
-//! the recursive interpreter in `super`.
+//! `docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md` §16. Since the production
+//! cutover it is the engine every production entry point runs; the recursive
+//! interpreter in `super` remains only as the differential reference and the
+//! rollback path until B-1R8 removes it after the final release decision.
 //!
 //! ## Why this is not recursive
 //!

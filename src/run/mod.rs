@@ -484,14 +484,15 @@ impl Interp {
         Ok(())
     }
 
-    /// Execute a module with the experimental explicit-continuation evaluator
-    /// (B-1R3A).
+    /// Execute a module with the explicit-continuation machine (B-1R3A).
     ///
-    /// Behavior-neutral for production: this method exists only with the
-    /// non-default `evaluator-oracle` feature and is never called by the
-    /// recursive engine or any public entry point. It mirrors [`Interp::run`]'s
-    /// declaration and initialization order, and routes the entry `main` call
-    /// through the machine. It is deliberately **not** an embedder API.
+    /// Since the production cutover (`62dd592`) this is the engine every
+    /// production entry point runs: `Compilation::execute_with*`, the free
+    /// `aura::execute_with`, the REPL, and the Playground runtime all route
+    /// here. [`Interp::run`] is the retained recursive engine (the differential
+    /// oracle's recursive side and the rollback path until B-1R8). This method
+    /// is deliberately **not** the primary embedder API — embedders use
+    /// [`crate::execute_with`].
     ///
     /// Surface and semantics: see `src/run/iterative.rs`. Every current
     /// language construct is handled; the machine never falls back to
@@ -593,8 +594,8 @@ impl Interp {
         Ok(())
     }
 
-    /// Evaluate one expression with the iterative machine (feature-gated),
-    /// normalizing an internal throw exactly like `eval_toplevel`.
+    /// Evaluate one expression with the iterative machine, normalizing an
+    /// internal throw exactly like `eval_toplevel`.
     pub(crate) fn iterative_eval(&mut self, e: &Expr, env: &Env) -> Result<Ctl> {
         match iterative::eval_expr(self, e, env) {
             Ok(c) => Ok(c),
@@ -604,8 +605,9 @@ impl Interp {
 
     /// Evaluate an expression in the global scope with the iterative machine.
     ///
-    /// Hidden and feature-gated: used only by the differential oracle's value
-    /// path (the REPL-equivalent final-value observable). It mirrors
+    /// Hidden: used by the differential oracle's value path (the
+    /// REPL-equivalent final-value observable) and by the Playground's
+    /// module-mode capture path. It mirrors
     /// [`Interp::eval_globals`] including uncaught-throw normalization.
     ///
     /// # Errors
@@ -630,6 +632,30 @@ impl Interp {
             self.globals = env;
         }
         Ok(ctl)
+    }
+
+    /// Register or execute a single top-level item with the machine (the
+    /// production REPL item path). Mirrors [`Interp::run_item`]: a `const`
+    /// initializer is expression evaluation and runs on the machine;
+    /// declaration-only items are engine-independent registration.
+    ///
+    /// # Errors
+    /// Returns the machine's first diagnostic.
+    #[doc(hidden)]
+    pub fn run_item_iterative(&mut self, item: &Item) -> Result<()> {
+        match item {
+            Item::Const { name, value, .. } => {
+                let globals = self.globals.clone();
+                let ctl = self.iterative_eval(value, &globals)?;
+                let v = self.finish_global(ctl)?;
+                self.globals.define(name.clone(), v, false);
+                Ok(())
+            }
+            other => {
+                self.declare_item(other);
+                Ok(())
+            }
+        }
     }
 
     pub(crate) fn run_sourced(
@@ -1980,7 +2006,11 @@ impl Interp {
         self.call_value(f, args, span)
     }
 
-    /// Evaluate an expression in the global scope (used by the REPL).
+    /// Evaluate an expression in the global scope on the **retained recursive
+    /// engine**. Since the cutover this is used only by the differential
+    /// oracle's recursive side (`tests/oracle/mod.rs`) and the rollback path;
+    /// production uses [`Interp::eval_globals_iterative`].
+    #[doc(hidden)]
     pub fn eval_globals(&mut self, e: &Expr) -> Result<Ctl> {
         let globals = self.globals.clone();
         match self.eval(e, &globals) {
@@ -1998,7 +2028,14 @@ impl Interp {
         }
     }
 
-    /// Execute a single statement in the global scope (used by the REPL).
+    /// Execute a single statement in the global scope on the **retained
+    /// recursive engine**.
+    ///
+    /// Retained for recursive-engine symmetry and engine-parity reference.
+    /// Production uses [`Interp::exec_stmt_globals_iterative`]; this method
+    /// has no caller in the tree and is slated for removal with the rest of
+    /// the recursive engine in B-1R8. Do not wire new callers to it.
+    #[doc(hidden)]
     pub fn exec_stmt_globals(&mut self, s: &Stmt) -> Result<Ctl> {
         let mut globals = self.globals.clone();
         let r = self.exec_stmt(s, &mut globals);
@@ -2008,7 +2045,11 @@ impl Interp {
         r
     }
 
-    /// Register or execute a single top-level item (used by the REPL).
+    /// Register or execute a single top-level item on the **retained recursive
+    /// engine**. Since the cutover this is used only by the differential
+    /// oracle's recursive side (`tests/oracle/mod.rs`); production uses
+    /// [`Interp::run_item_iterative`].
+    #[doc(hidden)]
     pub fn run_item(&mut self, item: &Item) -> Result<()> {
         match item {
             Item::Const { name, value, .. } => {

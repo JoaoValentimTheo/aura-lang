@@ -236,6 +236,37 @@ fn run_reports_a_language_diagnostic_on_stderr_with_code_1() {
 }
 
 #[test]
+fn run_holds_the_frame_limit_on_the_production_path() {
+    // End-to-end contract canary: through the real subprocess, the cut-over
+    // `Compilation` path, and the CLI's error mapping, a legal depth-510
+    // program (main is frame 1) must run to completion and frame 513 must be
+    // the structured E4011 the language promises — never a host failure.
+    // Note: native entry points wrap execution in the 64 MiB execution
+    // substrate, so this pins the *user-visible contract*, not engine
+    // selection; engine discrimination lives in `tests/b1_production_path.rs`
+    // (REPL, inline) and `playground/tests/node/b1_boundary.test.mjs` (wasm).
+    let deep = "fn f(n) { if n <= 0 { return 0 }\n return 1 + f(n - 1) }\n";
+    let ok_path = tmp(
+        "frames-510.aura",
+        &format!("{deep}fn main() {{ print(f(510)) }}"),
+    );
+    let (code, stdout, stderr) = run(&["run", ok_path.to_str().unwrap()]);
+    rm_tmp(&ok_path);
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(stdout, "510\n");
+
+    let over_path = tmp(
+        "frames-511.aura",
+        &format!("{deep}fn main() {{ print(f(511)) }}"),
+    );
+    let (code, stdout, stderr) = run(&["run", over_path.to_str().unwrap()]);
+    rm_tmp(&over_path);
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("E4011"), "{stderr}");
+}
+
+#[test]
 fn check_is_silent_on_success() {
     let path = tmp("check-ok.aura", "fn main() { print(1) }");
     let (code, stdout, stderr) = run(&["check", path.to_str().unwrap()]);

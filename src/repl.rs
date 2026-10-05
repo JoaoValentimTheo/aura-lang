@@ -416,7 +416,7 @@ fn eval_line<W: Write>(
                         },
                         Err(e) => Err(interp.uncaught_diag(e)),
                     },
-                    other => interp.run_item(other),
+                    other => interp.run_item_iterative(other),
                 };
                 if let Err(e) = result {
                     emit_diag(writer, source_id, e);

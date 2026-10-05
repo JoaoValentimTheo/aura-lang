@@ -8,11 +8,12 @@ before continuing substantial work.
 ## Repository
 
 - Branch: `rewrite/v3-rust`
-- Remote `origin/rewrite/v3-rust`: `52124a09b77f5bf6fa447450430a940516bac79f`
-  (R3A + B-1R3B.1 through B-1R3B.7; pushed and remote-closed; exact-SHA CI and
-  Pages green). Local = tracking = server; ahead/behind 0/0. (Reconcile this
-  line with `git rev-parse origin/rewrite/v3-rust` at every checkpoint: Git
-  wins.)
+- Remote `origin/rewrite/v3-rust`: `9cb5e28ce17cba652b48faa4ebbf682ec6029519`
+  (B-1R3B.8 checkpoint; pushed and remote-closed; exact-SHA CI and Pages
+  green). Local `HEAD` is the production cutover `62dd592` plus 40 earlier
+  local commits; the local range is **not pushed** and the remote is 41
+  commits behind. (Reconcile this line with `git rev-parse
+  origin/rewrite/v3-rust` at every checkpoint: Git wins.)
 - Local/remote relationship: authoritative value is `git rev-list
   --left-right --count origin/rewrite/v3-rust...HEAD`; a tracked file cannot
   safely hardcode its own position.
@@ -36,17 +37,21 @@ runtime means adding a version, never replacing one.
 
 B-1 — ENGINE-STACK-INDEPENDENT CALL ENGINE. B-1 is OPEN. The R3A baseline
 through B-1R3B.8 are pushed and remote-closed (`52124a0` for R3B.7, `9cb5e28`
-for the R3B.8 checkpoint). The full B-1R3C–B-1R3F evaluator migration is
-**implemented and validated locally but NOT pushed** (see the local commit
-range and the super-transaction report). Production still runs the recursive
-evaluator until the explicitly gated cutover.
+for the R3B.8 checkpoint). The full B-1R3C–B-1R3F evaluator migration plus the
+**local production cutover** (`62dd592`) are implemented and validated locally
+but **NOT pushed** (see the local commit range and the super-transaction
+report). Production now runs the explicit-continuation machine on every entry
+point; the recursive evaluator is retained only as the differential reference
+and rollback path (B-1R8 removes it after the release decision).
 
 B-1R phase state:
 
-- **B-1:** OPEN — evaluator migration complete locally; production cutover and
-  final push gate pending. Released WASM runtime still traps on the engine
-  stack below the 512-frame language limit; `v0.2.1` is immutable and contains
-  the defect. Native conforms.
+- **B-1:** OPEN — evaluator migration complete and cut over locally; final
+  adversarial review, validation matrix, and push gate pending. The released
+  WASM runtime still traps on the engine stack below the 512-frame language
+  limit; `v0.2.1` is immutable and contains the defect. The freshly built
+  machine-backed WASM holds the boundary (proven by
+  `playground/tests/node/b1_boundary.test.mjs`). Native conforms.
 - **B-1R1:** DESIGN COMPLETE (`docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md`).
 - **B-1R2:** DIFFERENTIAL ORACLE COMPLETE AND MUTATION-VALIDATED
   (`docs/engineering/B1R2_DIFFERENTIAL_ORACLE.md`; 104-case corpus; isolated
@@ -92,19 +97,54 @@ B-1R phase state:
   `saved_expr_depth` snapshots on `Cont::TryCatchEnd`/`Cont::TryFinally`).
   Eleven vacuous compile-error oracle cases were also replaced with
   runtime-exercising shapes.
-- **B-1R4–B-1R7:** IN PROGRESS/PENDING — stack/resource campaign committed
-  (`tests/b1_stack_safety.rs`); full validation, adversarial review, cutover.
+- **Production cutover (`62dd592`):** COMPLETE LOCALLY, NOT PUSHED. Every
+  production entry point now runs the machine: `Compilation::execute_with*`
+  (with the sourced `run_iterative_sourced` branch for provider-backed
+  compilations), the REPL statement/expression/const paths, the free
+  `aura::execute_with`, and the Playground WASM wrapper (`execute`,
+  `run_module_capture`). The recursive engine is retained as the differential
+  reference and rollback path.
+- **B-1R4 (full differential):** DONE — whole-corpus engine agreement
+  (`engines_agree`), differential 228/228, syntax conformance 43/43.
+- **B-1R5 (substrate boundary):** PARTIALLY DONE — fresh machine-backed WASM
+  pinned by `playground/tests/node/b1_boundary.test.mjs` (Node cold path: 510
+  legal / 511 E4011 for all mainstream shapes; module mode 511 legal / 512
+  E4011; instance recovery); native CLI/REPL boundary canaries in
+  `tests/cli.rs` and `tests/b1_production_path.rs`. The Chromium main-thread
+  and production-Worker boundary at limit−1/limit/limit+1 cannot be exercised
+  against the fresh artifact until a new runtime is published (human-gated,
+  `playground/runtimes/**` immutable); the browser/Worker suites currently
+  exercise the frozen `0.2.1` artifact only at depths it supports.
+- **B-1R6 (red team):** DONE — independent read-only adversarial review of the
+  cutover range. Findings: no production path reaches the recursive engine;
+  `run_item_iterative` parity and playground ordering confirmed; host-factory
+  mirroring exact. One genuine finding was independently reproduced and fixed:
+  the CLI boundary test cannot discriminate an engine revert (the 64 MiB
+  execution substrate masks recursion) — its comment now states that honestly
+  and discrimination lives in the REPL canary and fresh-wasm boundary. Stale
+  "feature-gated/experimental" docs on the machine and retained recursive
+  APIs were corrected and the retained recursive REPL methods marked
+  `#[doc(hidden)]`; a registry tripwire
+  (`tests/builtins.rs::only_the_resumable_builtins_accept_callbacks`) now
+  fails if a callback-taking builtin/method is added without extending the
+  resumable protocol. Pre-existing, already-disclosed pattern-helper
+  recursion remains; accepted depths bind without trap (E1015 above).
+- **B-1R7 (full validation gate):** DONE LOCALLY — fmt, clippy (both feature
+  configurations), full test matrix (50 suites each), MSRV 1.83, nightly fuzz
+  check, playground suite, website suite, artifact smoke; frozen artifacts
+  byte-unchanged.
 - **B-1R8:** NOT STARTED — remove the recursive engine and the oracle switch
   only after cutover validation and a human release decision.
 
 ## Production vs experimental engine
 
-- Production / default: **recursive** evaluator, unchanged and authoritative
-  until the explicit cutover.
-- Experimental: iterative evaluator, compiled only under the non-default
-  `evaluator-oracle` feature. It now handles **every** `Expr` (21) and `Stmt`
-  (12) variant with no recursive fallback; the unsupported-sentinel surface is
-  empty and the whole corpus is required to agree between engines
+- Production / default: **explicit-continuation machine** since the local
+  cutover `62dd592`. The recursive evaluator is retained only as the
+  differential reference (`Compilation::execute_recursive*`) and the rollback
+  path; no production entry point reaches it.
+- Iterative engine: compiled always (no longer feature-gated); it handles
+  **every** `Expr` (21) and `Stmt` (12) variant with no recursive fallback; the
+  whole corpus is required to agree between engines
   (`tests/evaluator_oracle.rs::engines_agree`). It supports literals, names,
   blocks, `let`/shadowing, `let` patterns, assignment (simple/compound,
   name/index/field targets), `if`/`while`/`loop`/`for` (lazy ranges),
@@ -170,13 +210,12 @@ Git + working tree + these documents; chat history is not authority.
 ## Exact Next Action
 
 See `docs/engineering/CURRENT_HANDOFF.md`. In short: the complete B-1R3C–B-1R3F
-evaluator migration is implemented, oracle-covered, and validated locally on
-top of the remotely closed `9cb5e28` checkpoint, but is **not pushed**.
-Remaining before B-1 can close: finish the adversarial review, run the final
-validation matrix, and — only if the cutover pre-gate passes — perform the
-local production cutover, then present the commit range for one final
-human-authorized push gate. Do not push implementation commits and do not start
-unrelated Aura 0.3 work.
+evaluator migration and the local production cutover `62dd592` are implemented,
+oracle-covered, and validated locally on top of the remotely closed `9cb5e28`
+checkpoint, but are **not pushed**. Remaining before B-1 can close: finish the
+adversarial review and the residual-seam worktree commit, then present the
+commit range for one final human-authorized push gate. Do not push
+implementation commits and do not start unrelated Aura 0.3 work.
 
 ## Writer
 
