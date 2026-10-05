@@ -142,6 +142,17 @@ B-1R phase state:
   by design), so a new mechanical routing tripwire
   (`tests/production_routing.rs`) pins every production entry's machine call
   spelling and was proven to fail when that seam is rerouted to recursion.
+- **Independent adversarial review (fresh reviewer, full range):** all
+  fifteen claims CONFIRMED with no falsification (unsupported-zero, cutover
+  completeness, callback registry, call frames, closures/environments,
+  loops/control, try, exactly-once ledger, stack safety, resource limits,
+  diagnostics/spans, oracle conservation, frozen state, test
+  discrimination, pattern-residual classification). Six minor findings;
+  A/B/C/D/F fixed in `39caf6f` (field-receiver and tuple order
+  differentials, `#[doc(hidden)]` on `Interp::run`, callback-confinement
+  tripwire, wasm pattern-depth calibration pin); E did not reproduce
+  (the recursive `run_item`/`eval_globals`/`exec_stmt_globals` methods
+  exist, so the negative routing assertions are meaningful).
 - **B-1R7 (full validation gate):** DONE LOCALLY — fmt, clippy (both feature
   configurations), full test matrix (50 suites each), MSRV 1.83, nightly fuzz
   check, playground suite, website suite, artifact smoke; frozen artifacts
