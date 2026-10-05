@@ -132,6 +132,16 @@ B-1R phase state:
   fails if a callback-taking builtin/method is added without extending the
   resumable protocol. Pre-existing, already-disclosed pattern-helper
   recursion remains; accepted depths bind without trap (E1015 above).
+- **Final push gate (deliberate-falsification campaign):** six mutations were
+  applied to the final architecture and reverted byte-exact
+  (shasum-verified). Detected: REPL const seam→recursion (stack abort),
+  eager-binary operand-order break and duplicated operand (oracle failures),
+  short-circuit signal swallow (oracle failures), Playground `execute`
+  →recursion (39/41 fresh-wasm boundary checks trap). Not behaviorally
+  discriminable on native: the free library seam (64 MiB substrate masks it,
+  by design), so a new mechanical routing tripwire
+  (`tests/production_routing.rs`) pins every production entry's machine call
+  spelling and was proven to fail when that seam is rerouted to recursion.
 - **B-1R7 (full validation gate):** DONE LOCALLY — fmt, clippy (both feature
   configurations), full test matrix (50 suites each), MSRV 1.83, nightly fuzz
   check, playground suite, website suite, artifact smoke; frozen artifacts
