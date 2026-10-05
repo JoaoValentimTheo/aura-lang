@@ -129,3 +129,153 @@ fn deterministic_across_runs() {
     let b = rt::execute("fn main() { print(\"x\") }", &[]).0;
     assert_eq!(a, b);
 }
+
+// ---------------------------------------------------------------------------
+// Standard-output capture bound (Host ABI application resource policy)
+// ---------------------------------------------------------------------------
+//
+// `rt::limits::MAX_STDOUT_BYTES` is the Playground's bounded-capture policy:
+// the interpreter emits to a host-controlled sink, and the host refuses any
+// write that would cross the bound. These tests pin the exact contract the
+// observed `E4020` relies on: capture stops at the bound, a crossing write is
+// refused whole with earlier bytes retained, the refusal is fatal to the run
+// (not catchable; `finally` regions still run), and the bound is per
+// execution (every `execute*` builds a fresh `BrowserHost`).
+
+/// `print(s)` writes `s.len()` bytes plus one newline, so a stdin string of
+/// `LIMIT - 1` bytes lands on exactly the bound.
+const LIMIT: usize = rt::limits::MAX_STDOUT_BYTES;
+
+fn stdout_of(v: &serde_json::Value) -> &str {
+    v["stdout"].as_str().expect("stdout is a string")
+}
+
+fn run_with_stdin(src: &str, stdin: &str) -> serde_json::Value {
+    let (json, _status, _version) = rt::execute(src, &options(&[], Some(stdin)));
+    parse(&json)
+}
+
+#[test]
+fn stdout_capture_accepts_exactly_the_limit() {
+    let v = run_with_stdin(
+        "fn main() {\n let s = read_line()\n print(s)\n}",
+        &"a".repeat(LIMIT - 1),
+    );
+    assert_eq!(v["status"], "ok");
+    assert_eq!(stdout_of(&v).len(), LIMIT);
+}
+
+#[test]
+fn stdout_capture_over_limit_is_e4020_with_prior_output_retained() {
+    let v = run_with_stdin(
+        "fn main() {\n print(\"before\")\n let s = read_line()\n print(s)\n}",
+        &"a".repeat(LIMIT),
+    );
+    assert_eq!(v["status"], "diagnostic");
+    let d = &v["diagnostics"][0];
+    assert_eq!(d["code"], 4020);
+    assert!(
+        d["message"]
+            .as_str()
+            .unwrap()
+            .contains("1048576 byte limit"),
+        "{d}"
+    );
+    assert_eq!(d["line"], 4);
+    // The bytes accepted before the crossing write are retained; the refused
+    // write contributed nothing (atomicity).
+    assert_eq!(stdout_of(&v), "before\n");
+}
+
+#[test]
+fn stdout_refusal_is_atomic_for_one_oversized_write() {
+    let v = run_with_stdin(
+        "fn main() {\n let s = read_line()\n print(s)\n}",
+        &"a".repeat(LIMIT),
+    );
+    assert_eq!(v["status"], "diagnostic");
+    assert_eq!(v["diagnostics"][0]["code"], 4020);
+    assert_eq!(stdout_of(&v), "");
+}
+
+#[test]
+fn many_small_writes_cross_the_bound_atomically() {
+    // 61680 prints of "0123456789abcdef" x 17 bytes (newline included) fill
+    // 1_048_560 bytes; the next 18-byte print exceeds the bound and is
+    // refused whole, so the captured output is exactly the accumulated bytes.
+    let v = run_with_stdin(
+        "fn main() {\n let mut i = 0\n while i < 61680 { print(\"0123456789abcdef\")\n i = i + 1 }\n print(\"0123456789abcdefX\")\n}",
+        "",
+    );
+    assert_eq!(v["status"], "diagnostic");
+    assert_eq!(v["diagnostics"][0]["code"], 4020);
+    assert_eq!(stdout_of(&v).len(), 61680 * 17);
+    assert!(stdout_of(&v).ends_with("0123456789abcdef\n"));
+}
+
+#[test]
+fn stdout_utf8_write_landing_exactly_on_the_bound_is_valid() {
+    // Fill LIMIT - 4 bytes, then one `print("€")` writes 4 UTF-8 bytes.
+    let vm = run_with_stdin(
+        "fn main() {\n let s = read_line()\n print(s)\n print(\"€\")\n}",
+        &"a".repeat(LIMIT - 5),
+    );
+    assert_eq!(vm["status"], "ok");
+    // `String::len` is the UTF-8 byte length, which is what the bound counts.
+    assert_eq!(stdout_of(&vm).len(), LIMIT);
+    assert!(stdout_of(&vm).ends_with("€\n"));
+}
+
+#[test]
+fn stdout_utf8_write_one_byte_over_is_refused_whole() {
+    // LIMIT - 3 accepted bytes, then 4 more would cross: refused whole, the
+    // retained prefix is byte-identical to what was accepted.
+    let vm = run_with_stdin(
+        "fn main() {\n let s = read_line()\n print(s)\n print(\"€\")\n}",
+        &"a".repeat(LIMIT - 4),
+    );
+    assert_eq!(vm["status"], "diagnostic");
+    assert_eq!(vm["diagnostics"][0]["code"], 4020);
+    assert_eq!(stdout_of(&vm).len(), LIMIT - 3);
+}
+
+#[test]
+fn stdout_e4020_is_not_catchable_and_finally_still_runs() {
+    // The `try` body's print crosses the bound (LIMIT + 1 bytes): the failure
+    // is a fatal host I/O failure, so `catch` must not intercept it, while the
+    // `finally` block still runs — and its short write succeeds against the
+    // empty capture.
+    let v = run_with_stdin(
+        "fn main() {\n let s = read_line()\n try {\n print(s)\n } catch e {\n print(\"caught\")\n } finally {\n print(\"finally\")\n }\n}",
+        &"a".repeat(LIMIT),
+    );
+    assert_eq!(v["status"], "diagnostic");
+    assert_eq!(v["diagnostics"][0]["code"], 4020);
+    assert_eq!(stdout_of(&v), "finally\n");
+}
+
+#[test]
+fn stdout_bound_is_per_execution() {
+    // Two separate executions may each land on exactly the bound: no state
+    // (stdout or budget) survives across `execute*` calls.
+    let src = "fn main() {\n let s = read_line()\n print(s)\n}";
+    let stdin = "a".repeat(LIMIT - 1);
+    for _ in 0..2 {
+        let v = run_with_stdin(src, &stdin);
+        assert_eq!(v["status"], "ok");
+        assert_eq!(stdout_of(&v).len(), LIMIT);
+    }
+}
+
+#[test]
+fn runaway_print_reports_structured_e4020_not_a_trap() {
+    // The reported Playground incident shape: a loop that prints far more
+    // than the bound must terminate with a structured E4020, never a guest
+    // trap or unbounded capture.
+    let (json, status, _version) =
+        rt::execute("fn main() {\n for i in 0..600000 { print(i) }\n}", &[]);
+    assert_eq!(status, rt::status::DIAGNOSTIC);
+    let v = parse(&json);
+    assert_eq!(v["diagnostics"][0]["code"], 4020);
+    assert!(v["stdout"].as_str().unwrap().len() <= LIMIT);
+}

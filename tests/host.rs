@@ -314,6 +314,45 @@ fn browser_host_does_not_expose_browser_state() {
     }
 }
 
+/// `with_stdout_limit` is the application resource policy behind the observed
+/// Playground `E4020`: the host accepts a write that lands on the bound,
+/// refuses whole any write that would cross it with the capture left
+/// byte-identical, and the interpreter surfaces the refusal as `E4020`.
+#[test]
+fn browser_host_stdout_limit_is_atomic_and_fatal() {
+    use std::sync::{Arc, Mutex};
+
+    fn run_limited_browser(src: &str, limit: usize) -> (Vec<u8>, Option<u16>) {
+        let out: aura::host::BrowserStdout = Arc::new(Mutex::new(Vec::new()));
+        let handle = out.clone();
+        let host = BrowserHost::with_stdout(out, None, Vec::new()).with_stdout_limit(limit);
+        let module = aura::compile_with_mode(src, aura::CompileMode::Program).expect("compiles");
+        let mut interp = Interp::with_host(Box::new(host));
+        let code = interp.run(&module).err().map(|d| d.code);
+        let bytes = handle.lock().unwrap().clone();
+        (bytes, code)
+    }
+
+    // A write that lands exactly on the bound is accepted.
+    let (bytes, code) = run_limited_browser("fn main() { print(\"abcd\") }", 5);
+    assert_eq!(code, None);
+    assert_eq!(bytes, b"abcd\n");
+
+    // One byte over: refused whole with E4020 and no partial bytes, while
+    // earlier accepted writes remain.
+    let (bytes, code) = run_limited_browser("fn main() { print(\"a\")\n print(\"abcd\") }", 5);
+    assert_eq!(code, Some(codes::IO));
+    assert_eq!(bytes, b"a\n");
+
+    // The refusal is not catchable; `finally` still runs.
+    let (bytes, code) = run_limited_browser(
+        "fn main() { try { print(\"abcd\") } catch e { print(\"caught\") } finally { print(\"f\") } }",
+        4,
+    );
+    assert_eq!(code, Some(codes::IO));
+    assert_eq!(bytes, b"f\n");
+}
+
 #[cfg(feature = "time")]
 #[test]
 fn time_is_routed_through_the_host() {
