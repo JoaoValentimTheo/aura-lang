@@ -33,11 +33,10 @@ pub fn install(it: &mut Interp) {
     #[cfg(not(feature = "py"))]
     {
         for name in ["py_eval", "py_import", "py_call", "py_version"] {
-            let owned: &'static str = Box::leak(name.to_string().into_boxed_str());
             it.native(
                 name,
                 move |_it: &mut Interp, _args: Vec<crate::run::value::Value>, span: Span| {
-                    Err(unavailable(owned, span))
+                    Err(unavailable(name, span))
                 },
             );
         }
