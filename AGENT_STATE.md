@@ -8,11 +8,11 @@ before continuing substantial work.
 ## Repository
 
 - Branch: `rewrite/v3-rust`
-- Remote `origin/rewrite/v3-rust`: `9cb5e28ce17cba652b48faa4ebbf682ec6029519`
-  (B-1R3B.8 checkpoint; pushed and remote-closed; exact-SHA CI and Pages
-  green). Local `HEAD` is the tip of the unpushed B-1 cutover range
-  (`62dd592` production cutover, `11abad2` residual-seam closures, plus
-  state-doc reconciliation); the local range is **not pushed**. Do not
+- Remote `origin/rewrite/v3-rust`: **`bb736fc1091a904caaa68919c1a95ab57d2f31d7`**
+  — the B-1 production cutover range **pushed, remote-closed, exact-SHA CI
+  green** (all 20 jobs) and Pages deployed. Local = tracking = server. The
+  prior B-1R3B.8 checkpoint was `9cb5e28`; the B-1 closure tip adds
+  `9fa70c6` (review outcome) and `bb736fc` (additive miri fix). Do not
   hardcode the ahead count: read it from `git rev-list --left-right --count
   origin/rewrite/v3-rust...HEAD`.
 - Local/remote relationship: authoritative value is `git rev-list
@@ -36,25 +36,27 @@ runtime means adding a version, never replacing one.
 
 ## Current Track
 
-B-1 — ENGINE-STACK-INDEPENDENT CALL ENGINE. B-1 is OPEN. The R3A baseline
-through B-1R3B.8 are pushed and remote-closed (`52124a0` for R3B.7, `9cb5e28`
-for the R3B.8 checkpoint). The full B-1R3C–B-1R3F evaluator migration plus the
-**local production cutover** (`62dd592`) are implemented and validated locally
-but **NOT pushed** (see the local commit range and the super-transaction
-report). Production now runs the explicit-continuation machine on every entry
-point; the recursive evaluator is retained only as the differential reference
-and rollback path (B-1R8 removes it after the release decision).
+B-1 — ENGINE-STACK-INDEPENDENT CALL ENGINE. **B-1 IS REMOTELY CLOSED** at
+`bb736fc` (exact-SHA CI green, all 20 jobs; Pages deployed). The complete
+B-1R3C–B-1R3F evaluator migration plus the production cutover (`62dd592`),
+the residual seam closures (`11abad2`), the mechanical routing tripwire
+(`a45d1ec`), the review-driven fixes (`39caf6f`), the review-outcome
+checkpoint (`9fa70c6`), and the additive miri fix (`bb736fc`) are pushed.
+Production runs the explicit-continuation machine on every entry point; the
+recursive evaluator is retained only as the differential reference and
+rollback path (B-1R8 removes it after the release decision).
 
 B-1R phase state:
 
-- **B-1:** OPEN — evaluator migration complete and cut over locally
-  (`62dd592` + seam closure `11abad2`); adversarial review and validation
-  matrix done; the human-authorized push gate is pending, and B-1R8
-  (recursive-engine removal) follows a release decision. The released
-  WASM runtime still traps on the engine stack below the 512-frame language
-  limit; `v0.2.1` is immutable and contains the defect. The freshly built
-  machine-backed WASM holds the boundary (proven by
-  `playground/tests/node/b1_boundary.test.mjs`). Native conforms.
+- **B-1:** **REMOTELY CLOSED** at `bb736fc`. Current-language iterative
+  surface zero (21/21 `Expr`, 12/12 `Stmt`, no sentinel, no fallback);
+  production cutover mechanically proven; unintended recursive production
+  seams zero; whole-language differential campaign green; deferred
+  exactly-once obligations closed; stack/resource/control/environment/
+  diagnostic semantics verified; frozen historical artifacts unchanged. The
+  released `0.2.1` WASM runtime still traps on the engine stack below the
+  512-frame language limit — that defect is fixed in source and proven on a
+  fresh build; it ships only when a new runtime is published (human-gated).
 - **B-1R1:** DESIGN COMPLETE (`docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md`).
 - **B-1R2:** DIFFERENTIAL ORACLE COMPLETE AND MUTATION-VALIDATED
   (`docs/engineering/B1R2_DIFFERENTIAL_ORACLE.md`; 104-case corpus; isolated
@@ -233,13 +235,11 @@ Git + working tree + these documents; chat history is not authority.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: the complete B-1R3C–B-1R3F
-evaluator migration and the local production cutover `62dd592` are implemented,
-oracle-covered, and validated locally on top of the remotely closed `9cb5e28`
-checkpoint, but are **not pushed**. Remaining before B-1 can close: finish the
-adversarial review and the residual-seam worktree commit, then present the
-commit range for one final human-authorized push gate. Do not push
-implementation commits and do not start unrelated Aura 0.3 work.
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: B-1 is **remotely closed**
+at `bb736fc` (exact-SHA CI green — all 20 jobs; Pages deployed). No further B-1
+implementation commits are authorized without a new human gate. Do not start
+unrelated Aura 0.3 work. B-1R8 (remove the recursive engine and the oracle
+switch) and any runtime publication remain separately human-gated.
 
 ## Writer
 

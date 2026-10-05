@@ -1830,12 +1830,67 @@ were untouched throughout.
   `bind_pattern`/`match_pattern` recurse per pattern level, accepted depths
   bind without trap, and over-deep input is the structured `E1015`.
 - **B-1R7 (validation gate):** fmt, clippy (default and no-default feature
-  configurations), 50 test suites on each configuration, MSRV 1.83, nightly
+  configurations), 51 test suites on each configuration, MSRV 1.83, nightly
   fuzz check, playground suite, website suite, artifact smoke — all green;
   frozen artifact hashes re-verified byte-exact.
 - **B-1R8:** not started (removes the recursive engine only after the release
   decision).
 
-Exact next action: commit the residual-seam closures and production-path tests,
-then present the full local commit range for one human-authorized push gate. Do
-not push before that authorization.
+## B-1 REMOTE CLOSURE (2026-10-05)
+
+The full adversarial push gate ran on the completed range and passed:
+
+- **Bootstrap:** branch `rewrite/v3-rust`; remote/tracking/server `9cb5e28`;
+  local tip `9fa70c6`; 0 behind / 47 ahead; linear, no merges; no unrelated or
+  frozen-artifact contamination.
+- **Coverage:** 21/21 `Expr`, 12/12 `Stmt`, no wildcard fallback, no `E4999`
+  sentinel in `src/`.
+- **Routing:** every production entry (library factory, free `execute_with`,
+  CLI, REPL ×3, Playground ×2, module capture) traced to the machine; the
+  recursive engine is confined to `execute_recursive*` and the oracle.
+- **Deliberate falsification:** six mutations, each reverted byte-exact. Five
+  discriminated behaviorally; the free library seam is not behaviorally
+  discriminable on native (64 MiB substrate), so `tests/production_routing.rs`
+  now pins every production entry's machine call spelling mechanically
+  (`a45d1ec`) and was proven to fail on that seam.
+- **Independent adversarial review** (fresh reviewer, full range): all fifteen
+  claims confirmed with no falsification. Six minor findings; A/B/C/D/F fixed
+  in `39caf6f` (field-receiver and tuple order differentials,
+  `#[doc(hidden)]` on `Interp::run`, callback-confinement tripwire, wasm
+  pattern-depth calibration pin); E did not reproduce.
+- **Pattern residual:** `bind_pattern`/`match_pattern` recursion is bounded by
+  the substrate-calibrated parser budget — depth 700/765 binds without trap on
+  the 4 MiB wasm stack, 766 is structured `E1015`; pinned by the boundary
+  test. Classified safe-under-invariant, not a blocker.
+- **B-1R5:** classified post-publication validation debt — the fresh
+  machine-backed wasm boundary is proven in Node (43/43) and the frozen
+  `0.2.1` artifact fails 42/43; the Chromium/Worker boundary needs a published
+  runtime (human-gated).
+- **Validation matrix:** fmt, clippy ×2, 51 suites ×2, MSRV 1.83, nightly fuzz
+  check + run, playground suite, `build --check`, website build + tests,
+  artifact smoke 12/12.
+- **Push:** fast-forward `9cb5e28..9fa70c6` (47 commits) pushed; local =
+  tracking = server at `9fa70c6`, ahead/behind 0/0.
+- **Exact-SHA CI at `9fa70c6`:** 19/20 jobs green; `miri` failed with 648
+  memory-leak reports (no UB) rooted at the pre-existing py-stub `Box::leak`
+  in `src/bridge/mod.rs` — newly visible because the cutover un-gated the
+  machine's ~500 lib unit tests. Additive fix `bb736fc` replaced the
+  unnecessary leak with the existing `&'static str`; verified with the exact
+  CI command locally (117 passed, 0 leaks).
+- **Exact-SHA CI at `bb736fc`:** **all 20 jobs green** (ubuntu/macos/windows
+  tests, clippy, miri, fuzz smoke, extended property, MSRV, interop, playground,
+  website, audit). Pages/Deploy website green (build + deploy) at the same
+  SHA.
+- **Final state:** local = tracking = server `bb736fc`, ahead/behind 0/0;
+  staged empty; worktree clean except protected `.kilo/**`; root `s` absent;
+  frozen `0.0.2`/`0.2.0`/`0.2.1` hashes byte-unchanged; `v0.2.1` unchanged; no
+  new tag, release, or version bump; no `0.2.2`.
+
+**B-1 status: REMOTELY CLOSED** at `bb736fc`. Production evaluator: the
+explicit-continuation machine. Recursive evaluator: retained oracle/rollback
+reference only (B-1R8 removal is human-gated). Publication-gated validation
+debt: browser/Worker boundary against a machine-backed runtime.
+
+Exact next action: none for B-1. B-1R8 (recursive-engine removal) and any
+runtime publication require a new human gate. Do not start Aura 0.3 work
+without explicit authorization.

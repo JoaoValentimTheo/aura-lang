@@ -14,9 +14,10 @@ explicit-continuation (iterative) evaluator over the existing AST
 
 ## Current status
 
-- B-1: **OPEN** — evaluator migration complete; production cut over locally
-  (`62dd592`), not pushed. Released `0.2.1` runtime still contains the defect;
-  the freshly built machine-backed runtime holds the language boundary.
+- B-1: **REMOTELY CLOSED** at `bb736fc` — the evaluator migration and
+  production cutover are pushed; exact-SHA CI green (all 20 jobs) and Pages
+  deployed. Released `0.2.1` runtime still contains the defect; the freshly
+  built machine-backed runtime holds the language boundary.
 - B-1R1 (design): COMPLETE.
 - B-1R2 (differential oracle): COMPLETE and mutation-validated.
 - B-1R3A-ARCH-1 (Arc AST sharing): RESOLVED.
@@ -37,28 +38,29 @@ explicit-continuation (iterative) evaluator over the existing AST
 - B-1R3B.8 (milestone completion audit + dependency graph): **COMPLETE AND
   REMOTELY CLOSED** at `9cb5e28` — `docs/engineering/B1R3B8_COMPLETION_AUDIT.md`.
 - B-1R3C–B-1R3F (Call, Method, Construct, Lambda, Pipe, Assign, LetPattern,
-  While, Loop, For, ListComp, MapComp, Match, Try): **IMPLEMENTED,
-  ORACLE-COVERED, AND LOCALLY VALIDATED**; not pushed.
-- Local production cutover `62dd592`: **COMPLETE LOCALLY, NOT PUSHED.** Every
-  production entry point runs the machine; the residual recursive seams
-  (free `aura::execute_with`, REPL `Item::Const`, Playground `execute`/
-  `run_module_capture`) are closed in the current worktree.
+  While, Loop, For, ListComp, MapComp, Match, Try): **COMPLETE AND PUSHED** in
+  the B-1 closure range (tip `bb736fc`).
+- Production cutover `62dd592`: **COMPLETE AND PUSHED** in the closure range.
+  Every production entry point runs the machine; the residual recursive seams
+  were closed at `11abad2` (free `aura::execute_with`, REPL `Item::Const`,
+  Playground `execute`/`run_module_capture`).
 - B-1R4 (full differential): DONE (whole-corpus `engines_agree`; differential
   228/228; syntax conformance 43/43).
 - B-1R5 (substrate boundary): PARTIALLY DONE — fresh machine-backed wasm pinned
-  by `playground/tests/node/b1_boundary.test.mjs` (Node cold path) and native
-  CLI/REPL canaries. The Chromium main-thread and production-Worker boundary
-  matrix needs the fresh artifact published to close (human-gated; frozen
+  by `playground/tests/node/b1_boundary.test.mjs` (43 checks: Node cold path
+  boundary matrix plus the pattern-depth calibration) and native CLI/REPL
+  canaries. The Chromium main-thread and production-Worker boundary matrix
+  needs the fresh artifact published to close (human-gated; frozen
   `playground/runtimes/**`).
-- B-1R6 (red team): DONE — independent read-only review. One finding
-  independently reproduced and fixed: the CLI boundary test cannot
-  discriminate an engine revert (64 MiB substrate masks it); its comment is
-  corrected and engine discrimination rests on the REPL canary and fresh-wasm
-  boundary. Stale engine docs corrected; retained recursive REPL methods
-  `#[doc(hidden)]`; callback-protocol tripwire added
-  (`tests/builtins.rs::only_the_resumable_builtins_accept_callbacks`).
-- B-1R7 (full validation gate): DONE LOCALLY (see `AGENT_STATE.md`).
-- B-1R8 (freeze review): NOT STARTED.
+- B-1R6 (red team): DONE — independent read-only review of the full range; all
+  fifteen claims confirmed with no falsification; six minor findings, A/B/C/D/F
+  fixed in `39caf6f` (field-receiver and tuple order differentials,
+  `#[doc(hidden)]` on `Interp::run`, callback-confinement tripwire, wasm
+  pattern-depth calibration pin); E did not reproduce.
+- B-1R7 (full validation gate): DONE — including the exact-SHA CI run on
+  `bb736fc` (all 20 jobs green) after the additive miri fix.
+- B-1R8 (recursive-engine removal + oracle switch removal): NOT STARTED —
+  human-gated; requires a release decision.
 
 See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
 
@@ -370,8 +372,8 @@ At milestone closure, run the full validation floor in `AGENTS.md`.
 R3B is **COMPLETE**: every planned microphase (R3B.1—R3B.7) is implemented,
 differentially oracled, and remotely closed; R3B.8 audited the milestone. The
 B-1R3C–B-1R3F evaluator migration and the production cutover `62dd592` are
-implemented, oracle-covered, and locally validated on top of `9cb5e28`; they
-are not pushed.
+implemented, oracle-covered, validated, **pushed, and remote-closed** as part
+of the B-1 closure range (tip `bb736fc`).
 
 - R3B.1 unary operators — **COMPLETE AND PUSHED**
 - R3B.2 binary operators — **COMPLETE AND PUSHED**
@@ -391,16 +393,16 @@ microphase.
 
 ## Exact next action
 
-1. B-1R6 adversarial review is complete; its one substantiated finding was
-   independently reproduced and fixed (see Current status).
-2. The residual-seam closures, production-path tests, and review-driven fixes
-   are committed at `11abad2`.
-3. Present the full unpushed local commit range (the production cutover
-   `62dd592`, the residual-seam closures and tests `11abad2`, and the state
-   reconciliation on top) for a single human-authorized push gate. **Do not
-   push** before that authorization.
-4. Do not start unrelated Aura 0.3 work. Keep frozen runtimes, `v0.2.1`, and
+1. B-1 is **REMOTELY CLOSED** at `bb736fc`: pushed, local = tracking = server
+   (ahead/behind 0/0), exact-SHA CI green (all 20 jobs), Pages deployed.
+2. No further B-1 implementation commits are authorized without a new human
+   gate. B-1R8 (remove the recursive engine and the oracle switch) and any
+   runtime publication remain separately human-gated.
+3. Do not start unrelated Aura 0.3 work. Keep frozen runtimes, `v0.2.1`, and
    `.kilo/**` untouched.
+4. Publication-gated validation debt: the Chromium/Worker boundary against a
+   machine-backed runtime awaits a published runtime (release-gated); the
+   fresh-wasm boundary is already pinned in Node.
 
 ## Stop conditions
 
