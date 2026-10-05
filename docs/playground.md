@@ -63,6 +63,43 @@ stdout limit is an **application** policy, not a language rule: exceeding it is
 Error semantics are unchanged: unavailable capability → `E5002`; genuine I/O
 failure → `E4020`; a missing file where the filesystem exists → `none`.
 
+### Stdout capture bound
+
+The Playground runtime bounds standard output with
+`playground/runtime/src/lib.rs` `limits::MAX_STDOUT_BYTES` (1 MiB,
+`1048576` bytes). The evaluator emits `print` output through the host trait
+(`Host::write_stdout`), which appends to a host-owned buffer; the interpreter
+never owns an unbounded output string. The bound is enforced by the host at
+the accept step, so the exact contract is:
+
+* a write that lands **on** the bound (total == 1 MiB) is accepted;
+* a write that would cross it is **refused whole** — the buffer is left
+  byte-identical to what was accepted, with no partial write;
+* the refusal is a fatal host I/O failure (`E4020` with the message
+  `standard output exceeded the 1048576 byte limit`): `catch` cannot
+  intercept it, while `finally` regions still run;
+* the budget is **per execution** — every `execute*` builds a fresh
+  `BrowserHost`, so no stdout or budget state survives across runs;
+* native/library/REPL hosts are unaffected: their `stdout` is process stdout
+  (unbounded, streaming, exit code unchanged), and a library embedder that
+  wants a bound installs its own `Host`.
+
+`E4020` here is a **host resource policy**, not language semantics. It is
+observable because execution stops when the host refuses a write; the
+alternative policies (truncate while execution continues, ring buffer,
+streaming chunks) would require the runtime to keep computing after a refused
+write, which the current synchronous ABI does not do. The refused write is
+never retried, dropped silently, or rendered partial, so a program can rely on
+either the full byte sequence it printed being present or the run ending with
+`E4020`. The 1 MiB value is unchanged from the first wasm runtime (`0.0.2`);
+it is not a B-1 behavior. Boundary behavior is pinned by the
+`playground/runtime/tests/execute.rs` stdout-bound tests.
+
+A program's *computation* is independent of the capture bound: long
+computations with tiny or no output are bounded only by the language's own
+limits (`E4011`, `E1015`, range/materialization caps), and repeated executions
+reach a stable linear-memory plateau.
+
 ---
 
 ## 3. The wasm ABI
