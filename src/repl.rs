@@ -311,7 +311,7 @@ fn eval_line<W: Write>(
         // Capture the inferred binding type here, while the checker still has
         // the statement checked and the session declarations loaded.
         let inferred_ty = checker.let_binding_type(&stmt);
-        let executed = match interp.exec_stmt_globals(&stmt) {
+        let executed = match interp.exec_stmt_globals_iterative(&stmt) {
             // A bare expression echoes its value; declarations stay silent.
             Ok(Ctl::Val(v)) if matches!(stmt, Stmt::Expr(..)) => {
                 let _ = writeln!(writer, "{}", v.display());
@@ -406,7 +406,7 @@ fn eval_line<W: Write>(
             // Execute first; only persist declarations the session accepted.
             for item in &module.items {
                 let result = match item {
-                    Item::Expr(expr, _) => match interp.eval_globals(expr) {
+                    Item::Expr(expr, _) => match interp.eval_globals_iterative(expr) {
                         Ok(ctl) => match interp.finish_global(ctl) {
                             Ok(v) => {
                                 let _ = writeln!(writer, "{}", v.display());
@@ -446,7 +446,7 @@ fn eval_line<W: Write>(
         Err(e) => {
             // Last resort: a bare expression.
             match crate::parse::parse_expr(source) {
-                Ok(expr) => match interp.eval_globals(&expr) {
+                Ok(expr) => match interp.eval_globals_iterative(&expr) {
                     Ok(Ctl::Val(v)) => {
                         let _ = writeln!(writer, "{}", v.display());
                     }

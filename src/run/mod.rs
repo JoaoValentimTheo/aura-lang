@@ -8,10 +8,9 @@ pub mod value;
 
 /// The explicit-continuation (iterative) evaluator — B-1R3A.
 ///
-/// Compiled only with the non-default `evaluator-oracle` feature so default and
-/// production builds contain no path to it (`ITERATIVE_EVALUATOR_DESIGN.md`
-/// §24). Production execution stays on the recursive engine below.
-#[cfg(feature = "evaluator-oracle")]
+/// Production execution uses this module's explicit-continuation machine. The
+/// recursive engine remains in the tree as the differential reference and for
+/// rollback (B-1R8 removes it after the final release decision).
 pub(crate) mod iterative;
 
 use std::cell::RefCell;
@@ -500,7 +499,6 @@ impl Interp {
     ///
     /// # Errors
     /// Returns the first diagnostic the iterative machine produces.
-    #[cfg(feature = "evaluator-oracle")]
     pub fn run_iterative(&mut self, module: &Module) -> Result<()> {
         // Pass 1: declarations (recursive helper; declaration is not
         // expression evaluation and carries no pending execution state).
@@ -539,7 +537,6 @@ impl Interp {
     /// [`Interp::run_iterative`]). The cutover path uses this so multi-source
     /// provider compilations are attribute-compatible with the recursive
     /// `run_sourced`.
-    #[cfg(feature = "evaluator-oracle")]
     pub(crate) fn run_iterative_sourced(
         &mut self,
         module: &Module,
@@ -598,7 +595,6 @@ impl Interp {
 
     /// Evaluate one expression with the iterative machine (feature-gated),
     /// normalizing an internal throw exactly like `eval_toplevel`.
-    #[cfg(feature = "evaluator-oracle")]
     pub(crate) fn iterative_eval(&mut self, e: &Expr, env: &Env) -> Result<Ctl> {
         match iterative::eval_expr(self, e, env) {
             Ok(c) => Ok(c),
@@ -614,11 +610,26 @@ impl Interp {
     ///
     /// # Errors
     /// Returns the iterative machine's first diagnostic.
-    #[cfg(feature = "evaluator-oracle")]
     #[doc(hidden)]
     pub fn eval_globals_iterative(&mut self, e: &Expr) -> Result<Ctl> {
         let globals = self.globals.clone();
         self.iterative_eval(e, &globals)
+    }
+
+    /// Execute a single statement in the global scope with the machine (the
+    /// production REPL statement path). Mirrors [`Interp::exec_stmt_globals`],
+    /// including adopting the shadowing frame a top-level `let` advances to.
+    ///
+    /// # Errors
+    /// Returns the machine's first diagnostic.
+    #[doc(hidden)]
+    pub fn exec_stmt_globals_iterative(&mut self, s: &Stmt) -> Result<Ctl> {
+        let globals = self.globals.clone();
+        let (ctl, top) = iterative::exec_stmt(self, s, &globals)?;
+        if let Some(env) = top {
+            self.globals = env;
+        }
+        Ok(ctl)
     }
 
     pub(crate) fn run_sourced(

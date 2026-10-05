@@ -337,19 +337,74 @@ impl Compilation {
         self.execute_with_host_factory(move || host::host_from_parts(stdout, args, input))
     }
 
-    /// Execute this compilation with the experimental explicit-continuation
-    /// evaluator (B-1R3A).
+    /// Execute this compilation with the retained recursive evaluator.
     ///
-    /// Hidden and available only with the non-default `evaluator-oracle`
-    /// feature. It is called by the differential oracle harness (and, after
-    /// the gated cutover, by the production path). Single-source and
-    /// provider-backed (multi-source) compilations both execute on the
-    /// machine; a provider-backed compilation retains per-item source
-    /// provenance. It never falls back to the recursive engine.
+    /// Hidden: kept as the differential reference for the oracle harness and
+    /// as the rollback path until B-1R8 removes the recursive engine after the
+    /// final release decision. Production (`execute_with`/
+    /// `execute_with_host_factory`) runs the explicit-continuation machine.
+    ///
+    /// # Errors
+    /// Returns the first diagnostic the recursive engine produces.
+    #[doc(hidden)]
+    pub fn execute_recursive(
+        self,
+        stdout: Option<Output>,
+        args: Vec<String>,
+        input: Option<Input>,
+    ) -> std::result::Result<(), DiagnosticReport> {
+        self.execute_recursive_host_factory(move || host::host_from_parts(stdout, args, input))
+    }
+
+    /// [`Compilation::execute_recursive`] with a host factory (the oracle's
+    /// recursive side and the rollback path for provider-backed builds).
+    ///
+    /// # Errors
+    /// Returns the first diagnostic the recursive engine produces.
+    #[doc(hidden)]
+    pub fn execute_recursive_host_factory<F>(
+        self,
+        make_host: F,
+    ) -> std::result::Result<(), DiagnosticReport>
+    where
+        F: FnOnce() -> Box<dyn host::Host> + Send + 'static,
+    {
+        let Compilation {
+            module,
+            sources,
+            entry_source,
+            item_sources,
+        } = self;
+        if let Some(item_sources) = item_sources {
+            let outcome = on_source_execution_stack(move || {
+                let mut interp = run::Interp::new();
+                interp.set_host(make_host());
+                interp.run_sourced(&module, &item_sources, entry_source)
+            });
+            return outcome.map_err(|diagnostic| DiagnosticReport::new(diagnostic, sources));
+        }
+        let outcome = on_execution_stack(move || {
+            let mut interp = run::Interp::new();
+            interp.set_host(make_host());
+            interp.run(&module)
+        });
+        match outcome {
+            Ok(()) => Ok(()),
+            Err(diagnostic) => Err(DiagnosticReport::new(
+                SourceDiagnostic::new(diagnostic, entry_source),
+                sources,
+            )),
+        }
+    }
+
+    /// Execute this compilation with the explicit-continuation machine.
+    ///
+    /// Retained as a hidden alias of the production path so the differential
+    /// oracle can name the engine explicitly; production entries call the same
+    /// machine internally. It never falls back to the recursive engine.
     ///
     /// # Errors
     /// Returns the first diagnostic the iterative machine produces.
-    #[cfg(feature = "evaluator-oracle")]
     #[doc(hidden)]
     pub fn execute_iterative(
         self,
@@ -411,14 +466,14 @@ impl Compilation {
             let outcome = on_source_execution_stack(move || {
                 let mut interp = run::Interp::new();
                 interp.set_host(make_host());
-                interp.run_sourced(&module, &item_sources, entry_source)
+                interp.run_iterative_sourced(&module, &item_sources, entry_source)
             });
             return outcome.map_err(|diagnostic| DiagnosticReport::new(diagnostic, sources));
         }
         let outcome = on_execution_stack(move || {
             let mut interp = run::Interp::new();
             interp.set_host(make_host());
-            interp.run(&module)
+            interp.run_iterative(&module)
         });
         match outcome {
             Ok(()) => Ok(()),

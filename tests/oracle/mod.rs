@@ -300,14 +300,12 @@ fn run_compiled(
     engine: Engine,
 ) -> std::result::Result<(), DiagnosticReport> {
     match engine.name() {
-        "recursive" => compilation.execute_with(Some(Box::new(sink)), Vec::new(), None),
-        #[cfg(feature = "evaluator-oracle")]
-        "iterative" => {
-            // B-1R3A: the real explicit-continuation machine. This is a
-            // distinct execution path; unsupported constructs return E4999 and
-            // never fall back to the recursive engine.
-            compilation.execute_iterative(Some(Box::new(sink)), Vec::new(), None)
-        }
+        // The retained recursive evaluator (differential reference/rollback).
+        "recursive" => compilation.execute_recursive(Some(Box::new(sink)), Vec::new(), None),
+        // The production machine. `execute_iterative` is an explicit alias of
+        // the same path so the comparison is engine-specific, not
+        // default-dependent.
+        "iterative" => compilation.execute_iterative(Some(Box::new(sink)), Vec::new(), None),
         _ => compilation.execute_with(Some(Box::new(sink)), Vec::new(), None),
     }
 }
