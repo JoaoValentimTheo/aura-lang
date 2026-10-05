@@ -141,3 +141,39 @@ fn playground_runtime_routes_to_the_machine() {
         );
     }
 }
+
+/// Callback confinement (machine re-entry guard).
+///
+/// The machine must never re-enter the recursive evaluator through a callback.
+/// Today the only producers that invoke an Aura value back are the three list
+/// `map`/`filter`/`reduce` bodies, which the machine drives through the
+/// resumable protocol; a future callback-taking native that bypassed the
+/// protocol would silently reintroduce host-stack recursion proportional to
+/// callback nesting on WASM. This tripwire pins both sides: no direct
+/// recursive callback call in the machine, and the recursive `call_value_pub`
+/// adapter confined to the three registered resumable bodies.
+#[test]
+fn callbacks_cannot_reenter_the_recursive_evaluator() {
+    let machine = source("src/run/iterative.rs");
+    assert_eq!(
+        count(&machine, "call_value_pub("),
+        0,
+        "the machine must not call the recursive callback adapter \
+         (`Interp::call_value_pub`); route callbacks through `start_call_value`"
+    );
+    assert_eq!(
+        count(&machine, "drive_resumable("),
+        0,
+        "the machine must not use the recursive `drive_resumable` adapter; \
+         schedule `NativeOutcome::InvokeCallback` as machine work"
+    );
+
+    let stdlib = source("src/stdlib/mod.rs");
+    assert_eq!(
+        count(&stdlib, "call_value_pub("),
+        3,
+        "`call_value_pub` must appear only in the resumable map/filter/reduce \
+         bodies; a new callback-taking native must register through \
+         `Interp::native_resumable` instead"
+    );
+}

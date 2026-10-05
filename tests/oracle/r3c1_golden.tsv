@@ -328,6 +328,8 @@ r3c1-value/short_circuit_skip_observable		ok	0		-	0	0	0	0	bool	false
 r3c1-value/short_circuit_run_observable	730a	ok	0		-	0	0	0	0	bool	true
 r3c1-value/short_circuit_skips_print		ok	0		-	0	0	0	0	bool	false
 r3c1-value/short_circuit_prints_when_required	646f6e650a	ok	0		-	0	0	0	0	bool	false
+r3c1-value/field_receiver_order_both	720a	ok	0		-	0	0	0	0	int	7
+r3c1-value/tuple_elements_order_both	610a620a	ok	0		-	0	0	0	0	list	[1, 2]
 r3c1-program/call_depth_509_ok		ok	0		-	0	0	0	0	-	-
 r3c1-program/call_depth_510_ok		ok	0		-	0	0	0	0	-	-
 r3c1-program/call_depth_511_ok		ok	0		-	0	0	0	0	-	-

@@ -641,6 +641,19 @@ pub fn supported_cases() -> Vec<Case> {
         ),
         value("short_circuit_skips_print", "false and print(\"skipped\")\n"),
         value("short_circuit_prints_when_required", "true and print(\"done\")\n"),
+        // B-1R6 review Finding A: field receivers had no stdout-order
+        // witness. The receiver is produced exactly once and before the
+        // field is projected, matching `eval_inner`'s `Expr::Field` arm.
+        value(
+            "field_receiver_order_both",
+            "struct P { x: int }\nfn r() { print(\'r\')\n P { x: 7 } }\nr().x\n",
+        ),
+        // B-1R6 review Finding B: tuple elements share the list path but had
+        // no observable order witness; a tuple literal is list sugar.
+        value(
+            "tuple_elements_order_both",
+            "fn a() { print(\'a\')\n 1 }\nfn b() { print(\'b\')\n 2 }\n(a(), b())\n",
+        ),
         // ----- call depth boundary ---------------------------------------
         // Program mode so both engines run on the production execution stack
         // (the recursive engine's 512-frame chain needs the 64 MiB substrate;

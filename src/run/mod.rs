@@ -448,12 +448,19 @@ impl Interp {
             .map_err(|e| e.into_diag(Span::default()))
     }
 
-    /// Execute a module and call `main` if present.
+    /// Execute a module and call `main` if present (the retained recursive
+    /// engine).
     ///
     /// Initialization order is deliberate and matches the checker:
     /// declarations (functions, structs, enums) are registered first, then
     /// top-level constants and expressions are evaluated in source order.
     /// This makes forward references between functions valid.
+    ///
+    /// Since the B-1 production cutover this is the **rollback/differential
+    /// surface only**: production entry points run [`Interp::run_iterative`].
+    /// Retained until B-1R8 removes the recursive engine after the release
+    /// decision.
+    #[doc(hidden)]
     pub fn run(&mut self, module: &Module) -> Result<()> {
         // Pass 1: declarations.
         for item in &module.items {
