@@ -8,14 +8,12 @@ before continuing substantial work.
 ## Repository
 
 - Branch: `rewrite/v3-rust`
-- Remote `origin/rewrite/v3-rust`: **`089dffe917212c5e3de0c380a918f3cf684aaef5`**
-  (`docs(state): record B-1 remote closure at bb736fc`) — pushed and
-  remote-closed. Local `HEAD` carries the **post-B1 runtime/WASM edge-closure**
-  commits on top (local only, **not pushed**; exact push gate pending). The
-  B-1 closure itself (cutover `62dd592`, seam closures `11abad2`, routing
-  tripwire `a45d1ec`, review fixes `39caf6f`, checkout `9fa70c6`, miri fix
-  `bb736fc`) is inside the pushed history. Do not hardcode the ahead count:
-  read it from `git rev-list --left-right --count origin/rewrite/v3-rust...HEAD`.
+- Remote `origin/rewrite/v3-rust`: **`e576238f7adb52f6ab6d18431602e3fbc2bd3636`**
+  (`docs(state): record the independent adversarial review outcome`) — POST-B1
+  runtime/WASM edge closure is **pushed and remote-closed**; exact-SHA CI green
+  (20/20 jobs) and Pages deployed after a GitHub Actions platform incident
+  delayed the run. Do not hardcode the ahead count: read it from
+  `git rev-list --left-right --count origin/rewrite/v3-rust...HEAD`.
 - Local/remote relationship: authoritative value is `git rev-list
   --left-right --count origin/rewrite/v3-rust...HEAD`; a tracked file cannot
   safely hardcode its own position.
@@ -23,6 +21,9 @@ before continuing substantial work.
   `v0.2.1` = commit `3f5f8702`. Release = language = runtime = `0.2.1`;
   Host ABI 1; Playground API 1.
 - No successor program or version is selected; there is **no `0.2.2`**.
+- Active local program: **PRE-0.3 FOUNDATION SUPER-TRANSACTION** (local only,
+  **NOT pushed**; push requires a new human authorization). See
+  `docs/engineering/CURRENT_HANDOFF.md`.
 
 ## Frozen release runtimes (immutable, byte-for-byte)
 
@@ -47,23 +48,33 @@ Production runs the explicit-continuation machine on every entry point; the
 recursive evaluator is retained only as the differential reference and
 rollback path (B-1R8 removes it after the release decision).
 
-POST-B1 RUNTIME/WASM EDGE CLOSURE — **COMPLETE LOCALLY, NOT PUSHED**. A
-narrow audit of the production machine and its host boundaries (triggered by
-the Playground `E4020` at 1 MiB stdout on the frozen `0.2.1` artifact). Key
-results: the 1 MiB `MAX_STDOUT_BYTES` bound is a `BrowserHost` application
-resource policy since the first wasm runtime (identical on `0.0.2`/`0.2.0`/
-`0.2.1`), enforced atomically at the host accept step, with `E4020` fatal but
-`finally`-running and a per-execution budget; native/REPL/library stdout stays
-unbounded process stdout; long computation is independent of capture (50M
-iterations complete; heap plateaus); stdin/args/virtual-project/clock
-boundaries verified; machine endurance, unwinding, recovery, and deep-value
-edges verified on fresh wasm; no recursive production seam. The previously
-unpinned `with_stdout_limit` contract is now pinned by nine tests in
-`playground/runtime/tests/execute.rs`, a three-scenario `BrowserHost` test in
-`tests/host.rs`, and ten
-fresh-wasm checks in `playground/tests/node/b1_boundary.test.mjs`; the capture
-contract is documented in `docs/playground.md` §2. Full validation matrix
-green; frozen artifacts and `.kilo/**` unchanged.
+POST-B1 RUNTIME/WASM EDGE CLOSURE — **REMOTELY CLOSED** at `e576238`
+(remote-closed 2026-10-05 after the GitHub Actions runner incident cleared;
+exact-SHA CI 20/20 green, Pages deployed). A narrow audit of the production
+machine and its host boundaries (triggered by the Playground `E4020` at 1 MiB
+stdout on the frozen `0.2.1` artifact). Key results: the 1 MiB
+`MAX_STDOUT_BYTES` bound is a `BrowserHost` application resource policy since
+the first wasm runtime (identical on `0.0.2`/`0.2.0`/`0.2.1`), enforced
+atomically at the host accept step, with `E4020` fatal but `finally`-running
+and a per-execution budget; native/REPL/library stdout stays unbounded process
+stdout; long computation is independent of capture; stdin/args/virtual-project/
+clock boundaries verified; machine endurance, unwinding, recovery, and
+deep-value edges verified on fresh wasm; no recursive production seam. The
+capture contract is documented in `docs/playground.md` §2.
+
+PRE-0.3 FOUNDATION SUPER-TRANSACTION — **IN PROGRESS LOCALLY, NOT PUSHED.**
+Authorized 2026-10-05 after Stage-1 remote closure. Commits so far establish:
+poisoned-lock byte preservation (`5edab88`); single-source resource limits +
+named sleep cap (`2fd1433`); unused-dependency removal (`3186340`); stale
+recursive-engine documentation reconciliation + errors-reference sync
+(`c1ffb18`); evaluator performance baseline (`9151df1`); exception-family
+foundation, design-only (`34c5878`); capability/embedded-Python/
+critical-profile architecture (`8ac9b93`); stdlib contract tests + module/
+future-boundary maps (`a1a5aa4`); WASM transport-limit tests (`eb1e339`);
+diagnostic taxonomy + internal-code documentation (`d4becc3`); runtime
+architecture record + these state updates. Jev PRE/POST consulted for every
+engineering iteration; see the current session ledger in
+`docs/engineering/CURRENT_HANDOFF.md`.
 
 B-1R phase state:
 
@@ -121,7 +132,8 @@ B-1R phase state:
   `saved_expr_depth` snapshots on `Cont::TryCatchEnd`/`Cont::TryFinally`).
   Eleven vacuous compile-error oracle cases were also replaced with
   runtime-exercising shapes.
-- **Production cutover (`62dd592`):** COMPLETE LOCALLY, NOT PUSHED. Every
+- **Production cutover (`62dd592`):** COMPLETE AND PUSHED (inside the B-1
+  closure range, remote-closed at `bb736fc`). Every
   production entry point now runs the machine: `Compilation::execute_with*`
   (with the sourced `run_iterative_sourced` branch for provider-backed
   compilations), the REPL statement/expression/const paths, the free
@@ -254,13 +266,13 @@ Git + working tree + these documents; chat history is not authority.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: the **post-B1 runtime/WASM
-edge closure is complete locally and not pushed** (remote is `089dffe`). Request
-one explicit human push authorization for the closure commits; after they are
-remotely closed, the already-planned PRE-0.3 FOUNDATION super-transaction may
-begin. B-1R8 (remove the recursive engine and the oracle switch) and any runtime
-publication remain separately human-gated. Do not start unrelated Aura 0.3 work
-before the push gate.
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: **B-1 and the post-B1
+runtime/WASM edge closure are remotely closed** (remote `e576238`, exact-SHA
+CI green). The **PRE-0.3 FOUNDATION super-transaction is in progress locally
+and not pushed**; continue it to completion (validation matrix, independent
+adversarial review, final Jev gate), then report and request explicit human
+authorization before any push. B-1R8 (remove the recursive engine and the
+oracle switch) and any runtime publication remain separately human-gated.
 
 ## Writer
 

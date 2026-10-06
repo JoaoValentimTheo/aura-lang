@@ -19,19 +19,20 @@ explicit-continuation (iterative) evaluator over the existing AST
   cutover are pushed; exact-SHA CI green (all 20 jobs) and Pages deployed.
   Released `0.2.1` runtime still contains the defect; the freshly built
   machine-backed runtime holds the language boundary.
-- POST-B1 RUNTIME/WASM EDGE CLOSURE: **COMPLETE LOCALLY, NOT PUSHED**. Narrow
-  audit of the production machine and its native/WASM host boundaries,
-  triggered by the Playground `E4020` at the 1 MiB stdout bound. Result: the
-  bound is a `BrowserHost` application resource policy since the first wasm
-  runtime (identical behavior on `0.0.2`/`0.2.0`/`0.2.1`), enforced atomically
-  before acceptance, fatal-but-`finally`-running, per execution; native/REPL/
-  library stdout is unbounded process stdout; long computation is independent
-  of capture; stdin/args/virtual-project/clock boundaries, machine endurance,
-  unwinding, recovery, and deep-value edges verified on fresh wasm; no
-  recursive production seam. The `with_stdout_limit` contract is now pinned by
-  `playground/runtime/tests/execute.rs`, `tests/host.rs`, and
-  `playground/tests/node/b1_boundary.test.mjs`, and documented in
-  `docs/playground.md` §2. One explicit human push authorization is required.
+- POST-B1 RUNTIME/WASM EDGE CLOSURE: **REMOTELY CLOSED** at `e576238`
+  (pushed 2026-10-05; exact-SHA CI 20/20 green and Pages deployed after a
+  GitHub Actions runner incident delayed the first attempts). The stdout
+  capture-bound contract is pinned in `playground/runtime/tests/execute.rs`,
+  `tests/host.rs`, and `playground/tests/node/b1_boundary.test.mjs`, and
+  documented in `docs/playground.md` §2.
+- PRE-0.3 FOUNDATION SUPER-TRANSACTION: **IN PROGRESS LOCALLY, NOT PUSHED**
+  (push requires a new explicit human authorization). Iteration ledger and
+  artifacts: `docs/engineering/RUNTIME_ARCHITECTURE.md`,
+  `EXCEPTION_ARCHITECTURE.md`, `CAPABILITY_MODEL.md`,
+  `EMBEDDED_PYTHON_ARCHITECTURE.md`, `CRITICAL_SYSTEM_PROFILE.md`,
+  `MODULE_ARCHITECTURE.md`, `FUTURE_EXTENSION_BOUNDARIES.md`,
+  `DIAGNOSTIC_TAXONOMY.md`, plus `tests/stdlib_coverage.rs` and the extended
+  transport-limit, poison-recovery, and benchmark coverage.
 - B-1R1 (design): COMPLETE.
 - B-1R2 (differential oracle): COMPLETE and mutation-validated.
 - B-1R3A-ARCH-1 (Arc AST sharing): RESOLVED.
@@ -408,18 +409,21 @@ microphase.
 
 ## Exact next action
 
-1. B-1 is **REMOTELY CLOSED**; the post-B1 runtime/WASM edge closure is
-   **complete locally** on top of `089dffe` and **not pushed**. Request one
-   explicit human push authorization for the closure commits (small additive
-   commits: `fix(wasm)`-scope test pins + `docs`). Do not push without it.
-2. After the closure is remotely closed, the already-planned PRE-0.3
-   FOUNDATION super-transaction may begin. Do not begin it before that.
-3. B-1R8 (remove the recursive engine and the oracle switch) and any runtime
+1. B-1 and the post-B1 runtime/WASM edge closure are **remotely closed**;
+   the Pre-0.3 Foundation super-transaction is in progress **locally and not
+   pushed**. Continue the iteration ledger: remaining work is the full
+   validation matrix, an independent read-only adversarial review, and the
+   final Jev completion gate; then return the complete report and request
+   explicit human authorization before any push.
+2. B-1R8 (remove the recursive engine and the oracle switch) and any runtime
    publication remain separately human-gated.
-4. Keep frozen runtimes, `v0.2.1`, and `.kilo/**` untouched.
-5. Publication-gated validation debt: the Chromium/Worker boundary against a
+3. Keep frozen runtimes, `v0.2.1`, and `.kilo/**` untouched.
+4. Publication-gated validation debt: the Chromium/Worker boundary against a
    machine-backed runtime awaits a published runtime (release-gated); the
    fresh-wasm boundary is already pinned in Node (53 checks).
+5. Pre-0.3 decisions awaiting the human: exception syntax/catching (E1–E6 in
+   `docs/engineering/EXCEPTION_ARCHITECTURE.md` §8) and embedded-CPython
+   packaging (P1–P5 in `docs/engineering/EMBEDDED_PYTHON_ARCHITECTURE.md` §9).
 
 ## Stop conditions
 
