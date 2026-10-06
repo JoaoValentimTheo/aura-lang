@@ -520,6 +520,15 @@ pub fn builtins() -> &'static [Signature] {
                 returns: Returns::Dynamic,
                 mutates_arg: None,
             },
+            #[cfg(feature = "json")]
+            Signature {
+                name: "json_decode_as",
+                params: vec![Param::one(TypeClass::Str), Param::one(TypeClass::Str)],
+                min_args: 2,
+                max_args: 2,
+                returns: Returns::Dynamic,
+                mutates_arg: None,
+            },
             // ----------------------------------------------------- regex
             #[cfg(feature = "regex")]
             Signature {

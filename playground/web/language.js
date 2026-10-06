@@ -30,6 +30,7 @@ export const TYPES = ["int", "float", "bool", "string"];
 // BUILT-IN FUNCTIONS — `aura::stdlib::builtin_names()`.
 export const BUILTINS = [
   "abs", "args", "assert", "enumerate", "filter", "json_decode",
+  "json_decode_as",
   "json_encode", "keys", "len", "map", "max", "min", "print", "push",
   "py_call", "py_eval", "py_import", "py_version", "range", "read_file",
   "read_line", "reduce", "regex_find", "regex_find_all", "regex_match",

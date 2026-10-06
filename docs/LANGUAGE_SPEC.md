@@ -2750,9 +2750,22 @@ returns `[]`. Filesystem access is available in every execution mode.
 
 **Feature-gated** (present only when compiled with the feature):
 
-* `json_encode(value) -> string`, `json_decode(string) -> value` (feature `json`);
+* `json_encode(value) -> string`, `json_decode(string) -> value`,
+  `json_decode_as(string, string) -> value` (feature `json`);
 * `regex_match`, `regex_find`, `regex_find_all`, `regex_replace` (feature `regex`);
 * `time_now`, `time_unix`, `sleep_ms` (feature `time`).
+
+**Normative rule (typed JSON decode).** `json_decode_as(text, type)` validates
+`text` against the declared Aura type named by the second argument — a source
+type spelling such as `User`, `[User]`, `{string: int}`, or `User | none` —
+and produces a value of that type. A document that does not match is `E4031`
+with a precise message naming the failing path: malformed JSON, a field
+required by the declaration but missing, a field or element of the wrong type,
+or a field not declared by the struct. A `T | none` field accepts absence or
+JSON `null` and decodes to `none`. A decode mismatch is an ordinary
+diagnostic, not a catchable throwable (§14.5); it is also distinct from a
+network, Host, internal, or user-exception failure. `json_decode` remains the
+permissive, non-type-directed form.
 
 **Normative rule (JSON keys are strings).** A JSON object's keys are strings by
 the JSON standard, so JSON is not Aura's generic-map model. `json_decode`

@@ -15,6 +15,37 @@ pub fn parse(src: &str) -> Result<Module> {
     on_parse_stack(src, parse_inner)
 }
 
+/// Parse a single type from its source spelling.
+///
+/// Used by runtime operations that receive a type *name* as data (for example
+/// `json_decode_as`'s structural spellings like `[User]` or `{string: int}`):
+/// the name is parsed with the same grammar the compiler uses, so the runtime
+/// never grows a second, divergent type parser.
+///
+/// # Errors
+/// Returns the ordinary parser diagnostic for a malformed or over-deep type.
+pub fn parse_type(src: &str) -> Result<TypeExpr> {
+    let toks = lex(src)?;
+    let mut parser = Parser {
+        toks,
+        pos: 0,
+        depth: 0,
+        expr_nodes: 0,
+        atom_depth: 0,
+        type_depth: 0,
+        module_depth: 0,
+    };
+    let ty = parser.ty()?;
+    if !matches!(parser.at(), Tok::Eof) {
+        return Err(Diag::new(
+            codes::EXPECTED,
+            "unexpected trailing tokens after a type",
+            parser.span(),
+        ));
+    }
+    Ok(ty)
+}
+
 /// Parse one physical source as contents already nested under
 /// `initial_depth` synthetic module wrappers.
 ///

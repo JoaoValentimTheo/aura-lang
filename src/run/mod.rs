@@ -240,7 +240,14 @@ pub struct Interp {
     /// overload set. Keyed by the nominal struct so method names never collide
     /// across types (`LANGUAGE_SPEC.md` §17.6).
     methods: HashMap<(String, String), Vec<Rc<Closure>>>,
+    /// Struct field names in declaration order, by nominal type name.
     structs: HashMap<String, Vec<String>>,
+    /// Struct field types, by nominal type name and field name, for typed
+    /// decoding (`json_decode_as`). Kept alongside `structs` so a decoded
+    /// document is validated against the declared shape (including `T | none`
+    /// optional fields and collection elements) rather than silently accepted
+    /// as dynamic data.
+    struct_field_types: HashMap<String, HashMap<String, crate::ast::TypeExpr>>,
     variants: HashMap<String, (String, usize)>,
     depth: usize,
     /// Current expression nesting depth, guarding against host stack
@@ -338,6 +345,7 @@ impl Interp {
             functions: HashMap::new(),
             methods: HashMap::new(),
             structs: HashMap::new(),
+            struct_field_types: HashMap::new(),
             variants: HashMap::new(),
             depth: 0,
             ast_depth: 0,
@@ -836,6 +844,13 @@ impl Interp {
                 self.structs.insert(
                     name.clone(),
                     fields.iter().map(|f| f.name.clone()).collect(),
+                );
+                self.struct_field_types.insert(
+                    name.clone(),
+                    fields
+                        .iter()
+                        .map(|f| (f.name.clone(), f.ty.clone()))
+                        .collect(),
                 );
             }
             Item::Enum { name, variants, .. } => {
@@ -2034,6 +2049,19 @@ impl Interp {
     /// value or a pipeline) is validated exactly as a direct call is
     /// (`LANGUAGE_SPEC.md` §25). Natives absent from the registry (internal
     /// helpers) impose no constraint.
+    /// The declared field types of a struct, by field name.
+    pub(crate) fn struct_fields(
+        &self,
+        name: &str,
+    ) -> Option<&HashMap<String, crate::ast::TypeExpr>> {
+        self.struct_field_types.get(name)
+    }
+
+    /// The declared field names of a struct, in declaration order.
+    pub(crate) fn struct_field_names(&self, name: &str) -> Option<&Vec<String>> {
+        self.structs.get(name)
+    }
+
     fn check_native_arity(&self, name: &str, count: usize, span: Span) -> Result<()> {
         if let Some(sig) = crate::stdlib::signatures::builtin(name) {
             if let Some(message) = sig.check_arity(count) {
