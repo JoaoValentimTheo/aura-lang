@@ -669,3 +669,75 @@ fn diagnostic_identity_is_stable_across_color_policies() {
         assert!(colored.contains(text), "{colored}");
     }
 }
+
+// ---------------------------------------------------------------------------
+// AIS/0.1 semantic document (Keystone §36)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ais_prints_a_structured_semantic_document() {
+    let p = TempProject::new("ais-doc");
+    p.write(
+        "doc.aura",
+        "struct User { name: string, email: string | none }\n\
+         fn find(_ok: bool) -> User | none { return User { name: \"a\", email: none } }\n\
+         fn main() { let u = find(true)\n if u != none { print(u.name) } }\n",
+    );
+    let (code, stdout, _) = p.run(&["ais", "doc.aura"]);
+    assert_eq!(code, 0, "{stdout}");
+    let doc: serde_json::Value = serde_json::from_str(&stdout).expect("AIS document is JSON");
+    assert_eq!(doc["ais_version"], "0.1");
+    assert_eq!(doc["capabilities"]["symbols"], true);
+    // The optional field keeps its full spelling: the union is described, not
+    // erased, which is the point of AIS's Keystone type coverage.
+    let user = doc["symbols"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["name"] == "User")
+        .expect("User symbol");
+    let email = user["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["name"] == "email")
+        .expect("email field");
+    assert!(email["type_name"].as_str().unwrap().contains("none"));
+    // A clean document omits the empty diagnostics array (the schema skips
+    // empty optional collections, so absence means "none"); either an omitted
+    // field or an empty array is a clean document.
+    if let Some(diags) = doc.get("diagnostics") {
+        assert_eq!(diags.as_array().map(Vec::len), Some(0), "{stdout}");
+    }
+}
+
+#[test]
+fn ais_reports_structured_diagnostics_and_exit_code() {
+    let p = TempProject::new("ais-diag");
+    p.write("bad.aura", "fn main() { let x: int = \"s\" }\n");
+    let (code, stdout, _) = p.run(&["ais", "bad.aura"]);
+    assert_eq!(code, 1);
+    let doc: serde_json::Value = serde_json::from_str(&stdout).expect("AIS document is JSON");
+    let diag = &doc["diagnostics"][0];
+    assert_eq!(diag["code_text"], "E3001");
+    assert_eq!(diag["severity"], "error");
+    assert!(diag["range"]["start"]["line"].is_number());
+    // No ANSI escapes: presentation never crosses the protocol boundary.
+    assert!(!stdout.contains('\u{1b}'));
+}
+
+#[test]
+fn ais_output_grants_no_capability() {
+    // The document describes the program; it must not contain host authority
+    // material (paths to secrets, environment, or network state) beyond the
+    // caller-supplied source name.
+    let p = TempProject::new("ais-cap");
+    p.write("c.aura", "fn main() { print(1) }\n");
+    let (code, stdout, _) = p.run(&["ais", "c.aura"]);
+    assert_eq!(code, 0);
+    for forbidden in ["py_call", "read_file(\"", "API_KEY", "token", "password"] {
+        assert!(!stdout.contains(forbidden), "unexpected {forbidden}");
+    }
+    // The only filesystem name present is the caller's own source path.
+    assert!(stdout.contains("c.aura"));
+}

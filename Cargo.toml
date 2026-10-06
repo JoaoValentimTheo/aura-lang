@@ -12,6 +12,7 @@ categories = ["compilers", "development-tools"]
 
 [dependencies]
 # Core language only needs an ordered map and float formatting; keep deps tiny.
+serde = { version = "1", optional = true, default-features = false, features = ["std", "derive"] }
 serde_json = { version = "1", optional = true, default-features = false, features = ["std"] }
 regex = { version = "1", optional = true, default-features = false, features = ["std", "perf", "unicode"] }
 chrono = { version = "0.4", optional = true, default-features = false, features = ["std", "clock"] }
@@ -25,7 +26,9 @@ proptest = "1.5"
 default = ["cli", "repl", "json", "regex", "time", "py"]
 cli = []
 repl = ["dep:rustyline"]
-json = ["dep:serde_json"]
+# `json` carries both the JSON builtins and the AIS/0.1 protocol schema (the
+# schema is a serialized contract, so it shares the serializer dependency).
+json = ["dep:serde_json", "dep:serde"]
 regex = ["dep:regex"]
 time = ["dep:chrono"]
 py = ["dep:pyo3"]

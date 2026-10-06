@@ -10,6 +10,13 @@
 //! `aura --help` (and `aura <command> --help`) print concise help. Running
 //! `aura` with no arguments prints global help. `-` reads source from stdin.
 
+// The CLI serializes the AIS document with `expect`: serialization of the AIS
+// schema cannot fail for a well-formed document (no non-string map keys, no
+// non-finite floats), and a panic here would be a compiler bug, not user
+// input. This mirrors the tests' convention of allowing the infallible-path
+// expect.
+#![cfg_attr(feature = "json", allow(clippy::expect_used))]
+
 use std::io::Read;
 use std::process::ExitCode;
 
@@ -17,6 +24,17 @@ use aura::error::render_with_source;
 
 /// The command inventory, used for both dispatch hints and help so the two can
 /// never drift (LANGUAGE_SPEC §47/§48).
+#[cfg(feature = "json")]
+const COMMANDS: [(&str, &str); 6] = [
+    ("run", "parse, check, and execute a program"),
+    ("check", "parse and check without executing"),
+    ("eval", "run a one-line program"),
+    ("repl", "start an interactive session"),
+    ("version", "print the compiler version"),
+    ("ais", "print the AIS/0.1 semantic document as JSON"),
+];
+
+#[cfg(not(feature = "json"))]
 const COMMANDS: [(&str, &str); 5] = [
     ("run", "parse, check, and execute a program"),
     ("check", "parse and check without executing"),
@@ -38,6 +56,10 @@ fn help(global: bool, command: Option<&str>) -> ExitCode {
             "aura check <file|->\n\n\
              Parse and check a program without executing it. `-` reads source\n\
              from stdin. Prints nothing on success.\n"
+        ),
+        #[cfg(feature = "json")]
+        Some("ais") => print!(
+            "aura ais <file|->\n\n             Print the AIS/0.1 semantic document for a source as JSON. The\n             document describes declarations, types, and diagnostics; it\n             grants no capability (no filesystem, network, Python, or Host\n             authority).\n"
         ),
         Some("eval") => print!(
             "aura eval <code>\n\n\
@@ -128,6 +150,13 @@ fn main() -> ExitCode {
                 return help(false, Some("eval"));
             }
             cmd_eval(&args)
+        }
+        #[cfg(feature = "json")]
+        Some("ais") => {
+            if help_requested(&args[1..]) {
+                return help(false, Some("ais"));
+            }
+            cmd_ais(&args)
         }
         Some("repl") => {
             if help_requested(&args[1..]) {
@@ -332,6 +361,65 @@ fn cmd_check(args: &[String]) -> ExitCode {
             eprintln!("{}", render_cli_report(&report, path == "-", args));
             ExitCode::FAILURE
         }
+    }
+}
+
+/// `aura ais <file|->`: print the AIS/0.1 document for a source.
+///
+/// The document is a stable semantic protocol for tooling. It is emitted even
+/// when checking finds diagnostics: the `diagnostics` array carries them, and
+/// the exit code is 1 when the source was rejected so a caller can branch
+/// without parsing the document.
+#[cfg(feature = "json")]
+fn cmd_ais(args: &[String]) -> ExitCode {
+    let positionals = split_subcommand_args(args, false);
+    let Some(path) = positionals.first().map(|p| p.as_str()) else {
+        eprintln!("usage: aura ais <file|->");
+        return ExitCode::from(2);
+    };
+    let (src, file) = match read_source(Some(path)) {
+        Ok(v) => v,
+        Err(c) => return c,
+    };
+    let module = match aura::parse::parse(&src) {
+        Ok(m) => m,
+        Err(d) => {
+            // A parse failure still yields a document, so a tool receives a
+            // structured diagnostic rather than only a process failure.
+            let mut doc = aura::ais::Document {
+                ais_version: aura::ais::AIS_VERSION.to_string(),
+                aura_version: aura::VERSION.to_string(),
+                language_version: aura::LANGUAGE_VERSION.to_string(),
+                capabilities: aura::ais::Capabilities::default(),
+                source_name: file.clone(),
+                symbols: Vec::new(),
+                diagnostics: vec![aura::ais::Diagnostic::from_diag(&d, Some(&src))],
+            };
+            doc.diagnostics.truncate(1);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&doc).expect("AIS document serializes")
+            );
+            return ExitCode::FAILURE;
+        }
+    };
+    let mut doc = aura::ais::document(&file, &src, &module);
+    let rejected = match aura::check::Checker::module(&module) {
+        Ok(()) => false,
+        Err(d) => {
+            doc.diagnostics
+                .push(aura::ais::Diagnostic::from_diag(&d, Some(&src)));
+            true
+        }
+    };
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&doc).expect("AIS document serializes")
+    );
+    if rejected {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
     }
 }
 

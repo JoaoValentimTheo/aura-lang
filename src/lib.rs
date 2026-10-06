@@ -10,6 +10,7 @@
 //!
 //! See `docs/contract.md` for the normative language specification.
 
+pub mod ais;
 pub mod ast;
 pub mod bridge;
 pub mod check;
