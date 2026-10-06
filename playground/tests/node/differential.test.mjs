@@ -763,7 +763,7 @@ if (postError.text === norm({ status: "ok", stdout: "3\n", result: null, diagnos
     "in-source module": `module inner {\n  pub fn count(n: int) -> int {\n    if n <= 0 {\n      return 0\n    } else {\n      return count(n - 1) + 1\n    }\n  }\n}\nfn main() { print(inner::count(${depth})) }\n`,
     method: `struct C { }\nimpl C {\n  fn count(self, n: int) -> int {\n    if n <= 0 { return 0 }\n    return self.count(n - 1) + 1\n  }\n}\nfn main() { let c = C { }\n print(c.count(${depth})) }\n`,
     mutual: `fn even(n) { if n == 0 { return 1 }\n return odd(n - 1) }\nfn odd(n) { if n == 0 { return 0 }\n return even(n - 1) }\nfn main() { print(even(${depth})) }\n`,
-    "for-body": `fn count(n: int) -> int {\n  if n <= 0 { return 0 }\n  let mut r = 0\n  for i in [0] { r = count(n - 1) + 1 }\n  return r\n}\nfn main() { print(count(${depth})) }\n`,
+    "for-body": `fn count(n: int) -> int {\n  if n <= 0 { return 0 }\n  let mut r = 0\n  for _i in [0] { r = count(n - 1) + 1 }\n  return r\n}\nfn main() { print(count(${depth})) }\n`,
     "if-else chain": `fn f(n: int) -> int {\n  if n <= 0 { return 0 }\n  if n % 2 == 0 {\n    return f(n - 1) + 1\n  } else {\n    return f(n - 1) + 1\n  }\n}\nfn main() { print(f(${depth})) }\n`,
   };
   let shapeFailures = 0;
@@ -858,8 +858,11 @@ if (postError.text === norm({ status: "ok", stdout: "3\n", result: null, diagnos
       if (kind === 0) lines.push(`print(${intExpr()})`);
       else if (kind === 1) {
         const n = name("i");
-        lines.push(`let mut ${n} = ${intExpr()}`);
-        intVar.push(n);
+        // Keystone unused analysis: a generated binding that is never read
+        // again is an explicit discard (`_iN`), exactly as the Rust-side
+        // generator does, so generated programs stay checker-clean.
+        lines.push(`let mut _${n} = ${intExpr()}`);
+        intVar.push(`_${n}`);
       } else if (kind === 2) lines.push(`print(len([1, 2, 3]))`);
       else if (kind === 3) lines.push(`print(abs(0 - ${rng.below(9)}))`);
       else if (kind === 4) lines.push(`for x in 0..${1 + rng.below(3)} { print(x) }`);
@@ -969,7 +972,7 @@ if (postError.text === norm({ status: "ok", stdout: "3\n", result: null, diagnos
   const typeSrc = (n) => {
     let t = "int";
     for (let i = 0; i < n; i += 1) t = `Box<${t}>`;
-    return `struct Box<T> { value: T }\nfn f(x: ${t}) -> int { return 1 }\nfn main() { print(1) }`;
+    return `struct Box<T> { value: T }\nfn f(_x: ${t}) -> int { return 1 }\nfn main() { print(1) }`;
   };
   // Around the unified ceiling, plus the exact boundary levels (N-1/N/N+1) and
   // the old substrate ceilings, which must now agree.
@@ -1093,7 +1096,7 @@ if (postError.text === norm({ status: "ok", stdout: "3\n", result: null, diagnos
   {
     const names = Array.from({ length: 600 }, (_, i) => `T${i}`);
     const defs = names.map((t) => `type ${t} = int`).join("\n");
-    const flat = `${defs}\ntype All = ${names.join(" | ")}\nfn main() { let x: All = 1 }`;
+    const flat = `${defs}\ntype All = ${names.join(" | ")}\nfn main() { let _x: All = 1 }`;
     let flatOk = true;
     const nf = join(dir, "typeexpr_flatunion.aura");
     writeFileSync(nf, flat);

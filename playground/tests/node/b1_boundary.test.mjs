@@ -76,7 +76,7 @@ const shapes = {
   "in-source module": (n) => `module inner {\n  pub fn count(n: int) -> int {\n    if n <= 0 {\n      return 0\n    } else {\n      return count(n - 1) + 1\n    }\n  }\n}\nfn main() { print(inner::count(${n})) }\n`,
   method: (n) => `struct C { }\nimpl C {\n  fn count(self, n: int) -> int {\n    if n <= 0 { return 0 }\n    return self.count(n - 1) + 1\n  }\n}\nfn main() { let c = C { }\n print(c.count(${n})) }\n`,
   mutual: (n) => `fn even(n) { if n == 0 { return 1 }\n return odd(n - 1) }\nfn odd(n) { if n == 0 { return 0 }\n return even(n - 1) }\nfn main() { print(even(${n})) }\n`,
-  "for-body": (n) => `fn count(n: int) -> int {\n  if n <= 0 { return 0 }\n  let mut r = 0\n  for i in [0] { r = count(n - 1) + 1 }\n  return r\n}\nfn main() { print(count(${n})) }\n`,
+  "for-body": (n) => `fn count(n: int) -> int {\n  if n <= 0 { return 0 }\n  let mut r = 0\n  for _i in [0] { r = count(n - 1) + 1 }\n  return r\n}\nfn main() { print(count(${n})) }\n`,
   "if-else chain": (n) => `fn f(n: int) -> int {\n  if n <= 0 { return 0 }\n  if n % 2 == 0 {\n    return f(n - 1) + 1\n  } else {\n    return f(n - 1) + 1\n  }\n}\nfn main() { print(f(${n})) }\n`,
 };
 
@@ -160,7 +160,9 @@ for (const depth of [512, 513]) {
 // This is the safety contract for the documented residual. If pattern parser
 // frames grow without re-calibrating the budget, the deep-accept probe will
 // trap and this test fails loudly (which is exactly the required behavior).
-const patternDepth = (n) => "[".repeat(n) + "x" + "]".repeat(n);
+// The innermost pattern binds nothing: the test measures pattern *depth*,
+// and an unused named binding would now be `E2008` (Keystone unused analysis).
+const patternDepth = (n) => "[".repeat(n) + "_" + "]".repeat(n);
 {
   // 700 is comfortably inside the 765-deep empirically accepted range on the
   // 4 MiB wasm stack but far above the 256 AST-depth limit, so it exercises
@@ -350,7 +352,7 @@ function hasE4020(r) {
 
   // E4020 is fatal: catch cannot intercept it; finally still runs.
   const fatal = runWithStdin(
-    `fn main() {\n  let s = read_line()\n  try {\n    print(s)\n  } catch e {\n    print("caught")\n  } finally {\n    print("finally-visible")\n  }\n}\n`,
+    `fn main() {\n  let s = read_line()\n  try {\n    print(s)\n  } catch _ {\n    print("caught")\n  } finally {\n    print("finally-visible")\n  }\n}\n`,
     "a".repeat(LIMIT),
   );
   check(
@@ -383,7 +385,7 @@ function hasE4020(r) {
 
   // Long computation with tiny output is unaffected by the capture bound.
   const compute = run(
-    `fn main() {\n  let mut x = 0\n  for i in 0..2000000 {\n    x = x + 1\n  }\n  print(x)\n}\n`,
+    `fn main() {\n  let mut x = 0\n  for _i in 0..2000000 {\n    x = x + 1\n  }\n  print(x)\n}\n`,
   );
   check(
     "long computation with tiny output completes",
