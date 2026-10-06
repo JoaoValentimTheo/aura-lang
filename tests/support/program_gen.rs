@@ -113,7 +113,6 @@ pub fn generate(seed: u64) -> String {
     format!("{PREAMBLE}fn main() {{\n{body}}}\n")
 }
 
-
 fn int_expr(rng: &mut Rng, vars: &[Var]) -> String {
     let mut opts: Vec<String> = vec![
         rng.below(20).to_string(),
