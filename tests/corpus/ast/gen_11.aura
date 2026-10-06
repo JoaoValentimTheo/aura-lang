@@ -11,13 +11,13 @@ fn describe(c: Color) -> int { return match c { Red() -> 0
  Blue() -> 2 } }
 fn on_show<T: Show>(x: T) -> int { return x.show() }
 fn main() {
-    let k0 = Red()
+    let _k0 = Red()
     let _p1 = Point { x: 0, y: 48 }
-    let mut l2 = [33, 12]
+    let mut _l2 = [33, 12]
     print(add(2, 1))
-    print((describe(k0) + 6))
+    print((describe(_k0) + 6))
     print(3)
-    for x in l2 { print(x) }
+    for x in _l2 { print(x) }
     let _p3 = Point { x: 4, y: 28 }
     print(0)
 }

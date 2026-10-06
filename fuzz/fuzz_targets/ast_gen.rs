@@ -273,7 +273,7 @@ fn gen_stmt(rng: &mut Rng, depth: usize) -> Stmt {
             if depth < 3 {
                 Stmt::Try {
                     body: gen_block(rng, depth + 1, 2),
-                    catch: "e".to_string(),
+                    catch: Pattern::Bind("e".to_string(), sp(rng)),
                     catch_body: gen_block(rng, depth + 1, 2),
                     finally: if rng.chance(40) {
                         Some(gen_block(rng, depth + 1, 1))

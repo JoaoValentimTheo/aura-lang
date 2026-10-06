@@ -13,14 +13,14 @@ fn on_show<T: Show>(x: T) -> int { return x.show() }
 fn main() {
     print(1)
     print((to_int("7") + 7))
-    let s0 = "abc".upper()
+    let _s0 = "abc".upper()
     let _k1 = Green()
     for x in 0..3 { print(x) }
     for x in 0..3 { print(x) }
     let _p2 = Point { x: 14, y: 42 }
     let mut _i3 = add(6, 1)
     print(len([1, 2, 3]))
-    if s0 == "a" {
+    if _s0 == "a" {
     let mut _c4 = []
     print(2)
     } else {

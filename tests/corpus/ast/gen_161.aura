@@ -12,13 +12,13 @@ fn describe(c: Color) -> int { return match c { Red() -> 0
 fn on_show<T: Show>(x: T) -> int { return x.show() }
 fn main() {
     print(3)
-    let mut c0 = []
+    let mut _c0 = []
     let mut _l1 = [31, 34]
-    let _b2 = (len(c0) > 0 and true)
+    let _b2 = (len(_c0) > 0 and true)
     let _k3 = Red()
-    let _b4 = len(c0) > 0
-    let _b5 = (c0.contains(1) and true)
+    let _b4 = len(_c0) > 0
+    let _b5 = (_c0.contains(1) and true)
     let _b6 = true
-    push(c0, c0)
+    push(_c0, _c0)
     print(0)
 }

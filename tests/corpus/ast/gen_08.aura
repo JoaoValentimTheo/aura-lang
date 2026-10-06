@@ -14,13 +14,13 @@ fn main() {
     for x in 0..3 { print(x) }
     let _b0 = false
     print((on_show(Num { n: 4 }) + 6))
-    let mut i1 = add(3, 1)
+    let mut _i1 = add(3, 1)
     for x in 0..3 { print(x) }
     let _p2 = Point { x: 6, y: 19 }
     for x in 0..3 { print(x) }
     if 1 < 2 {
     for x in 0..3 { print(x) }
-    let _s3 = to_string(i1)
+    let _s3 = to_string(_i1)
     } else {
         print(9)
     }

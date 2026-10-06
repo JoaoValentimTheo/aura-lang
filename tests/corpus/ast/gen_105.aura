@@ -12,18 +12,18 @@ fn describe(c: Color) -> int { return match c { Red() -> 0
 fn on_show<T: Show>(x: T) -> int { return x.show() }
 fn main() {
     if true {
-    let mut c0 = []
-    push(c0, c0)
-    let m1 = [c0, c0]
-    print(len(to_string(m1)))
-    print(len(json_encode(m1)))
+    let mut _c0 = []
+    push(_c0, _c0)
+    let _m1 = [_c0, _c0]
+    print(len(to_string(_m1)))
+    print(len(json_encode(_m1)))
     } else {
         print(9)
     }
     for x in 0..3 { print(x) }
     let _p0 = Point { x: 29, y: 33 }
-    let mut c1 = []
-    push(c1, c1)
+    let mut _c1 = []
+    push(_c1, _c1)
     print(2)
     for x in 0..3 { print(x) }
     let _s2 = "abc".upper()

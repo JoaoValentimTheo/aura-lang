@@ -11,10 +11,10 @@ fn describe(c: Color) -> int { return match c { Red() -> 0
  Blue() -> 2 } }
 fn on_show<T: Show>(x: T) -> int { return x.show() }
 fn main() {
-    let mut c0 = []
-    push(c0, c0)
-    push(c0, c0)
-    print(len(json_encode(c0)))
+    let mut _c0 = []
+    push(_c0, _c0)
+    push(_c0, _c0)
+    print(len(json_encode(_c0)))
     if 1 < 2 {
     print(add(0, 1))
     } else {

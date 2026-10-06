@@ -11,7 +11,7 @@ fn describe(c: Color) -> int { return match c { Red() -> 0
  Blue() -> 2 } }
 fn on_show<T: Show>(x: T) -> int { return x.show() }
 fn main() {
-    let mut c0 = []
+    let mut _c0 = []
     if 1 < 2 {
     print(2)
     let _s1 = ("a" + "z")
@@ -21,14 +21,14 @@ fn main() {
     for x in 0..3 { print(x) }
     let _s1 = ("abc".upper() + "z")
     let mut _i2 = (len([1, 2, 3]) - 6)
-    let mut l3 = [18]
+    let mut _l3 = [18]
     let mut _c4 = []
-    push(c0, c0)
-    let m5 = [c0, c0]
-    print(len(to_string(m5)))
-    print(len(json_encode(m5)))
-    push(l3, 26)
-    print(len(l3))
-    for x in l3 { print(x) }
+    push(_c0, _c0)
+    let _m5 = [_c0, _c0]
+    print(len(to_string(_m5)))
+    print(len(json_encode(_m5)))
+    push(_l3, 26)
+    print(len(_l3))
+    for x in _l3 { print(x) }
     print(0)
 }

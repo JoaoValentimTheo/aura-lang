@@ -17,10 +17,10 @@ fn main() {
     let _p1 = Point { x: 14, y: 20 }
     let _b2 = 1 < 2
     let _s3 = "a"
-    let mut c4 = []
-    push(c4, c4)
-    let m5 = [c4, c4]
-    print(len(to_string(m5)))
-    print(len(json_encode(m5)))
+    let mut _c4 = []
+    push(_c4, _c4)
+    let _m5 = [_c4, _c4]
+    print(len(to_string(_m5)))
+    print(len(json_encode(_m5)))
     print(0)
 }

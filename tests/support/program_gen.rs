@@ -105,71 +105,14 @@ pub fn generate(seed: u64) -> String {
     }
     // Always end with a deterministic observable, so two substrates must agree.
     body.push_str("    print(0)\n");
-    // Keystone unused analysis: a local that the generator never reads again
-    // is an intentional discard, so spell it `_name`. This is semantics-
-    // preserving (a `_`-prefixed binding is an ordinary binding that the
-    // unused analysis does not track) and keeps every generated program
-    // checker-clean, which the generator's guarantee requires.
-    let body = discard_unread_bindings(&body);
+    // Keystone unused analysis: every generated local is emitted as an
+    // explicit discard (`_name`). A `_`-prefixed binding is an ordinary,
+    // fully readable binding that the unused analysis does not track, so the
+    // generator's contract — every program checks — holds by construction
+    // rather than by a post-pass that would need to reason about scopes.
     format!("{PREAMBLE}fn main() {{\n{body}}}\n")
 }
 
-/// Prefix every declared local that is never referenced after its declaration
-/// with `_`, making the discard explicit (Keystone §12). Declarations appear as
-/// `    let [mut] NAME = ...`; a name counts as read when it occurs in the text
-/// after its own declaration line.
-fn discard_unread_bindings(body: &str) -> String {
-    let mut lines: Vec<String> = body.lines().map(ToString::to_string).collect();
-    let mut declared: Vec<(usize, String)> = Vec::new();
-    for (i, line) in lines.iter().enumerate() {
-        let trimmed = line.trim_start();
-        let Some(rest) = trimmed.strip_prefix("let ") else {
-            continue;
-        };
-        let rest = rest.strip_prefix("mut ").unwrap_or(rest);
-        let name: String = rest
-            .chars()
-            .take_while(|c| c.is_alphanumeric() || *c == '_')
-            .collect();
-        if !name.is_empty() {
-            declared.push((i, name));
-        }
-    }
-    for (i, name) in &declared {
-        // A later declaration of the same name is not a *read* of this one
-        // (both may be unread, in sibling blocks), so declaration lines are
-        // excluded from the usage scan.
-        let mut tail = String::new();
-        for line in &lines[i + 1..] {
-            let t = line.trim_start();
-            let d = t
-                .strip_prefix("let ")
-                .map_or("", |r| r.strip_prefix("mut ").unwrap_or(r));
-            let dname: String = d
-                .chars()
-                .take_while(|c| c.is_alphanumeric() || *c == '_')
-                .collect();
-            if !dname.is_empty() && dname.trim_start_matches('_') == name {
-                continue;
-            }
-            tail.push_str(line);
-            tail.push('\n');
-        }
-        let read = tail
-            .split(|c: char| !(c.is_alphanumeric() || c == '_'))
-            .any(|tok| tok == name);
-        if !read {
-            if let Some(pos) = lines[*i].find(name.as_str()) {
-                lines[*i].insert(pos, '_');
-            }
-        }
-    }
-    let mut out = lines.join("\n");
-    if body.ends_with('\n') {
-        out.push('\n');
-    }
-    out
-}
 
 fn int_expr(rng: &mut Rng, vars: &[Var]) -> String {
     let mut opts: Vec<String> = vec![
@@ -253,25 +196,25 @@ fn gen_stmt(rng: &mut Rng, vars: &mut Vec<Var>, out: &mut String, depth: usize) 
     let choice = rng.below(14);
     match choice {
         0 => {
-            let name = format!("i{}", vars.len());
+            let name = format!("_i{}", vars.len());
             let e = int_expr(rng, vars);
             out.push_str(&format!("    let mut {name} = {e}\n"));
             vars.push(Var::Int(name));
         }
         1 => {
-            let name = format!("s{}", vars.len());
+            let name = format!("_s{}", vars.len());
             let e = str_expr(rng, vars);
             out.push_str(&format!("    let {name} = {e}\n"));
             vars.push(Var::Str(name));
         }
         2 => {
-            let name = format!("b{}", vars.len());
+            let name = format!("_b{}", vars.len());
             let e = bool_expr(rng, vars);
             out.push_str(&format!("    let {name} = {e}\n"));
             vars.push(Var::Bool(name));
         }
         3 => {
-            let name = format!("l{}", vars.len());
+            let name = format!("_l{}", vars.len());
             let n = 1 + rng.below(4);
             let mut items = Vec::new();
             for _ in 0..n {
@@ -282,19 +225,19 @@ fn gen_stmt(rng: &mut Rng, vars: &mut Vec<Var>, out: &mut String, depth: usize) 
         }
         4 => {
             // A cycle seed: an untyped mutable empty list accepts any element.
-            let name = format!("c{}", vars.len());
+            let name = format!("_c{}", vars.len());
             out.push_str(&format!("    let mut {name} = []\n"));
             vars.push(Var::AnyList(name));
         }
         5 => {
-            let name = format!("p{}", vars.len());
+            let name = format!("_p{}", vars.len());
             let x = rng.below(50).to_string();
             let y = rng.below(50).to_string();
             out.push_str(&format!("    let {name} = Point {{ x: {x}, y: {y} }}\n"));
             vars.push(Var::Point(name));
         }
         6 => {
-            let name = format!("k{}", vars.len());
+            let name = format!("_k{}", vars.len());
             let c = *rng.pick(&["Red()", "Green()", "Blue()"]);
             out.push_str(&format!("    let {name} = {c}\n"));
             vars.push(Var::Color(name));
@@ -333,14 +276,14 @@ fn gen_stmt(rng: &mut Rng, vars: &mut Vec<Var>, out: &mut String, depth: usize) 
                     // list, so the same subgraph is traversed twice.
                     4 => {
                         out.push_str(&format!("    push({n}, {n})\n"));
-                        let m = format!("m{}", vars.len());
+                        let m = format!("_m{}", vars.len());
                         out.push_str(&format!("    let {m} = [{n}, {n}]\n"));
                         out.push_str(&format!("    print(len(to_string({m})))\n"));
                         out.push_str(&format!("    print(len(json_encode({m})))\n"));
                     }
                     // Deep fan-out amplification: `x = [x, x]` repeated.
                     _ => {
-                        let g = format!("g{}", vars.len());
+                        let g = format!("_g{}", vars.len());
                         out.push_str(&format!("    let mut {g} = {n}\n"));
                         let reps = 1 + rng.below(4);
                         for _ in 0..reps {

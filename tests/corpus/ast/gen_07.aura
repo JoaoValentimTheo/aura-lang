@@ -14,13 +14,13 @@ fn main() {
     print(2)
     let _k0 = Green()
     print(1)
-    let mut l1 = [42, 43, 5, 29]
+    let mut _l1 = [42, 43, 5, 29]
     print(1)
-    for x in l1 { print(x) }
+    for x in _l1 { print(x) }
     let _k2 = Blue()
     let mut _i3 = (abs(-3) % 7)
     let _k4 = Green()
-    for x in l1 { print(x) }
-    let _b5 = len(l1) > 0
+    for x in _l1 { print(x) }
+    let _b5 = len(_l1) > 0
     print(0)
 }
