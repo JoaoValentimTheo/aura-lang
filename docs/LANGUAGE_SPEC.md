@@ -41,16 +41,17 @@ rule changes only through the RFC process in `CONTRIBUTING.md`.
 ## 1. Overview
 
 **Aura is a small, dynamically-typed, expression-oriented scripting language
-with an optional conservative static checker and a native Rust tree-walking
-interpreter.**
+with an optional conservative static checker and a native Rust interpreter.**
 
 The language model:
 
 * **Execution model.** A program is a sequence of top-level *items*
   (functions, structs, enums, type aliases, constants, and expressions). Aura
   is interpreted: source is tokenized, parsed into an AST, checked, and then
-  walked by an interpreter. There is no compiler backend, bytecode, or
-  optimizer.
+  evaluated by an explicit-continuation machine with one language-owned frame
+  stack (the 512-frame limit of §31.3); the machine never consumes host
+  engine-stack frames per Aura call. There is no compiler backend, bytecode,
+  or optimizer.
 * **Static checking role.** A checker runs before execution and rejects a
   program for which it can *prove* a rule violation (undefined names,
   immutable-assignment, duplicate declarations, provable type mismatches, and

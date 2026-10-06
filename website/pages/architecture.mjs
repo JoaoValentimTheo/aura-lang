@@ -130,7 +130,7 @@ export const architecturePage = {
       [
         ["<code>src/lex</code>, <code>src/parse</code>, <code>src/ast</code>", "front end"],
         ["<code>src/check</code>", "the conservative checker"],
-        ["<code>src/run</code>", "the tree-walking interpreter and values"],
+        ["<code>src/run</code>", "the explicit-continuation evaluator and values"],
         ["<code>src/stdlib</code>", "builtins, methods, and the signature registry"],
         ["<code>src/host.rs</code>", "the host contract and native/limited hosts"],
         ["<code>playground/runtime</code>", "the WebAssembly runtime wrapper"],

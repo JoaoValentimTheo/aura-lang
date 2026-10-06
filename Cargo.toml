@@ -30,10 +30,10 @@ regex = ["dep:regex"]
 time = ["dep:chrono"]
 py = ["dep:pyo3"]
 # Test-only differential evaluator oracle (B-1R2/B-1R3). Never default and
-# never user-facing: it adds no runtime behavior. It exists so the future
-# explicit-continuation engine can be selected through one internal seam while
-# the differential harness compares both engines. Removed in B-1R8. See
-# `docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md` §24.
+# never user-facing: it adds no runtime behavior. The iterative machine is
+# always compiled and is the production engine; this flag only gates the
+# differential oracle harness that compares the two engines. Removed in B-1R8
+# (human-gated). See `docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md` §24.
 evaluator-oracle = []
 
 [lib]

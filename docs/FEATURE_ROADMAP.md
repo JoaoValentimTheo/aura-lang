@@ -46,7 +46,8 @@ must be designed against it before any code is written.
 
 ## Current Language State
 
-Aura today is a tree-walking interpreted language with a conservative checker.
+Aura today is an interpreted language with an explicit-continuation evaluator
+and a conservative checker.
 
 | Area | State |
 |---|---|

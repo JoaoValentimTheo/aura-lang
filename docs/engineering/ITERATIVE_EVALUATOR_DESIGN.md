@@ -728,6 +728,12 @@ remains a boundary test.
 
 ## 24. Differential oracle design
 
+> **Execution status (2026-10-05).** This section describes the migration plan.
+> It was executed: the machine is always compiled, production cut over in
+> `62dd592`, and the `evaluator-oracle` feature now gates only the oracle
+> harness (not engine availability). R8 (removal of the retained recursive
+> reference and the harness) remains human-gated.
+
 * During migration only, the interpreter supports two internal engines:
   `Recursive` (today's code) and `Iterative` (the machine). The switch is a
   private field; for the differential harness only it is reachable through a

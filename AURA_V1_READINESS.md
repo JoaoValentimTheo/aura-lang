@@ -13,7 +13,7 @@ never by schedule. Status legend: **GREEN** (ready), **YELLOW** (gaps remain),
 | MODULES | GREEN | providers parity; eager discovery defined; visibility/collision tested |
 | CLI | GREEN | `tests/cli.rs`; exit codes; paths; stdin |
 | REPL | GREEN | persistence + rollback; `tests/repl.rs` |
-| WASM | YELLOW | 0 imports; Host ABI 1; differential 228/228; module/alias depth unified with native. **Open B-1 (implementation nonconformance):** mainstream recursive shapes exhaust the JavaScript engine stack below the 512-frame language limit and trap instead of `E4011` — `LANGUAGE_SPEC` §31.3 is a language rule and §31.5 forbids host failures (corrected classification). Fresh-instance first-trap depths: else 387 (Node cold) / 196 (production Worker), match 459/233, closure 356, module 387, if-chain 419. Binding resource is the engine stack, not the 4 MiB guest stack. Every released WASM artifact is affected (`0.0.2`, `0.2.0`, `0.2.1`); native conforms. **Remediation in progress:** Option B (engine-stack-independent evaluator) selected; architecture designed in `docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md`; the non-production B-1R3A machine skeleton + first executable subset are implemented locally (feature-gated `evaluator-oracle`, unpushed). Production is still recursive, so B-1 remains open until the migration completes and the 512-frame boundary holds on every substrate. `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` |
+| WASM | GREEN (source) / YELLOW (published artifacts) | 0 imports; Host ABI 1; differential 228/228; module/alias depth unified with native. **B-1 is fixed in source and proven on a fresh machine-backed build:** every mainstream recursion shape reaches the 512-frame language limit and reports a structured `E4011` instead of trapping (fresh-wasm suite, 53 checks). The **released** artifacts `0.0.2`/`0.2.0`/`0.2.1` remain affected because frozen artifacts are immutable; they are superseded only by a future human-gated runtime publication. Production (native, CLI, REPL, WASM source build) runs the explicit-continuation machine. `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` |
 | PLAYGROUND | GREEN | FSM-P6 suites green; multi-file project state + tabs; capability detection; released `0.2.1` runtime is the selector default |
 | CPYTHON | GREEN | normative conversion table; interop matrix + edge cases + a generated conversion matrix (no host failure); call-site source spans tested; TESTED tiers (ADR-0003): Linux 3.10–3.13, macOS 3.12, Windows 3.12 (all CI legs blocking); lifetime/GIL reviewed (dimension M); security boundary explicit (arbitrary CPython authority, no sandbox claimed) |
 | SECURITY | GREEN | threat model / trust boundaries / architecture / incident response current; red-team campaign + re-verification recorded, all CRITICAL/HIGH fixed and guarded; deep fuzz campaign clean; no `unsafe` and Miri is a blocking CI gate; cargo audit reviewed; WASM zero-import policy verified; CPython arbitrary-authority boundary documented; release pipeline reviewed; SBOM + signed SLSA provenance (release signing is a supply-chain extra, tracked TD-03) |
@@ -45,25 +45,24 @@ never by schedule. Status legend: **GREEN** (ready), **YELLOW** (gaps remain),
    implementations are committed, pushed, released in `v0.2.1`, and CI-green.
    The `v0.2.1` release train is closed (published 2026-10-01; 27/27 check-runs
    green; GitHub Pages deploy green).
-3. **WASM (B-1, YELLOW — implementation nonconformance; remediation in
-   progress):** mainstream recursive programs exhaust the JavaScript engine
-   stack below the 512-frame language limit instead of reporting `E4011`
-   (§31.3 is a language rule; §31.5 forbids host failures — they reinforce
-   each other, so this is an implementation defect, not a spec conflict).
-   Present in every released WASM artifact and in HEAD; native conforms. Option
-   B (engine-stack-independent evaluator) is selected; the implementation
-   contract is `docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md`. The
-   non-production B-1R3A machine skeleton and first executable subset are
-   implemented locally and unpushed; production is still recursive, so B-1
-   stays open. Not a `v0.2.1` regression and not a release-immutability issue.
+3. **WASM (B-1 — fixed in source, proved on a fresh machine-backed build;
+   published artifacts superseded only by a future publication):** mainstream
+   recursive programs reach the 512-frame language limit and report a
+   structured `E4011` on the fresh build; the explicit-continuation machine is
+   the production engine on every entry point. The released WASM artifacts
+   (`0.0.2`, `0.2.0`, `0.2.1`) still contain the defect because frozen
+   artifacts are immutable; publishing a replacement runtime is a separate
+   human-gated release decision. Not a `v0.2.1` regression and not a
+   release-immutability issue.
 
 ## Notes
 
-- One unresolved correctness blocker is known: **B-1** (WASM call-frame
-  implementation nonconformance: the engine stack traps below the language
-  limit; `docs/WASM_CALL_FRAME_LIMIT_DECISION.md`; architecture designed in
-  `docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md`; B-1R3A non-production
-  skeleton implemented locally, production still recursive).
+- The former correctness blocker **B-1** (WASM call-frame implementation
+  nonconformance) is **fixed in source and remote-closed**, proved by the
+  fresh machine-backed WASM boundary suite; the released frozen artifacts
+  remain affected until a future human-gated runtime publication
+  (`docs/WASM_CALL_FRAME_LIMIT_DECISION.md`; architecture
+  `docs/engineering/ITERATIVE_EVALUATOR_DESIGN.md`).
   No unresolved CRITICAL/HIGH *security* blocker is known.
 - Frozen `0.0.2`/`0.2.0`/`0.2.1` artifacts verified byte-identical at intake;
   the published `0.2.1` release asset matches the in-repository artifact.

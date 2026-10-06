@@ -58,6 +58,21 @@ fn website_and_spec_grammar_stay_synchronized() {
     }
 }
 
+/// The diagnostic reference on the website must be the same text as
+/// `docs/errors.md` (the test-pinned authority), differing only in its first
+/// heading line, exactly like the grammar pair above. A divergent website
+/// copy is an authority defect: two documents answering the same question.
+#[test]
+fn website_and_spec_error_reference_stay_synchronized() {
+    let errors = lf(include_str!("../docs/errors.md"));
+    let site = lf(include_str!("../website/content/reference-errors.md"));
+    assert_eq!(
+        errors.split_once('\n').unwrap().1,
+        site.split_once('\n').unwrap().1,
+        "website reference-errors.md drifted from docs/errors.md"
+    );
+}
+
 #[test]
 fn every_token_variant_has_a_lexical_case() {
     let mut seen = BTreeSet::new();

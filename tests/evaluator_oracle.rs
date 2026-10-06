@@ -12,8 +12,8 @@
 //!    deliberately-preserved compound-assignment double evaluation and the B-1
 //!    contract-boundary corpus).
 //! 2. `engines_agree` — every engine on this build must agree on every case
-//!    (baseline self-comparison today; recursive vs iterative under the
-//!    `evaluator-oracle` feature in B-1R3).
+//!    (recursive reference vs the always-compiled iterative machine; the
+//!    `evaluator-oracle` feature gates this harness, not the engines).
 //! 3. `execution_is_isolated` — a mutating program observed twice yields
 //!    identical observables (no cross-run contamination).
 //! 4. `golden_manifest_is_reproducible` — regenerating the manifest from the

@@ -213,8 +213,11 @@ fn norm_value(v: &aura::run::value::Value) -> NormValue {
 
 /// The differential engine seam.
 ///
-/// For B-1R2 [`Engine::recursive`] and [`Engine::iterative`] both run the
-/// current tree-walking evaluator; the point is to prove the *harness*.
+/// Historically (B-1R2) both engines ran the same tree-walking evaluator and
+/// the point was to prove the *harness*. Since B-1R3A the `recursive` engine
+/// runs the retained tree-walking evaluator and `iterative` runs the
+/// explicit-continuation machine, both compiled unconditionally; the
+/// `evaluator-oracle` feature only gates this oracle harness.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Engine {
     name: &'static str,

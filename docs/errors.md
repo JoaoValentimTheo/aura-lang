@@ -6,7 +6,7 @@ Every rejection carries a stable code. Codes are grouped by phase:
 * `E2xxx` — name and rule checking (static).
 * `E3xxx` — type-level (static annotations).
 * `E4xxx` — runtime.
-* `E5xxx` — optional features / Python bridge.
+* `E5xxx` — optional features / capabilities.
 
 ## Lexical and syntactic (`E1xxx`)
 
@@ -82,3 +82,10 @@ Codes are part of the public contract. A code is never reused for a
 different meaning; new diagnostics get new numbers. `tests/grammar.rs`
 asserts that every code in this table can be produced by at least one
 program and that `src/error.rs` agrees.
+
+## Catchability
+
+Only an explicit `throw` is catchable. Every runtime diagnostic above is
+**fatal** and propagates through `try/catch`; a `finally` block still runs.
+`E5001` (a Python error) and `E5002` (a missing capability) are runtime
+diagnostics and are likewise not catchable.
