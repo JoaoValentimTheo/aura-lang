@@ -60,6 +60,11 @@ impl TypeClass {
     pub fn matches_ty(self, ty: &Ty) -> Option<bool> {
         let is = match (self, ty) {
             (_, Ty::Unknown) => return None,
+            // The bottom type satisfies every class vacuously: no value can
+            // ever reach the operation, so nothing can violate the class. This
+            // keeps a diverging call (`f()` with `-> never`) usable in any
+            // class-position, exactly as it is assignable to any type.
+            (_, Ty::Never) => return Some(true),
             // A union satisfies a class only when **every** member does: the
             // value at runtime may be any member, so one acceptable member
             // does not make a possible-`string` acceptable to an int

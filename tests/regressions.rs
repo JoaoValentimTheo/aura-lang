@@ -370,9 +370,15 @@ fn static_user_fn_unknown_argument_remains_permissive() {
         check("fn f(a: int) { return a }\nfn main() { f(none) }"),
         Err(codes::TYPE_MISMATCH)
     );
-    // An if-expression infers Unknown.
+    // An if-expression joins its branches: both are `none`, so the argument is
+    // `none` and a strict parameter rejects it. A join involving a genuinely
+    // undecidable branch still infers `Unknown` (see the dynamic cases below).
     assert_eq!(
         check("fn f(a: int) { return a }\nfn main() { f(if true { none } else { none }) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        check("fn f(a: int) { return a }\nfn main() { f(if true { 1 } else { 2 }) }"),
         Ok(())
     );
     // A call to a function of undetermined return type infers Unknown.
@@ -923,10 +929,11 @@ fn field_read_is_conservative_for_unproven_receivers() {
         check("struct P { x: int }\nfn main() { let m = {\"k\": P { x: 1 }}\n let y: string = m[\"k\"].x }"),
         Err(codes::TYPE_MISMATCH)
     );
-    // A branch result infers `Unknown`.
+    // A branch result joins its branches (§6.4, corrected): both arms are `P`,
+    // so the join is `P` and the annotation mismatch is caught.
     assert_eq!(
         check("struct P { x: int }\nfn main() { let p = if true { P { x: 1 } } else { P { x: 2 } }\n let _: string = p.x }"),
-        Ok(())
+        Err(codes::TYPE_MISMATCH)
     );
     // A function call whose return type is not declared infers `Unknown`.
     assert_eq!(

@@ -472,6 +472,13 @@ pub struct Checker {
     /// branch cannot fall through. `block` consumes it immediately after the
     /// statement that produced it.
     pending_narrowing: Option<(String, Ty)>,
+    /// Every `break` seen while checking the current function, paired with the
+    /// span of the innermost loop enclosing it at that point. Divergence asks
+    /// whether the loop statement being measured owns any break, which covers
+    /// every expression position; a bare AST scan missed breaks inside
+    /// block/if/match expressions and produced a false `never`.
+    break_owner: Vec<(Span, Span)>,
+    loop_spans: Vec<Span>,
     /// Names assigned inside the lambda currently being checked, collected
     /// while its body is walked. When that lambda value is stored in a
     /// binding, the binding's mutation set is registered so a later call can
@@ -485,6 +492,14 @@ pub struct Checker {
     /// runtime value may change behind the checker's back (closures capture by
     /// reference).
     closure_writes: HashMap<String, Vec<String>>,
+    /// Every direct (non-lambda) assignment target seen, in order. Used by
+    /// the surviving-branch check: a branch that wrote the guarded name cannot
+    /// prove a fact about it. Indices are recorded locally, so entries from an
+    /// enclosing function are never consulted.
+    write_log: Vec<String>,
+    /// The direct writes of the most recently checked `if`'s then and else
+    /// branches, read by the statement-position narrowing pass.
+    last_if_writes: Option<(Vec<String>, Vec<String>)>,
     /// The write set of the most recently inferred lambda expression, read by
     /// the `let` binder that stores it.
     lambda_last_writes: Option<Vec<String>>,
@@ -593,9 +608,13 @@ impl Checker {
             variant_payloads: HashMap::new(),
             return_type: None,
             pending_narrowing: None,
+            break_owner: Vec::new(),
+            loop_spans: Vec::new(),
             lambda_writes: Vec::new(),
             saved_lambda_writes: Vec::new(),
             closure_writes: HashMap::new(),
+            write_log: Vec::new(),
+            last_if_writes: None,
             lambda_last_writes: None,
             closure_all_writes: Vec::new(),
             unused_analysis: true,
@@ -1940,6 +1959,33 @@ impl Checker {
         }
     }
 
+    /// The value type of a block used as an expression: the type of its
+    /// trailing expression when the last statement is an expression, and
+    /// `none` when the block ends in a declaration or nothing at all (the
+    /// runtime yields `none` for such a block). A trailing `return`/`throw`
+    /// has type `never` — the block cannot produce a value.
+    ///
+    /// The trailing expression is inferred with the ordinary checker. The
+    /// recursion is well-founded: a branch's value is structurally part of the
+    /// branch, never the enclosing expression.
+    fn block_value_ty(&self, body: &[Stmt]) -> Ty {
+        match body.last() {
+            Some(Stmt::Expr(e, _)) => self.infer(e),
+            Some(Stmt::Return(..) | Stmt::Throw(..)) => Ty::Never,
+            _ => Ty::None,
+        }
+    }
+
+    /// The value type of an `else` used as an expression: a block contributes
+    /// its trailing value, and any other expression (including a chained
+    /// `else if`) is inferred directly.
+    fn expr_value_ty(&self, e: &Expr) -> Ty {
+        match e {
+            Expr::Block(b, _) => self.block_value_ty(b),
+            other => self.infer(other),
+        }
+    }
+
     /// The type `name` would have with `none` removed, if the binding's
     /// current type is an optional union and the name is a simple binding.
     fn narrowed_type_of(&self, name: &str) -> Option<Ty> {
@@ -2001,21 +2047,35 @@ impl Checker {
         }
         let then_diverges = self.block_diverges(then, true);
         let else_diverges = els.is_some_and(|e| self.expr_diverges(e, true));
+        // A surviving branch that wrote the guarded name proves nothing: the
+        // write may have put a `none` back (review C3).
+        let (then_writes, else_writes) = self
+            .last_if_writes
+            .take()
+            .unwrap_or_else(|| (Vec::new(), Vec::new()));
+        // Which branch survives: when `then_narrows` is set the only surviving
+        // path is the diverging-else case, so control continues from the
+        // *then* branch; otherwise the then-branch diverged and control
+        // continues from the else branch.
+        let surviving_branch_wrote = if then_narrows {
+            then_writes.contains(&name)
+        } else {
+            else_writes.contains(&name)
+        };
         // When the guarded branch is the diverging one, the other branch's
         // knowledge survives into the following statements.
         let survives = if then_narrows {
-            // `if u != none { return }` — after it, `u` may still be none, so
-            // nothing is proven; only `if u != none { ... }` with a diverging
-            // *else* would prove the then-branch's fact (handled below).
-            false
+            // `if u != none { return }` proves nothing after it (`u` may still
+            // be none); only a diverging *else* proves the then-branch's fact.
+            else_diverges
         } else {
-            // `if u == none { return }` — after it, `u` is known not to be
-            // none, provided the then-branch actually diverges.
+            // `if u == none { return }` proves `u` is not none below, provided
+            // the then-branch actually diverges.
             then_diverges
         };
-        let survives =
-            survives || (then_narrows && else_diverges) || (!then_narrows && then_diverges);
-        if survives {
+        // A surviving branch that itself wrote the name proves nothing: the
+        // write may have put a `none` back (review C3).
+        if survives && !surviving_branch_wrote {
             if let Some(ty) = self.narrowed_type_of(&name) {
                 self.pending_narrowing = Some((name, ty));
             }
@@ -2037,12 +2097,15 @@ impl Checker {
             Stmt::Return(..) => return_diverges,
             Stmt::Throw(..) => true,
             Stmt::Expr(e, _) => self.expr_diverges(e, return_diverges),
-            // An infinite loop that has no reachable `break` cannot complete:
-            // `loop { … }` with no `break` diverges; `while true { … }` with
-            // no `break` diverges.
-            Stmt::Loop(body, _) => !Checker::contains_break(body),
-            Stmt::While(c, body, _) => {
-                matches!(c, Expr::Lit(Lit::Bool(true), _)) && !Checker::contains_break(body)
+            // An infinite loop that owns no `break` cannot complete:
+            // `loop { … }` without a break diverges; `while true { … }` without
+            // a break diverges. Ownership is by the innermost enclosing loop,
+            // recorded while the body was checked, so a break in any expression
+            // position is seen and a nested loop's break belongs to the nested
+            // loop, never to this one.
+            Stmt::Loop(_, span) => !self.loop_owns_break(*span),
+            Stmt::While(c, _, span) => {
+                matches!(c, Expr::Lit(Lit::Bool(true), _)) && !self.loop_owns_break(*span)
             }
             // A `try` leaves the flow only when its catch body does and its
             // `finally` (when present) does as well.
@@ -2067,44 +2130,10 @@ impl Checker {
         }
     }
 
-    /// Whether `body` contains a `break` that escapes *this* loop (a `break`
-    /// inside a nested loop belongs to that loop and is not counted).
-    fn contains_break(body: &[Stmt]) -> bool {
-        // A `break` in statements is a break of the loop being measured, so
-        // blocks, `if`s, matches, and `try` bodies are searched. A *nested*
-        // loop's `break` belongs to that inner loop and never escapes the
-        // outer one, so nested loops are not searched at all: recursing into
-        // them made `loop { loop { break } }` look breakable and produced a
-        // false `E3006` on a genuinely infinite function.
-        fn in_stmts(body: &[Stmt]) -> bool {
-            body.iter().any(|s| match s {
-                Stmt::Break(_) => true,
-                Stmt::While(_, _, _) | Stmt::For(_, _, _, _) | Stmt::Loop(_, _) => false,
-                Stmt::Try {
-                    body,
-                    catch_body,
-                    finally,
-                    ..
-                } => {
-                    in_stmts(body)
-                        || in_stmts(catch_body)
-                        || finally.as_ref().is_some_and(|f| in_stmts(f))
-                }
-                Stmt::Expr(e, _) => in_expr(e),
-                _ => false,
-            })
-        }
-        fn in_expr(e: &Expr) -> bool {
-            match e {
-                Expr::Block(b, _) => in_stmts(b),
-                Expr::If(_, then, els, _) => {
-                    in_stmts(then) || els.as_ref().is_some_and(|e| in_expr(e))
-                }
-                Expr::Match(_, arms, _) => arms.iter().any(|a| in_stmts(&a.body)),
-                _ => false,
-            }
-        }
-        in_stmts(body)
+    /// Whether the loop statement with `span` owns a `break` (a break whose
+    /// innermost enclosing loop at check time was that loop).
+    fn loop_owns_break(&self, span: Span) -> bool {
+        self.break_owner.iter().any(|(_, owner)| *owner == span)
     }
 
     /// Whether an expression is guaranteed to leave the current flow.
@@ -3169,7 +3198,27 @@ impl Checker {
                     }
                 }
             },
-            Expr::If(_, _, _, _) | Expr::Match(_, _, _) | Expr::Block(_, _) => Ty::Unknown,
+            // A control-flow expression's type is the join of its branches
+            // (§6.4, corrected): accepting a branch-join as `Unknown` let a
+            // `none` branch launder into a strict annotation and fail only at
+            // runtime. `Unknown` still absorbs the join (§2.3), so a genuinely
+            // undecidable branch keeps the dynamic boundary.
+            Expr::If(_, then, els, _) => {
+                let t = self.block_value_ty(then);
+                let e = els.as_ref().map_or(Ty::None, |e| self.expr_value_ty(e));
+                Ty::union(vec![t, e])
+            }
+            Expr::Match(_, arms, _) => {
+                // A `match` used as a value requires an arm to match; its type
+                // is the join of the arm values. An empty arm list is `Unknown`
+                // (the runtime rejects an unmatched value anyway).
+                if arms.is_empty() {
+                    return Ty::Unknown;
+                }
+                let members: Vec<Ty> = arms.iter().map(|a| self.block_value_ty(&a.body)).collect();
+                Ty::union(members)
+            }
+            Expr::Block(body, _) => self.block_value_ty(body),
             Expr::Name(name, _) => {
                 for scope in self.value_types.iter().rev() {
                     if let Some(t) = scope.get(name) {
@@ -3212,16 +3261,20 @@ impl Checker {
                 }
                 if let Some(class) = recv_ty.type_class() {
                     if let Some(sig) = crate::stdlib::signatures::method(class, name) {
-                        // For a statically known map receiver, `keys`/`values`
-                        // carry the map's key and value types rather than the
-                        // registry's coarse `[string]`. `get`/`remove` stay
-                        // dynamic: they return `none` for a missing key, and
-                        // Aura has no static `none` type, so claiming `V` would
-                        // be a lie (LANGUAGE_SPEC §18).
+                        // For a statically known map receiver, carry the map's
+                        // own key/value types rather than the registry's coarse
+                        // ones. `get` returns `V | none` (the value, or `none`
+                        // for a missing key) and `remove` the same: an optional
+                        // result, exactly as the runtime behaves, so it cannot
+                        // be laundered into a strict annotation without a
+                        // narrowing (LANGUAGE_SPEC §18, §5.2).
                         if let Ty::Map(k, v) = &recv_ty {
                             match name.as_str() {
                                 "keys" => return Ty::List(k.clone()),
                                 "values" => return Ty::List(v.clone()),
+                                "get" | "remove" => {
+                                    return Ty::union(vec![v.as_ref().clone(), Ty::None]);
+                                }
                                 // `items()` yields a list of two-element lists:
                                 // `[[K | V]]` (no tuple type).
                                 "items" => {
@@ -3230,6 +3283,13 @@ impl Checker {
                                     return Ty::List(Box::new(Ty::List(Box::new(pair))));
                                 }
                                 _ => {}
+                            }
+                        }
+                        // `list.pop()`/`first()`/`last()` are optional for the
+                        // same reason: the list may be empty.
+                        if let Ty::List(elem) = &recv_ty {
+                            if matches!(name.as_str(), "pop" | "first" | "last") {
+                                return Ty::union(vec![elem.as_ref().clone(), Ty::None]);
                             }
                         }
                         // `sort`/`reverse` on a known list return a list of the
@@ -3380,7 +3440,7 @@ impl Checker {
     }
 
     fn check_builtin_call(
-        &self,
+        &mut self,
         sig: &crate::stdlib::signatures::Signature,
         args: &[Arg],
         span: Span,
@@ -3396,6 +3456,17 @@ impl Checker {
                     self.check_element_assignable(&elem, &self.infer(&value.value), span)?;
                 }
             }
+        }
+        // A builtin that takes a function argument may invoke it, so a
+        // closure passed by name (or reached dynamically) can write a captured
+        // binding during the call; discard those narrowings.
+        if sig.params.iter().any(|p| {
+            p.accepts
+                == crate::stdlib::signatures::Accepts::One(
+                    crate::stdlib::signatures::TypeClass::Function,
+                )
+        }) {
+            self.clear_all_closure_narrowing();
         }
         for (i, param) in sig.params.iter().enumerate() {
             let Some(arg) = args.get(i) else { break };
@@ -4814,16 +4885,21 @@ impl Checker {
                         // An assignment can put `none` back into the binding,
                         // so any narrowing of it ends here.
                         self.clear_narrowing(name);
-                        // If this write is inside a lambda body, remember it:
-                        // a call through a binding holding that closure can
-                        // change `name` behind a later narrowing's back. The
-                        // global set is the sound fallback when the callee's
-                        // capture set is unknown.
-                        if !self.lambda_writes.contains(name) {
-                            self.lambda_writes.push(name.clone());
+                        // A write inside a lambda body is a *capture*: calling
+                        // that closure can change `name` behind a later
+                        // narrowing's back. Defining the closure is not a
+                        // write of the enclosing region, so a lambda-body
+                        // write never enters `write_log`.
+                        if self.saved_lambda_writes.is_empty() {
+                            self.write_log.push(name.clone());
                         }
-                        if !self.closure_all_writes.contains(name) {
-                            self.closure_all_writes.push(name.clone());
+                        if !self.saved_lambda_writes.is_empty() {
+                            if !self.lambda_writes.contains(name) {
+                                self.lambda_writes.push(name.clone());
+                            }
+                            if !self.closure_all_writes.contains(name) {
+                                self.closure_all_writes.push(name.clone());
+                            }
                         }
                         // A write references the binding: it counts as a use.
                         self.mark_used(name);
@@ -5003,17 +5079,26 @@ impl Checker {
                         *span,
                     ));
                 }
+                if matches!(s, Stmt::Break(_)) {
+                    if let Some(owner) = self.loop_spans.last().copied() {
+                        self.break_owner.push((*span, owner));
+                    }
+                }
             }
-            Stmt::While(c, body, _) => {
+            Stmt::While(c, body, span) => {
                 self.expr(c)?;
                 self.loop_depth += 1;
+                self.loop_spans.push(*span);
                 let r = self.block(body);
+                self.loop_spans.pop();
                 self.loop_depth -= 1;
                 r?;
             }
-            Stmt::Loop(body, _) => {
+            Stmt::Loop(body, span) => {
                 self.loop_depth += 1;
+                self.loop_spans.push(*span);
                 let r = self.block(body);
+                self.loop_spans.pop();
                 self.loop_depth -= 1;
                 r?;
             }
@@ -5038,12 +5123,14 @@ impl Checker {
                     self.declare_local(&b, pat.span(), UnusedKind::Pattern);
                 }
                 self.loop_depth += 1;
+                self.loop_spans.push(*span);
                 let loop_result: Result<()> = (|| {
                     for s in body.iter() {
                         self.stmt(s)?;
                     }
                     Ok(())
                 })();
+                self.loop_spans.pop();
                 self.loop_depth -= 1;
                 if let Err(e) = loop_result {
                     self.pop();
@@ -5162,6 +5249,19 @@ impl Checker {
                         // or a callable local. Functions are hoisted, so
                         // forward references resolve.
                         if self.resolves_to_user_function(name) {
+                            // A user function may itself call a closure it was
+                            // handed (a callback parameter), and Aura has no
+                            // way to prove otherwise for an ordinary call, so
+                            // any narrowing of a name some lambda writes is
+                            // discarded at the call. Aura has no reference
+                            // parameters, so no *other* name can be mutated.
+                            // A user function may itself call a closure it was
+                            // handed (a callback parameter), and Aura has no
+                            // way to prove otherwise for an ordinary call, so
+                            // any narrowing of a name some lambda writes is
+                            // discarded at the call. Aura has no reference
+                            // parameters, so no *other* name can be mutated.
+                            self.clear_all_closure_narrowing();
                             // A directly resolved top-level function: select the
                             // overload by argument types among the **visible**
                             // overloads only, then check the call against that
@@ -5698,7 +5798,9 @@ impl Checker {
                 self.expr(c)?;
                 // Inside a guarded branch the binding is narrowed, so a
                 // possible-none access is provably safe there. The narrowing
-                // is scoped to the branch.
+                // is scoped to the branch. Each branch's direct writes are
+                // recorded so a statement-position guard does not install a
+                // fact a surviving (writing) branch invalidated.
                 let then_narrow = Checker::none_guard(c).and_then(|(name, then_narrows)| {
                     if then_narrows {
                         self.narrowed_type_of(&name).map(|ty| (name.clone(), ty))
@@ -5706,7 +5808,11 @@ impl Checker {
                         None
                     }
                 });
+                let then_log = self.write_log.len();
                 self.block_with(then, then_narrow)?;
+                let then_writes: Vec<String> = self.write_log[then_log..].to_vec();
+                self.write_log.truncate(then_log);
+                let mut else_writes: Vec<String> = Vec::new();
                 if let Some(e) = els {
                     let else_narrow = Checker::none_guard(c).and_then(|(name, then_narrows)| {
                         if !then_narrows {
@@ -5715,13 +5821,17 @@ impl Checker {
                             None
                         }
                     });
+                    let else_log = self.write_log.len();
                     match (else_narrow, e.as_ref()) {
                         (Some((name, ty)), Expr::Block(b, _)) => {
                             self.block_with(b, Some((name, ty)))?;
                         }
                         (_, other) => self.expr(other)?,
                     }
+                    else_writes = self.write_log[else_log..].to_vec();
+                    self.write_log.truncate(else_log);
                 }
+                self.last_if_writes = Some((then_writes, else_writes));
             }
             Expr::Match(subject, arms, _) => {
                 self.expr(subject)?;

@@ -66,7 +66,7 @@ r3b6-field-value/in_if_condition		ok	0		-	0	0	0	0	int	7
 r3b6-field-value/in_let		ok	0		-	0	0	0	0	int	2
 r3b6-field-value/index_then_field		ok	0		-	0	0	0	0	int	2
 r3b6-field-value/field_then_index		ok	0		-	0	0	0	0	int	1
-r3b6-field-value/receiver_error		runtime	4007	division by zero	<r3b6>	4	5	1	5	-	-
+r3b6-field-value/receiver_error		compile	2003	int has no method `len`	<r3b6>	9	10	1	10	-	-
 r3b6-field-value/receiver_throw		runtime	4026	uncaught value: 5	<r3b6>	0	0	1	1	-	-
 r3b6-field-value/receiver_return		runtime	4030	`return` cannot be used here	<r3b6>	0	0	1	1	-	-
 r3b6-field-value/unknown_on_list		compile	2003	list has no method `foo`	<r3b6>	6	7	1	7	-	-

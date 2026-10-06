@@ -458,3 +458,120 @@ fn unknown_callable_fallback_does_not_reject_sound_programs() {
         Ok(())
     );
 }
+
+// ---------------------------------------------------------------------------
+// Second independent review: narrowing invalidation and branch joins
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_closure_passed_to_a_user_function_invalidates_captured_narrowing() {
+    // The callee may invoke the callback, so the proof for a captured name
+    // cannot survive the call (review C1).
+    assert_eq!(
+        check("struct U { name: string }\nfn consume(u: U) -> string { return u.name }\nfn apply(cb) -> int { return cb(1) }\nfn main() { let mut u: U | none = U { name: \"a\" }\n let clear = (_x) -> { u = none }\n if u != none { apply(clear)\n print(consume(u)) } }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+#[test]
+fn a_closure_passed_to_a_higher_order_builtin_invalidates_captured_narrowing() {
+    // Free-function and method spellings both invoke the callback (review C2).
+    assert_eq!(
+        check("struct U { name: string }\nfn consume(u: U) -> string { return u.name }\nfn main() { let mut u: U | none = U { name: \"a\" }\n let clear = (_x) -> { u = none }\n if u != none { map([1], clear)\n print(consume(u)) } }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        check("struct U { name: string }\nfn consume(u: U) -> string { return u.name }\nfn main() { let mut u: U | none = U { name: \"a\" }\n let clear = (_x) -> { u = none }\n if u != none { [1, 2].map(clear)\n print(consume(u)) } }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // A callback whose captures do not include the narrowed name is fine.
+    assert_eq!(
+        check("struct U { name: string }\nfn consume(u: U) -> string { return u.name }\nfn main() { let u: U | none = U { name: \"a\" }\n if u != none { map([1], (x) -> x + 1)\n print(consume(u)) } }"),
+        Ok(())
+    );
+}
+
+#[test]
+fn a_write_in_the_surviving_branch_cancels_a_divergence_narrowing() {
+    // `if u != none { u = none } else { return }` proves nothing after the
+    // `if`: the surviving then-branch wrote the name (review C3).
+    assert_eq!(
+        check("struct U { name: string }\nfn consume(u: U) -> string { return u.name }\nfn f(mut u: U | none) -> string { if u != none { u = none } else { return \"x\" }\n return consume(u) }\nfn main() { print(f(U { name: \"a\" })) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // The symmetric form: the else-branch writes while the then-branch diverges.
+    assert_eq!(
+        check("struct U { name: string }\nfn consume(u: U) -> string { return u.name }\nfn f(mut u: U | none) -> string { if u == none { return \"x\" } else { u = none }\n return consume(u) }\nfn main() { print(f(U { name: \"a\" })) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // A diverging branch that does NOT write still proves the fact.
+    assert_eq!(
+        check("struct U { name: string }\nfn consume(u: U) -> string { return u.name }\nfn f(u: U | none) -> string { if u == none { return \"x\" }\n return consume(u) }\nfn main() { print(f(U { name: \"a\" })) }"),
+        Ok(())
+    );
+}
+
+#[test]
+fn branch_joins_are_not_unknown() {
+    // An `if` joins its branches; a possibly-`none` join cannot cross a strict
+    // boundary without narrowing (review C4).
+    assert_eq!(
+        check("fn f(flag: bool) -> int { return if flag { 1 } else { none } }\nfn main() { print(f(false)) }"),
+        Err(codes::RETURN_MISMATCH)
+    );
+    assert_eq!(
+        check(
+            "fn main() { let flag = true\n let x: int = if flag { 1 } else { none }\n print(x) }"
+        ),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // A `match` joins its arms likewise.
+    assert_eq!(
+        check("fn main() { let x: int = match 1 { 1 -> none, _ -> 5 }\n print(x) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // A branch with a genuinely unknown value still infers Unknown (§2.3).
+    assert_eq!(
+        check("fn u() { return none }\nfn f(flag: bool) -> int { return if flag { 1 } else { u() } }\nfn main() { print(f(true)) }"),
+        Ok(())
+    );
+}
+
+#[test]
+fn a_loop_break_in_an_expression_position_is_seen() {
+    // A reachable break inside a nested block expression means the loop can
+    // complete, so it does not satisfy `never` (review C5).
+    assert_eq!(
+        check("fn f() -> never { while true { let _x = { break } } }\nfn main() { f() }"),
+        Err(codes::NEVER_RETURNS)
+    );
+    // A break in a nested loop belongs to that loop; the outer still diverges.
+    assert_eq!(
+        check("fn f() -> never { loop { for _x in [1] { break } } }"),
+        Ok(())
+    );
+}
+
+#[test]
+fn map_lookup_is_optional_not_dynamic() {
+    // `m.get(k)` returns `V | none`; it cannot launder into a strict binding.
+    assert_eq!(
+        check("fn main() { let m = {\"a\": 1}\n let v: int = m.get(\"b\")\n print(v) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // The narrowed use is accepted.
+    assert_eq!(
+        check("fn main() { let m = {\"a\": 1}\n let v = m.get(\"b\")\n if v != none { print(v) } else { print(\"absent\") } }"),
+        Ok(())
+    );
+}
+
+#[test]
+fn never_satisfies_class_positions() {
+    // The bottom type cannot violate any class, so a diverging call is usable
+    // where a class-typed value is expected.
+    assert_eq!(
+        check("fn f() -> never { throw \"x\" }\nfn main() { print(range(f(), 3)) }"),
+        Ok(())
+    );
+}

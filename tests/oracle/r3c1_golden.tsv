@@ -55,8 +55,8 @@ r3c1-value/call_base		runtime	3001	cannot index int with int	<r3c1>	11	12	1	12	-
 r3c1-value/call_index		ok	0		-	0	0	0	0	int	2
 r3c1-value/nested_call_base		runtime	3001	expected a number, found list	<r3c1>	5	6	1	6	-	-
 r3c1-program/main_index_call		runtime	3001	cannot index int with int	r3c1.aura	28	29	1	29	-	-
-r3c1-value/call_receiver		runtime	2003	int has no method `len`	<r3c1>	15	16	1	16	-	-
-r3c1-value/nested_call_receiver		runtime	2003	int has no method `len`	<r3c1>	18	19	1	19	-	-
+r3c1-value/call_receiver		compile	2003	int has no method `len`	<r3c1>	15	16	1	16	-	-
+r3c1-value/nested_call_receiver		compile	2003	int has no method `len`	<r3c1>	18	19	1	19	-	-
 r3c1-value/call_interp		ok	0		-	0	0	0	0	string	"2"
 r3c1-value/nested_call_interp		ok	0		-	0	0	0	0	string	"3"
 r3c1-value/later_call_interp		ok	0		-	0	0	0	0	string	"11"

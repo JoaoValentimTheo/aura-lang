@@ -108,9 +108,9 @@ fn unknown_type_is_rejected() {
 #[test]
 fn map_key_type_must_be_key_capable() {
     // `string`, `int`, and `bool` are key-capable.
-    assert_eq!(check("fn f() -> {string: int} { return {} }"), Ok(()));
-    assert_eq!(check("fn f() -> {int: string} { return {} }"), Ok(()));
-    assert_eq!(check("fn f() -> {bool: int} { return {} }"), Ok(()));
+    assert_eq!(check("fn f() -> {string: int} { return {:} }"), Ok(()));
+    assert_eq!(check("fn f() -> {int: string} { return {:} }"), Ok(()));
+    assert_eq!(check("fn f() -> {bool: int} { return {:} }"), Ok(()));
     // `float`, `none`, and container keys are not.
     assert_eq!(
         check("fn f() -> {float: int} { return {} }"),
@@ -121,16 +121,16 @@ fn map_key_type_must_be_key_capable() {
         Err(codes::TYPE_MISMATCH)
     );
     assert_eq!(
-        check("fn f() -> {{int: int}: string} { return {} }"),
+        check("fn f() -> {{int: int}: string} { return {:} }"),
         Err(codes::TYPE_MISMATCH)
     );
     // A union is key-capable only when every member is.
     assert_eq!(
-        check("fn f() -> {string | int: bool} { return {} }"),
+        check("fn f() -> {string | int: bool} { return {:} }"),
         Ok(())
     );
     assert_eq!(
-        check("fn f() -> {string | float: bool} { return {} }"),
+        check("fn f() -> {string | float: bool} { return {:} }"),
         Err(codes::TYPE_MISMATCH)
     );
 }

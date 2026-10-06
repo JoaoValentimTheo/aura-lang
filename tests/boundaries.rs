@@ -536,7 +536,7 @@ fn list_and_map_type_nesting_are_bounded() {
         for _ in 0..n {
             t = format!("{{string: {t}}}");
         }
-        format!("fn main() {{ let _: {t} = {{}} }}")
+        format!("fn main() {{ let _: {t} = {{:}} }}")
     };
     assert!(run(&map_src(100)).is_ok());
     assert_eq!(run(&map_src(300)), Err(codes::NESTING));

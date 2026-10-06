@@ -951,12 +951,18 @@ holds: a direct assignment to the binding, shadowing it with a new binding,
 an assignment inside a nested block (the assignment is checked and the
 narrowing of the assigned name is discarded), or a call whose target may be a
 closure that assigns the binding. Closures capture by reference, so a call
-can change a captured value. The checker discards the narrowing of exactly
-the names a known callee closure assigns; when the callee's capture set is
-unknown (a lambda parameter, a closure read out of a container, any dynamic
-callee), it discards the narrowing of every name that any lambda in the
-program assigns — the sound choice, since Aura has no reference parameters
-and therefore no other way for a call to write a caller local.
+can change a captured value. The checker discards the narrowing of every name
+that any lambda in the program assigns whenever a call could reach a closure
+whose capture set is not known exactly: a call through a dynamic or unknown
+callee, a call through a container element, a call to a user function (which
+may invoke a callback it was handed), and a call to a higher-order builtin or
+method (which invokes its function argument). This is the sound choice, since
+Aura has no reference parameters and therefore no other way for a call to
+write a caller local. A call through a local binding initialized to a lambda
+is the one precisely-bounded case: only that lambda's own assignment targets
+are discarded. A divergence-proven narrowing is installed only when the
+surviving branch did not write the name; checking a lambda body neither
+destroys the enclosing region's proofs nor inherits them.
 
 **Normative rule (`none` access).** A member access, method call, or indexing
 on a value whose type contains `none` is rejected statically with `E3003`
@@ -1071,6 +1077,17 @@ check passes. This preserves the conservative soundness rule of §2.3.
 `none`, a known type, and `none` does not satisfy `int` (§5.2). A value the
 checker genuinely cannot type stays permissive: `let x = json_decode("{}");
 let y: int = x` passes, and a later runtime use of `y` may still fail.
+
+**Normative rule (branch joins).** An `if`/`match`/block used as a value has
+the join of its branch values: the union of the branch types (§5.2
+normalization), where a block contributes its trailing expression's type (or
+`none` when it ends in a declaration or nothing), an absent `else`
+contributes `none`, and a branch that diverges contributes `never`. The join
+is subject to the same rules as any other type, so `if flag { 1 } else { none
+}` is `int | none` and cannot satisfy an `int` boundary without narrowing.
+`Unknown` still absorbs the join (§2.3): a branch whose value the checker
+cannot determine keeps the dynamic boundary, so a call of undetermined return
+type or a dynamic builtin result is not rejected on its branch result alone.
 
 ### 6.5 Argument checking at directly resolved calls
 
