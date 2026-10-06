@@ -1542,7 +1542,7 @@ site).
 **Normative rule.** `catch` is mandatory: there is no `try` without `catch`.
 
 **Normative rule (builtin identity reservation).** The module root `Aura` is
-reserved: a user module named `Aura` at the file root is rejected (`E1009`),
+reserved: a user module named `Aura` at the file root is rejected (`E2023`),
 so user-defined exceptions cannot counterfeit built-in exception-family
 identity. The reservation is nominal and case-sensitive, and applies only at
 the root (`module Outer { module Aura { … } }` is legal).

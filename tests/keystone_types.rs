@@ -227,3 +227,70 @@ fn never_call_proves_the_path_cannot_continue() {
         Ok(())
     );
 }
+
+// ---------------------------------------------------------------------------
+// Independent-review regression: narrowing must be invalidated by a write
+// ---------------------------------------------------------------------------
+
+#[test]
+fn assignment_invalidates_narrowing_from_an_inner_scope() {
+    // The narrowing override lives in the block scope while the binding is
+    // declared in the function scope; a write must drop it, or the checker
+    // accepts an access the runtime rejects (review finding 1).
+    assert_eq!(
+        check("struct U { name: string }\nfn f(mut u: U | none) -> string { if u == none { return \"m\" }\n u = none\n return u.name }"),
+        Err(codes::POSSIBLE_NONE)
+    );
+    assert_eq!(
+        check("struct U { name: string }\nfn f(mut u: U | none) -> string { if u != none { u = none\n return u.name }\n return \"x\" }"),
+        Err(codes::POSSIBLE_NONE)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Independent-review regression: `never` divergence rules
+// ---------------------------------------------------------------------------
+
+#[test]
+fn try_that_completes_normally_does_not_satisfy_never() {
+    // Both the body and the catch path must diverge (review finding 2).
+    assert_eq!(
+        check("fn f() -> never { try { print(\"X\") } catch _ { throw 1 } }"),
+        Err(codes::NEVER_RETURNS)
+    );
+    // A genuinely diverging try still satisfies `never`.
+    assert_eq!(
+        check("fn f() -> never { try { throw 1 } catch _ { throw 2 } }"),
+        Ok(())
+    );
+}
+
+#[test]
+fn nested_loop_break_does_not_escape_the_outer_loop() {
+    // A `break` in a nested loop belongs to that loop, so the outer `loop`
+    // still diverges (review finding 3).
+    assert_eq!(check("fn f() -> never { loop { loop { break } } }"), Ok(()));
+    assert_eq!(
+        check("fn f() -> never { loop { for _x in [1] { break } } }"),
+        Ok(())
+    );
+    // A reachable break of the measured loop still makes it non-diverging.
+    assert_eq!(
+        check("fn f() -> never { loop { break } }"),
+        Err(codes::NEVER_RETURNS)
+    );
+}
+
+#[test]
+fn a_local_binding_shadows_a_function_name_at_runtime() {
+    // `LANGUAGE_SPEC.md` §6.5/§16.3: a shadowed name must not resolve to the
+    // top-level declaration (review finding 4).
+    assert_eq!(
+        ok("fn boom() -> never { throw \"global\" }\nfn main() { let boom = () -> 7\n print(boom()) }"),
+        "7\n"
+    );
+    assert_eq!(
+        ok("fn f(x: int) -> int { return x + 100 }\nfn main() { let f = (a: string) -> a\n print(f(\"hello\")) }"),
+        "hello\n"
+    );
+}

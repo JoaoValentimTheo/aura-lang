@@ -497,7 +497,10 @@ pub mod http {
                 )
             })
             .collect();
-        let mut body = String::new();
+        // A body is decoded as UTF-8 only after the whole (bounded) byte
+        // sequence is read: decoding per read chunk would split a multi-byte
+        // character that straddles a boundary and corrupt it into U+FFFD.
+        let mut bytes = Vec::new();
         let mut reader = response.into_body().into_reader();
         let mut buf = [0u8; 8192];
         loop {
@@ -507,13 +510,14 @@ pub mod http {
             if n == 0 {
                 break;
             }
-            if body.len() + n > MAX_HTTP_BODY_BYTES {
+            if bytes.len() + n > MAX_HTTP_BODY_BYTES {
                 return Err(HostError::io(format!(
                     "HTTP response body exceeds the {MAX_HTTP_BODY_BYTES} byte limit"
                 )));
             }
-            body.push_str(&String::from_utf8_lossy(&buf[..n]));
+            bytes.extend_from_slice(&buf[..n]);
         }
+        let body = String::from_utf8_lossy(&bytes).into_owned();
         Ok(HttpResponse {
             status,
             headers,

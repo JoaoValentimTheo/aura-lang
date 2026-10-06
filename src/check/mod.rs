@@ -1841,14 +1841,18 @@ impl Checker {
     /// Drop a flow-narrowing override for `name` (an assignment may put
     /// `none` back into the binding, so the precise `E3003` check returns).
     fn clear_narrowing(&mut self, name: &str) {
+        // `lookup_type` resolves innermost-first, so a narrowing override may
+        // live in an inner block scope while the binding is declared in an
+        // outer one. An assignment invalidates the binding's *current* type,
+        // so every override for the name must be dropped, not just the one in
+        // the declaring scope: otherwise a stale narrowed type survives the
+        // write and a possible-`none` access is wrongly accepted (which the
+        // runtime would then reject with a misleading `E2003`).
         for i in (0..self.scopes.len()).rev() {
-            if self.scopes[i].vars.contains_key(name) {
-                if self.scopes[i].narrowed.remove(name) {
-                    if let Some(map) = self.value_types.get_mut(i) {
-                        map.remove(name);
-                    }
+            if self.scopes[i].narrowed.remove(name) {
+                if let Some(map) = self.value_types.get_mut(i) {
+                    map.remove(name);
                 }
-                return;
             }
         }
     }
@@ -1997,12 +2001,19 @@ impl Checker {
             }
             // A `try` leaves the flow only when its catch body does and its
             // `finally` (when present) does as well.
+            // A `try` diverges only when *both* paths diverge: the body can
+            // complete normally (in which case control continues after the
+            // `try`), and the catch body handles a throw. Omitting the body
+            // here let `try { print(1) } catch e { throw e }` satisfy
+            // `-> never` while returning normally at runtime.
             Stmt::Try {
+                body,
                 catch_body,
                 finally,
                 ..
             } => {
-                self.block_diverges(catch_body, return_diverges)
+                self.block_diverges(body, return_diverges)
+                    && self.block_diverges(catch_body, return_diverges)
                     && finally
                         .as_ref()
                         .is_none_or(|f| self.block_diverges(f, return_diverges))
@@ -2014,12 +2025,16 @@ impl Checker {
     /// Whether `body` contains a `break` that escapes *this* loop (a `break`
     /// inside a nested loop belongs to that loop and is not counted).
     fn contains_break(body: &[Stmt]) -> bool {
+        // A `break` in statements is a break of the loop being measured, so
+        // blocks, `if`s, matches, and `try` bodies are searched. A *nested*
+        // loop's `break` belongs to that inner loop and never escapes the
+        // outer one, so nested loops are not searched at all: recursing into
+        // them made `loop { loop { break } }` look breakable and produced a
+        // false `E3006` on a genuinely infinite function.
         fn in_stmts(body: &[Stmt]) -> bool {
             body.iter().any(|s| match s {
                 Stmt::Break(_) => true,
-                Stmt::While(_, b, _) | Stmt::For(_, _, b, _) => in_stmts(b),
-                // A `loop`'s `break` belongs to that inner loop.
-                Stmt::Loop(b, _) => in_stmts(b),
+                Stmt::While(_, _, _) | Stmt::For(_, _, _, _) | Stmt::Loop(_, _) => false,
                 Stmt::Try {
                     body,
                     catch_body,

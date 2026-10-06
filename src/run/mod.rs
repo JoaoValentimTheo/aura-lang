@@ -1927,6 +1927,12 @@ impl Interp {
         }
         match callee {
             Expr::Name(name, nspan) => {
+                // A local binding shadows a top-level declaration
+                // (`LANGUAGE_SPEC.md` §6.5, §16.3): the call must invoke the
+                // binding, not the global function or builtin of that name.
+                if let Some(f) = env.get(name) {
+                    return Ok(Ctl::Val(self.call_value(f, vals, *nspan)?));
+                }
                 if let Some(set) = self.functions.get(name).cloned() {
                     // Resolve the overload by argument value types, using the
                     // same selector the checker uses (`crate::types::resolve_overload`)
@@ -1949,9 +1955,6 @@ impl Interp {
                     // bypass it.
                     self.check_native_arity(name, vals.len(), *nspan)?;
                     return Ok(Ctl::Val(n(self, vals, *nspan)?));
-                }
-                if let Some(f) = env.get(name) {
-                    return Ok(Ctl::Val(self.call_value(f, vals, *nspan)?));
                 }
                 Err(self.error(
                     codes::UNDEFINED,

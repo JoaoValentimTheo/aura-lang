@@ -211,6 +211,35 @@ fn default_http_request_denies_network() {
 }
 
 #[test]
+fn multibyte_character_across_the_read_boundary_is_intact() {
+    // The body reader fills an 8 KiB buffer; a multi-byte character must not
+    // be corrupted by decoding each chunk independently (review finding 7).
+    let prefix = "a".repeat(8191);
+    let body = format!("{prefix}é");
+    let response = Box::leak(
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .into_boxed_str(),
+    );
+    let server = TestServer::start(response);
+    let src = format!(
+        "fn main() {{ let r = http_get(\"{}\")\n print(len(r[\"body\"]))\n print(r[\"body\"][8191]) }}",
+        server.url("/utf8")
+    );
+    let out = run(&src).expect("request");
+    // 8192 characters, and the character at index 8191 is `é`, not U+FFFD.
+    assert_eq!(
+        out,
+        "8192
+é
+"
+    );
+}
+
+#[test]
 fn program_exception_still_flies_through() {
     // HTTP is ordinary capability work: an Aura `throw` is unaffected.
     let server = TestServer::start(OK_RESPONSE);

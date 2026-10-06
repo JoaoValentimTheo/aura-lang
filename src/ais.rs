@@ -285,7 +285,21 @@ fn symbol_of_item(item: &Item) -> Option<Symbol> {
         Item::Module {
             name, span, public, ..
         } => (name.clone(), SymbolKind::Module, *span, *public),
-        Item::Use { span, public, .. } => (String::new(), SymbolKind::Import, *span, *public),
+        Item::Use {
+            path,
+            alias,
+            span,
+            public,
+        } => {
+            // An import's symbol name is the bound local name: the alias when
+            // written, otherwise the last path segment. An empty name would
+            // make the symbol unusable to a tool.
+            let name = alias
+                .clone()
+                .or_else(|| path.last().cloned())
+                .unwrap_or_default();
+            (name, SymbolKind::Import, *span, *public)
+        }
         _ => return None,
     };
     let mut sym = Symbol {

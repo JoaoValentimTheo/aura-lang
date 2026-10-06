@@ -2610,6 +2610,12 @@ impl<'i> Machine<'i> {
             return Ok(Control::Next(Ctrl::EvalExpr(callee.clone(), env)));
         };
         let nspan = *nspan;
+        // A local binding shadows a top-level declaration
+        // (`LANGUAGE_SPEC.md` §6.5, §16.3): the call must invoke the binding,
+        // not the global function or builtin of that name.
+        if let Some(f) = env.get(name) {
+            return self.start_call_value(f, values, nspan);
+        }
         if let Some(set) = self.interp.functions.get(name.as_str()).cloned() {
             // Static overload resolution uses the checker's own selector.
             let c = self.interp.select_overload(name, &set, &values, nspan)?;
@@ -2639,9 +2645,6 @@ impl<'i> Machine<'i> {
                 values,
                 nspan,
             )?))));
-        }
-        if let Some(f) = env.get(name) {
-            return self.start_call_value(f, values, nspan);
         }
         Err(self.interp.error(
             codes::UNDEFINED,
