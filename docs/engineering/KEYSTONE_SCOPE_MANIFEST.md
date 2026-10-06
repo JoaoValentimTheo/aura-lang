@@ -115,6 +115,34 @@ ranges, `for … else`. See spec §34.1/§35 and order §38.
 (`Arc`), runtime `Rc`, `.kilo/**`, `.codex/**`. No publication; no push.
 Keystone metadata is Development-only until a human authorizes a runtime.
 
+## G2. Disposition at Keystone closure (2026-10-06)
+
+| Section B/C item | Disposition | Evidence |
+|---|---|---|
+| Optional narrowing | FIXED + REGRESSION TESTED | `Ty::None` retained; guards narrow; `tests/keystone_types.rs` |
+| `never` | FIXED + REGRESSION TESTED | bottom type, union absorption, `E3006`; `tests/keystone_types.rs` |
+| Raise-site span | FIXED + REGRESSION TESTED | both engines; oracle + R3C1 goldens |
+| Catch selection | FIXED + REGRESSION TESTED | RFC 0001; `tests/catch_syntax.rs` |
+| Builtin identity reservation | FIXED + REGRESSION TESTED | `E2023`; `tests/catch_syntax.rs` |
+| Unused analysis | FIXED + REGRESSION TESTED | `E2008`; `tests/keystone_unused.rs`; corpus migrated |
+| Structured diagnostics | FIXED + REGRESSION TESTED | `Presentation`; `src/diagnostic.rs`; CLI tests |
+| CLI color policy | FIXED + REGRESSION TESTED | `AURA_COLOR`/`--color`/`NO_COLOR`; `tests/cli.rs` |
+| Playground structured diagnostics | PARTIAL: Playground renders diagnostics as list items; Aurea provides `.au-diagnostic` primitives for severity mapping. Full component rewrite is future work | `playground/web/app.js`, `aurea.css` |
+| Runtime codename/channel | FIXED + REGRESSION TESTED | build registry + manifest + selector; manifest tests |
+| WASM output architecture | VERIFIED: bound is `BrowserHost` policy (root-caused); same-revision parity gate; chunked `OutputSink` not required by the frozen contract | `docs/playground.md`; differential 228/0 |
+| Local `const` in bodies | FALSIFIED premise; spec §4.2 defines `const` as module/session scope; behavior matches | probes; spec |
+| Shadowing | AUDITED, no change authorized; documented + tested | spec §16.3; `tests/shadowing.rs` |
+| Exception RFC | ACCEPTED (`docs/rfcs/0001-…`) | RFC |
+| HTTP capability | FIXED + REGRESSION TESTED | `http` feature; `tests/http.rs`; architecture doc |
+| JSON→Struct typed decode | FIXED + REGRESSION TESTED | `json_decode_as` `E4031`; `tests/keystone_json.rs` |
+| AIS/0.1 | IMPLEMENTED + TESTED | `src/ais.rs`; `aura ais`; `docs/engineering/AIS.md` |
+| Aurea | IMPLEMENTED + TESTED | `website/assets/aurea.css`; `website/tests/aurea.test.mjs` |
+| Overflow invariant | FIXED + REGRESSION TESTED | browser matrix 320–2560px + zoom + long token |
+| REPL/Playground redesign | IMPLEMENTED (state machine + recovery) + TESTED | `playground/web/app.js`; browser/worker/multifile |
+| Python/CPython + foreign values | INVESTIGATED; architecture record exists (`EMBEDDED_PYTHON_ARCHITECTURE.md`); no behavior change; provider seam is future work | docs |
+| Tooling reconciliation | DISPOSITIONED (`TOOLING_RECONCILIATION.md`); formatter/LSP architecture; package manager human-gated | docs |
+| Package-manager remote ecosystem | HUMAN-GATE REMAINING | PLANS.md; TOOLING_RECONCILIATION.md §5 |
+
 ## H. Enforcement (this manifest)
 
 Every item in sections B and C must end this transaction in exactly one state:
