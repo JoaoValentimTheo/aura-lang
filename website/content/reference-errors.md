@@ -76,6 +76,17 @@ Every rejection carries a stable code. Codes are grouped by phase:
 | E5001 | Python error | `py_eval("1 / 0")` |
 | E5002 | Capability unavailable (Python bridge, or a host capability) | `py_eval(...)` without the `py` feature; a non-string Python dict key; `time_unix`/`sleep_ms`/`read_file` in a host that does not provide the capability |
 
+## Internal and reserved codes
+
+These are declared for completeness but are **not** part of the public,
+user-facing contract: no program can rely on observing them, and they are
+never catchable.
+
+| Code  | Meaning | Visibility |
+|-------|---------|------------|
+| E4099 | In-flight `throw` crossing a call boundary | Internal control signal only; a program never sees it as a final diagnostic (`E4026` is the user-visible uncaught throw) |
+| E5003 | Optional standard-library feature not compiled into this build | Reserved; not currently produced |
+
 ## Stability
 
 Codes are part of the public contract. A code is never reused for a
