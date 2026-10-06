@@ -181,6 +181,53 @@ function check(name, cond, detail) {
   }
 }
 
+/* ------------------------------------------------- overflow invariants */
+// Keystone §32: general page horizontal overflow must not occur at the
+// narrowest supported width, at 200% zoom, or with pathologically long
+// content. Code and paths may scroll *locally*; the page may not widen.
+{
+  const widths = [320, 360, 768, 1024, 1440, 2560];
+  for (const width of widths) {
+    const page = await browser.newPage({ viewport: { width, height: 900 } });
+    await page.goto(base);
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    check(`overflow invariant @ ${width}px`, overflow <= 1, `overflow ${overflow}px`);
+    await page.close();
+  }
+
+  // 200% zoom is emulated by halving the viewport width at the same device
+  // scale, which is what a browser zoom does to layout.
+  {
+    const page = await browser.newPage({
+      viewport: { width: 640, height: 720 },
+      deviceScaleFactor: 2,
+    });
+    await page.goto(base);
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    check("overflow invariant @ 200% zoom", overflow <= 1, `overflow ${overflow}px`);
+    await page.close();
+  }
+
+  // A long unbroken token (a path or URL) must not widen the page.
+  {
+    const page = await browser.newPage({ viewport: { width: 320, height: 800 } });
+    await page.goto(base);
+    const overflow = await page.evaluate(() => {
+      const el = document.createElement("p");
+      el.className = "au-wrap";
+      el.textContent = "x".repeat(400) + "/" + "y".repeat(400);
+      document.querySelector("main")?.append(el);
+      return document.documentElement.scrollWidth - document.documentElement.clientWidth;
+    });
+    check("long token does not widen the page", overflow <= 1, `overflow ${overflow}px`);
+    await page.close();
+  }
+}
+
 /* -------------------------------------------------------- accessibility */
 {
   const page = await browser.newPage();

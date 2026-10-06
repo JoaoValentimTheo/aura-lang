@@ -35,6 +35,7 @@ function head({ title, description, path, base, pageType = "website", structured
 <meta name="twitter:description" content="${escapeHtml(description)}" />
 <meta name="twitter:image" content="${ogImage}" />
 
+<link rel="stylesheet" href="${url("assets/aurea.css", base)}" />
 <link rel="stylesheet" href="${url("assets/tokens.css", base)}" />
 <link rel="stylesheet" href="${url("assets/styles.css", base)}" />
 <script>

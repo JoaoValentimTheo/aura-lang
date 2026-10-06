@@ -1,0 +1,289 @@
+/* Aurea — the Aura design system.
+ *
+ * Aura-owned, local, dependency-free CSS. No external framework, no CDN, no
+ * utility framework: design tokens, component primitives, responsive
+ * behaviour, and accessibility live here. Components consume tokens only;
+ * magic colours are not scattered through them.
+ *
+ * Direction: black-first, high contrast, restrained, technical, clean.
+ *
+ * Relationship to the site's role palette: this file defines the *Aurea*
+ * layer — the structural and tonal primitives (surfaces, borders, focus,
+ * rhythm, motion, layout) under the `--au-*` namespace. The existing
+ * `tokens.css` role palette (`--md-*`) is consumed by the components as its
+ * semantic colour layer. Aurea is deliberately additive: it establishes the
+ * black-first surface scale and the accessibility primitives, and it does
+ * not duplicate or fork the already-reviewed role colours.
+ *
+ * Accessibility contract:
+ * - every interactive element has a visible `:focus-visible` indicator;
+ * - motion is suppressed under `prefers-reduced-motion`;
+ * - targets under `prefers-contrast: more` gain stronger borders;
+ * - the surface scale is designed for AA text contrast in both themes.
+ */
+
+/* --------------------------------------------------------------- tokens */
+:root {
+  /* Black-first surface scale. Level 0 is the page, and each level lifts. */
+  --au-black: #000000;
+  --au-ink-0: #05060a;
+  --au-ink-1: #0a0c12;
+  --au-ink-2: #11141c;
+  --au-ink-3: #181c26;
+  --au-ink-4: #212633;
+  --au-ink-5: #2b3140;
+
+  /* Text on the black scale: a near-white ramp, not pure white, so long
+   * technical reading stays comfortable. */
+  --au-text-strong: #f4f6fb;
+  --au-text: #d6dae6;
+  --au-text-muted: #9aa1b4;
+  --au-text-faint: #6b7288;
+
+  /* One accent, used sparingly. */
+  --au-accent: #8ab4ff;
+  --au-accent-strong: #b7cfff;
+  --au-accent-dim: #2a3a5c;
+
+  /* Status roles, aligned with the language's diagnostic severity. */
+  --au-error: #ff9d9d;
+  --au-warning: #ffd18a;
+  --au-note: #9fd8ff;
+  --au-help: #9fe8b7;
+
+  /* Lines. */
+  --au-line: rgb(255 255 255 / 0.10);
+  --au-line-strong: rgb(255 255 255 / 0.22);
+
+  /* Focus: a single, unmistakable indicator. */
+  --au-focus: #9ec5ff;
+  --au-focus-width: 2px;
+  --au-focus-offset: 2px;
+
+  /* Rhythm. */
+  --au-space-1: 0.25rem;
+  --au-space-2: 0.5rem;
+  --au-space-3: 0.75rem;
+  --au-space-4: 1rem;
+  --au-space-6: 1.5rem;
+  --au-space-8: 2rem;
+  --au-space-12: 3rem;
+  --au-space-16: 4rem;
+
+  /* Radii: restrained, technical. */
+  --au-radius-sm: 4px;
+  --au-radius-md: 8px;
+  --au-radius-lg: 12px;
+
+  /* Type. */
+  --au-font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --au-font-mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  --au-measure: 72ch;
+
+  /* Motion. */
+  --au-motion-fast: 120ms;
+  --au-motion: 200ms;
+  --au-ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Layout. */
+  --au-content: 1200px;
+  --au-gutter: clamp(1rem, 4vw, 2rem);
+}
+
+/* The light theme keeps the same structure with an inverted ramp; the
+ * black-first direction is the default identity, not a requirement that the
+ * site be unreadable in daylight. */
+[data-theme="light"] {
+  --au-ink-0: #ffffff;
+  --au-ink-1: #f7f8fb;
+  --au-ink-2: #eef0f6;
+  --au-ink-3: #e3e6ef;
+  --au-ink-4: #d5d9e5;
+  --au-ink-5: #c3c8d8;
+  --au-text-strong: #10131a;
+  --au-text: #2b3140;
+  --au-text-muted: #545b6e;
+  --au-text-faint: #7a8298;
+  --au-accent: #2a5bd6;
+  --au-accent-strong: #1f47a8;
+  --au-accent-dim: #d9e3ff;
+  --au-error: #b3261e;
+  --au-warning: #8a5a00;
+  --au-note: #1a5f8a;
+  --au-help: #1f6b42;
+  --au-line: rgb(16 19 26 / 0.12);
+  --au-line-strong: rgb(16 19 26 / 0.30);
+  --au-focus: #1f47a8;
+}
+
+/* ---------------------------------------------------------- primitives */
+
+/* A surface. Levels use the ink ramp so nesting reads as depth, not shadow. */
+.au-surface {
+  background: var(--au-ink-1);
+  color: var(--au-text);
+  border: 1px solid var(--au-line);
+}
+
+.au-surface--raised {
+  background: var(--au-ink-2);
+}
+
+.au-panel {
+  background: var(--au-ink-1);
+  border: 1px solid var(--au-line);
+  border-radius: var(--au-radius-md);
+  padding: var(--au-space-4);
+}
+
+/* A technical label: small, tracked, uppercase, muted. */
+.au-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--au-text-muted);
+}
+
+.au-code {
+  font-family: var(--au-font-mono);
+  font-size: 0.875em;
+  background: var(--au-ink-2);
+  border: 1px solid var(--au-line);
+  border-radius: var(--au-radius-sm);
+  padding: 0.1em 0.35em;
+}
+
+/* A focusable control. The indicator is never removed; it is only ever
+ * restyled, and it is always visible against the surface. */
+.au-control {
+  font: inherit;
+  color: inherit;
+  background: var(--au-ink-2);
+  border: 1px solid var(--au-line-strong);
+  border-radius: var(--au-radius-sm);
+  padding: var(--au-space-2) var(--au-space-3);
+  cursor: pointer;
+  transition: background var(--au-motion-fast) var(--au-ease),
+    border-color var(--au-motion-fast) var(--au-ease);
+}
+
+.au-control:hover {
+  background: var(--au-ink-3);
+}
+
+.au-control:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* The single focus contract for every interactive element in Aurea. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: var(--au-focus-width) solid var(--au-focus);
+  outline-offset: var(--au-focus-offset);
+}
+
+/* Diagnostic presentation primitives. The structured diagnostic is data; a
+ * renderer (CLI, Playground, AIS consumer) maps severity to one of these
+ * roles. No renderer parses another renderer's text. */
+.au-diagnostic {
+  border-left: 3px solid var(--au-line-strong);
+  padding: var(--au-space-2) var(--au-space-3);
+  font-family: var(--au-font-mono);
+  font-size: 0.8125rem;
+}
+
+.au-diagnostic--error {
+  border-left-color: var(--au-error);
+  color: var(--au-text-strong);
+}
+
+.au-diagnostic--warning {
+  border-left-color: var(--au-warning);
+}
+
+.au-diagnostic--note {
+  border-left-color: var(--au-note);
+}
+
+.au-diagnostic__code {
+  font-weight: 700;
+}
+
+.au-diagnostic__help {
+  color: var(--au-help);
+}
+
+/* Overflow is an invariant: a long token (a path, a URL, an identifier)
+ * wraps or scrolls locally instead of widening the page. */
+.au-wrap {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.au-scroll-x {
+  overflow-x: auto;
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* A layout primitive with correct flex shrink semantics: children may not
+ * force the container wider than its parent (min-width: 0). */
+.au-row {
+  display: flex;
+  gap: var(--au-space-3);
+  align-items: center;
+  min-width: 0;
+}
+
+.au-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--au-space-3);
+  min-width: 0;
+}
+
+.au-grid {
+  display: grid;
+  gap: var(--au-space-4);
+  min-width: 0;
+}
+
+/* ------------------------------------------------------- reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ------------------------------------------------------- more contrast */
+@media (prefers-contrast: more) {
+  :root {
+    --au-line: var(--au-line-strong);
+  }
+
+  .au-control,
+  .au-panel,
+  .au-surface {
+    border-width: 2px;
+  }
+}
+
+/* --------------------------------------------------------- forced colors */
+@media (forced-colors: active) {
+  .au-control,
+  .au-panel,
+  .au-surface,
+  .au-diagnostic {
+    border: 1px solid CanvasText;
+  }
+
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid Highlight;
+  }
+}
