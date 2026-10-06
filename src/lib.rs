@@ -10,6 +10,9 @@
 //!
 //! See `docs/contract.md` for the normative language specification.
 
+// The AIS schema is a serialized protocol: it shares the `json` feature's
+// serde dependency, so it is compiled only when that feature is on.
+#[cfg(feature = "json")]
 pub mod ais;
 pub mod ast;
 pub mod bridge;
