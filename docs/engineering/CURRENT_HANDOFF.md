@@ -31,10 +31,14 @@ explicit-continuation (iterative) evaluator over the existing AST
   `docs/rfcs/0001-exception-catch-selection.md`. Landed: exceptions E1-E6
   (pattern catch, raise-site spans, `Aura` namespace reservation), types
   (`never`, precise `none`, optional narrowing), unused analysis `E2008`,
-  same-revision Native/WASM differential. Local validation: 1171/0
-  all-features, clippy/fmt clean, playground suite green. Remaining: HTTP,
-  typed JSON/Struct decoding, AIS/0.1, diagnostics severity/notes/help +
-  CLI color, Aurea/website/playground redesign, codename metadata.
+  same-revision Native/WASM differential, HTTP capability, typed JSON
+  decoding, AIS/0.1, structured diagnostics + CLI color, Aurea + overflow
+  invariants, Playground state machine + recovery, codename metadata, tooling
+  reconciliation. Final SHA `8e4763c`, 39 ahead / 0 behind, not pushed.
+  Final validation: all-features 1217/0, no-default 1142/0, clippy/fmt/MSRV/
+  fuzz/Miri(124/0) green, playground + website suites green; independent
+  review's 7 findings fixed with regressions. Remaining human gates:
+  shadowing policy, package-manager model, runtime publication/codenames.
 - PRE-0.3 FOUNDATION SUPER-TRANSACTION: **IN PROGRESS LOCALLY, NOT PUSHED**
   (push requires a new explicit human authorization). Iteration ledger and
   artifacts: `docs/engineering/RUNTIME_ARCHITECTURE.md`,

@@ -313,11 +313,17 @@ suite green (differential 228/0, syntax conformance 43/43, boundary 63/63,
 browser/worker/multi-file/cache green). Frozen `0.0.2`/`0.2.0`/`0.2.1`
 byte-identical; `v0.2.1` unmoved; nothing pushed.
 
-Remaining Keystone workstreams (order §21-§36): HTTP capability, typed
-JSON->Struct decoding, AIS/0.1, structured diagnostics severity/notes/help +
-CLI color policy, Aurea CSS + website/playground redesign + overflow tests,
-REPL/Playground state machine, Python/CPython + foreign-value investigation,
-tooling reconciliation, runtime codename/channel metadata.
+All Keystone workstreams landed locally (21 commits, `8e4a59a`..`8e4763c`):
+exceptions E1-E6 (RFC 0001), `never`/`none`/narrowing, unused analysis
+`E2008`, typed JSON `E4031`, HTTP capability (feature `http`), AIS/0.1,
+structured diagnostics + CLI color, Aurea + overflow invariants, Playground
+state machine + recovery, codename metadata, tooling reconciliation. Final
+validation: all-features tests 1217/0; no-default 1142/0; clippy/fmt/MSRV
+green; fuzz campaigns clean; Miri 124/0; playground + website suites green.
+An independent adversarial review found 7 defects, all fixed with
+regressions (`39b4935`). Not pushed: 39 ahead / 0 behind remote `e576238`.
+Remaining human gates: shadowing policy change, package-manager
+product/security model, runtime publication/codenames.
 
 ## Exact Next Action
 
