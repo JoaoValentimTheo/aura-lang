@@ -24,11 +24,47 @@ impl Span {
     }
 }
 
+/// Diagnostic severity.
+///
+/// Every diagnostic produced today is an error: compilation stops at the
+/// first one. The field exists so the structured model is complete for
+/// renderers and for the AIS/0.1 surface (Keystone diagnostics), and so a
+/// future non-fatal diagnostic has a place to live without changing the
+/// contract. Severity is *data*; no ANSI or presentation state belongs here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Severity {
+    /// The program is rejected or the run fails.
+    #[default]
+    Error,
+    /// A non-fatal finding.
+    Warning,
+    /// Informational context.
+    Note,
+}
+
+impl Severity {
+    /// The stable lowercase spelling used by structured output (AIS, JSON).
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Severity::Error => "error",
+            Severity::Warning => "warning",
+            Severity::Note => "note",
+        }
+    }
+}
+
 /// A source-local diagnostic: code, message, and byte span.
 ///
 /// Source identity intentionally lives outside this legacy public struct so
 /// downstream users that construct `Diag` with struct literals remain source
 /// compatible. [`SourceDiagnostic`] adds provenance at multi-source boundaries.
+///
+/// `Diag` is deliberately frozen at three fields: the tests
+/// (`tests/source_provenance.rs::legacy_diag_struct_literal_remains_source_compatible`)
+/// pin that a struct literal keeps compiling. Structured presentation data
+/// (severity, notes, help) lives on [`SourceDiagnostic`] instead, which has
+/// never been struct-literal constructible.
 #[derive(Debug, Clone)]
 pub struct Diag {
     /// The stable code, e.g. `1006`.
@@ -84,6 +120,24 @@ impl std::error::Error for Diag {}
 pub struct SourceDiagnostic {
     diagnostic: Diag,
     source: Option<SourceId>,
+    /// How serious this is, and the structured context a renderer shows
+    /// (Keystone §28). Presentation data never changes `code`, which is the
+    /// identity.
+    presentation: Presentation,
+}
+
+/// Structured presentation attached to a diagnostic at its source boundary.
+///
+/// This is data, not text: renderers (CLI, Playground, AIS) consume the fields
+/// and never parse the rendered message, and no ANSI escape ever enters it.
+#[derive(Debug, Clone, Default)]
+pub struct Presentation {
+    /// Severity; all diagnostics produced today are errors.
+    pub severity: Severity,
+    /// Additional context lines, shown after the primary message.
+    pub notes: Vec<String>,
+    /// A suggested remedy, if one exists.
+    pub help: Option<String>,
 }
 
 impl SourceDiagnostic {
@@ -93,6 +147,7 @@ impl SourceDiagnostic {
         SourceDiagnostic {
             diagnostic,
             source: Some(source),
+            presentation: Presentation::default(),
         }
     }
 
@@ -102,7 +157,21 @@ impl SourceDiagnostic {
         SourceDiagnostic {
             diagnostic,
             source: None,
+            presentation: Presentation::default(),
         }
+    }
+
+    /// Attach structured presentation (severity, notes, help).
+    #[must_use]
+    pub fn with_presentation(mut self, presentation: Presentation) -> SourceDiagnostic {
+        self.presentation = presentation;
+        self
+    }
+
+    /// The structured presentation for this diagnostic.
+    #[must_use]
+    pub const fn presentation(&self) -> &Presentation {
+        &self.presentation
     }
 
     /// The source-local diagnostic payload.

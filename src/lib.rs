@@ -13,6 +13,7 @@
 pub mod ast;
 pub mod bridge;
 pub mod check;
+pub mod diagnostic;
 pub mod error;
 pub mod host;
 pub mod lex;

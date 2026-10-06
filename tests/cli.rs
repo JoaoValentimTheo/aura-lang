@@ -565,3 +565,107 @@ fn stdin_unknown_module_is_contextualized_and_never_uses_cwd_files() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Diagnostic presentation policy (Keystone §28)
+// ---------------------------------------------------------------------------
+
+/// Run with an explicit environment for the two color variables, in `cwd`.
+fn run_env_in(cwd: &Path, args: &[&str], envs: &[(&str, &str)]) -> (i32, String, String) {
+    let mut cmd = aura();
+    cmd.current_dir(cwd).args(args).stdin(Stdio::null());
+    // Start from a clean slate for the two policy variables so a developer's
+    // own shell settings cannot change the test.
+    cmd.env_remove("AURA_COLOR").env_remove("NO_COLOR");
+    for (k, v) in envs {
+        cmd.env(k, v);
+    }
+    let out = cmd.output().unwrap();
+    (
+        out.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+fn write_type_error(cwd: &Path) {
+    std::fs::write(cwd.join("color.aura"), "fn main() { let x: int = \"s\" }\n").unwrap();
+}
+
+#[test]
+fn redirected_diagnostics_are_plain_by_default() {
+    let p = TempProject::new("color-plain");
+    write_type_error(&p.0);
+    let (code, _, stderr) = run_env_in(&p.0, &["check", "color.aura"], &[]);
+    assert_eq!(code, 1);
+    assert!(stderr.contains("E3001"), "{stderr}");
+    assert!(
+        !stderr.contains('\x1b'),
+        "a redirected stream is plain: {stderr:?}"
+    );
+    // The stable snapshot form is `file:line:col: severity[E####]: message`.
+    assert!(stderr.contains("color.aura:1:13: error[E3001]"), "{stderr}");
+}
+
+#[test]
+fn aura_color_always_forces_escapes() {
+    let p = TempProject::new("color-always");
+    write_type_error(&p.0);
+    let (code, _, stderr) = run_env_in(&p.0, &["check", "color.aura"], &[("AURA_COLOR", "always")]);
+    assert_eq!(code, 1);
+    assert!(stderr.contains("\x1b["), "forced color: {stderr:?}");
+}
+
+#[test]
+fn aura_color_never_and_no_color_disable_escapes() {
+    let p = TempProject::new("color-never");
+    write_type_error(&p.0);
+    let (_, _, stderr) = run_env_in(&p.0, &["check", "color.aura"], &[("AURA_COLOR", "never")]);
+    assert!(!stderr.contains('\x1b'));
+    let (_, _, stderr) = run_env_in(&p.0, &["check", "color.aura"], &[("NO_COLOR", "1")]);
+    assert!(!stderr.contains('\x1b'));
+    // An explicit --color overrides NO_COLOR.
+    let (_, _, stderr) = run_env_in(
+        &p.0,
+        &["check", "--color=always", "color.aura"],
+        &[("NO_COLOR", "1")],
+    );
+    assert!(stderr.contains("\x1b["));
+}
+
+#[test]
+fn color_is_a_presentation_flag_not_a_source_argument() {
+    let p = TempProject::new("color-flag");
+    write_type_error(&p.0);
+    // `--color` before the path is consumed; `check` still sees one source.
+    let (code, _, stderr) = run_env_in(&p.0, &["check", "--color", "never", "color.aura"], &[]);
+    assert_eq!(code, 1);
+    assert!(stderr.contains("E3001"));
+    // `--color=never` after the path is also consumed for `check`.
+    let (code, _, stderr) = run_env_in(&p.0, &["check", "color.aura", "--color=never"], &[]);
+    assert_eq!(code, 1);
+    assert!(stderr.contains("E3001"));
+}
+
+#[test]
+fn run_program_arguments_after_the_path_are_not_consumed() {
+    let p = TempProject::new("color-run-args");
+    std::fs::write(p.0.join("args.aura"), "fn main() { print(args()) }\n").unwrap();
+    // `--color` after the source path belongs to the program's argument list.
+    let (code, stdout, _) = run_env_in(&p.0, &["run", "args.aura", "--color=always"], &[]);
+    assert_eq!(code, 0);
+    assert_eq!(stdout, "[\"--color=always\"]\n");
+}
+
+#[test]
+fn diagnostic_identity_is_stable_across_color_policies() {
+    let p = TempProject::new("color-identity");
+    write_type_error(&p.0);
+    let (_, _, plain) = run_env_in(&p.0, &["check", "color.aura"], &[]);
+    let (_, _, colored) = run_env_in(&p.0, &["check", "color.aura"], &[("AURA_COLOR", "always")]);
+    // The code and message are identical; only styling differs.
+    for text in ["E3001", "is annotated as `int`"] {
+        assert!(plain.contains(text), "{plain}");
+        assert!(colored.contains(text), "{colored}");
+    }
+}

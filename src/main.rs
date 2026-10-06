@@ -183,24 +183,101 @@ fn read_source(path: Option<&str>) -> Result<(String, String), ExitCode> {
     Ok((source.to_string(), file.to_string()))
 }
 
-fn render_cli_report(report: &aura::error::DiagnosticReport, stdin_source: bool) -> String {
-    let rendered = report.render();
-    if stdin_source && report.diagnostic().code == aura::error::codes::UNKNOWN_MODULE {
-        format!("{rendered}; filesystem modules are unavailable for <stdin>")
-    } else {
-        rendered
+/// The color policy for this invocation (Keystone §28). `--color <mode>`
+/// overrides `AURA_COLOR`, which overrides the `NO_COLOR` convention; `auto`
+/// colors only a terminal, so a redirected stream stays plain and stable.
+fn color_choice(args: &[String]) -> aura::diagnostic::ColorChoice {
+    let mut override_choice = None;
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "--color" {
+            if let Some(v) = args.get(i + 1) {
+                override_choice = aura::diagnostic::ColorChoice::parse(v);
+            }
+        } else if let Some(v) = args[i].strip_prefix("--color=") {
+            override_choice = aura::diagnostic::ColorChoice::parse(v);
+        }
+        i += 1;
     }
+    aura::diagnostic::resolve_choice(override_choice, &|k| std::env::var(k).ok())
+}
+
+/// Whether the diagnostic destination (stderr) is a terminal.
+fn stderr_is_terminal() -> bool {
+    use std::io::IsTerminal;
+    std::io::stderr().is_terminal()
+}
+
+fn render_cli_report(
+    report: &aura::error::DiagnosticReport,
+    stdin_source: bool,
+    args: &[String],
+) -> String {
+    let d = report.diagnostic();
+    let location = report.source_diagnostic().location().and_then(|loc| {
+        report.sources().get(loc.source).map(|s| {
+            let text = s.text();
+            let (line, col) = aura::error::line_col(text, loc.span.start);
+            format!("{}:{line}:{col}", s.name())
+        })
+    });
+    let color = aura::diagnostic::use_color(color_choice(args), stderr_is_terminal());
+    let mut rendered = aura::diagnostic::render_diagnostic(
+        d,
+        report.source_diagnostic().presentation(),
+        location.as_deref(),
+        color,
+    );
+    if stdin_source && d.code == aura::error::codes::UNKNOWN_MODULE {
+        rendered.push_str("; filesystem modules are unavailable for <stdin>");
+    }
+    rendered
+}
+
+/// Split the arguments of a subcommand into presentation flags (only those
+/// *before* the source path) and the remaining positionals.
+///
+/// For `run`, everything after the source path is the program's own argument
+/// list and may begin with `-`, so `--color` after the path belongs to the
+/// program and is not consumed here. For a subcommand with no program
+/// arguments, flags may appear anywhere.
+fn split_subcommand_args(args: &[String], source_is_first_positional: bool) -> Vec<&String> {
+    let mut positionals = Vec::new();
+    let mut i = 1; // skip the subcommand name
+    while i < args.len() {
+        let a = &args[i];
+        if source_is_first_positional && !positionals.is_empty() {
+            // Past the source path: keep everything verbatim, because `run`'s
+            // trailing arguments belong to the program and may start with `-`.
+            positionals.push(a);
+            i += 1;
+            continue;
+        }
+        if a == "--color" {
+            i += 2;
+            continue;
+        }
+        if a.starts_with("--color=") {
+            i += 1;
+            continue;
+        }
+        positionals.push(a);
+        i += 1;
+    }
+    positionals
 }
 
 fn cmd_run(args: &[String]) -> ExitCode {
-    let Some(path) = args.get(1).map(String::as_str) else {
+    let positionals = split_subcommand_args(args, true);
+    let Some(path) = positionals.first().map(|p| p.as_str()) else {
         eprintln!("usage: aura run <file|-> [program args...]");
         return ExitCode::from(2);
     };
-    // Program arguments are everything after the script path. When the script
-    // was read from stdin (`-`), the process stdin has been consumed as
-    // source, so no input source is wired.
-    let program_args: Vec<String> = args.iter().skip(2).cloned().collect();
+    // Program arguments are everything after the script path (presentation
+    // flags before the path are not program arguments). When the script was
+    // read from stdin (`-`), the process stdin has been consumed as source,
+    // so no input source is wired.
+    let program_args: Vec<String> = positionals.iter().skip(1).map(|p| (*p).clone()).collect();
     let input = if path == "-" {
         None
     } else {
@@ -220,18 +297,23 @@ fn cmd_run(args: &[String]) -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(report) => {
-            eprintln!("{}", render_cli_report(&report, path == "-"));
+            eprintln!("{}", render_cli_report(&report, path == "-", args));
             ExitCode::FAILURE
         }
     }
 }
 
 fn cmd_check(args: &[String]) -> ExitCode {
-    let Some(path) = args.get(1).map(String::as_str) else {
+    let positionals = split_subcommand_args(args, false);
+    let Some(path) = positionals.first().map(|p| p.as_str()) else {
         eprintln!("usage: aura check <file|->");
         return ExitCode::from(2);
     };
-    if args.len() > 2 {
+    // `--color [mode]` / `--color=mode` is a presentation flag, not a
+    // positional argument (Keystone §28); `check` has no program arguments,
+    // so the flag may appear anywhere.
+    let positionals = split_subcommand_args(args, false);
+    if positionals.len() > 1 {
         eprintln!("aura check takes exactly one source argument");
         return ExitCode::from(2);
     }
@@ -247,7 +329,7 @@ fn cmd_check(args: &[String]) -> ExitCode {
     match result {
         Ok(_) => ExitCode::SUCCESS,
         Err(report) => {
-            eprintln!("{}", render_cli_report(&report, path == "-"));
+            eprintln!("{}", render_cli_report(&report, path == "-", args));
             ExitCode::FAILURE
         }
     }
