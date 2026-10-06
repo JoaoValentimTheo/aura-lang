@@ -353,6 +353,56 @@ fn browser_host_stdout_limit_is_atomic_and_fatal() {
     assert_eq!(bytes, b"f\n");
 }
 
+/// A poisoned stdout lock must not silently lose accepted bytes.
+///
+/// The lock protects a `Vec<u8>` whose only mutation is an infallible
+/// `extend_from_slice`, so poison (which requires a prior panic while holding
+/// the lock) cannot leave torn state. The host and the shared sink must
+/// recover the data instead of returning an empty buffer or claiming a
+/// dropped write.
+#[test]
+fn poisoned_stdout_buffers_preserve_accepted_bytes() {
+    use std::sync::{Arc, Mutex};
+
+    fn poison(buf: &Arc<Mutex<Vec<u8>>>) {
+        // Poison the mutex by panicking while holding the guard.
+        let b = buf.clone();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _guard = b.lock().unwrap();
+            panic!("deliberate poison for the regression test");
+        }));
+    }
+
+    // SharedBuf (the `SharedBuf` writer used by `run_source`).
+    let buf = Arc::new(Mutex::new(Vec::new()));
+    {
+        use std::io::Write as _;
+        let mut sink = aura::SharedBuf(buf.clone());
+        sink.write_all(b"before").unwrap();
+    }
+    poison(&buf);
+    {
+        use std::io::Write as _;
+        let mut sink = aura::SharedBuf(buf.clone());
+        sink.write_all(b"-after").unwrap();
+    }
+    let recovered = match buf.lock() {
+        Ok(v) => v.clone(),
+        Err(p) => p.into_inner().clone(),
+    };
+    assert_eq!(recovered, b"before-after");
+
+    // BrowserHost stdout: a poisoned capture keeps prior bytes and still
+    // accepts the new write.
+    let out: aura::host::BrowserStdout = Arc::new(Mutex::new(Vec::new()));
+    let host = BrowserHost::with_stdout(out.clone(), None, Vec::new());
+    let mut host = host;
+    host.write_stdout(b"first\n").unwrap();
+    poison(&out);
+    host.write_stdout(b"second\n").unwrap();
+    assert_eq!(host.stdout(), b"first\nsecond\n");
+}
+
 #[cfg(feature = "time")]
 #[test]
 fn time_is_routed_through_the_host() {

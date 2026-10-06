@@ -736,9 +736,10 @@ fn run_module_capture(
 }
 
 fn take_stdout(out: &BrowserStdout) -> String {
-    out.lock()
-        .map(|v| String::from_utf8_lossy(&v).into_owned())
-        .unwrap_or_default()
+    match out.lock() {
+        Ok(v) => String::from_utf8_lossy(&v).into_owned(),
+        Err(poisoned) => String::from_utf8_lossy(&poisoned.into_inner()).into_owned(),
+    }
 }
 
 fn finish(
@@ -773,10 +774,22 @@ static PENDING_PROJECT: LazyLock<Mutex<Vec<u8>>> = LazyLock::new(|| Mutex::new(V
 static PENDING_OPTIONS: LazyLock<Mutex<Vec<u8>>> = LazyLock::new(|| Mutex::new(Vec::new()));
 static RESULT: LazyLock<Mutex<Option<String>>> = LazyLock::new(|| Mutex::new(None));
 
-fn set_result(s: String) {
-    if let Ok(mut slot) = RESULT.lock() {
-        *slot = Some(s);
+/// Lock a global slot, recovering from poison.
+///
+/// A poison can only follow a panic while this module held the lock. The
+/// protected payloads (byte buffers, an optional result string) are never
+/// left torn by an infallible mutate step, so the recovered data is
+/// authoritative; silently substituting an empty value would lose a whole
+/// pending request or result.
+fn lock_recovering<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    match m.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
     }
+}
+
+fn set_result(s: String) {
+    *lock_recovering(&RESULT) = Some(s);
 }
 
 /// The Host ABI version.
@@ -830,9 +843,7 @@ pub extern "C" fn aura_runtime_version_byte(i: u32) -> u32 {
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn aura_source_reset() {
-    if let Ok(mut s) = PENDING_SOURCE.lock() {
-        s.clear();
-    }
+    lock_recovering(&PENDING_SOURCE).clear();
 }
 
 /// Append the low `nbytes` (1..=4) bytes of `word` (little-endian) to the
@@ -850,9 +861,7 @@ pub extern "C" fn aura_source_push(word: u32, nbytes: u32) {
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn aura_project_reset() {
-    if let Ok(mut project) = PENDING_PROJECT.lock() {
-        project.clear();
-    }
+    lock_recovering(&PENDING_PROJECT).clear();
 }
 
 /// Append the low `nbytes` (1..=4) bytes of `word` (little-endian) to the
@@ -867,9 +876,7 @@ pub extern "C" fn aura_project_push(word: u32, nbytes: u32) {
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn aura_options_reset() {
-    if let Ok(mut s) = PENDING_OPTIONS.lock() {
-        s.clear();
-    }
+    lock_recovering(&PENDING_OPTIONS).clear();
 }
 
 /// Append the low `nbytes` (1..=4) bytes of `word` (little-endian) to the
@@ -882,21 +889,16 @@ pub extern "C" fn aura_options_push(word: u32, nbytes: u32) {
 
 fn push_word(dest: &LazyLock<Mutex<Vec<u8>>>, word: u32, nbytes: u32) {
     let n = nbytes.clamp(1, 4) as usize;
-    if let Ok(mut v) = dest.lock() {
-        let bytes = word.to_le_bytes();
-        v.extend_from_slice(&bytes[..n]);
-    }
+    let bytes = word.to_le_bytes();
+    lock_recovering(dest).extend_from_slice(&bytes[..n]);
 }
 
 /// Execute the pending program and store the JSON result.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn aura_run() -> u32 {
-    let source = PENDING_SOURCE.lock().map(|s| s.clone()).unwrap_or_default();
-    let options = PENDING_OPTIONS
-        .lock()
-        .map(|s| s.clone())
-        .unwrap_or_default();
+    let source = lock_recovering(&PENDING_SOURCE).clone();
+    let options = lock_recovering(&PENDING_OPTIONS).clone();
     let (json, status, _version) = execute_bytes(&source, &options);
     set_result(json);
     status
@@ -910,14 +912,8 @@ pub extern "C" fn aura_run() -> u32 {
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn aura_run_project() -> u32 {
-    let project = PENDING_PROJECT
-        .lock()
-        .map(|project| project.clone())
-        .unwrap_or_default();
-    let options = PENDING_OPTIONS
-        .lock()
-        .map(|options| options.clone())
-        .unwrap_or_default();
+    let project = lock_recovering(&PENDING_PROJECT).clone();
+    let options = lock_recovering(&PENDING_OPTIONS).clone();
     let (json, status, _version) = execute_project_bytes(&project, &options);
     set_result(json);
     status
@@ -927,23 +923,17 @@ pub extern "C" fn aura_run_project() -> u32 {
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn aura_output_len() -> u32 {
-    RESULT
-        .lock()
-        .ok()
-        .and_then(|s| s.as_ref().map(|s| s.len() as u32))
-        .unwrap_or(0)
+    lock_recovering(&RESULT)
+        .as_ref()
+        .map_or(0, |s| s.len() as u32)
 }
 
 /// Byte `i` of the JSON result document (0 past the end).
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn aura_output_byte(i: u32) -> u32 {
-    RESULT
-        .lock()
-        .ok()
-        .and_then(|s| {
-            s.as_ref()
-                .and_then(|s| s.as_bytes().get(i as usize).copied())
-        })
+    lock_recovering(&RESULT)
+        .as_ref()
+        .and_then(|s| s.as_bytes().get(i as usize).copied())
         .unwrap_or(0) as u32
 }

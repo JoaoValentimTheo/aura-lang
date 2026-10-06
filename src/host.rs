@@ -545,9 +545,17 @@ impl BrowserHost {
     }
 
     /// The bytes written to standard output so far.
+    ///
+    /// A poisoned lock cannot occur while the bytes are being mutated (the
+    /// mutation is a single `extend_from_slice` with no panic-capable step
+    /// that could tear the buffer), so poison is recovered rather than
+    /// treated as an empty buffer: accepted bytes are never silently lost.
     #[must_use]
     pub fn stdout(&self) -> Vec<u8> {
-        self.stdout.lock().map(|v| v.clone()).unwrap_or_default()
+        match self.stdout.lock() {
+            Ok(v) => v.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
     }
 
     /// The bytes written to standard output, as UTF-8 (lossily).
@@ -565,16 +573,23 @@ impl Default for BrowserHost {
 
 impl Host for BrowserHost {
     fn write_stdout(&mut self, bytes: &[u8]) -> HostResult<()> {
-        if let Ok(mut v) = self.stdout.lock() {
-            if let Some(limit) = self.max_stdout {
-                if v.len().saturating_add(bytes.len()) > limit {
-                    return Err(HostError::io(format!(
-                        "standard output exceeded the {limit} byte limit"
-                    )));
-                }
+        // Recover from a poisoned lock instead of silently dropping the write.
+        // `Vec<u8>` bytes are never left torn by a panic elsewhere (the only
+        // mutation here is a single infallible `extend_from_slice`), so the
+        // recovered bytes are authoritative. Returning `Ok` after dropping a
+        // write would corrupt the observable output contract.
+        let mut v = match self.stdout.lock() {
+            Ok(v) => v,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if let Some(limit) = self.max_stdout {
+            if v.len().saturating_add(bytes.len()) > limit {
+                return Err(HostError::io(format!(
+                    "standard output exceeded the {limit} byte limit"
+                )));
             }
-            v.extend_from_slice(bytes);
         }
+        v.extend_from_slice(bytes);
         Ok(())
     }
 

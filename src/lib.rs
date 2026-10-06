@@ -192,9 +192,14 @@ pub struct SharedBuf(pub Arc<Mutex<Vec<u8>>>);
 
 impl std::io::Write for SharedBuf {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        if let Ok(mut v) = self.0.lock() {
-            v.extend_from_slice(buf);
-        }
+        // Recover from a poisoned lock rather than silently dropping bytes;
+        // a `Vec<u8>` append is infallible, so no torn state is possible and
+        // claiming a dropped write would corrupt observable output.
+        let mut v = match self.0.lock() {
+            Ok(v) => v,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        v.extend_from_slice(buf);
         Ok(buf.len())
     }
 
@@ -216,10 +221,13 @@ pub fn run_source(src: &str, file: &str) -> error::Result<String> {
     compilation
         .execute_with(Some(Box::new(sink)), Vec::new(), None)
         .map_err(DiagnosticReport::into_diagnostic)?;
-    let text = buf
-        .lock()
-        .map(|v| String::from_utf8_lossy(&v).into_owned())
-        .unwrap_or_default();
+    // Recover a poisoned lock: the buffer's bytes are complete and
+    // authoritative (appends are infallible), and dropping them would make
+    // `run_source` report success while returning truncated output.
+    let text = match buf.lock() {
+        Ok(v) => String::from_utf8_lossy(&v).into_owned(),
+        Err(poisoned) => String::from_utf8_lossy(&poisoned.into_inner()).into_owned(),
+    };
     Ok(text)
 }
 
