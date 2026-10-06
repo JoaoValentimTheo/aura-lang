@@ -9,7 +9,7 @@ HIGH / MEDIUM / LOW.
 | TD-02 | MEDIUM | No CHANGELOG until now | Users cannot see changes per release | Not previously maintained | Docs/Release | now (created) |
 | TD-04 | MEDIUM | Cross-host/cross-toolchain reproducible builds not verified | Cannot prove artifact provenance bit-for-bit across environments | Single-host pure-Rust reproducibility **measured** (bit-identical); cross-host pending | Release Eng | v1 |
 | TD-03 | MEDIUM | No SBOM / build provenance / artifact signing | Release supply chain below best practice | **partially closed** — `scripts/sbom.sh` emits a CycloneDX SBOM attached to each release; the release manifest now records a dependency-lock SHA-256 (self-contained provenance). **signed SLSA provenance** now runs at publish (`actions/attest-build-provenance`, SHA-pinned, with `id-token`/`attestations` permissions) attesting every shipped artifact; it is validated at a real tagged release (`gh attestation verify`). Remaining: cryptographic release *signing* (GPG/cosign) of tags/assets | Release Eng | v1 |
-| TD-05 | MEDIUM | No committed performance benchmark suite | Regressions can go unnoticed | Ad-hoc measurement only | Performance | now (T4) |
+| TD-05 | MEDIUM | No committed performance benchmark suite | Regressions can go unnoticed | **stale — already fixed**: `tests/bench.rs` holds shape guards (always run) plus an `#[ignore]` timing report, with baselines and budgets in `docs/engineering/PERFORMANCE.md` | Performance | closed (stale) |
 | TD-06 | MEDIUM | No versioned backward-compatibility fixtures / upgrade tests | Breaking changes could slip silently | Pre-1.0 churn tolerated | Backward Compat | **closed** — `tests/compat.rs` pins 0.2.0 and the 0.2.1 additions with documented intentional breaks; `playground/tests/node/crossrelease.test.mjs` runs every *frozen* runtime (0.0.2, 0.0.2-dev.30, 0.2.0, 0.2.0-dev.1/2, 0.2.1-dev.4) against its language line's fixtures, proving released behavior is unchanged |
 | TD-07 | LOW | `E5003` (`FEATURE_UNAVAILABLE`) defined but unused | Dead code constant | Documented in spec | Static Semantics | — |
 | TD-08 | LOW | `s` transient file written by a property test at repo root | Untracked artifact noise | Pre-existing test hygiene | QA | **closed** — `run_registry_hermetic` runs the generated `write_file("s", "s")` against `LimitedHost::silent()`, so the capability boundary reports `E5002` and the real filesystem is never touched; root `s` is absent. |
@@ -21,6 +21,28 @@ HIGH / MEDIUM / LOW.
 | TD-15 | LOW | Some `E1015` depth diagnostics carry no `file:line:col` | Red-team F5: deep `module`/loop nesting reported `E1015` without a location | **closed** — added `Expr::span()`/`Stmt::span()` and attributed the expression, statement, and module depth diagnostics to the offending node (`tests/boundaries.rs::depth_diagnostics_carry_a_source_location`) | Diagnostics | closed |
 | TD-13 | MEDIUM | REPL submissions are O(N²) in session size | Each submission calls `Checker::with_declarations(&decls)` (src/repl.rs:306, 401), which loops over every prior `GlobalDecl`; N submissions cost Σk = O(N²) registration work. **Re-profiled 2026-10-01 (release):** 12/19/41/115/388/1454 ms for 100/200/400/800/1600/3200 submissions (~3.5× per doubling — clean quadratic). | **Root cause + equivalence obstacle (2026-10-01):** the full rebuild is also the rollback mechanism, and it is *not* equivalent to "keep the checker and mutate it": `check_stmt` on `let x = 5` records the *inferred* type in `value_types[0]`, whereas `with_declarations` only populates `value_types` for a binding whose persisted `ty` is `Some` (an annotated `let`); an unannotated one is left absent on rebuild. A monotonic cache would therefore type later uses more precisely than the rebuild does — an observable divergence, not just a metadata difference. A safe fix must (a) replicate `with_declarations`' exact per-variant registration including the `value_types` asymmetry, (b) restore the pre-statement state on any failed/rolled-back submission, and (c) be proven equivalent by a differential oracle over randomized submission sequences. Until then the O(N²) is confined to the interactive path (thousands of programmatic submissions) with no correctness impact, which the v1 Performance gate accepts as explicitly justified. | Static Semantics / DX | v1.1 |
 
+
+## Keystone release-candidate debt classification (2026-10-06)
+
+Every open item was classified for the Aura 0.3 Keystone closure:
+
+| Item | Classification |
+|---|---|
+| TD-21 (optionality permissiveness) | **REAL DEFECT IN THE KEYSTONE CONTRACT — FIXED** (`7959487`); deleted from this register |
+| TD-20 (ungated feature tests) | **REAL DEFECT IN THE KEYSTONE VALIDATION SURFACE — FIXED** (`6bec6e3`); closed |
+| TD-08 (`s` root artifact) | **STALE — ALREADY FIXED** by the hermetic host; closed |
+| TD-05 (no benchmark suite) | **STALE — ALREADY FIXED** (`tests/bench.rs`, `PERFORMANCE.md`); closed |
+| TD-15 (depth diagnostics without location) | closed previously (evidence in the row) |
+| TD-07 (`E5003` unused) | **ARCHITECTURAL LIMITATION, BY DESIGN** — the spec states `E5003` "is not part of the normative surface"; a feature-gated builtin absent from a reduced build is `E2003`, which is the same code an unknown builtin gets, so the diagnostic is not less precise in any way a program can observe |
+| TD-09 (internal boolean lowering names) | **FALSE POSITIVE** — internal representation only; no user-visible surface |
+| TD-10 (dev runtime identities) | **ARCHITECTURAL LIMITATION** — the manifest is authoritative; discoverability only |
+| TD-11 (CPython init policy) | **LEGITIMATE FUTURE FEATURE** (v1 scope); unchanged by Keystone, which explicitly kept Python behind the provider boundary |
+| TD-13 (REPL O(N²)) | **LEGITIMATE FUTURE FEATURE** — no correctness impact; the row records the equivalence obstacle and the v1.1 plan |
+| TD-14, TD-06, TD-12, TD-18 | closed previously (evidence in the rows) |
+| TD-19 (recursive engine) | closed in source; frozen-artifact and B-1R8 residuals are **HUMAN-GATED**, not defects in current Keystone behavior |
+| TD-01/TD-02/TD-03/TD-04/TD-17 (release/supply-chain) | **LEGITIMATE FUTURE RELEASE ENGINEERING** — outside the implemented language/runtime scope; TD-02 is fixed (CHANGELOG exists) |
+
+No item classified "REAL DEFECT IN THE KEYSTONE CONTRACT" remains open.
 
 ## Rules
 
