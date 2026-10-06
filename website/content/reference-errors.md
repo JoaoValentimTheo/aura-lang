@@ -51,7 +51,9 @@ Every rejection carries a stable code. Codes are grouped by phase:
 |-------|---------|-----------------|
 | E3001 | Type mismatch | `let x: int = "a"`; `{int: string}`; bitwise/shift on a non-integer (`1.0 & 2`); a format type on an incompatible value (`f"{'s':d}"`) |
 | E3002 | Unknown type / constructor | `-> Widget`, `Ghost { }` |
+| E3003 | Possible `none`: member/element access without narrowing | `let u: User \| none = …` then `u.name` without an `if u != none` guard |
 | E3005 | Return type mismatch | `-> int` returning a string |
+| E3006 | A `-> never` function can complete normally | `fn f() -> never { print(1) }`; `-> never` with a `return` |
 
 ## Runtime (`E4xxx`)
 

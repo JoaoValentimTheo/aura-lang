@@ -1615,6 +1615,10 @@ impl Parser {
                         "float" => TypeExpr::Float,
                         "bool" => TypeExpr::Bool,
                         "string" => TypeExpr::String,
+                        // `never` is the bottom type (§4.3). It is an ordinary
+                        // identifier elsewhere (`let never = 1`) and only takes
+                        // on its type meaning in a type position.
+                        "never" => TypeExpr::Never,
                         _ => TypeExpr::Named(name),
                     }
                 }

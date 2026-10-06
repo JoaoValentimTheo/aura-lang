@@ -918,14 +918,36 @@ float>` is accepted; `Map<[int], int>` and `Map<float, int>` are rejected
 (`E3001`) at the instantiation. `Unknown` is permissive: a key the checker
 cannot type imposes no constraint (§2.3).
 
-**Normative rule.** A union type never contains `Unknown` as a member: because
-`none` has no static type, any union containing `none` (or an unresolved name
-that resolves to `Unknown`, such as `none`) collapses to `Unknown` at
-construction. Thus `T | none` and `int | float | none` are both `Unknown` to
-the checker, which is the historical, permissive behavior of `T | none`
-generalized. The members of a stored `Union` are always concrete.
+**Normative rule.** A union type never contains `Unknown` as a member: an
+unresolved name that resolves to `Unknown` collapses the union to `Unknown` at
+construction. The members of a stored `Union` are always concrete.
 
-**Normative rule.** There is no static `none` type; `none` infers `Unknown`.
+**Normative rule (`none` and optionality).** `none` has the type `none`, and
+appears as a member of an optional union. The semantics of `T | none` remain
+the historical permissive ones for *assignment*: a union containing `none`
+accepts a value of any type, and `none` is accepted wherever a value may be
+expected (so `let x: int = none` is accepted). Retention of the `none` member
+makes two things precise that were previously only runtime behavior:
+
+- **Access.** A member access, method call, or indexing on a value whose type
+  contains `none` is rejected statically with `E3003` unless flow narrowing
+  has removed the `none` member. `none` itself has no members, so an access on
+  a definite `none` is the same code.
+- **Narrowing.** A `none` check narrows the guarded binding for the extent of
+  the guard: `if u != none { … }` (and `if none != u`) narrows `u` inside the
+  then-branch; `if u == none { … } else { … }` narrows inside the
+  else-branch. A guard whose branch diverges narrows the statements that
+  follow the `if`: `if u == none { return }` proves `u` is not `none` below.
+  The narrowed type is the receiver with `none` removed (`User | none` becomes
+  `User`). An assignment to the binding discards the narrowing.
+
+**Normative rule (`never`).** `never` is the bottom type: no value can result
+from a `never` expression. A `never` value is assignable wherever any type is
+expected, and a union absorbs it (`int | never` is `int`). A `return` or
+`throw` diverges, so a branch that ends in one has type `never`. A call to a
+function declared `-> never` diverges. A function declared `-> never` whose
+body can complete normally is `E3006` (a `return <value>` in such a body is
+`E3005`, the more specific mismatch).
 
 **Normative rule.** A union is normalized on construction: nested unions are
 flattened, duplicate members removed, and members put in a canonical order
@@ -933,7 +955,8 @@ flattened, duplicate members removed, and members put in a canonical order
 Two unions that differ only in member order or duplicates are the *same* type.
 
 *Evidence:* `Ty` (`src/types.rs`); `Ty::union`; `Ty::from_expr`;
-`Checker::infer`.
+`Ty::contains_none`/`Ty::without_none`; `Checker::infer`;
+`Checker::none_guard`/`Checker::block_diverges`; `tests/keystone_types.rs`.
 
 ### 5.3 Type properties
 

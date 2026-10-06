@@ -58,6 +58,24 @@ fn return_assignable(expected: &Ty, actual: &Ty) -> bool {
     if expected == actual {
         return true;
     }
+    // `never` is the bottom type (§4.3): a `never` value satisfies every
+    // declared return type, and only `never` satisfies `-> never`.
+    if matches!(expected, Ty::Never) {
+        return matches!(actual, Ty::Never);
+    }
+    if matches!(actual, Ty::Never) {
+        return true;
+    }
+    // `none` mirrors `compatible_with`'s documented permissiveness (§4.3).
+    if matches!(actual, Ty::None) {
+        return true;
+    }
+    if matches!(expected, Ty::None) {
+        return matches!(actual, Ty::None);
+    }
+    if expected.contains_none() || actual.contains_none() {
+        return true;
+    }
     match (expected, actual) {
         (Ty::Union(members), _) => members.iter().any(|m| return_assignable(m, actual)),
         (_, Ty::Union(members)) => members.iter().all(|m| return_assignable(expected, m)),
@@ -163,6 +181,11 @@ struct Scope {
     vars: HashMap<String, bool>,
     /// names declared in this exact scope, for redeclaration checks
     declares: HashMap<String, Span>,
+    /// Names whose `value_types` entry in this scope is a flow-narrowing
+    /// override rather than a declaration type. An assignment to such a name
+    /// invalidates the override (the binding may hold `none` again), so the
+    /// precise `E3003` check comes back.
+    narrowed: std::collections::HashSet<String>,
 }
 
 /// A declaration carried from an earlier session into a new checker.
@@ -418,6 +441,12 @@ pub struct Checker {
     variant_payloads: HashMap<String, Vec<Ty>>,
     /// The declared return type of the function currently being checked.
     return_type: Option<Ty>,
+    /// Pending flow narrowing produced by a diverging `if` (Keystone
+    /// optionality): a `name -> narrowed type` override that the enclosing
+    /// block applies to the statements after the `if`, because the `then`
+    /// branch cannot fall through. `block` consumes it immediately after the
+    /// statement that produced it.
+    pending_narrowing: Option<(String, Ty)>,
     /// The declared type of annotated bindings in scope, innermost last.
     value_types: Vec<HashMap<String, Ty>>,
     /// `_`-prefixed parameters of the function currently being checked, with
@@ -510,6 +539,7 @@ impl Checker {
             variants: HashMap::new(),
             variant_payloads: HashMap::new(),
             return_type: None,
+            pending_narrowing: None,
             value_types: vec![HashMap::new()],
             underscore_params: Vec::new(),
             used_names: HashMap::new(),
@@ -1713,6 +1743,220 @@ impl Checker {
         self.value_types.pop();
     }
 
+    /// Install a flow-narrowing override for `name` in the innermost scope:
+    /// after `if u != none { ... }`, `u` is known to be `T` (no `none`) inside
+    /// the block. The override is dropped by an assignment to `name`.
+    fn narrow(&mut self, name: String, ty: Ty) {
+        if let Some(map) = self.value_types.last_mut() {
+            map.insert(name.clone(), ty);
+        }
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.narrowed.insert(name);
+        }
+    }
+
+    /// The type `name` would have with `none` removed, if the binding's
+    /// current type is an optional union and the name is a simple binding.
+    fn narrowed_type_of(&self, name: &str) -> Option<Ty> {
+        let ty = self.lookup_type(name)?;
+        (ty.contains_none() && !matches!(ty, Ty::Unknown)).then(|| ty.without_none())
+    }
+
+    /// Recognize an optionality guard of the form `u != none` / `none != u`
+    /// (or the negated `u == none` / `none == u`). Returns the guarded name and
+    /// whether the *then* branch sees the non-`none` type.
+    fn none_guard(cond: &Expr) -> Option<(String, bool)> {
+        let Expr::Binary(op, l, r, _) = cond else {
+            return None;
+        };
+        let (name, is_none_rhs) = match (l.as_ref(), r.as_ref()) {
+            (Expr::Name(n, _), Expr::Lit(Lit::None, _)) => (n, true),
+            (Expr::Lit(Lit::None, _), Expr::Name(n, _)) => (n, false),
+            _ => return None,
+        };
+        // The returned flag says whether the *then* branch sees the
+        // non-`none` type. `none` on the left is the same guard as on the
+        // right (equality is symmetric, so the flag is unaffected).
+        let _ = is_none_rhs;
+        match op {
+            BinOp::Ne => Some((name.clone(), true)),
+            BinOp::Eq => Some((name.clone(), false)),
+            _ => None,
+        }
+    }
+
+    /// The precise diagnostic for an access on a value whose type contains
+    /// `none` (Keystone optionality): `E3003`, naming the guard that would
+    /// narrow it.
+    fn possible_none_diag(&self, ty: &Ty, member: &str, verb: &str, span: Span) -> Diag {
+        let message = if matches!(ty, Ty::None) {
+            // A definite `none`: there is no value to access at all, so the
+            // narrowing advice would be misleading.
+            format!("`none` has no members, so `{member}` cannot be {verb} here")
+        } else {
+            let narrowed = ty.without_none();
+            format!(
+                "this `{}` may be `none`, so `{member}` cannot be {verb} here; narrow it with a `none` check first (for example `if x != none {{ … }}`) — inside the guard the type is `{}`",
+                ty.name(),
+                narrowed.name()
+            )
+        };
+        Diag::new(codes::POSSIBLE_NONE, message, span)
+    }
+
+    /// Apply a statement-position `if`'s optionality narrowing: inside the
+    /// guarded branch, and in the code that follows when one branch diverges.
+    /// A non-guard `if` installs nothing.
+    fn apply_if_narrowing(&mut self, c: &Expr, then: &[Stmt], els: Option<&Expr>) {
+        let Some((name, then_narrows)) = Checker::none_guard(c) else {
+            return;
+        };
+        if self.narrowed_type_of(&name).is_none() {
+            return;
+        }
+        let then_diverges = self.block_diverges(then, true);
+        let else_diverges = els.is_some_and(|e| self.expr_diverges(e, true));
+        // When the guarded branch is the diverging one, the other branch's
+        // knowledge survives into the following statements.
+        let survives = if then_narrows {
+            // `if u != none { return }` — after it, `u` may still be none, so
+            // nothing is proven; only `if u != none { ... }` with a diverging
+            // *else* would prove the then-branch's fact (handled below).
+            false
+        } else {
+            // `if u == none { return }` — after it, `u` is known not to be
+            // none, provided the then-branch actually diverges.
+            then_diverges
+        };
+        let survives =
+            survives || (then_narrows && else_diverges) || (!then_narrows && then_diverges);
+        if survives {
+            if let Some(ty) = self.narrowed_type_of(&name) {
+                self.pending_narrowing = Some((name, ty));
+            }
+        }
+    }
+
+    /// Whether a statement is guaranteed to leave the current flow: a
+    /// `return` or `throw`, an infinite loop, a call to a `-> never`
+    /// function, or a trailing `if`/`match`/block whose every reachable path
+    /// does. Conservative by construction: an unrecognized shape reports
+    /// `false`, so a narrowing is never installed on a branch that could fall
+    /// through.
+    fn stmt_diverges(&self, s: &Stmt, return_diverges: bool) -> bool {
+        match s {
+            // For ordinary flow (narrowing), any `return` leaves the current
+            // flow. For the `-> never` contract, a `return` is precisely the
+            // normal completion the declaration forbids, so it does not
+            // count (a `return <value>` is already `E3005` at its site).
+            Stmt::Return(..) => return_diverges,
+            Stmt::Throw(..) => true,
+            Stmt::Expr(e, _) => self.expr_diverges(e, return_diverges),
+            // An infinite loop that has no reachable `break` cannot complete:
+            // `loop { … }` with no `break` diverges; `while true { … }` with
+            // no `break` diverges.
+            Stmt::Loop(body, _) => !Checker::contains_break(body),
+            Stmt::While(c, body, _) => {
+                matches!(c, Expr::Lit(Lit::Bool(true), _)) && !Checker::contains_break(body)
+            }
+            // A `try` leaves the flow only when its catch body does and its
+            // `finally` (when present) does as well.
+            Stmt::Try {
+                catch_body,
+                finally,
+                ..
+            } => {
+                self.block_diverges(catch_body, return_diverges)
+                    && finally
+                        .as_ref()
+                        .is_none_or(|f| self.block_diverges(f, return_diverges))
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether `body` contains a `break` that escapes *this* loop (a `break`
+    /// inside a nested loop belongs to that loop and is not counted).
+    fn contains_break(body: &[Stmt]) -> bool {
+        fn in_stmts(body: &[Stmt]) -> bool {
+            body.iter().any(|s| match s {
+                Stmt::Break(_) => true,
+                Stmt::While(_, b, _) | Stmt::For(_, _, b, _) => in_stmts(b),
+                // A `loop`'s `break` belongs to that inner loop.
+                Stmt::Loop(b, _) => in_stmts(b),
+                Stmt::Try {
+                    body,
+                    catch_body,
+                    finally,
+                    ..
+                } => {
+                    in_stmts(body)
+                        || in_stmts(catch_body)
+                        || finally.as_ref().is_some_and(|f| in_stmts(f))
+                }
+                Stmt::Expr(e, _) => in_expr(e),
+                _ => false,
+            })
+        }
+        fn in_expr(e: &Expr) -> bool {
+            match e {
+                Expr::Block(b, _) => in_stmts(b),
+                Expr::If(_, then, els, _) => {
+                    in_stmts(then) || els.as_ref().is_some_and(|e| in_expr(e))
+                }
+                Expr::Match(_, arms, _) => arms.iter().any(|a| in_stmts(&a.body)),
+                _ => false,
+            }
+        }
+        in_stmts(body)
+    }
+
+    /// Whether an expression is guaranteed to leave the current flow.
+    fn expr_diverges(&self, e: &Expr, return_diverges: bool) -> bool {
+        match e {
+            // An `if` diverges when both branches exist and diverge.
+            Expr::If(_, then, els, _) => {
+                els.as_ref()
+                    .is_some_and(|e| self.expr_diverges(e, return_diverges))
+                    && self.block_diverges(then, return_diverges)
+            }
+            Expr::Block(b, _) => self.block_diverges(b, return_diverges),
+            // A `match` diverges when it has arms and every arm does.
+            Expr::Match(_, arms, _) => {
+                !arms.is_empty()
+                    && arms
+                        .iter()
+                        .all(|a| self.block_diverges(&a.body, return_diverges))
+            }
+            // A call to a function declared `-> never` never returns: it must
+            // diverge (throw, loop forever, or propagate another `never`).
+            // Overloads are conservatively required to *all* return `never`,
+            // so an unresolved overload never proves divergence.
+            Expr::Call(f, _, _, _) => match f.as_ref() {
+                Expr::Name(n, _) => {
+                    let mut any = false;
+                    if let Some(set) = self.functions.get(n) {
+                        for sig in set.iter().filter(|s| self.fn_visible(s)) {
+                            if !matches!(sig.ret, Some(Ty::Never)) {
+                                return false;
+                            }
+                            any = true;
+                        }
+                    }
+                    any
+                }
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
+    /// Whether a statement list is guaranteed to leave the current flow.
+    fn block_diverges(&self, body: &[Stmt], return_diverges: bool) -> bool {
+        body.last()
+            .is_some_and(|s| self.stmt_diverges(s, return_diverges))
+    }
+
     fn declare(&mut self, name: &str, mutable: bool, span: Span) -> Result<()> {
         self.declare_inner(name, mutable, span, false)
     }
@@ -2299,6 +2543,26 @@ impl Checker {
                     }
                 }
                 self.block(body)?;
+                // Keystone `never`: a function declared `-> never` promises no
+                // value can ever be returned, so a body that can complete
+                // normally contradicts the declaration. `throw`, an infinite
+                // loop, and a call to another `-> never` function are the
+                // diverging shapes; anything else falls through and is
+                // `E3006`.
+                if matches!(self.return_type, Some(Ty::Never)) && !self.block_diverges(body, false)
+                {
+                    self.return_type = saved_return;
+                    self.underscore_params = saved_underscore;
+                    self.used_names = saved_used;
+                    self.current_module = saved_module;
+                    self.pop();
+                    self.pop_type_params();
+                    return Err(Diag::new(
+                        codes::NEVER_RETURNS,
+                        "this function returns `never`, so its body must not complete normally; end it with `throw`, an infinite `loop`, or a call to another `-> never` function",
+                        body.last().map_or(Span::default(), Stmt::span),
+                    ));
+                }
                 // Contract: a parameter whose name starts with `_` must be
                 // unused. Using it is E2009.
                 for (pname, _pspan) in std::mem::take(&mut self.underscore_params) {
@@ -2485,6 +2749,23 @@ impl Checker {
         }
         let r = self.block(body);
         r?;
+        // Keystone `never`: a function declared `-> never` promises no value
+        // can ever be returned, so a body that can complete normally
+        // contradicts the declaration. `throw`, an infinite loop, and a call
+        // to another `-> never` function are the diverging shapes; anything
+        // else falls through and is `E3006`.
+        if matches!(self.return_type, Some(Ty::Never)) && !self.block_diverges(body, false) {
+            self.return_type = saved_return;
+            self.underscore_params = saved_underscore;
+            self.used_names = saved_used;
+            self.current_module = saved_module;
+            self.pop();
+            return Err(Diag::new(
+                codes::NEVER_RETURNS,
+                "this function returns `never`, so its body must not complete normally; end it with `throw`, an infinite `loop`, or a call to another `-> never` function",
+                body.last().map_or(Span::default(), Stmt::span),
+            ));
+        }
         // The receiver is a parameter; using `self` is expected, so it is
         // never treated as an unused `_` parameter. The remaining `_`-prefixed
         // parameters keep the ordinary contract.
@@ -2566,7 +2847,7 @@ impl Checker {
                 Lit::Float(_) => Ty::Float,
                 Lit::Str(_) => Ty::String,
                 Lit::Bool(_) => Ty::Bool,
-                Lit::None => Ty::Unknown,
+                Lit::None => Ty::None,
             },
             Expr::FStr(..) => Ty::String,
             // A parenthesized comma-list is list sugar (§21): it is
@@ -4170,9 +4451,24 @@ impl Checker {
     }
 
     fn block(&mut self, body: &[Stmt]) -> Result<()> {
+        self.block_with(body, None)
+    }
+
+    /// Check a block, optionally installing a flow-narrowing override for one
+    /// binding before its statements run (Keystone optionality). A diverging
+    /// `if` inside the block narrows later statements of the same block (for
+    /// example `if u == none { return }` proves `u` is not none below); the
+    /// override lives in this block's scope, so it disappears at the end.
+    fn block_with(&mut self, body: &[Stmt], narrow: Option<(String, Ty)>) -> Result<()> {
         self.push();
+        if let Some((name, ty)) = narrow {
+            self.narrow(name, ty);
+        }
         for s in body {
             self.stmt(s)?;
+            if let Some((name, ty)) = self.pending_narrowing.take() {
+                self.narrow(name, ty);
+            }
         }
         self.pop();
         Ok(())
@@ -4412,7 +4708,17 @@ impl Checker {
                     }
                 }
             }
-            Stmt::Expr(e, _) => self.expr(e)?,
+            Stmt::Expr(e, _) => {
+                self.expr(e)?;
+                // Statement-position `if` (Keystone optionality): a guard on a
+                // binding narrows it inside the guarded branch, and when one
+                // branch diverges the narrowing applies to the code that
+                // follows the `if` (for example `if u == none { return }`
+                // proves `u` is not none below).
+                if let Expr::If(c, then, els, _) = e {
+                    self.apply_if_narrowing(c, then, els.as_deref());
+                }
+            }
             Stmt::Return(v, span) => {
                 if let Some(v) = v {
                     self.expr(v)?;
@@ -4668,6 +4974,11 @@ impl Checker {
             Expr::Method(r, name, args, ty_args, span) => {
                 self.expr(r)?;
                 let recv = self.infer(r);
+                // Keystone optionality: a method call on a possible-`none`
+                // receiver is rejected precisely (`E3003`) unless narrowed.
+                if matches!(recv, Ty::None | Ty::Union(_)) && recv.contains_none() {
+                    return Err(self.possible_none_diag(&recv, name, "called", *span));
+                }
                 // A statically known struct resolves against its nominal method
                 // table only (§17.6); there is no fallback to the built-in
                 // registry or to another struct.
@@ -4807,10 +5118,18 @@ impl Checker {
             }
             Expr::Field(r, name, span) => {
                 self.expr(r)?;
+                // Keystone optionality: a member access on a value that may be
+                // `none` is rejected precisely (`E3003`) unless a guard has
+                // narrowed it. This is the precise replacement for the
+                // historical runtime-only failure on `none`.
+                let recv_ty = self.infer(r);
+                if recv_ty.contains_none() {
+                    return Err(self.possible_none_diag(&recv_ty, name, "accessed", *span));
+                }
                 // On a statically known struct, `r.name` is always a field
                 // read; a method must be invoked with parentheses (§17.6).
                 // A missing field stays `Unknown` (§17.5), unchanged.
-                if let Some(sname) = self.struct_name_of(&self.infer(r)) {
+                if let Some(sname) = self.struct_name_of(&recv_ty) {
                     if self.method_set(&sname, name).is_some() {
                         return Err(Diag::new(
                             codes::UNDEFINED,
@@ -4876,6 +5195,19 @@ impl Checker {
             Expr::Index(b, i, span) => {
                 self.expr(b)?;
                 self.expr(i)?;
+                // Keystone optionality: indexing a possible-`none` value is
+                // rejected precisely (`E3003`) unless narrowed.
+                let base_ty = self.infer(b);
+                if base_ty.contains_none() {
+                    return Err(Diag::new(
+                        codes::POSSIBLE_NONE,
+                        format!(
+                            "this `{}` may be `none`; check it against `none` before indexing it",
+                            base_ty.name()
+                        ),
+                        *span,
+                    ));
+                }
                 // On a statically known map, the index must be compatible with
                 // the map's key type. A list/string index stays the runtime's
                 // decision, and an `Unknown` map imposes no constraint.
@@ -5048,9 +5380,31 @@ impl Checker {
             }
             Expr::If(c, then, els, _) => {
                 self.expr(c)?;
-                self.block(then)?;
+                // Inside a guarded branch the binding is narrowed, so a
+                // possible-none access is provably safe there. The narrowing
+                // is scoped to the branch.
+                let then_narrow = Checker::none_guard(c).and_then(|(name, then_narrows)| {
+                    if then_narrows {
+                        self.narrowed_type_of(&name).map(|ty| (name.clone(), ty))
+                    } else {
+                        None
+                    }
+                });
+                self.block_with(then, then_narrow)?;
                 if let Some(e) = els {
-                    self.expr(e)?;
+                    let else_narrow = Checker::none_guard(c).and_then(|(name, then_narrows)| {
+                        if !then_narrows {
+                            self.narrowed_type_of(&name).map(|ty| (name.clone(), ty))
+                        } else {
+                            None
+                        }
+                    });
+                    match (else_narrow, e.as_ref()) {
+                        (Some((name, ty)), Expr::Block(b, _)) => {
+                            self.block_with(b, Some((name, ty)))?;
+                        }
+                        (_, other) => self.expr(other)?,
+                    }
                 }
             }
             Expr::Match(subject, arms, _) => {

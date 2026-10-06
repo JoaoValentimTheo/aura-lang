@@ -35,11 +35,11 @@ r3b42-value/later_key_error		runtime	4007	division by zero	<r3b42>	9	10	1	10	-	-
 r3b42-value/later_value_error		runtime	4007	division by zero	<r3b42>	12	13	1	13	-	-
 r3b42-value/key_before_value		runtime	3001	expected a number, found string	<r3b42>	5	6	1	6	-	-
 r3b42-value/invalid_float_key_check		compile	3001	type `float` cannot be used as a map key; map keys must be `string`, `int`, or `bool`	<r3b42>	0	1	1	1	-	-
-r3b42-value/invalid_none_key_check		runtime	3001	type `none` cannot be used as a map key; map keys must be `string`, `int`, or `bool`	<r3b42>	1	5	1	2	-	-
+r3b42-value/invalid_none_key_check		compile	3001	type `none` cannot be used as a map key; map keys must be `string`, `int`, or `bool`	<r3b42>	0	1	1	1	-	-
 r3b42-value/invalid_list_key_check		compile	3001	type `[int]` cannot be used as a map key; map keys must be `string`, `int`, or `bool`	<r3b42>	0	1	1	1	-	-
 r3b42-value/invalid_range_key_check		compile	3001	type `range` cannot be used as a map key; map keys must be `string`, `int`, or `bool`	<r3b42>	0	1	1	1	-	-
-r3b42-value/invalid_runtime_none_key		runtime	3001	type `none` cannot be used as a map key; map keys must be `string`, `int`, or `bool`	<r3b42>	17	18	2	3	-	-
-r3b42-value/invalid_key_suppresses_value		runtime	3001	type `none` cannot be used as a map key; map keys must be `string`, `int`, or `bool`	<r3b42>	17	18	2	3	-	-
+r3b42-value/invalid_runtime_none_key		compile	3001	type `none` cannot be used as a map key; map keys must be `string`, `int`, or `bool`	<r3b42>	16	17	2	2	-	-
+r3b42-value/invalid_key_suppresses_value		compile	3001	type `none` cannot be used as a map key; map keys must be `string`, `int`, or `bool`	<r3b42>	16	17	2	2	-	-
 r3b42-value/key_return_aborts		runtime	4030	`return` cannot be used here	<r3b42>	0	0	1	1	-	-
 r3b42-value/key_throw_aborts		runtime	4026	uncaught value: 5	<r3b42>	0	0	1	1	-	-
 r3b42-value/value_return_aborts		runtime	4030	`return` cannot be used here	<r3b42>	0	0	1	1	-	-
@@ -57,6 +57,6 @@ r3b42-program/main_map_empty		ok	0		-	0	0	0	0	-	-
 r3b42-program/main_map_error		runtime	4007	division by zero	r3b42.aura	26	27	1	27	-	-
 r3b42-program/main_map_dup		ok	0		-	0	0	0	0	-	-
 r3b42-program/main_map_signal		ok	0		-	0	0	0	0	-	-
-r3b42-program/main_map_invalid_key		runtime	3001	type `none` cannot be used as a map key; map keys must be `string`, `int`, or `bool`	r3b42.aura	35	36	2	11	-	-
+r3b42-program/main_map_invalid_key		compile	3001	type `none` cannot be used as a map key; map keys must be `string`, `int`, or `bool`	r3b42.aura	34	35	2	10	-	-
 r3b42-program/main_map_element		ok	0		-	0	0	0	0	-	-
 r3b42-program/main_map_range		ok	0		-	0	0	0	0	-	-

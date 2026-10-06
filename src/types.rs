@@ -36,6 +36,17 @@ pub enum Ty {
     Named(String),
     /// An enum value, by enum type name.
     Enum(String),
+    /// `never` — the bottom type. No value can result from a `never`
+    /// expression: a `return`, `throw`, `break`, or `continue` path, or a
+    /// function declared `-> never` that does not return normally. `never`
+    /// is assignable to every type and compatible with every type.
+    Never,
+    /// `none` — the absence value's type. `none` appears as a member of an
+    /// optional union (`T | none`); a union containing it stays permissive
+    /// for assignment (the historical `T | none` behavior), but the member
+    /// is retained so flow narrowing can remove it inside a `!= none` guard
+    /// and so an unguarded member access can be diagnosed precisely.
+    None,
     /// `T1 | T2 | ...` — a union of two or more distinct members. Stored in a
     /// canonical, flattened, deduplicated form ([`Ty::union`]); a union with
     /// `none` (or any `Unknown` member) collapses to [`Ty::Unknown`], which is
@@ -76,6 +87,8 @@ impl Ty {
                 n,
                 args.iter().map(Ty::name).collect::<Vec<_>>().join(", ")
             ),
+            Ty::Never => "never".into(),
+            Ty::None => "none".into(),
             Ty::Unknown => "unknown".into(),
         }
     }
@@ -89,6 +102,34 @@ impl Ty {
             Ty::Named(n) | Ty::Enum(n) => Some(n.clone()),
             Ty::App(n, _) => Some(n.clone()),
             _ => None,
+        }
+    }
+
+    /// Whether this type is `none` or a union that contains `none`.
+    #[must_use]
+    pub fn contains_none(&self) -> bool {
+        match self {
+            Ty::None => true,
+            Ty::Union(ms) => ms.iter().any(Ty::contains_none),
+            _ => false,
+        }
+    }
+
+    /// This type with the `none` member removed: the narrowed type inside a
+    /// `!= none` guard. Removing it from a single-member union is the member
+    /// itself; removing the last member yields `never` (the branch cannot be
+    /// reached). A type without `none` is returned unchanged.
+    #[must_use]
+    pub fn without_none(&self) -> Ty {
+        match self {
+            Ty::None => Ty::Never,
+            Ty::Union(ms) => Ty::union(
+                ms.iter()
+                    .filter(|m| !matches!(m, Ty::None))
+                    .cloned()
+                    .collect(),
+            ),
+            other => other.clone(),
         }
     }
 
@@ -162,11 +203,19 @@ impl Ty {
         for m in members {
             flatten_into(m, &mut flat);
         }
-        // `none`/`Unknown` makes the union permissive, exactly as `T | none`
-        // has always been. Collapse immediately so the representation never
-        // carries `Unknown` as a member.
+        // An unresolved member (`Unknown`) still makes the union permissive,
+        // exactly as it has always been: collapse immediately so the
+        // representation never carries `Unknown` as a member. `none` is
+        // different: it is a known member and is retained for narrowing.
         if flat.iter().any(|m| matches!(m, Ty::Unknown)) {
             return Ty::Unknown;
+        }
+        // `never` is the bottom type and is absorbed by any union (§4.3):
+        // there is no value of `int | never` that is not an `int`. A union
+        // of only `never` members is `never`.
+        flat.retain(|m| !matches!(m, Ty::Never));
+        if flat.is_empty() {
+            return Ty::Never;
         }
         // Deduplicate, then sort into a canonical, human-friendly order:
         // primitives first in their declaration order, then compounds and
@@ -195,7 +244,9 @@ impl Ty {
             Ty::Union(_) => 7,
             Ty::Param(_) => 8,
             Ty::App(_, _) => 9,
-            Ty::Unknown => 10,
+            Ty::Never => 10,
+            Ty::None => 11,
+            Ty::Unknown => 12,
         }
     }
 
@@ -218,6 +269,29 @@ impl Ty {
         // before comparison; this keeps an unresolved parameter from making a
         // sound `false` decision.
         if matches!(self, Ty::Param(_)) || matches!(other, Ty::Param(_)) {
+            return true;
+        }
+        // `none` rules (§4.3, §5.2). The documented historical behavior is
+        // permissive: `none` is accepted wherever a value is expected, and a
+        // union that contains `none` accepts anything. Retention of the
+        // `none` member is what makes flow narrowing and precise access
+        // diagnostics possible; it does not remove the permissiveness.
+        if matches!(other, Ty::None) {
+            return true;
+        }
+        if matches!(self, Ty::None) {
+            return matches!(other, Ty::None | Ty::Never);
+        }
+        if self.contains_none() || other.contains_none() {
+            return true;
+        }
+        // `never` is the bottom type (§4.3): a `never` value is acceptable
+        // wherever any type is expected, and only a `never` (or an `Unknown`)
+        // value satisfies a `never` expectation.
+        if matches!(self, Ty::Never) {
+            return matches!(other, Ty::Never | Ty::Unknown);
+        }
+        if matches!(other, Ty::Never) {
             return true;
         }
         match (self, other) {
@@ -265,6 +339,8 @@ impl Ty {
     pub fn is_key_capable(&self) -> bool {
         match self {
             Ty::Int | Ty::Bool | Ty::String | Ty::Unknown | Ty::Param(_) => true,
+            // `never` is vacuously key-capable: no value can exist to key a map.
+            Ty::Never => true,
             Ty::Union(members) => members.iter().all(Ty::is_key_capable),
             _ => false,
         }
@@ -296,7 +372,7 @@ impl Ty {
             Ty::List(_) => TypeClass::List,
             Ty::Map(_, _) => TypeClass::Map,
             Ty::Named(_) | Ty::Enum(_) | Ty::Union(_) | Ty::Unknown => return None,
-            Ty::Param(_) | Ty::App(_, _) => return None,
+            Ty::Param(_) | Ty::App(_, _) | Ty::Never | Ty::None => return None,
         })
     }
 
@@ -310,10 +386,10 @@ impl Ty {
     pub fn orderable_with(&self, other: &Ty) -> Option<bool> {
         if matches!(
             self,
-            Ty::Unknown | Ty::Union(_) | Ty::Param(_) | Ty::App(_, _)
+            Ty::Unknown | Ty::Union(_) | Ty::Param(_) | Ty::App(_, _) | Ty::Never
         ) || matches!(
             other,
-            Ty::Unknown | Ty::Union(_) | Ty::Param(_) | Ty::App(_, _)
+            Ty::Unknown | Ty::Union(_) | Ty::Param(_) | Ty::App(_, _) | Ty::Never
         ) {
             return None;
         }
@@ -343,8 +419,13 @@ impl Ty {
             TypeExpr::Float => Ty::Float,
             TypeExpr::Bool => Ty::Bool,
             TypeExpr::String => Ty::String,
-            // `none` has no static type; it is the permissive `Unknown`.
-            TypeExpr::None => Ty::Unknown,
+            // `none` is the absence type: a member of an optional union
+            // (`T | none`). It is retained so flow narrowing can remove it
+            // and access checks can diagnose a possible `none` precisely
+            // (§4.3, §5.2).
+            TypeExpr::None => Ty::None,
+            // `never` is the bottom type (§4.3): no value can result.
+            TypeExpr::Never => Ty::Never,
             TypeExpr::List(inner) => Ty::List(Box::new(Ty::from_expr(inner, types, span)?)),
             TypeExpr::Map(k, v) => {
                 let key = Ty::from_expr(k, types, span)?;
@@ -445,7 +526,8 @@ impl Ty {
             TypeExpr::Float => Ty::Float,
             TypeExpr::Bool => Ty::Bool,
             TypeExpr::String => Ty::String,
-            TypeExpr::None => Ty::Unknown,
+            TypeExpr::None => Ty::None,
+            TypeExpr::Never => Ty::Never,
             TypeExpr::List(inner) => Ty::List(Box::new(Ty::from_expr_lenient(inner))),
             TypeExpr::Map(k, v) => Ty::Map(
                 Box::new(Ty::from_expr_lenient(k)),
@@ -496,6 +578,8 @@ impl Ty {
             // A parameter has a source spelling (its name) only inside its
             // declaration; outside, it cannot be persisted, so it is absent.
             Ty::Param(n) => TypeExpr::Named(n.clone()),
+            Ty::Never => TypeExpr::Never,
+            Ty::None => TypeExpr::None,
             Ty::Unknown => return None,
         })
     }

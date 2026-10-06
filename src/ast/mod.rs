@@ -26,6 +26,8 @@ pub enum TypeExpr {
     String,
     /// `none` (only meaningful as a union member)
     None,
+    /// `never` — the bottom type: no value can result (§4.3).
+    Never,
     /// `[T]`
     List(Box<TypeExpr>),
     /// `{K: V}`
@@ -51,6 +53,7 @@ impl TypeExpr {
             TypeExpr::Bool => "bool".into(),
             TypeExpr::String => "string".into(),
             TypeExpr::None => "none".into(),
+            TypeExpr::Never => "never".into(),
             TypeExpr::List(t) => format!("[{}]", t.name()),
             TypeExpr::Map(k, v) => format!("{{{}: {}}}", k.name(), v.name()),
             TypeExpr::Union(ms) => ms

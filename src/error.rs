@@ -311,8 +311,14 @@ pub mod codes {
     pub const RESERVED_NAMESPACE: u16 = 2023;
     /// Type mismatch.
     pub const TYPE_MISMATCH: u16 = 3001;
+    /// A member or element was accessed on a value that may be `none`
+    /// (`T | none`) without narrowing it first (Keystone optionality).
+    pub const POSSIBLE_NONE: u16 = 3003;
     /// Return type mismatch.
     pub const RETURN_MISMATCH: u16 = 3005;
+    /// A function declared `-> never` can complete normally, contradicting
+    /// its declared bottom return type (Keystone `never`).
+    pub const NEVER_RETURNS: u16 = 3006;
     /// Value is not iterable.
     pub const NOT_ITERABLE: u16 = 4018;
     /// Integer overflow.
