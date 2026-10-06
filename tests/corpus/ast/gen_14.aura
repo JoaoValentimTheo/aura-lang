@@ -20,7 +20,7 @@ fn main() {
     } else {
         print(9)
     }
-    let mut c1 = []
-    let mut l2 = [38]
+    let mut _c1 = []
+    let mut _l2 = [38]
     print(0)
 }

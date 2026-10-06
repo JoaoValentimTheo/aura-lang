@@ -103,9 +103,9 @@ fn f02_builtin_arity_and_types_are_static() {
 /// provable mismatch is reported before execution.
 #[test]
 fn f04_return_type_propagates_to_annotated_binding() {
-    let src = "fn f() -> string { return \"h\" }\nlet x: int = f()";
+    let src = "fn f() -> string { return \"h\" }\nlet _: int = f()";
     assert_eq!(check(src), Err(codes::TYPE_MISMATCH));
-    let ok = "fn f() -> string { return \"h\" }\nlet x: string = f()";
+    let ok = "fn f() -> string { return \"h\" }\nlet _: string = f()";
     assert_eq!(check(ok), Ok(()));
 }
 
@@ -332,20 +332,20 @@ fn static_user_fn_annotated_argument_type_is_checked() {
 /// value. Arity still applies.
 #[test]
 fn static_user_fn_unannotated_parameters_are_unconstrained() {
-    let src = "fn f(a: int, b, c: string) { return c }\nfn main() { print(f(1, true, \"ok\"))\n print(f(1, [9], \"ok\")) }";
+    let src = "fn f(_a: int, _b, c: string) { return c }\nfn main() { print(f(1, true, \"ok\"))\n print(f(1, [9], \"ok\")) }";
     assert_eq!(out(src), "ok\nok\n");
     // The unannotated middle parameter is never the reason for a rejection.
     assert_eq!(
-        check("fn f(a: int, b, c: string) { return c }\nfn main() { f(\"x\", true, \"ok\") }"),
+        check("fn f(_a: int, _b, c: string) { return c }\nfn main() { f(\"x\", true, \"ok\") }"),
         Err(codes::TYPE_MISMATCH)
     );
     assert_eq!(
-        check("fn f(a: int, b, c: string) { return c }\nfn main() { f(1, true, 4) }"),
+        check("fn f(_a: int, _b, c: string) { return c }\nfn main() { f(1, true, 4) }"),
         Err(codes::TYPE_MISMATCH)
     );
     // Arity still applies when annotations are partial.
     assert_eq!(
-        check("fn f(a: int, b) { return a }\nfn main() { f(1) }"),
+        check("fn f(a: int, _a) { return a }\nfn main() { f(1) }"),
         Err(codes::TYPE_MISMATCH)
     );
 }
@@ -371,7 +371,7 @@ fn static_user_fn_unknown_argument_remains_permissive() {
     );
     // `Unknown` does not suppress a proven mismatch on another argument.
     assert_eq!(
-        check("fn f(a: int, b: int) { return a }\nfn main() { f(none, \"x\") }"),
+        check("fn f(a: int, _a: int) { return a }\nfn main() { f(none, \"x\") }"),
         Err(codes::TYPE_MISMATCH)
     );
 }
@@ -459,14 +459,14 @@ fn dynamic_function_value_remains_runtime_checked() {
 /// rules, against the inserted first argument.
 #[test]
 fn pipeline_user_fn_call_is_checked() {
-    let ok = "fn f(x: int, y: string) { return y }\nfn main() { print(42 |> f(\"ok\")) }";
+    let ok = "fn f(_a: int, y: string) { return y }\nfn main() { print(42 |> f(\"ok\")) }";
     assert_eq!(check(ok), Ok(()));
     assert_eq!(out(ok), "ok\n");
-    let bad = "fn f(x: int, y: string) { return y }\nfn main() { print(\"wrong\" |> f(\"ok\")) }";
+    let bad = "fn f(_a: int, y: string) { return y }\nfn main() { print(\"wrong\" |> f(\"ok\")) }";
     assert_eq!(check(bad), Err(codes::TYPE_MISMATCH));
     // Arity through the pipeline.
     assert_eq!(
-        check("fn f(x: int, y: string) { return y }\nfn main() { 42 |> f() }"),
+        check("fn f(_a: int, y: string) { return y }\nfn main() { 42 |> f() }"),
         Err(codes::TYPE_MISMATCH)
     );
 }
@@ -476,11 +476,11 @@ fn pipeline_user_fn_call_is_checked() {
 #[test]
 fn direct_call_return_type_flows() {
     assert_eq!(
-        check("fn f(a: int) -> string { return \"h\" }\nlet x: int = f(1)"),
+        check("fn f(_a: int) -> string { return \"h\" }\nlet x: int = f(1)"),
         Err(codes::TYPE_MISMATCH)
     );
     assert_eq!(
-        out("fn f(a: int) -> string { return \"h\" }\nfn main() { let x: string = f(1)\n print(x) }"),
+        out("fn f(_a: int) -> string { return \"h\" }\nfn main() { let x: string = f(1)\n print(x) }"),
         "h\n"
     );
 }
@@ -641,7 +641,7 @@ fn named_arguments_unknown_parameter_is_rejected() {
 #[test]
 fn named_arguments_duplicate_is_rejected() {
     assert_eq!(
-        check("fn f(a: int, b: int) -> int { return a }\nfn main() { f(1, a: 2) }"),
+        check("fn f(a: int, _a: int) -> int { return a }\nfn main() { f(1, a: 2) }"),
         Err(codes::TYPE_MISMATCH)
     );
     assert_eq!(
@@ -654,11 +654,11 @@ fn named_arguments_duplicate_is_rejected() {
 #[test]
 fn named_arguments_missing_parameter_is_rejected() {
     assert_eq!(
-        check("fn f(a: int, b: int, c: int) -> int { return a }\nfn main() { f(a: 1, c: 3) }"),
+        check("fn f(a: int, _a: int, _b: int) -> int { return a }\nfn main() { f(a: 1, c: 3) }"),
         Err(codes::TYPE_MISMATCH)
     );
     assert_eq!(
-        check("fn f(a: int, b: int) -> int { return a }\nfn main() { f(a: 1) }"),
+        check("fn f(a: int, _a: int) -> int { return a }\nfn main() { f(a: 1) }"),
         Err(codes::TYPE_MISMATCH)
     );
 }
@@ -726,7 +726,7 @@ fn named_arguments_pipeline() {
         "52\n"
     );
     assert_eq!(
-        check("fn move(dx: int, dy: int) -> int { return dx }\nfn main() { 5 |> move(dx: 2) }"),
+        check("fn move(dx: int, _a: int) -> int { return dx }\nfn main() { 5 |> move(dx: 2) }"),
         Err(codes::TYPE_MISMATCH)
     );
 }
@@ -851,7 +851,7 @@ fn field_read_strengthens_function_argument_checking() {
 #[test]
 fn field_read_strengthens_named_argument_checking() {
     assert_eq!(
-        check("struct P { x: int }\nfn f(a: int, b: string) { return b }\nfn main() { let p = P { x: 1 }\n f(b: p.x, a: 1) }"),
+        check("struct P { x: int }\nfn f(_a: int, b: string) { return b }\nfn main() { let p = P { x: 1 }\n f(b: p.x, a: 1) }"),
         Err(codes::TYPE_MISMATCH)
     );
     assert_eq!(
@@ -893,7 +893,7 @@ fn field_read_is_conservative_for_unproven_receivers() {
     // An unannotated parameter is `Unknown`; `u.x` stays `Unknown`,
     // so an incompatible annotation is accepted statically.
     assert_eq!(
-        check("struct P { x: int }\nfn g(u) { let y: string = u.x }"),
+        check("struct P { x: int }\nfn g(u) { let _: string = u.x }"),
         Ok(())
     );
     // A list element read of a known element type now infers that type
@@ -910,12 +910,12 @@ fn field_read_is_conservative_for_unproven_receivers() {
     );
     // A branch result infers `Unknown`.
     assert_eq!(
-        check("struct P { x: int }\nfn main() { let p = if true { P { x: 1 } } else { P { x: 2 } }\n let y: string = p.x }"),
+        check("struct P { x: int }\nfn main() { let p = if true { P { x: 1 } } else { P { x: 2 } }\n let _: string = p.x }"),
         Ok(())
     );
     // A function call whose return type is not declared infers `Unknown`.
     assert_eq!(
-        check("struct P { x: int }\nfn mk() { return P { x: 1 } }\nfn main() { let y: string = mk().x }"),
+        check("struct P { x: int }\nfn mk() { return P { x: 1 } }\nfn main() { let _: string = mk().x }"),
         Ok(())
     );
 }
@@ -981,7 +981,7 @@ fn destructuring_does_not_change_feature_002() {
 #[test]
 fn destructuring_names_do_not_trip_feature_003() {
     assert_eq!(
-        check("struct S { x: int }\nfn main() { let [s] = [S { x: 1 }]\n let y: string = s.x }"),
+        check("struct S { x: int }\nfn main() { let [s] = [S { x: 1 }]\n let _: string = s.x }"),
         Ok(())
     );
     // A direct field read on a known struct still propagates (Feature 003).
@@ -1047,7 +1047,7 @@ fn h2_01_return_in_initializer_propagates_from_the_function() {
 #[test]
 fn h2_02_throw_in_initializer_is_catchable() {
     assert_eq!(
-        out("fn main() { try { let v = if true { throw \"x\" } else { 0 }\n print(\"no\") } catch e { print(\"caught \" + e) } }"),
+        out("fn main() { try { let _ = if true { throw \"x\" } else { 0 }\n print(\"no\") } catch e { print(\"caught \" + e) } }"),
         "caught x\n"
     );
     // A `throw` in a loop header (`while` condition / `for` iterable) is also
@@ -1057,7 +1057,7 @@ fn h2_02_throw_in_initializer_is_catchable() {
         "caught w\n"
     );
     assert_eq!(
-        out("fn main() { try { for x in if true { throw \"fo\" } else { [1] } {} } catch e { print(\"caught \" + e) } }"),
+        out("fn main() { try { for _ in if true { throw \"fo\" } else { [1] } {} } catch e { print(\"caught \" + e) } }"),
         "caught fo\n"
     );
     // And in an assignment target's subexpressions.
@@ -1099,7 +1099,7 @@ fn h2_05_lambda_return_is_not_checked_against_the_enclosing_function() {
     // function's return value, so the program is valid and prints 3.
     assert_eq!(
         out(
-            "fn f() -> int { let g = () -> { return \"s\" }\n return 3 }\nfn main() { print(f()) }"
+            "fn f() -> int { let _ = () -> { return \"s\" }\n return 3 }\nfn main() { print(f()) }"
         ),
         "3\n"
     );
@@ -1258,7 +1258,7 @@ fn bh1_02_cyclic_map_operations_do_not_crash() {
 #[test]
 fn bh1_03_deep_runtime_value_operations_do_not_crash() {
     let build =
-        "let a = []\n let mut c = a\n for i in range(0, 40000) { let n = []\n c.push(n)\n c = n }";
+        "let a = []\n let mut c = a\n for _i in range(0, 40000) { let n = []\n c.push(n)\n c = n }";
     // Display (truncated) and equality both terminate.
     let shown = out(&format!("fn main() {{ {build}\n print(a) }}"));
     assert!(shown.starts_with('['), "unexpected display");
@@ -1280,7 +1280,7 @@ fn bh1_03_deep_runtime_value_operations_do_not_crash() {
 /// BH1-04: a recursive enum built to depth must not crash on teardown.
 #[test]
 fn bh1_04_deep_recursive_enum_does_not_crash() {
-    let src = "enum E { N(int), S(E) }\nfn main() { let mut a = N(1)\n for i in range(0, 40000) { a = S(a) }\n print(\"ok\") }";
+    let src = "enum E { N(int), S(E) }\nfn main() { let mut a = N(1)\n for _ in range(0, 40000) { a = S(a) }\n print(\"ok\") }";
     assert_eq!(out(src), "ok\n");
 }
 

@@ -65,7 +65,7 @@ fn nested_literals_are_checked_against_the_expected_type() {
         codes::TYPE_MISMATCH
     );
     assert_eq!(
-        code("fn f(xs: [int]) { }\nfn main() { f([1, \"x\"]) }"),
+        code("fn f(_: [int]) { }\nfn main() { f([1, \"x\"]) }"),
         codes::TYPE_MISMATCH
     );
 }
@@ -85,7 +85,7 @@ fn indexing_a_known_container_yields_the_element_type() {
     );
     // A list index that yields `int` is not assignable to a `string` parameter.
     assert_eq!(
-        code("fn f(s: string) { }\nfn main() { let xs: [int] = [1]\n f(xs[0]) }"),
+        code("fn f(_: string) { }\nfn main() { let xs: [int] = [1]\n f(xs[0]) }"),
         codes::TYPE_MISMATCH
     );
 }

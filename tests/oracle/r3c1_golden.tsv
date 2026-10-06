@@ -11,7 +11,7 @@ r3c1-value/native_unknown_as_value		compile	2003	undefined variable `no_such_fn`
 r3c1-value/user_zero_args		ok	0		-	0	0	0	0	int	7
 r3c1-value/user_one_arg		ok	0		-	0	0	0	0	int	42
 r3c1-value/user_two_args		ok	0		-	0	0	0	0	int	42
-r3c1-value/user_arg_count_low		compile	3001	no overload of `f` accepts (int); 1 candidate(s) declared	<r3c1>	18	19	2	2	-	-
+r3c1-value/user_arg_count_low		compile	3001	no overload of `f` accepts (int); 1 candidate(s) declared	<r3c1>	19	20	2	2	-	-
 r3c1-value/user_arg_count_high		compile	3001	no overload of `f` accepts (int, int); 1 candidate(s) declared	<r3c1>	15	16	2	2	-	-
 r3c1-value/user_forward_reference		ok	0		-	0	0	0	0	int	3
 r3c1-value/user_named_argument		ok	0		-	0	0	0	0	int	4
@@ -310,7 +310,7 @@ r3c1-value/arg_order_two	610a620a	ok	0		-	0	0	0	0	int	0
 r3c1-value/arg_order_three	310a320a330a	ok	0		-	0	0	0	0	int	0
 r3c1-value/arg_evaluated_once	780a	ok	0		-	0	0	0	0	int	0
 r3c1-value/binary_order_over_call	6c0a	runtime	3001	expected a number, found none	<r3c1>	11	12	1	12	-	-
-r3c1-value/binary_order_left_then_right	720a	runtime	3001	expected a number, found none	<r3c1>	21	22	2	5	-	-
+r3c1-value/binary_order_left_then_right	720a	runtime	3001	expected a number, found none	<r3c1>	23	24	2	5	-	-
 r3c1-value/list_elements_once	610a620a630a	ok	0		-	0	0	0	0	list	[none, none, none]
 r3c1-value/map_key_before_value	6b0a	runtime	3001	type `none` cannot be used as a map key; map keys must be `string`, `int`, or `bool`	<r3c1>	6	7	1	7	-	-
 r3c1-value/range_bounds_order	730a650a	runtime	3001	range start expects an int, found none	<r3c1>	10	12	1	11	-	-

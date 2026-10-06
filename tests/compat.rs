@@ -268,7 +268,7 @@ fn c021_type_nesting_is_unified() {
         for _ in 0..n {
             t = format!("Box<{t}>");
         }
-        format!("struct Box<T> {{ value: T }}\nfn f(x: {t}) -> int {{ return 1 }}\nfn main() {{ print(1) }}")
+        format!("struct Box<T> {{ value: T }}\nfn f(_x: {t}) -> int {{ return 1 }}\nfn main() {{ print(1) }}")
     };
     assert!(run_source(&deep(255), "<compat>").is_ok());
     assert_eq!(
@@ -288,7 +288,7 @@ fn c021_alias_chain_depth_is_bounded() {
         }
         let _ = write!(
             s,
-            "fn f(x: A{n}) -> int {{ return 1 }}\nfn main() {{ print(1) }}\n"
+            "fn f(_x: A{n}) -> int {{ return 1 }}\nfn main() {{ print(1) }}\n"
         );
         s
     };

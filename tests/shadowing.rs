@@ -109,7 +109,7 @@ fn shadow_is_not_assignment() {
     );
     // The outer mutable binding is unaffected after the inner scope exits.
     assert_eq!(
-        ok("fn main() { let mut x = 10\n { let x = 20 }\n x = 30\n print(x) }"),
+        ok("fn main() { let mut x = 10\n { let _ = 20 }\n x = 30\n print(x) }"),
         "30\n"
     );
 }
@@ -125,7 +125,7 @@ fn shadowing_shares_the_mutation_capability_rule() {
     );
     // The outer mutable binding still can be, after the scope exits.
     assert_eq!(
-        ok("fn main() { let mut xs = [1]\n { let xs = [2] }\n xs.push(3)\n print(xs) }"),
+        ok("fn main() { let mut xs = [1]\n { let _ = [2] }\n xs.push(3)\n print(xs) }"),
         "[1, 3]\n"
     );
     // A shadowing `let mut` is itself mutable.

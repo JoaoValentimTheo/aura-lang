@@ -68,7 +68,7 @@ fn type_parameter_names_are_not_identity() {
 #[test]
 fn concrete_overload_wins_over_generic() {
     assert_eq!(
-        ok("fn f<T>(x: T) -> string { return \"g\" }\nfn f(x: int) -> string { return \"c\" }\nfn main() { print(f(1))\n print(f(\"a\")) }"),
+        ok("fn f<T>(_: T) -> string { return \"g\" }\nfn f(_: int) -> string { return \"c\" }\nfn main() { print(f(1))\n print(f(\"a\")) }"),
         "c\ng\n"
     );
 }
@@ -171,7 +171,7 @@ fn bounds_are_checked_at_the_call_site() {
         "7\n"
     );
     assert_eq!(
-        code("trait Show { fn show(self) -> int }\nstruct B { n: int }\nfn run<T: Show>(x: T) -> int { return 1 }\nfn main() { run(B { n: 1 }) }"),
+        code("trait Show { fn show(self) -> int }\nstruct B { n: int }\nfn run<T: Show>(_: T) -> int { return 1 }\nfn main() { run(B { n: 1 }) }"),
         codes::TYPE_MISMATCH
     );
 }
@@ -200,7 +200,7 @@ fn parameterised_alias_expands() {
 #[test]
 fn union_with_none_stays_permissive() {
     assert_eq!(
-        ok("fn f<T>(x: T) -> T { return x }\nfn g(x: int | none) -> int { return 0 }\nfn main() { print(f(1))\n print(g(2)) }"),
+        ok("fn f<T>(x: T) -> T { return x }\nfn g(_: int | none) -> int { return 0 }\nfn main() { print(f(1))\n print(g(2)) }"),
         "1\n0\n"
     );
 }

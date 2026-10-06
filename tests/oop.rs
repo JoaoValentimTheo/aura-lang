@@ -35,7 +35,7 @@ fn code(src: &str) -> u16 {
 #[test]
 fn impl_blocks_merge_and_may_add_overloads() {
     assert_eq!(
-        ok("struct P { n: int }\nimpl P { fn f(self, x: int) { print(\"i\") } }\nimpl P { fn f(self, x: string) { print(\"s\") } }\nfn main() { P { n: 0 }.f(1)\n P { n: 0 }.f(\"a\") }"),
+        ok("struct P { n: int }\nimpl P { fn f(self, _: int) { print(\"i\") } }\nimpl P { fn f(self, _: string) { print(\"s\") } }\nfn main() { P { n: 0 }.f(1)\n P { n: 0 }.f(\"a\") }"),
         "i\ns\n"
     );
     // Distinct method names across blocks likewise merge.
@@ -172,7 +172,7 @@ fn reuse_is_composition_not_inheritance() {
 #[test]
 fn overloading_is_ad_hoc_polymorphism() {
     assert_eq!(
-        ok("fn f(x: int) { print(\"i\") }\nfn f(x: string) { print(\"s\") }\nfn f(x) { print(\"any\") }\nfn main() { f(1)\n f(\"a\")\n f(true) }"),
+        ok("fn f(_: int) { print(\"i\") }\nfn f(_: string) { print(\"s\") }\nfn f(_) { print(\"any\") }\nfn main() { f(1)\n f(\"a\")\n f(true) }"),
         "i\ns\nany\n"
     );
 }

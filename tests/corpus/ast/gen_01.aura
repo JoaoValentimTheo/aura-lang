@@ -17,17 +17,17 @@ fn main() {
     print(3)
     let mut l1 = [6, 45, 6, 13]
     for x in l1 { print(x) }
-    let p2 = Point { x: 1, y: 43 }
+    let _p2 = Point { x: 1, y: 43 }
     push(l1, 60)
     print(len(l1))
     if c0.contains(1) {
     for x in l1 { print(x) }
-    let mut l3 = [36]
+    let mut _l3 = [36]
     } else {
         print(9)
     }
     push(l1, 14)
     print(len(l1))
-    let b3 = len(l1) > 0
+    let _b3 = len(l1) > 0
     print(0)
 }

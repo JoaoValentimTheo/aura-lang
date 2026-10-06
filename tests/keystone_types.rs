@@ -98,10 +98,10 @@ fn none_permissiveness_is_preserved() {
     // The documented `T | none` behavior is unchanged: a union containing
     // `none` accepts any value, and `none` is accepted anywhere.
     assert_eq!(
-        check("type N = int | float | none\nfn main() { let a: N = 1\n let b: N = 2.5\n let c: N = none\n let d: N = \"s\" }"),
+        check("type N = int | float | none\nfn main() { let _: N = 1\n let _: N = 2.5\n let _: N = none\n let _: N = \"s\" }"),
         Ok(())
     );
-    assert_eq!(check("fn main() { let x: int = none }"), Ok(()));
+    assert_eq!(check("fn main() { let _: int = none }"), Ok(()));
     assert_eq!(check("fn f() -> {string: int} { return none }"), Ok(()));
 }
 

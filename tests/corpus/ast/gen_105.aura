@@ -21,14 +21,14 @@ fn main() {
         print(9)
     }
     for x in 0..3 { print(x) }
-    let p0 = Point { x: 29, y: 33 }
+    let _p0 = Point { x: 29, y: 33 }
     let mut c1 = []
     push(c1, c1)
     print(2)
     for x in 0..3 { print(x) }
-    let s2 = "abc".upper()
+    let _s2 = "abc".upper()
     for x in 0..3 { print(x) }
-    let p3 = Point { x: 45, y: 36 }
-    let mut i4 = len([1, 2, 3])
+    let _p3 = Point { x: 45, y: 36 }
+    let mut _i4 = len([1, 2, 3])
     print(0)
 }

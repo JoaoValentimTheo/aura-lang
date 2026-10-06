@@ -118,7 +118,7 @@ fn comprehension_bindings_do_not_leak() {
 fn comprehension_pattern_is_assertive_like_ordinary_for() {
     // A list pattern of arity 1 cannot match a 1-element list of arity 2.
     assert_ne!(
-        run_source("fn main() { let ys = [a for [a, b] in [[1]]] }", "<c>").err_code(),
+        run_source("fn main() { let _ = [a for [a, _] in [[1]]] }", "<c>").err_code(),
         None
     );
 }
@@ -134,7 +134,7 @@ fn comprehension_over_a_non_iterable_is_rejected() {
 #[test]
 fn comprehension_throw_propagates() {
     assert_eq!(
-        code("fn f(x) { throw \"boom\" }\nfn main() { print([f(x) for x in [1]]) }"),
+        code("fn f(_) { throw \"boom\" }\nfn main() { print([f(x) for x in [1]]) }"),
         codes::FOREIGN
     );
 }

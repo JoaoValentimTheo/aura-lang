@@ -60,7 +60,7 @@ pub fn supported_cases() -> Vec<Case> {
         value("user_zero_args", "fn f() { 7 }\nf()\n"),
         value("user_one_arg", "fn f(x) { x + 1 }\nf(41)\n"),
         value("user_two_args", "fn f(a, b) { a * b }\nf(6, 7)\n"),
-        value("user_arg_count_low", "fn f(a, b) { a }\nf(1)\n"),
+        value("user_arg_count_low", "fn f(a, _b) { a }\nf(1)\n"),
         value("user_arg_count_high", "fn f(a) { a }\nf(1, 2)\n"),
         value("user_forward_reference", "fn g() { f() }\nfn f() { 3 }\ng()\n"),
         value("user_named_argument", "fn f(a, b) { a - b }\nf(b: 1, a: 5)\n"),
@@ -95,13 +95,13 @@ pub fn supported_cases() -> Vec<Case> {
         value("nested_required_call", "false or (true and len([1, 2]))\n"),
         program(
             "main_required_call",
-            "fn main() { let x = true and len([1, 2]) }\n",
+            "fn main() { let _ = true and len([1, 2]) }\n",
         ),
         // From the list unsupported set.
         value("call_element", "[1, len([1, 2])]\n"),
         program(
             "main_call_element",
-            "fn main() { let xs = [1, len([1, 2])] }\n",
+            "fn main() { let _ = [1, len([1, 2])] }\n",
         ),
         // From the map unsupported set.
         value("call_key", "{len([1, 2]): 1}\n"),
@@ -109,20 +109,20 @@ pub fn supported_cases() -> Vec<Case> {
         value("later_call_value", "{1: 2, 2: len([1, 2])}\n"),
         program(
             "main_call_value",
-            "fn main() { let m = {1: len([1, 2])} }\n",
+            "fn main() { let _ = {1: len([1, 2])} }\n",
         ),
-        program("main_call_key", "fn main() { let m = {len([1, 2]): 1} }\n"),
+        program("main_call_key", "fn main() { let _ = {len([1, 2]): 1} }\n"),
         // From the range unsupported set.
         value("call_start", "len([1, 2])..3\n"),
         value("call_end", "1..len([1, 2])\n"),
         value("call_end_after_int", "0..len([1, 2])\n"),
         value("nested_call_start", "(1 + len([1, 2]))..3\n"),
-        program("main_range_call", "fn main() { let r = 0..len([1, 2]) }\n"),
+        program("main_range_call", "fn main() { let _ = 0..len([1, 2]) }\n"),
         // From the index unsupported set.
         value("call_base", "len([1, 2])[0]\n"),
         value("call_index", "[1, 2][len([1])]\n"),
         value("nested_call_base", "([1] + len([2]))[0]\n"),
-        program("main_index_call", "fn main() { let y = len([1])[0] }\n"),
+        program("main_index_call", "fn main() { let _ = len([1])[0] }\n"),
         // From the field unsupported set.
         value("call_receiver", "{ len([1, 2]) }.len\n"),
         value("nested_call_receiver", "{ (1 + len([2])) }.len\n"),
@@ -134,11 +134,11 @@ pub fn supported_cases() -> Vec<Case> {
         value("spec_call_interp", "f\"{len([1]):d}\"\n"),
         program(
             "main_fstring_call",
-            "fn main() { let s = f\"{len([1])}\" }\n",
+            "fn main() { let _ = f\"{len([1])}\" }\n",
         ),
         program(
             "main_fstring_later_call",
-            "fn main() { let s = f\"{1}{len([1])}\" }\n",
+            "fn main() { let _ = f\"{1}{len([1])}\" }\n",
         ),
         // ----- higher-order callbacks through the resumable protocol -----
         // `map`/`filter`/`reduce` invoke Aura callbacks; the machine drives
@@ -180,11 +180,11 @@ pub fn supported_cases() -> Vec<Case> {
         value("construct_unknown_type", "Nope { x: 1 }\n"),
         value(
             "construct_used_as_call_argument",
-            "struct P { x: int }\nfn f(x) { 0 }\nf(P { x: 1 })\n",
+            "struct P { x: int }\nfn f(_x) { 0 }\nf(P { x: 1 })\n",
         ),
         program(
             "main_construct_argument",
-            "struct P { x: int }\nfn main() { let x = f(P { x: 1 }) }\nfn f(x) { 0 }\n",
+            "struct P { x: int }\nfn main() { let _ = f(P { x: 1 }) }\nfn f(_x) { 0 }\n",
         ),
         value("construct_enum_variant", "enum E { A(int), B }\nA(5)\n"),
         value("construct_enum_nullary", "enum E { A(int), B }\nB\n"),
@@ -254,14 +254,14 @@ pub fn supported_cases() -> Vec<Case> {
         ),
         value(
             "lambda_arg_order",
-            "((a, b) -> a)(print(\'l\'), print(\'r\'))\n",
+            "((a, _b) -> a)(print(\'l\'), print(\'r\'))\n",
         ),
         value("pipe_native", "[3, 1, 2] |> len\n"),
         value("pipe_named_fn", "fn d(xs) { len(xs) }\n[1, 2] |> d\n"),
         value("pipe_lambda", "[1, 2, 3] |> ((xs) -> len(xs))\n"),
         value("pipe_lambda_map", "[1, 2] |> ((xs) -> len(xs))\n"),
         value("pipe_chained", "[1, 2, 3] |> len |> ((n) -> n + 1)\n"),
-        value("pipe_left_once", "fn d(x) { 0 }\nprint(\'p\') |> d\n"),
+        value("pipe_left_once", "fn d(_x) { 0 }\nprint(\'p\') |> d\n"),
         value("pipe_left_error_first", "1 / 0 |> ((x) -> x)\n"),
         value("pipe_right_error", "1 |> ((x) -> x / 0)\n"),
         value("pipe_non_callable", "1 |> 2\n"),
@@ -305,7 +305,7 @@ pub fn supported_cases() -> Vec<Case> {
         value("let_pattern_list", "{ let [a, b] = [1, 2]\n a + b }\n"),
         value("let_pattern_nested", "{ let [a, [b]] = [1, [2]]\n a + b }\n"),
         value("let_pattern_wildcard", "{ let [_, b] = [1, 2]\n b }\n"),
-        value("let_pattern_arity_mismatch", "{ let [a, b] = [1]\n a }\n"),
+        value("let_pattern_arity_mismatch", "{ let [a, _] = [1]\n a }\n"),
         value("let_pattern_type_mismatch", "{ let [a] = 1\n a }\n"),
         value(
             "let_pattern_variant",
@@ -325,7 +325,7 @@ pub fn supported_cases() -> Vec<Case> {
         ),
         value(
             "let_pattern_atomic",
-            "{ let mut a = 1\n let [a, b] = [2]\n a }\n",
+            "{ let mut a = 1\n let [a, _] = [2]\n a }\n",
         ),
         value(
             "assign_then_read",
@@ -337,7 +337,7 @@ pub fn supported_cases() -> Vec<Case> {
         value("while_break", "{ let mut i = 0\n while true { i = i + 1\n if i == 2 { break } }\n i }\n"),
         value("while_continue", "{ let mut i = 0\n let mut s = 0\n while i < 4 { i = i + 1\n if i == 2 { continue }\n s = s + i }\n s }\n"),
         value("while_nested", "{ let mut n = 0\n let mut i = 0\n while i < 2 { let mut j = 0\n while j < 2 { n = n + 1\n j = j + 1 }\n i = i + 1 }\n n }\n"),
-        value("while_shadow_scope", "{ let x = 1\n let mut i = 0\n while i < 1 { let x = 2\n i = i + 1 }\n x }\n"),
+        value("while_shadow_scope", "{ let x = 1\n let mut i = 0\n while i < 1 { let _ = 2\n i = i + 1 }\n x }\n"),
         value("while_return_propagates", "fn f() { while true { return 5 } }\nf()\n"),
         value("while_throw_propagates", "fn f() { while true { throw 7 } }\nf()\n"),
         value("while_condition_error", "{ while 1 / 0 { } }\n"),
@@ -362,20 +362,20 @@ pub fn supported_cases() -> Vec<Case> {
         value("for_list", "{ let mut s = 0\n for x in [1, 2, 3] { s = s + x }\n s }\n"),
         value("for_string", "{ let mut s = \'\'\n for c in \'ab\' { s = s + c }\n s }\n"),
         value("for_map_keys", "{ let mut s = 0\n for k in {1: \'a\', 2: \'b\'} { s = s + k }\n s }\n"),
-        value("for_zero_items", "{ let mut n = 0\n for x in [] { n = n + 1 }\n n }\n"),
-        value("for_break", "{ let mut n = 0\n for x in 0..10 { n = n + 1\n if n == 2 { break } }\n n }\n"),
+        value("for_zero_items", "{ let mut n = 0\n for _ in [] { n = n + 1 }\n n }\n"),
+        value("for_break", "{ let mut n = 0\n for _ in 0..10 { n = n + 1\n if n == 2 { break } }\n n }\n"),
         value("for_continue", "{ let mut s = 0\n for x in 0..4 { if x == 2 { continue }\n s = s + x }\n s }\n"),
-        value("for_nested", "{ let mut n = 0\n for x in 0..2 { for y in 0..2 { n = n + 1 } }\n n }\n"),
+        value("for_nested", "{ let mut n = 0\n for _ in 0..2 { for _ in 0..2 { n = n + 1 } }\n n }\n"),
         value("for_pattern_list", "{ let mut s = 0\n for [a, b] in [[1, 2], [3, 4]] { s = s + a + b }\n s }\n"),
         value("for_pattern_wildcard", "{ let mut s = 0\n for [_, b] in [[1, 2], [3, 4]] { s = s + b }\n s }\n"),
-        value("for_scope_not_leak", "{ for x in [1] { }\n x }\n"),
-        value("for_range_lazy_break", "{ let mut n = 0\n for i in 0..10000000 { n = n + 1\n if n == 3 { break } }\n n }\n"),
+        value("for_scope_not_leak", "{ for _ in [1] { }\n x }\n"),
+        value("for_range_lazy_break", "{ let mut n = 0\n for _ in 0..10000000 { n = n + 1\n if n == 3 { break } }\n n }\n"),
         value("for_return", "fn f() { for x in 0..3 { return x } }\nf()\n"),
         value("for_throw", "fn f() { for x in 0..3 { throw x } }\nf()\n"),
         value("for_iterable_error", "{ for x in 1 / 0 { } }\n"),
         value("for_not_iterable", "{ for x in 1 { } }\n"),
         value("for_mutation_accumulator", "{ let mut acc = []\n for x in 0..3 { acc = acc + [x] }\n acc }\n"),
-        value("for_range_cap_break_early", "{ for i in 0..20000000 { break }\n 1 }\n"),
+        value("for_range_cap_break_early", "{ for _ in 0..20000000 { break }\n 1 }\n"),
         // ----- R3E.1 comprehensions ------------------------------------------
         value("listcomp_identity", "[x for x in [1, 2, 3]]\n"),
         value("listcomp_range", "[x * 2 for x in 0..4]\n"),
@@ -390,7 +390,7 @@ pub fn supported_cases() -> Vec<Case> {
         value("listcomp_scope", "{ let x = 9\n [x for x in [1, 2]] }\n"),
         value("listcomp_shadow_outer", "{ let x = 9\n [x for x in [1]]\n x }\n"),
         value("listcomp_filter_error", "[x for x in [1] if 1 / 0]\n"),
-        value("listcomp_value_error", "[1 / 0 for x in [1]]\n"),
+        value("listcomp_value_error", "[1 / 0 for _ in [1]]\n"),
         value("listcomp_iterable_error", "[x for x in 1 / 0]\n"),
         value("listcomp_not_iterable", "[x for x in 1]\n"),
         value("listcomp_pattern_mismatch", "[a for [a] in [1]]\n"),
@@ -400,10 +400,10 @@ pub fn supported_cases() -> Vec<Case> {
         value("mapcomp_filter", "{x: x for x in 0..4 if x % 2 == 1}\n"),
         value("mapcomp_key_order", "{k: v for [k, v] in [[1, \'a\'], [2, \'b\']]}\n"),
         value("mapcomp_duplicate_key", "{1: x for x in [10, 20]}\n"),
-        value("mapcomp_key_before_value", "{print(\'k\'): print(\'v\') for x in [1]}\n"),
+        value("mapcomp_key_before_value", "{print(\'k\'): print(\'v\') for _ in [1]}\n"),
         value("mapcomp_bad_key", "{xs: 1 for xs in [[1]]}\n"),
         value("mapcomp_nested", "{x: [y for y in 0..1] for x in 0..2}\n"),
-        value("mapcomp_error_key", "{1 / 0: 1 for x in [1]}\n"),
+        value("mapcomp_error_key", "{1 / 0: 1 for _ in [1]}\n"),
         value("mapcomp_empty", "{x: x for x in []}\n"),
         // ----- R3E.2 match ---------------------------------------------------
         value("match_int_first", "match 1 { 1 -> { \'a\' }\n 2 -> { \'b\' } }\n"),
@@ -433,68 +433,68 @@ pub fn supported_cases() -> Vec<Case> {
         value("match_no_arm", "match 9 { 1 -> { \'a\' } }\n"),
         value("match_subject_once", "fn s() { print(\'s\')\n 1 }\nmatch s() { 1 -> { 0 } }\n"),
         value("match_guard_scope", "match 8 { n if n > 3 -> { n * 2 }\n _ -> { 0 } }\n"),
-        value("match_body_scope_not_leak", "{ match 1 { n -> { } }\n 2 }\n"),
+        value("match_body_scope_not_leak", "{ match 1 { _ -> { } }\n 2 }\n"),
         value("match_body_signal", "fn f() { match 1 { 1 -> { return 4 } } }\nf()\n"),
         value("match_guard_error", "match 1 { _ if 1 / 0 -> { 0 } }\n"),
         value("match_subject_error", "match 1 / 0 { _ -> { 0 } }\n"),
-        value("match_first_match_wins", "match 5 { n if n > 3 -> { \'first\' }\n n -> { \'second\' } }\n"),
+        value("match_first_match_wins", "match 5 { n if n > 3 -> { \'first\' }\n _ -> { \'second\' } }\n"),
         // A false guard discards the failed arm's scope: later arms bind from
         // the match's original environment (`Interp::eval_inner`'s fresh
         // per-arm child scope). Regression for the adversarial review finding.
         value(
             "match_guard_false_scope_reset",
-            "{ let x = 1\n match 0 { x if false -> { 0 }\n _ -> { x } } }\n",
+            "{ let x = 1\n match 0 { _ if false -> { 0 }\n _ -> { x } } }\n",
         ),
         value(
             "match_guard_false_mutation_reset",
-            "{ let mut x = 1\n match 0 { x if false -> { 0 }\n _ -> { x = 50 } }\n x }\n",
+            "{ let mut x = 1\n match 0 { _ if false -> { 0 }\n _ -> { x = 50 } }\n x }\n",
         ),
         // ----- R3F.1 try / catch / finally ------------------------------------
-        value("try_no_throw", "{ try { 1 } catch e { 2 } }\n"),
+        value("try_no_throw", "{ try { 1 } catch _ { 2 } }\n"),
         value("try_catches_throw", "{ try { throw 5 } catch e { e } }\n"),
         value("try_catch_binding", "{ try { throw \'x\' } catch e { e + \'!\' } }\n"),
-        value("try_no_throw_catch_unreached", "{ try { 7 } catch e { 1 / 0 } }\n"),
+        value("try_no_throw_catch_unreached", "{ try { 7 } catch _ { 1 / 0 } }\n"),
         value("try_catch_rethrow", "{ try { try { throw 1 } catch e { throw e + 1 } } catch f { f } }\n"),
-        value("try_nested", "{ try { try { throw 1 } catch e { e + 1 } } catch f { 0 } }\n"),
+        value("try_nested", "{ try { try { throw 1 } catch e { e + 1 } } catch _ { 0 } }\n"),
         value(
             "try_finally_runs",
-            "{ let mut n = 0\n try { n = 1 } catch e { n = 9 } finally { n = n + 1 }\n n }\n",
+            "{ let mut n = 0\n try { n = 1 } catch _ { n = 9 } finally { n = n + 1 }\n n }\n",
         ),
         value("try_finally_after_throw", "{ let mut n = 0\n try { throw 1 } catch e { n = e } finally { n = n + 10 }\n n }\n"),
         value(
             "try_finally_override_return",
-            "fn f() { try { return 1 } catch e { 0 } finally { return 2 } }\nf()\n",
+            "fn f() { try { return 1 } catch _ { 0 } finally { return 2 } }\nf()\n",
         ),
         value(
             "try_finally_override_throw",
             "{ try { throw 1 } catch e { e } finally { throw 2 } }\n",
         ),
-        value("try_fatal_not_caught", "{ try { 1 / 0 } catch e { 99 } }\n"),
-        value("try_fatal_still_finally", "{ let mut n = 0\n try { 1 / 0 } catch e { n = 1 } }\n"),
+        value("try_fatal_not_caught", "{ try { 1 / 0 } catch _ { 99 } }\n"),
+        value("try_fatal_still_finally", "{ let mut n = 0\n try { 1 / 0 } catch _ { n = 1 } }\n"),
         value(
             "try_throw_in_finally",
-            "{ try { 1 } catch e { 0 } finally { throw 3 } }\n",
+            "{ try { 1 } catch _ { 0 } finally { throw 3 } }\n",
         ),
         value("try_return_through_catch", "fn f() { try { throw 1 } catch e { return e + 1 } }\nf()\n"),
         value("try_catch_scope", "{ try { throw 3 } catch e { let x = e + 1\n x } }\n"),
         value("try_call_throw_crosses_frame", "fn g() { throw 9 }\n{ try { g() } catch e { e } }\n"),
         value("try_call_throw_deep", "fn g() { h() }\nfn h() { throw 4 }\n{ try { g() } catch e { e } }\n"),
         value("try_catch_calls", "fn f(x) { x + 1 }\n{ try { throw 1 } catch e { f(e) } }\n"),
-        value("try_prefix_value", "{ try { 10 } catch e { 0 } } + 5\n"),
+        value("try_prefix_value", "{ try { 10 } catch _ { 0 } } + 5\n"),
         // A throw from a catch, and a fatal passing a region without
         // `finally`, must keep unwinding to outer try regions. Regression for
         // the adversarial review finding.
         value(
             "try_throw_from_catch_to_outer",
-            "fn g() { throw 2 }\n{ try { try { throw 1 } catch e { g() } } catch e2 { e2 } }\n",
+            "fn g() { throw 2 }\n{ try { try { throw 1 } catch _ { g() } } catch e2 { e2 } }\n",
         ),
         value(
             "try_fatal_through_outer_finally",
-            "{ try { try { 1 / 0 } catch e { 0 } } catch e { 0 } finally { print(\'F\') } }\n",
+            "{ try { try { 1 / 0 } catch _ { 0 } } catch _ { 0 } finally { print(\'F\') } }\n",
         ),
         value(
             "try_throw_three_regions",
-            "fn g() { throw 3 }\n{ try { try { try { throw 1 } catch e { g() } } catch e2 { 0 } } catch e3 { e3 } }\n",
+            "fn g() { throw 3 }\n{ try { try { try { throw 1 } catch _ { g() } } catch _ { 0 } } catch e3 { e3 } }\n",
         ),
         // A fatal raised in a catch body through a callee frame must restore
         // the frame/depth accounting before `finally`/outer regions continue.
@@ -503,26 +503,26 @@ pub fn supported_cases() -> Vec<Case> {
         // call needs the production execution stack.
         program(
             "try_catch_fatal_frame_recovery",
-            "fn boom() { 1 / 0 }\nfn rec(n) { if n { rec(n - 1) } else { 0 } }\nfn main() { try { try { throw 1 } catch e { boom() } finally { throw 99 } } catch e2 { 0 }\n rec(510) }\n",
+            "fn boom() { 1 / 0 }\nfn rec(n) { if n { rec(n - 1) } else { 0 } }\nfn main() { try { try { throw 1 } catch _ { boom() } finally { throw 99 } } catch _ { 0 }\n rec(510) }\n",
         ),
         program(
             "try_catch_fatal_return_finally",
-            "fn boom() { 1 / 0 }\nfn g() { try { try { throw 1 } catch e { boom() } finally { return 7 } } catch e2 { 0 } }\nfn main() { let x = g() }\n",
+            "fn boom() { 1 / 0 }\nfn g() { try { try { throw 1 } catch _ { boom() } finally { return 7 } } catch _ { 0 } }\nfn main() { let _ = g() }\n",
         ),
         program(
             "try_catch_fatal_continue_finally",
-            "fn boom() { 1 / 0 }\nfn main() { let mut i = 0\n while i < 3 { i = i + 1\n try { try { throw 1 } catch e { boom() } finally { continue } } catch e2 { 0 } } }\n",
+            "fn boom() { 1 / 0 }\nfn main() { let mut i = 0\n while i < 3 { i = i + 1\n try { try { throw 1 } catch _ { boom() } finally { continue } } catch _ { 0 } } }\n",
         ),
         program(
             "try_catch_fatal_two_callee_frames",
-            "fn boom() { b2() }\nfn b2() { 1 / 0 }\nfn rec(n) { if n { rec(n - 1) } else { 0 } }\nfn main() { try { try { throw 1 } catch e { boom() } finally { throw 99 } } catch e2 { 0 }\n rec(510) }\n",
+            "fn boom() { b2() }\nfn b2() { 1 / 0 }\nfn rec(n) { if n { rec(n - 1) } else { 0 } }\nfn main() { try { try { throw 1 } catch _ { boom() } finally { throw 99 } } catch _ { 0 }\n rec(510) }\n",
         ),
         // A fatal in a `finally` body while unwinding a pending fatal discards
         // the pending outcome and keeps unwinding, exactly like the recursive
         // engine's `?` on the finalizer.
         value(
             "try_fatal_in_finally",
-            "{ try { 1 / 0 } catch e { 0 } finally { 2 / 0 } }\n",
+            "{ try { 1 / 0 } catch _ { 0 } finally { 2 / 0 } }\n",
         ),
         value(
             "try_throw_then_fatal_in_finally",
@@ -532,23 +532,23 @@ pub fn supported_cases() -> Vec<Case> {
         // body/catch/finally across 1-3 nested regions, plus depth recovery.
         value(
             "try_fatal_catch_frame_uncaught_outer",
-            "fn boom() { 1 / 0 }\nfn g() { try { throw 1 } catch e { boom() } }\n{ try { g() } catch e { 0 } }\n",
+            "fn boom() { 1 / 0 }\nfn g() { try { throw 1 } catch _ { boom() } }\n{ try { g() } catch _ { 0 } }\n",
         ),
         value(
             "try_fatal_finally_frame_uncaught_outer",
-            "fn boom() { 1 / 0 }\nfn g() { try { 1 } catch e { 0 } finally { boom() } }\n{ try { g() } catch e { 0 } }\n",
+            "fn boom() { 1 / 0 }\nfn g() { try { 1 } catch _ { 0 } finally { boom() } }\n{ try { g() } catch _ { 0 } }\n",
         ),
         value(
             "try_fatal_finally_unwind_outer_finally",
-            "fn boom() { 1 / 0 }\nfn g() { try { throw 1 } catch e { e } finally { boom() } }\n{ try { g() } catch e { 0 } finally { print(\'outer\') } }\n",
+            "fn boom() { 1 / 0 }\nfn g() { try { throw 1 } catch e { e } finally { boom() } }\n{ try { g() } catch _ { 0 } finally { print(\'outer\') } }\n",
         ),
         value(
             "try_return_finally_after_fatal",
-            "fn g() { try { 1 / 0 } catch e { 0 } finally { return 3 } }\n{ g() }\n",
+            "fn g() { try { 1 / 0 } catch _ { 0 } finally { return 3 } }\n{ g() }\n",
         ),
         value(
             "try_fatal_inside_catch_expression",
-            "fn boom() { b2() }\nfn b2() { 1 / 0 }\n{ try { throw 1 } catch e { 1 + boom() + 2 } }\n",
+            "fn boom() { b2() }\nfn b2() { 1 / 0 }\n{ try { throw 1 } catch _ { 1 + boom() + 2 } }\n",
         ),
         value(
             "try_middle_catch_throw_outer_catch",
@@ -556,17 +556,17 @@ pub fn supported_cases() -> Vec<Case> {
         ),
         program(
             "try_depth_recovery_after_catch_error",
-            "fn boom() { 1 / 0 }\nfn rec(n) { if n { rec(n - 1) } else { 0 } }\nfn main() { try { try { throw 1 } catch e { boom() } } catch e2 { 0 }\n rec(509) }\n",
+            "fn boom() { 1 / 0 }\nfn rec(n) { if n { rec(n - 1) } else { 0 } }\nfn main() { try { try { throw 1 } catch _ { boom() } } catch _ { 0 }\n rec(509) }\n",
         ),
         value(
             "try_three_regions_fatal_chain",
-            "{ try { try { try { 1 / 0 } catch e { 0 } finally { print(\'a\') } } catch e2 { 0 } finally { print(\'b\') } } catch e3 { 0 } finally { print(\'c\') } }\n",
+            "{ try { try { try { 1 / 0 } catch _ { 0 } finally { print(\'a\') } } catch _ { 0 } finally { print(\'b\') } } catch _ { 0 } finally { print(\'c\') } }\n",
         ),
         value("try_throw_value_uncaught_after", "{ try { throw 1 } catch e { throw e + 1 } }\n"),
-        value("try_error_in_catch_propagates", "{ try { throw 1 } catch e { 1 / 0 } }\n"),
+        value("try_error_in_catch_propagates", "{ try { throw 1 } catch _ { 1 / 0 } }\n"),
         value(
             "try_finally_continue_signal",
-            "{ let mut i = 0\n while i < 2 { i = i + 1\n try { continue } catch e { 0 } finally { } }\n i }\n",
+            "{ let mut i = 0\n while i < 2 { i = i + 1\n try { continue } catch _ { 0 } finally { } }\n i }\n",
         ),
         // ----- composition with R3B constructs ---------------------------
         value("call_in_unary", "-(abs(-2))\n"),
@@ -590,11 +590,11 @@ pub fn supported_cases() -> Vec<Case> {
         value("call_skipped_or", "true or len([1, 2])\n"),
         // ----- side effects: exactly-once and order (R3B ledger) ---------
         value("print_side_effect", "print(\"a\")\n"),
-        value("arg_order_two", "fn f(a, b) { 0 }\nf(print(\"a\"), print(\"b\"))\n"),
-        value("arg_order_three", "fn f(a, b, c) { 0 }\nf(print(\"1\"), print(\"2\"), print(\"3\"))\n"),
-        value("arg_evaluated_once", "fn f(a) { 0 }\nlet n = [0]\nf(print(\"x\"))\n"),
+        value("arg_order_two", "fn f(_a, _b) { 0 }\nf(print(\"a\"), print(\"b\"))\n"),
+        value("arg_order_three", "fn f(_a, _b, _c) { 0 }\nf(print(\"1\"), print(\"2\"), print(\"3\"))\n"),
+        value("arg_evaluated_once", "fn f(_a) { 0 }\nlet n = [0]\nf(print(\"x\"))\n"),
         value("binary_order_over_call", "print(\"l\") + 0\n"),
-        value("binary_order_left_then_right", "fn f(a, b) { 0 }\nf(1 + print(\"r\") - 1, 2)\n"),
+        value("binary_order_left_then_right", "fn f(_a, _b) { 0 }\nf(1 + print(\"r\") - 1, 2)\n"),
         value("list_elements_once", "[print(\"a\"), print(\"b\"), print(\"c\")]\n"),
         value("map_key_before_value", "{print(\"k\"): print(\"v\")}\n"),
         value("range_bounds_order", "print(\"s\")..print(\"e\")\n"),
@@ -683,10 +683,10 @@ pub fn supported_cases() -> Vec<Case> {
             "fn main() { f(1000) }\nfn f(n) { if n { f(n - 1) } else { 0 } }\n",
         ),
         // ----- program (real frame boundary) -----------------------------
-        program("main_native_call", "fn main() { let x = len([1, 2]) }\n"),
-        program("main_user_call", "fn main() { let x = f() }\nfn f() { 3 }\n"),
-        program("main_nested_call", "fn main() { let x = f(g()) }\nfn f(a) { a }\nfn g() { 1 }\n"),
-        program("main_recursive", "fn main() { let x = f(4) }\nfn f(n) { if n { n + f(n - 1) } else { 0 } }\n"),
+        program("main_native_call", "fn main() { let _ = len([1, 2]) }\n"),
+        program("main_user_call", "fn main() { let _ = f() }\nfn f() { 3 }\n"),
+        program("main_nested_call", "fn main() { let _ = f(g()) }\nfn f(a) { a }\nfn g() { 1 }\n"),
+        program("main_recursive", "fn main() { let _ = f(4) }\nfn f(n) { if n { n + f(n - 1) } else { 0 } }\n"),
         program("main_throw", "fn main() { f() }\nfn f() { throw 1 }\n"),
         program("main_call_after_return", "fn main() { return\n f() }\nfn f() { print(\"unreached\") }\n"),
         program("main_print_order", "fn main() { print(\"one\")\n print(\"two\") }\n"),

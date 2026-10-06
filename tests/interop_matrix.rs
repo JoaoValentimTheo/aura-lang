@@ -304,7 +304,7 @@ fn unicode_round_trips() {
 fn repeated_calls_are_stable() {
     let src = r#"fn main() {
         let mut total = 0
-        for i in range(0, 50) {
+        for _ in range(0, 50) {
             total = total + py_eval("1 + 1")
         }
         print(total)

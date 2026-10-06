@@ -75,10 +75,10 @@ fn annotation_mismatch_is_rejected() {
 
 #[test]
 fn matching_annotation_is_accepted() {
-    assert_eq!(check("fn main() { let x: int = 3 }"), Ok(()));
-    assert_eq!(check("fn main() { let xs: [int] = [1, 2] }"), Ok(()));
+    assert_eq!(check("fn main() { let _: int = 3 }"), Ok(()));
+    assert_eq!(check("fn main() { let _: [int] = [1, 2] }"), Ok(()));
     assert_eq!(
-        check("fn main() { let m: {string: int} = {\"a\": 1} }"),
+        check("fn main() { let _: {string: int} = {\"a\": 1} }"),
         Ok(())
     );
 }
@@ -216,12 +216,12 @@ fn destructuring_duplicate_binding_is_static() {
 /// parameters remain strict.
 #[test]
 fn variable_shadowing_is_not_a_redeclaration() {
-    assert_eq!(check("fn main() { let x = 1\n let x = 2 }"), Ok(()));
-    assert_eq!(check("fn main() { let mut x = 1\n let x = 2 }"), Ok(()));
-    assert_eq!(check("fn main() { let mut x = 1\n let mut x = 2 }"), Ok(()));
+    assert_eq!(check("fn main() { let _ = 1\n let _ = 2 }"), Ok(()));
+    assert_eq!(check("fn main() { let mut _ = 1\n let _ = 2 }"), Ok(()));
+    assert_eq!(check("fn main() { let mut _ = 1\n let mut _ = 2 }"), Ok(()));
     // Destructuring `let` also shadows.
     assert_eq!(
-        check("fn main() { let x = 1\n let [x, y] = [1, 2] }"),
+        check("fn main() { let _ = 1\n let [_, _] = [1, 2] }"),
         Ok(())
     );
 }
@@ -292,7 +292,7 @@ fn destructuring_declares_all_names() {
 #[test]
 fn destructuring_names_stay_unknown() {
     assert_eq!(
-        check("struct S { x: int }\nfn main() { let [s] = [S { x: 1 }]\n let y: string = s.x }"),
+        check("struct S { x: int }\nfn main() { let [s] = [S { x: 1 }]\n let _: string = s.x }"),
         Ok(())
     );
 }
@@ -314,7 +314,7 @@ fn destructuring_shadows_outer_scope() {
 /// `Unknown`), and is a map, not a block.
 #[test]
 fn empty_map_literal_is_a_map_typed_by_existing_rules() {
-    assert_eq!(check("fn main() { let m: {string: int} = {:} }"), Ok(()));
+    assert_eq!(check("fn main() { let _: {string: int} = {:} }"), Ok(()));
     // It is a map value: a method that a map lacks is rejected as a method
     // error, not accepted as a block.
     assert_eq!(check("fn main() { {:}.nope() }"), Err(codes::UNDEFINED));
@@ -354,7 +354,7 @@ fn for_pattern_uses_the_same_validation_as_match() {
         Err(codes::UNKNOWN_TYPE)
     );
     assert_eq!(
-        check("enum E { A(int) }\nfn main() { for A(v) in [A(1)] { } }"),
+        check("enum E { A(int) }\nfn main() { for A(_) in [A(1)] { } }"),
         Ok(())
     );
 }
@@ -396,7 +396,7 @@ fn else_if_break_continue_loop_context_is_unchanged() {
         Err(codes::LOOP_CONTROL)
     );
     assert_eq!(
-        check("fn main() { for x in [1] { if false { } else if true { break } } }"),
+        check("fn main() { for _ in [1] { if false { } else if true { break } } }"),
         Ok(())
     );
 }
@@ -411,7 +411,7 @@ fn else_if_break_continue_loop_context_is_unchanged() {
 fn scripting_io_builtins_are_checked() {
     // Valid arities/types.
     assert_eq!(
-        check("fn main() { read_line()\n let t = read_file(\"a\")\n write_file(\"a\", \"b\")\n let a = args() }"),
+        check("fn main() { read_line()\n let _ = read_file(\"a\")\n write_file(\"a\", \"b\")\n let _ = args() }"),
         Ok(())
     );
     // Arity mismatches are `E3001`, consistent with the rest of the library.
@@ -441,7 +441,7 @@ fn scripting_io_builtins_are_checked() {
 #[test]
 fn chained_aliases_resolve_transitively() {
     assert_eq!(
-        check("type B = int\ntype A = B\nfn main() { let x: A = 5 }"),
+        check("type B = int\ntype A = B\nfn main() { let _: A = 5 }"),
         Ok(())
     );
     assert_eq!(
@@ -460,7 +460,7 @@ fn alias_is_transparent_in_return_field_and_payload_positions() {
         Err(codes::RETURN_MISMATCH)
     );
     assert_eq!(
-        check("type Id = int\nstruct S { id: Id }\nfn main() { let s = S(id: 3) }"),
+        check("type Id = int\nstruct S { id: Id }\nfn main() { let _ = S(id: 3) }"),
         Ok(())
     );
     assert_eq!(
@@ -468,7 +468,7 @@ fn alias_is_transparent_in_return_field_and_payload_positions() {
         Err(codes::TYPE_MISMATCH)
     );
     assert_eq!(
-        check("type Id = int\nenum E { A(Id) }\nfn main() { let e = A(5) }"),
+        check("type Id = int\nenum E { A(Id) }\nfn main() { let _ = A(5) }"),
         Ok(())
     );
     assert_eq!(
@@ -483,15 +483,15 @@ fn alias_is_transparent_in_return_field_and_payload_positions() {
 #[test]
 fn alias_chain_through_optional_stays_conservative() {
     assert_eq!(
-        check("type M = int | none\ntype N = M\nfn main() { let x: N = 5 }"),
+        check("type M = int | none\ntype N = M\nfn main() { let _: N = 5 }"),
         Ok(())
     );
     assert_eq!(
-        check("type M = int | none\ntype N = M\nfn main() { let x: N = none }"),
+        check("type M = int | none\ntype N = M\nfn main() { let _: N = none }"),
         Ok(())
     );
     assert_eq!(
-        check("type M = int | none\ntype N = M\nfn main() { let x: N = \"s\" }"),
+        check("type M = int | none\ntype N = M\nfn main() { let _: N = \"s\" }"),
         Ok(())
     );
     // The inner position of `T | none` is still resolved and validated.
@@ -518,7 +518,7 @@ fn deep_alias_chain_resolves() {
         for i in 1..200 {
             writeln!(aliases, "type T{i} = T{}", i - 1).unwrap();
         }
-        format!("type T0 = {target}\n{aliases}fn main() {{ let x: T199 = 5 }}\n")
+        format!("type T0 = {target}\n{aliases}fn main() {{ let _: T199 = 5 }}\n")
     };
     assert_eq!(check(&chain("int")), Ok(()));
     assert_eq!(check(&chain("string")), Err(codes::TYPE_MISMATCH));
@@ -532,7 +532,7 @@ fn deep_alias_chain_resolves() {
 fn alias_chain_resolves_in_any_declaration_order() {
     // Declaration order: target first.
     assert_eq!(
-        check("type C = int\ntype B = C\ntype A = B\nfn main() { let x: A = 9 }"),
+        check("type C = int\ntype B = C\ntype A = B\nfn main() { let _: A = 9 }"),
         Ok(())
     );
     assert_eq!(
@@ -541,7 +541,7 @@ fn alias_chain_resolves_in_any_declaration_order() {
     );
     // Forward order: target last.
     assert_eq!(
-        check("type A = B\ntype B = C\ntype C = int\nfn main() { let x: A = 9 }"),
+        check("type A = B\ntype B = C\ntype C = int\nfn main() { let _: A = 9 }"),
         Ok(())
     );
     assert_eq!(
@@ -557,7 +557,7 @@ fn alias_chain_resolves_in_any_declaration_order() {
 fn alias_resolves_through_collection_positions() {
     // Alias as a list element type.
     assert_eq!(
-        check("type Id = int\nfn main() { let xs: [Id] = [1, 2] }"),
+        check("type Id = int\nfn main() { let _: [Id] = [1, 2] }"),
         Ok(())
     );
     assert_eq!(
@@ -566,7 +566,7 @@ fn alias_resolves_through_collection_positions() {
     );
     // Alias as a map value type.
     assert_eq!(
-        check("type Id = int\nfn main() { let m: {string: Id} = {\"a\": 1} }"),
+        check("type Id = int\nfn main() { let _: {string: Id} = {\"a\": 1} }"),
         Ok(())
     );
     assert_eq!(
@@ -575,12 +575,12 @@ fn alias_resolves_through_collection_positions() {
     );
     // Alias chain resolving to a list, used as a value type.
     assert_eq!(
-        check("type Id = int\ntype Ids = [Id]\nfn main() { let xs: Ids = [1] }"),
+        check("type Id = int\ntype Ids = [Id]\nfn main() { let _: Ids = [1] }"),
         Ok(())
     );
     // Alias in both sides of a chain nested through `T | none`.
     assert_eq!(
-        check("type Id = int\ntype MaybeIds = [Id] | none\nfn main() { let xs: MaybeIds = [1] }"),
+        check("type Id = int\ntype MaybeIds = [Id] | none\nfn main() { let _: MaybeIds = [1] }"),
         Ok(())
     );
 }
@@ -591,7 +591,7 @@ fn alias_resolves_through_collection_positions() {
 #[test]
 fn alias_to_user_type_is_transparent() {
     assert_eq!(
-        check("struct P { x: int }\ntype Alias = P\nfn main() { let s: Alias = P { x: 1 } }"),
+        check("struct P { x: int }\ntype Alias = P\nfn main() { let _: Alias = P { x: 1 } }"),
         Ok(())
     );
     assert_eq!(
@@ -600,12 +600,12 @@ fn alias_to_user_type_is_transparent() {
     );
     // A forward-declared struct target also resolves.
     assert_eq!(
-        check("type Alias = P\nstruct P { x: int }\nfn main() { let s: Alias = P { x: 1 } }"),
+        check("type Alias = P\nstruct P { x: int }\nfn main() { let _: Alias = P { x: 1 } }"),
         Ok(())
     );
     // An aliased enum is usable in an annotated binding.
     assert_eq!(
-        check("enum E { A(int) }\ntype AliasE = E\nfn main() { let e: AliasE = A(3) }"),
+        check("enum E { A(int) }\ntype AliasE = E\nfn main() { let _: AliasE = A(3) }"),
         Ok(())
     );
 }
@@ -628,11 +628,11 @@ fn alias_chain_to_unknown_target_is_declaration_error() {
 fn general_union_accepts_members_and_rejects_others() {
     // int | float accepts both primitives.
     assert_eq!(
-        check("type Number = int | float\nfn main() { let x: Number = 1 }"),
+        check("type Number = int | float\nfn main() { let _: Number = 1 }"),
         Ok(())
     );
     assert_eq!(
-        check("type Number = int | float\nfn main() { let x: Number = 1.5 }"),
+        check("type Number = int | float\nfn main() { let _: Number = 1.5 }"),
         Ok(())
     );
     // ...but not a string.
@@ -642,7 +642,7 @@ fn general_union_accepts_members_and_rejects_others() {
     );
     // string | int accepts both.
     assert_eq!(
-        check("type ID = string | int\nfn main() { let a: ID = \"x\"\n let b: ID = 1 }"),
+        check("type ID = string | int\nfn main() { let _: ID = \"x\"\n let _: ID = 1 }"),
         Ok(())
     );
     assert_eq!(
@@ -650,7 +650,7 @@ fn general_union_accepts_members_and_rejects_others() {
         Err(codes::TYPE_MISMATCH)
     );
     // A union asserted inline (not through an alias) behaves identically.
-    assert_eq!(check("fn main() { let x: int | float = 2 }"), Ok(()));
+    assert_eq!(check("fn main() { let _: int | float = 2 }"), Ok(()));
     assert_eq!(
         check("fn main() { let x: int | float = \"s\" }"),
         Err(codes::TYPE_MISMATCH)
@@ -667,9 +667,9 @@ fn union_normalization_is_order_and_duplicate_insensitive() {
         "type N = int | int | float",
         "type N = int | float | int",
     ] {
-        let src = format!("{decl}\nfn main() {{ let x: N = 1 }}");
+        let src = format!("{decl}\nfn main() {{ let _: N = 1 }}");
         assert_eq!(check(&src), Ok(()), "expected {src:?} to accept an int");
-        let src = format!("{decl}\nfn main() {{ let x: N = 1.5 }}");
+        let src = format!("{decl}\nfn main() {{ let _: N = 1.5 }}");
         assert_eq!(check(&src), Ok(()), "expected {src:?} to accept a float");
     }
 }
@@ -680,15 +680,15 @@ fn union_normalization_is_order_and_duplicate_insensitive() {
 #[test]
 fn nested_union_flattens_through_aliases() {
     assert_eq!(
-        check("type A = int | float\ntype B = A | string\nfn main() { let x: B = \"s\" }"),
+        check("type A = int | float\ntype B = A | string\nfn main() { let _: B = \"s\" }"),
         Ok(())
     );
     assert_eq!(
-        check("type A = int | float\ntype B = A | string\nfn main() { let x: B = 1 }"),
+        check("type A = int | float\ntype B = A | string\nfn main() { let _: B = 1 }"),
         Ok(())
     );
     assert_eq!(
-        check("type A = int | float\ntype B = A | string\nfn main() { let x: B = 2.5 }"),
+        check("type A = int | float\ntype B = A | string\nfn main() { let _: B = 2.5 }"),
         Ok(())
     );
     assert_eq!(
@@ -703,21 +703,21 @@ fn nested_union_flattens_through_aliases() {
 fn union_with_none_is_permissive() {
     // `int | float | none` accepts an int, a float, and none.
     assert_eq!(
-        check("type N = int | float | none\nfn main() { let a: N = 1 }"),
+        check("type N = int | float | none\nfn main() { let _: N = 1 }"),
         Ok(())
     );
     assert_eq!(
-        check("type N = int | float | none\nfn main() { let a: N = 2.5 }"),
+        check("type N = int | float | none\nfn main() { let _: N = 2.5 }"),
         Ok(())
     );
     assert_eq!(
-        check("type N = int | float | none\nfn main() { let a: N = none }"),
+        check("type N = int | float | none\nfn main() { let _: N = none }"),
         Ok(())
     );
     // Because none is `Unknown`, even an out-of-union value is accepted — the
     // documented permissiveness of `T | none`, generalized.
     assert_eq!(
-        check("type N = int | float | none\nfn main() { let a: N = \"s\" }"),
+        check("type N = int | float | none\nfn main() { let _: N = \"s\" }"),
         Ok(())
     );
 }
@@ -728,7 +728,7 @@ fn union_with_none_is_permissive() {
 fn alias_composition_with_unions() {
     // alias -> union, chained aliases.
     assert_eq!(
-        check("type A = int | float\ntype B = A\ntype C = B\nfn main() { let x: C = 1 }"),
+        check("type A = int | float\ntype B = A\ntype C = B\nfn main() { let _: C = 1 }"),
         Ok(())
     );
     assert_eq!(
@@ -737,17 +737,17 @@ fn alias_composition_with_unions() {
     );
     // union -> alias member.
     assert_eq!(
-        check("type ID = string | int\ntype UserID = ID\nfn main() { let u: UserID = 7 }"),
+        check("type ID = string | int\ntype UserID = ID\nfn main() { let _: UserID = 7 }"),
         Ok(())
     );
     // alias in one member of another union.
     assert_eq!(
-        check("type A = int | float\ntype B = string | A\ntype C = B | none\nfn main() { let x: C = 1.5 }"),
+        check("type A = int | float\ntype B = string | A\ntype C = B | none\nfn main() { let _: C = 1.5 }"),
         Ok(())
     );
     // Forward declaration order resolves too.
     assert_eq!(
-        check("type C = B | bool\ntype B = A\ntype A = int | float\nfn main() { let x: C = true }"),
+        check("type C = B | bool\ntype B = A\ntype A = int | float\nfn main() { let _: C = true }"),
         Ok(())
     );
 }
@@ -758,24 +758,24 @@ fn alias_composition_with_unions() {
 fn union_in_supported_positions() {
     // function parameter (directly resolved call, F001 semantics).
     assert_eq!(
-        check("type N = int | float\nfn f(x: N) { return none }\nfn main() { f(1) }"),
+        check("type N = int | float\nfn f(_a: N) { return none }\nfn main() { f(1) }"),
         Ok(())
     );
     assert_eq!(
-        check("type N = int | float\nfn f(x: N) { return none }\nfn main() { f(2.5) }"),
+        check("type N = int | float\nfn f(_a: N) { return none }\nfn main() { f(2.5) }"),
         Ok(())
     );
     assert_eq!(
-        check("type N = int | float\nfn f(x: N) { return none }\nfn main() { f(\"s\") }"),
+        check("type N = int | float\nfn f(_a: N) { return none }\nfn main() { f(\"s\") }"),
         Err(codes::TYPE_MISMATCH)
     );
     // inline parameter union.
     assert_eq!(
-        check("fn f(x: string | int) { return none }\nfn main() { f(1) }"),
+        check("fn f(_a: string | int) { return none }\nfn main() { f(1) }"),
         Ok(())
     );
     assert_eq!(
-        check("fn f(x: string | int) { return none }\nfn main() { f(true) }"),
+        check("fn f(_a: string | int) { return none }\nfn main() { f(true) }"),
         Err(codes::TYPE_MISMATCH)
     );
     // return annotation.
@@ -793,7 +793,7 @@ fn union_in_supported_positions() {
     );
     // struct field.
     assert_eq!(
-        check("type Scalar = int | float\nstruct P { x: Scalar }\nfn main() { let p: P = P { x: 1 } }"),
+        check("type Scalar = int | float\nstruct P { x: Scalar }\nfn main() { let _: P = P { x: 1 } }"),
         Ok(())
     );
     assert_eq!(
@@ -802,7 +802,7 @@ fn union_in_supported_positions() {
     );
     // enum payload.
     assert_eq!(
-        check("type Scalar = int | float\nenum E { A(Scalar) }\nfn main() { let e: E = A(1.5) }"),
+        check("type Scalar = int | float\nenum E { A(Scalar) }\nfn main() { let _: E = A(1.5) }"),
         Ok(())
     );
     assert_eq!(
@@ -811,7 +811,7 @@ fn union_in_supported_positions() {
     );
     // collection element and map value.
     assert_eq!(
-        check("type Scalar = int | float\nfn main() { let xs: [Scalar] = [1, 2.5] }"),
+        check("type Scalar = int | float\nfn main() { let _: [Scalar] = [1, 2.5] }"),
         Ok(())
     );
     assert_eq!(
@@ -819,7 +819,7 @@ fn union_in_supported_positions() {
         Err(codes::TYPE_MISMATCH)
     );
     assert_eq!(
-        check("type Scalar = int | float\nfn main() { let m: {string: Scalar} = {\"a\": 1} }"),
+        check("type Scalar = int | float\nfn main() { let _: {string: Scalar} = {\"a\": 1} }"),
         Ok(())
     );
     assert_eq!(
@@ -859,11 +859,11 @@ fn union_alias_cycles_are_rejected_not_a_crash() {
 fn union_and_unknown_boundary() {
     // A value inferred `Unknown` is accepted by any union.
     assert_eq!(
-        check("type N = int | float\nfn main() { let x: N = none }"),
+        check("type N = int | float\nfn main() { let _: N = none }"),
         Ok(())
     );
     assert_eq!(
-        check("type N = int | float\nfn main() { let x: N = if true { 1 } else { 2 } }"),
+        check("type N = int | float\nfn main() { let _: N = if true { 1 } else { 2 } }"),
         Ok(())
     );
     // A union annotation with an unknown member name is E3002, not silently
@@ -896,9 +896,9 @@ fn range_literal_bounds_are_statically_checked() {
         Err(codes::TYPE_MISMATCH)
     );
     // Int bounds and Unknown bounds are accepted.
-    assert_eq!(check("fn main() { let r = 0..10 }"), Ok(()));
-    assert_eq!(check("fn main() { let r = 1 + 2..10 - 1 }"), Ok(()));
-    assert_eq!(check("fn f(x) { let r = 0..x }"), Ok(()));
+    assert_eq!(check("fn main() { let _ = 0..10 }"), Ok(()));
+    assert_eq!(check("fn main() { let _ = 1 + 2..10 - 1 }"), Ok(()));
+    assert_eq!(check("fn f(x) { let _ = 0..x }"), Ok(()));
 }
 
 /// A struct MUST declare each field name at most once (`LANGUAGE_SPEC.md`
@@ -930,11 +930,11 @@ fn range_builtin_second_bound_is_statically_checked() {
         check("fn main() { let r = range(0, 1.5) }"),
         Err(codes::TYPE_MISMATCH)
     );
-    assert_eq!(check("fn main() { let r = range(0, 10) }"), Ok(()));
+    assert_eq!(check("fn main() { let _ = range(0, 10) }"), Ok(()));
     // A single-argument call is still accepted, and an Unknown bound is
     // undecidable and therefore permitted (§2.3).
-    assert_eq!(check("fn main() { let r = range(10) }"), Ok(()));
-    assert_eq!(check("fn f(x) { let r = range(0, x) }"), Ok(()));
+    assert_eq!(check("fn main() { let _ = range(10) }"), Ok(()));
+    assert_eq!(check("fn f(x) { let _ = range(0, x) }"), Ok(()));
 }
 
 /// A parenthesized comma-list is list sugar and is indistinguishable from a
@@ -945,7 +945,7 @@ fn tuple_is_checked_like_a_list() {
         check("fn main() { let x: [string] = (1, 2) }"),
         Err(codes::TYPE_MISMATCH)
     );
-    assert_eq!(check("fn main() { let x: [int] = (1, 2) }"), Ok(()));
+    assert_eq!(check("fn main() { let _: [int] = (1, 2) }"), Ok(()));
 }
 
 // ------------------------------------------ arithmetic result-type inference
@@ -959,12 +959,12 @@ fn tuple_is_checked_like_a_list() {
 fn arithmetic_result_type_is_inferred_from_both_operands() {
     // Mixed promotion infers float, so the float annotation is accepted and
     // the int annotation is provably wrong.
-    assert_eq!(check("fn main() { let x: float = 1 + 1.5 }"), Ok(()));
+    assert_eq!(check("fn main() { let _: float = 1 + 1.5 }"), Ok(()));
     assert_eq!(
         check("fn main() { let x: int = 1 + 1.5 }"),
         Err(codes::TYPE_MISMATCH)
     );
-    assert_eq!(check("fn main() { let x: float = 1.5 + 1 }"), Ok(()));
+    assert_eq!(check("fn main() { let _: float = 1.5 + 1 }"), Ok(()));
     // A float parameter accepts a mixed-arithmetic argument.
     assert_eq!(
         check("fn f(x: float) -> float { return x }\nfn main() { f(1 + 1.5) }"),
@@ -975,8 +975,8 @@ fn arithmetic_result_type_is_inferred_from_both_operands() {
         Ok(())
     );
     // Same-type results are unchanged.
-    assert_eq!(check("fn main() { let x: int = 1 + 2 }"), Ok(()));
-    assert_eq!(check("fn main() { let s: string = \"a\" + \"b\" }"), Ok(()));
+    assert_eq!(check("fn main() { let _: int = 1 + 2 }"), Ok(()));
+    assert_eq!(check("fn main() { let _: string = \"a\" + \"b\" }"), Ok(()));
     assert_eq!(
         check("fn main() { let n: int = \"a\" + \"b\" }"),
         Err(codes::TYPE_MISMATCH)

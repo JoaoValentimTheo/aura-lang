@@ -20,6 +20,8 @@ absent.
 | J3 | PRE | Is reusing the existing `Pattern` grammar for the catch clause the right E2 choice, or does it create a semantic dead-end? | **choice=reuse, p=0.71** | Supported the pattern-reuse design; kept the clause count at one pattern (generalizes to multiple clauses later without breaking syntax) and used existing `match_pattern` selection semantics. |
 | J4 | POST | (a) How likely is a material semantic defect in the pattern-catch implementation not covered by 23 tests + oracle? (b) E1009 vs a dedicated code for the reserved module name? | **(a) 0.21 low**; **(b) choice=use_new_code, confidence 0.4 (p=0.60)** | (a) accepted; oracle + differential coverage judged sufficient. (b) deterministic repository evidence agreed with Jev: `E1009` is documented as a *value-namespace* reservation, while modules are a separate namespace (ADR-0002); added dedicated `E2023 RESERVED_NAMESPACE`, documented in `docs/errors.md` + website copy, sampled in `tests/grammar.rs`. Disagreement: none (evidence and Jev agreed). |
 
-Jev totals: PRE consultations 3; POST classifications 1; disagreements 0;
+| J5 | POST | Does the type-system slice have a material soundness defect or an unjustified breaking change: (a) unrequired accept->reject, (b) unsound narrowing, (c) retained `none` union member breaking an invariant the collapse provided? | **0.12 low** | Accepted. Evidence: only earlier-detection transitions at the same codes in regenerated goldens; mutation checks discriminated; spec updated. |
+
+Jev totals: PRE consultations 3; POST classifications 2; disagreements 0;
 Jev-driven extra investigations 3 (all resolved with deterministic evidence;
 J4(b) changed the implementation).

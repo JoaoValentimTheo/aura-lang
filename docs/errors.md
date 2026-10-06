@@ -29,6 +29,7 @@ Every rejection carries a stable code. Codes are grouped by phase:
 | E2003 | Undefined name or function | `print(nope)`, `nope()` |
 | E2005 | `let` without initializer | `let x` |
 | E2007 | Redeclaration | `const X = 1; const X = 2`; two `main`s; a duplicate function, parameter, or top-level `let` (an ordinary `let`/`let mut` shadows instead, §16.3) |
+| E2008 | Declaration is never used | `fn f() { let x = 1 }`, `fn f(x: int) { }`, `for v in [1] { }` with `v` unused; discard explicitly with `_`/`_name` |
 | E2009 | `_param` was used | `fn f(_x) { return _x }` |
 | E2010 | Invalid assignment target | `1 = 2` |
 | E2011 | Invalid `main` | `fn main(x) { }` |

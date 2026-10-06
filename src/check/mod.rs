@@ -175,12 +175,30 @@ fn type_expr_depth_exceeds(t: &TypeExpr, limit: usize) -> bool {
 const MAX_TYPE_NODES: usize = 100_000;
 
 /// A lexical scope of bindings.
+/// Why a local binding is tracked for unused analysis (Keystone). The kind
+/// only shapes the diagnostic wording.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UnusedKind {
+    /// `let` / `let mut` / destructuring `let`.
+    Local,
+    /// A function, method, or lambda parameter.
+    Param,
+    /// A pattern binding (`for`, `match` arm, catch clause).
+    Pattern,
+}
+
 #[derive(Debug, Default)]
 struct Scope {
     /// name -> mutable
     vars: HashMap<String, bool>,
     /// names declared in this exact scope, for redeclaration checks
     declares: HashMap<String, Span>,
+    /// Local bindings declared in this scope whose use must be checked when
+    /// the scope ends (Keystone unused analysis). A name here that is never
+    /// read is `E2008`, unless it is `_` or starts with `_` (explicit
+    /// discard). Module-scope declarations are not tracked: a module binding
+    /// may be used by another module or a later REPL submission.
+    unread: Vec<(String, Span, UnusedKind)>,
     /// Names whose `value_types` entry in this scope is a flow-narrowing
     /// override rather than a declaration type. An assignment to such a name
     /// invalidates the override (the binding may hold `none` again), so the
@@ -447,6 +465,11 @@ pub struct Checker {
     /// branch cannot fall through. `block` consumes it immediately after the
     /// statement that produced it.
     pending_narrowing: Option<(String, Ty)>,
+    /// Whether unused-binding analysis (`E2008`) is active. A compiled
+    /// program is checked with it on (Keystone strictness); a REPL submission
+    /// is checked with it off, because a session binding persists for later
+    /// submissions and an interactive `let x = 1` is not a dead declaration.
+    unused_analysis: bool,
     /// The declared type of annotated bindings in scope, innermost last.
     value_types: Vec<HashMap<String, Ty>>,
     /// `_`-prefixed parameters of the function currently being checked, with
@@ -540,6 +563,7 @@ impl Checker {
             variant_payloads: HashMap::new(),
             return_type: None,
             pending_narrowing: None,
+            unused_analysis: true,
             value_types: vec![HashMap::new()],
             underscore_params: Vec::new(),
             used_names: HashMap::new(),
@@ -1622,8 +1646,31 @@ impl Checker {
     ///
     /// # Errors
     /// Returns the first diagnostic found.
+    /// Run a check for a REPL submission: unused analysis (`E2008`) is
+    /// disabled, because a session's bindings persist for later submissions
+    /// and an interactive declaration is not a dead one.
+    ///
+    /// # Errors
+    /// Returns the first diagnostic.
+    pub fn check_repl_mode(&mut self, m: &Module, mode: crate::CompileMode) -> Result<()> {
+        let saved = self.unused_analysis;
+        self.unused_analysis = false;
+        let r = self.check_mode(m, mode);
+        self.unused_analysis = saved;
+        r
+    }
+
     pub fn check_stmt(&mut self, s: &Stmt) -> Result<()> {
-        self.stmt(s)
+        // A REPL submission is not a whole program: its top-level bindings
+        // persist in the session and may be used by a later submission, and
+        // an interactive `for i in … { }` is a deliberate probe. Unused
+        // analysis (`E2008`) is therefore a program-compilation rule, not a
+        // session rule.
+        let saved = self.unused_analysis;
+        self.unused_analysis = false;
+        let r = self.stmt(s);
+        self.unused_analysis = saved;
+        r
     }
 
     /// The statically inferred type of a `let` binding's initializer, as a
@@ -1741,6 +1788,95 @@ impl Checker {
     fn pop(&mut self) {
         self.scopes.pop();
         self.value_types.pop();
+    }
+
+    /// Record a local binding for unused analysis (Keystone §12). `_` and
+    /// `_`-prefixed names are explicit discards and are not tracked, which is
+    /// the existing discard convention (`LANGUAGE_SPEC.md` §4.6, §16.4).
+    fn declare_local(&mut self, name: &str, span: Span, kind: UnusedKind) {
+        if !self.unused_analysis || name == "_" || name.starts_with('_') {
+            return;
+        }
+        // Go-like discipline (Keystone §12): unused analysis applies to
+        // *local* bindings. A module-scope `let`/`const` is a package
+        // declaration: it may be used by another module, a later REPL
+        // submission, or be intentional. Only bindings inside a body scope
+        // are enforced. The base scope is module scope; every body, block,
+        // and arm pushes a new scope.
+        if self.scopes.len() <= 1 {
+            return;
+        }
+        self.supersede_shadowed(name);
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.unread.push((name.to_string(), span, kind));
+        }
+    }
+
+    /// Mark `name` as used: remove the newest tracked declaration of that
+    /// name in the innermost scope that declares it. A reference resolves to
+    /// the newest declaration, so an older shadowed binding stays flagged
+    /// unless it was used before being shadowed.
+    fn mark_used(&mut self, name: &str) {
+        for scope in self.scopes.iter_mut().rev() {
+            if scope.vars.contains_key(name) {
+                if let Some(pos) = scope.unread.iter().rposition(|(n, _, _)| n == name) {
+                    scope.unread.remove(pos);
+                }
+                return;
+            }
+        }
+    }
+
+    /// A new declaration of `name` supersedes any still-unread declaration of
+    /// the same name in an enclosing scope. Aura documents shadowing as valid
+    /// and installs a new binding (`LANGUAGE_SPEC.md` §16.3), so reporting the
+    /// shadowed binding as unused would forbid the documented idiom; the
+    /// superseded binding is dropped from the unused analysis instead.
+    fn supersede_shadowed(&mut self, name: &str) {
+        for scope in &mut self.scopes {
+            scope.unread.retain(|(n, _, _)| n != name);
+        }
+    }
+
+    /// Drop a flow-narrowing override for `name` (an assignment may put
+    /// `none` back into the binding, so the precise `E3003` check returns).
+    fn clear_narrowing(&mut self, name: &str) {
+        for i in (0..self.scopes.len()).rev() {
+            if self.scopes[i].vars.contains_key(name) {
+                if self.scopes[i].narrowed.remove(name) {
+                    if let Some(map) = self.value_types.get_mut(i) {
+                        map.remove(name);
+                    }
+                }
+                return;
+            }
+        }
+    }
+
+    /// Finish the innermost scope: report the first unused local binding as
+    /// `E2008`, then pop. Only normal completion calls this; an error path
+    /// keeps the raw `pop` because the checker aborts on the first error.
+    fn finish_scope(&mut self) -> Result<()> {
+        if self.unused_analysis {
+            if let Some(scope) = self.scopes.last() {
+                if let Some((name, span, kind)) = scope.unread.first().cloned() {
+                    let message = match kind {
+                        UnusedKind::Local => format!(
+                            "`{name}` is declared but never used; use it or discard it as `_`"
+                        ),
+                        UnusedKind::Param => {
+                            format!("parameter `{name}` is never used; discard it as `_{name}`")
+                        }
+                        UnusedKind::Pattern => {
+                            format!("`{name}` is bound here but never used; discard it as `_`")
+                        }
+                    };
+                    return Err(Diag::new(codes::UNUSED_BINDING, message, span));
+                }
+            }
+        }
+        self.pop();
+        Ok(())
     }
 
     /// Install a flow-narrowing override for `name` in the innermost scope:
@@ -2529,6 +2665,12 @@ impl Checker {
                             .last_mut()
                             .map(|m| m.insert(p.name.clone(), t));
                     }
+                    // Keystone unused analysis: a named parameter must be used
+                    // or explicitly discarded as `_name` (§16.4). `self` is a
+                    // receiver and is exempt; main's parameters cannot exist.
+                    if name != "main" && p.name != "self" {
+                        self.declare_local(&p.name, p.span, UnusedKind::Param);
+                    }
                 }
                 let saved_return = self.return_type.clone();
                 let saved_underscore = std::mem::take(&mut self.underscore_params);
@@ -2587,7 +2729,11 @@ impl Checker {
                 self.underscore_params = saved_underscore;
                 self.used_names = saved_used;
                 self.current_module = saved_module;
-                self.pop();
+                // Keystone unused analysis: the function scope holds the
+                // parameters, so an unused named parameter is `E2008` here
+                // (`self` and `main` are exempt; `_name` is an explicit
+                // discard).
+                self.finish_scope()?;
                 self.pop_type_params();
             }
             Item::Const {
@@ -2734,6 +2880,11 @@ impl Checker {
                     .last_mut()
                     .map(|m| m.insert(p.name.clone(), t));
             }
+            // Keystone unused analysis: a named parameter must be used or
+            // discarded as `_name`; the receiver `self` is exempt.
+            if p.name != "self" {
+                self.declare_local(&p.name, p.span, UnusedKind::Param);
+            }
         }
         let saved_return = self.return_type.clone();
         let saved_underscore = std::mem::take(&mut self.underscore_params);
@@ -2792,7 +2943,8 @@ impl Checker {
         self.underscore_params = saved_underscore;
         self.used_names = saved_used;
         self.current_module = saved_module;
-        self.pop();
+        // Keystone unused analysis: the method scope holds its parameters.
+        self.finish_scope()?;
         Ok(())
     }
 
@@ -4464,14 +4616,23 @@ impl Checker {
         if let Some((name, ty)) = narrow {
             self.narrow(name, ty);
         }
+        let mut result = Ok(());
         for s in body {
-            self.stmt(s)?;
+            if let Err(e) = self.stmt(s) {
+                result = Err(e);
+                break;
+            }
             if let Some((name, ty)) = self.pending_narrowing.take() {
                 self.narrow(name, ty);
             }
         }
-        self.pop();
-        Ok(())
+        if let Err(e) = result {
+            // An error aborts the check; skip unused analysis so the reported
+            // diagnostic is the first real problem, not a cascade.
+            self.pop();
+            return Err(e);
+        }
+        self.finish_scope()
     }
 
     fn stmt(&mut self, s: &Stmt) -> Result<()> {
@@ -4544,6 +4705,11 @@ impl Checker {
                 // so it resolves against the bindings visible *before* the new
                 // declaration.
                 self.declare_shadowing(name, *mutable, *span)?;
+                // A new binding replaces any narrowing of the shadowed one.
+                self.clear_narrowing(name);
+                // Keystone unused analysis: a named local must be used.
+                // `_`/`_name` are explicit discards (not tracked).
+                self.declare_local(name, *span, UnusedKind::Local);
             }
             Stmt::LetPattern {
                 pattern,
@@ -4560,6 +4726,8 @@ impl Checker {
                 self.check_pattern(pattern)?;
                 for name in pattern.bindings() {
                     self.declare_shadowing(&name, false, *span)?;
+                    self.clear_narrowing(&name);
+                    self.declare_local(&name, pattern.span(), UnusedKind::Local);
                 }
             }
             Stmt::Assign {
@@ -4571,6 +4739,11 @@ impl Checker {
                 self.expr(value)?;
                 match target {
                     Expr::Name(name, nspan) => {
+                        // An assignment can put `none` back into the binding,
+                        // so any narrowing of it ends here.
+                        self.clear_narrowing(name);
+                        // A write references the binding: it counts as a use.
+                        self.mark_used(name);
                         match self.lookup(name) {
                             Some(true) => {}
                             Some(false) => {
@@ -4779,6 +4952,7 @@ impl Checker {
                 self.check_pattern(pat)?;
                 for b in pat.bindings() {
                     self.declare(&b, false, Span::default())?;
+                    self.declare_local(&b, pat.span(), UnusedKind::Pattern);
                 }
                 self.loop_depth += 1;
                 let loop_result: Result<()> = (|| {
@@ -4788,8 +4962,11 @@ impl Checker {
                     Ok(())
                 })();
                 self.loop_depth -= 1;
-                self.pop();
-                loop_result?;
+                if let Err(e) = loop_result {
+                    self.pop();
+                    return Err(e);
+                }
+                self.finish_scope()?;
             }
             Stmt::Try {
                 body,
@@ -4805,11 +4982,20 @@ impl Checker {
                 self.push();
                 for b in catch.bindings() {
                     self.declare(&b, false, catch.span())?;
+                    self.declare_local(&b, catch.span(), UnusedKind::Pattern);
                 }
+                let mut catch_result = Ok(());
                 for s in catch_body.iter() {
-                    self.stmt(s)?;
+                    if let Err(e) = self.stmt(s) {
+                        catch_result = Err(e);
+                        break;
+                    }
                 }
-                self.pop();
+                if let Err(e) = catch_result {
+                    self.pop();
+                    return Err(e);
+                }
+                self.finish_scope()?;
                 if let Some(f) = finally {
                     self.block(f)?;
                 }
@@ -4861,6 +5047,7 @@ impl Checker {
                     ));
                 }
                 self.used_names.entry(name.clone()).or_insert(*span);
+                self.mark_used(name);
             }
             Expr::FStr(parts, _) => {
                 for p in parts.iter() {
@@ -4950,7 +5137,9 @@ impl Checker {
                                 }
                             }
                         } else if self.lookup(name).is_some() {
-                            // A callable binding (closure value): dynamic.
+                            // A callable binding (closure value): dynamic. The
+                            // call is a read of the binding.
+                            self.mark_used(name);
                             self.reject_named_args(name, args, *span)?;
                         } else {
                             return Err(Diag::new(
@@ -5341,6 +5530,7 @@ impl Checker {
                 // function's.
                 for p in ps {
                     self.declare(&p.name, p.mutable, p.span)?;
+                    self.declare_local(&p.name, p.span, UnusedKind::Param);
                     if let Some(pty) = &p.ty {
                         let t = self.annotation(pty, p.span)?;
                         self.value_types
@@ -5351,8 +5541,8 @@ impl Checker {
                 let r = self.expr(body);
                 self.return_type = saved_return;
                 self.loop_depth = saved_loop;
-                self.pop();
                 r?;
+                self.finish_scope()?;
             }
             Expr::Pipe(l, r, _) => {
                 self.expr(l)?;
@@ -5414,6 +5604,7 @@ impl Checker {
                     self.push();
                     for b in arm.pattern.bindings() {
                         self.declare(&b, false, Span::default())?;
+                        self.declare_local(&b, arm.pattern.span(), UnusedKind::Pattern);
                     }
                     if let Some(g) = &arm.guard {
                         self.expr(g)?;
@@ -5421,7 +5612,7 @@ impl Checker {
                     for s in arm.body.iter() {
                         self.stmt(s)?;
                     }
-                    self.pop();
+                    self.finish_scope()?;
                 }
             }
             Expr::Block(body, _) => self.block(body)?,
@@ -5444,12 +5635,13 @@ impl Checker {
                 self.push();
                 for b in pattern.bindings() {
                     self.declare(&b, false, Span::default())?;
+                    self.declare_local(&b, pattern.span(), UnusedKind::Pattern);
                 }
                 if let Some(f) = filter {
                     self.expr(f)?;
                 }
                 self.expr(value)?;
-                self.pop();
+                self.finish_scope()?;
             }
             Expr::MapComp {
                 key,
@@ -5471,6 +5663,7 @@ impl Checker {
                 self.push();
                 for b in pattern.bindings() {
                     self.declare(&b, false, Span::default())?;
+                    self.declare_local(&b, pattern.span(), UnusedKind::Pattern);
                 }
                 if let Some(f) = filter {
                     self.expr(f)?;
@@ -5483,7 +5676,7 @@ impl Checker {
                 if !kt.is_key_capable() {
                     return Err(kt.key_type_error(*span));
                 }
-                self.pop();
+                self.finish_scope()?;
             }
         }
         Ok(())

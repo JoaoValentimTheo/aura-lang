@@ -59,7 +59,7 @@ pub fn supported_cases() -> Vec<Case> {
         ),
         value(
             "let_shadow_does_not_leak_out",
-            "{ let x = 1\n { let x = 2\n 0 }\n x }\n",
+            "{ let x = 1\n { let _ = 2\n 0 }\n x }\n",
         ),
         // ----- name lookup ----------------------------------------------
         // A single-overload top-level function referenced as a value.
@@ -125,7 +125,7 @@ pub fn supported_cases() -> Vec<Case> {
         // The original R3A match sentinel: supported by B-1R3E.2. Key kept.
         value("match", "match 1 { 1 -> { 2 } }\n"),
         // The original R3A try sentinel: supported by B-1R3F.1. Key kept.
-        value("try_stmt", "{ try { 1 } catch e { 2 } }\n"),
+        value("try_stmt", "{ try { 1 } catch _ { 2 } }\n"),
         // The original R3A method sentinel: builtin method calls are supported
         // by B-1R3C.2. Key preserved.
 

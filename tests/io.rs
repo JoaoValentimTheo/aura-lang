@@ -323,7 +323,7 @@ fn file_transformer_round_trip() {
 fn e4020_is_not_catchable_but_finally_runs() {
     let dir = temp_dir("catch");
     let bad = dir.join("no_dir").join("out.txt");
-    let src = "fn main() { try { write_file(args()[0], \"x\") } catch e { print(\"caught\") } finally { print(\"finally\") } }";
+    let src = "fn main() { try { write_file(args()[0], \"x\") } catch _ { print(\"caught\") } finally { print(\"finally\") } }";
     // The catch must NOT intercept E4020; finally still runs.
     assert_eq!(fails(src, &[bad.to_str().unwrap()], b""), codes::IO);
     let _ = std::fs::remove_dir_all(&dir);

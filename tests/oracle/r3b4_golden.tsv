@@ -37,7 +37,7 @@ r3b4-value/map_element		ok	0		-	0	0	0	0	list	[1, {"a": 1}]
 r3b4-value/range_element		ok	0		-	0	0	0	0	list	[1, 1..3]
 r3b4-program/main_list_let		ok	0		-	0	0	0	0	-	-
 r3b4-program/main_tuple_let		ok	0		-	0	0	0	0	-	-
-r3b4-program/main_list_error		runtime	4007	division by zero	r3b4.aura	27	28	1	28	-	-
+r3b4-program/main_list_error		runtime	4007	division by zero	r3b4.aura	26	27	1	27	-	-
 r3b4-program/main_list_in_if		ok	0		-	0	0	0	0	-	-
 r3b4-program/main_list_signal		ok	0		-	0	0	0	0	-	-
 r3b4-program/main_list_range		ok	0		-	0	0	0	0	-	-

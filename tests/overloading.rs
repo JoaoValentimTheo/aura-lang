@@ -28,7 +28,7 @@ fn code(src: &str) -> u16 {
 #[test]
 fn two_function_overloads() {
     assert_eq!(
-        ok("fn show(x: int) { print(\"i\") }\nfn show(x: string) { print(\"s\") }\nfn main() { show(1)\n show(\"a\") }"),
+        ok("fn show(_x: int) { print(\"i\") }\nfn show(_x: string) { print(\"s\") }\nfn main() { show(1)\n show(\"a\") }"),
         "i\ns\n"
     );
 }
@@ -36,7 +36,7 @@ fn two_function_overloads() {
 #[test]
 fn three_function_overloads() {
     assert_eq!(
-        ok("fn f(x: int) { print(\"i\") }\nfn f(x: float) { print(\"f\") }\nfn f(x: string) { print(\"s\") }\nfn main() { f(1)\n f(1.5)\n f(\"a\") }"),
+        ok("fn f(_x: int) { print(\"i\") }\nfn f(_x: float) { print(\"f\") }\nfn f(_x: string) { print(\"s\") }\nfn main() { f(1)\n f(1.5)\n f(\"a\") }"),
         "i\nf\ns\n"
     );
 }
@@ -62,7 +62,7 @@ fn annotated_overload_beats_unannotated() {
     // `fn f(x: int)` is more specific than `fn f(x)`; an `int` argument picks
     // the annotated overload, any other type falls to the unannotated one.
     assert_eq!(
-        ok("fn f(x: int) { print(\"int\") }\nfn f(x) { print(\"any\") }\nfn main() { f(1)\n f(true) }"),
+        ok("fn f(_x: int) { print(\"int\") }\nfn f(_x) { print(\"any\") }\nfn main() { f(1)\n f(true) }"),
         "int\nany\n"
     );
 }
@@ -72,7 +72,7 @@ fn annotated_overload_beats_unannotated() {
 #[test]
 fn duplicate_signature_is_rejected() {
     assert_eq!(
-        code("fn f(x: int) { print(1) }\nfn f(x: int) { print(2) }\nfn main() { f(1) }"),
+        code("fn f(_x: int) { print(1) }\nfn f(x: int) { print(2) }\nfn main() { f(1) }"),
         codes::REDECLARED
     );
 }
@@ -88,7 +88,7 @@ fn return_type_does_not_distinguish_overloads() {
 #[test]
 fn different_arity_is_a_different_overload() {
     assert_eq!(
-        ok("fn f(x: int) { print(\"one\") }\nfn f(x: int, y: int) { print(\"two\") }\nfn main() { f(1)\n f(1, 2) }"),
+        ok("fn f(_x: int) { print(\"one\") }\nfn f(_x: int, _y: int) { print(\"two\") }\nfn main() { f(1)\n f(1, 2) }"),
         "one\ntwo\n"
     );
 }
@@ -98,11 +98,11 @@ fn different_arity_is_a_different_overload() {
 #[test]
 fn no_matching_overload_is_deterministic() {
     assert_eq!(
-        code("fn f(x: int) { print(1) }\nfn main() { f(\"a\") }"),
+        code("fn f(_x: int) { print(1) }\nfn main() { f(\"a\") }"),
         codes::TYPE_MISMATCH
     );
     assert_eq!(
-        code("fn f(x: int) { print(1) }\nfn main() { f(1, 2) }"),
+        code("fn f(_x: int) { print(1) }\nfn main() { f(1, 2) }"),
         codes::TYPE_MISMATCH
     );
 }
@@ -112,7 +112,7 @@ fn ambiguous_overload_is_reported() {
     // Two unions that both accept an `int` are equally specific, so neither is
     // preferred: the call is reported ambiguous rather than picked by order.
     assert_eq!(
-        code("fn f(x: int | string) { print(1) }\nfn f(x: int | bool) { print(2) }\nfn main() { f(1) }"),
+        code("fn f(_x: int | string) { print(1) }\nfn f(_x: int | bool) { print(2) }\nfn main() { f(1) }"),
         codes::TYPE_MISMATCH
     );
 }
@@ -130,7 +130,7 @@ fn duplicate_unannotated_overload_is_a_duplicate_not_ambiguous() {
 #[test]
 fn union_overload_matches_a_member() {
     assert_eq!(
-        ok("fn f(x: int | string) { print(\"u\") }\nfn f(x: bool) { print(\"b\") }\nfn main() { f(1)\n f(true) }"),
+        ok("fn f(_x: int | string) { print(\"u\") }\nfn f(_x: bool) { print(\"b\") }\nfn main() { f(1)\n f(true) }"),
         "u\nb\n"
     );
 }
@@ -138,7 +138,7 @@ fn union_overload_matches_a_member() {
 #[test]
 fn alias_overload_resolves_to_the_underlying_type() {
     assert_eq!(
-        ok("struct S { n: int }\ntype A = S\nfn f(x: S) { print(\"s\") }\nfn f(x: int) { print(\"i\") }\nfn main() { let a: A = S { n: 0 }\n f(a)\n f(1) }"),
+        ok("struct S { n: int }\ntype A = S\nfn f(_x: S) { print(\"s\") }\nfn f(_x: int) { print(\"i\") }\nfn main() { let a: A = S { n: 0 }\n f(a)\n f(1) }"),
         "s\ni\n"
     );
 }
@@ -156,7 +156,7 @@ fn method_overloads_by_argument_type() {
 #[test]
 fn method_duplicate_signature_is_rejected() {
     assert_eq!(
-        code("struct P { n: int }\nimpl P {\n fn f(self, x: int) { print(1) }\n fn f(self, x: int) { print(2) }\n}\nfn main() { P { n: 0 }.f(1) }"),
+        code("struct P { n: int }\nimpl P {\n fn f(self, _x: int) { print(1) }\n fn f(self, x: int) { print(2) }\n}\nfn main() { P { n: 0 }.f(1) }"),
         codes::REDECLARED
     );
 }
@@ -173,7 +173,7 @@ fn method_return_type_does_not_distinguish_overloads() {
 fn method_mut_receiver_is_not_an_overload_dimension() {
     // `mut self` difference alone must not create two overloads.
     assert_eq!(
-        code("struct P { n: int }\nimpl P {\n fn f(self, x: int) { print(1) }\n fn f(mut self, x: int) { print(2) }\n}\nfn main() { }"),
+        code("struct P { n: int }\nimpl P {\n fn f(self, _x: int) { print(1) }\n fn f(mut self, x: int) { print(2) }\n}\nfn main() { }"),
         codes::REDECLARED
     );
 }
@@ -181,7 +181,7 @@ fn method_mut_receiver_is_not_an_overload_dimension() {
 #[test]
 fn method_no_match_is_deterministic() {
     assert_eq!(
-        code("struct P { n: int }\nimpl P {\n fn f(self, x: int) { print(1) }\n}\nfn main() { P { n: 0 }.f(\"a\") }"),
+        code("struct P { n: int }\nimpl P {\n fn f(self, _x: int) { print(1) }\n}\nfn main() { P { n: 0 }.f(\"a\") }"),
         codes::TYPE_MISMATCH
     );
 }
@@ -189,7 +189,7 @@ fn method_no_match_is_deterministic() {
 #[test]
 fn separate_impl_blocks_extend_the_same_overload_set() {
     assert_eq!(
-        ok("struct P { n: int }\nimpl P {\n fn f(self, x: int) { print(\"i\") }\n}\nimpl P {\n fn f(self, x: string) { print(\"s\") }\n}\nfn main() { P { n: 0 }.f(1)\n P { n: 0 }.f(\"a\") }"),
+        ok("struct P { n: int }\nimpl P {\n fn f(self, _x: int) { print(\"i\") }\n}\nimpl P {\n fn f(self, _x: string) { print(\"s\") }\n}\nfn main() { P { n: 0 }.f(1)\n P { n: 0 }.f(\"a\") }"),
         "i\ns\n"
     );
 }
@@ -217,7 +217,7 @@ fn trait_method_is_not_overloadable_in_the_impl() {
 #[test]
 fn trait_and_inherent_overloads_share_one_namespace() {
     assert_eq!(
-        ok("trait T { fn show(self, x: int) }\nstruct S { n: int }\nimpl T for S { fn show(self, x: int) { print(\"t\") } }\nimpl S { fn show(self, x: string) { print(\"i\") } }\nfn main() { S { n: 0 }.show(1)\n S { n: 0 }.show(\"a\") }"),
+        ok("trait T { fn show(self, x: int) }\nstruct S { n: int }\nimpl T for S { fn show(self, _x: int) { print(\"t\") } }\nimpl S { fn show(self, _x: string) { print(\"i\") } }\nfn main() { S { n: 0 }.show(1)\n S { n: 0 }.show(\"a\") }"),
         "t\ni\n"
     );
 }
@@ -275,7 +275,7 @@ fn overloaded_function_cannot_be_used_as_a_value() {
     // an overload; this is deferred and rejected deterministically rather than
     // silently binding the first overload (`LANGUAGE_SPEC.md` §15.7).
     assert_eq!(
-        code("fn f(x: int) { print(1) }\nfn f(x: string) { print(2) }\nfn main() { let g = f\n g(1) }"),
+        code("fn f(_x: int) { print(1) }\nfn f(_x: string) { print(2) }\nfn main() { let g = f\n g(1) }"),
         codes::TYPE_MISMATCH
     );
     // A single-overload function may still be used as a value.
@@ -289,7 +289,7 @@ fn overloaded_function_cannot_be_used_as_a_value() {
 fn piped_value_resolves_an_overload() {
     // `x |> f` is `f(x)`, so the piped value resolves the overload by type.
     assert_eq!(
-        ok("fn f(x: int) { print(\"i\") }\nfn f(x: string) { print(\"s\") }\nfn main() { 1 |> f\n \"a\" |> f }"),
+        ok("fn f(_x: int) { print(\"i\") }\nfn f(_x: string) { print(\"s\") }\nfn main() { 1 |> f\n \"a\" |> f }"),
         "i\ns\n"
     );
 }

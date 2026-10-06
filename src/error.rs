@@ -278,6 +278,9 @@ pub mod codes {
     pub const LET_NO_INIT: u16 = 2005;
     /// Redeclaration in the same scope.
     pub const REDECLARED: u16 = 2007;
+    /// A binding, parameter, pattern binding, or catch binding is declared
+    /// but never used, and is not an explicit discard (`_`/`_name`).
+    pub const UNUSED_BINDING: u16 = 2008;
     /// `_param` was used.
     pub const UNUSED_PARAM: u16 = 2009;
     /// Invalid assignment target.

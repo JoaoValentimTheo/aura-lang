@@ -14,15 +14,15 @@ fn main() {
     let mut c0 = []
     if 1 < 2 {
     print(2)
-    let s1 = ("a" + "z")
+    let _s1 = ("a" + "z")
     } else {
         print(9)
     }
     for x in 0..3 { print(x) }
-    let s1 = ("abc".upper() + "z")
-    let mut i2 = (len([1, 2, 3]) - 6)
+    let _s1 = ("abc".upper() + "z")
+    let mut _i2 = (len([1, 2, 3]) - 6)
     let mut l3 = [18]
-    let mut c4 = []
+    let mut _c4 = []
     push(c0, c0)
     let m5 = [c0, c0]
     print(len(to_string(m5)))

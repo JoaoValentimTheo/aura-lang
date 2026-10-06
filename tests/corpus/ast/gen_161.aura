@@ -13,12 +13,12 @@ fn on_show<T: Show>(x: T) -> int { return x.show() }
 fn main() {
     print(3)
     let mut c0 = []
-    let mut l1 = [31, 34]
-    let b2 = (len(c0) > 0 and true)
-    let k3 = Red()
-    let b4 = len(c0) > 0
-    let b5 = (c0.contains(1) and true)
-    let b6 = true
+    let mut _l1 = [31, 34]
+    let _b2 = (len(c0) > 0 and true)
+    let _k3 = Red()
+    let _b4 = len(c0) > 0
+    let _b5 = (c0.contains(1) and true)
+    let _b6 = true
     push(c0, c0)
     print(0)
 }

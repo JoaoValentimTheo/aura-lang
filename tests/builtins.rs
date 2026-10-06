@@ -195,7 +195,7 @@ fn higher_order_builtins_reject_bad_callables() {
         Err(codes::TYPE_MISMATCH)
     );
     assert_eq!(
-        code("fn main() { print(map([1,2], (a, b) -> a)) }"),
+        code("fn main() { print(map([1,2], (a, _) -> a)) }"),
         Err(codes::TYPE_MISMATCH)
     );
     assert_eq!(

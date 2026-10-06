@@ -210,8 +210,8 @@ fn pipeline_requires_rhs_in_all_entry_points() {
 #[test]
 fn delimiter_comma_matrix() {
     for src in [
-        "fn f(a,) {}",
-        "fn f(\nmut a: int,\n) {}",
+        "fn f(_a,) {}",
+        "fn f(\nmut _: int,\n) {}",
         "fn f<T,>() {}",
         "struct S<T,> { pub x: T, }",
         "enum E<T,> { A(T,), B, }",
@@ -288,7 +288,7 @@ fn grammar_family_matrix() {
             "pub impl S {}",
         ),
         ("const", "pub const Name: int = 1", "const name = 1"),
-        ("top-let", "pub let x: int = 1", "let mut x = 1"),
+        ("top-let", "pub let _: int = 1", "let mut x = 1"),
         ("visibility", "pub fn f() {}", "pub pub fn f() {}"),
         (
             "nested-item",
@@ -333,7 +333,7 @@ fn statements_patterns_and_types_matrix() {
             "match x { [a, ..b] -> a }",
         ),
         ("let f = (mut x: int,) -> x", "let f = (x=1) -> x"),
-        ("let x: Box<[int | none]> = v", "let x: fn(int) -> int = v"),
+        ("let _: Box<[int | none]> = v", "let _: fn(int) -> int = v"),
     ] {
         assert!(parse_stmt(good).is_ok(), "{good}");
         assert!(parse_stmt(bad).is_err(), "{bad}");
@@ -343,7 +343,7 @@ fn statements_patterns_and_types_matrix() {
         "match x { 1.5 -> 0 }",
         "match x { S { x: a } -> a }",
         "let m::A(x) = v",
-        "let x: int? = 1",
+        "let _: int? = 1",
         "use a::{b,c}",
     ] {
         assert!(parse_stmt(src).is_err(), "{src}");
@@ -468,7 +468,7 @@ fn list_patterns_match_exact_length() {
     for (xs, expected) in [("[]", "0\n"), ("[1]", "1\n"), ("[1,2]", "0\n")] {
         assert_eq!(
             aura::run_source(
-                &format!("fn main() {{ print(match {xs} {{ [x] -> 1, _ -> 0 }}) }}"),
+                &format!("fn main() {{ print(match {xs} {{ [_x] -> 1, _ -> 0 }}) }}"),
                 "matrix"
             )
             .unwrap(),
@@ -503,8 +503,8 @@ fn return_accepts_every_unary_expression() {
 #[test]
 fn annotated_block_is_not_misclassified_as_a_map() {
     for src in [
-        "{ let x: int = 1; x }",
-        "{ print(1); let x: int = 2; x }",
+        "{ let _: int = 1; x }",
+        "{ print(1); let _: int = 2; x }",
         "{ let f = (x: int) -> x; f(1) }",
     ] {
         assert!(

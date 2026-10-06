@@ -221,7 +221,7 @@ proptest! {
     ) {
         // The body returns `none`, so a well-typed call has no runtime effect.
         let src = format!(
-            "fn f(a: {annotation}) {{ return none }}\nfn main() {{ f({arg}) }}"
+            "fn f(_a: {annotation}) {{ return none }}\nfn main() {{ f({arg}) }}"
         );
         let module = aura::parse::parse(&src).expect("generated source parses");
         match aura::check::Checker::module(&module) {
@@ -260,7 +260,7 @@ proptest! {
         ],
     ) {
         let src =
-            format!("fn f(a: {union}) {{ return none }}\nfn main() {{ f({arg}) }}");
+            format!("fn f(_a: {union}) {{ return none }}\nfn main() {{ f({arg}) }}");
         let module = aura::parse::parse(&src).expect("generated source parses");
         match aura::check::Checker::module(&module) {
             Ok(()) => {
@@ -364,7 +364,7 @@ proptest! {
     fn unproven_field_receiver_stays_permissive(bind_ty in "[a-z]{3,6}") {
         // An unannotated parameter has type `Unknown`.
         let src = format!(
-            "struct S {{ f: int }}\nfn g(u) {{ let y: string = u.f }}\nfn main() {{ print(\"{bind_ty}\") }}"
+            "struct S {{ f: int }}\nfn g(u) {{ let _: string = u.f }}\nfn main() {{ print(\"{bind_ty}\") }}"
         );
         let module = aura::parse::parse(&src).expect("generated source parses");
         prop_assert!(aura::check::Checker::module(&module).is_ok());
@@ -396,11 +396,18 @@ proptest! {
     /// proving no partial binding leaked.
     #[test]
     fn destructuring_failure_leaves_no_partial_binding(n in 2usize..5) {
-        let names: Vec<String> = (0..n).map(|i| format!("w{i}")).collect();
+        let names: Vec<String> = (0..n)
+            .map(|i| if i == 0 { format!("w{i}") } else { format!("_w{i}") })
+            .collect();
+        // Discard bindings need a pattern-safe spelling; use the first as the
+        // only read binding and `_` for the rest.
+        let pattern: Vec<String> = (0..n)
+            .map(|i| if i == 0 { format!("w{i}") } else { "_".to_string() })
+            .collect();
         let short = vec!["1"; n - 1].join(", ");
         let src = format!(
             "fn main() {{ let [{}] = [{}]\n print({}) }}",
-            names.join(", "),
+            pattern.join(", "),
             short,
             names[0]
         );

@@ -362,28 +362,28 @@ pub fn short_circuit_supported_cases() -> Vec<Case> {
         sc_value("let_binding", "{ let x = false and true\n x }\n"),
         sc_value("block_value", "{ 1 and 2 }\n"),
         // ----- program (real frame boundary, no calls) --------------------
-        sc_program("main_and_short", "fn main() { let x = false and true }\n"),
-        sc_program("main_or_short", "fn main() { let x = true or false }\n"),
+        sc_program("main_and_short", "fn main() { let _ = false and true }\n"),
+        sc_program("main_or_short", "fn main() { let _ = true or false }\n"),
         sc_program(
             "main_and_skip_unsupported",
-            "fn main() { let x = false and [1, 2] }\n",
+            "fn main() { let _ = false and [1, 2] }\n",
         ),
         sc_program(
             "main_or_skip_unsupported",
-            "fn main() { let x = true or [1, 2] }\n",
+            "fn main() { let _ = true or [1, 2] }\n",
         ),
         sc_program("main_if_skip", "fn main() { if false and [1, 2] { } }\n"),
         sc_program(
             "main_skip_rhs_throw",
-            "fn main() { let x = false and { throw 7 } }\n",
+            "fn main() { let _ = false and { throw 7 } }\n",
         ),
         sc_program(
             "main_return_skip_rhs",
-            "fn main() { let x = { return } and (1 / 0) }\n",
+            "fn main() { let _ = { return } and (1 / 0) }\n",
         ),
         sc_program(
             "main_required_div",
-            "fn main() { let x = true and (1 / 0) }\n",
+            "fn main() { let _ = true and (1 / 0) }\n",
         ),
     ]
 }
@@ -492,17 +492,17 @@ pub fn list_supported_cases() -> Vec<Case> {
         // (`LANGUAGE_SPEC.md` §22.1: `[1..3]` is a one-element list).
         list_value("range_element", "[1, 1..3]\n"),
         // ----- program mode (real frame boundary) --------------------------
-        list_program("main_list_let", "fn main() { let xs = [1, 2, 3] }\n"),
-        list_program("main_tuple_let", "fn main() { let xs = (1, 2) }\n"),
-        list_program("main_list_error", "fn main() { let xs = [1, 1 / 0] }\n"),
-        list_program("main_list_in_if", "fn main() { if [1] { let xs = [] } }\n"),
+        list_program("main_list_let", "fn main() { let _ = [1, 2, 3] }\n"),
+        list_program("main_tuple_let", "fn main() { let _ = (1, 2) }\n"),
+        list_program("main_list_error", "fn main() { let _ = [1, 1 / 0] }\n"),
+        list_program("main_list_in_if", "fn main() { if [1] { let _ = [] } }\n"),
         list_program(
             "main_list_signal",
-            "fn main() { let xs = [{ return }, 1 / 0] }\n",
+            "fn main() { let _ = [{ return }, 1 / 0] }\n",
         ),
         // Moved from the R3B.4.1 unsupported set in B-1R3B.5: a list containing
         // a Range through a real frame boundary.
-        list_program("main_list_range", "fn main() { let xs = [1..3] }\n"),
+        list_program("main_list_range", "fn main() { let _ = [1..3] }\n"),
     ]
 }
 
@@ -633,21 +633,21 @@ pub fn map_supported_cases() -> Vec<Case> {
         // ----- program mode (real frame boundary) --------------------------
         map_program(
             "main_map_let",
-            "fn main() { let m = {1: \"a\", 2: \"b\"} }\n",
+            "fn main() { let _ = {1: \"a\", 2: \"b\"} }\n",
         ),
         map_program(
             "main_map_in_if",
-            "fn main() { if {3: \"c\", 1: \"a\"} { let m = {:} } }\n",
+            "fn main() { if {3: \"c\", 1: \"a\"} { let _ = {:} } }\n",
         ),
-        map_program("main_map_empty", "fn main() { let m = {:} }\n"),
-        map_program("main_map_error", "fn main() { let m = {1: 1 / 0} }\n"),
+        map_program("main_map_empty", "fn main() { let _ = {:} }\n"),
+        map_program("main_map_error", "fn main() { let _ = {1: 1 / 0} }\n"),
         map_program(
             "main_map_dup",
-            "fn main() { let m = {1: \"a\", 1: \"b\"} }\n",
+            "fn main() { let _ = {1: \"a\", 1: \"b\"} }\n",
         ),
         map_program(
             "main_map_signal",
-            "fn main() { let m = {1: {return}, 2: 1 / 0} }\n",
+            "fn main() { let _ = {1: {return}, 2: 1 / 0} }\n",
         ),
         map_program(
             "main_map_invalid_key",
@@ -659,11 +659,11 @@ pub fn map_supported_cases() -> Vec<Case> {
         // List; no value-mode case substitutes for it.
         map_program(
             "main_map_element",
-            "fn main() { let xs = [1, {\"a\": 1}] }\n",
+            "fn main() { let _ = [1, {\"a\": 1}] }\n",
         ),
         // Moved from the R3B.4.2 unsupported set in B-1R3B.5: a Map whose value
         // is a Range through a real frame boundary.
-        map_program("main_map_range", "fn main() { let m = {1: (2..5)} }\n"),
+        map_program("main_map_range", "fn main() { let _ = {1: (2..5)} }\n"),
     ]
 }
 
@@ -796,21 +796,18 @@ pub fn range_supported_cases() -> Vec<Case> {
             "{ let x = none\n x..{ return 5 } }\n",
         ),
         // ----- program mode (real frame boundary) -------------------------
-        range_program("main_range_let", "fn main() { let r = 1..3 }\n"),
+        range_program("main_range_let", "fn main() { let _ = 1..3 }\n"),
         range_program(
             "main_range_in_if",
-            "fn main() { if 1..3 { let r = 9..9 } }\n",
+            "fn main() { if 1..3 { let _ = 9..9 } }\n",
         ),
         range_program("main_range_error", "fn main() { let r = 1..2.0 }\n"),
         range_program(
             "main_range_signal",
-            "fn main() { let r = { return }..(1 / 0) }\n",
+            "fn main() { let _ = { return }..(1 / 0) }\n",
         ),
-        range_program(
-            "main_range_in_list",
-            "fn main() { let xs = [1..3, 4..6] }\n",
-        ),
-        range_program("main_range_in_map", "fn main() { let m = {\"a\": 1..3} }\n"),
+        range_program("main_range_in_list", "fn main() { let _ = [1..3, 4..6] }\n"),
+        range_program("main_range_in_map", "fn main() { let _ = {\"a\": 1..3} }\n"),
     ]
 }
 
@@ -952,21 +949,21 @@ pub fn index_supported_cases() -> Vec<Case> {
         // ----- program mode (real frame boundary) -------------------------
         index_program(
             "main_index_let",
-            "fn main() { let xs = [1, 2, 3]\n let y = xs[1] }\n",
+            "fn main() { let xs = [1, 2, 3]\n let _ = xs[1] }\n",
         ),
         index_program(
             "main_index_error",
-            "fn main() { let xs = [1]\n let y = xs[5] }\n",
+            "fn main() { let xs = [1]\n let _ = xs[5] }\n",
         ),
         index_program(
             "main_index_map_nested",
-            "fn main() { let m = {1: [10, 20]}\n let y = m[1][0] }\n",
+            "fn main() { let m = {1: [10, 20]}\n let _ = m[1][0] }\n",
         ),
         index_program(
             "main_index_range",
-            "fn main() { let xs = [1..3, 4..5]\n let y = xs[0] }\n",
+            "fn main() { let xs = [1..3, 4..5]\n let _ = xs[0] }\n",
         ),
-        index_program("main_index_signal", "fn main() { let y = { return }[0] }\n"),
+        index_program("main_index_signal", "fn main() { let _ = { return }[0] }\n"),
     ]
 }
 
@@ -1008,11 +1005,11 @@ pub fn field_supported_cases() -> Vec<Case> {
         // ----- program mode (real frame boundary) -------------------------
         field_program(
             "main_field_let",
-            "fn main() { let xs = [1, 2]\n let n = xs.len }\n",
+            "fn main() { let xs = [1, 2]\n let _ = xs.len }\n",
         ),
         field_program(
             "main_field_map",
-            "fn main() { let m = {1: 2}\n let n = m.len }\n",
+            "fn main() { let m = {1: 2}\n let _ = m.len }\n",
         ),
         field_program("main_field_error", "fn main() { let n = [1].foo }\n"),
     ]
@@ -1218,35 +1215,35 @@ pub fn fstring_supported_cases() -> Vec<Case> {
         fstring_value("nested_fstring_around_expr", "f\"{f'{1 + 1}'}\"\n"),
         fstring_value("nested_fstring_outer_inner_text", "f\"[{f'x={2}'}]\"\n"),
         // ----- program mode (real frame boundary) --------------------------
-        fstring_program("main_fstring", "fn main() { let s = f\"v={1}\" }\n"),
+        fstring_program("main_fstring", "fn main() { let _ = f\"v={1}\" }\n"),
         fstring_program(
             "main_fstring_multi",
-            "fn main() { let s = f\"{1}{2}{3}\" }\n",
+            "fn main() { let _ = f\"{1}{2}{3}\" }\n",
         ),
         fstring_program(
             "main_fstring_format",
-            "fn main() { let s = f\"{42:06d}\" }\n",
+            "fn main() { let _ = f\"{42:06d}\" }\n",
         ),
-        fstring_program("main_fstring_error", "fn main() { let s = f\"{1 / 0}\" }\n"),
+        fstring_program("main_fstring_error", "fn main() { let _ = f\"{1 / 0}\" }\n"),
         fstring_program(
             "main_fstring_signal",
-            "fn main() { let s = f\"{ {return} }\" }\n",
+            "fn main() { let _ = f\"{ {return} }\" }\n",
         ),
         fstring_program(
             "main_fstring_in_list",
-            "fn main() { let xs = [f\"{1}\", f\"{2}\"] }\n",
+            "fn main() { let _ = [f\"{1}\", f\"{2}\"] }\n",
         ),
         fstring_program(
             "main_fstring_in_map",
-            "fn main() { let m = {1: f\"{2}\"} }\n",
+            "fn main() { let _ = {1: f\"{2}\"} }\n",
         ),
         fstring_program(
             "main_fstring_unicode",
-            "fn main() { let s = f\"caf\u{e9} {1}\" }\n",
+            "fn main() { let _ = f\"caf\u{e9} {1}\" }\n",
         ),
         fstring_program(
             "main_fstring_nested",
-            "fn main() { let s = f\"{f'{1}'}\" }\n",
+            "fn main() { let _ = f\"{f'{1}'}\" }\n",
         ),
     ]
 }

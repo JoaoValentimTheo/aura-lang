@@ -181,11 +181,11 @@ fn methods_are_private_by_default() {
 #[test]
 fn overload_visibility_is_per_overload() {
     assert_eq!(
-        ok("module m { pub fn f(x: int) -> int { return 1 }\n pub fn f(x: string) -> int { return 2 } }\nfn main() { print(m::f(\"a\")) }"),
+        ok("module m { pub fn f(_: int) -> int { return 1 }\n pub fn f(_: string) -> int { return 2 } }\nfn main() { print(m::f(\"a\")) }"),
         "2\n"
     );
     assert_eq!(
-        code("module m { pub fn f(x: int) -> int { return 1 }\n fn f(x: string) -> int { return 2 } }\nfn main() { print(m::f(\"a\")) }"),
+        code("module m { pub fn f(_: int) -> int { return 1 }\n fn f(_: string) -> int { return 2 } }\nfn main() { print(m::f(\"a\")) }"),
         codes::PRIVATE_ACCESS
     );
 }

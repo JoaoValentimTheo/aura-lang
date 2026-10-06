@@ -16,8 +16,8 @@ const GRAMMAR_SAMPLES: &[&str] = &[
     "module m { pub fn f() { } }\nuse m::f\nfn main() { f() }",
     "module a { pub struct S { x: int } }\nfn main() { print(1) }",
     "fn f() { }",
-    "fn f(a) { }",
-    "fn f(a: int, b: string) -> bool { return true }",
+    "fn f(_a) { }",
+    "fn f(_a: int, _b: string) -> bool { return true }",
     // `mut` on an ordinary parameter grants capability over the binding
     // (docs/grammar.md `param`, LANGUAGE_SPEC.md §16.4).
     "fn f(mut x: int) { x = x + 1 }",
@@ -35,12 +35,12 @@ const GRAMMAR_SAMPLES: &[&str] = &[
     "let x = 1",
     "const PI = 3",
     "const N: int = 3",
-    "fn m() { let mut y = 2 }",
+    "fn m() { let mut _ = 2 }",
     "let z: int = 3",
     "let w: int | float = 1",
     // range literal
     "fn rr() { for i in 0..10 { print(i) } }",
-    "fn rs() { let r = 1..3 }",
+    "fn rs() { let _ = 1..3 }",
     "fn rt() { print(range(0, 3) == 0..3) }",
     // comments
     "fn c1() { <!-- a comment --!> print(1) }",

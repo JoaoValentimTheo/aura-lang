@@ -119,10 +119,10 @@ fn stack_and_resource_campaign() {
     // `for` over a Range is lazy (no materialization), so it must succeed;
     // a comprehension over a Range materializes through `iterate` and hits
     // the 10,000,000-element cap.
-    let range_cap = "fn main() { let xs = [i for i in 0..10000001] }\n";
-    let range_lazy = "fn main() { for i in 0..999999999 { break } }\n";
-    let fmt_prec = "fn main() { let s = f\"{1.0:.70000f}\" }\n";
-    let fmt_width = "fn main() { let s = f\"{1:10000001}\" }\n";
+    let range_cap = "fn main() { let _ = [i for i in 0..10000001] }\n";
+    let range_lazy = "fn main() { for _ in 0..999999999 { break } }\n";
+    let fmt_prec = "fn main() { let _ = f\"{1.0:.70000f}\" }\n";
+    let fmt_width = "fn main() { let _ = f\"{1:10000001}\" }\n";
     for (name, src, code) in [
         ("range_cap_comprehension", range_cap, 4013u16),
         ("range_lazy_break", range_lazy, 0),

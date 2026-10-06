@@ -12,6 +12,6 @@ fn describe(c: Color) -> int { return match c { Red() -> 0
 fn on_show<T: Show>(x: T) -> int { return x.show() }
 fn main() {
     print(2)
-    let mut c0 = []
+    let mut _c0 = []
     print(0)
 }

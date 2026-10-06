@@ -346,7 +346,7 @@ fn browser_host_stdout_limit_is_atomic_and_fatal() {
 
     // The refusal is not catchable; `finally` still runs.
     let (bytes, code) = run_limited_browser(
-        "fn main() { try { print(\"abcd\") } catch e { print(\"caught\") } finally { print(\"f\") } }",
+        "fn main() { try { print(\"abcd\") } catch _ { print(\"caught\") } finally { print(\"f\") } }",
         4,
     );
     assert_eq!(code, Some(codes::IO));

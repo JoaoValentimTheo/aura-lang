@@ -90,7 +90,7 @@ fn catch_catches_a_value_thrown_in_a_called_function() {
 fn catch_with_finally_and_return() {
     assert_eq!(
         ok(
-            "fn f() -> int { try { return 1 } catch e { return 0 } finally { return 2 } }\nfn main() { print(f()) }"
+            "fn f() -> int { try { return 1 } catch _ { return 0 } finally { return 2 } }\nfn main() { print(f()) }"
         ),
         "2\n"
     );
@@ -132,7 +132,7 @@ fn catch_non_matching_variant_propagates() {
     // A non-selected value keeps propagating: the outer catch sees it.
     assert_eq!(
         ok(
-            "enum MyErr { Bad(string), Worse(int) }\nfn main() { try { try { throw MyErr::Worse(3) } catch MyErr::Bad(m) { print(\"inner\") } } catch e { print(\"outer\") } }"
+            "enum MyErr { Bad(string), Worse(int) }\nfn main() { try { try { throw MyErr::Worse(3) } catch MyErr::Bad(_) { print(\"inner\") } } catch _ { print(\"outer\") } }"
         ),
         "outer\n"
     );
@@ -191,7 +191,7 @@ fn catch_variant_payload_binding_is_immutable() {
 fn catch_non_match_still_runs_finally() {
     assert_eq!(
         ok(
-            "enum E { V(int) }\nfn main() { try { try { throw E::V(1) } catch 3 { print(\"no\") } finally { print(\"fin\") } } catch e { print(\"outer\") } }"
+            "enum E { V(int) }\nfn main() { try { try { throw E::V(1) } catch 3 { print(\"no\") } finally { print(\"fin\") } } catch _ { print(\"outer\") } }"
         ),
         "fin\nouter\n"
     );

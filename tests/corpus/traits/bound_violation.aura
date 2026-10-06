@@ -1,4 +1,4 @@
 trait Show { fn show(self) -> int }
 struct B { n: int }
-fn run<T: Show>(x: T) -> int { return 1 }
+fn run<T: Show>(_x: T) -> int { return 1 }
 fn main() { run(B { n: 1 }) }

@@ -14,14 +14,14 @@ fn main() {
     print(1)
     print((to_int("7") + 7))
     let s0 = "abc".upper()
-    let k1 = Green()
+    let _k1 = Green()
     for x in 0..3 { print(x) }
     for x in 0..3 { print(x) }
-    let p2 = Point { x: 14, y: 42 }
-    let mut i3 = add(6, 1)
+    let _p2 = Point { x: 14, y: 42 }
+    let mut _i3 = add(6, 1)
     print(len([1, 2, 3]))
     if s0 == "a" {
-    let mut c4 = []
+    let mut _c4 = []
     print(2)
     } else {
         print(9)

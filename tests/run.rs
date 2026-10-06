@@ -190,7 +190,7 @@ fn finally_control_flow_overrides_the_pending_outcome() {
 fn f() -> int {
     try {
         return 1
-    } catch e {
+    } catch _ {
         return 0
     } finally {
         return 2
@@ -206,7 +206,7 @@ fn main() {
     try {
         try {
             throw "a"
-        } catch e {
+        } catch _ {
             print("caught a")
         } finally {
             throw "b"
@@ -351,15 +351,15 @@ fn destructuring_underscore_binds_nothing() {
 #[test]
 fn destructuring_runtime_mismatches_are_e3001() {
     assert_eq!(
-        fails("fn main() { let [a, b] = [1] }").code,
+        fails("fn main() { let [_, _] = [1] }").code,
         codes::TYPE_MISMATCH
     );
     assert_eq!(
-        fails("fn main() { let [a, b] = 5 }").code,
+        fails("fn main() { let [_, _] = 5 }").code,
         codes::TYPE_MISMATCH
     );
     assert_eq!(
-        fails("enum E { A(int) }\nfn main() { let A(x) = 5 }").code,
+        fails("enum E { A(int) }\nfn main() { let A(_) = 5 }").code,
         codes::TYPE_MISMATCH
     );
     assert_eq!(
@@ -384,7 +384,7 @@ fn destructuring_failure_is_e3001_and_binds_nothing() {
     // prove that no partial binding is left behind (the checker rejects a
     // same-scope redeclaration before execution, so atomicity is observed
     // across REPL submissions where fresh names are used).
-    let err = fails("fn main() { let [a, [b, c]] = [1, [2]] }");
+    let err = fails("fn main() { let [_, [_, _]] = [1, [2]] }");
     assert_eq!(err.code, codes::TYPE_MISMATCH);
 }
 
@@ -548,7 +548,7 @@ fn else_if_break_and_continue() {
 /// `finally` runs on the exit path through an `else if` chain.
 #[test]
 fn else_if_try_finally_interaction() {
-    let src = "fn f() -> int { for i in range(0, 3) { try { if i == 1 { break } else if i == 0 { continue } } catch e { } finally { print(f\"f{i}\") } }\n return 7 }\nfn main() { print(f()) }";
+    let src = "fn f() -> int { for i in range(0, 3) { try { if i == 1 { break } else if i == 0 { continue } } catch _ { } finally { print(f\"f{i}\") } }\n return 7 }\nfn main() { print(f()) }";
     // i=0: continue -> finally prints f0; i=1: break -> finally prints f1; returns 7.
     assert_eq!(out(src), "f0\nf1\n7\n");
 }
@@ -774,7 +774,7 @@ fn match_arm_bindings_do_not_leak() {
     let d = fails("fn main() { match [1, 2] { [a, b] -> { print(a + b) } }\n print(a) }");
     assert_eq!(d.code, codes::UNDEFINED);
     assert_eq!(
-        out("fn main() { let a = 9\n match [1, 2] { [a, b] -> { print(a) } }\n print(a) }"),
+        out("fn main() { let a = 9\n match [1, 2] { [a, _] -> { print(a) } }\n print(a) }"),
         "1\n9\n"
     );
 }

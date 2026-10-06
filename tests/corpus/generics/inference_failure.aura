@@ -1,5 +1,5 @@
-fn f<T>(x: T) -> string { return "g" }
-fn f(x: int) -> string { return "c" }
-fn f(x: string) -> string { return "s" }
+fn f<T>(_x: T) -> string { return "g" }
+fn f(_x: int) -> string { return "c" }
+fn f(_x: string) -> string { return "s" }
 fn main() { print(f(1))
  print(f("a")) }

@@ -105,7 +105,70 @@ pub fn generate(seed: u64) -> String {
     }
     // Always end with a deterministic observable, so two substrates must agree.
     body.push_str("    print(0)\n");
+    // Keystone unused analysis: a local that the generator never reads again
+    // is an intentional discard, so spell it `_name`. This is semantics-
+    // preserving (a `_`-prefixed binding is an ordinary binding that the
+    // unused analysis does not track) and keeps every generated program
+    // checker-clean, which the generator's guarantee requires.
+    let body = discard_unread_bindings(&body);
     format!("{PREAMBLE}fn main() {{\n{body}}}\n")
+}
+
+/// Prefix every declared local that is never referenced after its declaration
+/// with `_`, making the discard explicit (Keystone §12). Declarations appear as
+/// `    let [mut] NAME = ...`; a name counts as read when it occurs in the text
+/// after its own declaration line.
+fn discard_unread_bindings(body: &str) -> String {
+    let mut lines: Vec<String> = body.lines().map(ToString::to_string).collect();
+    let mut declared: Vec<(usize, String)> = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        let trimmed = line.trim_start();
+        let Some(rest) = trimmed.strip_prefix("let ") else {
+            continue;
+        };
+        let rest = rest.strip_prefix("mut ").unwrap_or(rest);
+        let name: String = rest
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        if !name.is_empty() {
+            declared.push((i, name));
+        }
+    }
+    for (i, name) in &declared {
+        // A later declaration of the same name is not a *read* of this one
+        // (both may be unread, in sibling blocks), so declaration lines are
+        // excluded from the usage scan.
+        let mut tail = String::new();
+        for line in &lines[i + 1..] {
+            let t = line.trim_start();
+            let d = t
+                .strip_prefix("let ")
+                .map_or("", |r| r.strip_prefix("mut ").unwrap_or(r));
+            let dname: String = d
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            if !dname.is_empty() && dname.trim_start_matches('_') == name {
+                continue;
+            }
+            tail.push_str(line);
+            tail.push('\n');
+        }
+        let read = tail
+            .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+            .any(|tok| tok == name);
+        if !read {
+            if let Some(pos) = lines[*i].find(name.as_str()) {
+                lines[*i].insert(pos, '_');
+            }
+        }
+    }
+    let mut out = lines.join("\n");
+    if body.ends_with('\n') {
+        out.push('\n');
+    }
+    out
 }
 
 fn int_expr(rng: &mut Rng, vars: &[Var]) -> String {

@@ -263,8 +263,8 @@ fn bounded_deep_pattern_executes_without_overflow() {
     let n = 1000usize;
     let src = format!(
         "fn id(v) {{ return v }}\nfn main() {{ let mut x = id(1)\n \
-         for i in range(0, {n}) {{ x = id([x]) }}\n \
-         let r = match x {{ {pat} y {close} -> \"m\"\n _ -> \"f\" }}\n print(r) }}",
+         for _i in range(0, {n}) {{ x = id([x]) }}\n \
+         let r = match x {{ {pat} _ {close} -> \"m\"\n _ -> \"f\" }}\n print(r) }}",
         pat = "[".repeat(n),
         close = "]".repeat(n),
     );
@@ -481,7 +481,7 @@ fn type_nesting_counts_toward_the_semantic_ast_limit() {
         for _ in 0..n {
             t = format!("Box<{t}>");
         }
-        format!("struct Box<T> {{ value: T }}\nfn f(x: {t}) -> int {{ return 1 }}\nfn main() {{ print(1) }}")
+        format!("struct Box<T> {{ value: T }}\nfn f(_x: {t}) -> int {{ return 1 }}\nfn main() {{ print(1) }}")
     };
     // The `int` atom occupies the deepest level, so `n` generic wraps is
     // `n + 1` AST levels. "At most 256 levels" therefore accepts 255 wraps and
@@ -510,7 +510,7 @@ fn type_nesting_counts_toward_the_semantic_ast_limit() {
         .map(|i| format!("T{i}"))
         .collect::<Vec<_>>()
         .join(" | ");
-    let flat = format!("{defs}\ntype All = {members}\nfn main() {{ let x: All = 1 }}");
+    let flat = format!("{defs}\ntype All = {members}\nfn main() {{ let _: All = 1 }}");
     assert!(
         run(&flat).is_ok(),
         "a flat 4000-member union must stay accepted"
@@ -526,7 +526,7 @@ fn list_and_map_type_nesting_are_bounded() {
         for _ in 0..n {
             t = format!("[{t}]");
         }
-        format!("fn f(x: {t}) -> int {{ return 1 }}\nfn main() {{ print(1) }}")
+        format!("fn f(_x: {t}) -> int {{ return 1 }}\nfn main() {{ print(1) }}")
     };
     assert!(run(&list_src(255)).is_ok());
     assert_eq!(run(&list_src(300)), Err(codes::NESTING));
@@ -536,7 +536,7 @@ fn list_and_map_type_nesting_are_bounded() {
         for _ in 0..n {
             t = format!("{{string: {t}}}");
         }
-        format!("fn main() {{ let x: {t} = {{}} }}")
+        format!("fn main() {{ let _: {t} = {{}} }}")
     };
     assert!(run(&map_src(100)).is_ok());
     assert_eq!(run(&map_src(300)), Err(codes::NESTING));
@@ -564,7 +564,7 @@ fn type_nesting_is_bounded_in_every_annotation_position() {
         format!("{prelude}struct S {{ x: {over} }}\nfn main() {{ print(1) }}"),
         format!("{prelude}enum E {{ V({over}) }}\nfn main() {{ print(1) }}"),
         format!("{prelude}type MyAlias = {over}\nfn main() {{ print(1) }}"),
-        format!("{prelude}fn main() {{ let x: {over} = 0 }}"),
+        format!("{prelude}fn main() {{ let _: {over} = 0 }}"),
         format!("{prelude}fn f() -> {over} {{ return 0 }}\nfn main() {{ print(1) }}"),
     ];
     for (i, src) in cases.iter().enumerate() {

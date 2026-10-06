@@ -2,7 +2,7 @@ fn count(n: int) -> int {
   if n <= 0 { return 0 }
   try {
     return count(n - 1) + 1
-  } catch e {
+  } catch _ {
     return 0
   }
 }

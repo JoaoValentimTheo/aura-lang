@@ -14,12 +14,12 @@ fn main() {
     for x in 0..3 { print(x) }
     for x in 0..3 { print(x) }
     if true {
-    let mut l0 = [44, 45, 13, 29]
+    let mut _l0 = [44, 45, 13, 29]
     } else {
         print(9)
     }
     print(1)
-    let k0 = Green()
-    let b1 = false
+    let _k0 = Green()
+    let _b1 = false
     print(0)
 }

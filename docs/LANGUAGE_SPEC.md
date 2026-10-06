@@ -1910,8 +1910,24 @@ parameter list. This was formerly reported as `E1006` by the parser.
 **Normative rule.** A parameter whose name begins with `_` MUST NOT be used in
 the body; using it is `E2009`.
 
+**Normative rule (unused analysis).** A *named local* declaration that is never
+used is `E2008`: a `let`/`let mut` binding, a destructuring `let` binding, a
+binding introduced by a `for`/`match`/comprehension pattern or a `catch`
+clause, and a named function, method, or lambda parameter. `_` and any name
+beginning with `_` are explicit discards and are exempt. A write
+(`x = v`) counts as a use. A new declaration of a name supersedes the unused
+tracking of an enclosing shadowed binding, because shadowing is valid
+(§16.3). Only *body* scopes are enforced: a module-scope `let`/`const` is a
+package declaration that another module or a later REPL submission may use, so
+it is never reported. A REPL submission is a session, not a program, and is
+exempt for the same reason. This is the Go-like discipline of the Keystone
+release: an explicitly named declaration states intent, and an unused one is a
+dead declaration to remove or discard deliberately.
+
 *Evidence:* `Parser::params` (`src/parse/mod.rs`); `Param::mutable`
-(`src/ast/mod.rs`); `tests/parser.rs`, `tests/mutation.rs`.
+(`src/ast/mod.rs`); `Checker::declare_local`/`mark_used`/`finish_scope`
+(`src/check/mod.rs`); `tests/parser.rs`, `tests/mutation.rs`,
+`tests/keystone_unused.rs`.
 
 ### 16.5 Structure and collection mutation
 

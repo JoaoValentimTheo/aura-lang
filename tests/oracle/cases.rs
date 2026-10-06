@@ -543,7 +543,7 @@ fn main() {
         name: "closure_callback_recursion_small",
         file: "closure_cb_rec.aura",
         source: r#"fn rec(n: int) -> int { if n <= 0 { return 0 }
-  return [0].map((x) -> rec(n - 1) + 1)[0] }
+  return [0].map((_) -> rec(n - 1) + 1)[0] }
 fn main() { print(rec(3)) }
 "#,
         kind: Kind::ExecuteProgram,
@@ -915,7 +915,7 @@ fn main() { print(f"{a()} {b()}") }
         name: "comprehension_value",
         file: "cp_comp_value.aura",
         source: r#"fn a() -> int { print("a"); return 1 }
-fn main() { print([a() for x in [1, 2]]) }
+fn main() { print([a() for _ in [1, 2]]) }
 "#,
         kind: Kind::ExecuteProgram,
     });
@@ -1002,77 +1002,77 @@ fn add_finally_matrix(out: &mut Vec<Case>) {
 
     push(
         "pending_val__finally_val",
-        "fn f() -> int { try { 1 } catch e { 2 } finally { print(\"F\") } }\nfn main() { print(f()) }\n",
+        "fn f() -> int { try { 1 } catch _ { 2 } finally { print(\"F\") } }\nfn main() { print(f()) }\n",
     );
     push(
         "pending_val__finally_return",
-        "fn f() -> int { try { 1 } catch e { 2 } finally { return 7 } }\nfn main() { print(f()) }\n",
+        "fn f() -> int { try { 1 } catch _ { 2 } finally { return 7 } }\nfn main() { print(f()) }\n",
     );
     push(
         "pending_val__finally_throw",
-        "fn f() -> int { try { 1 } catch e { 2 } finally { throw \"T\" } }\nfn main() { print(f()) }\n",
+        "fn f() -> int { try { 1 } catch _ { 2 } finally { throw \"T\" } }\nfn main() { print(f()) }\n",
     );
     push(
         "pending_return__finally_val",
-        "fn f() -> int { try { return 1 } catch e { return 2 } finally { print(\"F\") } }\nfn main() { print(f()) }\n",
+        "fn f() -> int { try { return 1 } catch _ { return 2 } finally { print(\"F\") } }\nfn main() { print(f()) }\n",
     );
     push(
         "pending_return__finally_return",
-        "fn f() -> int { try { return 1 } catch e { return 2 } finally { return 7 } }\nfn main() { print(f()) }\n",
+        "fn f() -> int { try { return 1 } catch _ { return 2 } finally { return 7 } }\nfn main() { print(f()) }\n",
     );
     push(
         "pending_return__finally_throw",
-        "fn f() -> int { try { return 1 } catch e { return 2 } finally { throw \"T\" } }\nfn main() { print(f()) }\n",
+        "fn f() -> int { try { return 1 } catch _ { return 2 } finally { throw \"T\" } }\nfn main() { print(f()) }\n",
     );
     push(
         "pending_throw__finally_val",
-        "fn f() -> int { try { throw \"x\" } catch e { return 2 } finally { print(\"F\") } }\nfn main() { print(f()) }\n",
+        "fn f() -> int { try { throw \"x\" } catch _ { return 2 } finally { print(\"F\") } }\nfn main() { print(f()) }\n",
     );
     push(
         "pending_throw__finally_return",
-        "fn f() -> int { try { throw \"x\" } catch e { return 2 } finally { return 7 } }\nfn main() { print(f()) }\n",
+        "fn f() -> int { try { throw \"x\" } catch _ { return 2 } finally { return 7 } }\nfn main() { print(f()) }\n",
     );
     push(
         "pending_throw__finally_throw",
-        "fn f() -> int { try { throw \"x\" } catch e { return 2 } finally { throw \"T\" } }\nfn main() { print(f()) }\n",
+        "fn f() -> int { try { throw \"x\" } catch _ { return 2 } finally { throw \"T\" } }\nfn main() { print(f()) }\n",
     );
     push(
         "pending_break__finally_val",
-        "fn f() -> int { let mut i = 0\n while i < 2 { i = i + 1\n try { break } catch e { print(\"caught\") } finally { print(\"F\") } }\n return i }\nfn main() { print(f()) }\n",
+        "fn f() -> int { let mut i = 0\n while i < 2 { i = i + 1\n try { break } catch _ { print(\"caught\") } finally { print(\"F\") } }\n return i }\nfn main() { print(f()) }\n",
     );
     push(
         "pending_break__finally_return",
-        "fn f() { let mut i = 0\n while i < 2 { i = i + 1\n try { break } catch e { print(\"caught\") } finally { return } } }\nfn main() { f(); print(\"after\") }\n",
+        "fn f() { let mut i = 0\n while i < 2 { i = i + 1\n try { break } catch _ { print(\"caught\") } finally { return } } }\nfn main() { f(); print(\"after\") }\n",
     );
     push(
         "pending_break__finally_throw",
-        "fn f() { let mut i = 0\n while i < 2 { i = i + 1\n try { break } catch e { print(\"caught\") } finally { throw \"T\" } } }\nfn main() { f(); print(\"unreached\") }\n",
+        "fn f() { let mut i = 0\n while i < 2 { i = i + 1\n try { break } catch _ { print(\"caught\") } finally { throw \"T\" } } }\nfn main() { f(); print(\"unreached\") }\n",
     );
     push(
         "pending_continue__finally_val",
-        "fn main() { let mut i = 0\n let mut s = 0\n while i < 3 { i = i + 1\n try { continue } catch e { print(\"caught\") } finally { s = s + i } }\n print(s) }\n",
+        "fn main() { let mut i = 0\n let mut s = 0\n while i < 3 { i = i + 1\n try { continue } catch _ { print(\"caught\") } finally { s = s + i } }\n print(s) }\n",
     );
     push(
         "pending_continue__finally_return",
-        "fn f() { let mut i = 0\n while i < 3 { i = i + 1\n try { continue } catch e { print(\"caught\") } finally { return } } }\nfn main() { f(); print(\"after\") }\n",
+        "fn f() { let mut i = 0\n while i < 3 { i = i + 1\n try { continue } catch _ { print(\"caught\") } finally { return } } }\nfn main() { f(); print(\"after\") }\n",
     );
     push(
         "pending_continue__finally_throw",
-        "fn f() { let mut i = 0\n while i < 3 { i = i + 1\n try { continue } catch e { print(\"caught\") } finally { throw \"T\" } } }\nfn main() { f(); print(\"unreached\") }\n",
+        "fn f() { let mut i = 0\n while i < 3 { i = i + 1\n try { continue } catch _ { print(\"caught\") } finally { throw \"T\" } } }\nfn main() { f(); print(\"unreached\") }\n",
     );
     // Fatal error from finally propagates over a pending value.
     push(
         "pending_val__finally_fatal_error",
-        "fn f() -> int { try { 1 } catch e { 2 } finally { let z = 1 / 0 } }\nfn main() { print(f()) }\n",
+        "fn f() -> int { try { 1 } catch _ { 2 } finally { let _ = 1 / 0 } }\nfn main() { print(f()) }\n",
     );
     // Nested try inside finally.
     push(
         "nested_try_in_finally",
-        "fn f() -> int { try { return 1 } catch e { return 0 } finally { try { throw \"x\" } catch f { print(f) } } }\nfn main() { print(f()) }\n",
+        "fn f() -> int { try { return 1 } catch _ { return 0 } finally { try { throw \"x\" } catch f { print(f) } } }\nfn main() { print(f()) }\n",
     );
     // Call inside finally.
     push(
         "call_in_finally",
-        "fn g() -> int { print(\"g\"); return 0 }\nfn f() -> int { try { return 1 } catch e { return 0 } finally { g() } }\nfn main() { print(f()) }\n",
+        "fn g() -> int { print(\"g\"); return 0 }\nfn f() -> int { try { return 1 } catch _ { return 0 } finally { g() } }\nfn main() { print(f()) }\n",
     );
 }

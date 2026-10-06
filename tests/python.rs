@@ -62,7 +62,7 @@ fn python_errors_point_at_the_call_site() {
 fn python_conversion_errors_point_at_the_call_site() {
     // A value that cannot cross the boundary is likewise attributed to the
     // crossing call token, not to offset 0.
-    let src = "fn main() {\n    let x = py_eval(\"2**100\")\n}";
+    let src = "fn main() {\n    let _ = py_eval(\"2**100\")\n}";
     let err = run_source(src, "<py>").unwrap_err();
     assert_eq!(err.code, aura::error::codes::OVERFLOW);
     let expected = src.find("py_eval").unwrap();

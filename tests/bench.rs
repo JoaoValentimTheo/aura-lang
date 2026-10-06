@@ -161,7 +161,7 @@ fn gen_alias_chain(n: usize) -> String {
     }
     let _ = writeln!(
         s,
-        "fn f(x: A{n}) -> int {{ return 1 }}\nfn main() {{ print(1) }}"
+        "fn f(_x: A{n}) -> int {{ return 1 }}\nfn main() {{ print(1) }}"
     );
     s
 }
@@ -319,7 +319,7 @@ fn parameterized_alias_chain_is_bounded_by_the_depth_cap() {
         }
         let _ = write!(
             s,
-            "fn f(x: A{n}<int>) -> int {{ return 1 }}\nfn main() {{ print(1) }}"
+            "fn f(_x: A{n}<int>) -> int {{ return 1 }}\nfn main() {{ print(1) }}"
         );
         s
     };

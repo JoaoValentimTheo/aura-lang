@@ -13,7 +13,7 @@ fn on_show<T: Show>(x: T) -> int { return x.show() }
 fn main() {
     let mut c0 = []
     let mut l1 = [36, 45]
-    let k2 = Green()
+    let _k2 = Green()
     for x in l1 { print(x) }
     push(l1, 84)
     print(len(l1))
@@ -25,6 +25,6 @@ fn main() {
     let m3 = [c0, c0]
     print(len(to_string(m3)))
     print(len(json_encode(m3)))
-    let k3 = Red()
+    let _k3 = Red()
     print(0)
 }

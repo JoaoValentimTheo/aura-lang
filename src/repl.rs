@@ -399,7 +399,7 @@ fn eval_line<W: Write>(
                 }
             };
             let mut checker = crate::check::Checker::with_declarations(decls);
-            if let Err(e) = checker.check_mode(&module, crate::CompileMode::Module) {
+            if let Err(e) = checker.check_repl_mode(&module, crate::CompileMode::Module) {
                 emit_diag(writer, source_id, e);
                 return;
             }

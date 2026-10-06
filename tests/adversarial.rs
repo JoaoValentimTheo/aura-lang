@@ -168,8 +168,8 @@ fn statically_non_iterable_for_is_rejected_at_check_time() {
         check_code("fn main() { for x in 5 { } }"),
         codes::NOT_ITERABLE
     );
-    assert_eq!(check_code("fn main() { for x in \"ab\" { } }"), 0);
-    assert_eq!(check_code("fn main() { for x in [1] { } }"), 0);
+    assert_eq!(check_code("fn main() { for _ in \"ab\" { } }"), 0);
+    assert_eq!(check_code("fn main() { for _ in [1] { } }"), 0);
 }
 
 #[test]
@@ -177,7 +177,7 @@ fn break_and_continue_outside_a_loop_are_rejected() {
     assert_eq!(check_code("fn main() { break }"), codes::LOOP_CONTROL);
     assert_eq!(check_code("fn main() { continue }"), codes::LOOP_CONTROL);
     assert_eq!(
-        check_code("fn main() { for i in range(0, 1) { break } }"),
+        check_code("fn main() { for _ in range(0, 1) { break } }"),
         0
     );
     // A loop in a function does not license `break` in another function.
@@ -275,7 +275,7 @@ fn long_union_chain_is_bounded() {
         .map(|i| format!("T{i}"))
         .collect::<Vec<_>>()
         .join(" | ");
-    let src = format!("{members}\ntype All = {union}\nfn main() {{ let x: All = 1 }}");
+    let src = format!("{members}\ntype All = {union}\nfn main() {{ let _: All = 1 }}");
     let module = aura::parse::parse(&src).expect("parses");
     assert_eq!(Checker::module(&module).map_or_else(|d| d.code, |()| 0), 0);
 
@@ -288,7 +288,7 @@ fn long_union_chain_is_bounded() {
     // A deeply nested type expression on the language's own large-stack
     // substrate does not crash; it is a deterministic diagnostic.
     let deep = format!(
-        "fn main() {{ let x: {}int{} = 1 }}",
+        "fn main() {{ let _: {}int{} = 1 }}",
         "[".repeat(5000),
         "]".repeat(5000)
     );
@@ -309,7 +309,7 @@ fn deep_and_cyclic_union_aliases_are_safe() {
         })
         .collect::<Vec<_>>()
         .join("\n");
-    let src = format!("{chain}\nfn main() {{ let x: T99 = 1 }}");
+    let src = format!("{chain}\nfn main() {{ let _: T99 = 1 }}");
     let module = aura::parse::parse(&src).expect("parses");
     assert_eq!(Checker::module(&module).map_or_else(|d| d.code, |()| 0), 0);
 
@@ -392,13 +392,13 @@ fn doubling_alias_union_resolves_in_linear_time() {
 
     // The resolved union is still correct after deduplication.
     let ok = format!(
-        "type T0 = int | float\n{chain}type U = T{n} | string\nfn main() {{ let a: U = 1\n let b: U = 2.5\n let c: U = \"s\" }}"
+        "type T0 = int | float\n{chain}type U = T{n} | string\nfn main() {{ let _a: U = 1\n let _b: U = 2.5\n let _c: U = \"s\" }}"
     );
     let module = aura::parse::parse(&ok).expect("parses");
     assert_eq!(Checker::module(&module).map_or_else(|d| d.code, |()| 0), 0);
     // ...and a member outside the union is still rejected.
     let bad = format!(
-        "type T0 = int | float\n{chain}type U = T{n} | string\nfn main() {{ let x: U = true }}"
+        "type T0 = int | float\n{chain}type U = T{n} | string\nfn main() {{ let _: U = true }}"
     );
     let module = aura::parse::parse(&bad).expect("parses");
     assert_eq!(
@@ -423,7 +423,7 @@ fn chained_duplicating_aliases_are_bounded() {
             let alias = format!("type A{i} = Dup<A{}>\n", i - 1);
             src.push_str(&alias);
         }
-        let driver = format!("fn f(x: A{n}) -> int {{ return 1 }}\nfn main() {{ print(1) }}\n");
+        let driver = format!("fn f(_x: A{n}) -> int {{ return 1 }}\nfn main() {{ print(1) }}\n");
         src.push_str(&driver);
         assert_eq!(
             check_code(&src),
@@ -432,7 +432,7 @@ fn chained_duplicating_aliases_are_bounded() {
         );
     }
     // A single non-amplifying parameterized alias still resolves.
-    let ok = "type Pair<T> = [T]\nfn f(x: Pair<int>) -> int { return 1 }\nfn main() { print(1) }";
+    let ok = "type Pair<T> = [T]\nfn f(_: Pair<int>) -> int { return 1 }\nfn main() { print(1) }";
     assert_eq!(check_code(ok), 0);
 }
 
@@ -449,7 +449,7 @@ fn broad_but_linear_aliases_still_check() {
         .map(|i| format!("T{i}"))
         .collect::<Vec<_>>()
         .join(" | ");
-    let _ = write!(src, "type All = {union}\nfn main() {{ let x: All = 1 }}\n");
+    let _ = write!(src, "type All = {union}\nfn main() {{ let _: All = 1 }}\n");
     assert_eq!(check_code(&src), 0);
 }
 
@@ -470,7 +470,8 @@ fn linear_alias_chains_are_depth_bounded() {
             src.push_str(&alias);
         }
         if use_it {
-            let driver = format!("fn f(x: A{n}) -> int {{ return 1 }}\nfn main() {{ print(1) }}\n");
+            let driver =
+                format!("fn f(_x: A{n}) -> int {{ return 1 }}\nfn main() {{ print(1) }}\n");
             src.push_str(&driver);
         } else {
             let _ = write!(src, "let z: A{n} = []\nfn main() {{ print(1) }}\n");
@@ -507,7 +508,7 @@ fn parameterized_alias_chains_are_depth_bounded() {
         if used {
             let _ = write!(
                 src,
-                "fn f(x: A{n}<int>) -> int {{ return 1 }}\nfn main() {{ print(1) }}\n"
+                "fn f(_x: A{n}<int>) -> int {{ return 1 }}\nfn main() {{ print(1) }}\n"
             );
         } else {
             src.push_str("fn main() { print(1) }\n");
@@ -539,7 +540,7 @@ fn parameterized_alias_cannot_bypass_the_depth_limit() {
             let alias = format!("type A{i}<T> = A{}<[T]>\n", i - 1);
             src.push_str(&alias);
         }
-        let _ = writeln!(src, "fn main() {{ let x: A{n}<int> = [] }}");
+        let _ = writeln!(src, "fn main() {{ let _: A{n}<int> = [] }}");
         src
     };
     // A modest chain is accepted; a deep chain is bounded rather than accepted
