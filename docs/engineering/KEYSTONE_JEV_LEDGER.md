@@ -26,7 +26,9 @@ absent.
 
 | J7 | POST | (a) How likely is a material soundness/security/contract defect in AIS + typed JSON decode + HTTP not covered by tests? (b) Is the capability/protocol boundary the right structure to build on? | **(a) 0.43 elevated**; **(b) choice=sound, p=0.76 (fix_first 0.21)** | Investigated the two named structural concerns. (1) AIS advertised `flow`/`completion` capabilities in `Capabilities::default()` while `document()` populates neither — a real overclaim; fixed to `false` for both, with the schema bits reserved for a future producer that actually carries them. (2) HTTP redirect behavior verified with a live 302 server: the layer returns `302` as an ordinary response and does not follow it; added as a permanent regression test. Both findings were Jev-driven; neither required a design change. |
 
-Jev totals: PRE consultations 3; POST classifications 4; disagreements 0;
+| J8 | POST | Final gate: what concrete evidence could falsify the completion claim, and is the `take(u: U)` acceptance a Keystone regression, a should-fix-now, or a recorded pre-existing limitation? | **(falsifier question) 0.47; (disposition) choice=recorded_limitation, p=0.94** | The falsifier question is open-ended and was resolved by evidence rather than the number: the strongest candidate (`take(u: U)` accepting a possible-`none`) was verified against a pre-Keystone worktree binary to predate Keystone, so it is recorded as TD-21 rather than fixed (tightening it would falsify the documented `T \| none` permissiveness). Independent review found 7 defects, all fixed. No undispositioned material remainder identified. |
+
+Jev totals: PRE consultations 3; POST classifications 5; disagreements 0;
 Jev-driven extra investigations 5 (all resolved with deterministic evidence;
 J4(b) and J7 both changed the implementation; J6-driven checks confirmed two
 false-positive fixes and the REPL exemption).
