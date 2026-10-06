@@ -25,6 +25,16 @@ explicit-continuation (iterative) evaluator over the existing AST
   capture-bound contract is pinned in `playground/runtime/tests/execute.rs`,
   `tests/host.rs`, and `playground/tests/node/b1_boundary.test.mjs`, and
   documented in `docs/playground.md` §2.
+- AURA 0.3 KEYSTONE SUPER-TRANSACTION: **IN PROGRESS LOCALLY, NOT PUSHED**.
+  Manifest `docs/engineering/KEYSTONE_SCOPE_MANIFEST.md`, ledger
+  `docs/engineering/KEYSTONE_JEV_LEDGER.md`, RFC
+  `docs/rfcs/0001-exception-catch-selection.md`. Landed: exceptions E1-E6
+  (pattern catch, raise-site spans, `Aura` namespace reservation), types
+  (`never`, precise `none`, optional narrowing), unused analysis `E2008`,
+  same-revision Native/WASM differential. Local validation: 1171/0
+  all-features, clippy/fmt clean, playground suite green. Remaining: HTTP,
+  typed JSON/Struct decoding, AIS/0.1, diagnostics severity/notes/help +
+  CLI color, Aurea/website/playground redesign, codename metadata.
 - PRE-0.3 FOUNDATION SUPER-TRANSACTION: **IN PROGRESS LOCALLY, NOT PUSHED**
   (push requires a new explicit human authorization). Iteration ledger and
   artifacts: `docs/engineering/RUNTIME_ARCHITECTURE.md`,

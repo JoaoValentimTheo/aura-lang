@@ -282,15 +282,52 @@ Before a model switch: finish the atomic operation, understand the diff, update
 `scripts/agent-state.sh`, and set writer ownership below. Synchronization is
 Git + working tree + these documents; chat history is not authority.
 
+## Aura 0.3 "Keystone" super-transaction (LOCAL, NOT PUSHED)
+
+Started 2026-10-06 from local `8e4a59a` (remote `e576238`, 18 ahead / 0
+behind). Scope manifest: `docs/engineering/KEYSTONE_SCOPE_MANIFEST.md`.
+Adversarial-review ledger: `docs/engineering/KEYSTONE_JEV_LEDGER.md`.
+Decisions RFC: `docs/rfcs/0001-exception-catch-selection.md`.
+
+Landed locally (each with focused evidence, full-suite runs, and mutation
+checks where applicable):
+
+- `66ed6dc` exceptions E1-E6: pattern-based catch selection (a full pattern
+  after `catch`), raise-site spans for uncaught `E4026`, reserved namespace
+  root `Aura` (`E2023`).
+- `3113fce` types: `never` bottom type (`E3006` for a normal-completion
+  `-> never` body), `Ty::None` retention with precise `E3003` possible-none
+  diagnostics, flow narrowing through `!= none`/`== none` guards including
+  divergent-branch narrowing.
+- `7dd8576` checker: Go-like unused analysis `E2008` (locals, parameters,
+  pattern and catch bindings; `_`/`_name` discard; module-scope and REPL
+  exempt; generator-aware corpus migration).
+- `97c45fc` playground gates: the Native/WASM differential compares the two
+  substrates *of the same revision* (fresh-source wasm), frozen runtimes stay
+  covered by `cross-release`.
+- `37715d3` Jev ledger records J1-J6.
+
+Validated locally: `cargo test --locked --all-targets --all-features`
+1171 passed / 0 failed; clippy `-D warnings` clean; fmt clean; playground
+suite green (differential 228/0, syntax conformance 43/43, boundary 63/63,
+browser/worker/multi-file/cache green). Frozen `0.0.2`/`0.2.0`/`0.2.1`
+byte-identical; `v0.2.1` unmoved; nothing pushed.
+
+Remaining Keystone workstreams (order §21-§36): HTTP capability, typed
+JSON->Struct decoding, AIS/0.1, structured diagnostics severity/notes/help +
+CLI color policy, Aurea CSS + website/playground redesign + overflow tests,
+REPL/Playground state machine, Python/CPython + foreign-value investigation,
+tooling reconciliation, runtime codename/channel metadata.
+
 ## Exact Next Action
 
 See `docs/engineering/CURRENT_HANDOFF.md`. In short: **B-1 and the post-B1
 runtime/WASM edge closure are remotely closed** (remote `e576238`, exact-SHA
-CI green). The **PRE-0.3 FOUNDATION super-transaction is in progress locally
-and not pushed**; continue it to completion (validation matrix, independent
-adversarial review, final Jev gate), then report and request explicit human
-authorization before any push. B-1R8 (remove the recursive engine and the
-oracle switch) and any runtime publication remain separately human-gated.
+CI green). The **Aura 0.3 Keystone super-transaction is in progress locally
+and not pushed**; continue the remaining workstreams, then report and request
+explicit human authorization before any push. B-1R8 (remove the recursive
+engine and the oracle switch) and any runtime publication remain separately
+human-gated.
 
 ## Writer
 
