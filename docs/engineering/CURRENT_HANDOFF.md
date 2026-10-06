@@ -428,7 +428,7 @@ was run under the mandatory Jev PRE/POST loop; evidence and dispositions only
 | I11 | I | Diagnostic taxonomy; E4099/E5003 undocumented | 46 constants / 45 codes; doc gap | proceed 0.99 | sync test green; grammar 6 | (folded) | `d4becc3` |
 | I12 | B | Runtime architecture record; state reconciliation | entry points verified with file:line | commit scope approved | production_routing exists; agent-state preflight OK | commit 0.96 | `5b74ebb` |
 | I13 | Residuals/§21 | Dispose 5 residuals; deliberate divergence | fresh-wasm pattern + f-string sweeps: no traps | commit scope approved | 3 mutations detected and reverted byte-exact (sha256); wasm 63 checks | commit 0.93 | `0e34fed`, `ef920a8` |
-| I14 | Validation | Full matrix + independent adversarial review | — | — | 53+52 suites, clippy×2, MSRV, fuzz, wasm 63, node, website, python, miri 117 | see review | (this commit) |
+| I14 | Validation/review | Full matrix + independent adversarial review | — | — | 52+52 suites, clippy×2, MSRV, fuzz, wasm 63, node, website, python, miri 117; review: claim not falsified, 7 minor doc corrections + 2 test-precision nits + 1 mirror-drift surface | accept 0.98 (corrections) | `1d38b49` |
 
 Jev totals: PRE consultations: 13; POST classifications: 12; disagreements:
 1 (I7: Jev 0.65 commit vs deterministic evidence that the doc was
