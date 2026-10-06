@@ -22,6 +22,9 @@ absent.
 
 | J5 | POST | Does the type-system slice have a material soundness defect or an unjustified breaking change: (a) unrequired accept->reject, (b) unsound narrowing, (c) retained `none` union member breaking an invariant the collapse provided? | **0.12 low** | Accepted. Evidence: only earlier-detection transitions at the same codes in regenerated goldens; mutation checks discriminated; spec updated. |
 
-Jev totals: PRE consultations 3; POST classifications 2; disagreements 0;
-Jev-driven extra investigations 3 (all resolved with deterministic evidence;
-J4(b) changed the implementation).
+| J6 | POST | Does the Go-like unused analysis (E2008) risk false positives that reject valid documented programs, or break REPL/session semantics, given the evidence: 10 new tests, 108 fixture migrations, generator post-pass, full suite 1171/0, mutation discriminated? | **0.18 low** | Accepted. Two false positives found and fixed during implementation (called-local bindings; shadowed bindings), REPL/module-scope exemption added, duplicate-`_`-parameter behavior verified against a HEAD worktree (E2007 at both revisions, not a regression). |
+
+Jev totals: PRE consultations 3; POST classifications 3; disagreements 0;
+Jev-driven extra investigations 4 (all resolved with deterministic evidence;
+J4(b) changed the implementation; J6-driven checks confirmed two false-positive
+fixes and the REPL exemption).
