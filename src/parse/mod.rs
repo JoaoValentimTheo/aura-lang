@@ -1800,10 +1800,12 @@ impl Parser {
                 self.bump();
                 let body = self.block()?;
                 self.expect(&Tok::Catch)?;
-                let catch = self.ident("catch binding")?;
-                // The catch binding is followed directly by its block:
-                // `catch e { ... }`. There is no `->` here (`LANGUAGE_SPEC.md`
-                // §14.5).
+                // The catch clause is a full pattern (RFC 0001): a bare
+                // identifier is `Pattern::Bind`, and a variant pattern selects
+                // nominally. It is followed directly by its block:
+                // `catch e { ... }` / `catch MyErr::Bad(m) { ... }`. There is
+                // no `->` here (`LANGUAGE_SPEC.md` §14.5).
+                let catch = self.pattern()?;
                 let catch_body = self.block()?;
                 let finally = if self.eat(&Tok::Finally) {
                     Some(self.block()?)

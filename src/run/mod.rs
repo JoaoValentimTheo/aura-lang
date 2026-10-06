@@ -248,6 +248,10 @@ pub struct Interp {
     ast_depth: usize,
     /// A thrown value in flight across a call boundary; consumed by `try`.
     pending_throw: Option<Value>,
+    /// Where the in-flight throw was raised: its `throw` statement span and
+    /// the source active there (RFC 0001). Used so an uncaught `E4026`
+    /// reports the raise site rather than the frame-crossing call site.
+    pending_throw_site: Option<(Span, Option<SourceId>)>,
     closure_sources: HashMap<usize, SourceId>,
     current_source: Option<SourceId>,
     last_error_source: Option<SourceId>,
@@ -338,6 +342,7 @@ impl Interp {
             depth: 0,
             ast_depth: 0,
             pending_throw: None,
+            pending_throw_site: None,
             closure_sources: HashMap::new(),
             current_source: None,
             last_error_source: None,
@@ -605,8 +610,12 @@ impl Interp {
             if let Err(diagnostic) =
                 iterative::call_closure_body(self, main, Vec::new(), Span::default())
             {
+                // Normalize first: `uncaught` records the raise site's source
+                // when one was captured (RFC 0001), and that recorded source
+                // must be the one read here.
+                let diagnostic = self.uncaught(diagnostic);
                 let owner = self.last_error_source.take().unwrap_or(entry_source);
-                return Err(SourceDiagnostic::new(self.uncaught(diagnostic), owner));
+                return Err(SourceDiagnostic::new(diagnostic, owner));
             }
         }
         Ok(())
@@ -728,8 +737,11 @@ impl Interp {
             self.current_source = Some(entry_source);
             self.last_error_source = None;
             if let Err(diagnostic) = self.call(&main, Vec::new(), Span::default()) {
+                // Normalize first: `uncaught` records the raise site's source
+                // when one was captured (RFC 0001).
+                let diagnostic = self.uncaught(diagnostic);
                 let owner = self.last_error_source.take().unwrap_or(entry_source);
-                return Err(SourceDiagnostic::new(self.uncaught(diagnostic), owner));
+                return Err(SourceDiagnostic::new(diagnostic, owner));
             }
         }
         Ok(())
@@ -842,16 +854,33 @@ impl Interp {
 
     /// Convert an uncaught internal `THROWN` signal into the user-facing
     /// uncaught-throw diagnostic (`E4026`), preserving the thrown value's
-    /// display. `E4099` is an internal call-boundary signal and MUST NOT reach
-    /// the user (`LANGUAGE_SPEC.md` §34.3); every non-`try` exit path funnels
-    /// through here. Any other diagnostic is returned unchanged.
+    /// display and, when known, its raise site (RFC 0001). `E4099` is an
+    /// internal call-boundary signal and MUST NOT reach the user
+    /// (`LANGUAGE_SPEC.md` §34.3); every non-`try` exit path funnels through
+    /// here. Any other diagnostic is returned unchanged.
     fn uncaught(&mut self, d: Diag) -> Diag {
         if d.code == codes::THROWN {
-            let shown = self
-                .pending_throw
-                .take()
-                .map_or_else(|| "uncaught value".to_string(), |v| v.display());
-            self.error(codes::FOREIGN, format!("uncaught value: {shown}"), d.span)
+            let thrown = self.pending_throw.take();
+            let shown = thrown
+                .as_ref()
+                .map_or_else(|| "uncaught value".to_string(), Value::display);
+            // Report the raise site recorded for this throw; if the value had
+            // to be reconstructed from the signal message (no in-flight
+            // value), there is no trustworthy site and the frame-crossing
+            // span is used unchanged.
+            let (span, site_source) = match thrown {
+                Some(_) => self.pending_throw_site.take().unwrap_or((d.span, None)),
+                None => {
+                    self.pending_throw_site = None;
+                    (d.span, None)
+                }
+            };
+            if site_source.is_some() {
+                // Sourced entry points prefer this over the frame-crossing
+                // source, so the reported location matches the reported span.
+                self.last_error_source = site_source;
+            }
+            self.error(codes::FOREIGN, format!("uncaught value: {shown}"), span)
         } else {
             d
         }
@@ -1037,8 +1066,13 @@ impl Interp {
                     None => Ok(Ctl::Return(Value::None)),
                 }
             }
-            Stmt::Throw(v, _span) => match self.eval(v, env)? {
-                Ctl::Val(value) => Ok(Ctl::Throw(value)),
+            Stmt::Throw(v, span) => match self.eval(v, env)? {
+                Ctl::Val(value) => {
+                    // Preserve the raise site for an uncaught `E4026` (RFC
+                    // 0001): the statement span and the source active here.
+                    self.pending_throw_site = Some((*span, self.current_source));
+                    Ok(Ctl::Throw(value))
+                }
                 other => Ok(other),
             },
             Stmt::Break(_) => Ok(Ctl::Break),
@@ -1112,9 +1146,16 @@ impl Interp {
                 let outcome = self.exec_block(body, env, true);
                 let mut result = match outcome {
                     Ok(Ctl::Throw(v)) => {
-                        let scope = env.child();
-                        scope.define(catch.clone(), v, false);
-                        self.exec_block(catch_body, &scope, false)
+                        if self.match_pattern(catch, &v) {
+                            let scope = env.child();
+                            self.bind_pattern(catch, &v, &scope)?;
+                            self.exec_block(catch_body, &scope, false)
+                        } else {
+                            // The pattern does not select this value: the
+                            // throw continues to an outer `try` (or becomes
+                            // `E4026`), with `finally` still running.
+                            Ok(Ctl::Throw(v))
+                        }
                     }
                     // A `throw` inside a called function crosses the call
                     // boundary as the internal THROWN signal; the pending
@@ -1124,9 +1165,16 @@ impl Interp {
                             .pending_throw
                             .take()
                             .unwrap_or_else(|| Value::str(diag.message.clone()));
-                        let scope = env.child();
-                        scope.define(catch.clone(), thrown, false);
-                        self.exec_block(catch_body, &scope, false)
+                        if self.match_pattern(catch, &thrown) {
+                            let scope = env.child();
+                            self.bind_pattern(catch, &thrown, &scope)?;
+                            self.exec_block(catch_body, &scope, false)
+                        } else {
+                            // Not selected: restore the in-flight value so an
+                            // outer region can still catch it.
+                            self.pending_throw = Some(thrown);
+                            Err(diag)
+                        }
                     }
                     Ok(flow) => Ok(flow),
                     Err(diag) => Err(diag),

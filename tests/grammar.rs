@@ -138,6 +138,10 @@ fn error_samples() -> Vec<(u16, String)> {
         (codes::EXPECTED, "fn () { }".to_string()),
         (codes::RESERVED_NAME, "fn main() { let if = 1 }".to_string()),
         (
+            codes::RESERVED_NAMESPACE,
+            "module Aura { pub struct S { x: int } }\nfn main() { print(1) }".to_string(),
+        ),
+        (
             codes::ASSIGN_IMMUTABLE,
             "fn main() { let x = 1\n x = 2 }".to_string(),
         ),

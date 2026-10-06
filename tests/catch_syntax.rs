@@ -111,3 +111,145 @@ fn try_requires_catch() {
     // `catch` remains mandatory; this is unchanged by the syntax cleanup.
     assert_eq!(code("fn main() { try { throw 1 } }"), codes::EXPECTED);
 }
+
+// ---------------------------------------------------------------------------
+// RFC 0001 — catch selection reuses the pattern grammar
+// ---------------------------------------------------------------------------
+
+#[test]
+fn catch_selects_a_nominal_variant() {
+    // A variant pattern catches only that variant; the payload binds.
+    assert_eq!(
+        ok(
+            "enum MyErr { Bad(string), Worse(int) }\nfn main() { try { throw MyErr::Bad(\"boom\") } catch MyErr::Bad(m) { print(m) } }"
+        ),
+        "boom\n"
+    );
+}
+
+#[test]
+fn catch_non_matching_variant_propagates() {
+    // A non-selected value keeps propagating: the outer catch sees it.
+    assert_eq!(
+        ok(
+            "enum MyErr { Bad(string), Worse(int) }\nfn main() { try { try { throw MyErr::Worse(3) } catch MyErr::Bad(m) { print(\"inner\") } } catch e { print(\"outer\") } }"
+        ),
+        "outer\n"
+    );
+}
+
+#[test]
+fn catch_wildcard_binds_nothing() {
+    assert_eq!(
+        ok("fn main() { try { throw 5 } catch _ { print(\"any\") } }"),
+        "any\n"
+    );
+}
+
+#[test]
+fn catch_none_pattern() {
+    assert_eq!(
+        ok("fn main() { try { throw none } catch none { print(\"absent\") } }"),
+        "absent\n"
+    );
+}
+
+#[test]
+fn catch_literal_pattern() {
+    assert_eq!(
+        ok("fn main() { try { throw 7 } catch 7 { print(\"seven\") } }"),
+        "seven\n"
+    );
+}
+
+#[test]
+fn catch_unknown_variant_is_rejected() {
+    // The catch pattern is validated exactly like a match arm's.
+    assert_eq!(
+        code("fn main() { try { throw 1 } catch Nope::X(m) { print(m) } }"),
+        codes::UNKNOWN_TYPE
+    );
+}
+
+#[test]
+fn catch_pattern_duplicate_binding_is_rejected() {
+    assert_eq!(
+        code("fn main() { try { throw [1, 2] } catch [a, a] { print(a) } }"),
+        codes::DUPLICATE_BINDING
+    );
+}
+
+#[test]
+fn catch_variant_payload_binding_is_immutable() {
+    assert_eq!(
+        code("enum E { V(int) }\nfn main() { try { throw E::V(1) } catch E::V(x) { x = 2 } }"),
+        codes::ASSIGN_IMMUTABLE
+    );
+}
+
+#[test]
+fn catch_non_match_still_runs_finally() {
+    assert_eq!(
+        ok(
+            "enum E { V(int) }\nfn main() { try { try { throw E::V(1) } catch 3 { print(\"no\") } finally { print(\"fin\") } } catch e { print(\"outer\") } }"
+        ),
+        "fin\nouter\n"
+    );
+}
+
+#[test]
+fn catch_module_qualified_variant_is_nominal() {
+    // A cross-module variant pattern uses the module-qualified path and
+    // selects by nominal identity, not by spelling.
+    assert_eq!(
+        ok(
+            "module M { pub enum E { Boom(string) } }\nfn main() { try { throw M::E::Boom(\"x\") } catch M::E::Boom(m) { print(m) } }"
+        ),
+        "x\n"
+    );
+}
+
+#[test]
+fn builtin_exception_namespace_is_reserved() {
+    // E6 (RFC 0001): a user module cannot claim the builtin family root.
+    assert_eq!(
+        code("module Aura { pub struct Foo { x: int } }\nfn main() { print(1) }"),
+        codes::RESERVED_NAMESPACE
+    );
+    // The reservation is case-sensitive nominal identity: a differently
+    // spelled module is a different name.
+    assert_eq!(
+        ok("module aura { pub struct Foo { x: int } }\nfn main() { print(1) }"),
+        "1\n"
+    );
+    // A nested module cannot counterfeit the root namespace.
+    assert_eq!(
+        ok("module Outer { module Aura { pub struct Foo { x: int } } }\nfn main() { print(1) }"),
+        "1\n"
+    );
+}
+
+#[test]
+fn uncaught_throw_reports_the_raise_site() {
+    // RFC 0001: an uncaught throw reports the `throw` statement, not the
+    // frame-crossing call site.
+    let err = run_source(
+        "fn f() -> int {\n    throw 7\n}\nfn main() {\n    f()\n}\n",
+        "<raise>",
+    )
+    .expect_err("expected an uncaught throw");
+    assert_eq!(err.code, codes::FOREIGN);
+    let (line, _col) = aura::error::line_col(
+        "fn f() -> int {\n    throw 7\n}\nfn main() {\n    f()\n}\n",
+        err.span.start,
+    );
+    assert_eq!(line, 2, "raise-site line");
+}
+
+#[test]
+fn caught_throw_reports_no_uncaught_error() {
+    assert_eq!(
+        ok("fn f() -> int {\n    throw 7\n}\nfn main() {\n    try { f() } catch e { print(e) }\n}"),
+        "7\n"
+    );
+}

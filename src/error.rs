@@ -306,6 +306,9 @@ pub mod codes {
     pub const DUPLICATE_LOGICAL_SOURCE: u16 = 2021;
     /// A provider/module source key or logical child path is invalid.
     pub const MODULE_SOURCE_PATH: u16 = 2022;
+    /// A reserved namespace root was claimed by a user declaration (RFC 0001
+    /// E6: `module Aura` cannot counterfeit builtin exception identity).
+    pub const RESERVED_NAMESPACE: u16 = 2023;
     /// Type mismatch.
     pub const TYPE_MISMATCH: u16 = 3001;
     /// Return type mismatch.

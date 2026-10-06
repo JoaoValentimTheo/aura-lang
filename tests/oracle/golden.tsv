@@ -26,7 +26,7 @@ diag/overflow		runtime	4013	integer overflow	overflow.aura	38	39	1	39	-	-
 diag/type_mismatch_runtime		runtime	3001	expected a number, found string	type_mismatch.aura	20	21	1	21	-	-
 diag/no_match		runtime	4029	no match arm matched the value	no_match.aura	31	36	2	19	-	-
 diag/break_outside_loop		compile	2015	`break`/`continue` can only appear inside a loop	break_outside.aura	12	17	1	13	-	-
-diag/uncaught_throw		runtime	4026	uncaught value: boom	uncaught_throw.aura	0	0	1	1	-	-
+diag/uncaught_throw		runtime	4026	uncaught value: boom	uncaught_throw.aura	12	17	1	13	-	-
 diag/undefined_name_compile		compile	2003	undefined variable `nope`	undefined.aura	18	22	1	19	-	-
 diag/immutable_assign_compile		compile	2001	cannot assign to `x`: it is immutable (declare it `let mut`)	immutable.aura	23	24	1	24	-	-
 diag/missing_main_compile		compile	4027	this program has no `fn main()`, so there is nothing to run	no_main.aura	0	0	1	1	-	-
@@ -61,19 +61,19 @@ compound/index_target_double_eval	6964780a6964780a5b31315d0a	ok	0		-	0	0	0	0	-	-
 compound/index_rhs_order	7268730a6964780a6964780a5b365d0a	ok	0		-	0	0	0	0	-	-
 finally/pending_val__finally_val	460a310a	ok	0		-	0	0	0	0	-	-
 finally/pending_val__finally_return	370a	ok	0		-	0	0	0	0	-	-
-finally/pending_val__finally_throw		runtime	4026	uncaught value: T	finally.aura	82	83	2	19	-	-
+finally/pending_val__finally_throw		runtime	4026	uncaught value: T	finally.aura	50	55	1	51	-	-
 finally/pending_return__finally_val	460a310a	ok	0		-	0	0	0	0	-	-
 finally/pending_return__finally_return	370a	ok	0		-	0	0	0	0	-	-
-finally/pending_return__finally_throw		runtime	4026	uncaught value: T	finally.aura	96	97	2	19	-	-
+finally/pending_return__finally_throw		runtime	4026	uncaught value: T	finally.aura	64	69	1	65	-	-
 finally/pending_throw__finally_val	460a320a	ok	0		-	0	0	0	0	-	-
 finally/pending_throw__finally_return	370a	ok	0		-	0	0	0	0	-	-
-finally/pending_throw__finally_throw		runtime	4026	uncaught value: T	finally.aura	97	98	2	19	-	-
+finally/pending_throw__finally_throw		runtime	4026	uncaught value: T	finally.aura	65	70	1	66	-	-
 finally/pending_break__finally_val	460a310a	ok	0		-	0	0	0	0	-	-
 finally/pending_break__finally_return	61667465720a	ok	0		-	0	0	0	0	-	-
-finally/pending_break__finally_throw		runtime	4026	uncaught value: T	finally.aura	129	130	4	13	-	-
+finally/pending_break__finally_throw		runtime	4026	uncaught value: T	finally.aura	101	106	3	54	-	-
 finally/pending_continue__finally_val	360a	ok	0		-	0	0	0	0	-	-
 finally/pending_continue__finally_return	61667465720a	ok	0		-	0	0	0	0	-	-
-finally/pending_continue__finally_throw		runtime	4026	uncaught value: T	finally.aura	132	133	4	13	-	-
+finally/pending_continue__finally_throw		runtime	4026	uncaught value: T	finally.aura	104	109	3	57	-	-
 finally/pending_val__finally_fatal_error		runtime	4007	division by zero	finally.aura	60	61	1	61	-	-
 finally/nested_try_in_finally	780a310a	ok	0		-	0	0	0	0	-	-
 finally/call_in_finally	670a310a	ok	0		-	0	0	0	0	-	-
@@ -97,8 +97,8 @@ module/runtime_error_in_child		runtime	4007	division by zero	child.aura	32	33	1	
 module/return_to_caller	34320a	ok	0		-	0	0	0	0	-	-
 module/init_order	656e7472792d696e69740a6368696c642d696e69740a6d61696e0a	ok	0		-	0	0	0	0	-	-
 module/chain_error_in_leaf		runtime	4007	division by zero	leaf.aura	32	33	1	33	-	-
-module/uncaught_throw_in_child		runtime	4026	uncaught value: 7	main.aura	12	17	1	13	-	-
-module/uncaught_throw_in_leaf		runtime	4026	uncaught value: 9	mid.aura	23	27	1	24	-	-
+module/uncaught_throw_in_child		runtime	4026	uncaught value: 7	child.aura	25	30	1	26	-	-
+module/uncaught_throw_in_leaf		runtime	4026	uncaught value: 9	leaf.aura	23	28	1	24	-	-
 module/throw_in_child_caught	350a	ok	0		-	0	0	0	0	-	-
 value/int_expression		ok	0		-	0	0	0	0	int	7
 value/list_expression		ok	0		-	0	0	0	0	list	[1, 2, 3]

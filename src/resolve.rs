@@ -541,6 +541,17 @@ impl Resolver {
                     span,
                     public,
                 } => {
+                    // The builtin exception-family namespace root is reserved
+                    // (RFC 0001, E6; `LANGUAGE_SPEC.md` §3.3): a user module
+                    // must not counterfeit builtin identity. The reservation
+                    // applies at the root, where builtin families live.
+                    if prefix.is_empty() && name == "Aura" {
+                        return Err(Diag::new(
+                            codes::RESERVED_NAMESPACE,
+                            "`Aura` is reserved for built-in exception families and cannot be used as a module name",
+                            *span,
+                        ));
+                    }
                     let mut child = prefix.to_vec();
                     child.push(name.clone());
                     // Record the module itself so `pub module` is a real
@@ -1593,8 +1604,12 @@ impl Resolver {
                 span,
             } => {
                 let body = self.rewrite_block(body, locals, prefix)?;
+                // The catch clause is a pattern (RFC 0001); its variant tags
+                // are canonicalized exactly like a `match` arm's, and its
+                // bindings join the catch scope.
+                let catch = self.rewrite_pattern(catch, prefix)?;
                 locals.push();
-                locals.declare(catch);
+                self.collect_pattern_bindings(&catch, locals);
                 let mut out = Vec::with_capacity(catch_body.len());
                 for st in catch_body.iter() {
                     out.push(self.rewrite_stmt(st, locals, prefix)?);
@@ -1606,7 +1621,7 @@ impl Resolver {
                 };
                 Stmt::Try {
                     body,
-                    catch: catch.clone(),
+                    catch,
                     catch_body: out.into(),
                     finally,
                     span: *span,

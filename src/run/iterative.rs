@@ -417,8 +417,12 @@ enum Cont {
     },
     /// A `return` operand finished; convert to the `return` signal.
     ReturnFrom,
-    /// A `throw` operand finished; convert to the `throw` signal.
-    ThrowFrom,
+    /// A `throw` operand finished; record its raise site and convert to the
+    /// `throw` signal.
+    ThrowFrom {
+        /// The `throw` statement's span (RFC 0001 raise-site reporting).
+        span: Span,
+    },
     /// A call argument finished (R3C.1). Arguments are evaluated strictly in
     /// source order, exactly once each, *before* any callee resolution or
     /// parameter binding — mirroring `Interp::eval_call`'s argument loop. The
@@ -437,13 +441,14 @@ enum Cont {
     /// arm (`call_value`). A `Name` callee is resolved synchronously once its
     /// arguments complete, so this record is only pushed for other shapes.
     CallCallee { values: Vec<Value>, span: Span },
-    /// A `try` body block finished (R3F.1); catch a `throw`, and run `finally`.
+    /// A `try` body block finished (R3F.1); catch a `throw` selected by the
+    /// catch pattern (RFC 0001), and run `finally`.
     /// The snapshot fields restore machine state when an error aborts the body
     /// mid-expression (the body's own continuations are discarded): the
     /// recursive engine's unwind balances `ast_depth` and pops frame state,
     /// which the machine reproduces from these snapshots.
     TryBody {
-        catch: String,
+        catch: Pattern,
         catch_body: Arc<[Stmt]>,
         finally: Option<Arc<[Stmt]>>,
         env: Env,
@@ -781,18 +786,24 @@ impl<'i> Machine<'i> {
                             .pending_throw
                             .take()
                             .unwrap_or_else(|| Value::str(diag.message.clone()));
-                        let scope = env.child();
-                        scope.define(catch, thrown, false);
-                        self.kont.push(Cont::TryCatchEnd {
-                            finally,
-                            env,
-                            frames_len: self.frames.len(),
-                            depth: self.interp.depth,
-                            saved_expr_depth: self.expr_depth,
-                        });
-                        return Ok(Some(Control::Next(Ctrl::EnterBlock(
-                            catch_body, scope, false,
-                        ))));
+                        if self.interp.match_pattern(&catch, &thrown) {
+                            let scope = env.child();
+                            self.interp.bind_pattern(&catch, &thrown, &scope)?;
+                            self.kont.push(Cont::TryCatchEnd {
+                                finally,
+                                env,
+                                frames_len: self.frames.len(),
+                                depth: self.interp.depth,
+                                saved_expr_depth: self.expr_depth,
+                            });
+                            return Ok(Some(Control::Next(Ctrl::EnterBlock(
+                                catch_body, scope, false,
+                            ))));
+                        }
+                        // The pattern does not select this value: restore the
+                        // in-flight throw and keep unwinding to an outer
+                        // region (RFC 0001).
+                        self.interp.pending_throw = Some(thrown);
                     }
                     if let Some(f) = finally {
                         self.kont.push(Cont::TryFinally {
@@ -930,20 +941,25 @@ impl<'i> Machine<'i> {
             } => {
                 let original = match done.ctl {
                     Ctl::Throw(v) => {
-                        // Only an explicit `throw` is catchable; the catch
-                        // scope binds the thrown value and the catch body runs
+                        // Only an explicit `throw` is catchable. The catch
+                        // pattern selects the value (RFC 0001): on a match the
+                        // scope binds the pattern and the catch body runs
                         // unscoped (it aliases that scope), exactly like
-                        // `Interp::exec_stmt`'s `Try`.
-                        let scope = env.child();
-                        scope.define(catch, v, false);
-                        self.kont.push(Cont::TryCatchEnd {
-                            finally: finally.clone(),
-                            env: env.clone(),
-                            frames_len: self.frames.len(),
-                            depth: self.interp.depth,
-                            saved_expr_depth: self.expr_depth,
-                        });
-                        return Ok(Resume::Next(Ctrl::EnterBlock(catch_body, scope, false)));
+                        // `Interp::exec_stmt`'s `Try`; on a non-match the
+                        // throw continues outward and `finally` still runs.
+                        if self.interp.match_pattern(&catch, &v) {
+                            let scope = env.child();
+                            self.interp.bind_pattern(&catch, &v, &scope)?;
+                            self.kont.push(Cont::TryCatchEnd {
+                                finally: finally.clone(),
+                                env: env.clone(),
+                                frames_len: self.frames.len(),
+                                depth: self.interp.depth,
+                                saved_expr_depth: self.expr_depth,
+                            });
+                            return Ok(Resume::Next(Ctrl::EnterBlock(catch_body, scope, false)));
+                        }
+                        Ctl::Throw(v)
                     }
                     other => other,
                 };
@@ -1610,8 +1626,11 @@ impl<'i> Machine<'i> {
                 Ctl::Val(v) => Ok(Resume::Next(Ctrl::ReturnValue(v))),
                 other => Ok(Resume::Redeliver(Done::plain(other))),
             },
-            Cont::ThrowFrom => match done.ctl {
-                Ctl::Val(v) => Ok(Resume::Next(Ctrl::ThrowValue(v))),
+            Cont::ThrowFrom { span } => match done.ctl {
+                Ctl::Val(v) => {
+                    self.interp.pending_throw_site = Some((span, self.interp.current_source));
+                    Ok(Resume::Next(Ctrl::ThrowValue(v)))
+                }
                 other => Ok(Resume::Redeliver(Done::plain(other))),
             },
             Cont::CallArgs {
@@ -2775,8 +2794,12 @@ impl<'i> Machine<'i> {
                 }
                 None => Ok(Control::Next(Ctrl::Done(Ctl::Return(Value::None)))),
             },
-            Stmt::Throw(value, _) => {
-                self.kont.push(Cont::ThrowFrom);
+            Stmt::Throw(value, span) => {
+                // The raise site is recorded when the operand *completes*
+                // (see `Cont::ThrowFrom`), so an operand that itself throws
+                // keeps its own inner site (RFC 0001), mirroring
+                // `Interp::exec_stmt`'s `Stmt::Throw` arm.
+                self.kont.push(Cont::ThrowFrom { span: *span });
                 Ok(Control::Next(Ctrl::EvalExpr(
                     Arc::new(value.clone()),
                     env.clone(),
@@ -3174,7 +3197,7 @@ mod tests {
         let e = Expr::Block(
             Arc::from([Stmt::Try {
                 body: Arc::from([expr_stmt(lit(1))]),
-                catch: "e".to_string(),
+                catch: Pattern::Bind("e".to_string(), Span::default()),
                 catch_body: Arc::from([]),
                 finally: None,
                 span: Span::default(),
@@ -3333,7 +3356,7 @@ mod tests {
         let branch = Expr::Block(
             Arc::from([Stmt::Try {
                 body: Arc::from([expr_stmt(lit(7))]),
-                catch: "e".to_string(),
+                catch: Pattern::Bind("e".to_string(), Span::default()),
                 catch_body: Arc::from([]),
                 finally: None,
                 span: Span::default(),
@@ -4326,7 +4349,7 @@ mod tests {
         let try_expr = Expr::Block(
             Arc::from([Stmt::Try {
                 body: Arc::from([expr_stmt(lit(2))]),
-                catch: "e".to_string(),
+                catch: Pattern::Bind("e".to_string(), Span::default()),
                 catch_body: Arc::from([]),
                 finally: None,
                 span: Span::default(),
@@ -4666,7 +4689,7 @@ mod tests {
         let try_expr = Expr::Block(
             Arc::from([Stmt::Try {
                 body: Arc::from([]),
-                catch: "e".to_string(),
+                catch: Pattern::Bind("e".to_string(), Span::default()),
                 catch_body: Arc::from([]),
                 finally: None,
                 span: Span::default(),

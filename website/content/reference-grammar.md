@@ -91,7 +91,7 @@ continue_stmt   = "continue" statement_end ;
 while_stmt      = "while" expr block ;
 loop_stmt       = "loop" block ;
 for_stmt        = "for" pattern "in" expr block ;
-try_stmt        = "try" block "catch" IDENT block [ "finally" block ]
+try_stmt        = "try" block "catch" pattern block [ "finally" block ]
                   [ terminator ] ;
 
 expr            = pipe ;

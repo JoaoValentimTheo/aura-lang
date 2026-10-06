@@ -567,12 +567,12 @@ pub enum Stmt {
     Loop(Arc<[Stmt]>, Span),
     /// `for pat in iter { body }`.
     For(Pattern, Expr, Arc<[Stmt]>, Span),
-    /// `try { } catch e { } finally { }`.
+    /// `try { } catch <pattern> { } finally { }`.
     Try {
         /// Try body.
         body: Arc<[Stmt]>,
-        /// Catch binding.
-        catch: String,
+        /// Catch pattern, matched against the thrown value (RFC 0001).
+        catch: Pattern,
         /// Catch body.
         catch_body: Arc<[Stmt]>,
         /// Optional finally body.

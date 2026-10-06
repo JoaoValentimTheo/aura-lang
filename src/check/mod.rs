@@ -4493,8 +4493,13 @@ impl Checker {
                 ..
             } => {
                 self.block(body)?;
+                // The catch clause is a pattern (RFC 0001): validate its
+                // variants and bind its names exactly like a match arm's.
+                self.check_pattern(catch)?;
                 self.push();
-                self.declare(catch, false, Span::default())?;
+                for b in catch.bindings() {
+                    self.declare(&b, false, catch.span())?;
+                }
                 for s in catch_body.iter() {
                     self.stmt(s)?;
                 }

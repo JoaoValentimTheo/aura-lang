@@ -620,7 +620,7 @@ continue_stmt   = "continue" statement_end ;
 while_stmt      = "while" expr block ;
 loop_stmt       = "loop" block ;
 for_stmt        = "for" pattern "in" expr block ;
-try_stmt        = "try" block "catch" IDENT block [ "finally" block ]
+try_stmt        = "try" block "catch" pattern block [ "finally" block ]
                   [ terminator ] ;
 ```
 
@@ -1497,18 +1497,36 @@ control-flow signal and, if it escapes the function, is `E4030`.
 ### 14.5 `throw` and `try`/`catch`/`finally`
 
 **Normative rule.** `throw e` raises the value of `e` as a *throwable*. A
-`try { … } catch x { … }` catches a throwable raised in its body (including
-one raised in a called function) and binds `x` to the thrown value. The catch
-binding is followed directly by its block; there is no `->` before it (a
-`catch e -> { … }` is a parse error, `E1006`).
+`try { … } catch p { … }` catches a throwable raised in its body (including
+one raised in a called function) when the pattern `p` matches it, and binds
+`p`'s names to the matched parts. The catch clause is followed directly by its
+block; there is no `->` before it (a `catch e -> { … }` is a parse error,
+`E1006`). The clause after `catch` is a full pattern (§4.7), exactly as in a
+`match` arm: `catch e` binds any thrown value, `catch _` catches with no
+binding, `catch E::V(x)` selects one nominal variant, `catch none` selects a
+thrown `none`, and `catch 7` selects that literal. When the pattern does not
+match, the throw continues to the next enclosing `try` (or terminates with
+`E4026`); it is never silently discarded.
 
 **Normative rule.** Only explicit `throw` is catchable. Runtime diagnostics
 (overflow, division by zero, index errors, and so on) are **not** values and
 are **not** catchable; they propagate to the top and terminate the program.
 
-**Normative rule.** An uncaught throwable terminates the program with `E4026`.
+**Normative rule.** An uncaught throwable terminates the program with `E4026`,
+reported at the `throw` statement that raised it (not at an intervening call
+site).
 
 **Normative rule.** `catch` is mandatory: there is no `try` without `catch`.
+
+**Normative rule (builtin identity reservation).** The module root `Aura` is
+reserved: a user module named `Aura` at the file root is rejected (`E1009`),
+so user-defined exceptions cannot counterfeit built-in exception-family
+identity. The reservation is nominal and case-sensitive, and applies only at
+the root (`module Outer { module Aura { … } }` is legal).
+
+*Evidence:* `Stmt::Try`/`Stmt::Throw` in `exec_stmt` (`src/run/mod.rs`) and the
+machine (`src/run/iterative.rs`); `Pattern` reuse in `parse`/`resolve`/`check`;
+`tests/catch_syntax.rs`; RFC 0001 (`docs/rfcs/0001-exception-catch-selection.md`).
 
 ### 14.6 `finally`
 

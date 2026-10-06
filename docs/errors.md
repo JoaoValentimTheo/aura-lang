@@ -43,6 +43,7 @@ Every rejection carries a stable code. Codes are grouped by phase:
 | E2020 | Module-source ownership collision | two provider sources both claim logical module `foo`; or in-source `module foo` plus external `foo` |
 | E2021 | Duplicate logical source | one provider source key is supplied for two logical modules, or supplied twice for one logical module |
 | E2022 | Invalid/missing module-source path or provider key | provider advertises a missing child source; invalid logical child name such as `../foo` |
+| E2023 | Reserved namespace root claimed by a user declaration | a root `module Aura { … }` (reserved for built-in exception families, RFC 0001 E6) |
 
 ## Type-level (`E3xxx`, static)
 

@@ -27,8 +27,8 @@ r3c1-value/call_inside_array_index_expr		ok	0		-	0	0	0	0	int	20
 r3c1-value/user_overflow		runtime	4013	integer overflow	<r3c1>	29	30	1	30	-	-
 r3c1-value/user_undefined_name		compile	2003	undefined variable `missing`	<r3c1>	9	16	1	10	-	-
 r3c1-value/user_divide_by_zero		runtime	4007	division by zero	<r3c1>	12	13	1	13	-	-
-r3c1-value/user_throw		runtime	4026	uncaught value: 5	<r3c1>	19	20	2	1	-	-
-r3c1-value/user_throw_value		runtime	4026	uncaught value: boom	<r3c1>	24	25	2	1	-	-
+r3c1-value/user_throw		runtime	4026	uncaught value: 5	<r3c1>	9	14	1	10	-	-
+r3c1-value/user_throw_value		runtime	4026	uncaught value: boom	<r3c1>	9	14	1	10	-	-
 r3c1-value/user_return_ignored_after		ok	0		-	0	0	0	0	int	1
 r3c1-value/call		ok	0		-	0	0	0	0	int	2
 r3c1-value/pipe_native_call		ok	0		-	0	0	0	0	int	2
@@ -70,7 +70,7 @@ r3c1-value/filter_named_callback		ok	0		-	0	0	0	0	list	[1, 3]
 r3c1-value/reduce_named_callback		ok	0		-	0	0	0	0	int	10
 r3c1-value/map_callback_order	610a	runtime	3001	expected a number, found none	<r3c1>	12	13	1	13	-	-
 r3c1-value/higher_order_apply		ok	0		-	0	0	0	0	int	3
-r3c1-value/callback_throw_propagates		runtime	4026	uncaught value: 1	<r3c1>	23	26	2	1	-	-
+r3c1-value/callback_throw_propagates		runtime	4026	uncaught value: 1	<r3c1>	13	18	1	14	-	-
 r3c1-value/reduce_callback_error		runtime	4007	division by zero	<r3c1>	17	18	1	18	-	-
 r3c1-value/construct_positional		ok	0		-	0	0	0	0	struct	P { x: 1 }
 r3c1-value/construct_named		ok	0		-	0	0	0	0	struct	P { x: 1, y: 2 }
@@ -126,7 +126,7 @@ r3c1-value/lambda_map		ok	0		-	0	0	0	0	list	[2, 4, 6]
 r3c1-value/lambda_filter		ok	0		-	0	0	0	0	list	[2, 4]
 r3c1-value/lambda_reduce		ok	0		-	0	0	0	0	int	6
 r3c1-value/lambda_throw		compile	1006	expected an expression, found `throw`	<r3c1>	8	13	1	9	-	-
-r3c1-value/lambda_throw_block		runtime	4026	uncaught value: 3	<r3c1>	21	22	1	22	-	-
+r3c1-value/lambda_throw_block		runtime	4026	uncaught value: 3	<r3c1>	10	15	1	11	-	-
 r3c1-value/lambda_arg_order	6c0a720a	ok	0		-	0	0	0	0	none	none
 r3c1-value/pipe_native		ok	0		-	0	0	0	0	int	3
 r3c1-value/pipe_named_fn		ok	0		-	0	0	0	0	int	2
@@ -170,7 +170,7 @@ r3c1-value/while_continue		ok	0		-	0	0	0	0	int	8
 r3c1-value/while_nested		ok	0		-	0	0	0	0	int	4
 r3c1-value/while_shadow_scope		ok	0		-	0	0	0	0	int	1
 r3c1-value/while_return_propagates		ok	0		-	0	0	0	0	int	5
-r3c1-value/while_throw_propagates		runtime	4026	uncaught value: 7	<r3c1>	34	35	2	1	-	-
+r3c1-value/while_throw_propagates		runtime	4026	uncaught value: 7	<r3c1>	22	27	1	23	-	-
 r3c1-value/while_condition_error		runtime	4007	division by zero	<r3c1>	10	11	1	11	-	-
 r3c1-value/loop_zero		ok	0		-	0	0	0	0	int	1
 r3c1-value/loop_counts		ok	0		-	0	0	0	0	int	3
@@ -192,7 +192,7 @@ r3c1-value/for_pattern_wildcard		ok	0		-	0	0	0	0	int	6
 r3c1-value/for_scope_not_leak		compile	2003	undefined variable `x`	<r3c1>	20	21	2	2	-	-
 r3c1-value/for_range_lazy_break		ok	0		-	0	0	0	0	int	3
 r3c1-value/for_return		ok	0		-	0	0	0	0	int	0
-r3c1-value/for_throw		runtime	4026	uncaught value: 0	<r3c1>	37	38	2	1	-	-
+r3c1-value/for_throw		runtime	4026	uncaught value: 0	<r3c1>	25	30	1	26	-	-
 r3c1-value/for_iterable_error		compile	4018	`int` is not iterable	<r3c1>	2	5	1	3	-	-
 r3c1-value/for_not_iterable		compile	4018	`int` is not iterable	<r3c1>	2	5	1	3	-	-
 r3c1-value/for_mutation_accumulator		ok	0		-	0	0	0	0	list	[0, 1, 2]
@@ -340,6 +340,6 @@ r3c1-program/main_native_call		ok	0		-	0	0	0	0	-	-
 r3c1-program/main_user_call		ok	0		-	0	0	0	0	-	-
 r3c1-program/main_nested_call		ok	0		-	0	0	0	0	-	-
 r3c1-program/main_recursive		ok	0		-	0	0	0	0	-	-
-r3c1-program/main_throw		runtime	4026	uncaught value: 1	r3c1.aura	12	13	1	13	-	-
+r3c1-program/main_throw		runtime	4026	uncaught value: 1	r3c1.aura	27	32	2	10	-	-
 r3c1-program/main_call_after_return		ok	0		-	0	0	0	0	-	-
 r3c1-program/main_print_order	6f6e650a74776f0a	ok	0		-	0	0	0	0	-	-
