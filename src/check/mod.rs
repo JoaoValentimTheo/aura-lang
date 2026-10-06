@@ -149,7 +149,9 @@ fn type_expr_depth_exceeds(t: &TypeExpr, limit: usize) -> bool {
 
 /// Maximum AST nesting the checker will descend before reporting a limit.
 /// Prevents a flat but deeply nested program from exhausting the host stack.
-const MAX_AST_DEPTH: usize = 256;
+///
+/// Reused from the parser so the single semantic value is declared once.
+use crate::parse::MAX_AST_DEPTH;
 
 /// Maximum total type nodes produced while expanding one resolved type
 /// annotation (including parameterized alias expansion). Bounds the flat size

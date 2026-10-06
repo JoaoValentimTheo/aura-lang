@@ -353,8 +353,34 @@ fn browser_host_stdout_limit_is_atomic_and_fatal() {
     assert_eq!(bytes, b"f\n");
 }
 
-/// A poisoned stdout lock must not silently lose accepted bytes.
+/// A single `sleep_ms` call is clamped by the named host policy constant.
 ///
+/// The clamp is a host bound (the WebAssembly host has no sleep at all), so
+/// this pins the policy at the pure helper: the value is never re-derived
+/// from an unnamed literal at the call site.
+#[test]
+fn sleep_ms_is_clamped_by_the_named_policy() {
+    use aura::host::{clamped_sleep_ms, MAX_SLEEP_MS};
+    assert_eq!(clamped_sleep_ms(0), 0);
+    assert_eq!(clamped_sleep_ms(1), 1);
+    assert_eq!(clamped_sleep_ms(MAX_SLEEP_MS), MAX_SLEEP_MS);
+    assert_eq!(clamped_sleep_ms(MAX_SLEEP_MS + 1), MAX_SLEEP_MS);
+    assert_eq!(clamped_sleep_ms(u64::MAX), MAX_SLEEP_MS);
+}
+
+/// The semantic AST-depth budget is declared exactly once and re-exported.
+///
+/// The parser is the declaration site; the evaluator re-export and the
+/// checker import must observe the same value, so drift is impossible.
+#[test]
+fn ast_depth_budget_has_a_single_value() {
+    let parser_value = aura::parse::MAX_AST_DEPTH;
+    let run_value: usize = aura::run::MAX_AST_DEPTH;
+    assert_eq!(parser_value, 256);
+    assert_eq!(parser_value, run_value);
+}
+
+/// A poisoned stdout lock must not silently lose accepted bytes.///
 /// The lock protects a `Vec<u8>` whose only mutation is an infallible
 /// `extend_from_slice`, so poison (which requires a prior panic while holding
 /// the lock) cannot leave torn state. The host and the shared sink must

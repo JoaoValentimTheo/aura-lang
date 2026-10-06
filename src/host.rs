@@ -367,9 +367,23 @@ impl Host for StdHost {
     }
 
     fn sleep_ms(&mut self, ms: u64) -> HostResult<()> {
-        std::thread::sleep(std::time::Duration::from_millis(ms.min(60_000)));
+        std::thread::sleep(std::time::Duration::from_millis(clamped_sleep_ms(ms)));
         Ok(())
     }
+}
+
+/// Maximum sleep a single `sleep_ms` call may block for.
+///
+/// The native host is the only host that provides sleep (the WebAssembly host
+/// reports `E5002`), and a script must not be able to pin a process
+/// indefinitely with one call. This is a host policy bound, not a language
+/// semantic one: it caps the *duration of one call* and never errors.
+pub const MAX_SLEEP_MS: u64 = 60_000;
+
+/// Clamp a requested sleep to [`MAX_SLEEP_MS`].
+#[must_use]
+pub fn clamped_sleep_ms(ms: u64) -> u64 {
+    ms.min(MAX_SLEEP_MS)
 }
 
 /// A capability-limited host.

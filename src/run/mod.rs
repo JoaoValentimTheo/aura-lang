@@ -31,7 +31,11 @@ pub const MAX_CALL_FRAMES: usize = 512;
 
 /// Maximum expression nesting depth the evaluator will descend. Bounds host
 /// stack usage for deeply nested expressions.
-pub const MAX_AST_DEPTH: usize = 256;
+///
+/// The single declaration lives in [`crate::parse`] so the lexer, parser,
+/// checker, module graph, and evaluator can never drift apart; this re-export
+/// preserves the historical `aura::run::MAX_AST_DEPTH` path.
+pub use crate::parse::MAX_AST_DEPTH;
 
 /// Maximum f-string format *precision* (digits after the decimal point).
 ///
@@ -53,6 +57,13 @@ pub const MAX_FORMAT_PRECISION: usize = u16::MAX as usize;
 /// The value matches the range-materialization cap (§31.4): a generous but
 /// bounded amount of materialized output.
 pub const MAX_FORMAT_WIDTH: usize = 10_000_000;
+
+/// Maximum number of elements produced when a range is materialized (a
+/// comprehension source, a `for` over a non-range iterable, or a `sort`
+/// input). Bounds a pathological range so it cannot exhaust memory; exceeding
+/// it is `E4013`, identical on every substrate. `for` over a `Range` stays
+/// lazy and is not subject to this cap.
+pub const MAX_RANGE_MATERIALIZE: i64 = 10_000_000;
 
 /// A user-defined function.
 #[derive(Debug)]
@@ -1220,7 +1231,6 @@ impl Interp {
             Value::Range(r) => {
                 // Materializing a range is bounded so a pathological range
                 // cannot exhaust memory; the cap is part of the runtime model.
-                const MAX_RANGE_MATERIALIZE: i64 = 10_000_000;
                 let n = r.len();
                 if n > MAX_RANGE_MATERIALIZE {
                     return Err(self.error(
