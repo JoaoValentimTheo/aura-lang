@@ -464,9 +464,12 @@ green.
 
 **Outcome A stands: no public exception syntax was chosen or implemented;
 E1–E6 remain the human gate.** The verified, refined decision package is
-`docs/engineering/EXCEPTION_SYNTAX_DECISION_PACKAGE.md`. TD-20 records the
-pre-existing bare-config test-hygiene gap (not repaired: outside the audited
-range and every affected configuration is unsupported/documented-against).
+`docs/engineering/EXCEPTION_SYNTAX_DECISION_PACKAGE.md`; it supersedes the
+prior session's untracked `plans/EXCEPTION_SYNTAX_DECISION_PACKAGE.md`
+(sha256 `647e0e24…`; its content is preserved as a strict subset). TD-20
+records the pre-existing bare-config test-hygiene gap (not repaired: outside
+the audited range and every affected configuration is unsupported/
+documented-against).
 
 Independent adversarial review (fresh read-only session, 2026-10-05):
 completion claim **not falsified** across 13 attack areas (frozen artifacts,
