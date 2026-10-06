@@ -77,6 +77,23 @@ engineering iteration; the full iteration ledger (questions, evidence, Jev
 outcomes, dispositions, commits) is recorded in the Pre-0.3 section of
 `docs/engineering/CURRENT_HANDOFF.md`.
 
+PRE-0.3 ADVERSARIAL RE-AUDIT + HUMAN SYNTAX GATE — **COMPLETE LOCALLY
+2026-10-06, WAITING FOR HUMAN.** Bootstrap verified against the checkpoint
+(branch, HEAD `1102b23`, remote `e576238`, ahead 15 / behind 0, range intact,
+frozen hashes byte-identical, tag `v0.2.1` = `3f5f8702`, protected state
+unchanged). The `e576238..1102b23` range was adversarially re-audited: routing
+to the iterative machine mechanically re-verified (`production_routing` 4/4),
+non-catchability of resource/host/internal/Python failures re-executed,
+single-sourced limits confirmed, native/WASM parity re-measured, a deliberate
+production-seam mutation was caught and reverted byte-exact. One in-range
+documentation defect was repaired separately (`150befe`, `tests/host.rs`
+merged doc-comment delimiter; behavior identical). The exception decision
+package was verified by execution, refined, and committed as
+`docs/engineering/EXCEPTION_SYNTAX_DECISION_PACKAGE.md`; pre-existing bare
+`--no-default-features` test-hygiene gap recorded as TD-20 (not repaired;
+outside the audited range). **No public exception syntax was implemented or
+chosen: E1–E6 remain the human gate. Outcome A stands.**
+
 B-1R phase state:
 
 - **B-1:** **REMOTELY CLOSED** at `bb736fc`. Current-language iterative

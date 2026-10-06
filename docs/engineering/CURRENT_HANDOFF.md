@@ -436,6 +436,38 @@ design-only and non-normative — proceeded, strengthened the non-normative
 markers first); Jev-driven extra investigations: 3 (I2 hidden-corruption
 question, I5 spec-rewording caution, I7 preemption caution).
 
+## PRE-0.3 adversarial re-audit + human syntax gate (2026-10-06)
+
+Bootstrap (verified, not assumed): branch `rewrite/v3-rust`; local HEAD
+`1102b23` (then `150befe` after the repair below); remote
+`e576238f7adb52f6ab6d18431602e3fbc2bd3636`; ahead 15 / behind 0; range
+`e576238..1102b23` intact; staged none; protected `.kilo/**` churn matches the
+documented state; `.codex/**` not tracked; root `s` absent; frozen runtime
+hashes byte-identical; tag `v0.2.1` = `3f5f8702`; declared version `0.2.1`.
+
+| # | Workstream | Question / action | Evidence before | Jev PRE | Verification | Jev POST | Commit |
+|---|---|---|---|---|---|---|---|
+| A1 | Bootstrap | Is the checkpoint true in Git? | local/remote SHAs, reflog linear, frozen hashes, tags | proceed 0.85 (divergence 0.21, defect 0.26) | all 18 audited claims checked; 0 production defects | accept | — |
+| A2 | F1 in-range defect | Merged doc-comment delimiter `tests/host.rs:383` | introduced by `2fd1433`; single occurrence | proceed 0.97 | fmt clean; host 19/19 | accept | `150befe` |
+| A3 | F2 bare-config hygiene | 13 tests in 8 suites fail bare `--no-default-features` | every failing file unchanged since remote `e576238`; canonical configs 52/52 | future_work 0.99 | reproduced (exit 101); recorded as TD-20 | accept | (doc only, below) |
+| A4 | Routing mutation | Does the tripwire catch a rerouted seam? | `src/lib.rs:443` temporarily → `interp.run` | reuse A1 gate | `production_routing` FAILED (2≠3); reverted, sha256 byte-identical | accept | (reverted) |
+| A5 | Decision package | Verify candidate claims by execution | 21 probes on the built CLI | A/B `needs_more` 0.60, span 0.65 → revised claims | A and B already constructible; nominal cross-module identity verified; C needs new grammar; catch-selection/raise-site-span are the real gaps | accept (revised) | `docs/engineering/EXCEPTION_SYNTAX_DECISION_PACKAGE.md` |
+
+Validation executed in this pass: all-features 52/52 suites; canonical
+`--no-default-features --features cli,repl,json,regex,time` 52/52; evaluator
+oracle 228/228 differential; fresh-WASM boundary 63/63; syntax conformance
+43/43 zero imports; browser 66; worker 12; multi-file 42; cache 7; `fmt`
+clean; clippy `--all-features` and bare both `-D warnings` clean; MSRV
+`+1.83.0 check --all-features` green; nightly fuzz `check --all-targets`
+green; Miri 117/117; four fuzz targets ~890k runs clean; website build + tests
+green.
+
+**Outcome A stands: no public exception syntax was chosen or implemented;
+E1–E6 remain the human gate.** The verified, refined decision package is
+`docs/engineering/EXCEPTION_SYNTAX_DECISION_PACKAGE.md`. TD-20 records the
+pre-existing bare-config test-hygiene gap (not repaired: outside the audited
+range and every affected configuration is unsupported/documented-against).
+
 Independent adversarial review (fresh read-only session, 2026-10-05):
 completion claim **not falsified** across 13 attack areas (frozen artifacts,
 protected state, commit coherence, uncommitted state, no-push, doc claims,
@@ -460,21 +492,27 @@ sync test (documented as non-authoritative; runtime refusal is the decision).
 
 ## Exact next action
 
-1. B-1 and the post-B1 runtime/WASM edge closure are **remotely closed**;
-   the Pre-0.3 Foundation super-transaction is in progress **locally and not
-   pushed**. Continue the iteration ledger: remaining work is the full
-   validation matrix, an independent read-only adversarial review, and the
-   final Jev completion gate; then return the complete report and request
-   explicit human authorization before any push.
-2. B-1R8 (remove the recursive engine and the oracle switch) and any runtime
+1. B-1 and the post-B1 runtime/WASM edge closure are **remotely closed**. The
+   Pre-0.3 Foundation super-transaction and the 2026-10-06 adversarial re-audit
+   are **complete locally and not pushed** (`150befe`). The exception feature is
+   **stopped at the human syntax gate**: the human must resolve E1–E6 (an ADR
+   and, per `docs/rfcs/README.md`, an accepted RFC for the chosen grammar) in
+   `docs/engineering/EXCEPTION_ARCHITECTURE.md` §8 / the decision package
+   `docs/engineering/EXCEPTION_SYNTAX_DECISION_PACKAGE.md` §6. Do not implement
+   public exception syntax before that decision.
+2. Nothing in this transaction is pushed. Pushing the local range (now
+   `e576238..150befe` plus the documentation commits) requires explicit human
+   authorization.
+3. B-1R8 (remove the recursive engine and the oracle switch) and any runtime
    publication remain separately human-gated.
-3. Keep frozen runtimes, `v0.2.1`, and `.kilo/**` untouched.
-4. Publication-gated validation debt: the Chromium/Worker boundary against a
+4. Keep frozen runtimes, `v0.2.1`, and `.kilo/**` untouched.
+5. Publication-gated validation debt: the Chromium/Worker boundary against a
    machine-backed runtime awaits a published runtime (release-gated); the
    fresh-wasm boundary is already pinned in Node (63 checks).
-5. Pre-0.3 decisions awaiting the human: exception syntax/catching (E1–E6 in
+6. Pre-0.3 decisions awaiting the human: exception syntax/catching (E1–E6 in
    `docs/engineering/EXCEPTION_ARCHITECTURE.md` §8) and embedded-CPython
    packaging (P1–P5 in `docs/engineering/EMBEDDED_PYTHON_ARCHITECTURE.md` §9).
+   Bare-config test-feature gating is tracked as TD-20 (low, v1.1).
 
 ## Stop conditions
 
