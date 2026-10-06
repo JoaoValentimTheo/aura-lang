@@ -12,7 +12,6 @@ categories = ["compilers", "development-tools"]
 
 [dependencies]
 # Core language only needs an ordered map and float formatting; keep deps tiny.
-serde = { version = "1", default-features = false, features = ["derive", "std"], optional = true }
 serde_json = { version = "1", optional = true, default-features = false, features = ["std"] }
 regex = { version = "1", optional = true, default-features = false, features = ["std", "perf", "unicode"] }
 chrono = { version = "0.4", optional = true, default-features = false, features = ["std", "clock"] }
@@ -29,7 +28,7 @@ repl = ["dep:rustyline"]
 json = ["dep:serde_json"]
 regex = ["dep:regex"]
 time = ["dep:chrono"]
-py = ["dep:pyo3", "dep:serde"]
+py = ["dep:pyo3"]
 # Test-only differential evaluator oracle (B-1R2/B-1R3). Never default and
 # never user-facing: it adds no runtime behavior. It exists so the future
 # explicit-continuation engine can be selected through one internal seam while
