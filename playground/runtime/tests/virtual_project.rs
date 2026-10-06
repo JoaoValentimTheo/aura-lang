@@ -519,12 +519,7 @@ fn virtual_transport_limits_are_host_policy_errors() {
 fn too_many_virtual_sources_are_rejected() {
     let mut sources = Vec::with_capacity(rt::limits::MAX_PROJECT_SOURCES + 1);
     for i in 0..=rt::limits::MAX_PROJECT_SOURCES {
-        sources.push(source(
-            &format!("s{i}"),
-            &format!("s{i}.aura"),
-            "",
-            vec![],
-        ));
+        sources.push(source(&format!("s{i}"), &format!("s{i}.aura"), "", vec![]));
     }
     let raw = project("root", sources);
     assert_eq!(code(&run(&raw)), u64::from(codes::IO));
