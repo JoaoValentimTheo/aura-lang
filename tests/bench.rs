@@ -79,6 +79,63 @@ fn gen_calls(n: usize) -> String {
     s
 }
 
+/// Evaluator-shaped workloads for the Pre-0.3 baseline. Each returns a
+/// program whose `main` performs `n` units of the named operation; they are
+/// only used by the `#[ignore]` timing report.
+fn gen_eval_loop(n: usize) -> String {
+    format!(
+        "fn main() {{\n let mut i = 0\n let mut acc = 0\n while i < {n} {{\n acc = acc + i\n i = i + 1\n }}\n print(acc)\n}}\n"
+    )
+}
+
+fn gen_eval_recursion(n: usize) -> String {
+    format!(
+        "fn rec(k: int) -> int {{\n if k <= 0 {{\n return 0\n }} else {{\n return k + rec(k - 1)\n }}\n}}\nfn main() {{ print(rec({n})) }}\n"
+    )
+}
+
+fn gen_eval_closures(n: usize) -> String {
+    format!(
+        "fn apply(f, x: int) -> int {{ return f(x) }}\nfn main() {{\n let add = (x: int) -> {{ return x + 1 }}\n let mut acc = 0\n let mut i = 0\n while i < {n} {{\n acc = apply(add, acc)\n i = i + 1\n }}\n print(acc)\n}}\n"
+    )
+}
+
+fn gen_eval_index(n: usize) -> String {
+    let mut s = String::from("fn main() {\n let xs = [0");
+    for i in 1..n {
+        let _ = write!(s, ", {i}");
+    }
+    let _ = write!(
+        s,
+        "]\n let mut i = 0\n let mut acc = 0\n let mut k = 0\n while k < {n} {{\n acc = acc + xs[i]\n i = i + 1\n if i >= {n} {{ i = 0 }}\n k = k + 1\n }}\n print(acc)\n}}\n"
+    );
+    s
+}
+
+fn gen_eval_methods(n: usize) -> String {
+    format!(
+        "fn main() {{\n let mut s = \"seed\"\n let mut i = 0\n while i < {n} {{\n s = s.trim()\n i = i + 1\n }}\n print(s)\n}}\n"
+    )
+}
+
+fn gen_eval_fstring(n: usize) -> String {
+    format!(
+        "fn main() {{\n let mut acc = \"\"\n let mut i = 0\n while i < {n} {{\n acc = f\"{{i}}\"\n i = i + 1\n }}\n print(acc)\n}}\n"
+    )
+}
+
+fn gen_eval_try(n: usize) -> String {
+    format!(
+        "fn main() {{\n let mut i = 0\n let mut acc = 0\n while i < {n} {{\n try {{ acc = acc + 1 }} catch e {{ acc = 0 }} finally {{ acc = acc + 0 }}\n i = i + 1\n }}\n print(acc)\n}}\n"
+    )
+}
+
+fn gen_eval_map(n: usize) -> String {
+    format!(
+        "fn main() {{\n let m = {{\"a\": 1, \"b\": 2, \"c\": 3}}\n let mut i = 0\n let mut acc = 0\n while i < {n} {{\n acc = acc + m.get(\"a\")\n i = i + 1\n }}\n print(acc)\n}}\n"
+    )
+}
+
 /// A fold over `n` characters of a string: exercises string iteration and
 /// byte handling.
 fn gen_string_walk(n: usize) -> String {
@@ -455,5 +512,58 @@ fn timing_report() {
         println!("lex,{n},{lex_ms:.3}");
         println!("parse,{n},{parse_ms:.3}");
         println!("check,{n},{check_ms:.3}");
+    }
+}
+
+/// A named evaluator workload: a report label, a program generator, and the
+/// sizes to measure (some stages have a lower useful maximum, like the
+/// 512-call-frame recursion cap).
+type EvalStage = (&'static str, fn(usize) -> String, &'static [usize]);
+
+/// The standard measurement ladder.
+const EVAL_SIZES: &[usize] = &[50, 100, 200, 400, 800];
+
+/// Recursion is capped at 400: 512 is the language call-frame limit, so
+/// larger N would be a legitimate `E4011`, not a measurement.
+const RECURSION_SIZES: &[usize] = &[50, 100, 200, 400];
+
+/// Evaluator-stage timing report for the Pre-0.3 baseline. Run with:
+/// `cargo test --release --test bench -- --ignored --nocapture eval_timing`.
+///
+/// Every workload executes through the production explicit-continuation
+/// machine (`run_source`), so the numbers are the baseline the 0.3 work must
+/// not regress. Absolute values are host-specific; the recorded baseline in
+/// `docs/engineering/PERFORMANCE.md` names the machine it was measured on.
+#[test]
+#[ignore = "timing report, not an assertion"]
+fn eval_timing_report() {
+    println!("stage,N,ms");
+    let stages: [EvalStage; 8] = [
+        ("eval_loop", gen_eval_loop, EVAL_SIZES),
+        ("eval_recursion", gen_eval_recursion, RECURSION_SIZES),
+        ("eval_closures", gen_eval_closures, EVAL_SIZES),
+        ("eval_index", gen_eval_index, EVAL_SIZES),
+        ("eval_methods", gen_eval_methods, EVAL_SIZES),
+        ("eval_fstring", gen_eval_fstring, EVAL_SIZES),
+        ("eval_try", gen_eval_try, EVAL_SIZES),
+        ("eval_map", gen_eval_map, EVAL_SIZES),
+    ];
+    for (name, gen, stage_sizes) in stages {
+        for &n in stage_sizes {
+            let src = gen(n);
+            let ms = time_millis(|| {
+                let _ = run_source(&src, "<bench>").unwrap();
+            });
+            println!("{name},{n},{ms:.4}");
+        }
+    }
+
+    // Whole-pipeline cost on the generated function corpus, for scale.
+    for n in [100usize, 400, 1600] {
+        let src = gen_functions(n);
+        let ms = time_millis(|| {
+            let _ = run_source(&src, "<bench>").unwrap();
+        });
+        println!("eval_pipeline,{n},{ms:.3}");
     }
 }

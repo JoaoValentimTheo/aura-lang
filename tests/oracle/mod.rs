@@ -292,11 +292,12 @@ pub fn observe(case: &Case, engine: Engine) -> ObserveResult {
 /// **The single execution seam.** Every compiled module is executed here, and
 /// this is the only place an engine selects its execution path.
 ///
-/// For B-1R2 both variants execute the current recursive interpreter through
-/// `Compilation::execute_with`; no fake machine exists. In B-1R3 the
-/// `Engine::iterative` branch (already feature-gated) becomes a call that runs
-/// the explicit continuation machine on the same compiled module. The
-/// observable/comparison/corpus/golden machinery is unchanged by that work.
+/// `Engine::recursive` runs the retained tree-walking evaluator (the
+/// differential reference and rollback path) and `Engine::iterative` runs the
+/// production explicit-continuation machine on the same compiled module. Both
+/// are always compiled; the `evaluator-oracle` feature gates only this
+/// harness. The observable/comparison/corpus/golden machinery is independent
+/// of which engine a case selects.
 fn run_compiled(
     compilation: aura::Compilation,
     sink: SharedBuf,
@@ -315,7 +316,7 @@ fn run_compiled(
 
 /// The value-path seam: run a main-less module's items on a fresh interpreter
 /// and return the last top-level expression's normalized value. Both engines
-/// share this entry point; B-1R3 selects the machine inside it.
+/// share this entry point; the engine selects the machine inside it.
 fn run_value_items(module: &Module, engine: Engine, sink: SharedBuf) -> Result<NormValue, Diag> {
     let mut interp = Interp::with_host(host::host_from_parts(
         Some(Box::new(sink)),
