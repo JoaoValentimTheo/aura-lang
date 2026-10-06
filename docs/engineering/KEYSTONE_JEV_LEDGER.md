@@ -24,7 +24,9 @@ absent.
 
 | J6 | POST | Does the Go-like unused analysis (E2008) risk false positives that reject valid documented programs, or break REPL/session semantics, given the evidence: 10 new tests, 108 fixture migrations, generator post-pass, full suite 1171/0, mutation discriminated? | **0.18 low** | Accepted. Two false positives found and fixed during implementation (called-local bindings; shadowed bindings), REPL/module-scope exemption added, duplicate-`_`-parameter behavior verified against a HEAD worktree (E2007 at both revisions, not a regression). |
 
-Jev totals: PRE consultations 3; POST classifications 3; disagreements 0;
-Jev-driven extra investigations 4 (all resolved with deterministic evidence;
-J4(b) changed the implementation; J6-driven checks confirmed two false-positive
-fixes and the REPL exemption).
+| J7 | POST | (a) How likely is a material soundness/security/contract defect in AIS + typed JSON decode + HTTP not covered by tests? (b) Is the capability/protocol boundary the right structure to build on? | **(a) 0.43 elevated**; **(b) choice=sound, p=0.76 (fix_first 0.21)** | Investigated the two named structural concerns. (1) AIS advertised `flow`/`completion` capabilities in `Capabilities::default()` while `document()` populates neither — a real overclaim; fixed to `false` for both, with the schema bits reserved for a future producer that actually carries them. (2) HTTP redirect behavior verified with a live 302 server: the layer returns `302` as an ordinary response and does not follow it; added as a permanent regression test. Both findings were Jev-driven; neither required a design change. |
+
+Jev totals: PRE consultations 3; POST classifications 4; disagreements 0;
+Jev-driven extra investigations 5 (all resolved with deterministic evidence;
+J4(b) and J7 both changed the implementation; J6-driven checks confirmed two
+false-positive fixes and the REPL exemption).

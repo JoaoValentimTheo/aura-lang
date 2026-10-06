@@ -63,12 +63,18 @@ pub struct Capabilities {
 
 impl Default for Capabilities {
     fn default() -> Self {
+        // Honest advertisement: a 0.1 document produced by `document()`
+        // carries symbols (with their type spellings, so `types` too) and,
+        // once the caller attaches them, diagnostics. It does not yet
+        // populate flow facts or completion context — the schema reserves
+        // the capability bits for them, but a producer must not claim a part
+        // of the model it does not actually carry.
         Capabilities {
             symbols: true,
             types: true,
             diagnostics: true,
-            flow: true,
-            completion: true,
+            flow: false,
+            completion: false,
         }
     }
 }

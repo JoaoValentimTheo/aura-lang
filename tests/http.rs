@@ -119,6 +119,11 @@ impl Host for NoNetworkHost {
     // `http_request` is not overridden: the trait default denies it.
 }
 
+/// A 302 that points at another path on the same server: the layer must
+/// return it as an ordinary response rather than following it, so a redirect
+/// cannot expand authority implicitly.
+const REDIRECT_RESPONSE: &str = "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/elsewhere\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+
 const OK_RESPONSE: &str = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nX-Test: yes\r\nContent-Length: 26\r\nConnection: close\r\n\r\n{\"name\": \"bob\", \"age\": 30}";
 
 #[test]
@@ -215,6 +220,19 @@ fn program_exception_still_flies_through() {
     );
     let out = run(&src).expect("catch handles the throw");
     assert_eq!(out, "my error\n");
+}
+
+#[test]
+fn a_redirect_is_returned_not_followed() {
+    // Following a redirect would send a request the program never asked for,
+    // to a destination it did not choose. The 3xx is the response.
+    let server = TestServer::start(REDIRECT_RESPONSE);
+    let src = format!(
+        "fn main() {{ let r = http_get(\"{}\")\n print(r[\"status\"]) }}",
+        server.url("/a")
+    );
+    let out = run(&src).expect("3xx is a response");
+    assert_eq!(out, "302\n");
 }
 
 #[test]
