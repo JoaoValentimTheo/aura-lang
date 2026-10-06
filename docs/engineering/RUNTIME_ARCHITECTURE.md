@@ -16,7 +16,7 @@ Every production entry point reaches it:
 | `Compilation::execute_with` / `execute_with_host_factory` | `run_iterative` | `src/lib.rs:484` |
 | `Compilation::execute_iterative` | `run_iterative` | `src/lib.rs:443` |
 | free `aura::execute_with` | `run_iterative` | `src/lib.rs:713` |
-| `run_source` / `run_program` | `execute_with*` | `src/lib.rs:222`, `:660`, `:673` |
+| `run_source` / `run_program` | `execute_with*` (call sites) | `src/lib.rs:660`, `:673` |
 | CLI (`aura run`, `aura eval`) | `execute_with` | `src/main.rs:215`, `:218` |
 | REPL statement/expression/const | machine methods | `src/repl.rs` (B-1R6 review) |
 | Playground `execute` / `run_module_capture` | `execute_with_host_factory` / `run_iterative` | `playground/runtime/src/lib.rs:535`, `:647` |
@@ -38,7 +38,7 @@ engines to agree on the whole corpus.
 | `Control` | `:174` | the loop's next action |
 | `Cont` | `:285` | continuation frames: one per suspended expression/statement context (list/map/range/call/while/match/try/…), plus accumulator state |
 | `UserFrame` | `:620` | one Aura call: closure, env, source, restorable expression-depth budget |
-| `FrameBoundary` | `:1947` | call/return crossing bookkeeping |
+| `Cont::FrameBoundary` | `:612` | call/return crossing bookkeeping (resumed at `:1947`) |
 
 The machine consumes only the continuation stack; it never re-enters the AST
 recursively and never grows the host stack per Aura call. `tests/b1_stack_safety.rs`

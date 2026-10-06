@@ -11,8 +11,9 @@ Companion to `tests/bench.rs`.
     super-linear behaviour without committing to wall-clock constants.
   - **Timing report** (`#[ignore]`): prints per-stage milliseconds per N for
     humans and release audits. Never asserted.
-- Timings are averaged over 3 runs after a warm-up; ratios, not absolutes, are
-  asserted. Host-specific numbers are illustrative, not contractual.
+- Timings use the minimum of 3 samples after a warm-up (least-noise
+  estimate); ratios, not absolutes, are asserted. Host-specific numbers are
+  illustrative, not contractual.
 
 ## Reproduce
 

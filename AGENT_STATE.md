@@ -73,7 +73,8 @@ critical-profile architecture (`8ac9b93`); stdlib contract tests + module/
 future-boundary maps (`a1a5aa4`); WASM transport-limit tests (`eb1e339`);
 diagnostic taxonomy + internal-code documentation (`d4becc3`); runtime
 architecture record + these state updates. Jev PRE/POST consulted for every
-engineering iteration; see the current session ledger in
+engineering iteration; the full iteration ledger (questions, evidence, Jev
+outcomes, dispositions, commits) is recorded in the Pre-0.3 section of
 `docs/engineering/CURRENT_HANDOFF.md`.
 
 B-1R phase state:

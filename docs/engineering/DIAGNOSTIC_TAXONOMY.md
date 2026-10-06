@@ -13,8 +13,11 @@ codes and renumbers nothing. Authority for the public table: `docs/errors.md`
   and `CAPABILITY_UNAVAILABLE` intentionally share `5002` (both mean "this
   build or host cannot provide the requested capability"), documented at
   `src/error.rs:326-330`.
-- One code is mechanically asserted reachable: `tests/grammar.rs` samples one
-  program per public code and compares the produced code.
+- Reachability is mechanically asserted across the suite: `tests/grammar.rs`
+  samples one program per code for 36 constants; `E2020`–`E2022` are asserted
+  in `tests/module_graph.rs`; `E5001` in the feature-gated
+  `tests/interop_matrix.rs`; `E4099`/`E5003` are declared non-public and
+  unsampled.
 - `docs/errors.md` documents every code; two non-public codes (`E4099`
   internal, `E5003` reserved) have an explicit "Internal and reserved"
   section so no declared code is undocumented.

@@ -202,11 +202,19 @@ const patternDepth = (n) => "[".repeat(n) + "x" + "]".repeat(n);
 // trap: a grouped interpolation and a grouped wrapper around it must not trap.
 {
   const g = (n) => "(".repeat(n) + "1" + ")".repeat(n);
+  // A probe passes only when it is `ok` or the structured nesting diagnostic
+  // `E1015`; any other code (an internal `E4999`, a host failure) is a real
+  // finding, not an acceptable outcome.
+  const acceptable = (result) =>
+    !result.trap &&
+    result.result !== null &&
+    (result.result.status === "ok" ||
+      (result.result.diagnostics || []).some((d) => d.code === 1015));
   for (const n of [300, 380]) {
     const plain = run(`fn main() { print(${g(n)}) }`);
     check(
-      `grouping @${n} resolves without trap`,
-      !plain.trap && (plain.result !== null),
+      `grouping @${n} is ok or E1015, never a trap`,
+      acceptable(plain),
       plain.trap ? `guest trap: ${plain.trap}` : JSON.stringify(plain.result),
     );
   }
@@ -216,8 +224,8 @@ const patternDepth = (n) => "[".repeat(n) + "x" + "]".repeat(n);
         `fn main() { print(${"(".repeat(outer)}f"{${g(inner)}}"${")".repeat(outer)}) }`,
       );
       check(
-        `f-string composition outer=${outer} inner=${inner} does not trap`,
-        !probe.trap && probe.result !== null,
+        `f-string composition outer=${outer} inner=${inner} is ok or E1015`,
+        acceptable(probe),
         probe.trap ? `guest trap: ${probe.trap}` : JSON.stringify(probe.result),
       );
     }
@@ -229,8 +237,8 @@ const patternDepth = (n) => "[".repeat(n) + "x" + "]".repeat(n);
       const outer = `f"{${"(".repeat(l1)}${inner}${")".repeat(l1)}}"`;
       const probe = run(`fn main() { print(${outer}) }`);
       check(
-        `nested f-string l1=${l1} l2=${l2} does not trap`,
-        !probe.trap && probe.result !== null,
+        `nested f-string l1=${l1} l2=${l2} is ok or E1015`,
+        acceptable(probe),
         probe.trap ? `guest trap: ${probe.trap}` : JSON.stringify(probe.result),
       );
     }

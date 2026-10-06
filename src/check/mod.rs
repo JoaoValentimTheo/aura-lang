@@ -10,6 +10,7 @@ use std::collections::HashMap;
 
 use crate::ast::*;
 use crate::error::{codes, Diag, Result, SourceDiagnostic, Span};
+use crate::parse::MAX_AST_DEPTH;
 use crate::source::SourceId;
 use crate::types::Ty;
 
@@ -146,12 +147,6 @@ fn type_expr_depth_exceeds(t: &TypeExpr, limit: usize) -> bool {
     }
     false
 }
-
-/// Maximum AST nesting the checker will descend before reporting a limit.
-/// Prevents a flat but deeply nested program from exhausting the host stack.
-///
-/// Reused from the parser so the single semantic value is declared once.
-use crate::parse::MAX_AST_DEPTH;
 
 /// Maximum total type nodes produced while expanding one resolved type
 /// annotation (including parameterized alias expansion). Bounds the flat size

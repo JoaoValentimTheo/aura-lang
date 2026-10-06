@@ -62,7 +62,7 @@ explicit-continuation (iterative) evaluator over the existing AST
 - B-1R4 (full differential): DONE (whole-corpus `engines_agree`; differential
   228/228; syntax conformance 43/43).
 - B-1R5 (substrate boundary): PARTIALLY DONE — fresh machine-backed wasm pinned
-  by `playground/tests/node/b1_boundary.test.mjs` (53 checks: the frame/pattern
+  by `playground/tests/node/b1_boundary.test.mjs` (63 checks: the frame/pattern
   boundary matrix, the pattern-depth calibration, and the post-B1 stdout
   capture-bound checks) and native CLI/REPL canaries. The Chromium main-thread
   and production-Worker boundary matrix needs the fresh artifact published to
@@ -407,7 +407,48 @@ of the B-1 closure range (tip `bb736fc`).
 Use multi-reviewer analysis mainly at milestone closure, not after each
 microphase.
 
-## POST-B1 residuals — disposition (2026-10-05)
+## PRE-0.3 iteration ledger (2026-10-05)
+
+Compact record of the Pre-0.3 Foundation super-transaction. Every iteration
+was run under the mandatory Jev PRE/POST loop; evidence and dispositions only
+(no chain-of-thought).
+
+| # | Workstream | Question / action | Evidence before | Jev PRE | Verification | Jev POST | Commit |
+|---|---|---|---|---|---|---|---|
+| I1 | A/J/K/H/P/O reconnaissance | Inventory repo order, module identity, stdlib, limits, unsafe/panic, supply chain | two read-only subagent inventories + lead verification (falsified the `[0]`-index concern: test-only) | proceed 0.99 | − (read-only) | accept 0.99 | — |
+| I2 | P/Host | Poisoned locks silently drop bytes? | host.rs:568-578 / lib.rs:195-199 confirm silent drop | proceed 0.92 (hidden-corruption p=0.07) | host 17 tests incl. new poison regression; playground execute 19 | commit 0.99 (risk 0.15) | `5edab88` |
+| I3 | H | Triplicated `MAX_AST_DEPTH`, magic range/sleep limits | parse:163, run:34, check:152; run:1223 local const; host:370 magic | proceed 0.97 | boundaries 34; oracle 48; fmt/clippy clean | commit 1.0 | `2fd1433` |
+| I4 | O | Unused `serde`/`arbitrary` deps | `cargo tree -i serde` = self-only; no derives | proceed 0.92 | all feature configs + 51 suites + fuzz nightly + locks | commit 0.94 | `3186340` |
+| I5 | A/25 | Stale "production recursive" claims; divergent errors reference | 7 docs wrong; website duplicate | proceed 0.91 (spec-rewording risk flagged 0.51, mitigated by wording) | syntax_docs 3 (new sync test), grammar 6, website build/tests | commit 0.98 | `c1ffb18` |
+| I6 | G | No evaluator performance baseline | bench.rs had shape guards only | proceed 1.0 | 8 stages measured linear; guards 14 pass; fmt/clippy | commit 0.99 | `9151df1` |
+| I7 | C | Exception family/custom-exception foundation | throw/catch reality; TryResult snapshots | proceed 0.99 (preemption risk 0.4 → design-only markers strengthened) | doc cross-checked | commit 0.65→ (low, revised wording) | `34c5878` |
+| I8 | D/E/F | Capability model, embedded-Python boundary, critical profile | Host trait, pyo3 inventory, resource table | proceed 0.96 | all claims cross-checked to source | accept 0.95 | `8ac9b93` |
+| I9 | K/J/L/M/N | Stdlib coverage gaps; module map; AI/Dart/quantum boundaries | inventory found untested surfaces; cycle-coverage suspicion falsified | proceed 0.92 | stdlib_coverage 11 (2 expectation fixes to match documented surface) | commit 0.94 | `a1a5aa4` |
+| I10 | WASM | Remaining transport limits untested | args/project/key/name limits had no direct tests | commit scope approved | execute 22, virtual_project 24 (1 expectation corrected to E4020) | commit 0.99 | `eb1e339` |
+| I11 | I | Diagnostic taxonomy; E4099/E5003 undocumented | 46 constants / 45 codes; doc gap | proceed 0.99 | sync test green; grammar 6 | (folded) | `d4becc3` |
+| I12 | B | Runtime architecture record; state reconciliation | entry points verified with file:line | commit scope approved | production_routing exists; agent-state preflight OK | commit 0.96 | `5b74ebb` |
+| I13 | Residuals/§21 | Dispose 5 residuals; deliberate divergence | fresh-wasm pattern + f-string sweeps: no traps | commit scope approved | 3 mutations detected and reverted byte-exact (sha256); wasm 63 checks | commit 0.93 | `0e34fed`, `ef920a8` |
+| I14 | Validation | Full matrix + independent adversarial review | — | — | 53+52 suites, clippy×2, MSRV, fuzz, wasm 63, node, website, python, miri 117 | see review | (this commit) |
+
+Jev totals: PRE consultations: 13; POST classifications: 12; disagreements:
+1 (I7: Jev 0.65 commit vs deterministic evidence that the doc was
+design-only and non-normative — proceeded, strengthened the non-normative
+markers first); Jev-driven extra investigations: 3 (I2 hidden-corruption
+question, I5 spec-rewording caution, I7 preemption caution).
+
+Independent adversarial review (fresh read-only session, 2026-10-05):
+completion claim **not falsified** across 13 attack areas (frozen artifacts,
+protected state, commit coherence, uncommitted state, no-push, doc claims,
+resource contracts, poison soundness, semantic safety, test quality, oracle
+golden, dual authority, validation honesty). Findings: 7 minor
+documentation-accuracy corrections, all applied in this iteration (TryResult
+variant names, FrameBoundary location, entry-point citation, taxonomy
+sampling wording, PERFORMANCE min-vs-average wording, stale "53" counts,
+state-ledger pointer). One pre-existing non-blocking note retained: the
+Playground `project.js` mirrors four transport limits without a mechanical
+sync test (documented as non-authoritative; runtime refusal is the decision).
+
+
 
 | # | Residual | Disposition |
 |---|---|---|

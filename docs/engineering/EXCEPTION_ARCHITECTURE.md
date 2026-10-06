@@ -31,8 +31,8 @@ record for what 0.3 may add.
   lexical/syntactic, `E2xxx` static, `E3xxx` type-level, `E4xxx` runtime,
   `E5xxx` capability/feature.
 - The evaluator distinguishes inside `try` regions:
-  `TryResult::Completed(Vec<Stmt>)` vs `TryResult::Fatal(Diag)`
-  (`src/run/iterative.rs:224-230`); `Cont::TryCatchEnd`/`Cont::TryFinally`
+  `TryResult::Body(Ctl) | TryResult::Caught(Ctl)` vs `TryResult::Fatal(Diag)`
+  (`src/run/iterative.rs:223-230`); `Cont::TryCatchEnd`/`Cont::TryFinally`
   snapshot frames/depth so an error raised in a catch/finally body cannot leak
   frames.
 - `Ctl::Throw(Value)` is the control signal; `E4026` is the uncaught-throw

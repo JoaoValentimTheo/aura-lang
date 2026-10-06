@@ -8,9 +8,15 @@
 // Usage: node playground/tests/node/project.test.mjs
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   KEY_PATTERN,
+  MAX_PROJECT_BYTES,
   MAX_PROJECT_SOURCES,
+  MAX_SOURCE_BYTES,
+  MAX_SOURCE_NAME_BYTES,
   Project,
   createKeyGenerator,
   highestKeyCounter,
@@ -477,6 +483,52 @@ test("a snapshot is independent of the project it came from", () => {
   p.renameSource(p.sources[1].key, "other.aura");
   assert.notEqual(snap.get(snap.sources[0].key).text, "mutated");
   assert.equal(snap.get(snap.sources[1].key).name, "helper.aura");
+});
+
+// --- drift check against the runtime's authoritative limits ---------------
+//
+// `web/project.js` mirrors four transport limits and the key grammar so the UI
+// can refuse oversized input before building a request. The runtime remains the
+// authority (`docs/playground.md` §2); this test is the mechanical guard that
+// the *mirror* cannot drift: it reads the Rust limit constants and the key
+// grammar and asserts the JS values match. If a runtime limit changes without
+// updating the UI mirror, this fails loudly instead of surfacing as a
+// confusing late rejection.
+
+test("JS transport-limit mirrors match the runtime's authoritative constants", () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const rust = readFileSync(
+    resolve(here, "../../runtime/src/lib.rs"),
+    "utf8",
+  );
+  const limitsBlock = rust.slice(
+    rust.indexOf("pub mod limits"),
+    rust.indexOf("pub mod limits") + 2000,
+  );
+  const readUsize = (name) => {
+    const m = limitsBlock.match(
+      new RegExp(`${name}:\\s*usize\\s*=\\s*([0-9_*\\s]+);`),
+    );
+    assert.ok(m, `runtime limit ${name} not found`);
+    const expr = m[1].replaceAll("_", "").trim();
+    // The values are Rust const arithmetic (`256 * 1024`), restricted to
+    // digits, `*`, and whitespace by the capture; evaluate it safely.
+    assert.match(expr, /^[0-9* ]+$/, `unexpected expression for ${name}: ${expr}`);
+    const value = expr
+      .split("*")
+      .map((part) => Number(part.trim()))
+      .reduce((a, b) => a * b, 1);
+    assert.ok(Number.isSafeInteger(value), `bad value for ${name}`);
+    return value;
+  };
+  assert.equal(MAX_SOURCE_NAME_BYTES, readUsize("MAX_SOURCE_NAME_BYTES"));
+  assert.equal(MAX_PROJECT_SOURCES, readUsize("MAX_PROJECT_SOURCES"));
+  assert.equal(MAX_SOURCE_BYTES, readUsize("MAX_SOURCE_BYTES"));
+  assert.equal(MAX_PROJECT_BYTES, readUsize("MAX_PROJECT_BYTES"));
+  // The virtual-key grammar: `valid_virtual_key` accepts 1..=MAX_VIRTUAL_KEY_BYTES
+  // ASCII alphanumerics plus `_`/`-`; the JS pattern must accept exactly that.
+  const keyBytes = readUsize("MAX_VIRTUAL_KEY_BYTES");
+  assert.equal(KEY_PATTERN.source, `^[A-Za-z0-9_-]{1,${keyBytes}}$`);
 });
 
 console.log(`project: ${passed} passed, 0 failed`);
