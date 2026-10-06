@@ -76,6 +76,14 @@ for (const entry of manifest.versions) {
   // A version entry records the release it belongs to, separately from the
   // language version, so the two cannot be conflated.
   check(`release version present for ${entry.id}`, typeof entry.release_version === "string");
+  // Codename metadata (Keystone §34): the field exists on every entry. A
+  // string names a human-approved release line; null is the explicit
+  // "awaiting a human choice" placeholder, never an invented name.
+  check(
+    `codename field present for ${entry.id}`,
+    entry.codename === null || typeof entry.codename === "string",
+    JSON.stringify(entry.codename),
+  );
   if (entry.channel === "development") {
     // A development runtime is on a release line but is not itself the
     // release: its identity is a pre-release of that line, never equal to it.
@@ -125,6 +133,48 @@ try {
 } catch (err) {
   check("build --check passes", false, String(err.stdout || err.message));
 }
+
+// ---------------------------------------------------------------------------
+// Codename / channel metadata (Keystone §34)
+// ---------------------------------------------------------------------------
+
+// A codename names a release *line* and must never be invented for a line the
+// human has not named. Every existing entry's line is pre-Keystone, so the
+// honest value is the explicit null placeholder; the 0.3 "Keystone" codename
+// exists in the build's registry but no 0.3 runtime is published.
+let codenameFailures = 0;
+for (const entry of manifest.versions) {
+  const line = (entry.release_version || entry.id).split(".").slice(0, 2).join(".");
+  if (line === "0.3") {
+    if (entry.codename !== "Keystone") {
+      codenameFailures += 1;
+      console.error(`FAIL ${entry.id}: the 0.3 line must carry codename "Keystone"`);
+    }
+  } else if (entry.codename !== null && typeof entry.codename !== "string") {
+    codenameFailures += 1;
+    console.error(`FAIL ${entry.id}: codename must be a string or null`);
+  }
+}
+check("pre-Keystone lines do not invent a codename", codenameFailures === 0);
+
+// Keystone is a development line: it must not be presented as a published
+// release, and this transaction must not have published any runtime for it.
+check(
+  "no 0.3 runtime is published while Keystone is under development",
+  !manifest.versions.some((v) => (v.release_version || v.id).startsWith("0.3")),
+); 
+
+// The channel vocabulary is exactly release|development: the UI maps a
+// superseded development entry to a Beta group, but the stored channel stays
+// one of the two honest values.
+let channelFailures = 0;
+for (const entry of manifest.versions) {
+  if (entry.channel !== "release" && entry.channel !== "development") {
+    channelFailures += 1;
+    console.error(`FAIL ${entry.id}: unknown channel ${JSON.stringify(entry.channel)}`);
+  }
+}
+check("every entry uses the channel vocabulary", channelFailures === 0);
 
 console.log(`\nManifest: ${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

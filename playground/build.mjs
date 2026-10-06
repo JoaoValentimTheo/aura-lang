@@ -31,6 +31,27 @@ const checkOnly = args.has("--check");
 
 const PLAYGROUND_API_VERSION = 1;
 
+// Release-line codenames (Keystone §34). A codename is metadata: it names a
+// release *line*, never an individual build, and it is recorded here as the
+// single authoritative registry rather than duplicated in the UI or embedded
+// in historical artifacts. A published artifact is never rewritten to add or
+// change a codename, so an entry whose line has no human-approved codename
+// carries `codename: null` — an explicit placeholder awaiting a human choice,
+// not a silently invented name.
+//
+// The Aura 0.3 line is "Keystone". It is a development line: no 0.3 runtime
+// exists yet, so no manifest entry receives this codename in this build. When
+// a 0.3 runtime is authorized and built, the lookup below attaches it
+// automatically.
+const RELEASE_CODENAMES = {
+  "0.3": "Keystone",
+};
+
+/** The codename for a release line, or null when none is approved. */
+function codenameFor(releaseLine) {
+  return RELEASE_CODENAMES[releaseLine] ?? null;
+}
+
 // The frozen 0.0.1 release predates the WebAssembly execution substrate (it
 // spawns OS threads for parsing/execution), so it has no browser runtime. It
 // is recorded as a historical, non-executable entry rather than fabricated.
@@ -42,6 +63,7 @@ const FROZEN_0_0_1 = {
   host_abi_version: null,
   available: false,
   channel: "release",
+  codename: null, // awaiting a human-approved codename for this release line
   reason:
     "The published 0.0.1 predates the WebAssembly execution substrate and has no browser runtime. Selecting it will not execute any artifact.",
   artifact: null,
@@ -63,6 +85,7 @@ const FROZEN_0_0_2 = {
   host_abi_version: 1,
   available: true,
   channel: "release",
+  codename: null, // awaiting a human-approved codename for this release line
   artifact: "0.0.2/aura_playground_runtime.wasm",
   sha256: "5a4ad3f7e3f786164d65df437d607e7ddd5e25947ea2c8dd9b436a5490b334ed",
   bytes: 1366621,
@@ -82,6 +105,7 @@ const FROZEN_0_2_0 = {
   host_abi_version: 1,
   available: true,
   channel: "release",
+  codename: null, // awaiting a human-approved codename for this release line
   artifact: "0.2.0/aura_playground_runtime.wasm",
   sha256: "9937fd8094ef402b7a9233d02bd232405f75b9e70661404646fcda7cd295c5bc",
   bytes: 1654161,
@@ -100,6 +124,7 @@ const FROZEN_0_2_1 = {
   host_abi_version: 1,
   available: true,
   channel: "release",
+  codename: null, // awaiting a human-approved codename for this release line
   artifact: "0.2.1/aura_playground_runtime.wasm",
   sha256: "48c456fcda6c50dd6808ccc5f15a0bca4c0b81d7d970172557817decf427cc9e",
   bytes: 1768322,
@@ -116,6 +141,7 @@ const HISTORICAL_DEV_0_0_2_DEV_30 = {
   host_abi_version: 1,
   available: true,
   channel: "development",
+  codename: null, // awaiting a human-approved codename for this release line
   artifact: "0.0.2-dev.30/aura_playground_runtime.wasm",
   sha256: "916a8282f7afcf67b89662af89d2f69cf562d9dbe41fe88cab1764a3ef19c578",
   bytes: 1654216,
@@ -134,6 +160,7 @@ const HISTORICAL_DEV_0_2_0_DEV_1 = {
   host_abi_version: 1,
   available: true,
   channel: "development",
+  codename: null, // awaiting a human-approved codename for this release line
   artifact: "0.2.0-dev.1/aura_playground_runtime.wasm",
   sha256: "ba40e89c834896badfb17d5c72aa2dcb227907a7b5ba513c315ef2f2da0adf08",
   bytes: 1767068,
@@ -157,6 +184,7 @@ const HISTORICAL_DEV_0_2_0_DEV_2 = {
   host_abi_version: 1,
   available: true,
   channel: "development",
+  codename: null, // awaiting a human-approved codename for this release line
   artifact: "0.2.0-dev.2/aura_playground_runtime.wasm",
   sha256: "b69f212bf3f1d8df41b66ad249bf9c9829015b06459569fd2b765a5596b66c06",
   bytes: 1767723,
@@ -358,6 +386,9 @@ const manifest = {
       host_abi_version: abiVersion,
       available: true,
       channel,
+      // The codename of this entry's release line, or null when the line has
+      // no human-approved codename yet (Keystone §34).
+      codename: codenameFor(releaseVersion),
       artifact: `${runtimeVersion}/${artifactName}`,
       sha256: hash,
       bytes: wasm.byteLength,

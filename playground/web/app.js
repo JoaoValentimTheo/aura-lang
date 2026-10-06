@@ -1103,11 +1103,21 @@ async function loadManifest() {
     // labelled as such and never presented as a published release; the release
     // identity and the language semantics it implements are shown alongside so
     // the three identities are never confused.
+    //
+    // A superseded development runtime is a historical preview: it is grouped
+    // under "Beta" so a user can still pick it deliberately without it reading
+    // as a current release. The codename, when a line has one, is metadata
+    // from the manifest (never invented here).
     const channel = v.channel === "development" ? "development" : "release";
+    const superseded =
+      channel === "development" && v.id !== manifest.current;
+    const codename = typeof v.codename === "string" ? ` "${v.codename}"` : "";
     const label =
       channel === "development"
-        ? `Aura ${v.id} — development runtime`
-        : `Aura ${v.release_version || v.id} — release`;
+        ? superseded
+          ? `Beta — Aura ${v.id}${codename} — historical preview`
+          : `Aura ${v.id}${codename} — development runtime`
+        : `Aura ${v.release_version || v.id}${codename} — release`;
     option.textContent = v.available ? label : `${label} (unavailable)`;
     option.disabled = !v.available;
     els.version.append(option);

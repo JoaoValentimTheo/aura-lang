@@ -13,7 +13,8 @@
       "reason": "The published 0.0.1 predates the WebAssembly execution substrate and has no browser runtime. Selecting it will not execute any artifact.",
       "artifact": null,
       "sha256": null,
-      "bytes": null
+      "bytes": null,
+      "codename": null
     },
     {
       "id": "0.0.2",
@@ -25,7 +26,8 @@
       "channel": "release",
       "artifact": "0.0.2/aura_playground_runtime.wasm",
       "sha256": "5a4ad3f7e3f786164d65df437d607e7ddd5e25947ea2c8dd9b436a5490b334ed",
-      "bytes": 1366621
+      "bytes": 1366621,
+      "codename": null
     },
     {
       "id": "0.0.2-dev.30",
@@ -37,7 +39,8 @@
       "channel": "development",
       "artifact": "0.0.2-dev.30/aura_playground_runtime.wasm",
       "sha256": "916a8282f7afcf67b89662af89d2f69cf562d9dbe41fe88cab1764a3ef19c578",
-      "bytes": 1654216
+      "bytes": 1654216,
+      "codename": null
     },
     {
       "id": "0.2.0-dev.1",
@@ -49,7 +52,8 @@
       "channel": "development",
       "artifact": "0.2.0-dev.1/aura_playground_runtime.wasm",
       "sha256": "ba40e89c834896badfb17d5c72aa2dcb227907a7b5ba513c315ef2f2da0adf08",
-      "bytes": 1767068
+      "bytes": 1767068,
+      "codename": null
     },
     {
       "id": "0.2.0-dev.2",
@@ -61,7 +65,8 @@
       "channel": "development",
       "artifact": "0.2.0-dev.2/aura_playground_runtime.wasm",
       "sha256": "b69f212bf3f1d8df41b66ad249bf9c9829015b06459569fd2b765a5596b66c06",
-      "bytes": 1767723
+      "bytes": 1767723,
+      "codename": null
     },
     {
       "id": "0.2.0",
@@ -73,7 +78,8 @@
       "channel": "release",
       "artifact": "0.2.0/aura_playground_runtime.wasm",
       "sha256": "9937fd8094ef402b7a9233d02bd232405f75b9e70661404646fcda7cd295c5bc",
-      "bytes": 1654161
+      "bytes": 1654161,
+      "codename": null
     },
     {
       "id": "0.2.1",
@@ -85,7 +91,8 @@
       "channel": "release",
       "artifact": "0.2.1/aura_playground_runtime.wasm",
       "sha256": "48c456fcda6c50dd6808ccc5f15a0bca4c0b81d7d970172557817decf427cc9e",
-      "bytes": 1768322
+      "bytes": 1768322,
+      "codename": null
     }
   ]
 }
