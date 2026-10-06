@@ -47,7 +47,7 @@ async function run(src, timeout = 15000) {
   await page.waitForFunction(
     () => {
       const s = document.getElementById("status").textContent;
-      return s !== "running…" && !s.startsWith("running (");
+      return s !== "Running…" && !s.startsWith("Running");
     },
     { timeout },
   );
@@ -62,7 +62,7 @@ async function run(src, timeout = 15000) {
 
 // 1. normal completion
 let r = await run('fn main() { print("ok") }');
-check("normal completion", r.stdout === "ok\n" && r.status === "ok", JSON.stringify(r));
+check("normal completion", r.stdout === "ok\n" && r.status === "Completed", JSON.stringify(r));
 
 // 2. Aura error
 r = await run("fn main() { print(1 / 0) }");
@@ -80,11 +80,11 @@ check("parser limit E1015", r.diagnostics.some((d) => d.includes("E1015")), JSON
 for (let i = 0; i < 5; i += 1) {
   await page.fill("#source", "fn main() { while true {} }");
   await page.click("#run");
-  await page.waitForFunction(() => document.getElementById("status").textContent.startsWith("running"), {
+  await page.waitForFunction(() => document.getElementById("status").textContent.startsWith("Running"), {
     timeout: 5000,
   });
   await page.click("#stop");
-  await page.waitForFunction(() => document.getElementById("status").textContent === "stopped");
+  await page.waitForFunction(() => document.getElementById("status").textContent === "Stopped");
   r = await run(`fn main() { print("cycle ${i}") }`);
   check(`run after stop ${i}`, r.stdout === `cycle ${i}\n`, JSON.stringify(r));
 }
@@ -95,7 +95,7 @@ await page.fill("#source", "fn main() {\n let mut s = 0\n for i in range(0, 2000
 await page.click("#run");
 await page.fill("#source", 'fn main() { print("second") }');
 await page.click("#run");
-await page.waitForFunction(() => document.getElementById("status").textContent === "ok", {
+await page.waitForFunction(() => document.getElementById("status").textContent === "Completed", {
   timeout: 10000,
 });
 r = await page.evaluate(() => ({ stdout: document.getElementById("stdout").textContent }));
@@ -105,7 +105,7 @@ check("restart result is the new run", r.stdout === "second\n", JSON.stringify(r
 let ok = true;
 for (let i = 0; i < 20; i += 1) {
   const rr = await run("fn main() { print(1 + 1) }");
-  if (rr.stdout !== "2\n" || rr.status !== "ok") {
+  if (rr.stdout !== "2\n" || rr.status !== "Completed") {
     ok = false;
     break;
   }

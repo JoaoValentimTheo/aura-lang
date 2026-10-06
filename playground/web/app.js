@@ -289,9 +289,54 @@ function applyHandoff() {
   els.stdin.value = handoff.stdin;
 }
 
+// The Playground state machine (Keystone §31). Every execution transitions
+// through a vocabulary the user can reason about; a failure of one execution
+// returns the editor to a *ready* state rather than killing the environment.
+//
+//   ready     — nothing running; the editor is editable and Run is enabled
+//   running   — an execution owns a worker; Stop is enabled
+//   completed — the last execution finished normally
+//   failed    — the last execution ended in a program diagnostic or an
+//               internal error; the environment is still ready
+//   stopped   — the user or a new run cancelled the last execution
+//
+// The editor source is never cleared by a failure, and a subsequent run
+// always starts from whatever is on screen.
+const PLAYGROUND_STATE = {
+  READY: "ready",
+  RUNNING: "running",
+  COMPLETED: "completed",
+  FAILED: "failed",
+  STOPPED: "stopped",
+};
+
+// The visible status text for each state, so the vocabulary is presented
+// consistently instead of by ad-hoc strings at each call site.
+const STATE_LABEL = {
+  ready: "Ready",
+  running: "Running…",
+  completed: "Completed",
+  failed: "Failed",
+  stopped: "Stopped",
+};
+
+let playgroundState = PLAYGROUND_STATE.READY;
+
 function setStatus(text, kind) {
   els.status.textContent = text;
   els.status.className = `status${kind ? ` ${kind}` : ""}`;
+}
+
+// Enter a state, updating the status line and the control availability
+// together so the two can never disagree.
+function enterState(state, detail) {
+  playgroundState = state;
+  const label = STATE_LABEL[state] || state;
+  const kind =
+    state === "failed" ? "error" : state === "running" ? "running" : "ok";
+  setStatus(detail ? `${label} — ${detail}` : label, kind);
+  els.run.disabled = state === "running";
+  els.stop.disabled = state !== "running";
 }
 
 // ------------------------------------------------------------- project state
@@ -1150,9 +1195,10 @@ function stopCurrent(reason) {
   if (currentRun) {
     currentRun.stopped = true;
   }
-  setStatus(reason || "stopped", "error");
-  els.run.disabled = false;
-  els.stop.disabled = true;
+  // A stop (whether the Stop button or a superseding run) ends the execution
+  // but never the environment: the source stays and Run is immediately
+  // available again.
+  enterState(PLAYGROUND_STATE.STOPPED, reason === "stopped" ? undefined : reason);
 }
 
 function run() {
@@ -1170,9 +1216,7 @@ function run() {
   clearOutput();
   showNote("");
   setProjectNote("");
-  setStatus("running…");
-  els.run.disabled = true;
-  els.stop.disabled = false;
+  enterState(PLAYGROUND_STATE.RUNNING);
 
   const worker = new Worker("./web/worker.js");
   const record = { runId, worker, stopped: false };
@@ -1207,7 +1251,11 @@ function run() {
     if (!currentRun || currentRun.runId !== runId) return;
     const msg = event.data || {};
     if (msg.kind === "loaded") {
-      setStatus(`running (runtime ${msg.runtimeVersion}, ABI ${msg.abiVersion})`);
+      // The worker reports the artifact it actually instantiated. The state
+      // stays `running`; the detail just gains the runtime identity.
+      if (playgroundState === PLAYGROUND_STATE.RUNNING) {
+        setStatus(`Running — runtime ${msg.runtimeVersion}, ABI ${msg.abiVersion}`, "running");
+      }
       return;
     }
     if (msg.kind === "result") {
@@ -1293,12 +1341,16 @@ function finishRun(record, result) {
   els.stdout.textContent = result.stdout || "";
   renderDiagnostics(result.diagnostics || []);
   if (result.status === "ok") {
-    setStatus("ok", "ok");
+    enterState(PLAYGROUND_STATE.COMPLETED);
   } else if (result.status === "diagnostic") {
-    setStatus("diagnostic", "error");
+    // A program diagnostic is a failed *execution*, not a broken
+    // environment: the source is intact and Run is available.
+    enterState(PLAYGROUND_STATE.FAILED, "program diagnostic");
   } else {
-    setStatus("internal error", "error");
+    enterState(PLAYGROUND_STATE.FAILED, "internal error");
   }
+  // The worker finished its work; release it. The environment stays ready and
+  // the source is untouched, so the next run starts cleanly.
   if (record.worker) {
     record.worker.terminate();
     record.worker = null;
@@ -1306,8 +1358,6 @@ function finishRun(record, result) {
   if (currentRun === record) {
     currentRun = null;
   }
-  els.run.disabled = false;
-  els.stop.disabled = true;
 }
 
 els.run.addEventListener("click", run);

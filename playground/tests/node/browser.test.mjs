@@ -63,7 +63,7 @@ async function runAndWait(page, timeout = 15000) {
   await page.waitForFunction(
     () => {
       const s = document.getElementById("status").textContent;
-      return s !== "running…" && !s.startsWith("running (");
+      return s !== "Running…" && !s.startsWith("Running");
     },
     { timeout },
   );
@@ -82,7 +82,7 @@ async function runAndWait(page, timeout = 15000) {
   await setSource(page, 'fn main() {\n print(1 + 2)\n}');
   const r = await runAndWait(page);
   check("basic run stdout", r.stdout === "3\n", JSON.stringify(r));
-  check("basic run status", r.status === "ok", r.status);
+  check("basic run status", r.status === "Completed", r.status);
   check("basic run no page errors", errors.length === 0, errors.join("; "));
   await page.close();
 }
@@ -92,7 +92,7 @@ async function runAndWait(page, timeout = 15000) {
   const { page } = await newPage();
   await setSource(page, 'fn main() { throw "boom" }');
   const r = await runAndWait(page);
-  check("uncaught throw status", r.status === "diagnostic", r.status);
+  check("uncaught throw status", r.status.startsWith("Failed"), r.status);
   check(
     "uncaught throw shows E4026",
     r.diagnostics.some((d) => d.includes("E4026")),
@@ -119,7 +119,7 @@ async function runAndWait(page, timeout = 15000) {
   await page.click("#run");
   // The UI thread must remain responsive while the Worker spins.
   await page.waitForFunction(
-    () => document.getElementById("status").textContent.startsWith("running"),
+    () => document.getElementById("status").textContent.startsWith("Running"),
     { timeout: 5000 },
   );
   // Prove responsiveness: the Stop button is clickable and the DOM responds.
@@ -127,7 +127,7 @@ async function runAndWait(page, timeout = 15000) {
   const t0 = Date.now();
   await page.click("#stop");
   await page.waitForFunction(
-    () => document.getElementById("status").textContent === "stopped",
+    () => document.getElementById("status").textContent === "Stopped",
     { timeout: 5000 },
   );
   check("stop returns quickly", Date.now() - t0 < 5000);
@@ -149,11 +149,11 @@ async function runAndWait(page, timeout = 15000) {
   // Interleave a runaway + stop, then a normal run.
   await setSource(page, "fn main() { while true {} }");
   await page.click("#run");
-  await page.waitForFunction(() => document.getElementById("status").textContent.startsWith("running"), {
+  await page.waitForFunction(() => document.getElementById("status").textContent.startsWith("Running"), {
     timeout: 5000,
   });
   await page.click("#stop");
-  await page.waitForFunction(() => document.getElementById("status").textContent === "stopped");
+  await page.waitForFunction(() => document.getElementById("status").textContent === "Stopped");
   await setSource(page, 'fn main() { print("after") }');
   const r = await runAndWait(page);
   check("run after stop", r.stdout === "after\n", JSON.stringify(r));
@@ -393,7 +393,7 @@ async function runAndWait(page, timeout = 15000) {
   await page.keyboard.press("ControlOrMeta+Enter");
   await page.waitForFunction(() => {
     const s = document.getElementById("status").textContent;
-    return s !== "running…" && !s.startsWith("running (");
+    return s !== "Running…" && !s.startsWith("Running");
   });
   const kbd = await page.evaluate(() => document.getElementById("stdout").textContent);
   check("standalone Ctrl/Cmd+Enter runs", kbd === "kb\n", JSON.stringify(kbd));
@@ -403,7 +403,7 @@ async function runAndWait(page, timeout = 15000) {
   await page.click("#run");
   await page.waitForFunction(() => {
     const s = document.getElementById("status").textContent;
-    return s !== "running…" && !s.startsWith("running (");
+    return s !== "Running…" && !s.startsWith("Running");
   });
   const problems = await page.evaluate(() => ({
     code: document.querySelector("#diagnostics .diag-code")?.textContent || "",
@@ -531,7 +531,7 @@ async function runAndWait(page, timeout = 15000) {
       "fn main() { print(count(150)) }",
   );
   const r = await runAndWait(page);
-  check("browser recursion depth 150 succeeds", r.status === "ok", JSON.stringify(r));
+  check("browser recursion depth 150 succeeds", r.status === "Completed", JSON.stringify(r));
   check("browser recursion depth 150 stdout", r.stdout === "150\n", JSON.stringify(r.stdout));
   check("no page errors in recursion guard", errors.length === 0, errors.join("; "));
   await page.close();
@@ -553,10 +553,52 @@ async function runAndWait(page, timeout = 15000) {
   const r = await runAndWait(page);
   check(
     "worker recursion limit reports structured E4011",
-    r.status === "diagnostic" && /E4011/.test(JSON.stringify(r.diagnostics)),
+    r.status.startsWith("Failed") && /E4011/.test(JSON.stringify(r.diagnostics)),
     JSON.stringify(r),
   );
   check("no page errors in worker boundary probe", errors.length === 0, errors.join("; "));
+  await page.close();
+}
+
+// --- 11. Execution recovery across every failure class (Keystone §6) ------
+//
+// An uncaught error terminates the CURRENT execution. It must not poison the
+// reusable environment: the source stays, the state returns to a ready
+// vocabulary, and the next run succeeds.
+{
+  const { page, errors } = await newPage();
+  const cases = [
+    { name: "lexer error", src: "fn main() { @ }", expect: "Failed" },
+    { name: "parser error", src: "fn main( {", expect: "Failed" },
+    { name: "checker error", src: 'fn main() { let x: int = "s" }', expect: "Failed" },
+    { name: "uncaught throw", src: 'fn main() { throw "boom" }', expect: "Failed" },
+    { name: "runtime diagnostic", src: "fn main() { let xs = [1]\n print(xs[9]) }", expect: "Failed" },
+  ];
+  for (const c of cases) {
+    await setSource(page, c.src);
+    const r = await runAndWait(page);
+    check(`${c.name} reports ${c.expect}`, r.status.startsWith(c.expect), JSON.stringify(r));
+    // The environment recovers: the very next run succeeds with new source.
+    await setSource(page, `fn main() { print("recovered after ${c.name}") }`);
+    const r2 = await runAndWait(page);
+    check(
+      `runs again after ${c.name}`,
+      r2.status === "Completed" && r2.stdout === `recovered after ${c.name}\n`,
+      JSON.stringify(r2),
+    );
+  }
+  check("no page errors across recovery matrix", errors.length === 0, errors.join("; "));
+  await page.close();
+}
+
+// --- 12. Source is preserved across a failed run --------------------------
+{
+  const { page } = await newPage();
+  const src = 'fn main() {\n let x: int = "s"\n}';
+  await setSource(page, src);
+  await runAndWait(page);
+  const preserved = await page.inputValue("#source");
+  check("failure preserves the source", preserved === src, preserved);
   await page.close();
 }
 

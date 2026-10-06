@@ -101,7 +101,7 @@ async function runAndWait(page, timeout = 20000) {
   await page.waitForFunction(
     () => {
       const s = document.getElementById("status").textContent;
-      return s !== "running…" && !s.startsWith("running (");
+      return s !== "Running…" && !s.startsWith("Running");
     },
     { timeout },
   );
@@ -221,7 +221,7 @@ async function selectTab(page, name) {
   // The Aura module identity still comes from the *link*, not the file name.
   await selectTab(page, "main.aura");
   const r = await runAndWait(page);
-  check("multi-file project executes", r.status === "ok", JSON.stringify(r));
+  check("multi-file project executes", r.status === "Completed", JSON.stringify(r));
   check("multi-file project output", r.stdout === "41\n", JSON.stringify(r.stdout));
   check("multi-file run reports no diagnostics", r.diagnostics.length === 0, JSON.stringify(r));
   checkSentLinks(r.sent, [
@@ -254,7 +254,7 @@ async function selectTab(page, name) {
     then: "main.aura",
   });
   const r = await runAndWait(page);
-  check("renamed file still participates in the project", r.status === "ok", JSON.stringify(r));
+  check("renamed file still participates in the project", r.status === "Completed", JSON.stringify(r));
   check("renamed file output", r.stdout === "42\n", JSON.stringify(r.stdout));
 
   // Deleting the active (second) file leaves a valid project.
@@ -268,7 +268,7 @@ async function selectTab(page, name) {
   // historical one-file path and still runs.
   await page.fill("#source", 'fn main() { print("after delete") }');
   const r2 = await runAndWait(page);
-  check("project still runs after a delete", r2.status === "ok", JSON.stringify(r2));
+  check("project still runs after a delete", r2.status === "Completed", JSON.stringify(r2));
   check("the surviving file runs", r2.stdout === "after delete\n", JSON.stringify(r2.stdout));
   check("the deleted file's link is gone", r2.sent.sources === null || r2.sent.sources.length === 1, JSON.stringify(r2.sent));
   await page.close();
@@ -285,7 +285,7 @@ async function selectTab(page, name) {
     then: "main.aura",
   });
   const r = await runAndWait(page);
-  check("a child diagnostic is reported", r.status === "diagnostic", JSON.stringify(r));
+  check("a child diagnostic is reported", r.status.startsWith("Failed"), JSON.stringify(r));
   check(
     "the diagnostic carries the owning source name",
     r.diagnostics[0] && r.diagnostics[0].source === "main-2.aura",
@@ -324,7 +324,7 @@ async function selectTab(page, name) {
   );
   check("the refusal is explained", /already exists/.test(state.note || ""), state.note);
   const r = await runAndWait(page);
-  check("the project still runs after a refused rename", r.status !== "worker error", JSON.stringify(r));
+  check("the project still runs after a refused rename", r.status !== "Failed — worker error", JSON.stringify(r));
   await page.close();
 }
 
@@ -339,7 +339,7 @@ async function selectTab(page, name) {
   await addFile(page);
   await page.fill("#source", 'pub fn v() -> int { return 1 }');
   const r2 = await runAndWait(page);
-  check("a legacy runtime does not crash on a project", r2.status !== "ok", JSON.stringify(r2));
+  check("a legacy runtime does not crash on a project", r2.status !== "Completed", JSON.stringify(r2));
   check(
     "the legacy limitation is explained",
     r2.diagnostics.some((d) => /virtual project/i.test(d.text)),
@@ -363,7 +363,7 @@ async function selectTab(page, name) {
   check("the example loads three files", state.tabs.length === 3, JSON.stringify(state.tabs));
   check("the example marks main.aura as the entry", state.tabs[0].entry === true, JSON.stringify(state.tabs));
   const r = await runAndWait(page);
-  check("the multi-file example executes", r.status === "ok", JSON.stringify(r));
+  check("the multi-file example executes", r.status === "Completed", JSON.stringify(r));
   check(
     "the multi-file example prints the expected output",
     r.stdout === "3 item(s) at 255 cents\ntotal: 255\n",
@@ -380,11 +380,11 @@ async function selectTab(page, name) {
   await page.fill("#source", 'pub fn v() -> int { return 1 }');
   await selectTab(page, "main.aura");
   await page.click("#run");
-  await page.waitForFunction(() => document.getElementById("status").textContent.startsWith("running"), {
+  await page.waitForFunction(() => document.getElementById("status").textContent.startsWith("Running"), {
     timeout: 15000,
   });
   await page.click("#stop");
-  await page.waitForFunction(() => document.getElementById("status").textContent === "stopped");
+  await page.waitForFunction(() => document.getElementById("status").textContent === "Stopped");
   // Run -> edit -> run: the next project run must reflect the edited text.
   await page.fill("#source", 'fn main() { print("after stop") }');
   const r = await runAndWait(page);
@@ -397,7 +397,7 @@ async function selectTab(page, name) {
   const { page } = await newPage();
   await page.fill("#source", "1 + 2");
   const r = await runAndWait(page);
-  check("a one-file project keeps the eval fallback", r.status === "ok", JSON.stringify(r));
+  check("a one-file project keeps the eval fallback", r.status === "Completed", JSON.stringify(r));
   await page.close();
 }
 
