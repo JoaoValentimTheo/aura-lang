@@ -514,6 +514,48 @@ fn virtual_transport_limits_are_host_policy_errors() {
     assert_eq!(code(&run(&raw)), u64::from(codes::IO));
 }
 
+/// More sources than the transport limit is a host policy rejection.
+#[test]
+fn too_many_virtual_sources_are_rejected() {
+    let mut sources = Vec::with_capacity(rt::limits::MAX_PROJECT_SOURCES + 1);
+    for i in 0..=rt::limits::MAX_PROJECT_SOURCES {
+        sources.push(source(
+            &format!("s{i}"),
+            &format!("s{i}.aura"),
+            "",
+            vec![],
+        ));
+    }
+    let raw = project("root", sources);
+    assert_eq!(code(&run(&raw)), u64::from(codes::IO));
+}
+
+/// An encoded project over the byte limit is rejected before parsing.
+#[test]
+fn oversized_virtual_project_bytes_are_rejected() {
+    // One source whose text alone pushes the encoded request past the bound.
+    let huge = "x".repeat(rt::limits::MAX_PROJECT_BYTES + 1);
+    let raw = project("root", vec![source("root", "main.aura", &huge, vec![])]);
+    assert_eq!(code(&run(&raw)), u64::from(codes::IO));
+}
+
+/// An entry key outside the key grammar is a module-source path error
+/// (`E2022`), not a host I/O error.
+#[test]
+fn invalid_virtual_entry_key_is_a_module_source_error() {
+    let raw = project("bad/key", vec![source("bad/key", "main.aura", "", vec![])]);
+    assert_eq!(code(&run(&raw)), u64::from(codes::MODULE_SOURCE_PATH));
+}
+
+/// An over-long source display name is a host transport rejection (`E4020`);
+/// the name is host metadata, not an Aura module path.
+#[test]
+fn oversized_virtual_source_name_is_rejected() {
+    let name = "x".repeat(rt::limits::MAX_SOURCE_NAME_BYTES + 1);
+    let raw = project("root", vec![source("root", &name, "fn main() {}", vec![])]);
+    assert_eq!(code(&run(&raw)), u64::from(codes::IO));
+}
+
 #[test]
 fn virtual_initialization_uses_parent_then_sorted_children() {
     let ordered = project(

@@ -123,6 +123,50 @@ fn oversized_stdin_is_rejected() {
     assert_eq!(parse(&json)["diagnostics"][0]["code"], 4020);
 }
 
+/// Too many arguments is a host transport rejection (`E4020`), reported as a
+/// structured diagnostic rather than a partial run.
+#[test]
+fn too_many_args_are_rejected() {
+    let args: Vec<String> = (0..=rt::limits::MAX_ARGS).map(|i| i.to_string()).collect();
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let (json, status, _) = rt::execute("fn main() {}", &options(&refs, None));
+    assert_eq!(status, rt::status::DIAGNOSTIC);
+    assert_eq!(parse(&json)["diagnostics"][0]["code"], 4020);
+    // Exactly the limit is accepted.
+    let ok_refs: Vec<&str> = args[..rt::limits::MAX_ARGS]
+        .iter()
+        .map(String::as_str)
+        .collect();
+    let (_json, status, _) = rt::execute("fn main() {}", &options(&ok_refs, None));
+    assert_eq!(status, rt::status::OK);
+}
+
+/// A single argument over the byte limit is rejected; exactly the limit is
+/// accepted.
+#[test]
+fn oversized_arg_is_rejected() {
+    let big = "a".repeat(rt::limits::MAX_ARG_BYTES + 1);
+    let (json, status, _) = rt::execute("fn main() {}", &options(&[&big], None));
+    assert_eq!(status, rt::status::DIAGNOSTIC);
+    assert_eq!(parse(&json)["diagnostics"][0]["code"], 4020);
+
+    let at_limit = "a".repeat(rt::limits::MAX_ARG_BYTES);
+    let (_json, status, _) = rt::execute("fn main() {}", &options(&[&at_limit], None));
+    assert_eq!(status, rt::status::OK);
+}
+
+/// An argument is delivered to `args()` unchanged when within the bounds.
+#[test]
+fn args_round_trip_through_the_host() {
+    let (json, status, _) = rt::execute(
+        "fn main() { print(args()) }",
+        &options(&["one", "two"], None),
+    );
+    assert_eq!(status, rt::status::OK);
+    let v = parse(&json);
+    assert_eq!(v["stdout"], "[\"one\", \"two\"]\n");
+}
+
 #[test]
 fn deterministic_across_runs() {
     let a = rt::execute("fn main() { print(\"x\") }", &[]).0;
