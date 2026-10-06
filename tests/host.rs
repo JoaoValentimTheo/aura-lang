@@ -380,7 +380,7 @@ fn ast_depth_budget_has_a_single_value() {
     assert_eq!(parser_value, run_value);
 }
 
-/// A poisoned stdout lock must not silently lose accepted bytes.///
+/// A poisoned stdout lock must not silently lose accepted bytes.
 /// The lock protects a `Vec<u8>` whose only mutation is an infallible
 /// `extend_from_slice`, so poison (which requires a prior panic while holding
 /// the lock) cannot leave torn state. The host and the shared sink must
