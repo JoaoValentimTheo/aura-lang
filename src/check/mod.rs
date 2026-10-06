@@ -66,19 +66,26 @@ fn return_assignable(expected: &Ty, actual: &Ty) -> bool {
     if matches!(actual, Ty::Never) {
         return true;
     }
-    // `none` mirrors `compatible_with`'s documented permissiveness (§4.3).
-    if matches!(actual, Ty::None) {
-        return true;
-    }
-    if matches!(expected, Ty::None) {
-        return matches!(actual, Ty::None);
-    }
-    if expected.contains_none() || actual.contains_none() {
-        return true;
-    }
+    // Optionality (`T | none`) follows the same real relation as
+    // `compatible_with` (§4.3, §5.2): `T` and `none` are assignable to an
+    // optional (via the union arms below), but a possible-`none` value is
+    // **not** assignable to a strict expectation without narrowing. The one
+    // exception is a bare unresolved generic: §2.3 forbids rejecting on a
+    // type the checker cannot determine, which preserves the documented
+    // generic constructor idiom while rejecting `-> int { return none }`
+    // and structured expectations like `-> [T] { return none }`.
     match (expected, actual) {
+        // Widen/narrow member-wise: every actual member must be accepted by
+        // some expected member, so `int | none` widens to `int | float | none`
+        // and `none` satisfies `int | none`, while narrowing stays rejected.
+        (Ty::Union(expected_members), Ty::Union(actual_members)) => actual_members
+            .iter()
+            .all(|a| expected_members.iter().any(|e| return_assignable(e, a))),
         (Ty::Union(members), _) => members.iter().any(|m| return_assignable(m, actual)),
         (_, Ty::Union(members)) => members.iter().all(|m| return_assignable(expected, m)),
+        // The §2.3 unknown boundary: a bare `Param` expectation accepts the
+        // absence value (`none` has no static member type to conflict with).
+        (Ty::Param(_), Ty::None) => true,
         (Ty::List(a), Ty::List(b)) => return_assignable(a, b),
         (Ty::Map(ek, ev), Ty::Map(ak, av)) => {
             return_assignable(ek, ak) && return_assignable(ev, av)
@@ -465,6 +472,29 @@ pub struct Checker {
     /// branch cannot fall through. `block` consumes it immediately after the
     /// statement that produced it.
     pending_narrowing: Option<(String, Ty)>,
+    /// Names assigned inside the lambda currently being checked, collected
+    /// while its body is walked. When that lambda value is stored in a
+    /// binding, the binding's mutation set is registered so a later call can
+    /// invalidate the narrowing of exactly the names the closure can write.
+    lambda_writes: Vec<String>,
+    /// A saved `lambda_writes` for the enclosing lambda while a nested one is
+    /// checked.
+    saved_lambda_writes: Vec<Vec<String>>,
+    /// `name -> the names a closure stored in that binding can assign`. A call
+    /// through the binding invalidates the narrowing of those names: their
+    /// runtime value may change behind the checker's back (closures capture by
+    /// reference).
+    closure_writes: HashMap<String, Vec<String>>,
+    /// The write set of the most recently inferred lambda expression, read by
+    /// the `let` binder that stores it.
+    lambda_last_writes: Option<Vec<String>>,
+    /// Every name any lambda body in the program assigns. A call through a
+    /// callable whose capture set is *not* known (a lambda parameter, a
+    /// closure read out of a container, any dynamic callee) can invoke a
+    /// closure that writes one of these names, so their narrowings are
+    /// conservatively discarded. Names never assigned in any lambda cannot be
+    /// mutated through a call, because Aura has no reference parameters.
+    closure_all_writes: Vec<String>,
     /// Whether unused-binding analysis (`E2008`) is active. A compiled
     /// program is checked with it on (Keystone strictness); a REPL submission
     /// is checked with it off, because a session binding persists for later
@@ -563,6 +593,11 @@ impl Checker {
             variant_payloads: HashMap::new(),
             return_type: None,
             pending_narrowing: None,
+            lambda_writes: Vec::new(),
+            saved_lambda_writes: Vec::new(),
+            closure_writes: HashMap::new(),
+            lambda_last_writes: None,
+            closure_all_writes: Vec::new(),
             unused_analysis: true,
             value_types: vec![HashMap::new()],
             underscore_params: Vec::new(),
@@ -1881,6 +1916,16 @@ impl Checker {
         }
         self.pop();
         Ok(())
+    }
+
+    /// Discard the narrowing of every name any lambda in the program assigns.
+    /// Used when a call's target capture set cannot be determined: the sound
+    /// choice, since only such names can be mutated behind a call (Aura has
+    /// no reference parameters).
+    fn clear_all_closure_narrowing(&mut self) {
+        for w in self.closure_all_writes.clone() {
+            self.clear_narrowing(&w);
+        }
     }
 
     /// Install a flow-narrowing override for `name` in the innermost scope:
@@ -4675,6 +4720,18 @@ impl Checker {
                 span,
             } => {
                 self.expr(value)?;
+                // If the initializer was a lambda, the binding holds a
+                // closure; remember which names that closure can assign, so a
+                // later call through the binding can invalidate their
+                // narrowing. Any other initializer clears a stale set.
+                match self.lambda_last_writes.take() {
+                    Some(names) if matches!(value, Expr::Lambda(..)) => {
+                        self.closure_writes.insert(name.clone(), names);
+                    }
+                    _ => {
+                        self.closure_writes.remove(name);
+                    }
+                }
                 // The new binding's recorded type replaces any type the
                 // shadowed binding had: a shadow is a *different* binding, so
                 // it must not inherit the previous one's type when its own
@@ -4757,6 +4814,17 @@ impl Checker {
                         // An assignment can put `none` back into the binding,
                         // so any narrowing of it ends here.
                         self.clear_narrowing(name);
+                        // If this write is inside a lambda body, remember it:
+                        // a call through a binding holding that closure can
+                        // change `name` behind a later narrowing's back. The
+                        // global set is the sound fallback when the callee's
+                        // capture set is unknown.
+                        if !self.lambda_writes.contains(name) {
+                            self.lambda_writes.push(name.clone());
+                        }
+                        if !self.closure_all_writes.contains(name) {
+                            self.closure_all_writes.push(name.clone());
+                        }
                         // A write references the binding: it counts as a use.
                         self.mark_used(name);
                         match self.lookup(name) {
@@ -5155,6 +5223,21 @@ impl Checker {
                             // A callable binding (closure value): dynamic. The
                             // call is a read of the binding.
                             self.mark_used(name);
+                            // The closure captures by reference, so calling it
+                            // may write any name in its capture set; a
+                            // narrowing of such a name is no longer provable
+                            // after the call. When the binding's capture set
+                            // is unknown (an untyped callable, a lambda
+                            // parameter), fall back to the global set: any
+                            // closure in the program could be behind it.
+                            match self.closure_writes.get(name).cloned() {
+                                Some(writes) => {
+                                    for w in writes {
+                                        self.clear_narrowing(&w);
+                                    }
+                                }
+                                None => self.clear_all_closure_narrowing(),
+                            }
                             self.reject_named_args(name, args, *span)?;
                         } else {
                             return Err(Diag::new(
@@ -5166,8 +5249,10 @@ impl Checker {
                     }
                     other => {
                         // A non-name callee is dynamic; named arguments cannot
-                        // be resolved against a parameter list.
+                        // be resolved against a parameter list. The callee may
+                        // be any closure, so its writes cannot be bounded.
                         self.expr(other)?;
+                        self.clear_all_closure_narrowing();
                         self.reject_named_args("callable", args, *span)?;
                     }
                 }
@@ -5533,6 +5618,9 @@ impl Checker {
             }
             Expr::Lambda(ps, body, _) => {
                 self.push();
+                // A lambda's writes belong to it, not to an enclosing lambda.
+                self.saved_lambda_writes
+                    .push(std::mem::take(&mut self.lambda_writes));
                 let saved_loop = std::mem::take(&mut self.loop_depth);
                 // A lambda has no declared return type, so a `return` in its
                 // body must not be checked against the enclosing function's
@@ -5556,12 +5644,35 @@ impl Checker {
                 let r = self.expr(body);
                 self.return_type = saved_return;
                 self.loop_depth = saved_loop;
+                // The lambda's own write set is its capture set; restore the
+                // enclosing lambda's set and hand the inner one to the caller
+                // through `lambda_last_writes`.
+                let own_writes = std::mem::take(&mut self.lambda_writes);
+                self.lambda_writes = self.saved_lambda_writes.pop().unwrap_or_default();
+                self.lambda_last_writes = Some(own_writes);
                 r?;
                 self.finish_scope()?;
             }
             Expr::Pipe(l, r, _) => {
                 self.expr(l)?;
                 self.expr(r)?;
+                // `x |> f` calls the right-hand value when it is callable; if
+                // it names a local closure, its capture set is invalidated
+                // exactly as a direct call would.
+                match r.as_ref() {
+                    Expr::Name(name, _) => match self.closure_writes.get(name).cloned() {
+                        Some(writes) => {
+                            for w in writes {
+                                self.clear_narrowing(&w);
+                            }
+                        }
+                        None if self.lookup(name).is_some() => {
+                            self.clear_all_closure_narrowing();
+                        }
+                        None => {}
+                    },
+                    _ => self.clear_all_closure_narrowing(),
+                }
             }
             Expr::Range(l, r, span) => {
                 self.expr(l)?;

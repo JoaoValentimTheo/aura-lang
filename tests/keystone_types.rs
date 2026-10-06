@@ -94,15 +94,33 @@ fn none_access_is_diagnosed_precisely() {
 }
 
 #[test]
-fn none_permissiveness_is_preserved() {
-    // The documented `T | none` behavior is unchanged: a union containing
-    // `none` accepts any value, and `none` is accepted anywhere.
+fn optional_accepts_exactly_its_members() {
+    // `T | none` accepts its own members (`T` and `none`) and nothing else:
+    // optionality is a real type relation, not a permissiveness escape
+    // hatch (§4.3, §5.2).
     assert_eq!(
-        check("type N = int | float | none\nfn main() { let _: N = 1\n let _: N = 2.5\n let _: N = none\n let _: N = \"s\" }"),
+        check("type N = int | float | none\nfn main() { let _: N = 1\n let _: N = 2.5\n let _: N = none }"),
         Ok(())
     );
-    assert_eq!(check("fn main() { let _: int = none }"), Ok(()));
-    assert_eq!(check("fn f() -> {string: int} { return none }"), Ok(()));
+    assert_eq!(
+        check("type N = int | float | none\nfn main() { let _: N = \"s\" }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // A strict type rejects `none` (no silent optionality), and a `none`
+    // return does not satisfy a strict return type.
+    assert_eq!(
+        check("fn main() { let _: int = none }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        check("fn f() -> {string: int} { return none }"),
+        Err(codes::RETURN_MISMATCH)
+    );
+    // The variable-bound spelling is the same relation.
+    assert_eq!(
+        check("fn main() { let n = none\n let _: int = n }"),
+        Err(codes::TYPE_MISMATCH)
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -292,5 +310,150 @@ fn a_local_binding_shadows_a_function_name_at_runtime() {
     assert_eq!(
         ok("fn f(x: int) -> int { return x + 100 }\nfn main() { let f = (a: string) -> a\n print(f(\"hello\")) }"),
         "hello\n"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Optionality is a real relation (TD-21 correction)
+//
+// `T <: T | none`, `none <: T | none`, but `T | none </: T` without a
+// narrowing guard. Every position enforces the same relation.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn optional_to_strict_is_rejected_in_every_position() {
+    // function argument
+    assert_eq!(
+        check("fn consume(u: int) -> int { return u }\nfn f(m: int | none) -> int { return consume(m) }\nfn main() { print(f(1)) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // return
+    assert_eq!(
+        check("fn f(m: int | none) -> int { return m }"),
+        Err(codes::RETURN_MISMATCH)
+    );
+    // local initialization
+    assert_eq!(
+        check("fn main() { let m: int | none = none\n let _: int = m }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // reassignment
+    assert_eq!(
+        check("fn main() { let mut x: int = 0\n let m: int | none = none\n x = m }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // struct field
+    assert_eq!(
+        check("struct S { a: int }\nfn main() { let m: int | none = none\n let _s = S { a: m } }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // enum payload
+    assert_eq!(
+        check("enum E { A(int) }\nfn main() { let m: int | none = none\n let _e = A(m) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // list element
+    assert_eq!(
+        check("fn main() { let m: int | none = none\n let _xs: [int] = [m] }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // builtin argument
+    assert_eq!(
+        check("fn main() { let m: int | none = none\n print(abs(m)) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+#[test]
+fn optional_accepts_its_members_in_every_position() {
+    // `T -> T | none`
+    assert_eq!(
+        check("fn consume(m: int | none) -> int { print(m)\n return 1 }\nfn main() { print(consume(1)) }"),
+        Ok(())
+    );
+    // `none -> T | none`
+    assert_eq!(
+        check("fn consume(m: int | none) -> int { print(m)\n return 1 }\nfn main() { print(consume(none)) }"),
+        Ok(())
+    );
+    // `T | none -> T | none`
+    assert_eq!(
+        check("fn consume(m: int | none) -> int { print(m)\n return 1 }\nfn g(m: int | none) -> int { return consume(m) }\nfn main() { print(g(1)) }"),
+        Ok(())
+    );
+    // `T | none -> T | float | none` (widening)
+    assert_eq!(
+        check("fn consume(m: int | float | none) -> int { print(m)\n return 1 }\nfn g(m: int | none) -> int { return consume(m) }\nfn main() { print(g(1)) }"),
+        Ok(())
+    );
+    // optional struct field accepts all three
+    assert_eq!(
+        check("struct S { email: string | none }\nfn main() { let _a = S { email: \"x\" }\n let _b = S { email: none } }"),
+        Ok(())
+    );
+}
+
+#[test]
+fn narrowings_invalidate_when_the_proof_ends() {
+    // A closure captures by reference: calling one that writes a captured
+    // name ends the narrowing proven for that name.
+    assert_eq!(
+        check("struct U { name: string }\nfn consume(u: U) -> string { return u.name }\nfn main() { let mut u: U | none = U { name: \"a\" }\n let clear = () -> { u = none }\n if u != none { clear()\n print(consume(u)) } }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // A closure that writes an unrelated name does not disturb the proof.
+    assert_eq!(
+        check("struct U { name: string }\nfn consume(u: U) -> string { return u.name }\nfn main() { let mut u: U | none = U { name: \"a\" }\n let mut other: int = 0\n let bump = () -> { other = 1 }\n if u != none { bump()\n print(consume(u)) } }"),
+        Ok(())
+    );
+    // A pure closure does not disturb the proof either.
+    assert_eq!(
+        check("struct U { name: string }\nfn consume(u: U) -> string { return u.name }\nfn main() { let u: U | none = U { name: \"a\" }\n let pure = () -> 1\n if u != none { pure()\n print(consume(u)) } }"),
+        Ok(())
+    );
+    // Shadowing the narrowed name with a fresh `none` ends the proof.
+    assert_eq!(
+        check("struct U { name: string }\nfn consume(u: U) -> string { return u.name }\nfn f(u: U | none) -> string { if u != none { let u = none\n return consume(u) }\n return \"x\" }\nfn main() { print(f(U { name: \"a\" })) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    // A loop exit does not prove the guard held.
+    assert_eq!(
+        check("struct U { name: string }\nfn consume(u: U) -> string { return u.name }\nfn f(mut u: U | none, v: U | none) -> string { while u != none { u = v }\n return consume(u) }\nfn main() { print(f(U { name: \"a\" }, none)) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+#[test]
+fn unknown_boundary_stays_permissive() {
+    // A value the checker genuinely cannot type is not rejected (§2.3).
+    assert_eq!(
+        check("fn consume(u: int) -> int { return u }\nfn main() { print(consume(json_decode(\"{}\"))) }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("fn consume(u: int) -> int { return u }\nfn main() { print(consume(if true { 1 } else { 2 })) }"),
+        Ok(())
+    );
+}
+
+#[test]
+fn a_call_through_an_unknown_callable_invalidates_captured_narrowing() {
+    // A closure stored in a container and invoked through a higher-order
+    // builtin can still write its captures; the narrowing of any name that
+    // some lambda in the program assigns is therefore discarded at such a
+    // call (Jev-flagged gap in the first closure rule).
+    assert_eq!(
+        check("struct U { name: string }\nfn consume(u: U) -> string { return u.name }\nfn main() { let mut u: U | none = U { name: \"a\" }\n let hs = [() -> { u = none }]\n if u != none { map(hs, (h) -> h())\n print(consume(u)) } }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+#[test]
+fn unknown_callable_fallback_does_not_reject_sound_programs() {
+    // The fallback only discards narrowings of names that some lambda writes;
+    // a program whose lambdas never touch the narrowed name stays accepted.
+    assert_eq!(
+        check("struct U { name: string }\nfn consume(u: U) -> string { return u.name }\nfn main() { let u: U | none = U { name: \"a\" }\n let xs = [1, 2]\n if u != none { map(xs, (x) -> x + 1)\n print(consume(u)) } }"),
+        Ok(())
     );
 }

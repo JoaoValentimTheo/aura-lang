@@ -108,29 +108,29 @@ fn unknown_type_is_rejected() {
 #[test]
 fn map_key_type_must_be_key_capable() {
     // `string`, `int`, and `bool` are key-capable.
-    assert_eq!(check("fn f() -> {string: int} { return none }"), Ok(()));
-    assert_eq!(check("fn f() -> {int: string} { return none }"), Ok(()));
-    assert_eq!(check("fn f() -> {bool: int} { return none }"), Ok(()));
+    assert_eq!(check("fn f() -> {string: int} { return {} }"), Ok(()));
+    assert_eq!(check("fn f() -> {int: string} { return {} }"), Ok(()));
+    assert_eq!(check("fn f() -> {bool: int} { return {} }"), Ok(()));
     // `float`, `none`, and container keys are not.
     assert_eq!(
-        check("fn f() -> {float: int} { return none }"),
+        check("fn f() -> {float: int} { return {} }"),
         Err(codes::TYPE_MISMATCH)
     );
     assert_eq!(
-        check("fn f() -> {[int]: string} { return none }"),
+        check("fn f() -> {[int]: string} { return {} }"),
         Err(codes::TYPE_MISMATCH)
     );
     assert_eq!(
-        check("fn f() -> {{int: int}: string} { return none }"),
+        check("fn f() -> {{int: int}: string} { return {} }"),
         Err(codes::TYPE_MISMATCH)
     );
     // A union is key-capable only when every member is.
     assert_eq!(
-        check("fn f() -> {string | int: bool} { return none }"),
+        check("fn f() -> {string | int: bool} { return {} }"),
         Ok(())
     );
     assert_eq!(
-        check("fn f() -> {string | float: bool} { return none }"),
+        check("fn f() -> {string | float: bool} { return {} }"),
         Err(codes::TYPE_MISMATCH)
     );
 }
@@ -478,10 +478,11 @@ fn alias_is_transparent_in_return_field_and_payload_positions() {
 }
 
 /// An alias chain through `T | none` resolves, and the optional annotation
-/// stays at the conservative `Unknown` boundary (§2.3, §6.4): it proves
-/// nothing, so it rejects nothing.
+/// follows the real optionality relation (§4.3, §5.2): its members are
+/// accepted, and a value outside the union is rejected rather than silently
+/// admitted by the historical permissiveness.
 #[test]
-fn alias_chain_through_optional_stays_conservative() {
+fn alias_chain_through_optional_enforces_the_union() {
     assert_eq!(
         check("type M = int | none\ntype N = M\nfn main() { let _: N = 5 }"),
         Ok(())
@@ -492,7 +493,7 @@ fn alias_chain_through_optional_stays_conservative() {
     );
     assert_eq!(
         check("type M = int | none\ntype N = M\nfn main() { let _: N = \"s\" }"),
-        Ok(())
+        Err(codes::TYPE_MISMATCH)
     );
     // The inner position of `T | none` is still resolved and validated.
     assert_eq!(check("type M = Nope | none"), Err(codes::UNKNOWN_TYPE));
@@ -697,10 +698,11 @@ fn nested_union_flattens_through_aliases() {
     );
 }
 
-/// A union that includes `none` is permissive, generalizing the historical
-/// `T | none` behavior (`LANGUAGE_SPEC.md` §4.3, §5.2).
+/// A union that includes `none` accepts precisely its members
+/// (`LANGUAGE_SPEC.md` §4.3, §5.2): `none` is a real member, not a
+/// permissiveness escape hatch.
 #[test]
-fn union_with_none_is_permissive() {
+fn union_with_none_accepts_its_members() {
     // `int | float | none` accepts an int, a float, and none.
     assert_eq!(
         check("type N = int | float | none\nfn main() { let _: N = 1 }"),
@@ -714,11 +716,11 @@ fn union_with_none_is_permissive() {
         check("type N = int | float | none\nfn main() { let _: N = none }"),
         Ok(())
     );
-    // Because none is `Unknown`, even an out-of-union value is accepted — the
-    // documented permissiveness of `T | none`, generalized.
+    // A value outside the union is rejected: `none` does not make the union
+    // accept arbitrary types.
     assert_eq!(
         check("type N = int | float | none\nfn main() { let _: N = \"s\" }"),
-        Ok(())
+        Err(codes::TYPE_MISMATCH)
     );
 }
 
@@ -857,11 +859,13 @@ fn union_alias_cycles_are_rejected_not_a_crash() {
 /// (`LANGUAGE_SPEC.md` §2.3, §6.4).
 #[test]
 fn union_and_unknown_boundary() {
-    // A value inferred `Unknown` is accepted by any union.
+    // `none` is a known type now, so it does not satisfy a union without a
+    // `none` member: `int | float` rejects it.
     assert_eq!(
         check("type N = int | float\nfn main() { let _: N = none }"),
-        Ok(())
+        Err(codes::TYPE_MISMATCH)
     );
+    // A value inferred `Unknown` is still accepted by any union (§2.3).
     assert_eq!(
         check("type N = int | float\nfn main() { let _: N = if true { 1 } else { 2 } }"),
         Ok(())

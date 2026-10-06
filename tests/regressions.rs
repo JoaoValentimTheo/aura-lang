@@ -189,9 +189,14 @@ fn b3_struct_field_type_validation() {
         out("struct S { a: bool }\nfn main() { print(S { a: true }) }"),
         "S { a: true }\n"
     );
-    // A value the checker cannot type is not rejected (conservative).
+    // A definite `none` in a strict field is rejected (optionality is a real
+    // relation); a value the checker genuinely cannot type stays conservative.
     assert_eq!(
         check("struct S { a: int }\nfn main() { let x = none\n S { a: x } }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        check("struct S { a: int }\nfn main() { let x = json_decode(\"{}\")\n S { a: x } }"),
         Ok(())
     );
 }
@@ -244,9 +249,14 @@ fn b6_enum_named_argument_contract() {
         check("enum E { A(int) }\nfn main() { A(\"x\") }"),
         Err(codes::TYPE_MISMATCH)
     );
-    // A payload the checker cannot type is accepted.
+    // A definite `none` payload is rejected; a value the checker cannot type
+    // stays accepted (the §2.3 unknown boundary).
     assert_eq!(
         check("enum E { A(int) }\nfn main() { let z = none\n A(z) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        check("enum E { A(int) }\nfn main() { let z = json_decode(\"{}\")\n A(z) }"),
         Ok(())
     );
 }
@@ -351,13 +361,14 @@ fn static_user_fn_unannotated_parameters_are_unconstrained() {
 }
 
 /// An argument whose inferred type is `Unknown` is never rejected merely
-/// because inference is incomplete.
+/// because inference is incomplete. A definite `none` is no longer `Unknown`
+/// (Keystone optionality, §4.3/§5.2), so it is checked as `none`.
 #[test]
 fn static_user_fn_unknown_argument_remains_permissive() {
-    // `none` infers Unknown.
+    // A definite `none` argument to a strict parameter is rejected.
     assert_eq!(
         check("fn f(a: int) { return a }\nfn main() { f(none) }"),
-        Ok(())
+        Err(codes::TYPE_MISMATCH)
     );
     // An if-expression infers Unknown.
     assert_eq!(
@@ -671,9 +682,13 @@ fn named_arguments_type_checking() {
         check("fn f(a: int, b: int) -> int { return a + b }\nfn main() { f(b: 1, a: \"x\") }"),
         Err(codes::TYPE_MISMATCH)
     );
-    // Unknown is permissive.
+    // A definite `none` is rejected; an unknown value stays permissive.
     assert_eq!(
         check("fn f(x: int) -> int { return x }\nfn main() { f(x: none) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        check("fn f(x: int) -> int { return x }\nfn main() { f(x: json_decode(\"{}\")) }"),
         Ok(())
     );
 }

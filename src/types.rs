@@ -271,19 +271,15 @@ impl Ty {
         if matches!(self, Ty::Param(_)) || matches!(other, Ty::Param(_)) {
             return true;
         }
-        // `none` rules (§4.3, §5.2). The documented historical behavior is
-        // permissive: `none` is accepted wherever a value is expected, and a
-        // union that contains `none` accepts anything. Retention of the
-        // `none` member is what makes flow narrowing and precise access
-        // diagnostics possible; it does not remove the permissiveness.
-        if matches!(other, Ty::None) {
-            return true;
-        }
+        // Optionality (`T | none`) is a real type relation, not a
+        // permissiveness escape hatch (§4.3, §5.2): `T` is assignable to
+        // `T | none` and `none` is assignable to `T | none`, but a `T | none`
+        // value is **not** assignable to `T` without narrowing. A `none`
+        // expectation accepts only `none`; the bottom `never` is handled by
+        // the rules below. Widening to a union expectation is handled by the
+        // union arms of the structural match.
         if matches!(self, Ty::None) {
             return matches!(other, Ty::None | Ty::Never);
-        }
-        if self.contains_none() || other.contains_none() {
-            return true;
         }
         // `never` is the bottom type (§4.3): a `never` value is acceptable
         // wherever any type is expected, and only a `never` (or an `Unknown`)

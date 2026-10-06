@@ -60,11 +60,15 @@ impl TypeClass {
     pub fn matches_ty(self, ty: &Ty) -> Option<bool> {
         let is = match (self, ty) {
             (_, Ty::Unknown) => return None,
-            // A union satisfies a class when any member does; a union never
-            // contains `Unknown` (it collapses to `Unknown`), so the answer is
-            // always decidable.
+            // A union satisfies a class only when **every** member does: the
+            // value at runtime may be any member, so one acceptable member
+            // does not make a possible-`string` acceptable to an int
+            // parameter. This mirrors the assignability relation: `T | none`
+            // never crosses a non-optional boundary without narrowing, and
+            // the free-function spelling of an operation must agree with its
+            // method spelling (which is already gated by `E3003`).
             (_, Ty::Union(members)) => {
-                return Some(members.iter().any(|m| self.matches_ty(m) == Some(true)));
+                return Some(members.iter().all(|m| self.matches_ty(m) == Some(true)));
             }
             (TypeClass::Int, Ty::Int) => true,
             (TypeClass::Float, Ty::Float) => true,
@@ -110,6 +114,35 @@ impl Accepts {
             Accepts::Any => Some(true),
             Accepts::One(c) => c.matches_ty(ty),
             Accepts::AnyOf(cs) => {
+                // A union satisfies the class *set* when every member is
+                // acceptable to some class: the runtime value may be any
+                // member, so each must be covered (`int | float` satisfies
+                // `any_of(int, float)`, while `int | none` does not).
+                if let Ty::Union(members) = ty {
+                    let mut any_unknown = false;
+                    for m in members {
+                        let mut accepted = false;
+                        let mut member_unknown = false;
+                        for c in cs {
+                            match c.matches_ty(m) {
+                                Some(true) => {
+                                    accepted = true;
+                                    break;
+                                }
+                                Some(false) => {}
+                                None => member_unknown = true,
+                            }
+                        }
+                        if !accepted {
+                            if member_unknown {
+                                any_unknown = true;
+                            } else {
+                                return Some(false);
+                            }
+                        }
+                    }
+                    return if any_unknown { None } else { Some(true) };
+                }
                 let mut any_unknown = false;
                 for c in cs {
                     match c.matches_ty(ty) {

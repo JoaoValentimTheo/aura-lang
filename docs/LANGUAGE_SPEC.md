@@ -922,24 +922,56 @@ cannot type imposes no constraint (§2.3).
 unresolved name that resolves to `Unknown` collapses the union to `Unknown` at
 construction. The members of a stored `Union` are always concrete.
 
-**Normative rule (`none` and optionality).** `none` has the type `none`, and
-appears as a member of an optional union. The semantics of `T | none` remain
-the historical permissive ones for *assignment*: a union containing `none`
-accepts a value of any type, and `none` is accepted wherever a value may be
-expected (so `let x: int = none` is accepted). Retention of the `none` member
-makes two things precise that were previously only runtime behavior:
+**Normative rule (`none` and optionality).** `none` has the type `none` and
+appears as a member of an optional union. Optionality is a real static type
+relation, enforced everywhere a type is checked:
 
-- **Access.** A member access, method call, or indexing on a value whose type
-  contains `none` is rejected statically with `E3003` unless flow narrowing
-  has removed the `none` member. `none` itself has no members, so an access on
-  a definite `none` is the same code.
-- **Narrowing.** A `none` check narrows the guarded binding for the extent of
-  the guard: `if u != none { … }` (and `if none != u`) narrows `u` inside the
-  then-branch; `if u == none { … } else { … }` narrows inside the
-  else-branch. A guard whose branch diverges narrows the statements that
-  follow the `if`: `if u == none { return }` proves `u` is not `none` below.
-  The narrowed type is the receiver with `none` removed (`User | none` becomes
-  `User`). An assignment to the binding discards the narrowing.
+```
+T  <: T | none        (accept)
+none <: T | none      (accept)
+T | none </: T        (reject, unless flow narrowing proved it non-none)
+T | none <: T | none  (accept)
+none </: T            (reject; `T` is not optional)
+```
+
+The relation applies uniformly to function arguments, returns, local
+initialization, assignment, struct fields, enum payloads, collection
+elements, named arguments, and builtin arguments. A union type also never
+accepts a value outside its declared members: `T | none` accepts `T` and
+`none`, not an unrelated type.
+
+**Normative rule (`none` narrowing).** A `none` check narrows the guarded
+binding for the extent of the guard: `if u != none { … }` (and
+`if none != u`) narrows `u` inside the then-branch; `if u == none { … } else
+{ … }` narrows inside the else-branch. A guard whose branch diverges narrows
+the statements that follow the `if`: `if u == none { return }` proves `u` is
+not `none` below. The narrowed type is the binding with `none` removed
+(`User | none` becomes `User`). A narrowing ends when the proof no longer
+holds: a direct assignment to the binding, shadowing it with a new binding,
+an assignment inside a nested block (the assignment is checked and the
+narrowing of the assigned name is discarded), or a call whose target may be a
+closure that assigns the binding. Closures capture by reference, so a call
+can change a captured value. The checker discards the narrowing of exactly
+the names a known callee closure assigns; when the callee's capture set is
+unknown (a lambda parameter, a closure read out of a container, any dynamic
+callee), it discards the narrowing of every name that any lambda in the
+program assigns — the sound choice, since Aura has no reference parameters
+and therefore no other way for a call to write a caller local.
+
+**Normative rule (`none` access).** A member access, method call, or indexing
+on a value whose type contains `none` is rejected statically with `E3003`
+unless flow narrowing has removed the `none` member. `none` itself has no
+members, so an access on a definite `none` is the same code. The same
+relation governs an operation whose argument class is a fixed set: a union
+value is acceptable only when **every** member is acceptable
+(`abs(x)` rejects `int | none`), so a value of unknown runtime shape never
+silently crosses into a class-specific operation.
+
+**Normative rule (`none` and the unknown boundary).** A bare unresolved
+generic parameter is the §2.3 unknown boundary: `none` satisfies `-> T` in a
+generic body, which is what makes the documented optional-constructor idiom
+(`fn unwrap<T>(o: Opt<T>) -> T { … Nothing -> none }`) well-typed. A
+structured expectation (`-> [T]`, `-> Opt<T>`) is not bypassed by `none`.
 
 **Normative rule (`never`).** `never` is the bottom type: no value can result
 from a `never` expression. A `never` value is assignable wherever any type is
@@ -1035,8 +1067,10 @@ of any other type is `E3001`.
 **Normative rule.** If the value's inferred type is `Unknown`, the annotation
 check passes. This preserves the conservative soundness rule of §2.3.
 
-*Non-normative example.* `let x = none; let y: int = x` passes the checker;
-`x` is `Unknown`. A later runtime use of `y` may still fail.
+*Non-normative example.* `let x = none; let y: int = x` is rejected: `x` is
+`none`, a known type, and `none` does not satisfy `int` (§5.2). A value the
+checker genuinely cannot type stays permissive: `let x = json_decode("{}");
+let y: int = x` passes, and a later runtime use of `y` may still fail.
 
 ### 6.5 Argument checking at directly resolved calls
 
@@ -1160,9 +1194,10 @@ checker accepts (`A` = accept, `R` = reject with `E3001`).
 † A union expected type accepts the value when **some** member does; the row
 shows `int | float` and `string | int` respectively.
 ‡ A union is accepted when **every** member is compatible with the same
-primitive/compound expected type, or when any member matches a union member.
-A union containing `none` is `Unknown`, not `Union`, and is thus always
-accepted.
+primitive/compound expected type, or when every member matches a union
+member. A union containing `none` accepts its own members and `none`, and is
+accepted by another union only when each of its members is accepted; it never
+crosses a strict boundary without narrowing (§5.2).
 
 **Normative rule.** A `Named` value is compatible only with the same `Named`
 name; struct types are nominal.
