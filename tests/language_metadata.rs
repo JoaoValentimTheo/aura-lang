@@ -64,8 +64,14 @@ fn literals_match_the_lexer() {
 
 #[test]
 fn builtins_match_the_signature_registry() {
+    // The front-end metadata describes the *browser* language surface: the
+    // WebAssembly runtime's build. A native-only capability (the `http`
+    // feature, which the WASM runtime deliberately does not enable) is not
+    // listed, because the browser playground has no network capability and
+    // must not advertise one. Every other builtin is shared and must match.
     let mut expected: Vec<String> = aura::stdlib::builtin_names()
         .into_iter()
+        .filter(|name| !aura::stdlib::signatures::is_native_only(name))
         .map(str::to_string)
         .collect();
     expected.sort_unstable();

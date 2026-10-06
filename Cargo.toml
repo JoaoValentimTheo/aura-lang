@@ -18,6 +18,13 @@ regex = { version = "1", optional = true, default-features = false, features = [
 chrono = { version = "0.4", optional = true, default-features = false, features = ["std", "clock"] }
 rustyline = { version = "14", optional = true }
 pyo3 = { version = "0.29", optional = true, features = ["auto-initialize"] }
+# HTTP capability backend (Keystone §21). Deliberately *not* default and
+# deliberately not enabled by the WASM runtime: network authority is
+# Native-only, flows through `Host`, and a restricted host denies it with
+# `E5002`. rustls (no OpenSSL) keeps the build portable; the dependency
+# inventory and the security review are recorded in
+# `docs/engineering/HTTP_ARCHITECTURE.md`.
+ureq = { version = "3", optional = true, default-features = false, features = ["rustls"] }
 
 [dev-dependencies]
 proptest = "1.5"
@@ -32,6 +39,9 @@ json = ["dep:serde_json", "dep:serde"]
 regex = ["dep:regex"]
 time = ["dep:chrono"]
 py = ["dep:pyo3"]
+# The HTTP capability. Non-default: it is the only feature that grows the
+# native dependency tree, and a build without it has no network surface at all.
+http = ["dep:ureq"]
 # Test-only differential evaluator oracle (B-1R2/B-1R3). Never default and
 # never user-facing: it adds no runtime behavior. The iterative machine is
 # always compiled and is the production engine; this flag only gates the

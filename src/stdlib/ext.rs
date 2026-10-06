@@ -382,6 +382,224 @@ pub mod json {
     }
 }
 
+#[cfg(feature = "http")]
+pub mod http {
+    //! HTTP capability surface (Keystone §21).
+    //!
+    //! The evaluator builds a typed [`crate::host::HttpRequest`] and asks the
+    //! installed host for the capability. A host without network authority
+    //! returns `E5002`; a transport failure is `E4020`; a response body over
+    //! the limit is `E4020`. The request/response are ordinary Aura values: a
+    //! response is a map with `status`, `headers`, and `body`, so
+    //! `response["status"]` and typed JSON decoding compose without special
+    //! syntax.
+
+    use crate::error::{codes, Diag, Span};
+    use crate::host::{HttpRequest, HTTP_METHODS, MAX_HTTP_TIMEOUT_MS};
+    use crate::run::value::{MapKey, Value};
+    use crate::run::Interp;
+    use std::cell::RefCell;
+    use std::collections::BTreeMap;
+    use std::rc::Rc;
+
+    fn err(code: u16, msg: impl Into<String>, span: Span) -> Diag {
+        Diag::new(code, msg, span)
+    }
+
+    fn string_arg(args: &[Value], i: usize, name: &str, span: Span) -> Result<String, Diag> {
+        match args.get(i) {
+            Some(Value::Str(s)) => Ok(s.to_string()),
+            _ => Err(err(
+                codes::TYPE_MISMATCH,
+                format!("`{name}` expects a string argument {}", i + 1),
+                span,
+            )),
+        }
+    }
+
+    /// Build a response map: `{status, headers, body}`.
+    fn response_value(response: &crate::host::HttpResponse) -> Value {
+        let mut m: BTreeMap<MapKey, Value> = BTreeMap::new();
+        m.insert(
+            MapKey::str("status"),
+            Value::Int(i64::from(response.status)),
+        );
+        m.insert(MapKey::str("body"), Value::str(response.body.clone()));
+        let mut headers: BTreeMap<MapKey, Value> = BTreeMap::new();
+        for (k, v) in &response.headers {
+            // A repeated header joins with a comma, per HTTP field semantics.
+            // The key is lowercased so a lookup is case-insensitive by shape.
+            let key = k.to_ascii_lowercase();
+            let entry = headers
+                .entry(MapKey::str(&key))
+                .or_insert_with(|| Value::str(String::new()));
+            if let Value::Str(prev) = entry {
+                let mut joined = prev.to_string();
+                if !joined.is_empty() {
+                    joined.push_str(", ");
+                }
+                joined.push_str(v);
+                *entry = Value::str(joined);
+            }
+        }
+        m.insert(
+            MapKey::str("headers"),
+            Value::Map(Rc::new(RefCell::new(headers))),
+        );
+        Value::Map(Rc::new(RefCell::new(m)))
+    }
+
+    /// Perform a request through the host capability.
+    fn request(
+        it: &Interp,
+        method: &str,
+        url: &str,
+        headers: &[(String, String)],
+        body: Option<String>,
+        timeout_ms: u64,
+        span: Span,
+    ) -> Result<Value, Diag> {
+        let method = method.to_ascii_uppercase();
+        if !HTTP_METHODS.contains(&method.as_str()) {
+            return Err(err(
+                codes::TYPE_MISMATCH,
+                format!(
+                    "`{method}` is not a supported HTTP method; expected one of {}",
+                    HTTP_METHODS.join(", ")
+                ),
+                span,
+            ));
+        }
+        let request = HttpRequest {
+            method,
+            url: url.to_string(),
+            headers: headers.to_vec(),
+            body,
+            timeout_ms: timeout_ms.min(MAX_HTTP_TIMEOUT_MS),
+        };
+        let response = it
+            .host()
+            .http_request(&request)
+            .map_err(|e| e.into_diag(span))?;
+        Ok(response_value(&response))
+    }
+
+    /// Parse the optional headers argument: `[[ "k", "v" ], …]`.
+    fn parse_headers(
+        args: &[Value],
+        i: usize,
+        name: &str,
+        span: Span,
+    ) -> Result<Vec<(String, String)>, Diag> {
+        let Some(Value::List(items)) = args.get(i) else {
+            return Err(err(
+                codes::TYPE_MISMATCH,
+                format!("`{name}` expects a list of `[key, value]` header pairs"),
+                span,
+            ));
+        };
+        let items = items.borrow();
+        let mut out = Vec::with_capacity(items.len());
+        for (idx, item) in items.iter().enumerate() {
+            let Value::List(pair) = item else {
+                return Err(err(
+                    codes::TYPE_MISMATCH,
+                    format!("`{name}` header {idx} is not a `[key, value]` pair"),
+                    span,
+                ));
+            };
+            let pair = pair.borrow();
+            if pair.len() != 2 {
+                return Err(err(
+                    codes::TYPE_MISMATCH,
+                    format!("`{name}` header {idx} must have exactly two elements"),
+                    span,
+                ));
+            }
+            let (Value::Str(k), Value::Str(v)) = (&pair[0], &pair[1]) else {
+                return Err(err(
+                    codes::TYPE_MISMATCH,
+                    format!("`{name}` header {idx} must be `[string, string]`"),
+                    span,
+                ));
+            };
+            out.push((k.to_string(), v.to_string()));
+        }
+        Ok(out)
+    }
+
+    /// Install the HTTP functions.
+    pub fn install(it: &mut Interp) {
+        // `http_request(method, url)` / `http_request(method, url, options)`
+        // where options is a map with optional `headers`, `body`, `timeout_ms`.
+        it.native("http_request", |it, args, span| {
+            let method = string_arg(&args, 0, "http_request", span)?;
+            let url = string_arg(&args, 1, "http_request", span)?;
+            let (headers, body, timeout_ms) = match args.get(2) {
+                None => (Vec::new(), None, MAX_HTTP_TIMEOUT_MS),
+                Some(Value::Map(opts)) => {
+                    let opts = opts.borrow();
+                    let headers = match opts.get(&MapKey::str("headers")) {
+                        None => Vec::new(),
+                        Some(_) => {
+                            // A map value is not a positional list argument, so
+                            // rebuild the list path from a synthetic vector.
+                            let synthetic = vec![opts
+                                .get(&MapKey::str("headers"))
+                                .cloned()
+                                .unwrap_or(Value::None)];
+                            parse_headers(&synthetic, 0, "http_request", span)?
+                        }
+                    };
+                    let body = match opts.get(&MapKey::str("body")) {
+                        Some(Value::Str(b)) => Some(b.to_string()),
+                        Some(Value::None) | None => None,
+                        Some(_) => {
+                            return Err(err(
+                                codes::TYPE_MISMATCH,
+                                "`http_request` option `body` must be a string",
+                                span,
+                            ));
+                        }
+                    };
+                    let timeout_ms = match opts.get(&MapKey::str("timeout_ms")) {
+                        Some(Value::Int(t)) if *t > 0 => (*t).unsigned_abs(),
+                        Some(Value::Int(_)) => {
+                            return Err(err(
+                                codes::TYPE_MISMATCH,
+                                "`http_request` option `timeout_ms` must be positive",
+                                span,
+                            ));
+                        }
+                        Some(_) => {
+                            return Err(err(
+                                codes::TYPE_MISMATCH,
+                                "`http_request` option `timeout_ms` must be an int",
+                                span,
+                            ));
+                        }
+                        None => MAX_HTTP_TIMEOUT_MS,
+                    };
+                    (headers, body, timeout_ms)
+                }
+                Some(_) => {
+                    return Err(err(
+                        codes::TYPE_MISMATCH,
+                        "`http_request` third argument must be an options map",
+                        span,
+                    ));
+                }
+            };
+            request(it, &method, &url, &headers, body, timeout_ms, span)
+        });
+        // Convenience GET: `http_get(url)`.
+        it.native("http_get", |it, args, span| {
+            let url = string_arg(&args, 0, "http_get", span)?;
+            request(it, "GET", &url, &[], None, MAX_HTTP_TIMEOUT_MS, span)
+        });
+    }
+}
+
 #[cfg(feature = "regex")]
 pub mod regex {
     //! Regular expressions backed by the `regex` crate.

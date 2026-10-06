@@ -529,6 +529,29 @@ pub fn builtins() -> &'static [Signature] {
                 returns: Returns::Dynamic,
                 mutates_arg: None,
             },
+            // ------------------------------------------------------ http
+            #[cfg(feature = "http")]
+            Signature {
+                name: "http_request",
+                params: vec![
+                    Param::one(TypeClass::Str),
+                    Param::one(TypeClass::Str),
+                    Param::ANY,
+                ],
+                min_args: 2,
+                max_args: 3,
+                returns: Returns::Dynamic,
+                mutates_arg: None,
+            },
+            #[cfg(feature = "http")]
+            Signature {
+                name: "http_get",
+                params: vec![Param::one(TypeClass::Str)],
+                min_args: 1,
+                max_args: 1,
+                returns: Returns::Dynamic,
+                mutates_arg: None,
+            },
             // ----------------------------------------------------- regex
             #[cfg(feature = "regex")]
             Signature {
@@ -606,6 +629,20 @@ pub fn builtins() -> &'static [Signature] {
 #[must_use]
 pub fn builtin(name: &str) -> Option<&'static Signature> {
     builtins().iter().find(|s| s.name == name)
+}
+
+/// Whether a builtin is a *native-only* capability rather than part of the
+/// shared language surface.
+///
+/// The HTTP capability (Keystone §21) is the one such family: it requires a
+/// host with network authority, the WebAssembly playground runtime does not
+/// provide it, and the front-end metadata describes the browser surface. A
+/// name here is present in a native build but must not be advertised by the
+/// browser tooling; the semantic rule is the same everywhere (the capability
+/// is denied with `E5002` when absent).
+#[must_use]
+pub fn is_native_only(name: &str) -> bool {
+    matches!(name, "http_request" | "http_get")
 }
 
 /// A method on a built-in receiver kind.
