@@ -285,6 +285,7 @@ fn browser_host_sequential_reads_are_deterministic() {
     assert_eq!(first.0, "1\n2\nnone\n");
 }
 
+#[cfg(feature = "time")]
 #[test]
 fn browser_host_has_no_filesystem_clock_or_sleep() {
     for src in [

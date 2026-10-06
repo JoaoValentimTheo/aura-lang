@@ -131,6 +131,7 @@ fn main() { print(m::hidden()) }
 /// Cycle + display + JSON: a self-referential value through a `mut` list must
 /// terminate and be depth-bounded, not hang or overflow the host stack, in
 /// both the display form and the JSON encoding (`LANGUAGE_SPEC.md` §31.6).
+#[cfg(feature = "json")]
 #[test]
 fn cyclic_value_is_bounded_in_display_and_json() {
     let src = r#"

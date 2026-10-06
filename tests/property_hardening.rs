@@ -38,6 +38,9 @@ fn run_registry_hermetic(src: &str) -> Result<(), u16> {
 // A single deterministically chosen probe seed for the substrate-parity
 // properties: native and wasm must agree on the *same* generated programs, so
 // the seed set is fixed and enumerated, not random.
+// Used by the generated-program parity properties, which require the `json`
+// feature (the generator can emit JSON builtins).
+#[cfg(feature = "json")]
 const PARITY_SEEDS: std::ops::Range<u64> = 0..64;
 
 // ---------------------------------------------------------------------------
@@ -245,6 +248,7 @@ proptest! {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(200))]
 
+    #[cfg(feature = "json")]
     #[test]
     fn generated_programs_check_and_run(seed in PARITY_SEEDS) {
         let src = program_gen::generate(seed);
@@ -325,6 +329,7 @@ proptest! {
     // job; this property adds randomized shape coverage on top.
     #![proptest_config(ProptestConfig::with_cases(16))]
 
+    #[cfg(feature = "json")]
     #[test]
     fn cyclic_graphs_render_and_compare_safely(
         pushes in 1usize..5,

@@ -1,3 +1,4 @@
+#![cfg(feature = "json")]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 //! Aura 0.3 Keystone typed JSON decoding (`json_decode_as`, `E4031`).
 //!

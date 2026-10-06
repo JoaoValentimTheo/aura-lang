@@ -294,6 +294,7 @@ fn generic_keys_render_deterministically() {
 
 // ------------------------------------------------------- L. JSON
 
+#[cfg(feature = "json")]
 #[test]
 fn json_does_not_stringify_non_string_keys() {
     // A JSON object's keys are strings; a non-string-keyed map is a

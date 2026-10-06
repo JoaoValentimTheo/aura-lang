@@ -196,7 +196,7 @@ fn b3_struct_field_type_validation() {
         Err(codes::TYPE_MISMATCH)
     );
     assert_eq!(
-        check("struct S { a: int }\nfn main() { let x = json_decode(\"{}\")\n S { a: x } }"),
+        check("struct S { a: int }\nfn main() { let x = f_unknown()\n S { a: x } }\nfn f_unknown() { return none }"),
         Ok(())
     );
 }
@@ -256,7 +256,7 @@ fn b6_enum_named_argument_contract() {
         Err(codes::TYPE_MISMATCH)
     );
     assert_eq!(
-        check("enum E { A(int) }\nfn main() { let z = json_decode(\"{}\")\n A(z) }"),
+        check("enum E { A(int) }\nfn main() { let z = f_unknown()\n A(z) }\nfn f_unknown() { return none }"),
         Ok(())
     );
 }
@@ -688,7 +688,7 @@ fn named_arguments_type_checking() {
         Err(codes::TYPE_MISMATCH)
     );
     assert_eq!(
-        check("fn f(x: int) -> int { return x }\nfn main() { f(x: json_decode(\"{}\")) }"),
+        check("fn f(x: int) -> int { return x }\nfn g() { return none }\nfn main() { f(x: g()) }"),
         Ok(())
     );
 }
@@ -1180,6 +1180,7 @@ fn h2_07_dead_method_aliases_are_unreachable() {
 /// fix the `json_*`, `regex_*`, and `time_*` natives never consulted the
 /// registry, so `f(1, 2, 3)` silently ignored the extra arguments, violating
 /// `LANGUAGE_SPEC.md` §25 ("also enforced at runtime").
+#[cfg(feature = "json")]
 #[test]
 fn h2_08_first_class_builtin_arity_is_enforced() {
     assert_eq!(
@@ -1225,6 +1226,7 @@ fn h2_08_first_class_builtin_arity_is_enforced() {
 
 /// BH1-01: a cyclic list is constructible (`a.push(a)`) and must display,
 /// compare, and encode without overflowing the native stack.
+#[cfg(feature = "json")]
 #[test]
 fn bh1_01_cyclic_list_operations_do_not_crash() {
     // Display terminates (truncated) instead of aborting.
@@ -1270,6 +1272,7 @@ fn bh1_02_cyclic_map_operations_do_not_crash() {
 /// BH1-03: a deeply nested value built at runtime must not crash display,
 /// equality, JSON encoding, or teardown — even well past the depth at which
 /// naive recursion overflowed the 64 MiB interpreter stack.
+#[cfg(feature = "json")]
 #[test]
 fn bh1_03_deep_runtime_value_operations_do_not_crash() {
     let build =
@@ -1301,6 +1304,7 @@ fn bh1_04_deep_recursive_enum_does_not_crash() {
 
 /// BH1-05: shallow values keep their exact prior semantics — the depth guard
 /// is a host-safety bound, not a value-model change.
+#[cfg(feature = "json")]
 #[test]
 fn bh1_05_shallow_value_semantics_are_unchanged() {
     assert_eq!(
@@ -1472,6 +1476,7 @@ fn audit_deep_type_annotation_never_host_fails() {
 
 /// AUDIT-4: a list that contains itself twice must display and JSON-encode in
 /// bounded time, eliding the remainder exactly like the depth bound.
+#[cfg(feature = "json")]
 #[test]
 fn audit4_multi_reference_cycle_terminates() {
     // The minimal reproducer: one list, pushed onto itself twice.

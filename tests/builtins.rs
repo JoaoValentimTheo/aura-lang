@@ -228,6 +228,7 @@ fn wrong_receiver_types_are_diagnostics() {
 }
 
 /// `regex_*` use `(pattern, text)` argument order.
+#[cfg(feature = "regex")]
 #[test]
 fn regex_argument_order_is_pattern_then_text() {
     assert_eq!(

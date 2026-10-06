@@ -62,6 +62,7 @@ fn literals_match_the_lexer() {
     assert_eq!(entries(&metadata(), "LITERALS"), expected);
 }
 
+#[cfg(all(feature = "json", feature = "regex", feature = "time"))]
 #[test]
 fn builtins_match_the_signature_registry() {
     // The front-end metadata describes the *browser* language surface: the

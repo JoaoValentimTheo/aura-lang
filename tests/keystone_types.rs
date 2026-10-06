@@ -423,6 +423,7 @@ fn narrowings_invalidate_when_the_proof_ends() {
     );
 }
 
+#[cfg(feature = "json")]
 #[test]
 fn unknown_boundary_stays_permissive() {
     // A value the checker genuinely cannot type is not rejected (§2.3).

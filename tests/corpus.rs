@@ -14,6 +14,8 @@
 //! and its boundary is pinned by `tests/boundaries.rs` and the differential
 //! harness rather than duplicated as a corpus fixture here.
 
+#![cfg(all(feature = "json", feature = "regex", feature = "time"))]
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 

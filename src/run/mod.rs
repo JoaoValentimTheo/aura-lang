@@ -2047,12 +2047,10 @@ impl Interp {
         }
     }
 
-    /// Enforce a builtin's registry arity at runtime. Used on every native
-    /// invocation path so that a builtin reached dynamically (a first-class
-    /// value or a pipeline) is validated exactly as a direct call is
-    /// (`LANGUAGE_SPEC.md` §25). Natives absent from the registry (internal
-    /// helpers) impose no constraint.
-    /// The declared field types of a struct, by field name.
+    /// The declared field types of a struct, by field name. Used by the typed
+    /// JSON decode (`json_decode_as`), which shares the struct declarations
+    /// the checker sees.
+    #[cfg(feature = "json")]
     pub(crate) fn struct_fields(
         &self,
         name: &str,
@@ -2060,11 +2058,18 @@ impl Interp {
         self.struct_field_types.get(name)
     }
 
-    /// The declared field names of a struct, in declaration order.
+    /// The declared field names of a struct, in declaration order. Used by
+    /// the typed JSON decode.
+    #[cfg(feature = "json")]
     pub(crate) fn struct_field_names(&self, name: &str) -> Option<&Vec<String>> {
         self.structs.get(name)
     }
 
+    /// Enforce a builtin's registry arity at runtime. Used on every native
+    /// invocation path so that a builtin reached dynamically (a first-class
+    /// value or a pipeline) is validated exactly as a direct call is
+    /// (`LANGUAGE_SPEC.md` §25). Natives absent from the registry (internal
+    /// helpers) impose no constraint.
     fn check_native_arity(&self, name: &str, count: usize, span: Span) -> Result<()> {
         if let Some(sig) = crate::stdlib::signatures::builtin(name) {
             if let Some(message) = sig.check_arity(count) {
