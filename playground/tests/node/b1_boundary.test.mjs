@@ -190,6 +190,53 @@ const patternDepth = (n) => "[".repeat(n) + "x" + "]".repeat(n);
   );
 }
 
+// F-string sub-parser budget composition (post-B1 residual).
+//
+// The f-string interpolation is parsed by a fresh `Parser` whose recursion
+// budget restarts; the pre-0.3 probe (2026-10-05) swept the additive frontier
+// on the fresh wasm and found no trap: at every combination of outer grouping
+// and inner interpolation grouping the result is either ok or the structured
+// E1015, and multi-level nesting is grammar-bounded (three quote kinds cannot
+// nest). This probe pins the safety contract mechanically so a future change
+// to parser frame sizes or the sub-parser entry cannot silently reintroduce a
+// trap: a grouped interpolation and a grouped wrapper around it must not trap.
+{
+  const g = (n) => "(".repeat(n) + "1" + ")".repeat(n);
+  for (const n of [300, 380]) {
+    const plain = run(`fn main() { print(${g(n)}) }`);
+    check(
+      `grouping @${n} resolves without trap`,
+      !plain.trap && (plain.result !== null),
+      plain.trap ? `guest trap: ${plain.trap}` : JSON.stringify(plain.result),
+    );
+  }
+  for (const outer of [300, 380]) {
+    for (const inner of [300, 380]) {
+      const probe = run(
+        `fn main() { print(${"(".repeat(outer)}f"{${g(inner)}}"${")".repeat(outer)}) }`,
+      );
+      check(
+        `f-string composition outer=${outer} inner=${inner} does not trap`,
+        !probe.trap && probe.result !== null,
+        probe.trap ? `guest trap: ${probe.trap}` : JSON.stringify(probe.result),
+      );
+    }
+  }
+  // Two-level nested f-strings (the grammar maximum) with grouping.
+  for (const l1 of [340, 375]) {
+    for (const l2 of [340, 375]) {
+      const inner = `f'${"(".repeat(l2)}1${")".repeat(l2)}'`;
+      const outer = `f"{${"(".repeat(l1)}${inner}${")".repeat(l1)}}"`;
+      const probe = run(`fn main() { print(${outer}) }`);
+      check(
+        `nested f-string l1=${l1} l2=${l2} does not trap`,
+        !probe.trap && probe.result !== null,
+        probe.trap ? `guest trap: ${probe.trap}` : JSON.stringify(probe.result),
+      );
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Stdout capture bound on the fresh machine-backed wasm
 // ---------------------------------------------------------------------------

@@ -407,6 +407,16 @@ of the B-1 closure range (tip `bb736fc`).
 Use multi-reviewer analysis mainly at milestone closure, not after each
 microphase.
 
+## POST-B1 residuals — disposition (2026-10-05)
+
+| # | Residual | Disposition |
+|---|---|---|
+| 1 | Real browser/Worker validation of a fresh machine-backed runtime | **Publication-gated** (unchanged). Frozen `playground/runtimes/**` is immutable; the fresh-wasm Node boundary is pinned at 63 checks; the Chromium/Worker matrix closes only when a new runtime is published (human-gated). |
+| 2 | `bind_pattern`/`match_pattern` bounded host recursion | **Verified safe and pinned.** Fresh-wasm calibration: deep pattern @700 binds without trap; @766 is structured `E1015`. AST-bounded (`MAX_AST_DEPTH` + substrate parser budget). Recorded in `docs/engineering/RUNTIME_ARCHITECTURE.md` §3. |
+| 3 | f-string sub-parser budget composition | **Investigated empirically; no trap found.** Additive frontier sweep (outer/inner grouping, two-level nested f-strings) on fresh wasm is ok-or-`E1015`; grammar bounds nesting depth. Now pinned by 10 fresh-wasm checks in `playground/tests/node/b1_boundary.test.mjs` so a future parser-frame change cannot reintroduce a trap silently. |
+| 4 | Poisoned-mutex silent ignore in `BrowserHost` | **FIXED** in `5edab88`: all output/result locks recover via `PoisonError::into_inner`; regression test deliberately poisons the buffer and asserts bytes survive. |
+| 5 | Recursive-engine removal | **Human-gated** (B-1R8). The recursive evaluator remains the differential reference (`execution_recursive*`, oracle `engines_agree`); no production entry reaches it (`tests/production_routing.rs`). |
+
 ## Exact next action
 
 1. B-1 and the post-B1 runtime/WASM edge closure are **remotely closed**;
@@ -420,7 +430,7 @@ microphase.
 3. Keep frozen runtimes, `v0.2.1`, and `.kilo/**` untouched.
 4. Publication-gated validation debt: the Chromium/Worker boundary against a
    machine-backed runtime awaits a published runtime (release-gated); the
-   fresh-wasm boundary is already pinned in Node (53 checks).
+   fresh-wasm boundary is already pinned in Node (63 checks).
 5. Pre-0.3 decisions awaiting the human: exception syntax/catching (E1–E6 in
    `docs/engineering/EXCEPTION_ARCHITECTURE.md` §8) and embedded-CPython
    packaging (P1–P5 in `docs/engineering/EMBEDDED_PYTHON_ARCHITECTURE.md` §9).
