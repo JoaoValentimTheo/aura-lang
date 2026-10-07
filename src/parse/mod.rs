@@ -32,6 +32,7 @@ pub fn parse_type(src: &str) -> Result<TypeExpr> {
         depth: 0,
         expr_nodes: 0,
         atom_depth: 0,
+        grouping_depth: 0,
         type_depth: 0,
         module_depth: 0,
     };
@@ -111,6 +112,7 @@ fn parse_inner_with_initial_depth(src: &str, initial_depth: usize) -> Result<Mod
         depth: initial_depth,
         expr_nodes: 0,
         atom_depth: 0,
+        grouping_depth: 0,
         type_depth: 0,
         // A physical wrapper (a loaded child source) is equivalent to an
         // in-source `module` block, so it consumes the same semantic nesting
@@ -133,6 +135,7 @@ fn parse_expr_inner(src: &str) -> Result<Expr> {
         depth: 0,
         expr_nodes: 0,
         atom_depth: 0,
+        grouping_depth: 0,
         type_depth: 0,
         module_depth: 0,
     };
@@ -150,14 +153,27 @@ fn parse_expr_inner(src: &str) -> Result<Expr> {
 /// Parse one expression whose text is a verbatim substring of a larger source
 /// beginning at byte offset `base` (used for f-string interpolations). Token
 /// spans stay absolute, so diagnostics name the real file location.
-fn parse_expr_at(src: &str, base: usize) -> Result<Expr> {
+///
+/// The fragment inherits the caller's recursion and grouping depth. Without
+/// that inheritance the fragment parser started at depth 0, so the outer
+/// expression and the interpolation each stayed under the budget while their
+/// *combined* physical recursion could exceed the WebAssembly stack and trap —
+/// a trap, not `E1015`, and one that leaves the shared Playground instance
+/// unusable for every later run.
+fn parse_expr_at_depth(
+    src: &str,
+    base: usize,
+    initial_depth: usize,
+    initial_grouping: usize,
+) -> Result<Expr> {
     let toks = lex_at(src, base)?;
     let mut p = Parser {
         toks,
         pos: 0,
-        depth: 0,
+        depth: initial_depth,
         expr_nodes: 0,
         atom_depth: 0,
+        grouping_depth: initial_grouping,
         type_depth: 0,
         module_depth: 0,
     };
@@ -177,6 +193,7 @@ fn parse_stmt_inner(src: &str) -> Result<Stmt> {
         depth: 0,
         expr_nodes: 0,
         atom_depth: 0,
+        grouping_depth: 0,
         type_depth: 0,
         module_depth: 0,
     };
@@ -225,6 +242,51 @@ pub const fn parse_recursion_budget() -> usize {
     #[cfg(target_arch = "wasm32")]
     {
         768
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        2048
+    }
+}
+
+/// The parser's **pure-grouping** backstop: a substrate-calibrated bound on the
+/// depth of grouping parentheses (`( … )`) that wrap an expression without
+/// introducing an AST node, and so are not governed by [`MAX_AST_DEPTH`].
+///
+/// This is a host-safety bound, not a language limit, and it exists because a
+/// grouping level is the most frame-expensive recursion the parser has: it
+/// descends `expr → expr_bp → unary → postfix → atom → atom_inner` and back
+/// through the sub-expression, so a grouping level costs several engine frames
+/// while advancing [`parse_recursion_budget`] by only one. A single shared
+/// budget therefore cannot bound both paths:
+///
+/// * Nested patterns and containers reach 765 levels inside the general budget
+///   without approaching the engine's ceiling, so they are bounded by
+///   [`parse_recursion_budget`] alone.
+/// * Pure grouping reaches the **physical ceiling first**: measured on the
+///   WebAssembly substrate (Node 20, the CI runtime), 262 grouping levels trap
+///   the engine ("Maximum call stack size exceeded") while the general budget
+///   of 768 has not yet fired. The measured ceiling did not move when the
+///   wasm shadow stack was raised from 4 MiB to 16 MiB, so the limiter is the
+///   engine's own stack tracking, not the linear-memory stack; the bound must
+///   stay below it rather than rely on it.
+///
+/// The wasm value (192) keeps a wide margin below the measured 262-level
+/// ceiling while leaving room for the widest documented valid program (the
+/// §31.1 combination of 250 nested containers plus 50 grouping levels, which
+/// this bound must not reject: it counts grouping only, so that program uses
+/// 50 of 192). Native runs the parser on a dedicated 64 MiB stack whose
+/// physical ceiling is far above the engine-bound value, so it keeps the
+/// general budget: a 1000-deep parenthesized chain is accepted there, exactly
+/// as `tests/boundaries.rs` pins.
+///
+/// Exceeding it is `E1015` on every substrate; it never redefines the semantic
+/// AST limit.
+#[must_use]
+pub const fn parse_grouping_budget() -> usize {
+    #[cfg(target_arch = "wasm32")]
+    {
+        192
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -438,6 +500,11 @@ struct Parser {
     /// descent can exhaust the host stack on a substrate whose physical
     /// ceiling is below the recursion budget (`LANGUAGE_SPEC.md` §31.2/§31.5).
     atom_depth: usize,
+    /// Current nesting depth of *pure grouping* parentheses (`( expr )`), which
+    /// add no AST node but are the parser's most frame-expensive recursion.
+    /// Bounded by [`parse_grouping_budget`], a substrate-calibrated host-safety
+    /// bound (see that function for the measured physical ceiling).
+    grouping_depth: usize,
     /// Current structural nesting depth of a type annotation (`Box<…>`, `[T]`,
     /// `{K: V}`). Type nesting counts toward the same [`MAX_AST_DEPTH`] budget
     /// as every other node kind (ADR-0004), so "valid under the semantic limit"
@@ -2483,7 +2550,10 @@ impl Parser {
             }
             Tok::FStr(raw) => {
                 self.bump();
-                let parts = self.fstring(&raw, span)?;
+                // The interpolation sub-parser inherits this parser's
+                // depth so the composite recursion is bounded by the one
+                // budget (see `parse_expr_at_depth`).
+                let parts = self.fstring(&raw, span, self.depth, self.grouping_depth)?;
                 Expr::FStr(parts.into(), span)
             }
             Tok::Ident(name) => {
@@ -2556,7 +2626,26 @@ impl Parser {
                     let body = self.expr()?;
                     return Ok(Expr::Lambda(params, Arc::new(body), span));
                 }
-                let first = self.expr()?;
+                // A pure grouping level adds no AST node, so `MAX_AST_DEPTH`
+                // does not bound it; charge it to the substrate-calibrated
+                // grouping backstop, which keeps the engine stack safe and
+                // reports the same `E1015` as every other nesting limit.
+                self.grouping_depth += 1;
+                if self.grouping_depth > parse_grouping_budget() {
+                    self.grouping_depth -= 1;
+                    return Err(Diag::new(
+                        codes::NESTING,
+                        "expression nests too deeply",
+                        span,
+                    ));
+                }
+                let first = match self.expr() {
+                    Ok(e) => e,
+                    Err(d) => {
+                        self.grouping_depth -= 1;
+                        return Err(d);
+                    }
+                };
                 if self.eat(&Tok::Comma) {
                     // A parenthesized comma-list is list sugar and one AST
                     // level; bound its nesting during parsing. Pure grouping
@@ -2583,9 +2672,11 @@ impl Parser {
                     }
                     self.expect(&Tok::RParen)?;
                     self.leave_container();
+                    self.grouping_depth -= 1;
                     Expr::Tuple(items.into(), span)
                 } else {
                     self.expect(&Tok::RParen)?;
+                    self.grouping_depth -= 1;
                     first
                 }
             }
@@ -2907,7 +2998,13 @@ impl Parser {
         false
     }
 
-    fn fstring(&mut self, raw: &str, span: Span) -> Result<Vec<FPart>> {
+    fn fstring(
+        &mut self,
+        raw: &str,
+        span: Span,
+        outer_depth: usize,
+        outer_grouping: usize,
+    ) -> Result<Vec<FPart>> {
         let mut parts = Vec::new();
         let mut lit = String::new();
         // The raw body is a verbatim substring of the source, beginning just
@@ -2970,7 +3067,12 @@ impl Parser {
                     // specification. A `:` inside brackets/parens belongs to a
                     // slice or call, so split only at depth zero.
                     let (expr_src, spec_src) = split_format_spec(inner);
-                    let e = parse_expr_at(expr_src, base + inner_start)?;
+                    let e = parse_expr_at_depth(
+                        expr_src,
+                        base + inner_start,
+                        outer_depth,
+                        outer_grouping,
+                    )?;
                     let spec = match spec_src {
                         Some((spec_text, spec_off)) => {
                             Some(parse_format_spec(spec_text, base + inner_start + spec_off)?)
