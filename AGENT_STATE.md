@@ -313,7 +313,7 @@ suite green (differential 228/0, syntax conformance 43/43, boundary 63/63,
 browser/worker/multi-file/cache green). Frozen `0.0.2`/`0.2.0`/`0.2.1`
 byte-identical; `v0.2.1` unmoved; nothing pushed.
 
-All Keystone workstreams landed locally (21 commits, `8e4a59a`..`8e4763c`):
+All Keystone workstreams landed locally (29 commits, `8e4a59a`..`45271b2`):
 exceptions E1-E6 (RFC 0001), `never`/`none`/narrowing, unused analysis
 `E2008`, typed JSON `E4031`, HTTP capability (feature `http`), AIS/0.1,
 structured diagnostics + CLI color, Aurea + overflow invariants, Playground
@@ -321,9 +321,37 @@ state machine + recovery, codename metadata, tooling reconciliation. Final
 validation: all-features tests 1217/0; no-default 1142/0; clippy/fmt/MSRV
 green; fuzz campaigns clean; Miri 124/0; playground + website suites green.
 An independent adversarial review found 7 defects, all fixed with
-regressions (`39b4935`). Not pushed: 39 ahead / 0 behind remote `e576238`.
-Remaining human gates: shadowing policy change, package-manager
-product/security model, runtime publication/codenames.
+regressions (`39b4935`).
+
+Keystone went through four further adversarial review passes after the
+initial closure. Each finding was independently reproduced by the writer
+against the built CLI before it was fixed, never dismissed on reviewer
+authority:
+
+- Second review (`45271b2`): narrowing invalidation across closure calls,
+  branch joins, and a loop-break in expression position; `E3008`→precise
+  `E3003`.
+- Third review: `never` reachability, shadowing, and
+  `none`-narrowing precision (C1–C5).
+- Fourth review: shadowed-callee divergence (F1/F1b),
+  false-divergence narrowing (F2b), transitive closure capture (F3),
+  literal-condition divergence (F4), `try`-`finally` divergence (F5),
+  statically-empty iterable (F6).
+- Fifth review: value-position divergence (`let x = boom()`,
+  `print(boom())`, operands, `let x = { throw }`, doubly-diverging `if`) and
+  method `-> never` divergence on a statically-known receiver — two
+  wrong-reject classes, both fixed in `expr_diverges` (now modeling eager
+  sub-expression divergence symmetric with the reachable-return scan) with
+  regressions in `tests/keystone_types.rs` (48/48). The full validation floor
+  was re-run on this state: all-features 1247/0 (56 suites), no-default
+  canonical 1172/0, bare `--no-default-features` 1037/0 (TD-20 stays closed),
+  clippy/fmt/MSRV 1.83/nightly-fuzz-check clean, playground suite green
+  (browser 78/0, differential 228/0, boundary 63/0), website suite green
+  (browser 380/0, a11y 70/0, links 2499 OK).
+
+Not pushed: 44 ahead / 0 behind remote `e576238`. Remaining human gates:
+shadowing policy change, package-manager product/security model, runtime
+publication/codenames.
 
 ## Exact Next Action
 

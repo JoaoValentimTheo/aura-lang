@@ -575,3 +575,341 @@ fn never_satisfies_class_positions() {
         Ok(())
     );
 }
+
+// ---------------------------------------------------------------------------
+// Third independent review: invalidation completeness, divergence, isolation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_closure_call_in_the_surviving_branch_invalidates() {
+    // Calling a closure in the branch that survives the `if` ends the proof,
+    // even though the call is not a direct write (review C1).
+    assert_eq!(
+        check("struct U { name: string }\nfn main() { let mut u: U | none = U { name: \"a\" }\n let clear = () -> { u = none }\n if u == none { return } else { clear() }\n print(u.name) }"),
+        Err(codes::POSSIBLE_NONE)
+    );
+    // The mirror form with the call in the diverging-else position.
+    assert_eq!(
+        check("struct U { name: string }\nfn main() { let mut u: U | none = U { name: \"a\" }\n let clear = () -> { u = none }\n if u != none { clear() } else { return }\n print(u.name) }"),
+        Err(codes::POSSIBLE_NONE)
+    );
+}
+
+#[test]
+fn a_user_struct_method_with_a_callable_argument_invalidates() {
+    // A method can invoke a callback it was handed (review C3).
+    assert_eq!(
+        check("struct U { name: string }\nstruct H { tag: int }\nimpl H { fn apply(self, cb) -> int { return cb(self.tag) } }\nfn main() { let mut u: U | none = U { name: \"a\" }\n let h = H { tag: 1 }\n let clear = (_x) -> { u = none }\n if u != none { h.apply(clear) }\n print(u.name) }"),
+        Err(codes::POSSIBLE_NONE)
+    );
+}
+
+#[test]
+fn guard_narrowing_does_not_leak_out_of_a_non_block_body() {
+    // A `catch`/`for`/`match` body may not run (or may run zero times), so a
+    // guard inside it proves nothing after it (review C4).
+    assert_eq!(
+        check("struct U { name: string }\nfn main() { let u: U | none = none\n try { print(\"x\") } catch _ { if u == none { return } }\n print(u.name) }"),
+        Err(codes::POSSIBLE_NONE)
+    );
+    assert_eq!(
+        check("struct U { name: string }\nfn main() { let u: U | none = none\n for _i in [] { if u == none { return } }\n print(u.name) }"),
+        Err(codes::POSSIBLE_NONE)
+    );
+    assert_eq!(
+        check("struct U { name: string }\nfn main() { let u: U | none = none\n match 2 { 1 -> { if u == none { return } }\n _ -> { print(\"other\") } }\n print(u.name) }"),
+        Err(codes::POSSIBLE_NONE)
+    );
+    // Inside the body the guard does narrow for the rest of that body.
+    assert_eq!(
+        check("struct U { name: string }\nfn consume(u: U) -> string { return u.name }\nfn main() { let u: U | none = none\n for _i in [1] { if u == none { return }\n print(consume(u)) } }"),
+        Ok(())
+    );
+}
+
+#[test]
+fn a_never_body_cannot_return_anywhere() {
+    // An early `return` violates `-> never` even when the tail diverges, and a
+    // `loop { return }` is not an infinite loop (review C5).
+    assert_eq!(
+        check("fn die(b: bool) -> never { if b { return }\n throw \"x\" }"),
+        Err(codes::NEVER_RETURNS)
+    );
+    assert_eq!(
+        check("fn die() -> never { loop { return } }"),
+        Err(codes::NEVER_RETURNS)
+    );
+    // A diverging tail with no return is still valid.
+    assert_eq!(check("fn die() -> never { throw \"x\" }"), Ok(()));
+}
+
+#[test]
+fn defining_a_closure_does_not_end_the_enclosing_proof() {
+    // The lambda runs only when called; defining it must not invalidate a
+    // narrowing in effect where it is defined (review M1).
+    assert_eq!(
+        check("struct U { name: string }\nfn f(mut u: U | none) -> string { if u != none { let _never_called = () -> { u = none }\n return u.name }\n return \"x\" }\nfn main() { print(f(U { name: \"a\" })) }"),
+        Ok(())
+    );
+    // But calling it does.
+    assert_eq!(
+        check("struct U { name: string }\nfn consume(u: U) -> string { return u.name }\nfn main() { let mut u: U | none = U { name: \"a\" }\n let clear = () -> { u = none }\n clear()\n print(consume(u)) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+#[test]
+fn a_capture_assignment_uses_the_declared_type_not_the_narrowed_type() {
+    // Inside the closure `u` has its declared `U | none`; a later call may
+    // invalidate an enclosing narrowing, so body checks must not assume it.
+    assert_eq!(
+        check("struct U { name: string }\nfn main() { let mut u: U | none = U { name: \"a\" }\n let clear = () -> { u = none }\n clear()\n print(u) }"),
+        Ok(())
+    );
+}
+
+#[test]
+fn a_never_body_rejects_only_reachable_returns() {
+    // The contract is about *reachable* normal completion. A `return` that no
+    // path can reach is not a completion and must not be rejected.
+    // Unreachable: after an unconditional `throw`.
+    assert_eq!(
+        check("fn die() -> never { throw \"x\"\n return }\nfn main() { print(\"ok\") }"),
+        Ok(())
+    );
+    // Unreachable: after a diverging statement (the tail is dead code).
+    assert_eq!(
+        check("fn die() -> never { throw \"x\"\n print(\"y\") }\nfn main() { print(\"ok\") }"),
+        Ok(())
+    );
+    // Unreachable: a statically-false branch.
+    assert_eq!(
+        check(
+            "fn die() -> never { if false { return }\n throw \"x\" }\nfn main() { print(\"ok\") }"
+        ),
+        Ok(())
+    );
+    // Unreachable: a `while false` body never runs.
+    assert_eq!(
+        check("fn die() -> never { while false { return }\n throw \"x\" }\nfn main() { print(\"ok\") }"),
+        Ok(())
+    );
+    // Still rejected: a reachable early return in a real branch.
+    assert_eq!(
+        check("fn die(b: bool) -> never { if b { return }\n throw \"x\" }\nfn main() { print(\"ok\") }"),
+        Err(codes::NEVER_RETURNS)
+    );
+    // Still rejected: a loop body's return is reachable.
+    assert_eq!(
+        check("fn die() -> never { loop { return } }"),
+        Err(codes::NEVER_RETURNS)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Fourth independent review: shadowed callees, transitive captures, precise
+// divergence for statically-decided branches, empty iterables, and `finally`
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_shadowed_callee_is_not_a_diverging_function() {
+    // A local binding or parameter named like a top-level `-> never` function
+    // shadows it; the call is to the local value, which may return, so the
+    // `-> never` body is rejected (review F1). Without the shadow check the
+    // diverging top-level function is consulted and the body wrongly passes.
+    assert_eq!(
+        check("fn boom() -> never { throw \"g\" }\nfn f() -> never {\n let boom = () -> 0\n boom() }\nfn main() { print(\"ok\") }"),
+        Err(codes::NEVER_RETURNS)
+    );
+    assert_eq!(
+        check("fn boom() -> never { throw \"g\" }\nfn f(boom) -> never { boom() }\nfn main() { boom() }"),
+        Err(codes::NEVER_RETURNS)
+    );
+    // The unshadowed call still diverges.
+    assert_eq!(
+        check("fn boom() -> never { throw \"g\" }\nfn f() -> never { boom() }\nfn main() { print(\"ok\") }"),
+        Ok(())
+    );
+}
+
+#[test]
+fn a_shadowed_callee_does_not_install_a_narrowing() {
+    // The same false divergence could install a narrowing on `u`; with the
+    // shadow fix the guard's call is not proof, so the access is `E3003`
+    // (review F2).
+    assert_eq!(
+        check("struct U { name: string }\nfn boom() -> never { throw \"g\" }\nfn main() {\n let mut u: U | none = none\n let boom = () -> { return }\n if u == none { boom() }\n print(u.name) }"),
+        Err(codes::POSSIBLE_NONE)
+    );
+}
+
+#[test]
+fn a_transitively_invoking_closure_invalidates() {
+    // A closure that only *calls* another closure still writes, transitively;
+    // calling it must end the narrowing of the name the inner one assigns
+    // (review F3).
+    assert_eq!(
+        check("struct U { name: string }\nfn main() {\n let mut u: U | none = U { name: \"a\" }\n let inner = () -> { u = none }\n let outer = () -> { inner() }\n if u != none {\n outer()\n print(u.name) } }"),
+        Err(codes::POSSIBLE_NONE)
+    );
+}
+
+#[test]
+fn a_literal_condition_decides_divergence() {
+    // `if true { throw }` has no else and still never completes; `if true { … }`
+    // is decided by its then-block, `if false { … }` by its else (review F4).
+    assert_eq!(
+        check("fn f() -> never { if true { throw \"x\" } }\nfn main() { print(\"ok\") }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("fn f() -> never { if false { print(\"y\") }\n throw \"x\" }\nfn main() { print(\"ok\") }"),
+        Ok(())
+    );
+}
+
+#[test]
+fn a_doubly_diverging_try_with_finally_still_diverges() {
+    // The `finally` runs but does not swallow the pending `throw`, so the `try`
+    // never completes (review F5).
+    assert_eq!(
+        check("fn f() -> never { try { throw \"x\" } catch e { throw e } finally { print(\"c\") } }\nfn main() { print(\"ok\") }"),
+        Ok(())
+    );
+    // A body that completes normally is still rejected.
+    assert_eq!(
+        check("fn f() -> never { try { print(\"x\") } catch e { throw e } }\nfn main() { print(\"ok\") }"),
+        Err(codes::NEVER_RETURNS)
+    );
+}
+
+#[test]
+fn a_statically_empty_iterable_has_no_reachable_return() {
+    // `for _ in []` never runs its body, so its `return` is unreachable
+    // (review F6); the tail `throw` diverges.
+    assert_eq!(
+        check("fn f() -> never {\n for _x in [] { return }\n throw \"x\" }\nfn main() { print(\"ok\") }"),
+        Ok(())
+    );
+    // A non-empty literal still makes the return reachable.
+    assert_eq!(
+        check("fn f() -> never {\n for _x in [1] { return }\n throw \"x\" }\nfn main() { print(\"ok\") }"),
+        Err(codes::NEVER_RETURNS)
+    );
+}
+
+#[test]
+fn a_diverging_value_position_does_not_complete() {
+    // Every eager sub-expression is evaluated, so a value position that cannot
+    // yield (`let x = boom()`, an argument, an operand) means the statement
+    // never completes. A value position cannot end in a bare `throw`
+    // statement, so its divergence must be recognized by the expression scan
+    // or a genuinely non-completing body is wrongly `E3006`.
+    assert_eq!(
+        check("fn boom() -> never { throw \"g\" }\nfn f() -> never { let _x = boom() }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("fn boom() -> never { throw \"g\" }\nfn f() -> never { print(boom()) }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("fn boom() -> never { throw \"g\" }\nfn r(i: int) -> int { return i }\nfn f() -> never { r(boom()) }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("fn f() -> never { let _x = { throw \"g\" } }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("fn f(b: bool) -> never { let _x = if b { throw \"x\" } else { throw \"y\" } }"),
+        Ok(())
+    );
+    // A value position that can yield still completes normally.
+    assert_eq!(
+        check("fn r() -> int { return 1 }\nfn f() -> never { let _x = r() }"),
+        Err(codes::NEVER_RETURNS)
+    );
+    // A short-circuited operand is not guaranteed to be evaluated, so a
+    // diverging right-hand side does not by itself prove divergence.
+    assert_eq!(
+        check(
+            "fn boom() -> never { throw \"g\" }\nfn f(b: bool) -> never { let _x = b and boom() }"
+        ),
+        Err(codes::NEVER_RETURNS)
+    );
+}
+
+#[test]
+fn a_never_method_proves_divergence() {
+    // A method declared `-> never` on a statically-known struct receiver never
+    // returns, exactly like a free function (spec §17.6: the receiver's type
+    // resolves the call statically), so it satisfies `-> never`.
+    assert_eq!(
+        check("struct S {}\nimpl S { fn boom(self) -> never { throw \"x\" } }\nfn f(s: S) -> never { s.boom() }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("struct S {}\nimpl S { fn boom(self) -> never { throw \"x\" } }\nfn f(s: S) -> never { let _x = s.boom() }"),
+        Ok(())
+    );
+    // A method that can return does not prove divergence.
+    assert_eq!(
+        check(
+            "struct S {}\nimpl S { fn r(self) -> int { return 1 } }\nfn f(s: S) -> never { s.r() }"
+        ),
+        Err(codes::NEVER_RETURNS)
+    );
+}
+
+#[test]
+fn a_comprehension_element_is_not_guaranteed_to_run() {
+    // A comprehension evaluates its iterable, but its element/key and filter
+    // run only for yielded, matching elements, so a diverging element does NOT
+    // make the comprehension non-completing (a filter can suppress it or the
+    // iterable can be empty). The narrowing/divergence scan must not treat
+    // such a position as proof.
+    assert_eq!(
+        check("fn boom() -> never { throw \"g\" }\nfn f(xs: [int]) -> never { let _y = [boom() for _x in xs] }"),
+        Err(codes::NEVER_RETURNS)
+    );
+    assert_eq!(
+        check("fn boom() -> never { throw \"g\" }\nfn f(xs: [int]) -> never { let _y = [1 for _x in xs if boom()] }"),
+        Err(codes::NEVER_RETURNS)
+    );
+    // A diverging iterable is evaluated eagerly and does prove divergence.
+    assert_eq!(
+        check(
+            "fn boom() -> never { throw \"g\" }\nfn f() -> never { let _y = [1 for _x in boom()] }"
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        check("fn boom() -> never { throw \"g\" }\nfn f() -> never { let _y = {1: 2 for _x in boom()} }"),
+        Ok(())
+    );
+}
+
+#[test]
+fn a_diverging_loop_header_does_not_complete() {
+    // A `while` condition or a `for` iterable that never yields means the loop
+    // is never entered, so it cannot complete normally (`LANGUAGE_SPEC.md`
+    // §5.2: a value that cannot be produced makes the statement non-completing).
+    assert_eq!(
+        check("fn boom() -> never { throw \"g\" }\nfn f() -> never { while boom() { } }"),
+        Ok(())
+    );
+    assert_eq!(
+        check("fn boom() -> never { throw \"g\" }\nfn f() -> never { for _x in boom() { } }"),
+        Ok(())
+    );
+    // A loop that can fall through its body still completes normally.
+    assert_eq!(
+        check("fn f() -> never { while true { break } }"),
+        Err(codes::NEVER_RETURNS)
+    );
+    assert_eq!(
+        check("fn f() -> never { for _x in [1] { break } }"),
+        Err(codes::NEVER_RETURNS)
+    );
+}

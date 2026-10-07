@@ -955,14 +955,24 @@ can change a captured value. The checker discards the narrowing of every name
 that any lambda in the program assigns whenever a call could reach a closure
 whose capture set is not known exactly: a call through a dynamic or unknown
 callee, a call through a container element, a call to a user function (which
-may invoke a callback it was handed), and a call to a higher-order builtin or
-method (which invokes its function argument). This is the sound choice, since
-Aura has no reference parameters and therefore no other way for a call to
-write a caller local. A call through a local binding initialized to a lambda
-is the one precisely-bounded case: only that lambda's own assignment targets
-are discarded. A divergence-proven narrowing is installed only when the
-surviving branch did not write the name; checking a lambda body neither
-destroys the enclosing region's proofs nor inherits them.
+may invoke a callback it was handed), a call to a struct method whose
+parameters are not provably non-callable, and a call to a higher-order
+builtin or method (which invokes its function argument). This is the sound
+choice, since Aura has no reference parameters and therefore no other way for
+a call to write a caller local. A call through a local binding initialized to
+a lambda is the one precisely-bounded case: that lambda's assignment targets,
+*and the targets of any closure it transitively invokes*, are discarded. A
+divergence-proven narrowing is installed only when the branch that survives
+the `if` neither wrote the name directly nor invoked a closure that can write
+it (directly or transitively).
+
+**Normative rule (lambda isolation).** Defining a lambda is not a write: a
+closure runs only when it is called, so defining one does not end a narrowing
+in effect where it is defined, and a captured binding inside the body has its
+declared type rather than any narrowing of the definition site. A guard
+inside a loop, `catch`, or `match` arm body narrows for the remainder of that
+body, but its fact does not escape the body: the body may run zero times, so
+a divergence inside it proves nothing about code after the loop/`try`/`match`.
 
 **Normative rule (`none` access).** A member access, method call, or indexing
 on a value whose type contains `none` is rejected statically with `E3003`
@@ -981,11 +991,36 @@ structured expectation (`-> [T]`, `-> Opt<T>`) is not bypassed by `none`.
 
 **Normative rule (`never`).** `never` is the bottom type: no value can result
 from a `never` expression. A `never` value is assignable wherever any type is
-expected, and a union absorbs it (`int | never` is `int`). A `return` or
-`throw` diverges, so a branch that ends in one has type `never`. A call to a
-function declared `-> never` diverges. A function declared `-> never` whose
-body can complete normally is `E3006` (a `return <value>` in such a body is
-`E3005`, the more specific mismatch).
+expected (including a class-typed position such as a range bound, where no
+value can exist to violate the class), and a union absorbs it (`int | never`
+is `int`). A `throw` diverges, so a branch that ends in one has type `never`.
+A call to a function declared `-> never` diverges, *unless* the callee name is
+bound by a local or parameter in the calling body, in which case the call is to
+that binding and its divergence is not assumed. A method declared `-> never`
+called on a receiver whose nominal type is statically known diverges the same
+way (every visible overload of the name must return `never`). A function
+declared `-> never` whose body can complete normally is `E3006`. A body
+containing any reachable `return` violates the declaration even when its tail
+diverges (`fn f(b: bool) -> never { if b { return }\n throw "x" }` is
+`E3006`), because a `return` is exactly the normal completion `-> never`
+forbids; a `return <value>` is `E3005`, the more specific mismatch. A `loop`
+whose body contains a reachable `return` is not an infinite loop, so it does
+not satisfy `-> never`. A `return` that no path can reach — after an
+unconditional `throw`, after another diverging statement, inside a
+statically-false branch (`if false { … }`), or in a `while false { … }` body —
+is not a completion and is accepted. A statement that cannot produce a value —
+a `let`/assignment initializer, a call argument, or an eager operand whose
+evaluation diverges (a `-> never` call, a diverging block/`if`/`match`
+expression) — does not complete normally either; because such a position is an
+expression rather than a statement, a bare `throw` cannot appear there, so its
+divergence is recognized within the expression. A `while` whose condition
+diverges, or a `for` whose iterable diverges, never enters its body, so it
+cannot complete normally. Reachability is decided per literal condition:
+`if true { … }` is decided solely by its then-block, `if false { … }` solely
+by its `else`, and a `for` over a statically empty literal (`[]`, `{:}`,
+`range(n, n)`) has an unreachable body. A `try` whose `finally` diverges, or
+whose body and catch both diverge, diverges; a normally-completing `finally`
+does not swallow a pending `throw`/`return` from the body or catch.
 
 **Normative rule.** A union is normalized on construction: nested unions are
 flattened, duplicate members removed, and members put in a canonical order

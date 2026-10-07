@@ -302,7 +302,7 @@ function check(name, cond, detail) {
     await page.waitForFunction(
       () => {
         const s = document.getElementById("status").textContent;
-        return s !== "running…" && !s.startsWith("running (");
+        return s !== "Running…" && !s.startsWith("Running");
       },
       { timeout },
     );
@@ -316,12 +316,12 @@ function check(name, cond, detail) {
   }
 
   let r = await run('fn main() { print(1 + 2) }');
-  check("playground basic run", r.stdout === "3\n" && r.status === "ok", JSON.stringify(r));
+  check("playground basic run", r.stdout === "3\n" && r.status === "Completed", JSON.stringify(r));
 
   r = await run('fn main() { throw "boom" }');
   check(
     "playground structured diagnostic E4026",
-    r.status === "diagnostic" && r.diagnostics.some((d) => d.includes("E4026")),
+    r.status.startsWith("Failed") && r.diagnostics.some((d) => d.includes("E4026")),
     JSON.stringify(r),
   );
 
@@ -333,7 +333,7 @@ function check(name, cond, detail) {
   await page.waitForFunction(
     () => {
       const s = document.getElementById("status").textContent;
-      return s !== "running…" && !s.startsWith("running (");
+      return s !== "Running…" && !s.startsWith("Running");
     },
     { timeout: 20000 },
   );
@@ -344,13 +344,13 @@ function check(name, cond, detail) {
   await page.fill("#source", "fn main() { while true {} }");
   await page.click("#run");
   await page.waitForFunction(
-    () => document.getElementById("status").textContent.startsWith("running"),
+    () => document.getElementById("status").textContent.startsWith("Running"),
     { timeout: 5000 },
   );
   check("stop enabled while runaway", await page.isEnabled("#stop"));
   await page.click("#stop");
   await page.waitForFunction(
-    () => document.getElementById("status").textContent === "stopped",
+    () => document.getElementById("status").textContent === "Stopped",
     { timeout: 5000 },
   );
   r = await run("fn main() { print(42) }");
@@ -443,7 +443,7 @@ function check(name, cond, detail) {
   await page.keyboard.press("ControlOrMeta+Enter");
   await page.waitForFunction(() => {
     const s = document.getElementById("status").textContent;
-    return s !== "running…" && !s.startsWith("running (");
+    return s !== "Running…" && !s.startsWith("Running");
   });
   let kbd = await page.evaluate(() => document.getElementById("stdout").textContent);
   check("Ctrl/Cmd+Enter runs", kbd === "kb\n", JSON.stringify(kbd));
@@ -454,7 +454,7 @@ function check(name, cond, detail) {
   await page.click("#run");
   await page.waitForFunction(() => {
     const s = document.getElementById("status").textContent;
-    return s !== "running…" && !s.startsWith("running (");
+    return s !== "Running…" && !s.startsWith("Running");
   });
   const problems = await page.evaluate(() => {
     const tab = document.getElementById("tab-problems");
@@ -511,7 +511,7 @@ function check(name, cond, detail) {
     await p.waitForFunction(
       () => {
         const s = document.getElementById("status").textContent;
-        return s !== "running…" && !s.startsWith("running (");
+        return s !== "Running…" && !s.startsWith("Running");
       },
       { timeout: 30000 },
     );
@@ -700,7 +700,7 @@ function check(name, cond, detail) {
     await page.waitForFunction(
       () => {
         const s = document.getElementById("status").textContent;
-        return s !== "running…" && !s.startsWith("running (");
+        return s !== "Running…" && !s.startsWith("Running");
       },
       { timeout },
     );
@@ -747,12 +747,12 @@ function check(name, cond, detail) {
   await page.fill("#source", "fn main() { while true {} }");
   await page.click("#run");
   await page.waitForFunction(
-    () => document.getElementById("status").textContent.startsWith("running"),
+    () => document.getElementById("status").textContent.startsWith("Running"),
     { timeout: 5000 },
   );
   await page.click("#stop");
   await page.waitForFunction(
-    () => document.getElementById("status").textContent === "stopped",
+    () => document.getElementById("status").textContent === "Stopped",
     { timeout: 5000 },
   );
   check("run re-enabled after stop", await page.isEnabled("#run"));
@@ -778,7 +778,7 @@ function check(name, cond, detail) {
   await page.waitForFunction(
     () => {
       const s = document.getElementById("status").textContent;
-      return s !== "running…" && !s.startsWith("running (");
+      return s !== "Running…" && !s.startsWith("Running");
     },
     { timeout: 30000 },
   );

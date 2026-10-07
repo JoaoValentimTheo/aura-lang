@@ -34,11 +34,21 @@ explicit-continuation (iterative) evaluator over the existing AST
   same-revision Native/WASM differential, HTTP capability, typed JSON
   decoding, AIS/0.1, structured diagnostics + CLI color, Aurea + overflow
   invariants, Playground state machine + recovery, codename metadata, tooling
-  reconciliation. Final SHA `8e4763c`, 39 ahead / 0 behind, not pushed.
-  Final validation: all-features 1217/0, no-default 1142/0, clippy/fmt/MSRV/
-  fuzz/Miri(124/0) green, playground + website suites green; independent
-  review's 7 findings fixed with regressions. Remaining human gates:
-  shadowing policy, package-manager model, runtime publication/codenames.
+  reconciliation. Last committed SHA `45271b2`, 44 ahead / 0 behind, not
+  pushed. Final validation: all-features 1217/0, no-default 1142/0,
+  clippy/fmt/MSRV/fuzz/Miri(124/0) green, playground + website suites green;
+  independent review's 7 findings fixed with regressions.
+  Five adversarial review passes total (J1–J12 in the ledger); each finding
+  was independently reproduced against the built CLI before being fixed:
+  second (committed `45271b2`), then the third/fourth/fifth passes hardening
+  `never` reachability, shadowed-callee divergence, transitive closure
+  capture, literal conditions, `try`-`finally`, statically-empty iterables,
+  eager value-position divergence, and `-> never` method divergence.
+  `tests/keystone_types.rs` is 48/48. The full validation floor is green on
+  this state (all-features 1247/0, canonical 1172/0, bare 1037/0,
+  clippy/fmt/MSRV/fuzz-check clean, playground + website suites green).
+  Remaining human gates: shadowing policy, package-manager model, runtime
+  publication/codenames.
 - PRE-0.3 FOUNDATION SUPER-TRANSACTION: **IN PROGRESS LOCALLY, NOT PUSHED**
   (push requires a new explicit human authorization). Iteration ledger and
   artifacts: `docs/engineering/RUNTIME_ARCHITECTURE.md`,
@@ -508,6 +518,19 @@ sync test (documented as non-authoritative; runtime refusal is the decision).
 | 5 | Recursive-engine removal | **Human-gated** (B-1R8). The recursive evaluator remains the differential reference (`execution_recursive*`, oracle `engines_agree`); no production entry reaches it (`tests/production_routing.rs`). |
 
 ## Exact next action
+
+0. **Aura 0.3 Keystone super-transaction closure (in progress).** The
+   `never`/`none`/narrowing checker was hardened across five adversarial
+   review passes (J1–J12 in `KEYSTONE_JEV_LEDGER.md`); the third/fourth/
+   fifth-review fixes are committed in the checkpoint immediately following
+   `45271b2`. The baseline validation floor is green (all-features 1247/0,
+   canonical 1172/0, bare 1037/0, clippy/fmt/MSRV/nightly fuzz check,
+   playground and website Node suites). The remaining closure program
+   (type-family formalization, Value-algebra anti-collapse, FSM/security
+   assurance, coverage, cleanup, PokéAPI dogfood, AIX/AIS, MCP, docs,
+   website, full matrix) runs on top of this checkpoint; report completion
+   and request explicit human authorization before any push. Preserve frozen
+   runtimes, `v0.2.1`, and `.kilo/**`.
 
 1. B-1 and the post-B1 runtime/WASM edge closure are **remotely closed**. The
    Pre-0.3 Foundation super-transaction and the 2026-10-06 adversarial re-audit

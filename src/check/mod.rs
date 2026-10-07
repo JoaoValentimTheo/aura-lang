@@ -173,6 +173,21 @@ fn type_expr_depth_exceeds(t: &TypeExpr, limit: usize) -> bool {
     false
 }
 
+/// Whether an iterable expression is statically empty, so a `for` body can
+/// never run. Only the literal empty list/map/range are recognized; any other
+/// expression may iterate (conservatively non-empty).
+fn statically_empty_iterable(e: &Expr) -> bool {
+    match e {
+        Expr::List(items, _) | Expr::Tuple(items, _) => items.is_empty(),
+        Expr::Map(entries, _) => entries.is_empty(),
+        Expr::Range(a, b, _) => match (a.as_ref(), b.as_ref()) {
+            (Expr::Lit(Lit::Int(x), _), Expr::Lit(Lit::Int(y), _)) => x == y,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
 /// Maximum total type nodes produced while expanding one resolved type
 /// annotation (including parameterized alias expansion). Bounds the flat size
 /// of an expanded `TypeExpr` so a chain of duplicating aliases reports `E1015`
@@ -181,7 +196,20 @@ fn type_expr_depth_exceeds(t: &TypeExpr, limit: usize) -> bool {
 /// union plus a few thousand separate aliases.
 const MAX_TYPE_NODES: usize = 100_000;
 
-/// A lexical scope of bindings.
+/// The effects of the two branches of a statement-position `if`, used to
+/// decide whether a divergence-proven narrowing may be installed.
+#[derive(Debug, Default, Clone)]
+struct IfBranchEffects {
+    /// Direct (non-lambda) writes in the then branch.
+    then_writes: Vec<String>,
+    /// Direct (non-lambda) writes in the else branch.
+    else_writes: Vec<String>,
+    /// Names any closure the then branch invoked can write.
+    then_called: Vec<String>,
+    /// Names any closure the else branch invoked can write.
+    else_called: Vec<String>,
+}
+
 /// Why a local binding is tracked for unused analysis (Keystone). The kind
 /// only shapes the diagnostic wording.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -194,6 +222,7 @@ enum UnusedKind {
     Pattern,
 }
 
+/// A lexical scope of bindings.
 #[derive(Debug, Default)]
 struct Scope {
     /// name -> mutable
@@ -497,9 +526,15 @@ pub struct Checker {
     /// prove a fact about it. Indices are recorded locally, so entries from an
     /// enclosing function are never consulted.
     write_log: Vec<String>,
-    /// The direct writes of the most recently checked `if`'s then and else
-    /// branches, read by the statement-position narrowing pass.
-    last_if_writes: Option<(Vec<String>, Vec<String>)>,
+    /// What the most recently checked `if`'s branches did: each branch's
+    /// direct writes and the names any closure it invoked can write. Read by
+    /// the statement-position narrowing pass.
+    last_if_writes: Option<IfBranchEffects>,
+    /// Names that closures invoked so far could write, accumulated while a
+    /// region is checked. Cleared around the branch checks of an `if`, so a
+    /// branch's closure calls are observable even when the callee is a known
+    /// binding (whose exact write set is added).
+    closure_call_names: Vec<String>,
     /// The write set of the most recently inferred lambda expression, read by
     /// the `let` binder that stores it.
     lambda_last_writes: Option<Vec<String>>,
@@ -510,6 +545,13 @@ pub struct Checker {
     /// conservatively discarded. Names never assigned in any lambda cannot be
     /// mutated through a call, because Aura has no reference parameters.
     closure_all_writes: Vec<String>,
+    /// The names bound by `let`/`let`-pattern/parameter/local inside the body
+    /// currently being checked, so a call whose callee name is one of them
+    /// resolves to that local value, not to the same-named top-level function.
+    /// Used by the `-> never` divergence scan, which runs after the body scope
+    /// has been popped and therefore cannot consult the live scopes. Names are
+    /// snapshot at the start of the function and restored afterwards.
+    body_bound_names: Vec<String>,
     /// Whether unused-binding analysis (`E2008`) is active. A compiled
     /// program is checked with it on (Keystone strictness); a REPL submission
     /// is checked with it off, because a session binding persists for later
@@ -615,8 +657,10 @@ impl Checker {
             closure_writes: HashMap::new(),
             write_log: Vec::new(),
             last_if_writes: None,
+            closure_call_names: Vec::new(),
             lambda_last_writes: None,
             closure_all_writes: Vec::new(),
+            body_bound_names: Vec::new(),
             unused_analysis: true,
             value_types: vec![HashMap::new()],
             underscore_params: Vec::new(),
@@ -1937,14 +1981,89 @@ impl Checker {
         Ok(())
     }
 
+    /// Walk a statement list that is *not* its own block scope: a loop body,
+    /// a `catch` body, or a `match` arm body. A divergence-proven narrowing is
+    /// forwarded between the statements of the body (so a guard at the top of
+    /// a body proves for the rest of that body), but it is contained at the
+    /// end: the body may run zero times, so its facts must not escape to code
+    /// that follows the loop/try/match (review C4).
+    fn stmt_seq(&mut self, body: &[Stmt]) -> Result<()> {
+        for s in body {
+            self.stmt(s)?;
+            if let Some((name, ty)) = self.pending_narrowing.take() {
+                self.narrow(name, ty);
+            }
+        }
+        self.pending_narrowing = None;
+        Ok(())
+    }
+
+    /// Temporarily remove every narrowing override, returning it for restore.
+    ///
+    /// Used when checking a lambda body: a closure may run at any later time,
+    /// when a narrowing in effect at its *definition* site no longer holds, so
+    /// inside the body a captured binding has its declared type. The
+    /// overrides are restored so the enclosing region's proofs continue
+    /// afterwards.
+    fn hide_narrowings(&mut self) -> Vec<(usize, String, Ty)> {
+        let mut saved = Vec::new();
+        for i in 0..self.scopes.len() {
+            let names: Vec<String> = self.scopes[i].narrowed.iter().cloned().collect();
+            for name in names {
+                if let Some(map) = self.value_types.get_mut(i) {
+                    if let Some(ty) = map.remove(&name) {
+                        saved.push((i, name.clone(), ty));
+                    }
+                }
+                self.scopes[i].narrowed.remove(&name);
+            }
+        }
+        saved
+    }
+
+    /// Restore overrides removed by [`Self::hide_narrowings`].
+    fn restore_narrowings(&mut self, saved: Vec<(usize, String, Ty)>) {
+        for (i, name, ty) in saved {
+            if let Some(map) = self.value_types.get_mut(i) {
+                map.insert(name.clone(), ty);
+            }
+            if let Some(scope) = self.scopes.get_mut(i) {
+                scope.narrowed.insert(name);
+            }
+        }
+    }
+
+    /// Record that a closure able to write `writes` is being invoked. Every
+    /// written name's narrowing ends here (the call may put `none` back), and
+    /// the name is remembered as "called" so the surviving-`if`-branch
+    /// analysis can see the invalidation. Inside a lambda body the writes are
+    /// also unioned into the enclosing lambda's own capture set, so a closure
+    /// that merely invokes another closure is tracked transitively (a call
+    /// chain `outer -> inner -> u = none` invalidates `u` at `outer()`).
+    fn note_closure_call(&mut self, writes: &[String]) {
+        for w in writes {
+            if !self.saved_lambda_writes.is_empty() {
+                if !self.lambda_writes.contains(w) {
+                    self.lambda_writes.push(w.clone());
+                }
+                if !self.closure_all_writes.contains(w) {
+                    self.closure_all_writes.push(w.clone());
+                }
+            }
+            if !self.closure_call_names.contains(w) {
+                self.closure_call_names.push(w.clone());
+            }
+            self.clear_narrowing(w);
+        }
+    }
+
     /// Discard the narrowing of every name any lambda in the program assigns.
     /// Used when a call's target capture set cannot be determined: the sound
     /// choice, since only such names can be mutated behind a call (Aura has
     /// no reference parameters).
     fn clear_all_closure_narrowing(&mut self) {
-        for w in self.closure_all_writes.clone() {
-            self.clear_narrowing(&w);
-        }
+        let all = self.closure_all_writes.clone();
+        self.note_closure_call(&all);
     }
 
     /// Install a flow-narrowing override for `name` in the innermost scope:
@@ -2047,21 +2166,21 @@ impl Checker {
         }
         let then_diverges = self.block_diverges(then, true);
         let else_diverges = els.is_some_and(|e| self.expr_diverges(e, true));
-        // A surviving branch that wrote the guarded name proves nothing: the
-        // write may have put a `none` back (review C3).
-        let (then_writes, else_writes) = self
-            .last_if_writes
-            .take()
-            .unwrap_or_else(|| (Vec::new(), Vec::new()));
+        // A surviving branch that wrote the guarded name — directly or by
+        // invoking a closure that can write it — proves nothing: the value may
+        // have been set back to `none` (review C1/C3).
+        let effects = self.last_if_writes.take().unwrap_or_default();
         // Which branch survives: when `then_narrows` is set the only surviving
         // path is the diverging-else case, so control continues from the
         // *then* branch; otherwise the then-branch diverged and control
         // continues from the else branch.
-        let surviving_branch_wrote = if then_narrows {
-            then_writes.contains(&name)
+        let (surviving_writes, surviving_called) = if then_narrows {
+            (&effects.then_writes, &effects.then_called)
         } else {
-            else_writes.contains(&name)
+            (&effects.else_writes, &effects.else_called)
         };
+        let surviving_branch_invalidates =
+            surviving_writes.contains(&name) || surviving_called.contains(&name);
         // When the guarded branch is the diverging one, the other branch's
         // knowledge survives into the following statements.
         let survives = if then_narrows {
@@ -2075,7 +2194,7 @@ impl Checker {
         };
         // A surviving branch that itself wrote the name proves nothing: the
         // write may have put a `none` back (review C3).
-        if survives && !surviving_branch_wrote {
+        if survives && !surviving_branch_invalidates {
             if let Some(ty) = self.narrowed_type_of(&name) {
                 self.pending_narrowing = Some((name, ty));
             }
@@ -2097,6 +2216,19 @@ impl Checker {
             Stmt::Return(..) => return_diverges,
             Stmt::Throw(..) => true,
             Stmt::Expr(e, _) => self.expr_diverges(e, return_diverges),
+            // A `let` whose initializer never yields (a `-> never` call, a
+            // `throw`, a diverging `if`/`match`/block) never completes: the
+            // binding is never established and control does not continue. This
+            // matters because the initializer is a value position, so it cannot
+            // end in a bare `throw` statement and must be recognized here.
+            Stmt::Let { value, .. } | Stmt::LetPattern { value, .. } => {
+                self.expr_diverges(value, return_diverges)
+            }
+            // An assignment whose target or value never yields never completes.
+            Stmt::Assign { target, value, .. } => {
+                self.expr_diverges(target, return_diverges)
+                    || self.expr_diverges(value, return_diverges)
+            }
             // An infinite loop that owns no `break` cannot complete:
             // `loop { … }` without a break diverges; `while true { … }` without
             // a break diverges. Ownership is by the innermost enclosing loop,
@@ -2104,27 +2236,38 @@ impl Checker {
             // position is seen and a nested loop's break belongs to the nested
             // loop, never to this one.
             Stmt::Loop(_, span) => !self.loop_owns_break(*span),
+            // A `while` diverges when its condition never yields (the body
+            // never runs), or when it is `while true` with no owning `break`.
             Stmt::While(c, _, span) => {
-                matches!(c, Expr::Lit(Lit::Bool(true), _)) && !self.loop_owns_break(*span)
+                self.expr_diverges(c, return_diverges)
+                    || (matches!(c, Expr::Lit(Lit::Bool(true), _)) && !self.loop_owns_break(*span))
             }
-            // A `try` leaves the flow only when its catch body does and its
-            // `finally` (when present) does as well.
-            // A `try` diverges only when *both* paths diverge: the body can
-            // complete normally (in which case control continues after the
-            // `try`), and the catch body handles a throw. Omitting the body
-            // here let `try { print(1) } catch e { throw e }` satisfy
-            // `-> never` while returning normally at runtime.
+            // A `for` diverges when its iterable never yields: the loop is
+            // never entered, so it cannot complete normally. (A `break` inside
+            // a `for` body makes the body-completion case non-diverging, so it
+            // is deliberately not considered here.)
+            Stmt::For(_, iter, _, _) => self.expr_diverges(iter, return_diverges),
+            // A `try` leaves the flow when its `finally` does, or when both the
+            // body and the catch body do. A normally-completing `finally` does
+            // not swallow a pending `return`/`throw`, so it must not force the
+            // `try` to be treated as falling through when both other paths
+            // already diverge (`try { throw } catch e { throw e } finally {
+            // print }` never returns). Omitting the body entirely would let
+            // `try { print(1) } catch e { throw e }` satisfy `-> never` while
+            // returning normally at runtime, so body and catch are both
+            // required.
             Stmt::Try {
                 body,
                 catch_body,
                 finally,
                 ..
             } => {
-                self.block_diverges(body, return_diverges)
-                    && self.block_diverges(catch_body, return_diverges)
-                    && finally
-                        .as_ref()
-                        .is_none_or(|f| self.block_diverges(f, return_diverges))
+                let finally_diverges = finally
+                    .as_ref()
+                    .is_some_and(|f| self.block_diverges(f, return_diverges));
+                finally_diverges
+                    || (self.block_diverges(body, return_diverges)
+                        && self.block_diverges(catch_body, return_diverges))
             }
             _ => false,
         }
@@ -2137,49 +2280,383 @@ impl Checker {
     }
 
     /// Whether an expression is guaranteed to leave the current flow.
+    ///
+    /// An expression diverges when it cannot produce a value: every eager
+    /// sub-expression is evaluated, so an eagerly-evaluated operand that
+    /// diverges makes the whole expression diverge. This is the value-position
+    /// counterpart of [`Checker::expr_has_reachable_return`] and must stay
+    /// symmetric with it; a value position (`let x = …`, an argument, an
+    /// operand) cannot end in a bare `throw` statement, so its divergence has
+    /// to be recognized here or a genuinely non-completing body is wrongly
+    /// rejected under `-> never`.
     fn expr_diverges(&self, e: &Expr, return_diverges: bool) -> bool {
         match e {
-            // An `if` diverges when both branches exist and diverge.
-            Expr::If(_, then, els, _) => {
-                els.as_ref()
-                    .is_some_and(|e| self.expr_diverges(e, return_diverges))
-                    && self.block_diverges(then, return_diverges)
+            Expr::Lit(..) | Expr::Name(..) => false,
+            // Every interpolated part is evaluated; a literal part never
+            // diverges.
+            Expr::FStr(parts, _) => parts.iter().any(|p| match p {
+                FPart::Lit(_) => false,
+                FPart::Expr(e, _) => self.expr_diverges(e, return_diverges),
+            }),
+            Expr::Unary(_, x, _) => self.expr_diverges(x, return_diverges),
+            // `and`/`or` short-circuit: only a diverging left operand is
+            // guaranteed to be evaluated, so only it proves divergence. Every
+            // other binary operator evaluates both operands eagerly.
+            Expr::Binary(op, l, r, _) => {
+                if matches!(op, BinOp::And | BinOp::Or) {
+                    self.expr_diverges(l, return_diverges)
+                } else {
+                    self.expr_diverges(l, return_diverges) || self.expr_diverges(r, return_diverges)
+                }
             }
-            Expr::Block(b, _) => self.block_diverges(b, return_diverges),
-            // A `match` diverges when it has arms and every arm does.
-            Expr::Match(_, arms, _) => {
-                !arms.is_empty()
-                    && arms
-                        .iter()
-                        .all(|a| self.block_diverges(&a.body, return_diverges))
-            }
+            // A call diverges when its callee expression, any argument, or the
+            // called function itself never yields a value.
+            //
             // A call to a function declared `-> never` never returns: it must
             // diverge (throw, loop forever, or propagate another `never`).
             // Overloads are conservatively required to *all* return `never`,
             // so an unresolved overload never proves divergence.
-            Expr::Call(f, _, _, _) => match f.as_ref() {
-                Expr::Name(n, _) => {
-                    let mut any = false;
-                    if let Some(set) = self.functions.get(n) {
-                        for sig in set.iter().filter(|s| self.fn_visible(s)) {
-                            if !matches!(sig.ret, Some(Ty::Never)) {
-                                return false;
-                            }
-                            any = true;
-                        }
-                    }
-                    any
+            Expr::Call(f, args, _, _) => {
+                if self.expr_diverges(f, return_diverges)
+                    || args
+                        .iter()
+                        .any(|a| self.expr_diverges(&a.value, return_diverges))
+                {
+                    return true;
                 }
-                _ => false,
-            },
-            _ => false,
+                match f.as_ref() {
+                    Expr::Name(n, _) => {
+                        // A local binding or parameter of the same name shadows
+                        // the top-level function at runtime, so the call is to
+                        // that callable value, not to `fn n`, and its
+                        // divergence is unknown. This scan runs after the body
+                        // scope is popped, so live scopes are consulted and, for
+                        // the `-> never` check, the body-bound names snapshotted
+                        // by the caller. Without this guard a shadowed name
+                        // would be treated as a diverging `-> never` call,
+                        // wrongly accepting a body that completes normally (and
+                        // wrongly installing a narrowing).
+                        if !self.resolves_to_user_function(n)
+                            || self.body_bound_names.contains(&n.clone())
+                        {
+                            return false;
+                        }
+                        let mut any = false;
+                        if let Some(set) = self.functions.get(n) {
+                            for sig in set.iter().filter(|s| self.fn_visible(s)) {
+                                if !matches!(sig.ret, Some(Ty::Never)) {
+                                    return false;
+                                }
+                                any = true;
+                            }
+                        }
+                        any
+                    }
+                    _ => false,
+                }
+            }
+            // A method call evaluates its receiver then its arguments eagerly,
+            // and a method declared `-> never` on a statically-known struct
+            // receiver never returns. Every visible overload of the name must
+            // return `never` (mirroring the free-function rule) so an
+            // unresolved or mixed overload never proves divergence.
+            Expr::Method(r, name, args, _, _) => {
+                if self.expr_diverges(r, return_diverges)
+                    || args
+                        .iter()
+                        .any(|a| self.expr_diverges(&a.value, return_diverges))
+                {
+                    return true;
+                }
+                let recv = self.infer(r);
+                let Some(sname) = self.struct_name_of(&recv) else {
+                    return false;
+                };
+                let Some(set) = self.method_set(&sname, name) else {
+                    return false;
+                };
+                let mut any = false;
+                for sig in set.iter().filter(|s| self.method_visible(s)) {
+                    if !matches!(sig.ret, Some(Ty::Never)) {
+                        return false;
+                    }
+                    any = true;
+                }
+                any
+            }
+            Expr::Field(r, _, _) => self.expr_diverges(r, return_diverges),
+            Expr::Index(b, i, _) => {
+                self.expr_diverges(b, return_diverges) || self.expr_diverges(i, return_diverges)
+            }
+            Expr::List(xs, _) | Expr::Tuple(xs, _) => {
+                xs.iter().any(|x| self.expr_diverges(x, return_diverges))
+            }
+            Expr::Map(entries, _) => entries.iter().any(|(k, v)| {
+                self.expr_diverges(k, return_diverges) || self.expr_diverges(v, return_diverges)
+            }),
+            // A comprehension evaluates its iterable first. The element/key and
+            // filter run only for elements the iterable yields that pass the
+            // filter, so — unlike an eager operand — a diverging element is not
+            // guaranteed to run (an empty iterable or a false filter suppresses
+            // it) and must never prove divergence. Only a diverging iterable
+            // does. (The pattern is assertive, so a mismatch is `E3001`, not a
+            // skip; it is not a source of suppression.)
+            Expr::ListComp { iterable, .. } | Expr::MapComp { iterable, .. } => {
+                self.expr_diverges(iterable, return_diverges)
+            }
+            Expr::Construct(_, args, _, _) => args
+                .iter()
+                .any(|a| self.expr_diverges(&a.value, return_diverges)),
+            // Defining a lambda does not run it.
+            Expr::Lambda(..) => false,
+            // `x |> f` evaluates both sides eagerly.
+            Expr::Pipe(l, r, _) => {
+                self.expr_diverges(l, return_diverges) || self.expr_diverges(r, return_diverges)
+            }
+            Expr::Range(l, r, _) => {
+                self.expr_diverges(l, return_diverges) || self.expr_diverges(r, return_diverges)
+            }
+            // An `if` diverges when its condition diverges (neither branch
+            // runs) or when every reachable branch diverges. A literal condition
+            // makes one branch statically unreachable: `if true { … }` is
+            // decided solely by its then-block (so a diverging then with no
+            // `else` diverges), and `if false { … }` solely by its `else`.
+            Expr::If(c, then, els, _) => {
+                if self.expr_diverges(c, return_diverges) {
+                    return true;
+                }
+                match c.as_ref() {
+                    Expr::Lit(Lit::Bool(true), _) => self.block_diverges(then, return_diverges),
+                    Expr::Lit(Lit::Bool(false), _) => els
+                        .as_ref()
+                        .is_some_and(|e| self.expr_diverges(e, return_diverges)),
+                    _ => {
+                        els.as_ref()
+                            .is_some_and(|e| self.expr_diverges(e, return_diverges))
+                            && self.block_diverges(then, return_diverges)
+                    }
+                }
+            }
+            Expr::Block(b, _) => self.block_diverges(b, return_diverges),
+            // A `match` diverges when its subject diverges or when it has arms
+            // and every arm does.
+            Expr::Match(subject, arms, _) => {
+                self.expr_diverges(subject, return_diverges)
+                    || (!arms.is_empty()
+                        && arms
+                            .iter()
+                            .all(|a| self.block_diverges(&a.body, return_diverges)))
+            }
         }
     }
 
     /// Whether a statement list is guaranteed to leave the current flow.
+    ///
+    /// A block diverges if *any* statement diverges: the statements before it
+    /// run, then control leaves and the rest are unreachable. Scanning the
+    /// whole list (not just the last statement) keeps this symmetric with
+    /// [`Checker::body_can_complete_normally`] and recognizes a diverging
+    /// statement followed by unreachable trailing statements.
     fn block_diverges(&self, body: &[Stmt], return_diverges: bool) -> bool {
-        body.last()
-            .is_some_and(|s| self.stmt_diverges(s, return_diverges))
+        body.iter().any(|s| self.stmt_diverges(s, return_diverges))
+    }
+
+    /// Whether a `-> never` function body can complete normally: it contains a
+    /// reachable `return`, or control can fall off its end. This is stricter
+    /// and more accurate than a last-statement [`Checker::block_diverges`]
+    /// scan, which overlooks an unconditional `throw` followed by unreachable
+    /// statements (`fn f() -> never { throw "x"\n print("y") }` cannot complete
+    /// normally, and neither can `throw "x"\n return`).
+    fn body_can_complete_normally(&self, body: &[Stmt]) -> bool {
+        for s in body {
+            if self.stmt_has_reachable_return(s) {
+                return true;
+            }
+            if self.stmt_diverges(s, false) {
+                // A diverging statement makes the rest of the body
+                // unreachable, so the body cannot fall through.
+                return false;
+            }
+        }
+        // Control reaches the end of the body: it completes normally.
+        true
+    }
+
+    fn stmts_have_reachable_return(&self, body: &[Stmt]) -> bool {
+        for s in body {
+            if self.stmt_has_reachable_return(s) {
+                return true;
+            }
+            // Control does not continue past a statement that diverges, nor
+            // past a `break`/`continue` that transfers out of the sequence.
+            if self.stmt_diverges(s, false) || matches!(s, Stmt::Break(_) | Stmt::Continue(_)) {
+                return false;
+            }
+        }
+        false
+    }
+
+    fn stmt_has_reachable_return(&self, s: &Stmt) -> bool {
+        match s {
+            Stmt::Return(..) => true,
+            Stmt::Throw(..) | Stmt::Break(_) | Stmt::Continue(_) => false,
+            Stmt::Let { value, .. } | Stmt::LetPattern { value, .. } => {
+                self.expr_has_reachable_return(value)
+            }
+            Stmt::Assign { target, value, .. } => {
+                self.expr_has_reachable_return(target) || self.expr_has_reachable_return(value)
+            }
+            Stmt::Expr(e, _) => self.expr_has_reachable_return(e),
+            // A loop body runs at least once (`loop`) or may run (`while`), so a
+            // `return` inside it is reachable whenever the body is not
+            // statically disabled. `break` does not make the return
+            // unreachable — the body still runs before any break.
+            Stmt::Loop(body, _) => self.stmts_have_reachable_return(body),
+            Stmt::While(c, body, _) => {
+                let cond = self.expr_has_reachable_return(c);
+                // A body is unreachable when the loop can never enter it: a
+                // diverging condition, or the statically-false `while false`.
+                if self.expr_diverges(c, false) || matches!(c, Expr::Lit(Lit::Bool(false), _)) {
+                    cond
+                } else {
+                    cond || self.stmts_have_reachable_return(body)
+                }
+            }
+            // A `for` body may run zero times, so a return inside it is only
+            // reachable if the body can be entered. That is false for a
+            // statically empty literal iterable and for an iterable whose
+            // evaluation diverges (the loop is never entered).
+            Stmt::For(_, iter, body, _) => {
+                self.expr_has_reachable_return(iter)
+                    || (!self.expr_diverges(iter, false)
+                        && !statically_empty_iterable(iter)
+                        && self.stmts_have_reachable_return(body))
+            }
+            Stmt::Try {
+                body,
+                catch_body,
+                finally,
+                ..
+            } => {
+                let f = finally
+                    .as_ref()
+                    .is_some_and(|f| self.stmts_have_reachable_return(f));
+                let b = self.stmts_have_reachable_return(body);
+                let c = self.stmts_have_reachable_return(catch_body);
+                // A `finally` return is always reachable (it overrides). The
+                // body's/ catch's return is reachable unless the other path is
+                // taken, but conservatively a return on either branch is a
+                // reachable completion.
+                f || b || c
+            }
+        }
+    }
+
+    fn expr_has_reachable_return(&self, e: &Expr) -> bool {
+        match e {
+            Expr::Lit(..) | Expr::Name(..) => false,
+            Expr::FStr(parts, _) => parts.iter().any(|p| match p {
+                FPart::Lit(_) => false,
+                FPart::Expr(e, _) => self.expr_has_reachable_return(e),
+            }),
+            Expr::Unary(_, x, _) => self.expr_has_reachable_return(x),
+            Expr::Binary(_, l, r, _) => {
+                self.expr_has_reachable_return(l) || self.expr_has_reachable_return(r)
+            }
+            Expr::Call(f, args, _, _) => {
+                self.expr_has_reachable_return(f)
+                    || args
+                        .iter()
+                        .any(|a| self.expr_has_reachable_return(&a.value))
+            }
+            Expr::Method(r, _, args, _, _) => {
+                self.expr_has_reachable_return(r)
+                    || args
+                        .iter()
+                        .any(|a| self.expr_has_reachable_return(&a.value))
+            }
+            Expr::Field(r, _, _) => self.expr_has_reachable_return(r),
+            Expr::Index(b, i, _) => {
+                self.expr_has_reachable_return(b) || self.expr_has_reachable_return(i)
+            }
+            Expr::List(xs, _) | Expr::Tuple(xs, _) => {
+                xs.iter().any(|x| self.expr_has_reachable_return(x))
+            }
+            Expr::Map(entries, _) => entries.iter().any(|(k, v)| {
+                self.expr_has_reachable_return(k) || self.expr_has_reachable_return(v)
+            }),
+            Expr::ListComp {
+                value,
+                iterable,
+                filter,
+                ..
+            } => {
+                self.expr_has_reachable_return(value)
+                    || self.expr_has_reachable_return(iterable)
+                    || filter
+                        .as_ref()
+                        .is_some_and(|f| self.expr_has_reachable_return(f))
+            }
+            Expr::MapComp {
+                key,
+                value,
+                iterable,
+                filter,
+                ..
+            } => {
+                self.expr_has_reachable_return(key)
+                    || self.expr_has_reachable_return(value)
+                    || self.expr_has_reachable_return(iterable)
+                    || filter
+                        .as_ref()
+                        .is_some_and(|f| self.expr_has_reachable_return(f))
+            }
+            Expr::Construct(_, args, _, _) => args
+                .iter()
+                .any(|a| self.expr_has_reachable_return(&a.value)),
+            // A lambda's `return` returns from the lambda, not this function.
+            Expr::Lambda(..) => false,
+            Expr::Pipe(l, r, _) => {
+                self.expr_has_reachable_return(l) || self.expr_has_reachable_return(r)
+            }
+            Expr::Range(a, b, _) => {
+                self.expr_has_reachable_return(a) || self.expr_has_reachable_return(b)
+            }
+            Expr::If(c, then, els, _) => {
+                // A condition that itself never returns makes neither branch
+                // reachable.
+                if self.expr_diverges(c, false) {
+                    return false;
+                }
+                let cond = self.expr_has_reachable_return(c);
+                // A literal condition makes one branch statically unreachable,
+                // exactly like `while false`.
+                match c.as_ref() {
+                    Expr::Lit(Lit::Bool(true), _) => cond || self.stmts_have_reachable_return(then),
+                    Expr::Lit(Lit::Bool(false), _) => {
+                        cond || els
+                            .as_ref()
+                            .is_some_and(|e| self.expr_has_reachable_return(e))
+                    }
+                    _ => {
+                        cond || self.stmts_have_reachable_return(then)
+                            || els
+                                .as_ref()
+                                .is_some_and(|e| self.expr_has_reachable_return(e))
+                    }
+                }
+            }
+            Expr::Match(subject, arms, _) => {
+                self.expr_has_reachable_return(subject)
+                    || arms.iter().any(|a| {
+                        self.stmts_have_reachable_return(&a.body)
+                            || a.guard
+                                .as_ref()
+                                .is_some_and(|g| self.expr_has_reachable_return(g))
+                    })
+            }
+            Expr::Block(body, _) => self.stmts_have_reachable_return(body),
+        }
     }
 
     fn declare(&mut self, name: &str, mutable: bool, span: Span) -> Result<()> {
@@ -2242,6 +2719,9 @@ impl Checker {
         // the latest declaration); a fresh declaration records its own.
         scope.declares.insert(name.to_string(), span);
         scope.vars.insert(name.to_string(), mutable);
+        if !self.body_bound_names.contains(&name.to_string()) {
+            self.body_bound_names.push(name.to_string());
+        }
         Ok(())
     }
 
@@ -2741,6 +3221,12 @@ impl Checker {
                     }
                     self.has_main = true;
                 }
+                // Snapshot the body-bound names this function's parameters and
+                // locals will add, so the divergence scan (which runs after the
+                // body scope is popped) can still see that a same-named local
+                // shadowed a top-level function. Taken before the parameters
+                // are declared so they are captured too.
+                let saved_bound = std::mem::take(&mut self.body_bound_names);
                 // The name is already declared by `hoist`; only the body scope
                 // and parameter bindings are introduced here.
                 self.push();
@@ -2780,8 +3266,10 @@ impl Checker {
                 // loop, and a call to another `-> never` function are the
                 // diverging shapes; anything else falls through and is
                 // `E3006`.
-                if matches!(self.return_type, Some(Ty::Never)) && !self.block_diverges(body, false)
+                if matches!(self.return_type, Some(Ty::Never))
+                    && self.body_can_complete_normally(body)
                 {
+                    self.body_bound_names = saved_bound;
                     self.return_type = saved_return;
                     self.underscore_params = saved_underscore;
                     self.used_names = saved_used;
@@ -2794,6 +3282,7 @@ impl Checker {
                         body.last().map_or(Span::default(), Stmt::span),
                     ));
                 }
+                self.body_bound_names = saved_bound;
                 // Contract: a parameter whose name starts with `_` must be
                 // unused. Using it is E2009.
                 for (pname, _pspan) in std::mem::take(&mut self.underscore_params) {
@@ -2987,6 +3476,7 @@ impl Checker {
                 self.underscore_params.push((p.name.clone(), p.span));
             }
         }
+        let saved_bound = std::mem::take(&mut self.body_bound_names);
         let r = self.block(body);
         r?;
         // Keystone `never`: a function declared `-> never` promises no value
@@ -2994,7 +3484,8 @@ impl Checker {
         // contradicts the declaration. `throw`, an infinite loop, and a call
         // to another `-> never` function are the diverging shapes; anything
         // else falls through and is `E3006`.
-        if matches!(self.return_type, Some(Ty::Never)) && !self.block_diverges(body, false) {
+        if matches!(self.return_type, Some(Ty::Never)) && self.body_can_complete_normally(body) {
+            self.body_bound_names = saved_bound;
             self.return_type = saved_return;
             self.underscore_params = saved_underscore;
             self.used_names = saved_used;
@@ -3006,6 +3497,7 @@ impl Checker {
                 body.last().map_or(Span::default(), Stmt::span),
             ));
         }
+        self.body_bound_names = saved_bound;
         // The receiver is a parameter; using `self` is expected, so it is
         // never treated as an unused `_` parameter. The remaining `_`-prefixed
         // parameters keep the ordinary contract.
@@ -4882,17 +5374,12 @@ impl Checker {
                 self.expr(value)?;
                 match target {
                     Expr::Name(name, nspan) => {
-                        // An assignment can put `none` back into the binding,
-                        // so any narrowing of it ends here.
-                        self.clear_narrowing(name);
-                        // A write inside a lambda body is a *capture*: calling
-                        // that closure can change `name` behind a later
-                        // narrowing's back. Defining the closure is not a
-                        // write of the enclosing region, so a lambda-body
-                        // write never enters `write_log`.
-                        if self.saved_lambda_writes.is_empty() {
-                            self.write_log.push(name.clone());
-                        }
+                        // A write inside a lambda body is a *capture*, not a
+                        // write of the enclosing region: the lambda runs only
+                        // when it is called, so defining it must not end a
+                        // narrowing in effect where it is defined. The name is
+                        // recorded as a capture so a later call through the
+                        // closure (or any unknown callee) invalidates it.
                         if !self.saved_lambda_writes.is_empty() {
                             if !self.lambda_writes.contains(name) {
                                 self.lambda_writes.push(name.clone());
@@ -4900,6 +5387,12 @@ impl Checker {
                             if !self.closure_all_writes.contains(name) {
                                 self.closure_all_writes.push(name.clone());
                             }
+                        } else {
+                            // A direct write can put `none` back into the
+                            // binding, so any narrowing of it ends here, and
+                            // it is recorded for the surviving-branch check.
+                            self.clear_narrowing(name);
+                            self.write_log.push(name.clone());
                         }
                         // A write references the binding: it counts as a use.
                         self.mark_used(name);
@@ -5124,12 +5617,7 @@ impl Checker {
                 }
                 self.loop_depth += 1;
                 self.loop_spans.push(*span);
-                let loop_result: Result<()> = (|| {
-                    for s in body.iter() {
-                        self.stmt(s)?;
-                    }
-                    Ok(())
-                })();
+                let loop_result = self.stmt_seq(body);
                 self.loop_spans.pop();
                 self.loop_depth -= 1;
                 if let Err(e) = loop_result {
@@ -5154,14 +5642,7 @@ impl Checker {
                     self.declare(&b, false, catch.span())?;
                     self.declare_local(&b, catch.span(), UnusedKind::Pattern);
                 }
-                let mut catch_result = Ok(());
-                for s in catch_body.iter() {
-                    if let Err(e) = self.stmt(s) {
-                        catch_result = Err(e);
-                        break;
-                    }
-                }
-                if let Err(e) = catch_result {
+                if let Err(e) = self.stmt_seq(catch_body) {
                     self.pop();
                     return Err(e);
                 }
@@ -5331,11 +5812,7 @@ impl Checker {
                             // parameter), fall back to the global set: any
                             // closure in the program could be behind it.
                             match self.closure_writes.get(name).cloned() {
-                                Some(writes) => {
-                                    for w in writes {
-                                        self.clear_narrowing(&w);
-                                    }
-                                }
+                                Some(writes) => self.note_closure_call(&writes),
                                 None => self.clear_all_closure_narrowing(),
                             }
                             self.reject_named_args(name, args, *span)?;
@@ -5400,6 +5877,28 @@ impl Checker {
                         .cloned()
                         .collect();
                     let sig = visible[i].clone();
+                    // A method may invoke a callable argument, or a callable
+                    // reachable from one: a parameter whose type is not a
+                    // provable non-callable could hold one, so any narrowing
+                    // of a name some lambda writes is discarded at the call
+                    // (review C2/C3). A parameter with a concrete non-callable
+                    // annotation cannot be a callback and is ignored.
+                    if sig.params.iter().any(|p| {
+                        !matches!(
+                            p.ty,
+                            Some(
+                                Ty::Int
+                                    | Ty::Float
+                                    | Ty::Bool
+                                    | Ty::String
+                                    | Ty::List(_)
+                                    | Ty::Map(_, _)
+                                    | Ty::None
+                            )
+                        )
+                    }) {
+                        self.clear_all_closure_narrowing();
+                    }
                     self.check_struct_method_args(
                         &sname,
                         name,
@@ -5500,6 +5999,9 @@ impl Checker {
                     // Methods are positional; named arguments are out of scope.
                     self.reject_named_args(name, args, *span)?;
                     self.check_method_call(r, name, args, *span)?;
+                    // A built-in method may invoke a function argument (such as
+                    // `map`/`filter`); discard any captured narrowing.
+                    self.clear_all_closure_narrowing();
                 }
                 for a in args.iter() {
                     self.expr(&a.value)?;
@@ -5741,7 +6243,15 @@ impl Checker {
                             .map(|m| m.insert(p.name.clone(), t));
                     }
                 }
+                // A closure runs when called, not where it is defined, so the
+                // enclosing region's narrowings do not hold inside its body.
+                let hidden = self.hide_narrowings();
+                // Names bound inside the lambda must not leak into the
+                // enclosing function's callee-shadowing view.
+                let bound_len = self.body_bound_names.len();
                 let r = self.expr(body);
+                self.body_bound_names.truncate(bound_len);
+                self.restore_narrowings(hidden);
                 self.return_type = saved_return;
                 self.loop_depth = saved_loop;
                 // The lambda's own write set is its capture set; restore the
@@ -5761,11 +6271,7 @@ impl Checker {
                 // exactly as a direct call would.
                 match r.as_ref() {
                     Expr::Name(name, _) => match self.closure_writes.get(name).cloned() {
-                        Some(writes) => {
-                            for w in writes {
-                                self.clear_narrowing(&w);
-                            }
-                        }
+                        Some(writes) => self.note_closure_call(&writes),
                         None if self.lookup(name).is_some() => {
                             self.clear_all_closure_narrowing();
                         }
@@ -5809,10 +6315,14 @@ impl Checker {
                     }
                 });
                 let then_log = self.write_log.len();
+                let then_calls = self.closure_call_names.len();
                 self.block_with(then, then_narrow)?;
                 let then_writes: Vec<String> = self.write_log[then_log..].to_vec();
                 self.write_log.truncate(then_log);
+                let then_called: Vec<String> = self.closure_call_names[then_calls..].to_vec();
+                self.closure_call_names.truncate(then_calls);
                 let mut else_writes: Vec<String> = Vec::new();
+                let mut else_called: Vec<String> = Vec::new();
                 if let Some(e) = els {
                     let else_narrow = Checker::none_guard(c).and_then(|(name, then_narrows)| {
                         if !then_narrows {
@@ -5822,6 +6332,7 @@ impl Checker {
                         }
                     });
                     let else_log = self.write_log.len();
+                    let else_calls = self.closure_call_names.len();
                     match (else_narrow, e.as_ref()) {
                         (Some((name, ty)), Expr::Block(b, _)) => {
                             self.block_with(b, Some((name, ty)))?;
@@ -5830,8 +6341,15 @@ impl Checker {
                     }
                     else_writes = self.write_log[else_log..].to_vec();
                     self.write_log.truncate(else_log);
+                    else_called = self.closure_call_names[else_calls..].to_vec();
+                    self.closure_call_names.truncate(else_calls);
                 }
-                self.last_if_writes = Some((then_writes, else_writes));
+                self.last_if_writes = Some(IfBranchEffects {
+                    then_writes,
+                    else_writes,
+                    then_called,
+                    else_called,
+                });
             }
             Expr::Match(subject, arms, _) => {
                 self.expr(subject)?;
@@ -5845,9 +6363,7 @@ impl Checker {
                     if let Some(g) = &arm.guard {
                         self.expr(g)?;
                     }
-                    for s in arm.body.iter() {
-                        self.stmt(s)?;
-                    }
+                    self.stmt_seq(&arm.body)?;
                     self.finish_scope()?;
                 }
             }
