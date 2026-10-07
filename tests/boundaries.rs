@@ -619,3 +619,38 @@ fn depth_diagnostics_carry_a_source_location() {
         "module depth diagnostic must point at the deep level"
     );
 }
+
+/// The grouping backstop is a substrate-calibrated host-safety bound, distinct
+/// from the general recursion budget, and it counts *grouping only*.
+///
+/// Regression for the exact-SHA CI failure: on the WebAssembly substrate a
+/// pure grouping chain reached the engine's physical ceiling (262 levels
+/// measured on CI's Node 20) before the general 768 budget fired, so over-deep
+/// grouping trapped instead of reporting `E1015`. The dedicated
+/// `parse_grouping_budget` fixes that; this test pins the native side of the
+/// contract — the documented valid maximum (250 nested containers plus 50
+/// grouping levels) is still accepted, and a chain past the native grouping
+/// backstop is still the stable nesting diagnostic rather than a crash.
+#[test]
+fn grouping_backstop_counts_grouping_only() {
+    // The §31.1 valid maximum with grouping: 250 containers + 50 groups.
+    let combined = format!(
+        "fn main() {{ print({}{}1{}{}) }}",
+        "[".repeat(250),
+        "(".repeat(50),
+        ")".repeat(50),
+        "]".repeat(250)
+    );
+    assert!(
+        run(&combined).is_ok(),
+        "250 nested containers plus 50 grouping levels must be accepted"
+    );
+
+    // Past the native grouping backstop is E1015, never a host failure.
+    let over = format!(
+        "fn main() {{ print({}1{}) }}",
+        "(".repeat(3000),
+        ")".repeat(3000)
+    );
+    assert_eq!(run(&over), Err(codes::NESTING));
+}

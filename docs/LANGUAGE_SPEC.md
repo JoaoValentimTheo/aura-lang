@@ -3379,6 +3379,25 @@ require.
 > "256" describes **AST nodes**, not raw parentheses. A chain of grouping
 > parentheses is limited by mechanism 2, not by the number 256.
 
+> **RESOLVED (grouping and f-string containment).** A pure grouping level
+> (`( expr )`, no comma) creates no AST node, so only mechanism 2 bounds it —
+> but a grouping level is the parser's most frame-expensive recursion, and on
+> the WebAssembly substrate it reaches the engine's physical ceiling *before*
+> the general backstop fires (measured: 262 grouping levels trap while the
+> 768 general budget has not yet fired; the ceiling is unchanged when the wasm
+> shadow stack is enlarged, so it is the engine's own stack tracking). A
+> dedicated substrate-calibrated **grouping backstop**
+> (`parse_grouping_budget`) therefore bounds pure grouping independently, and
+> it counts **grouping only**: the documented valid maximum — 250 nested
+> containers plus grouping, e.g. 50 levels — is accepted, and native keeps the
+> general budget (a 1000-deep parenthesized chain is accepted there). An
+> f-string interpolation is parsed by a sub-parser that **inherits** the
+> caller's recursion and grouping depth, so the composite nesting of an
+> interpolation inside a grouped expression is bounded by the same budgets
+> rather than by two budgets that could each stay individually under their
+> limit while their sum exceeded the physical stack. Over either bound is
+> `E1015`, never a host trap, on every substrate.
+
 > **RESOLVED (ADR-0004).** `TypeExpr` nodes were the one place where
 > acceptance depended on the substrate: type nesting was bounded only by the
 > substrate-calibrated backstop (native accepted ≤2047 / rejected 2048; WASM
