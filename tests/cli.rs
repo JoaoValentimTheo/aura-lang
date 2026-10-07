@@ -931,7 +931,9 @@ fn mcp_unknown_method_is_jsonrpc_minus_32601() {
 fn mcp_grants_no_capability_and_reads_no_file() {
     // The adapter reads only the source in the request. A snapshot of a
     // program that would need a file or network produces no such access.
-    let out = run_mcp(&[r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"aura_snapshot","arguments":{"source":"fn main() { print(1) }\n"}}}"#]);
+    let out = run_mcp(&[
+        r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"aura_snapshot","arguments":{"source":"fn main() { print(1) }\n"}}}"#,
+    ]);
     for forbidden in ["API_KEY", "read_file(\"", "py_call", "token", "password"] {
         assert!(!out.contains(forbidden), "unexpected {forbidden}");
     }

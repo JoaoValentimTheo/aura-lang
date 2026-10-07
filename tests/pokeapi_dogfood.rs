@@ -188,8 +188,10 @@ fn pokeapi_chain_accepts_an_absent_optional_field_as_none() {
     );
     assert!(!body.contains("front_default"), "fixture was trimmed");
     let server = TestServer::start(json_response(&body, "200 OK"));
-    let src = dogfood_program(&server.url(""))
-        .replace("print(sprites.front_default != none)", "print(sprites.front_default == none)");
+    let src = dogfood_program(&server.url("")).replace(
+        "print(sprites.front_default != none)",
+        "print(sprites.front_default == none)",
+    );
     let out = run(&src).expect("dogfood runs without the optional field");
     assert_eq!(
         out,

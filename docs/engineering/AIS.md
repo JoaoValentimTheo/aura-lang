@@ -92,6 +92,7 @@ is never mistaken for an empty one.
 | `source_name` | the caller-supplied source display name |
 | `revision` | content-addressed revision of the source |
 | `symbols[]` | declarations: `name`, `kind`, `range`, `public`, `type_name`, `families`, `value_kind`, `capabilities`, `type_parameters`, `parameters`, `fields`, `variants` |
+| `narrowings[]` | flow facts the checker proved: `name`, `narrowed_type`, `diverges` |
 | `diagnostics[]` | `code`, `code_text`, `severity`, `message`, `range`, `notes`, `help` |
 
 `range` carries both human coordinates (`line`, `column`) and the byte
