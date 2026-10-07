@@ -1,7 +1,8 @@
 # Aura 0.3 “Keystone” — Canonical Scope Manifest
 
 Status: **canonical engineering manifest** for the Aura 0.3 “Keystone”
-super-transaction (local only; not pushed). Authority: this file classifies
+super-transaction (closure range pushed through remote `b221e6a9`). Authority:
+this file classifies
 scope and points to the authoritative spec/RFC/code/tests; it does not itself
 define language semantics. Normative behavior lives in `docs/LANGUAGE_SPEC.md`
 and accepted `docs/adr/*`; current repository state lives in `AGENT_STATE.md`.

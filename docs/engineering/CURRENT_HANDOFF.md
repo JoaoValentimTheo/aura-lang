@@ -25,8 +25,9 @@ explicit-continuation (iterative) evaluator over the existing AST
   capture-bound contract is pinned in `playground/runtime/tests/execute.rs`,
   `tests/host.rs`, and `playground/tests/node/b1_boundary.test.mjs`, and
   documented in `docs/playground.md` §2.
-- AURA 0.3 KEYSTONE SUPER-TRANSACTION: **IN PROGRESS LOCALLY, NOT PUSHED**.
-  Manifest `docs/engineering/KEYSTONE_SCOPE_MANIFEST.md`, ledger
+- AURA 0.3 KEYSTONE SUPER-TRANSACTION: **CLOSURE RANGE PUSHED THROUGH
+  `b221e6a9`**; the remote is no longer at `e576238`. Manifest
+  `docs/engineering/KEYSTONE_SCOPE_MANIFEST.md`, ledger
   `docs/engineering/KEYSTONE_JEV_LEDGER.md`, RFC
   `docs/rfcs/0001-exception-catch-selection.md`. Landed: exceptions E1-E6
   (pattern catch, raise-site spans, `Aura` namespace reservation), types
@@ -34,7 +35,21 @@ explicit-continuation (iterative) evaluator over the existing AST
   same-revision Native/WASM differential, HTTP capability, typed JSON
   decoding, structured diagnostics + CLI color, Aurea + overflow invariants,
   codename metadata, tooling reconciliation.
-- KEYSTONE CLOSURE CAMPAIGN (2026-10-07, local, not pushed): committed
+- **REMOTE CI IS RED AT `b221e6a9`** (run `37639795923`, job
+  `playground (wasm runtime)`): `b1_boundary.test.mjs` reports 44/19 with
+  grouping/f-string `guest trap: Maximum call stack size exceeded` /
+  `memory access out of bounds`. The cause is a parser that bounds grouping
+  and f-string interpolation recursion. The fix is committed locally as the
+  two commits **ahead** of the remote (`04783231`, `e7505408`) and is
+  **unpushed**. On the local tip the fresh-wasm boundary suite is **63/0**,
+  the full playground suite is green (differential 233/0, browser 98/0,
+  worker 12/0), the native matrix is green (all-features 57 suites + 166 lib;
+  bare and canonical 57+57; lib 124/166), clippy (both configs) / fmt / MSRV
+  1.83 / nightly fuzz check all exit 0, and the website suite is green
+  (browser 380/0, a11y 70/0, links 2499 OK, release-version 29/0). Frozen
+  `0.0.2`/`0.2.0`/`0.2.1` byte-identical; `v0.2.1` = `3f5f8702…` unmoved;
+  `.kilo/**` protected churn untouched; no tag/release/deploy.
+- KEYSTONE CLOSURE CAMPAIGN (2026-10-07, pushed through `b221e6a9`): committed
   `2f99a18` (third/fourth/fifth-review checker hardening), `c510215`
   (Value-algebra anti-collapse + type families + AIS delivery + MCP),
   `5abcd0d` (PokéAPI dogfood), `31c77be` (Playground FSM), `6e3ff89` (AIS
@@ -76,8 +91,8 @@ explicit-continuation (iterative) evaluator over the existing AST
   clippy/fmt/MSRV/fuzz-check clean, playground + website suites green).
   Remaining human gates: shadowing policy, package-manager model, runtime
   publication/codenames.
-- PRE-0.3 FOUNDATION SUPER-TRANSACTION: **IN PROGRESS LOCALLY, NOT PUSHED**
-  (push requires a new explicit human authorization). Iteration ledger and
+- PRE-0.3 FOUNDATION SUPER-TRANSACTION: **PUSHED THROUGH `b221e6a9`**.
+  Iteration ledger and
   artifacts: `docs/engineering/RUNTIME_ARCHITECTURE.md`,
   `EXCEPTION_ARCHITECTURE.md`, `CAPABILITY_MODEL.md`,
   `EMBEDDED_PYTHON_ARCHITECTURE.md`, `CRITICAL_SYSTEM_PROFILE.md`,
@@ -546,30 +561,36 @@ sync test (documented as non-authoritative; runtime refusal is the decision).
 
 ## Exact next action
 
-0. **Aura 0.3 Keystone super-transaction closure (in progress).** The
-   `never`/`none`/narrowing checker was hardened across five adversarial
-   review passes (J1–J12 in `KEYSTONE_JEV_LEDGER.md`); the third/fourth/
-   fifth-review fixes are committed in the checkpoint immediately following
-   `45271b2`. The baseline validation floor is green (all-features 1247/0,
-   canonical 1172/0, bare 1037/0, clippy/fmt/MSRV/nightly fuzz check,
-   playground and website Node suites). The remaining closure program
-   (type-family formalization, Value-algebra anti-collapse, FSM/security
-   assurance, coverage, cleanup, PokéAPI dogfood, AIX/AIS, MCP, docs,
-   website, full matrix) runs on top of this checkpoint; report completion
-   and request explicit human authorization before any push. Preserve frozen
-   runtimes, `v0.2.1`, and `.kilo/**`.
+0. **Aura 0.3 Keystone closure range is pushed through `b221e6a9`; remote CI
+   is RED at that SHA.** The `never`/`none`/narrowing checker was hardened
+   across five adversarial review passes (J1–J12 in `KEYSTONE_JEV_LEDGER.md`);
+   the type-family/value-algebra/AIS/MCP/dogfood/FSM work is landed. The local
+   tip is **2 commits ahead** of the remote (`04783231`, `e7505408`): the
+   parser wasm-safety fix that repairs the red `playground (wasm runtime)` job.
+   On the local tip the full matrix is green (native all-features 57 suites +
+   166 lib; bare and canonical 57+57 with lib 124/166; clippy both configs,
+   fmt, MSRV 1.83, nightly fuzz check; playground differential 233/0, browser
+   98/0, worker 12/0, **fresh-wasm boundary 63/0**; website browser 380/0,
+   a11y 70/0, links 2499 OK). **Exact next action:** request explicit human
+   authorization to push the 2-commit repair, then push normally (never force)
+   and verify the exact pushed SHA in CI. Preserve frozen runtimes, `v0.2.1`,
+   `.kilo/**`, and the main oracle golden.
 
 1. B-1 and the post-B1 runtime/WASM edge closure are **remotely closed**. The
    Pre-0.3 Foundation super-transaction and the 2026-10-06 adversarial re-audit
-   are **complete locally and not pushed** (`150befe`). The exception feature is
-   **stopped at the human syntax gate**: the human must resolve E1–E6 (an ADR
-   and, per `docs/rfcs/README.md`, an accepted RFC for the chosen grammar) in
-   `docs/engineering/EXCEPTION_ARCHITECTURE.md` §8 / the decision package
-   `docs/engineering/EXCEPTION_SYNTAX_DECISION_PACKAGE.md` §6. Do not implement
-   public exception syntax before that decision.
-2. Nothing in this transaction is pushed. Pushing the local range (now
-   `e576238..150befe` plus the documentation commits) requires explicit human
-   authorization.
+   are **complete and pushed** through `b221e6a9` (the former local range
+   `e576238..150befe` is now on the remote). The exception feature is
+   **decided and implemented**: RFC 0001 (`docs/rfcs/0001-exception-catch-selection.md`)
+   is **Accepted** — the record of the Keystone human authorization — and
+   pattern-based catch selection, raise-site spans, and the reserved `Aura`
+   namespace are implemented and regression-tested (`tests/catch_syntax.rs`);
+   `KEYSTONE_SCOPE_MANIFEST.md` §G2 records the same disposition.
+   `docs/engineering/EXCEPTION_SYNTAX_DECISION_PACKAGE.md` is retained as the
+   **superseded historical** decision package (it records Outcome A, the state
+   that existed *before* the authorization); it is not current authority.
+2. The Keystone closure range is pushed through `b221e6a9`. Only the 2-commit
+   parser wasm-safety repair (`04783231`, `e7505408`) is unpushed; pushing it
+   requires explicit human authorization.
 3. B-1R8 (remove the recursive engine and the oracle switch) and any runtime
    publication remain separately human-gated.
 4. Keep frozen runtimes, `v0.2.1`, and `.kilo/**` untouched.

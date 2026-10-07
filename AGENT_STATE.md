@@ -8,21 +8,32 @@ before continuing substantial work.
 ## Repository
 
 - Branch: `rewrite/v3-rust`
-- Remote `origin/rewrite/v3-rust`: **`e576238f7adb52f6ab6d18431602e3fbc2bd3636`**
-  (`docs(state): record the independent adversarial review outcome`) — POST-B1
-  runtime/WASM edge closure is **pushed and remote-closed**; exact-SHA CI green
-  (20/20 jobs) and Pages deployed after a GitHub Actions platform incident
-  delayed the run. Do not hardcode the ahead count: read it from
+- Remote `origin/rewrite/v3-rust`: **`b221e6a9d3fc2355596b4118c2e789f8c37092d0`**
+  (`fix(ci): gate the AIS CLI surface, repair the fuzz target, migrate a stale
+  catch test`) — the Keystone closure range is **pushed** through this tip.
+  Do not hardcode the ahead count: read it from
   `git rev-list --left-right --count origin/rewrite/v3-rust...HEAD`.
 - Local/remote relationship: authoritative value is `git rev-list
   --left-right --count origin/rewrite/v3-rust...HEAD`; a tracked file cannot
-  safely hardcode its own position.
+  safely hardcode its own position. At the 2026-10-07 recovery checkpoint this
+  is **0 ahead / 2 behind is impossible — read it**; the local tip was
+  `e7505408` (2 commits ahead of `b221e6a9`).
+- **Remote CI at `b221e6a9` is RED** (run `37639795923`): the
+  `playground (wasm runtime)` job fails in `b1_boundary.test.mjs` (44/19) with
+  grouping/f-string `guest trap` — the exact defect fixed by the unpushed local
+  commits `04783231` (`fix(parser): bound grouping and f-string interpolation
+  recursion on wasm`) and `e7505408` (`test(parser): pin the grouping backstop
+  contract`). Locally the fresh-wasm boundary suite is **63/0** and the native
+  parser/boundaries suites are green. Pushing these two commits is the
+  exact-SHA CI repair; it is human-gated (`docs/engineering/CURRENT_HANDOFF.md`).
 - Current release: **`v0.2.1`**, published 2026-10-01, immutable. Tag
   `v0.2.1` = commit `3f5f8702`. Release = language = runtime = `0.2.1`;
   Host ABI 1; Playground API 1.
 - No successor program or version is selected; there is **no `0.2.2`**.
-- Active local program: **AURA 0.3 "KEYSTONE" CLOSURE** (local only, **NOT
-  pushed**; push requires a new human authorization). See
+- Active program: **AURA 0.3 "KEYSTONE" CLOSURE** — the closure range is
+  **pushed through `b221e6a9`**; only the 2-commit parser wasm-safety repair
+  (`04783231`, `e7505408`) remains unpushed and requires a new human
+  authorization. See
   `docs/engineering/CURRENT_HANDOFF.md` and
   `docs/engineering/KEYSTONE_SCOPE_MANIFEST.md`. The publication gate is the
   objective: no release, tag, version bump, or deployment is created.
@@ -64,8 +75,8 @@ clock boundaries verified; machine endurance, unwinding, recovery, and
 deep-value edges verified on fresh wasm; no recursive production seam. The
 capture contract is documented in `docs/playground.md` §2.
 
-PRE-0.3 FOUNDATION SUPER-TRANSACTION — **IN PROGRESS LOCALLY, NOT PUSHED.**
-Authorized 2026-10-05 after Stage-1 remote closure. Commits so far establish:
+PRE-0.3 FOUNDATION SUPER-TRANSACTION — **PUSHED THROUGH `b221e6a9`** (the
+former local range is now on the remote). Commits establish:
 poisoned-lock byte preservation (`5edab88`); single-source resource limits +
 named sleep cap (`2fd1433`); unused-dependency removal (`3186340`); stale
 recursive-engine documentation reconciliation + errors-reference sync
@@ -284,10 +295,10 @@ Before a model switch: finish the atomic operation, understand the diff, update
 `scripts/agent-state.sh`, and set writer ownership below. Synchronization is
 Git + working tree + these documents; chat history is not authority.
 
-## Aura 0.3 "Keystone" super-transaction (LOCAL, NOT PUSHED)
+## Aura 0.3 "Keystone" super-transaction (PUSHED THROUGH `b221e6a9`)
 
-Started 2026-10-06 from local `8e4a59a` (remote `e576238`, 18 ahead / 0
-behind). Scope manifest: `docs/engineering/KEYSTONE_SCOPE_MANIFEST.md`.
+Started 2026-10-06 from local `8e4a59a` (then-remote `e576238`, 18 ahead / 0
+behind); the whole closure range is now on the remote through `b221e6a9`. Scope manifest: `docs/engineering/KEYSTONE_SCOPE_MANIFEST.md`.
 Adversarial-review ledger: `docs/engineering/KEYSTONE_JEV_LEDGER.md`.
 Decisions RFC: `docs/rfcs/0001-exception-catch-selection.md`.
 
@@ -351,20 +362,28 @@ authority:
   (browser 78/0, differential 228/0, boundary 63/0), website suite green
   (browser 380/0, a11y 70/0, links 2499 OK).
 
-Not pushed: 44 ahead / 0 behind remote `e576238`. Remaining human gates:
-shadowing policy change, package-manager product/security model, runtime
-publication/codenames.
+Pushed through `b221e6a9` (the whole Keystone range is now on the remote).
+At the 2026-10-07 recovery checkpoint the local tip was `e7505408`, **2 ahead**
+of remote `b221e6a9`: the unpushed parser wasm-safety fix that repairs the red
+`playground (wasm runtime)` CI job. Remaining human gates: shadowing policy
+change, package-manager product/security model, runtime publication/codenames,
+and the authorization to push the 2-commit CI repair.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: **B-1 and the post-B1
-runtime/WASM edge closure are remotely closed** (remote `e576238`, exact-SHA
-CI green). The **Aura 0.3 Keystone super-transaction is in progress locally
-and not pushed**; continue the remaining workstreams, then report and request
-explicit human authorization before any push. B-1R8 (remove the recursive
-engine and the oracle switch) and any runtime publication remain separately
-human-gated.
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: B-1 and the post-B1
+runtime/WASM edge closure are remotely closed; the **Aura 0.3 Keystone**
+closure range is **pushed through `b221e6a9`**. The remote CI at `b221e6a9` is
+**RED** on the `playground (wasm runtime)` job (grouping/f-string trap in
+`b1_boundary`), and the local tip `e7505408` holds the 2-commit parser fix that
+turns that suite to 63/0. **Exact next action:** finish the recovery
+reconnaissance, keep the full local matrix green, then request explicit human
+authorization to push the 2-commit repair and verify the exact pushed SHA in
+CI. B-1R8 (remove the recursive engine and the oracle switch) and any runtime
+publication remain separately human-gated.
 
 ## Writer
 
-NONE
+NONE (single-writer discipline; the 2026-10-07 recovery session held exclusive
+worktree ownership — a stale external `opencode` writer had already exited on
+its own).
