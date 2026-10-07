@@ -106,3 +106,37 @@ webpki-roots, zeroize` (plus platform stubs).
 - No redirect following, no cookies, no connection pooling controls exposed
   to Aura, no proxy configuration.
 - No WASM HTTP: the browser substrate denies the capability.
+
+## 7. PokéAPI dogfood (Keystone §11)
+
+`tests/pokeapi_dogfood.rs` exercises the full chain — Aura program → HTTP →
+`Host::http_request` capability → real transport → JSON → typed decode →
+Struct/optional values — in two layers:
+
+- **Deterministic (CI):** a loopback server serves captured PokéAPI
+  documents through the real transport and the real decoders. Runs in the
+  normal test matrix; never depends on a third party.
+- **Live (opt-in):** `AURA_LIVE_POKEAPI=1 cargo test --locked --all-features
+  --test pokeapi_dogfood -- --ignored` runs the same program against
+  `https://pokeapi.co`, proving the fixture matches the live shape.
+
+The deterministic layer proves: a 200 decodes typed; nested objects and
+arrays resolve; an absent optional field (`string | none`) decodes to `none`;
+a 404 stays a plain status with a decodable body; a shape mismatch is
+`E4031`, is not `try`-catchable, and an undeclared field is rejected rather
+than ignored.
+
+**Recorded finding (not a defect).** PokéAPI's `types[].type` key is the Aura
+reserved word `type` (`LANGUAGE_SPEC.md` §7), and `json_decode_as` requires a
+JSON key to equal a declared field name exactly. The typed decoder therefore
+cannot consume that specific nested object; the dogfood reads it through the
+permissive `json_decode` map path instead. A field-rename or raw-identifier
+mechanism would be new language syntax and is left to the human gate rather
+than invented here.
+
+**Environment note.** In the container this campaign ran in, outbound TLS is
+throttled to ~30 s for processes other than the allowlisted `curl`/`node`
+(the Aura/BrowserHost path times out at `MAX_HTTP_TIMEOUT_MS`). The live test
+therefore cannot complete here; that is an environment fact, not a repository
+defect. The deterministic layer exercises the identical Aura-side code path
+with the identical response bytes.
