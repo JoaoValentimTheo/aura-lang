@@ -552,6 +552,12 @@ pub struct Checker {
     /// has been popped and therefore cannot consult the live scopes. Names are
     /// snapshot at the start of the function and restored afterwards.
     body_bound_names: Vec<String>,
+    /// Whether to record flow narrowings as they are proven, for
+    /// [`Checker::module_narrowings`] (AIS narrowing facts). Off by default so
+    /// the ordinary check path allocates nothing for it.
+    record_narrowings: bool,
+    /// Narrowings proven while `record_narrowings` is on, in proof order.
+    observed_narrowings: Vec<(String, Ty)>,
     /// Whether unused-binding analysis (`E2008`) is active. A compiled
     /// program is checked with it on (Keystone strictness); a REPL submission
     /// is checked with it off, because a session binding persists for later
@@ -661,6 +667,8 @@ impl Checker {
             lambda_last_writes: None,
             closure_all_writes: Vec::new(),
             body_bound_names: Vec::new(),
+            record_narrowings: false,
+            observed_narrowings: Vec::new(),
             unused_analysis: true,
             value_types: vec![HashMap::new()],
             underscore_params: Vec::new(),
@@ -2070,12 +2078,37 @@ impl Checker {
     /// after `if u != none { ... }`, `u` is known to be `T` (no `none`) inside
     /// the block. The override is dropped by an assignment to `name`.
     fn narrow(&mut self, name: String, ty: Ty) {
+        if self.record_narrowings {
+            self.observed_narrowings.push((name.clone(), ty.clone()));
+        }
         if let Some(map) = self.value_types.last_mut() {
             map.insert(name.clone(), ty);
         }
         if let Some(scope) = self.scopes.last_mut() {
             scope.narrowed.insert(name);
         }
+    }
+
+    /// Check a module and report the flow narrowings the checker installed
+    /// (Keystone AIS §13: a consumer must never redo compiler flow analysis).
+    ///
+    /// A narrowing is recorded where the checker proves it — an optionality
+    /// guard that removes `none` from a binding's type — so the report is the
+    /// compiler's own conclusion, not a second analysis. The returned list is
+    /// deduplicated by `(name, type)` and ordered by first proof, and the check
+    /// result is returned unchanged so a caller sees exactly what
+    /// [`Checker::module`] would report.
+    pub fn module_narrowings(m: &Module) -> (Result<()>, Vec<(String, Ty)>) {
+        let mut c = Checker::new();
+        c.record_narrowings = true;
+        let outcome = c.check(m);
+        let mut facts = Vec::new();
+        for (name, ty) in std::mem::take(&mut c.observed_narrowings) {
+            if !facts.iter().any(|(n, t)| n == &name && t == &ty) {
+                facts.push((name, ty));
+            }
+        }
+        (outcome, facts)
     }
 
     /// The value type of a block used as an expression: the type of its

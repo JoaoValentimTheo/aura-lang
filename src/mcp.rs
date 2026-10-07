@@ -289,14 +289,7 @@ pub fn read_resource(uri: &str) -> Value {
 /// Build an AIS snapshot from source text, attaching checker diagnostics.
 fn snapshot(source: &str, name: &str) -> crate::ais::Document {
     match crate::parse::parse(source) {
-        Ok(module) => {
-            let mut doc = crate::ais::document(name, source, &module);
-            if let Err(d) = crate::check::Checker::module(&module) {
-                doc.diagnostics
-                    .push(crate::ais::Diagnostic::from_diag(&d, Some(source)));
-            }
-            doc
-        }
+        Ok(module) => crate::ais::checked_document(name, source, &module),
         Err(d) => crate::ais::Document {
             ais_version: crate::ais::AIS_VERSION.to_string(),
             aura_version: crate::VERSION.to_string(),
@@ -305,6 +298,7 @@ fn snapshot(source: &str, name: &str) -> crate::ais::Document {
             source_name: name.to_string(),
             revision: Some(crate::ais::revision_of(source)),
             symbols: Vec::new(),
+            narrowings: Vec::new(),
             diagnostics: vec![crate::ais::Diagnostic::from_diag(&d, Some(source))],
         },
     }
@@ -683,14 +677,20 @@ mod tests {
     fn capabilities_are_reported_through_the_handshake_and_resources() {
         // A client learns the capability set without a separate call.
         let r = call("initialize", json!({}));
-        assert_eq!(r["result"]["capabilities"]["experimental"]["compiler"]["present"], true);
+        assert_eq!(
+            r["result"]["capabilities"]["experimental"]["compiler"]["present"],
+            true
+        );
         // And can read it as a resource.
         let r = call("resources/read", json!({ "uri": "aura://capabilities" }));
         let text = r["result"]["contents"][0]["text"].as_str().unwrap();
         assert!(text.contains("\"ais\""));
         assert!(text.contains("\"jev\""));
         // The tool form agrees.
-        let r = call("tools/call", json!({ "name": "aura_capabilities", "arguments": {} }));
+        let r = call(
+            "tools/call",
+            json!({ "name": "aura_capabilities", "arguments": {} }),
+        );
         assert_eq!(r["result"]["structuredContent"]["ais"]["present"], true);
     }
 

@@ -145,13 +145,31 @@ An alias symbol projects its **target** (`type Names = [string]` reports
 family (it is not yet known), and a user type never claims a map capability
 merely because both are keyed.
 
-## Flow facts and completion (capability-gated)
+## Flow facts and narrowing (compiler-proved, never re-derived)
 
-`FlowFact` (`name`, `narrowed_type`, `diverges`) and `CompletionContext`
-(`position`, `visible_symbols`) are part of the 0.1 schema. `block_diverges`
-exposes the checker's conservative divergence rule so a tool can describe
-whether a path cannot continue. These are present as data; the Playground and
-LSP are not required to consume all of them in 0.3.
+**AIS must never force a consumer to redo flow analysis the checker already
+did.** After a `!= none` guard the checker proves a binding is `T`, and the
+document carries exactly that conclusion in `narrowings[]`:
+
+```json
+{
+  "name": "e",
+  "narrowed_type": "string",
+  "diverges": false
+}
+```
+
+The facts come from a recording seam inside the checker
+(`Checker::module_narrowings`): the same pass that installs the narrowing
+records it, so the report is the compiler's own proof rather than a second
+analysis. A document built without checking (`ais::document`) carries no
+narrowings, and a guard the checker did not prove produces none.
+
+`block_diverges` exposes the checker's conservative divergence rule so a tool
+can describe whether a path cannot continue. `CompletionContext`
+(`position`, `visible_symbols`) is part of the 0.1 schema. These are present
+as data; the Playground and LSP are not required to consume all of them in
+0.3.
 
 ## Relationship to MCP
 

@@ -414,7 +414,8 @@ fn ais_read(path: &str) -> Result<(String, String), ExitCode> {
     read_source(Some(path))
 }
 
-/// Build the snapshot document for a source, attaching any checker diagnostic.
+/// Build the snapshot document for a source, attaching any checker diagnostic
+/// and the narrowings the checker proved.
 fn ais_snapshot_of(src: &str, file: &str) -> (aura::ais::Document, bool) {
     let module = match aura::parse::parse(src) {
         Ok(m) => m,
@@ -427,21 +428,15 @@ fn ais_snapshot_of(src: &str, file: &str) -> (aura::ais::Document, bool) {
                 source_name: file.to_string(),
                 revision: Some(aura::ais::revision_of(src)),
                 symbols: Vec::new(),
+                narrowings: Vec::new(),
                 diagnostics: vec![aura::ais::Diagnostic::from_diag(&d, Some(src))],
             };
             doc.diagnostics.truncate(1);
             return (doc, true);
         }
     };
-    let mut doc = aura::ais::document(file, src, &module);
-    let rejected = match aura::check::Checker::module(&module) {
-        Ok(()) => false,
-        Err(d) => {
-            doc.diagnostics
-                .push(aura::ais::Diagnostic::from_diag(&d, Some(src)));
-            true
-        }
-    };
+    let doc = aura::ais::checked_document(file, src, &module);
+    let rejected = !doc.diagnostics.is_empty();
     (doc, rejected)
 }
 

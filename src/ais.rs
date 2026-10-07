@@ -627,6 +627,12 @@ pub struct Document {
     pub revision: Option<String>,
     /// Declarations, in source order.
     pub symbols: Vec<Symbol>,
+    /// Flow narrowings the checker proved, when the document was checked.
+    /// A consumer must never redo flow analysis the compiler already did
+    /// (Keystone §13): each fact names the binding and the type the checker
+    /// proved inside a guarded region.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub narrowings: Vec<FlowFact>,
     /// Structured diagnostics, when checking produced any.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub diagnostics: Vec<Diagnostic>,
@@ -738,10 +744,7 @@ impl Delta {
     /// declaration must not tell a consumer that the declaration changed.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        !self
-            .symbols
-            .iter()
-            .any(|c| c.change != "moved")
+        !self.symbols.iter().any(|c| c.change != "moved")
             && self.resolved_diagnostics.is_empty()
             && self.new_diagnostics.is_empty()
     }
@@ -952,8 +955,35 @@ pub fn document(source_name: &str, source: &str, module: &Module) -> Document {
         source_name: source_name.to_string(),
         revision: Some(revision_of(source)),
         symbols,
+        narrowings: Vec::new(),
         diagnostics: Vec::new(),
     }
+}
+
+/// Build a checked AIS document: the snapshot plus any checker diagnostic and
+/// the flow narrowings the checker proved.
+///
+/// This is the canonical entry point for a tool that wants the compiler's
+/// conclusions (AIS §13): the narrowing facts come from the checker's own
+/// proof, not from a second analysis. A rejected program still yields a
+/// document, with the diagnostic and without narrowings.
+#[must_use]
+pub fn checked_document(source_name: &str, source: &str, module: &Module) -> Document {
+    let mut doc = document(source_name, source, module);
+    let (outcome, facts) = crate::check::Checker::module_narrowings(module);
+    if let Err(d) = outcome {
+        doc.diagnostics
+            .push(Diagnostic::from_diag(&d, Some(source)));
+    }
+    doc.narrowings = facts
+        .into_iter()
+        .map(|(name, ty)| FlowFact {
+            name,
+            narrowed_type: Some(ty.name()),
+            diverges: false,
+        })
+        .collect();
+    doc
 }
 
 /// Whether a statement list contains a diverging trailing statement.
@@ -1297,5 +1327,43 @@ mod tests {
         let d = delta(&doc, &doc);
         let json = serde_json::to_string(&d).expect("serializes");
         assert!(json.contains("\"ais_version\":\"0.1\""));
+    }
+
+    #[test]
+    fn a_checked_document_reports_the_checkers_narrowing_proof() {
+        // AIS must never force a consumer to redo flow analysis: after a
+        // `!= none` guard the checker proves the binding is `string`, and the
+        // document carries exactly that conclusion.
+        let src = "fn find(ok: bool) -> string | none {\n  if ok { return \"x\" }\n  return none\n}\nfn main() {\n  let e = find(true)\n  if e != none { print(e) }\n}\n";
+        let module = parse(src).expect("parses");
+        let doc = checked_document("m.aura", src, &module);
+        assert!(doc.diagnostics.is_empty(), "{:?}", doc.diagnostics);
+        let fact = doc
+            .narrowings
+            .iter()
+            .find(|f| f.name == "e")
+            .expect("the guard proves `e` is not none");
+        assert_eq!(fact.narrowed_type.as_deref(), Some("string"));
+        assert!(!fact.diverges);
+    }
+
+    #[test]
+    fn a_checked_document_without_a_guard_reports_no_narrowing() {
+        // No guard, no proof: the document must not invent a narrowing.
+        let src = "fn find(ok: bool) -> string | none {\n  if ok { return \"x\" }\n  return none\n}\nfn main() {\n  let e = find(true)\n  print(e)\n}\n";
+        let module = parse(src).expect("parses");
+        let (outcome, facts) = crate::check::Checker::module_narrowings(&module);
+        assert!(outcome.is_ok());
+        assert!(facts.iter().all(|(n, _)| n != "e"));
+    }
+
+    #[test]
+    fn a_plain_document_carries_no_narrowings() {
+        // The unchecked snapshot constructor never reports flow facts; only
+        // `checked_document` (which runs the checker) does.
+        let src = "fn main() { print(1) }\n";
+        let module = parse(src).expect("parses");
+        let doc = document("m.aura", src, &module);
+        assert!(doc.narrowings.is_empty());
     }
 }
