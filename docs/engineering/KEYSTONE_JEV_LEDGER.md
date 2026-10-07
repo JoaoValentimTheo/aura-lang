@@ -39,3 +39,37 @@ false-positive fixes and the REPL exemption; J9 changed the `-> never`
 reachability analysis; J10 drove the adversarial wrongly-accept sweep; J11
 drove the fifth sweep and changed `expr_diverges` and the method arm; J12
 accepted the bounded residual after that sweep).
+
+## Closure-campaign consultations (2026-10-07)
+
+During the final closure campaign Jev was consulted twice by the CLI and
+**timed out** both times (`jev noul` / `jev choice` produced no result within
+60 s in this container; the evaluator's own network path is throttled here,
+the same environment fact recorded in `HTTP_ARCHITECTURE.md` §7). Neither
+consultation is recorded as a verdict, because a timeout is not a
+measurement. The campaign therefore proceeded on deterministic repository
+evidence, exactly as AGENTS.md requires ("Reviewer consensus is not
+evidence"), and no decision below rests on an unrecorded Jev judgment.
+
+The findings that a Jev consultation had been prepared to triage were decided
+by evidence instead:
+
+- **The campaign's `;` premise.** Jev was not needed: `docs/grammar.md`
+  (`terminator = NEWLINE | ";"`), `docs/LANGUAGE_SPEC.md` §2.4/§3.7,
+  CONF-PARSE-8 (CLOSED) and `tests/syntax_conformance.rs` (`{;;}` accepted,
+  `1 2` rejected) all agree, and `[1; 3]` was reproduced as `E1006`. Verdict:
+  the premise was wrong; no change made.
+- **`json_encode` of unrepresentable kinds.** Reproduced identity collapses
+  (`A(1)` and `B(1)` both encoded `1`; `0..3` encoded `null`), and the
+  released non-string-map-key rule already established the project's
+  anti-collapse stance. Fixed uniformly; decision record
+  `JSON_VALUE_ALGEBRA_DECISION.md`.
+- **AIS delta on unrelated edits.** Found by a metamorphic property test
+  (comment insertion reported every following symbol as `changed`), not by
+  Jev. Fixed (`moved` vs `changed`).
+
+Jev availability is exercised as an *optional capability*: `aura mcp` reports
+`jev.present` by PATH discovery, and `src/mcp.rs` pins that its absence
+changes no semantic output. The differential harness
+(`tests/ais_differential.mjs`) is the reproducible structure for a real Jev
+(or any evaluator) run once an evaluator is reachable.

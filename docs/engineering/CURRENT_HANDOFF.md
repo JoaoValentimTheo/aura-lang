@@ -32,12 +32,27 @@ explicit-continuation (iterative) evaluator over the existing AST
   (pattern catch, raise-site spans, `Aura` namespace reservation), types
   (`never`, precise `none`, optional narrowing), unused analysis `E2008`,
   same-revision Native/WASM differential, HTTP capability, typed JSON
-  decoding, AIS/0.1, structured diagnostics + CLI color, Aurea + overflow
-  invariants, Playground state machine + recovery, codename metadata, tooling
-  reconciliation. Last committed SHA `45271b2`, 44 ahead / 0 behind, not
-  pushed. Final validation: all-features 1217/0, no-default 1142/0,
-  clippy/fmt/MSRV/fuzz/Miri(124/0) green, playground + website suites green;
-  independent review's 7 findings fixed with regressions.
+  decoding, structured diagnostics + CLI color, Aurea + overflow invariants,
+  codename metadata, tooling reconciliation.
+- KEYSTONE CLOSURE CAMPAIGN (2026-10-07, local, not pushed): committed
+  `2f99a18` (third/fourth/fifth-review checker hardening), `c510215`
+  (Value-algebra anti-collapse + type families + AIS delivery + MCP),
+  `5abcd0d` (PokéAPI dogfood), `31c77be` (Playground FSM), `6e3ff89` (AIS
+  delta fix + properties), `1932047` (Jev discovery + differential harness),
+  `b4aabb1` (spec version drift), `ffc701f` (website drift), `a5f182c` +
+  `4a36681` (regression seeds, fuzz lock), `6893457` (AIS narrowing proofs).
+  Real defects fixed with regression evidence: `json_encode` silently
+  collapsing unrepresentable kinds to `null`/payload; the Playground status
+  starting as the non-vocabulary `idle`; AIS delta reporting an unrelated
+  insertion as a semantic change to every following symbol; the spec header
+  claiming language version 0.0.1; the website claiming no development line
+  exists. Campaign premise about `;` **falsified with evidence**: the
+  canonical grammar, spec §3.7, CONF-PARSE-8 and `tests/syntax_conformance.rs`
+  all define `;` as a statement terminator, and `[1; 3]` is `E1006` — no
+  grammar change was made.
+- Remaining closure work: none required for the publication gate beyond the
+  human gates below. Frozen `0.0.2`/`0.2.0`/`0.2.1` byte-identical; `v0.2.1`
+  unmoved; `.kilo/**` protected churn untouched; no tag/release/deploy.
   Five adversarial review passes total (J1–J12 in the ledger); each finding
   was independently reproduced against the built CLI before being fixed:
   second (committed `45271b2`), then the third/fourth/fifth passes hardening

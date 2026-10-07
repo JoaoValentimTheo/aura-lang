@@ -153,6 +153,24 @@ Keystone metadata is Development-only until a human authorizes a runtime.
 | `Array`/`Set`/`Tuple` family premises | FALSIFIED WITH EVIDENCE | Aura has no `Array` and no `Set` type; `Tuple` is list sugar (spec §21). The campaign's conceptual tree is corrected in spec §5.4, not implemented as invented syntax |
 | `range` as an annotation spelling | HUMAN-GATE REMAINING (recorded) | `Range` has no `Ty` member and `range` is not a legal annotation (`E3002`); ranges are dynamically typed (`Ty::Unknown`). Adding a spelling changes the annotation surface; recorded, not invented |
 
+## G4. Assurance and AIX closure (2026-10-07, super-transaction continuation)
+
+| Item | Disposition | Evidence |
+|---|---|---|
+| `;` as a statement separator | VERIFIED, NOT A DEFECT (campaign premise corrected) | `docs/LANGUAGE_SPEC.md` §2.4/§3.7 and `docs/grammar.md` (`terminator = NEWLINE \| ";"`) normatively define `;` as a statement terminator; CONF-PARSE-8 is CLOSED; `tests/syntax_conformance.rs` pins it (`{;;}` accepted, `1 2` and `fn a() {} fn b() {}` rejected). There is no array `;` syntax: `[1; 3]` is `E1006`. No grammar change |
+| Playground FSM | REAL DEFECT FIXED + MATRIX | static markup initialized the status to the ad-hoc `idle`, not the machine's vocabulary, and the initial state was never entered through `enterState`; fixed; `browser.test.mjs` §13 pins legal transitions, forbidden edges, vocabulary closure, cycle closure. 98/0 |
+| AIS delta on unrelated edits | REAL DEFECT FIXED | an inserted comment made every following symbol report `changed` (ranges compared); now `moved` vs `changed`, `is_empty` ignores moves; `tests/ais_properties.rs` + unit regressions |
+| AIS/MCP adversarial surface | FIXED (new) | `fuzz/fuzz_targets/ais.rs`: 706,771 runs in 61 s, zero findings; `tests/ais_properties.rs` 10/10 properties |
+| AIS/0.1 delivery + MCP adapter | IMPLEMENTED + DOCUMENTED | snapshot/slice/delta, content revision, three identity levels as fields, `aura mcp` transport-only adapter with bounded frames; `docs/engineering/AIS.md`, `MCP.md` |
+| DX/AIX separation | NORMATIVE DOC | `docs/engineering/DX_AIX.md`; human prose is never the machine interface |
+| Jev discovery | IMPLEMENTED, OPTIONAL, PROVEN FALLBACK | PATH scan only; `aura://capabilities`; a missing Jev leaves semantic output byte-identical |
+| AIS differential dogfood | HARNESS IMPLEMENTED, EXTERNAL RUN NOT EXECUTED | `tests/ais_differential.mjs` verifies ground truth against the compiler and prints the exact command for a real evaluator; no model run was faked. Jev itself times out in this container |
+| PokéAPI HTTP + typed-data dogfood | COMPLETED (deterministic) + LIVE OPT-IN | `tests/pokeapi_dogfood.rs` 6/6 over the real transport/decoders; live run blocked by the container's TLS throttle (recorded in `HTTP_ARCHITECTURE.md` §7) |
+| Coverage baseline | MEASURED | `cargo llvm-cov --all-features`: 88.58% lines, 89.05% functions, 87.59% regions (ais.rs 93.01%, mcp.rs 92.27%) |
+| Spec language version | REAL DRIFT FIXED + GUARDED | header said 0.0.1 while `LANGUAGE_VERSION` is 0.2.1; corrected and pinned by `tests/contract_sync.rs` |
+| Website development-line claims | REAL DRIFT FIXED | "no active development line" contradicted the in-progress 0.3 line; corrected on roadmap/home/known-limitations and the stale runtime excerpt; website suite green |
+| Dead production code / TODO markers | NONE FOUND | `clippy -D warnings` clean across all targets and features; zero `TODO`/`FIXME`/`HACK` in `src/` |
+
 ## H. Enforcement (this manifest)
 
 Every item in sections B and C must end this transaction in exactly one state:

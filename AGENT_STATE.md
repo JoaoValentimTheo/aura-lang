@@ -21,9 +21,11 @@ before continuing substantial work.
   `v0.2.1` = commit `3f5f8702`. Release = language = runtime = `0.2.1`;
   Host ABI 1; Playground API 1.
 - No successor program or version is selected; there is **no `0.2.2`**.
-- Active local program: **PRE-0.3 FOUNDATION SUPER-TRANSACTION** (local only,
-  **NOT pushed**; push requires a new human authorization). See
-  `docs/engineering/CURRENT_HANDOFF.md`.
+- Active local program: **AURA 0.3 "KEYSTONE" CLOSURE** (local only, **NOT
+  pushed**; push requires a new human authorization). See
+  `docs/engineering/CURRENT_HANDOFF.md` and
+  `docs/engineering/KEYSTONE_SCOPE_MANIFEST.md`. The publication gate is the
+  objective: no release, tag, version bump, or deployment is created.
 
 ## Frozen release runtimes (immutable, byte-for-byte)
 
