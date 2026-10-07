@@ -623,6 +623,26 @@ const cases = [
     'fn main() { print(json_encode({1: "x"})) }',
   ],
   [
+    'json rejects a range rather than emitting null',
+    "fn main() { print(json_encode(0..3)) }",
+  ],
+  [
+    'json rejects a function rather than emitting null',
+    'fn main() { print(json_encode(len)) }',
+  ],
+  [
+    'json rejects a variant rather than flattening it',
+    'enum E { A(int), B(int) }\nfn main() { print(json_encode(A(1))) }',
+  ],
+  [
+    'json rejects a non-finite float rather than emitting null',
+    'fn main() { print(json_encode(to_float("nan"))) }',
+  ],
+  [
+    'json still encodes representable values identically',
+    'fn main() {\n print(json_encode([1, "two", true, none]))\n print(json_encode(2.5))\n print(json_encode(none))\n}',
+  ],
+  [
     'map mixed key literal infers a union',
     'fn main() {\n let m = {1: "a", "1": "b"}\n print(m)\n print(m.keys())\n}',
   ],
