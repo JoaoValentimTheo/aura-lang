@@ -288,9 +288,12 @@ fn stdout_e4020_is_not_catchable_and_finally_still_runs() {
     // The `try` body's print crosses the bound (LIMIT + 1 bytes): the failure
     // is a fatal host I/O failure, so `catch` must not intercept it, while the
     // `finally` block still runs — and its short write succeeds against the
-    // empty capture.
+    // empty capture. The catch binding is an explicit discard (`catch _`): a
+    // named-but-unused binding is `E2008` under the Keystone unused discipline
+    // (`LANGUAGE_SPEC.md` §16.4), and this test is about the transport bound,
+    // not a binding it never reads.
     let v = run_with_stdin(
-        "fn main() {\n let s = read_line()\n try {\n print(s)\n } catch e {\n print(\"caught\")\n } finally {\n print(\"finally\")\n }\n}",
+        "fn main() {\n let s = read_line()\n try {\n print(s)\n } catch _ {\n print(\"caught\")\n } finally {\n print(\"finally\")\n }\n}",
         &"a".repeat(LIMIT),
     );
     assert_eq!(v["status"], "diagnostic");

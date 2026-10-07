@@ -410,12 +410,14 @@ fn cmd_ais(args: &[String]) -> ExitCode {
 }
 
 /// Parse a source path into `(text, display-name)` or report the CLI error.
+#[cfg(feature = "json")]
 fn ais_read(path: &str) -> Result<(String, String), ExitCode> {
     read_source(Some(path))
 }
 
 /// Build the snapshot document for a source, attaching any checker diagnostic
 /// and the narrowings the checker proved.
+#[cfg(feature = "json")]
 fn ais_snapshot_of(src: &str, file: &str) -> (aura::ais::Document, bool) {
     let module = match aura::parse::parse(src) {
         Ok(m) => m,
@@ -440,6 +442,7 @@ fn ais_snapshot_of(src: &str, file: &str) -> (aura::ais::Document, bool) {
     (doc, rejected)
 }
 
+#[cfg(feature = "json")]
 fn print_ais<T: serde::Serialize>(value: &T) -> ExitCode {
     println!(
         "{}",
@@ -448,6 +451,7 @@ fn print_ais<T: serde::Serialize>(value: &T) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+#[cfg(feature = "json")]
 fn cmd_ais_snapshot(args: &[&str]) -> ExitCode {
     let Some(path) = args.first() else {
         eprintln!("usage: aura ais <file|->");
@@ -466,6 +470,7 @@ fn cmd_ais_snapshot(args: &[&str]) -> ExitCode {
     }
 }
 
+#[cfg(feature = "json")]
 fn cmd_ais_slice(args: &[&str]) -> ExitCode {
     let (Some(path), Some(target)) = (args.first(), args.get(1)) else {
         eprintln!("usage: aura ais slice <file|-> <target> [depth] [budget]");
@@ -492,6 +497,7 @@ fn cmd_ais_slice(args: &[&str]) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+#[cfg(feature = "json")]
 fn cmd_ais_delta(args: &[&str]) -> ExitCode {
     let (Some(old_path), Some(new_path)) = (args.first(), args.get(1)) else {
         eprintln!("usage: aura ais delta <old-file|-> <new-file|->");
@@ -526,6 +532,7 @@ fn cmd_ais_delta(args: &[&str]) -> ExitCode {
 /// line. The loop is stateless, so a malformed line produces an error response
 /// (or is ignored when it is a notification) and the session continues. A
 /// frame larger than `MAX_REQUEST_BYTES` is refused without buffering further.
+#[cfg(feature = "json")]
 fn cmd_mcp() -> ExitCode {
     use std::io::{BufRead, Write};
     let stdin = std::io::stdin();

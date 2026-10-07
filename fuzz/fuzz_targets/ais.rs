@@ -30,6 +30,7 @@ fuzz_target!(|data: &[u8]| {
                 source_name: "<fuzz>".to_string(),
                 revision: Some(aura::ais::revision_of(&text)),
                 symbols: Vec::new(),
+                narrowings: Vec::new(),
                 diagnostics: Vec::new(),
             };
             let _ = aura::ais::slice(&doc, "target", 4, 16);
