@@ -182,6 +182,7 @@ fn display_form_distinguishes_every_kind() {
 }
 
 #[test]
+#[cfg(feature = "json")]
 fn json_preserves_kind_identity_or_rejects() {
     // JSON encodes exactly the representable kinds: `none` is `null`, a list
     // is an array, a map and a struct are objects, and each is distinct.
