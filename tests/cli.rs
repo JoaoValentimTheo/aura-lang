@@ -854,3 +854,92 @@ fn ais_snapshot_subcommand_is_equivalent_to_bare_ais() {
     assert_eq!(sub_code, 0);
     assert_eq!(bare, sub);
 }
+
+// ---------------------------------------------------------------------------
+// MCP adapter (Keystone §17)
+// ---------------------------------------------------------------------------
+
+/// Run `aura mcp` with the given newline-delimited frames, returning stdout.
+fn run_mcp(frames: &[&str]) -> String {
+    let input = format!("{}\n", frames.join("\n"));
+    let mut child = aura()
+        .arg("mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+#[test]
+fn mcp_stdio_handshake_and_tool_call_work_end_to_end() {
+    let out = run_mcp(&[
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+        r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"aura_snapshot","arguments":{"source":"fn rows() -> [[int]] { return [] }\nfn main() { print(rows()) }\n"}}}"#,
+    ]);
+    let lines: Vec<&str> = out.lines().collect();
+    // Two responses: the initialize reply and the tool reply. The
+    // notification gets none.
+    assert_eq!(lines.len(), 2, "{out}");
+    let init: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(init["result"]["serverInfo"]["name"], "aura-mcp");
+    let call: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
+    assert_eq!(call["result"]["isError"], false);
+    let rows = call["result"]["structuredContent"]["symbols"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["name"] == "rows")
+        .unwrap();
+    assert_eq!(rows["type_name"], "[[int]]");
+    assert_eq!(rows["families"][0], "sequence");
+    assert_eq!(rows["value_kind"], "list");
+}
+
+#[test]
+fn mcp_malformed_frame_is_an_error_and_the_session_survives() {
+    let out = run_mcp(&[
+        "this is not json",
+        r#"{"jsonrpc":"2.0","id":9,"method":"ping"}"#,
+    ]);
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines.len(), 2, "{out}");
+    let parse_err: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(parse_err["error"]["code"], -32700);
+    // The next frame still works: one bad frame does not end the session.
+    let ping: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
+    assert_eq!(ping["id"], 9);
+}
+
+#[test]
+fn mcp_unknown_method_is_jsonrpc_minus_32601() {
+    let out = run_mcp(&[r#"{"jsonrpc":"2.0","id":3,"method":"nope/nope"}"#]);
+    let r: serde_json::Value = serde_json::from_str(out.lines().next().unwrap()).unwrap();
+    assert_eq!(r["error"]["code"], -32601);
+}
+
+#[test]
+fn mcp_grants_no_capability_and_reads_no_file() {
+    // The adapter reads only the source in the request. A snapshot of a
+    // program that would need a file or network produces no such access.
+    let out = run_mcp(&[r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"aura_snapshot","arguments":{"source":"fn main() { print(1) }\n"}}}"#]);
+    for forbidden in ["API_KEY", "read_file(\"", "py_call", "token", "password"] {
+        assert!(!out.contains(forbidden), "unexpected {forbidden}");
+    }
+}
+
+#[test]
+fn mcp_takes_no_arguments() {
+    let (code, _, stderr) = run(&["mcp", "extra"]);
+    assert_eq!(code, 2);
+    assert!(stderr.contains("no arguments"), "{stderr}");
+}

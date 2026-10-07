@@ -9,6 +9,8 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+# The AIS/MCP target builds JSON-RPC frames to exercise the adapter's handler.
+serde_json = "1"
 
 [dependencies.aura-lang]
 path = ".."
@@ -45,6 +47,13 @@ bench = false
 [[bin]]
 name = "runtime"
 path = "fuzz_targets/runtime.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ais"
+path = "fuzz_targets/ais.rs"
 test = false
 doc = false
 bench = false

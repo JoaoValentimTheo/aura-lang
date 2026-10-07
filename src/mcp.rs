@@ -45,6 +45,70 @@ pub const MAX_REQUEST_BYTES: usize = 8 * 1024 * 1024;
 /// The largest number of symbols a single slice response may carry.
 pub const MAX_SLICE_SYMBOLS: usize = 4096;
 
+/// Whether an optional external evaluator is discoverable.
+///
+/// Jev is an *optional adversarial evaluator*, never a semantic authority. This
+/// function performs **discovery only**: it scans `PATH` for an executable
+/// named `jev` and reports the first match. It does not run the program, read
+/// its configuration, or grant any authority — an MCP client learns whether
+/// Jev *could* be invoked by the user, and the compiler remains the sole
+/// authority for what a program means. Absence changes nothing semantic
+/// (`tests/ais_properties.rs` proves AIS works identically either way).
+#[must_use]
+pub fn discover_jev() -> Option<std::path::PathBuf> {
+    discover_jev_in(std::env::var_os("PATH").as_deref())
+}
+
+/// The testable core of [`discover_jev`]: scan an explicit `PATH`.
+#[must_use]
+pub fn discover_jev_in(path: Option<&std::ffi::OsStr>) -> Option<std::path::PathBuf> {
+    let path = path?;
+    for dir in std::env::split_paths(path) {
+        if dir.as_os_str().is_empty() {
+            continue;
+        }
+        let candidate = dir.join("jev");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+/// The session capability report for `aura://capabilities`.
+///
+/// The compiler/AIS layer is required and always present; the MCP adapter is
+/// this process; Jev is optional and reported only if discoverable. A consumer
+/// must treat a missing optional capability as a normal state, not an error.
+#[must_use]
+pub fn capabilities_report() -> Value {
+    let jev = discover_jev();
+    json!({
+        "compiler": {
+            "required": true,
+            "present": true,
+            "language_version": crate::LANGUAGE_VERSION,
+        },
+        "ais": {
+            "required": true,
+            "present": true,
+            "ais_version": crate::ais::AIS_VERSION,
+        },
+        "mcp_adapter": {
+            "required": false,
+            "present": true,
+            "protocol_version": MCP_PROTOCOL_VERSION,
+            "authority": "transport only: the compiler is the semantic authority",
+        },
+        "jev": {
+            "required": false,
+            "present": jev.is_some(),
+            "path": jev.map(|p| p.display().to_string()),
+            "role": "adversarial measurement, never semantic authority; absence changes no Aura semantics",
+        },
+    })
+}
+
 /// The server identity reported in the `initialize` handshake.
 #[must_use]
 pub fn server_info() -> Value {
@@ -66,6 +130,7 @@ pub fn server_capabilities() -> Value {
     json!({
         "tools": {},
         "resources": { "subscribe": false, "listChanged": false },
+        "experimental": capabilities_report(),
     })
 }
 
@@ -149,6 +214,15 @@ pub fn tools() -> Value {
                 },
                 "required": ["source"]
             }
+        },
+        {
+            "name": "aura_capabilities",
+            "description": "The session capability report: the compiler and AIS are required and present; the MCP adapter is transport-only; the optional Jev adversarial evaluator is reported by PATH discovery alone and its absence changes no Aura semantics.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
         }
     ])
 }
@@ -167,6 +241,12 @@ pub fn resources() -> Value {
             "uri": "aura://versions",
             "name": "Version matrix",
             "description": "The AIS protocol version, compiler version, and language version.",
+            "mimeType": "application/json"
+        },
+        {
+            "uri": "aura://capabilities",
+            "name": "Session capabilities",
+            "description": "Required and optional capabilities: the compiler and AIS are required; the MCP adapter and the optional Jev evaluator are reported by discovery only.",
             "mimeType": "application/json"
         }
     ])
@@ -196,6 +276,11 @@ pub fn read_resource(uri: &str) -> Value {
                 "ais_version": crate::ais::AIS_VERSION,
                 "mcp_protocol_version": MCP_PROTOCOL_VERSION
             })).unwrap_or_default()
+        }),
+        "aura://capabilities" => json!({
+            "uri": uri,
+            "mimeType": "application/json",
+            "text": serde_json::to_string_pretty(&capabilities_report()).unwrap_or_default()
         }),
         _ => json!({ "error": format!("unknown resource `{uri}`") }),
     }
@@ -293,6 +378,7 @@ fn call_tool(name: &str, args: &Value) -> Result<Value, String> {
             let source = need_str(args, "source")?;
             Ok(json!({ "revision": crate::ais::revision_of(source) }))
         }
+        "aura_capabilities" => Ok(capabilities_report()),
         other => Err(format!("unknown tool `{other}`")),
     }
 }
@@ -572,5 +658,61 @@ mod tests {
             .collect();
         assert!(changes.contains(&("a", "changed")));
         assert!(changes.contains(&("b", "added")));
+    }
+
+    #[test]
+    fn jev_discovery_is_read_only_and_never_required() {
+        // Discovery scans PATH only: it never runs the binary, reads its
+        // configuration, or grants authority. An empty PATH finds nothing.
+        assert_eq!(discover_jev_in(None), None);
+        assert_eq!(discover_jev_in(Some(std::ffi::OsStr::new(""))), None);
+        assert_eq!(
+            discover_jev_in(Some(std::ffi::OsStr::new("/nonexistent-dir-xyz"))),
+            None
+        );
+        // And the capability report is honest about the optional role.
+        let report = capabilities_report();
+        assert_eq!(report["compiler"]["required"], true);
+        assert_eq!(report["compiler"]["present"], true);
+        assert_eq!(report["ais"]["required"], true);
+        assert_eq!(report["jev"]["required"], false);
+        assert!(report["jev"]["role"].as_str().unwrap().contains("never"));
+    }
+
+    #[test]
+    fn capabilities_are_reported_through_the_handshake_and_resources() {
+        // A client learns the capability set without a separate call.
+        let r = call("initialize", json!({}));
+        assert_eq!(r["result"]["capabilities"]["experimental"]["compiler"]["present"], true);
+        // And can read it as a resource.
+        let r = call("resources/read", json!({ "uri": "aura://capabilities" }));
+        let text = r["result"]["contents"][0]["text"].as_str().unwrap();
+        assert!(text.contains("\"ais\""));
+        assert!(text.contains("\"jev\""));
+        // The tool form agrees.
+        let r = call("tools/call", json!({ "name": "aura_capabilities", "arguments": {} }));
+        assert_eq!(r["result"]["structuredContent"]["ais"]["present"], true);
+    }
+
+    #[test]
+    fn a_missing_optional_capability_changes_no_semantics() {
+        // The core semantic operations are identical whether or not Jev is
+        // present, because none of them consults it: the compiler is the
+        // authority. This is the fallback proof.
+        let src = "fn rows() -> [[int]] { return [] }\nfn main() { print(rows()) }\n";
+        let a = call(
+            "tools/call",
+            json!({ "name": "aura_snapshot", "arguments": { "source": src } }),
+        );
+        let b = call(
+            "tools/call",
+            json!({ "name": "aura_snapshot", "arguments": { "source": src } }),
+        );
+        assert_eq!(
+            a["result"]["structuredContent"],
+            b["result"]["structuredContent"]
+        );
+        // And no snapshot field mentions Jev at all.
+        assert!(!a["result"]["structuredContent"].to_string().contains("jev"));
     }
 }

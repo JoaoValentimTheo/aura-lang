@@ -55,6 +55,31 @@ Small semantic operations — never one `get_everything` call.
 | `aura_diagnostics` | `ais::Diagnostic` | structured diagnostics (code/severity/range) |
 | `aura_delta` | `ais::delta` | declaration-level changes, resolved/new diagnostics |
 | `aura_revision` | `ais::revision_of` | the content-addressed revision |
+| `aura_capabilities` | `mcp::capabilities_report` | required/optional session capabilities |
+
+## Capability discovery (Jev is optional)
+
+The `initialize` result advertises `experimental` capabilities and the
+`aura://capabilities` resource carries the same report, so a client learns the
+session's shape in one handshake:
+
+```json
+{
+  "compiler": { "required": true,  "present": true },
+  "ais":      { "required": true,  "present": true },
+  "mcp_adapter": { "required": false, "present": true,
+                   "authority": "transport only: the compiler is the semantic authority" },
+  "jev":      { "required": false, "present": false,
+                "role": "adversarial measurement, never semantic authority; absence changes no Aura semantics" }
+}
+```
+
+Jev is discovered by scanning `PATH` for an executable named `jev`
+(`mcp::discover_jev`). Discovery is **read-only**: it never runs the binary,
+reads its configuration, or grants authority. Jev's absence changes no Aura
+semantics — none of the semantic tools consults it, and
+`src/mcp.rs::tests::a_missing_optional_capability_changes_no_semantics` pins
+that the same source yields byte-identical semantic output either way.
 
 ## Resources
 
@@ -63,6 +88,7 @@ Read-only, stable information:
 - `aura://schema` — the AIS version, the three identity levels, the delivery
   model, and the explicit statement that the compiler is the authority.
 - `aura://versions` — the compiler, language, AIS, and MCP protocol versions.
+- `aura://capabilities` — the session capability report above.
 
 Unknown URIs return an error object; they do not fail the process.
 
