@@ -22,6 +22,22 @@
 
 use proptest::prelude::*;
 
+
+/// A generator for a *legal* Aura value-naming identifier.
+///
+/// `[a-z][a-z0-9]{1,5}` can still produce a reserved word (`fn`, `if`, `for`,
+/// …) or a builtin name (reserved as a value binding since `E1009`), which
+/// would make the generated source unparseable or unredeclarable and turn a
+/// property into a generator bug. The filter is derived from the lexer's own
+/// keyword list and the stdlib's builtin registry, so it can never drift from
+/// the language.
+fn legal_ident() -> impl Strategy<Value = String> {
+    "[a-z][a-z0-9]{1,5}".prop_filter("not a reserved word or builtin name", |s| {
+        !aura::lex::KEYWORDS.contains(&s.as_str())
+            && !aura::stdlib::builtin_names().contains(&s.as_str())
+    })
+}
+
 // ---------------------------------------------------------------------------
 // 1. Bounded output
 // ---------------------------------------------------------------------------
@@ -83,7 +99,7 @@ proptest! {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn families_and_value_kinds_are_disjoint_vocabularies(name in "[a-z]{1,6}") {
+    fn families_and_value_kinds_are_disjoint_vocabularies(name in legal_ident()) {
         let src = format!("fn {name}() -> [[int]] {{ return [] }}\n");
         let doc = aura::ais::document("m.aura", &src, &aura::parse::parse(&src).unwrap());
         let sym = doc.symbols.iter().find(|s| s.name == name).unwrap();
@@ -117,7 +133,7 @@ proptest! {
 
     #[test]
     fn a_comment_insertion_does_not_change_declarations(
-        name in "[a-z]{1,6}",
+        name in legal_ident(),
         comment in "[A-Za-z0-9 ]{0,40}",
     ) {
         // Inserting a comment line before a declaration cannot change what is
@@ -142,7 +158,7 @@ proptest! {
     }
 
     #[test]
-    fn trailing_whitespace_does_not_change_declarations(name in "[a-z]{1,6}") {
+    fn trailing_whitespace_does_not_change_declarations(name in legal_ident()) {
         let base = format!("fn {name}() -> int {{ return 1 }}\n");
         let padded = format!("fn {name}() -> int {{ return 1 }}\n   \t\n");
         let a = aura::ais::document("m.aura", &base, &aura::parse::parse(&base).unwrap());
@@ -155,7 +171,7 @@ proptest! {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn mcp_snapshot_matches_the_ais_snapshot(name in "[a-z]{1,6}") {
+    fn mcp_snapshot_matches_the_ais_snapshot(name in legal_ident()) {
         let src = format!("fn {name}() -> [[int]] {{ return [] }}\nfn main() {{ print({name}()) }}\n");
         let call = serde_json::json!({
             "jsonrpc": "2.0", "id": 1, "method": "tools/call",

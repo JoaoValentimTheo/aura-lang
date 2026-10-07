@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc 69a1c84c434900508a0228d885d2dc184703ff5ce5dc93bfd0746351249bdd91 # shrinks to body = "", depth = 1, budget = 1
 cc 708e81405d8aff33820b58f70515bc24defc2a861bfeb437f9c8bf0f62eb1147 # shrinks to name = "a", comment = ""
+cc 2ea09b96e2e92d3c1cb8ba551db62b25215c463a4c5fc2f97acbe302a7414cd6 # shrinks to name = "fn", comment = ""
