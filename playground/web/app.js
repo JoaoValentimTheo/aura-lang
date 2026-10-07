@@ -1380,6 +1380,10 @@ window.__setChildren = (children) => setActiveChildren(children);
 if (els.outputTab) els.outputTab.addEventListener("click", () => showTab("output"));
 if (els.problemsTab) els.problemsTab.addEventListener("click", () => showTab("problems"));
 showTab("output");
+// Enter the machine's initial state through the one transition function, so
+// the state variable, the status text, and the control availability are set
+// together. The static markup's placeholder text is never a state.
+enterState(PLAYGROUND_STATE.READY);
 
 // The initial program is the default one; a handoff from a host site's
 // "Run in Playground" link — carried by the navigation itself — replaces it,

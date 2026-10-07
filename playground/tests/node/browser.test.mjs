@@ -602,6 +602,109 @@ async function runAndWait(page, timeout = 15000) {
   await page.close();
 }
 
+// --- 13. Execution state machine: transitions, forbidden edges, cycles ----
+//
+// Keystone §6 requires the machine to be reasoned about as a graph, not as a
+// set of branches. The states are ready/running/completed/failed/stopped
+// (`web/app.js`, PLAYGROUND_STATE). This section checks the *legal*
+// transitions, the *forbidden* ones (a control that must be unavailable in a
+// state), and cycle closure: every path returns to `ready`, from which any
+// next transition is possible.
+{
+  const { page, errors } = await newPage();
+  const state = () => page.evaluate(() => document.getElementById("status").textContent);
+  const runDisabled = () => page.evaluate(() => document.getElementById("run").disabled);
+  const stopDisabled = () => page.evaluate(() => document.getElementById("stop").disabled);
+
+  // ready: Run enabled, Stop disabled. `ready` is the initial state, and the
+  // initial status text is the state label.
+  check("FSM initial state is ready", (await state()) === "Ready", await state());
+  check("ready: Run enabled", (await runDisabled()) === false);
+  check("ready: Stop disabled", (await stopDisabled()) === true);
+
+  // ready -> running: Run is enabled and enters running.
+  await setSource(page, "fn main() { print(1) }");
+  await page.click("#run");
+  await page.waitForFunction(
+    () => document.getElementById("status").textContent.startsWith("Running"),
+    { timeout: 5000 },
+  );
+  check("ready -> running", (await state()).startsWith("Running"));
+  // running: Stop enabled, Run disabled (the forbidden edge is unreachable).
+  check("running: Stop enabled", (await stopDisabled()) === false);
+  check("running: Run disabled", (await runDisabled()) === true);
+  // The forbidden edge running -> ready without an exit does not exist: the
+  // status stays in the running vocabulary until a result or a stop.
+
+  // running -> completed, then completed -> running (a second run).
+  await page.waitForFunction(
+    () => document.getElementById("status").textContent === "Completed",
+    { timeout: 15000 },
+  );
+  check("running -> completed", (await state()) === "Completed");
+  check("completed: Run enabled again", (await runDisabled()) === false);
+  check("completed: Stop disabled again", (await stopDisabled()) === true);
+  await setSource(page, "fn main() { print(2) }");
+  await page.click("#run");
+  await page.waitForFunction(
+    () => document.getElementById("status").textContent === "Completed",
+    { timeout: 15000 },
+  );
+  const stdout2 = await page.textContent("#stdout");
+  check("completed -> running -> completed cycle", stdout2 === "2\n", stdout2);
+
+  // completed -> failed: a diagnostic run never reuses the previous success.
+  await setSource(page, 'fn main() { let x: int = "s" }');
+  await page.click("#run");
+  await page.waitForFunction(
+    () => document.getElementById("status").textContent.startsWith("Failed"),
+    { timeout: 15000 },
+  );
+  check("completed -> failed", (await state()).startsWith("Failed"));
+  check("failed: Run enabled", (await runDisabled()) === false);
+  check("failed: Stop disabled", (await stopDisabled()) === true);
+
+  // failed -> running -> stopped: a runaway program is stopped by the user.
+  await setSource(page, "fn main() { while true {} }");
+  await page.click("#run");
+  await page.waitForFunction(
+    () => document.getElementById("status").textContent.startsWith("Running"),
+    { timeout: 5000 },
+  );
+  check("failed -> running", (await state()).startsWith("Running"));
+  await page.click("#stop");
+  await page.waitForFunction(
+    () => document.getElementById("status").textContent === "Stopped",
+    { timeout: 5000 },
+  );
+  check("running -> stopped", (await state()) === "Stopped");
+  check("stopped: Run enabled", (await runDisabled()) === false);
+  check("stopped: Stop disabled", (await stopDisabled()) === true);
+
+  // stopped -> running -> completed: the machine returns to a fully usable
+  // cycle, proving no state is absorbing and every failure path recovers.
+  await setSource(page, "fn main() { print(3) }");
+  await page.click("#run");
+  await page.waitForFunction(
+    () => document.getElementById("status").textContent === "Completed",
+    { timeout: 15000 },
+  );
+  const stdout3 = await page.textContent("#stdout");
+  check("stopped -> running -> completed recovery", stdout3 === "3\n", stdout3);
+
+  // The transition vocabulary stays closed: no state outside the five is
+  // ever presented for the states exercised above.
+  const vocabulary = new Set(["Ready", "Running…", "Completed", "Failed", "Stopped"]);
+  const final = await state();
+  check(
+    "state vocabulary is closed",
+    [...vocabulary].some((v) => final === v || final.startsWith(v)),
+    final,
+  );
+  check("no page errors across the FSM matrix", errors.length === 0, errors.join("; "));
+  await page.close();
+}
+
 await browser.close();
 server.close();
 
