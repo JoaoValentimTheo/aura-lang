@@ -656,7 +656,14 @@ pub fn revision_of(source: &str) -> String {
 pub struct SymbolChange {
     /// The symbol's name.
     pub name: String,
-    /// `added`, `removed`, or `changed`.
+    /// `added`, `removed`, `changed`, or `moved`.
+    ///
+    /// `changed` means the declaration's *semantics* differ (kind, type,
+    /// families, value kind, capabilities, type parameters, parameters,
+    /// fields, variants, or visibility). `moved` means only its source range
+    /// moved — an unrelated insertion above it shifts its position without
+    /// changing what is declared — so an agent session is told to refresh
+    /// positions without being told the declaration changed.
     pub change: String,
     /// The *canonical* serialized form of the symbol after the change (absent
     /// for `removed`). A consumer compares this to decide whether a change
@@ -664,6 +671,39 @@ pub struct SymbolChange {
     /// whole document.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub after: Option<Symbol>,
+}
+
+/// Compare two symbols ignoring their source ranges.
+///
+/// Two declarations with the same name are semantically the same when
+/// everything except where they were written is equal: a comment inserted
+/// above a declaration moves it without changing what it declares.
+fn same_declaration(a: &Symbol, b: &Symbol) -> bool {
+    let mut a = a.clone();
+    let mut b = b.clone();
+    let scrub = |s: &mut Symbol| {
+        s.range = Range {
+            start: Position {
+                line: 0,
+                column: 0,
+                offset: 0,
+            },
+            end: Position {
+                line: 0,
+                column: 0,
+                offset: 0,
+            },
+        };
+        for p in &mut s.parameters {
+            p.range = s.range.clone();
+        }
+        for f in &mut s.fields {
+            f.range = s.range.clone();
+        }
+    };
+    scrub(&mut a);
+    scrub(&mut b);
+    a == b
 }
 
 /// A semantic delta between two source revisions.
@@ -692,11 +732,24 @@ pub struct Delta {
 
 impl Delta {
     /// Whether this delta carries no semantic change.
+    ///
+    /// A `moved` symbol is a position refresh, not a semantic change, so it
+    /// does not make the delta non-empty: an unrelated edit above a
+    /// declaration must not tell a consumer that the declaration changed.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.symbols.is_empty()
+        !self
+            .symbols
+            .iter()
+            .any(|c| c.change != "moved")
             && self.resolved_diagnostics.is_empty()
             && self.new_diagnostics.is_empty()
+    }
+
+    /// Whether the delta carries any change at all, including position moves.
+    #[must_use]
+    pub fn has_moves(&self) -> bool {
+        self.symbols.iter().any(|c| c.change == "moved")
     }
 }
 
@@ -715,6 +768,11 @@ pub fn delta(from: &Document, to: &Document) -> Delta {
     for (name, sym) in &after {
         match before.get(name) {
             Some(old) if old == sym => {}
+            Some(old) if same_declaration(old, sym) => changes.push(SymbolChange {
+                name: (*name).to_string(),
+                change: "moved".into(),
+                after: Some((*sym).clone()),
+            }),
             Some(_) => changes.push(SymbolChange {
                 name: (*name).to_string(),
                 change: "changed".into(),
@@ -1148,6 +1206,36 @@ mod tests {
         let to = document("m.aura", src2, &parse(src2).unwrap());
         assert_ne!(from.revision, to.revision);
         assert!(delta(&from, &to).is_empty());
+    }
+
+    #[test]
+    fn delta_reports_an_unrelated_insertion_as_moved_not_changed() {
+        // Inserting a comment above a declaration shifts every following
+        // declaration's byte range. That is a position refresh, not a
+        // semantic change: the delta must not tell a consumer that the whole
+        // universe changed, and `is_empty` must stay true.
+        let src1 = "fn a() -> int { return 1 }\nfn b() -> int { return 2 }\n";
+        let src2 = "# a note\nfn a() -> int { return 1 }\nfn b() -> int { return 2 }\n";
+        let from = document("m.aura", src1, &parse(src1).unwrap());
+        let to = document("m.aura", src2, &parse(src2).unwrap());
+        let d = delta(&from, &to);
+        assert!(d.is_empty(), "a comment insertion is not a semantic change");
+        assert!(d.has_moves(), "positions moved and the delta says so");
+        assert!(d.symbols.iter().all(|c| c.change == "moved"));
+        // The moved metadata still carries the current position.
+        let a = d.symbols.iter().find(|c| c.name == "a").unwrap();
+        assert_eq!(a.after.as_ref().unwrap().range.start.line, 2);
+    }
+
+    #[test]
+    fn delta_still_reports_a_real_signature_change_as_changed() {
+        let src1 = "fn a(x: int) -> int { return x }\n";
+        let src2 = "fn a(x: string) -> int { return 1 }\n";
+        let from = document("m.aura", src1, &parse(src1).unwrap());
+        let to = document("m.aura", src2, &parse(src2).unwrap());
+        let d = delta(&from, &to);
+        assert!(!d.is_empty());
+        assert_eq!(d.symbols[0].change, "changed");
     }
 
     #[test]
