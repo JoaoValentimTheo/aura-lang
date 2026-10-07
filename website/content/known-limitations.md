@@ -60,8 +60,13 @@ is.
   builtin-name reservation, unified type nesting, filesystem-backed module
   acquisition for the CLI, and the multi-file Playground (see the
   [migration guide](/docs/migration-0-2-1/)).
-- There is **no active development line**: the `0.2.1` release train is closed
-  and no successor version has been selected.
+- An **unreleased development line** (`0.3` "Keystone") is in progress. It has
+  no published artifact and no version bump: it hardens the checker's
+  `none`/`never`/narrowing rules, formalizes the type-family and Value-algebra
+  identities, and adds the AIS/0.1 semantic interface and its MCP adapter.
+  Nothing from it is available in the released runtime, and no release date is
+  claimed. The published `0.2.1` line remains the language you can download
+  and run today.
 - Released runtime artifacts are immutable; fixes ship as a new version.
 - Semantics may still change before 1.0, always with an ADR and a migration
   note.

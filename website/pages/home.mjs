@@ -294,7 +294,8 @@ fn main() {
         ["OOP completion", "Four pillars mapped to Aura; composition over inheritance", chip("Delivered", "success")],
         ["Hardening", "Conformance, differential testing, fuzzing", chip("Delivered", "success")],
         ["Generics", "Static, erased, nominal parametric polymorphism", chip("Delivered", "success")],
-        ["Next direction", "Not yet selected; no successor program is authorized", chip("Pending human decision", "planned")],
+        ["0.3 “Keystone” line", "In progress, unreleased: checker hardening, Value algebra, AIS/0.1", chip("Unreleased", "planned")],
+        ["Direction after 0.3", "Not yet selected; no successor program is authorized", chip("Pending human decision", "planned")],
         ["Python / data", "PyO3 interop and the scientific ecosystem", chip("Long-term", "planned")],
       ],
     )}

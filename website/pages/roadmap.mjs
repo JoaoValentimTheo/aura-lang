@@ -80,10 +80,16 @@ const PHASES = [
     body: "Conformance suites, differential testing, and fuzzing, plus the train-1 red-team campaign: every finding was fixed with regression coverage, and the language behaves identically across every substrate.",
   },
   {
+    tag: "In progress (unreleased)",
+    kind: "planned",
+    title: "0.3 “Keystone” development line",
+    body: "An unreleased engineering program is in progress on the development branch: checker hardening for <code>none</code>/<code>never</code>/narrowing, the formal type-family and Value-algebra identities, the AIS/0.1 semantic interface, and its MCP adapter. It has no published artifact, version bump, or release date; the released <code>0.2.1</code> remains the language you can download and run. Publication requires a separate, explicit human authorization.",
+  },
+  {
     tag: "Pending human decision",
     kind: "planned",
-    title: "Next major direction",
-    body: "The filesystem-module program (FSM-P1…P6) is delivered and released. No successor engineering program has been selected; nothing is started by assumption. The explicitly deferred candidates include package management, browser persistence, an LSP, a formatter, async, and macros.",
+    title: "Direction after 0.3",
+    body: "The filesystem-module program (FSM-P1…P6) is delivered and released as 0.2.1, and the 0.3 Keystone line is in progress. The direction after 0.3 has not been selected; nothing is started by assumption. The explicitly deferred candidates include package management, browser persistence, an LSP, a formatter, async, and macros.",
   },
   {
     tag: "Long-term",
@@ -99,7 +105,7 @@ export const roadmapPage = {
   path: "roadmap/",
   activeKey: "roadmap",
   description:
-    "The Aura roadmap: delivered infrastructure (0.0.1, 0.0.2), the completed Aura Core (0.2.0), the released 0.2.1 (filesystem modules and the multi-file Playground), and the next direction, which is not yet selected.",
+    "The Aura roadmap: delivered infrastructure (0.0.1, 0.0.2), the completed Aura Core (0.2.0), the released 0.2.1 (filesystem modules and the multi-file Playground), and the in-progress, unreleased 0.3 Keystone line.",
   async render(base) {
     const items = PHASES.map(
       (p) => `<div class="card card--elevated">
