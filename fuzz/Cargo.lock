@@ -22,6 +22,7 @@ version = "0.0.0"
 dependencies = [
  "aura-lang",
  "libfuzzer-sys",
+ "serde_json",
 ]
 
 [[package]]
