@@ -51,8 +51,20 @@ explicit-continuation (iterative) evaluator over the existing AST
   all define `;` as a statement terminator, and `[1; 3]` is `E1006` — no
   grammar change was made.
 - Remaining closure work: none required for the publication gate beyond the
-  human gates below. Frozen `0.0.2`/`0.2.0`/`0.2.1` byte-identical; `v0.2.1`
+  human gates below. Final validation on this exact source: all-features
+  1333/0 (176 suites), no-default canonical 1252/0, bare --no-default-features
+  1054/0, clippy -D warnings / fmt / MSRV 1.83 / nightly fuzz check all exit 0,
+  playground suite green (differential 233/0, browser 98/0, boundary 63/0,
+  worker 12/0, multi-file 42/0, cache 7/0), website suite green (browser
+  380/0, a11y 70/0, links 2499 OK across 43 pages, release-version 29/0).
+  Frozen `0.0.2`/`0.2.0`/`0.2.1` byte-identical; `v0.2.1` = `3f5f8702…`
   unmoved; `.kilo/**` protected churn untouched; no tag/release/deploy.
+  **Exact next action:** the branch is at the publication gate. A push must
+  be explicitly authorized by the human; if authorized, `git push` normally
+  (never force), then verify the exact pushed SHA in CI. Note that CI's
+  `pages.yml` triggers on push to these paths and will deploy the website —
+  that is the repository's existing behavior, so a push publishes the site;
+  confirm the human accepts that consequence before the push.
   Five adversarial review passes total (J1–J12 in the ledger); each finding
   was independently reproduced against the built CLI before being fixed:
   second (committed `45271b2`), then the third/fourth/fifth passes hardening
