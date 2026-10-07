@@ -14,6 +14,52 @@
 use crate::ast::*;
 use crate::error::{codes, Diag, Result, Span};
 
+/// The capability family a semantic type belongs to (`LANGUAGE_SPEC.md` §5.4).
+///
+/// A family answers "what operations are valid here", never "what is this":
+/// `[int]` and `string` are both `Sequence` and therefore both iterable and
+/// indexable, but they stay distinct semantic types and distinct runtime
+/// values. The family is a *projection* of a type, not a replacement for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TypeFamily {
+    /// `int`, `float`, `bool`, `string`.
+    Scalar,
+    /// `[T]`, `string` — capabilities shared by list and string iteration.
+    Sequence,
+    /// `{K: V}`.
+    Mapping,
+    /// A nominal struct.
+    Object,
+    /// An enum, a union, `never`, or `none` (an inhabitant-set type).
+    Sum,
+    /// A function value.
+    Callable,
+    /// `none`.
+    Nullish,
+    /// A runtime-only range; it has no annotation spelling.
+    RangeLike,
+    /// The checker does not know; no family is claimed.
+    Unknown,
+}
+
+impl TypeFamily {
+    /// The stable protocol spelling of this family.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            TypeFamily::Scalar => "scalar",
+            TypeFamily::Sequence => "sequence",
+            TypeFamily::Mapping => "mapping",
+            TypeFamily::Object => "object",
+            TypeFamily::Sum => "sum",
+            TypeFamily::Callable => "callable",
+            TypeFamily::Nullish => "nullish",
+            TypeFamily::RangeLike => "range_like",
+            TypeFamily::Unknown => "unknown",
+        }
+    }
+}
+
 /// A type known to the checker.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ty {
@@ -370,6 +416,63 @@ impl Ty {
             Ty::Named(_) | Ty::Enum(_) | Ty::Union(_) | Ty::Unknown => return None,
             Ty::Param(_) | Ty::App(_, _) | Ty::Never | Ty::None => return None,
         })
+    }
+
+    /// The capability families of this type (`LANGUAGE_SPEC.md` §5.4).
+    ///
+    /// This is a *projection*: it classifies which operations the type
+    /// supports, and never replaces the semantic type. Two types in one family
+    /// (a list and a string; a struct and a string-keyed map) remain distinct
+    /// types with distinct equality, display, and JSON behavior. A type may
+    /// belong to more than one family: a `string` is `Scalar` and `Sequence`.
+    ///
+    /// `App` is a parameterized nominal application whose declaration decides
+    /// whether it is an object or a sum; without the declaration registry the
+    /// family is not claimed. `Never` is the empty sum, `none` the nullish
+    /// unit, and `Union` an untagged sum.
+    #[must_use]
+    pub fn families(&self) -> &'static [TypeFamily] {
+        match self {
+            Ty::Int | Ty::Float | Ty::Bool => &[TypeFamily::Scalar],
+            Ty::String => &[TypeFamily::Scalar, TypeFamily::Sequence],
+            Ty::List(_) => &[TypeFamily::Sequence],
+            Ty::Map(_, _) => &[TypeFamily::Mapping],
+            Ty::Named(_) => &[TypeFamily::Object],
+            Ty::Enum(_) | Ty::Union(_) | Ty::Never => &[TypeFamily::Sum],
+            Ty::None => &[TypeFamily::Nullish],
+            Ty::Param(_) | Ty::App(_, _) | Ty::Unknown => &[TypeFamily::Unknown],
+        }
+    }
+
+    /// The primary capability family, the first of [`Ty::families`].
+    #[must_use]
+    pub fn family(&self) -> TypeFamily {
+        self.families()
+            .first()
+            .copied()
+            .unwrap_or(TypeFamily::Unknown)
+    }
+
+    /// The canonical runtime value kind a value of this type has
+    /// (`LANGUAGE_SPEC.md` §5.4 level 3), or `"unknown"` when the static type
+    /// does not pin one kind (a union, a generic parameter, an unresolved
+    /// application, the checker's `Unknown`).
+    #[must_use]
+    pub fn value_kind(&self) -> &'static str {
+        match self {
+            Ty::Int => "int",
+            Ty::Float => "float",
+            Ty::Bool => "bool",
+            Ty::String => "string",
+            Ty::List(_) => "list",
+            Ty::Map(_, _) => "map",
+            Ty::Named(_) => "struct",
+            Ty::Enum(_) => "enum",
+            Ty::None => "none",
+            Ty::Never => "never",
+            Ty::Union(_) => "union",
+            Ty::Param(_) | Ty::App(_, _) | Ty::Unknown => "unknown",
+        }
     }
 
     /// Whether two types can be ordered with `<`, `<=`, `>`, `>=`.

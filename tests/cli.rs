@@ -741,3 +741,116 @@ fn ais_output_grants_no_capability() {
     // The only filesystem name present is the caller's own source path.
     assert!(stdout.contains("c.aura"));
 }
+
+#[test]
+fn ais_snapshot_separates_type_family_and_value_kind() {
+    // The three identity levels must be visible and distinct: a list has the
+    // `sequence` family and the `list` value kind, and those are not the same
+    // string, so a consumer cannot conflate them.
+    let p = TempProject::new("ais-levels");
+    p.write(
+        "l.aura",
+        "fn rows() -> [[int]] { return [] }\nfn main() { print(rows()) }\n",
+    );
+    let (code, stdout, _) = p.run(&["ais", "l.aura"]);
+    assert_eq!(code, 0, "{stdout}");
+    let doc: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let rows = doc["symbols"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["name"] == "rows")
+        .expect("rows");
+    assert_eq!(rows["type_name"], "[[int]]");
+    assert_eq!(rows["families"][0], "sequence");
+    assert_eq!(rows["value_kind"], "list");
+    assert!(rows["revision"].is_null() || doc["revision"].is_string());
+}
+
+#[test]
+fn ais_snapshot_carries_a_content_revision() {
+    let p = TempProject::new("ais-rev");
+    p.write("r.aura", "fn main() { print(1) }\n");
+    let (_, first, _) = p.run(&["ais", "r.aura"]);
+    let (_, second, _) = p.run(&["ais", "r.aura"]);
+    let a: serde_json::Value = serde_json::from_str(&first).unwrap();
+    let b: serde_json::Value = serde_json::from_str(&second).unwrap();
+    let rev = a["revision"].as_str().expect("revision");
+    assert!(rev.starts_with("rev:"));
+    assert_eq!(a["revision"], b["revision"]);
+}
+
+#[test]
+fn ais_slice_is_target_focused() {
+    let p = TempProject::new("ais-slice");
+    p.write(
+        "s.aura",
+        "struct Point { x: int, y: int }\n\
+         fn origin() -> Point { return Point { x: 0, y: 0 } }\n\
+         fn unrelated() -> int { return 1 }\n\
+         fn main() { print(unrelated()) }\n",
+    );
+    let (code, stdout, _) = p.run(&["ais", "slice", "s.aura", "origin", "2", "16"]);
+    assert_eq!(code, 0, "{stdout}");
+    let s: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(s["target"], "origin");
+    assert_eq!(s["symbol"]["name"], "origin");
+    let deps: Vec<&str> = s["dependencies"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|d| d["name"].as_str()).collect())
+        .unwrap_or_default();
+    assert!(deps.contains(&"Point"), "{stdout}");
+    assert!(!deps.contains(&"unrelated"), "{stdout}");
+}
+
+#[test]
+fn ais_delta_reports_declaration_changes() {
+    let p = TempProject::new("ais-delta");
+    p.write(
+        "old.aura",
+        "fn a(x: int) -> int { return x }\nfn b() -> int { return 2 }\n",
+    );
+    p.write(
+        "new.aura",
+        "fn a(x: string) -> int { return 1 }\nfn c() -> int { return 3 }\n",
+    );
+    let (code, stdout, _) = p.run(&["ais", "delta", "old.aura", "new.aura"]);
+    assert_eq!(code, 0, "{stdout}");
+    let d: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let changes: Vec<(&str, &str)> = d["symbols"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| (c["name"].as_str().unwrap(), c["change"].as_str().unwrap()))
+        .collect();
+    assert!(changes.contains(&("a", "changed")));
+    assert!(changes.contains(&("b", "removed")));
+    assert!(changes.contains(&("c", "added")));
+    assert!(d["from_revision"].as_str().unwrap().starts_with("rev:"));
+    assert!(d["to_revision"].as_str().unwrap().starts_with("rev:"));
+}
+
+#[test]
+fn ais_delta_from_stdin_rejects_two_stdin_sides() {
+    let (code, _, stderr) = run(&["ais", "delta", "-", "-"]);
+    assert_eq!(code, 2);
+    assert!(stderr.contains("stdin"), "{stderr}");
+}
+
+#[test]
+fn ais_slice_usage_error_is_exit_two() {
+    let (code, _, stderr) = run(&["ais", "slice", "only-one-arg"]);
+    assert_eq!(code, 2);
+    assert!(stderr.contains("usage"), "{stderr}");
+}
+
+#[test]
+fn ais_snapshot_subcommand_is_equivalent_to_bare_ais() {
+    let p = TempProject::new("ais-snap-alias");
+    p.write("m.aura", "fn main() { print(1) }\n");
+    let (bare_code, bare, _) = p.run(&["ais", "m.aura"]);
+    let (sub_code, sub, _) = p.run(&["ais", "snapshot", "m.aura"]);
+    assert_eq!(bare_code, 0);
+    assert_eq!(sub_code, 0);
+    assert_eq!(bare, sub);
+}

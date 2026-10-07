@@ -244,6 +244,21 @@ pub struct Symbol {
     /// The resolved type or signature spelling, when the kind has one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub type_name: Option<String>,
+    /// The semantic type's capability families, in canonical order
+    /// (`LANGUAGE_SPEC.md` §5.4 level 2). Projected from the resolved type,
+    /// never a replacement for `type_name`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub families: Vec<String>,
+    /// The runtime value kind the resolved type pins, when it pins exactly one
+    /// (`LANGUAGE_SPEC.md` §5.4 level 3). Absent for a union, a generic
+    /// parameter, an unresolved application, or the checker's `Unknown`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value_kind: Option<String>,
+    /// The capabilities implied by the families, so a consumer need not infer
+    /// them: `iterable`, `indexable`, `sized`, `callable`, `keyed`,
+    /// `orderable`, `mutable`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub capabilities: Vec<String>,
     /// Generic type parameters, in declaration order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub type_parameters: Vec<String>,
@@ -262,7 +277,141 @@ fn type_spelling(t: &TypeExpr) -> String {
     t.name().clone()
 }
 
-fn symbol_of_item(item: &Item) -> Option<Symbol> {
+/// The declarations a projection needs to resolve a type spelling into a
+/// semantic type. A name in this environment resolves to a struct, an enum, an
+/// alias target, or is not a value type at all (a trait, a module, a generic
+/// parameter).
+#[derive(Default)]
+struct TypeEnv {
+    structs: std::collections::HashSet<String>,
+    enums: std::collections::HashSet<String>,
+    aliases: std::collections::HashMap<String, TypeExpr>,
+}
+
+impl TypeEnv {
+    fn from_module(module: &Module) -> TypeEnv {
+        let mut env = TypeEnv::default();
+        for item in &module.items {
+            match item {
+                Item::Struct { name, .. } => {
+                    env.structs.insert(name.clone());
+                }
+                Item::Enum { name, .. } => {
+                    env.enums.insert(name.clone());
+                }
+                Item::Alias { name, target, .. } => {
+                    env.aliases.insert(name.clone(), target.clone());
+                }
+                _ => {}
+            }
+        }
+        env
+    }
+}
+
+/// Resolve a written type spelling to a checker type for projection.
+///
+/// Unlike the checker's `Ty::from_expr`, an unknown name resolves to
+/// `Ty::Unknown` (no family claim) rather than an opaque nominal type, and a
+/// generic parameter in scope stays `Ty::Param` (also no claim). Alias
+/// resolution is bounded so a cyclic alias cannot loop here.
+fn project_expr(t: &TypeExpr, env: &TypeEnv, params: &[String], depth: usize) -> crate::types::Ty {
+    use crate::types::Ty;
+    match t {
+        TypeExpr::Int => Ty::Int,
+        TypeExpr::Float => Ty::Float,
+        TypeExpr::Bool => Ty::Bool,
+        TypeExpr::String => Ty::String,
+        TypeExpr::None => Ty::None,
+        TypeExpr::Never => Ty::Never,
+        TypeExpr::List(inner) => Ty::List(Box::new(project_expr(inner, env, params, depth))),
+        TypeExpr::Map(k, v) => Ty::Map(
+            Box::new(project_expr(k, env, params, depth)),
+            Box::new(project_expr(v, env, params, depth)),
+        ),
+        TypeExpr::Union(members) => Ty::union(
+            members
+                .iter()
+                .map(|m| project_expr(m, env, params, depth))
+                .collect(),
+        ),
+        TypeExpr::Named(n) => {
+            if params.iter().any(|p| p == n) {
+                Ty::Param(n.clone())
+            } else if env.structs.contains(n) {
+                Ty::Named(n.clone())
+            } else if env.enums.contains(n) {
+                Ty::Enum(n.clone())
+            } else if depth < 16 {
+                match env.aliases.get(n) {
+                    Some(target) => project_expr(target, env, params, depth + 1),
+                    None => Ty::Unknown,
+                }
+            } else {
+                Ty::Unknown
+            }
+        }
+        TypeExpr::App(n, _) => {
+            if env.structs.contains(n) {
+                Ty::Named(n.clone())
+            } else if env.enums.contains(n) {
+                Ty::Enum(n.clone())
+            } else {
+                Ty::Unknown
+            }
+        }
+    }
+}
+
+/// Project a checker type's three identity levels into protocol fields.
+///
+/// A symbol whose declared spelling is a user type is resolved through the
+/// module's declarations before projection, so an alias to `[int]` reports the
+/// `sequence` family rather than an opaque name, and an unresolved name yields
+/// no family claim.
+fn project_ty(t: &crate::types::Ty) -> (Vec<String>, Option<String>, Vec<String>) {
+    use crate::types::{Ty, TypeFamily};
+    let families: Vec<String> = t
+        .families()
+        .iter()
+        .map(|f| f.as_str().to_string())
+        .filter(|f| f != "unknown")
+        .collect();
+    let value_kind = match t.value_kind() {
+        "unknown" | "union" | "never" => None,
+        k => Some(k.to_string()),
+    };
+    // Capabilities mirror the executable truth (`LANGUAGE_SPEC.md` §5.3):
+    //   `len`        accepts string, list, map, range
+    //   iteration    accepts string, list, map (keys), range
+    //   indexing     accepts string, list, map, struct (by field name)
+    //   mutation     is shared for list, map, and struct fields
+    //   ordering     is defined for int, float, bool, string
+    let mut caps: Vec<String> = Vec::new();
+    if matches!(t, Ty::String | Ty::List(_) | Ty::Map(_, _) | Ty::Named(_)) {
+        caps.push("indexable".into());
+    }
+    if matches!(t, Ty::String | Ty::List(_) | Ty::Map(_, _)) {
+        caps.push("iterable".into());
+    }
+    if matches!(t, Ty::String | Ty::List(_) | Ty::Map(_, _)) {
+        caps.push("sized".into());
+    }
+    if matches!(t, Ty::List(_) | Ty::Map(_, _) | Ty::Named(_)) {
+        caps.push("mutable".into());
+    }
+    if matches!(t, Ty::Int | Ty::Float | Ty::Bool | Ty::String) {
+        caps.push("orderable".into());
+    }
+    if t.families().contains(&TypeFamily::Callable) {
+        caps.push("callable".into());
+    }
+    caps.sort();
+    caps.dedup();
+    (families, value_kind, caps)
+}
+
+fn symbol_of_item(item: &Item, env: &TypeEnv) -> Option<Symbol> {
     let (name, kind, span, public) = match item {
         Item::Fn {
             name, span, public, ..
@@ -319,6 +468,9 @@ fn symbol_of_item(item: &Item) -> Option<Symbol> {
         },
         public,
         type_name: None,
+        families: Vec::new(),
+        value_kind: None,
+        capabilities: Vec::new(),
         type_parameters: Vec::new(),
         parameters: Vec::new(),
         fields: Vec::new(),
@@ -391,6 +543,26 @@ fn symbol_of_item(item: &Item) -> Option<Symbol> {
         Item::Alias { target, .. } => sym.type_name = Some(type_spelling(target)),
         _ => {}
     }
+    // Project the three identity levels for the symbol's *value* type, when it
+    // has one. A function's value type is its return type; a struct, enum, or
+    // alias symbol projects its own declared type; a trait or module value has
+    // no family claim.
+    let value_ty = match item {
+        Item::Fn { ret, .. } => ret
+            .as_ref()
+            .map(|t| project_expr(t, env, &sym.type_parameters, 0)),
+        Item::Struct { name, .. } => Some(crate::types::Ty::Named(name.clone())),
+        Item::Enum { name, .. } => Some(crate::types::Ty::Enum(name.clone())),
+        Item::Alias { target, .. } => Some(project_expr(target, env, &sym.type_parameters, 0)),
+        Item::Const { ann, .. } => ann.as_ref().map(|t| project_expr(t, env, &[], 0)),
+        _ => None,
+    };
+    if let Some(t) = value_ty {
+        let (families, value_kind, capabilities) = project_ty(&t);
+        sym.families = families;
+        sym.value_kind = value_kind;
+        sym.capabilities = capabilities;
+    }
     Some(sym)
 }
 
@@ -447,11 +619,255 @@ pub struct Document {
     pub capabilities: Capabilities,
     /// The source display name.
     pub source_name: String,
+    /// A content-addressed revision identity for the source this document
+    /// describes. Two documents of the same source text share a revision, so a
+    /// consumer can detect "nothing changed" without comparing payloads, and a
+    /// delta is computed between two revisions rather than two ad-hoc copies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<String>,
     /// Declarations, in source order.
     pub symbols: Vec<Symbol>,
     /// Structured diagnostics, when checking produced any.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub diagnostics: Vec<Diagnostic>,
+}
+
+/// A content-addressed source revision: the FNV-1a 64-bit hash of the exact
+/// source bytes, rendered as `rev:<16 hex digits>`.
+///
+/// This is deliberately a *content* identity, not an edit counter: inserting an
+/// unrelated line only changes the revision if it changes these bytes, and the
+/// same bytes always produce the same identity. It is not cryptographic and
+/// MUST NOT be used for integrity or security decisions — it exists so a
+/// long-running agent session can ask "is this the revision I already hold?".
+#[must_use]
+pub fn revision_of(source: &str) -> String {
+    // FNV-1a 64-bit: tiny, dependency-free, and stable across platforms.
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in source.as_bytes() {
+        hash ^= u64::from(*b);
+        hash = hash.wrapping_mul(0x1000_0000_01b3);
+    }
+    format!("rev:{hash:016x}")
+}
+
+/// One changed, added, or removed symbol in a [`Delta`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SymbolChange {
+    /// The symbol's name.
+    pub name: String,
+    /// `added`, `removed`, or `changed`.
+    pub change: String,
+    /// The *canonical* serialized form of the symbol after the change (absent
+    /// for `removed`). A consumer compares this to decide whether a change
+    /// affects its task; the delta never asks the consumer to re-read the
+    /// whole document.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after: Option<Symbol>,
+}
+
+/// A semantic delta between two source revisions.
+///
+/// The delta is computed from two documents, so it is exactly the set of
+/// symbol-level differences: changed, added, and removed declarations, plus
+/// the diagnostics that resolved and the diagnostics that appeared. A consumer
+/// applies a delta to the snapshot it holds instead of receiving the world.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Delta {
+    /// The AIS protocol version.
+    pub ais_version: String,
+    /// The revision the consumer is expected to hold.
+    pub from_revision: String,
+    /// The revision this delta produces.
+    pub to_revision: String,
+    /// Symbol-level changes, sorted by name.
+    pub symbols: Vec<SymbolChange>,
+    /// Diagnostic codes present before and gone now (resolved).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub resolved_diagnostics: Vec<u16>,
+    /// Diagnostic codes present now and absent before (new).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub new_diagnostics: Vec<u16>,
+}
+
+impl Delta {
+    /// Whether this delta carries no semantic change.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.symbols.is_empty()
+            && self.resolved_diagnostics.is_empty()
+            && self.new_diagnostics.is_empty()
+    }
+}
+
+/// Compute the semantic delta between two documents.
+///
+/// Symbols are matched by name. A symbol whose canonical serialization differs
+/// is `changed`; a name only in `to` is `added`; a name only in `from` is
+/// `removed`. Diagnostic identity is the `E####` code.
+#[must_use]
+pub fn delta(from: &Document, to: &Document) -> Delta {
+    use std::collections::BTreeMap;
+    let before: BTreeMap<&str, &Symbol> =
+        from.symbols.iter().map(|s| (s.name.as_str(), s)).collect();
+    let after: BTreeMap<&str, &Symbol> = to.symbols.iter().map(|s| (s.name.as_str(), s)).collect();
+    let mut changes: Vec<SymbolChange> = Vec::new();
+    for (name, sym) in &after {
+        match before.get(name) {
+            Some(old) if old == sym => {}
+            Some(_) => changes.push(SymbolChange {
+                name: (*name).to_string(),
+                change: "changed".into(),
+                after: Some((*sym).clone()),
+            }),
+            None => changes.push(SymbolChange {
+                name: (*name).to_string(),
+                change: "added".into(),
+                after: Some((*sym).clone()),
+            }),
+        }
+    }
+    for name in before.keys() {
+        if !after.contains_key(name) {
+            changes.push(SymbolChange {
+                name: (*name).to_string(),
+                change: "removed".into(),
+                after: None,
+            });
+        }
+    }
+    changes.sort_by(|a, b| a.name.cmp(&b.name));
+    let old_codes: std::collections::BTreeSet<u16> =
+        from.diagnostics.iter().map(|d| d.code).collect();
+    let new_codes: std::collections::BTreeSet<u16> =
+        to.diagnostics.iter().map(|d| d.code).collect();
+    Delta {
+        ais_version: AIS_VERSION.to_string(),
+        from_revision: from.revision.clone().unwrap_or_default(),
+        to_revision: to.revision.clone().unwrap_or_default(),
+        symbols: changes,
+        resolved_diagnostics: old_codes.difference(&new_codes).copied().collect(),
+        new_diagnostics: new_codes.difference(&old_codes).copied().collect(),
+    }
+}
+
+/// A task-focused semantic slice: the minimal sufficient context for a task
+/// anchored at one target.
+///
+/// A slice never re-sends the whole document. It carries the target's own
+/// symbol, the symbols it names (its declared dependencies, by name), and the
+/// diagnostics that mention it or its dependencies, bounded by `budget`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Slice {
+    /// The AIS protocol version.
+    pub ais_version: String,
+    /// The revision the slice was taken from.
+    pub revision: String,
+    /// The requested target name.
+    pub target: String,
+    /// The target symbol, when the document declares it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<Symbol>,
+    /// The directly referenced declarations, sorted by name, bounded by the
+    /// budget. Depth 1 is this list; `dependency_depth` widens it.
+    pub dependencies: Vec<Symbol>,
+    /// Diagnostics whose span touches the slice's resolution, when known.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<Diagnostic>,
+    /// How many symbols were available but omitted by the budget, so a consumer
+    /// knows the slice is incomplete rather than empty.
+    pub omitted: usize,
+}
+
+/// Build a task-focused slice around `target`.
+///
+/// `dependency_depth` is the transitive closure depth (1 = direct references);
+/// `budget` caps the number of symbols carried (the target included). A target
+/// that is not declared yields an empty slice rather than an error, matching
+/// the protocol's "describe what is known" rule.
+#[must_use]
+pub fn slice(doc: &Document, target: &str, dependency_depth: usize, budget: usize) -> Slice {
+    let by_name: std::collections::HashMap<&str, &Symbol> =
+        doc.symbols.iter().map(|s| (s.name.as_str(), s)).collect();
+    let Some(root) = by_name.get(target) else {
+        return Slice {
+            ais_version: AIS_VERSION.to_string(),
+            revision: doc.revision.clone().unwrap_or_default(),
+            target: target.to_string(),
+            symbol: None,
+            dependencies: Vec::new(),
+            diagnostics: Vec::new(),
+            omitted: 0,
+        };
+    };
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    seen.insert(root.name.clone());
+    let mut frontier: Vec<&Symbol> = vec![root];
+    for _ in 0..dependency_depth {
+        let mut next: Vec<&Symbol> = Vec::new();
+        for sym in &frontier {
+            for name in referenced_names(sym) {
+                if let Some(dep) = by_name.get(name.as_str()) {
+                    if seen.insert(dep.name.clone()) {
+                        next.push(dep);
+                    }
+                }
+            }
+        }
+        if next.is_empty() {
+            break;
+        }
+        frontier = next;
+    }
+    let mut names: Vec<String> = seen.into_iter().collect();
+    names.sort();
+    // The target is always carried: the budget bounds the *dependencies*, so a
+    // tiny budget degrades to "the target alone", never to "some unrelated
+    // symbol" and never to a silent target omission.
+    let mut deps: Vec<String> = names.into_iter().filter(|n| n != target).collect();
+    let dep_budget = budget.saturating_sub(1);
+    let omitted = deps.len().saturating_sub(dep_budget);
+    deps.truncate(dep_budget);
+    let dependencies: Vec<Symbol> = deps
+        .iter()
+        .filter_map(|n| by_name.get(n.as_str()).map(|s| (*s).clone()))
+        .collect();
+    Slice {
+        ais_version: AIS_VERSION.to_string(),
+        revision: doc.revision.clone().unwrap_or_default(),
+        target: target.to_string(),
+        symbol: Some((*root).clone()),
+        dependencies,
+        diagnostics: Vec::new(),
+        omitted,
+    }
+}
+
+/// The names a symbol's signature references, for slice closure.
+fn referenced_names(sym: &Symbol) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut note = |spelling: &str| {
+        for token in spelling.split(|c: char| !(c.is_alphanumeric() || c == '_')) {
+            if token.is_empty() || token.chars().next().is_some_and(|c| c.is_numeric()) {
+                continue;
+            }
+            out.push(token.to_string());
+        }
+    };
+    if let Some(t) = &sym.type_name {
+        note(t);
+    }
+    for p in &sym.parameters {
+        if let Some(t) = &p.type_name {
+            note(t);
+        }
+    }
+    for f in &sym.fields {
+        note(&f.type_name);
+    }
+    out.sort();
+    out.dedup();
+    out
 }
 
 /// Build an AIS document for a parsed module.
@@ -461,7 +877,12 @@ pub struct Document {
 /// structured diagnostics. No capability is granted by producing a document.
 #[must_use]
 pub fn document(source_name: &str, source: &str, module: &Module) -> Document {
-    let mut symbols: Vec<Symbol> = module.items.iter().filter_map(symbol_of_item).collect();
+    let env = TypeEnv::from_module(module);
+    let mut symbols: Vec<Symbol> = module
+        .items
+        .iter()
+        .filter_map(|item| symbol_of_item(item, &env))
+        .collect();
     for s in &mut symbols {
         resolve_symbol(s, source);
     }
@@ -471,6 +892,7 @@ pub fn document(source_name: &str, source: &str, module: &Module) -> Document {
         language_version: crate::LANGUAGE_VERSION.to_string(),
         capabilities: Capabilities::default(),
         source_name: source_name.to_string(),
+        revision: Some(revision_of(source)),
         symbols,
         diagnostics: Vec::new(),
     }
@@ -608,5 +1030,184 @@ mod tests {
             "source_name":"x.aura","symbols":[],"diagnostics":[],"future_field":42}"#;
         let doc: Document = serde_json::from_str(json).expect("forward compatible");
         assert_eq!(doc.ais_version, "0.1");
+    }
+
+    // -----------------------------------------------------------------------
+    // Type / Family / ValueKind separation and the delivery model
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn a_list_symbol_reports_the_sequence_family_and_list_value_kind() {
+        let src = "fn rows() -> [[int]] { return [] }\n";
+        let module = parse(src).expect("parses");
+        let doc = document("m.aura", src, &module);
+        let rows = doc.symbols.iter().find(|s| s.name == "rows").unwrap();
+        // Family is `sequence`; value kind is `list`; both are present and
+        // they are *different* strings for the same type.
+        assert_eq!(rows.families, vec!["sequence"]);
+        assert_eq!(rows.value_kind.as_deref(), Some("list"));
+        assert!(rows.capabilities.contains(&"iterable".to_string()));
+        assert!(rows.capabilities.contains(&"indexable".to_string()));
+        assert!(rows.capabilities.contains(&"mutable".to_string()));
+    }
+
+    #[test]
+    fn a_string_symbol_is_scalar_and_sequence_but_its_value_kind_is_string() {
+        let src = "fn name() -> string { return \"x\" }\n";
+        let module = parse(src).expect("parses");
+        let doc = document("m.aura", src, &module);
+        let name = doc.symbols.iter().find(|s| s.name == "name").unwrap();
+        // A string is in two families; the family set is not the value kind.
+        assert_eq!(name.families, vec!["scalar", "sequence"]);
+        assert_eq!(name.value_kind.as_deref(), Some("string"));
+        assert!(name.capabilities.contains(&"orderable".to_string()));
+        assert!(name.capabilities.contains(&"iterable".to_string()));
+    }
+
+    #[test]
+    fn a_struct_symbol_projects_object_not_a_map() {
+        let src = "struct P { x: int }\n";
+        let module = parse(src).expect("parses");
+        let doc = document("m.aura", src, &module);
+        let p = doc.symbols.iter().find(|s| s.name == "P").unwrap();
+        assert_eq!(p.families, vec!["object"]);
+        assert_eq!(p.value_kind.as_deref(), Some("struct"));
+        // No map key capability is claimed merely because both are keyed.
+        assert!(!p.capabilities.contains(&"iterable".to_string()));
+    }
+
+    #[test]
+    fn an_alias_projects_the_target_not_the_alias_name() {
+        let src = "type Names = [string]\n";
+        let module = parse(src).expect("parses");
+        let doc = document("m.aura", src, &module);
+        let names = doc.symbols.iter().find(|s| s.name == "Names").unwrap();
+        assert_eq!(names.kind, SymbolKind::TypeAlias);
+        assert_eq!(names.families, vec!["sequence"]);
+        assert_eq!(names.value_kind.as_deref(), Some("list"));
+    }
+
+    #[test]
+    fn a_generic_parameter_claims_no_family() {
+        let src = "fn id<T>(x: T) -> T { return x }\n";
+        let module = parse(src).expect("parses");
+        let doc = document("m.aura", src, &module);
+        let id = doc.symbols.iter().find(|s| s.name == "id").unwrap();
+        // `T` is not known, so no family and no value kind are invented.
+        assert!(id.families.is_empty());
+        assert_eq!(id.value_kind, None);
+    }
+
+    #[test]
+    fn revision_is_content_addressed_and_stable() {
+        let a = revision_of("fn main() { print(1) }");
+        let b = revision_of("fn main() { print(1) }");
+        let c = revision_of("fn main() { print(2) }");
+        assert_eq!(a, b, "same bytes must share a revision");
+        assert_ne!(a, c, "different bytes must differ");
+        assert!(a.starts_with("rev:"));
+        // The same source produces the same revision through the document.
+        let module = parse("fn main() { print(1) }").expect("parses");
+        let doc = document("m.aura", "fn main() { print(1) }", &module);
+        assert_eq!(doc.revision.as_deref(), Some(a.as_str()));
+    }
+
+    #[test]
+    fn delta_reports_added_changed_and_removed_symbols() {
+        // A *declaration* change is a signature change: the delta is defined
+        // over the declaration-level model AIS carries (name, kind, type,
+        // fields, parameters), not over statement bodies. Changing only a body
+        // is not a symbol change here — see
+        // `delta_is_declaration_level_not_body_level`.
+        let before_src = "fn a(x: int) -> int { return x }\nfn b() -> int { return 2 }\n";
+        let after_src = "fn a(x: string) -> int { return 1 }\nfn c() -> int { return 3 }\n";
+        let from = document("m.aura", before_src, &parse(before_src).unwrap());
+        let to = document("m.aura", after_src, &parse(after_src).unwrap());
+        let d = delta(&from, &to);
+        assert!(!d.is_empty());
+        assert_eq!(d.from_revision, from.revision.clone().unwrap());
+        let by_name: Vec<(&str, &str)> = d
+            .symbols
+            .iter()
+            .map(|c| (c.name.as_str(), c.change.as_str()))
+            .collect();
+        assert!(by_name.contains(&("a", "changed")));
+        assert!(by_name.contains(&("b", "removed")));
+        assert!(by_name.contains(&("c", "added")));
+    }
+
+    #[test]
+    fn delta_is_declaration_level_not_body_level() {
+        // Honest protocol boundary: AIS describes declarations, so a
+        // body-only edit is not a symbol change. The revision still changes,
+        // so a consumer always sees *that* the source changed even when no
+        // declaration did.
+        let src1 = "fn a() -> int { return 1 }\n";
+        let src2 = "fn a() -> int { return 2 }\n";
+        let from = document("m.aura", src1, &parse(src1).unwrap());
+        let to = document("m.aura", src2, &parse(src2).unwrap());
+        assert_ne!(from.revision, to.revision);
+        assert!(delta(&from, &to).is_empty());
+    }
+
+    #[test]
+    fn a_delta_between_identical_revisions_is_empty() {
+        let src = "fn a() -> int { return 1 }\n";
+        let from = document("m.aura", src, &parse(src).unwrap());
+        let to = document("m.aura", src, &parse(src).unwrap());
+        let d = delta(&from, &to);
+        assert!(d.is_empty());
+        assert_eq!(d.from_revision, d.to_revision);
+    }
+
+    #[test]
+    fn a_slice_is_target_focused_and_budgeted() {
+        // `use_p` depends on `P`; the slice for `use_p` carries both, but not
+        // the unrelated `Unrelated`.
+        let src = "struct P { x: int }\nstruct Unrelated { y: int }\nfn use_p(p: P) -> int { return p.x }\n";
+        let module = parse(src).expect("parses");
+        let doc = document("m.aura", src, &module);
+        let s = slice(&doc, "use_p", 2, 32);
+        assert_eq!(s.target, "use_p");
+        assert_eq!(s.symbol.as_ref().unwrap().name, "use_p");
+        let deps: Vec<&str> = s.dependencies.iter().map(|d| d.name.as_str()).collect();
+        assert!(deps.contains(&"P"), "direct dependency must be included");
+        assert!(
+            !deps.contains(&"Unrelated"),
+            "an unrelated symbol must not be dragged in"
+        );
+        assert_eq!(s.omitted, 0);
+    }
+
+    #[test]
+    fn a_slice_budget_reports_the_omission_rather_than_lying() {
+        let src =
+            "struct A { x: int }\nstruct B { y: int }\nfn f(a: A, b: B) -> int { return a.x }\n";
+        let doc = document("m.aura", src, &parse(src).unwrap());
+        let s = slice(&doc, "f", 1, 1);
+        // Target only: the dependencies are omitted and counted, never hidden.
+        assert!(s.dependencies.is_empty());
+        assert_eq!(s.omitted, 2);
+    }
+
+    #[test]
+    fn a_slice_for_an_unknown_target_is_empty_not_an_error() {
+        let src = "fn a() -> int { return 1 }\n";
+        let doc = document("m.aura", src, &parse(src).unwrap());
+        let s = slice(&doc, "nope", 1, 8);
+        assert!(s.symbol.is_none());
+        assert!(s.dependencies.is_empty());
+    }
+
+    #[test]
+    fn slice_and_delta_serialize_with_the_protocol_version() {
+        let src = "fn a() -> int { return 1 }\n";
+        let doc = document("m.aura", src, &parse(src).unwrap());
+        let s = slice(&doc, "a", 1, 8);
+        let json = serde_json::to_string(&s).expect("serializes");
+        assert!(json.contains("\"ais_version\":\"0.1\""));
+        let d = delta(&doc, &doc);
+        let json = serde_json::to_string(&d).expect("serializes");
+        assert!(json.contains("\"ais_version\":\"0.1\""));
     }
 }

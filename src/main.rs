@@ -25,13 +25,14 @@ use aura::error::render_with_source;
 /// The command inventory, used for both dispatch hints and help so the two can
 /// never drift (LANGUAGE_SPEC §47/§48).
 #[cfg(feature = "json")]
-const COMMANDS: [(&str, &str); 6] = [
+const COMMANDS: [(&str, &str); 7] = [
     ("run", "parse, check, and execute a program"),
     ("check", "parse and check without executing"),
     ("eval", "run a one-line program"),
     ("repl", "start an interactive session"),
     ("version", "print the compiler version"),
-    ("ais", "print the AIS/0.1 semantic document as JSON"),
+    ("ais", "print an AIS/0.1 semantic payload as JSON"),
+    ("mcp", "serve the AIS semantic model over MCP stdio"),
 ];
 
 #[cfg(not(feature = "json"))]
@@ -59,7 +60,23 @@ fn help(global: bool, command: Option<&str>) -> ExitCode {
         ),
         #[cfg(feature = "json")]
         Some("ais") => print!(
-            "aura ais <file|->\n\n             Print the AIS/0.1 semantic document for a source as JSON. The\n             document describes declarations, types, and diagnostics; it\n             grants no capability (no filesystem, network, Python, or Host\n             authority).\n"
+            "aura ais [snapshot|slice|delta] ...\n\n\
+             Print an AIS/0.1 semantic payload as JSON. It grants no capability\n\
+             (no filesystem, network, Python, or Host authority).\n\n\
+             aura ais <file|->                 the semantic snapshot\n\
+             aura ais slice <file|-> <target> [depth] [budget]\n\
+                                               a task-focused slice\n\
+             aura ais delta <old-file|-> <new-file|->\n\
+                                               the declaration delta\n"
+        ),
+        #[cfg(feature = "json")]
+        Some("mcp") => print!(
+            "aura mcp\n\n\
+             Serve the AIS/0.1 semantic model over the MCP stdio transport\n\
+             (newline-delimited JSON-RPC 2.0). The adapter exposes the same\n\
+             semantic operations as `aura ais` and grants no capability: it\n\
+             reads only the source text the client sends, never the environment,\n\
+             the network, or a secret.\n"
         ),
         Some("eval") => print!(
             "aura eval <code>\n\n\
@@ -157,6 +174,17 @@ fn main() -> ExitCode {
                 return help(false, Some("ais"));
             }
             cmd_ais(&args)
+        }
+        #[cfg(feature = "json")]
+        Some("mcp") => {
+            if help_requested(&args[1..]) {
+                return help(false, Some("mcp"));
+            }
+            if args.len() > 1 {
+                eprintln!("aura mcp takes no arguments; try: {}", command_list());
+                return ExitCode::from(2);
+            }
+            cmd_mcp()
         }
         Some("repl") => {
             if help_requested(&args[1..]) {
@@ -372,54 +400,189 @@ fn cmd_check(args: &[String]) -> ExitCode {
 /// without parsing the document.
 #[cfg(feature = "json")]
 fn cmd_ais(args: &[String]) -> ExitCode {
-    let positionals = split_subcommand_args(args, false);
-    let Some(path) = positionals.first().map(|p| p.as_str()) else {
-        eprintln!("usage: aura ais <file|->");
-        return ExitCode::from(2);
-    };
-    let (src, file) = match read_source(Some(path)) {
-        Ok(v) => v,
-        Err(c) => return c,
-    };
-    let module = match aura::parse::parse(&src) {
+    let tail: Vec<&str> = args.iter().skip(1).map(String::as_str).collect();
+    match tail.first() {
+        Some(&"slice") => cmd_ais_slice(&tail[1..]),
+        Some(&"delta") => cmd_ais_delta(&tail[1..]),
+        Some(&"snapshot") => cmd_ais_snapshot(&tail[1..]),
+        _ => cmd_ais_snapshot(&tail),
+    }
+}
+
+/// Parse a source path into `(text, display-name)` or report the CLI error.
+fn ais_read(path: &str) -> Result<(String, String), ExitCode> {
+    read_source(Some(path))
+}
+
+/// Build the snapshot document for a source, attaching any checker diagnostic.
+fn ais_snapshot_of(src: &str, file: &str) -> (aura::ais::Document, bool) {
+    let module = match aura::parse::parse(src) {
         Ok(m) => m,
         Err(d) => {
-            // A parse failure still yields a document, so a tool receives a
-            // structured diagnostic rather than only a process failure.
             let mut doc = aura::ais::Document {
                 ais_version: aura::ais::AIS_VERSION.to_string(),
                 aura_version: aura::VERSION.to_string(),
                 language_version: aura::LANGUAGE_VERSION.to_string(),
                 capabilities: aura::ais::Capabilities::default(),
-                source_name: file.clone(),
+                source_name: file.to_string(),
+                revision: Some(aura::ais::revision_of(src)),
                 symbols: Vec::new(),
-                diagnostics: vec![aura::ais::Diagnostic::from_diag(&d, Some(&src))],
+                diagnostics: vec![aura::ais::Diagnostic::from_diag(&d, Some(src))],
             };
             doc.diagnostics.truncate(1);
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&doc).expect("AIS document serializes")
-            );
-            return ExitCode::FAILURE;
+            return (doc, true);
         }
     };
-    let mut doc = aura::ais::document(&file, &src, &module);
+    let mut doc = aura::ais::document(file, src, &module);
     let rejected = match aura::check::Checker::module(&module) {
         Ok(()) => false,
         Err(d) => {
             doc.diagnostics
-                .push(aura::ais::Diagnostic::from_diag(&d, Some(&src)));
+                .push(aura::ais::Diagnostic::from_diag(&d, Some(src)));
             true
         }
     };
+    (doc, rejected)
+}
+
+fn print_ais<T: serde::Serialize>(value: &T) -> ExitCode {
     println!(
         "{}",
-        serde_json::to_string_pretty(&doc).expect("AIS document serializes")
+        serde_json::to_string_pretty(value).expect("AIS payload serializes")
     );
+    ExitCode::SUCCESS
+}
+
+fn cmd_ais_snapshot(args: &[&str]) -> ExitCode {
+    let Some(path) = args.first() else {
+        eprintln!("usage: aura ais <file|->");
+        return ExitCode::from(2);
+    };
+    let (src, file) = match ais_read(path) {
+        Ok(v) => v,
+        Err(c) => return c,
+    };
+    let (doc, rejected) = ais_snapshot_of(&src, &file);
+    let code = print_ais(&doc);
     if rejected {
         ExitCode::FAILURE
     } else {
-        ExitCode::SUCCESS
+        code
+    }
+}
+
+fn cmd_ais_slice(args: &[&str]) -> ExitCode {
+    let (Some(path), Some(target)) = (args.first(), args.get(1)) else {
+        eprintln!("usage: aura ais slice <file|-> <target> [depth] [budget]");
+        return ExitCode::from(2);
+    };
+    let depth = args
+        .get(2)
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(1);
+    let budget = args
+        .get(3)
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(32);
+    let (src, file) = match ais_read(path) {
+        Ok(v) => v,
+        Err(c) => return c,
+    };
+    let (doc, _) = ais_snapshot_of(&src, &file);
+    let s = aura::ais::slice(&doc, target, depth, budget);
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&s).expect("AIS slice serializes")
+    );
+    ExitCode::SUCCESS
+}
+
+fn cmd_ais_delta(args: &[&str]) -> ExitCode {
+    let (Some(old_path), Some(new_path)) = (args.first(), args.get(1)) else {
+        eprintln!("usage: aura ais delta <old-file|-> <new-file|->");
+        return ExitCode::from(2);
+    };
+    // `-` can name only one side: stdin is consumed once.
+    if *old_path == "-" && *new_path == "-" {
+        eprintln!("aura ais delta cannot read both sides from stdin");
+        return ExitCode::from(2);
+    }
+    let (old_src, old_file) = match ais_read(old_path) {
+        Ok(v) => v,
+        Err(c) => return c,
+    };
+    let (new_src, new_file) = match ais_read(new_path) {
+        Ok(v) => v,
+        Err(c) => return c,
+    };
+    let (from, _) = ais_snapshot_of(&old_src, &old_file);
+    let (to, _) = ais_snapshot_of(&new_src, &new_file);
+    let d = aura::ais::delta(&from, &to);
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&d).expect("AIS delta serializes")
+    );
+    ExitCode::SUCCESS
+}
+
+/// Serve the AIS model over the MCP stdio transport.
+///
+/// Newline-delimited JSON-RPC 2.0: one request per line, one response per
+/// line. The loop is stateless, so a malformed line produces an error response
+/// (or is ignored when it is a notification) and the session continues. A
+/// frame larger than `MAX_REQUEST_BYTES` is refused without buffering further.
+fn cmd_mcp() -> ExitCode {
+    use std::io::{BufRead, Write};
+    let stdin = std::io::stdin();
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+    let mut reader = stdin.lock();
+    let mut line = String::new();
+    loop {
+        line.clear();
+        match reader.read_line(&mut line) {
+            Ok(0) => return ExitCode::SUCCESS, // EOF ends the session cleanly
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("aura mcp: input error: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.len() > aura::mcp::MAX_REQUEST_BYTES {
+            let err = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": serde_json::Value::Null,
+                "error": { "code": -32600, "message": "request exceeds the adapter's size limit" }
+            });
+            let _ = writeln!(out, "{err}");
+            let _ = out.flush();
+            continue;
+        }
+        // A malformed frame is an error response, never a panic: a client bug
+        // must not bring down a long-running session.
+        let msg: serde_json::Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(e) => {
+                let err = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": serde_json::Value::Null,
+                    "error": { "code": -32700, "message": format!("parse error: {e}") }
+                });
+                let _ = writeln!(out, "{err}");
+                let _ = out.flush();
+                continue;
+            }
+        };
+        if let Some(response) = aura::mcp::handle_message(&msg) {
+            if writeln!(out, "{response}").is_err() {
+                return ExitCode::SUCCESS; // client closed the pipe
+            }
+            let _ = out.flush();
+        }
     }
 }
 

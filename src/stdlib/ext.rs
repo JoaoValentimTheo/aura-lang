@@ -29,7 +29,7 @@ pub mod json {
     /// Convert an Aura value to JSON, bounded by [`Value::MAX_VALUE_DEPTH`]-style
     /// depth *and* a total-node budget so a cyclic or pathologically deep value
     /// cannot overflow the native stack or expand exponentially. A value nested
-    /// beyond either bound serializes as `null` (`LANGUAGE_SPEC.md` §31.5).
+    /// beyond either bound serializes as `null` (`LANGUAGE_SPEC.md` §31.6).
     ///
     /// A JSON object's keys are strings by the JSON standard. A string-keyed
     /// Aura map encodes as a JSON object unchanged. A map with a non-string key
@@ -37,6 +37,19 @@ pub mod json {
     /// deterministic conversion error: stringifying the key would collapse
     /// distinct keys (`1` and `"1"`) into one, which the language refuses to do
     /// silently.
+    ///
+    /// The same anti-collapse rule governs the value itself: a value whose
+    /// *kind* has no exact JSON representation — an enum variant, a `range`, a
+    /// function, or a non-finite float (`nan`/`inf`) — is a deterministic
+    /// conversion error, never a silent approximation. `null` is the encoding
+    /// of `none` (and of the documented over-depth truncation), so
+    /// approximating an unrepresentable value as `null` would make
+    /// `json_decode(json_encode(x))` collapse distinct kinds (`0..3`, a
+    /// closure, `nan`, and `none`) into `none`. Flattening a variant instead
+    /// collapses distinct variants of one enum (`A(1)` and `B(1)`) into the
+    /// same JSON value, exactly the identity loss the map-key rule refuses.
+    /// The kinds JSON *can* represent exactly — scalars, `none`, lists,
+    /// string-keyed maps, and structs — encode unchanged.
     fn to_json_depth(
         v: &Value,
         depth: usize,
@@ -50,8 +63,14 @@ pub mod json {
             Value::None => serde_json::Value::Null,
             Value::Bool(b) => serde_json::Value::Bool(*b),
             Value::Int(i) => serde_json::Value::Number((*i).into()),
-            Value::Float(f) => serde_json::Number::from_f64(*f)
-                .map_or(serde_json::Value::Null, serde_json::Value::Number),
+            Value::Float(f) => {
+                let Some(n) = serde_json::Number::from_f64(*f) else {
+                    return Err(format!(
+                        "json_encode cannot represent the non-finite float `{f}`; JSON numbers are finite, and `null` is the encoding of `none`"
+                    ));
+                };
+                serde_json::Value::Number(n)
+            }
             Value::Str(s) => serde_json::Value::String(s.to_string()),
             Value::List(l) => {
                 let mut out = Vec::with_capacity(l.borrow().len());
@@ -81,19 +100,25 @@ pub mod json {
                 serde_json::Value::Object(obj)
             }
             Value::Variant(v) => {
-                if v.payload.is_empty() {
-                    serde_json::Value::String(v.tag.clone())
-                } else if v.payload.len() == 1 {
-                    to_json_depth(&v.payload[0], depth + 1, budget)?
-                } else {
-                    let mut out = Vec::with_capacity(v.payload.len());
-                    for x in &v.payload {
-                        out.push(to_json_depth(x, depth + 1, budget)?);
-                    }
-                    serde_json::Value::Array(out)
-                }
+                return Err(format!(
+                    "json_encode cannot represent the `{}` variant `{}{}`; JSON has no enum kind, and flattening it would collapse distinct variants",
+                    v.ty,
+                    v.tag,
+                    if v.payload.is_empty() { "()" } else { "(…)" }
+                ));
             }
-            _ => serde_json::Value::Null,
+            Value::Range(r) => {
+                return Err(format!(
+                    "json_encode cannot represent the `range` `{}..{}`; JSON has no range kind",
+                    r.start, r.end
+                ));
+            }
+            Value::Closure(_) | Value::Native(_) => {
+                return Err(format!(
+                    "json_encode cannot represent a `{}`; JSON has no function kind",
+                    v.type_name()
+                ));
+            }
         })
     }
 

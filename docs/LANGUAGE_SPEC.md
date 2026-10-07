@@ -1045,6 +1045,53 @@ Two unions that differ only in member order or duplicates are the *same* type.
 "Shared" means the value is a reference held through `Rc<RefCell<…>>`; passing
 or binding it aliases the same storage (§16.6).
 
+### 5.4 Type families — three distinct identity levels
+
+**Normative rule.** Aura distinguishes three levels of type identity, which
+are *not* synonyms and MUST NOT be collapsed:
+
+1. **Semantic type** — a member of the checker's type domain (§5.2): `int`,
+   `float`, `bool`, `string`, `[T]`, `{K: V}`, `Named(n)`, `Enum(n)`,
+   `Union(...)`, `Param`, `App`, or `Unknown`. Two semantic types are the
+   same only by the equality the checker defines.
+2. **Type family** — the shared *capability* class a semantic type belongs
+   to. A family answers "what operations are valid here", not "what is this".
+3. **Runtime value kind** — the variant of the runtime `Value` model (§5.1):
+   `int`, `float`, `string`, `bool`, `none`, `list`, `map`, `struct`, `enum
+   variant`, `closure`, `native function`, or `range`.
+
+**Normative rule (family membership).** The families are:
+
+| Family | Semantic types | Runtime value kinds |
+|---|---|---|
+| `Scalar` | `int`, `float`, `bool`, `string` | `int`, `float`, `bool`, `string` |
+| `Sequence` | `[T]`, `string` | `list`, `string` |
+| `Mapping` | `{K: V}` | `map` |
+| `Object` | `Named(n)` | struct instance |
+| `Sum` | `Enum(n)`, `Union(...)` | enum variant, or any member |
+| `Callable` | `fn` shapes | closure, native function |
+| `Nullish` | `none` | `none` |
+| `RangeLike` | `range` values (dynamic) | `range` |
+
+**Normative rule (capabilities do not erase identity).** Family membership
+grants a *capability* (§5.3), never identity. Two types in one family remain
+distinct semantic types and distinct runtime kinds: a `string` is iterable and
+indexable like a list but is never equal to one, a struct and a `string`-keyed
+map may both be JSON objects but never compare equal, and a list, a map, and a
+range share iteration/sizing yet are pairwise unequal. Equality, ordering,
+display, JSON encoding, patterns, and the static relation are each defined
+per *semantic type*, never per family. Sharing implementation to realize a
+capability is permitted; sharing identity is not.
+
+**Normative rule (one deliberate absorption).** `Tuple`/`(a, b)` is list
+sugar (§21): it has no distinct semantic type, family, or value kind. It is
+the only place where two source spellings denote one identity, and it is a
+language decision, not a collapse of the model above.
+
+*Evidence:* `Ty` (`src/types.rs`); `Value`/`Value::type_name`/`Value::ty`
+(`src/run/value.rs`); `TypeClass` (`src/stdlib/signatures.rs`);
+`tests/keystone_value_algebra.rs`.
+
 ---
 
 ## 6. Type Annotations
@@ -2860,6 +2907,28 @@ always produces a `string`-keyed Aura map. `json_encode` encodes a
 `string`-keyed Aura map as a JSON object unchanged, but a map with any
 non-string key is a deterministic `E3001`: the key is never stringified, which
 would collapse distinct keys such as `1` and `"1"`.
+
+**Normative rule (JSON encodes exactly the representable kinds).**
+`json_encode` encodes exactly the value kinds JSON represents without loss:
+`none` as `null`, `bool`, `int`, finite `float`, and `string` as their JSON
+counterparts, a list as a JSON array, and a string-keyed map or a struct as a
+JSON object. Every other kind is a deterministic `E3001`, never a silent
+approximation:
+
+* an enum variant, because JSON has no enum kind and flattening a variant
+  collapses distinct variants of one enum (`A(1)` and `B(1)`) into the same
+  JSON value and erases the tag;
+* a `range`, because JSON has no range kind;
+* a function (closure or native), because JSON has no function kind;
+* a non-finite float (`nan`, `inf`, `-inf`), because JSON numbers are finite.
+
+This is the same identity rule as the map-key rule above: `null` is the
+encoding of `none` (and of the documented over-depth truncation, §31.6), so an
+unrepresentable value MUST NOT be approximated as `null` merely because it has
+no exact JSON form. The rule applies at every depth. The over-depth and
+node-budget truncation of §31.6 is unaffected: it is a host-safety bound on an
+otherwise representable value, not a representation of an unrepresentable
+kind.
 
 **Normative rule.** A call to a builtin with the wrong argument count or a
 provably wrong argument type is `E3001` before execution, and is also enforced

@@ -143,6 +143,16 @@ Keystone metadata is Development-only until a human authorizes a runtime.
 | Tooling reconciliation | DISPOSITIONED (`TOOLING_RECONCILIATION.md`); formatter/LSP architecture; package manager human-gated | docs |
 | Package-manager remote ecosystem | HUMAN-GATE REMAINING | PLANS.md; TOOLING_RECONCILIATION.md §5 |
 
+## G3. Value-algebra closure (2026-10-07, super-transaction continuation)
+
+| Item | Disposition | Evidence |
+|---|---|---|
+| Type families formalized as 3 identity levels | FIXED (normative spec §5.4) | semantic type vs type family vs runtime value kind, with the family table and the capability-does-not-erase-identity rule |
+| Anti-collapse matrix executable | FIXED + REGRESSION TESTED | `tests/keystone_value_algebra.rs` 17/17: cross-kind equality, tuple-is-list-sugar, int/float numeric equality, display/JSON identity, per-kind indexing/iteration/patterns, static cross-kind rejection, scalar-only ordering |
+| `json_encode` of unrepresentable kinds | REAL DEFECT FIXED | range/function/variant/non-finite float were silently `null`/payload (colliding with `none` and losing enum identity); now uniform `E3001`; `docs/engineering/JSON_VALUE_ALGEBRA_DECISION.md`; TD-22 closed |
+| `Array`/`Set`/`Tuple` family premises | FALSIFIED WITH EVIDENCE | Aura has no `Array` and no `Set` type; `Tuple` is list sugar (spec §21). The campaign's conceptual tree is corrected in spec §5.4, not implemented as invented syntax |
+| `range` as an annotation spelling | HUMAN-GATE REMAINING (recorded) | `Range` has no `Ty` member and `range` is not a legal annotation (`E3002`); ranges are dynamically typed (`Ty::Unknown`). Adding a spelling changes the annotation surface; recorded, not invented |
+
 ## H. Enforcement (this manifest)
 
 Every item in sections B and C must end this transaction in exactly one state:

@@ -21,6 +21,8 @@ pub mod diagnostic;
 pub mod error;
 pub mod host;
 pub mod lex;
+#[cfg(feature = "json")]
+pub mod mcp;
 pub mod module_graph;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod native_source;
