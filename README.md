@@ -313,7 +313,9 @@ cargo test --no-default-features --features cli,repl,json,regex,time
 See [CONTRIBUTING.md](CONTRIBUTING.md). The language contract lives in
 [docs/contract.md](docs/contract.md); diagnostic codes in
 [docs/errors.md](docs/errors.md); the object model (the four pillars and the
-no-inheritance decision) in [docs/OOP.md](docs/OOP.md).
+no-inheritance decision) in [docs/OOP.md](docs/OOP.md). The
+[docs/README.md](docs/README.md) index maps which document is authoritative
+for each question and which are historical records.
 
 ## License
 
