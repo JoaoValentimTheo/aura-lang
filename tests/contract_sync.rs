@@ -401,3 +401,24 @@ fn const_and_let_share_the_value_namespace() {
         Err(codes::REDECLARED)
     );
 }
+
+/// Documentation synchronization: the normative specification's declared
+/// language version must match the implementation's `LANGUAGE_VERSION`.
+///
+/// The header once drifted to `0.0.1` while `src/lib.rs` declared `0.2.1`, so
+/// the "one authoritative answer" rule (AGENTS.md) was violated by a stale
+/// claim. This test makes the drift impossible to reintroduce silently: both
+/// values are read from the repository, and any future language-version change
+/// must update the specification in the same commit.
+#[test]
+fn the_specification_declares_the_implemented_language_version() {
+    let spec = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/LANGUAGE_SPEC.md"),
+    )
+    .expect("the specification is part of the repository");
+    let expected = format!("**Language version:** Aura {}", aura::LANGUAGE_VERSION);
+    assert!(
+        spec.contains(&expected),
+        "docs/LANGUAGE_SPEC.md must declare `{expected}` to match src/lib.rs"
+    );
+}

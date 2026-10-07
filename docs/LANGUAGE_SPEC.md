@@ -1,20 +1,25 @@
 # The Aura Language Specification
 
-**Language version:** Aura 0.0.1
+**Language version:** Aura 0.2.1
 **Status:** Current normative specification
 **Baseline commit:** `aba88668856173337b68cd4fb8e046f0467bf561`
 
-This revision incorporates the intentional **language evolution** that added
-general union types, transparent union composition through aliases, the
-Rust-style `a..b` range literal, and `<!-- ... --!>` multiline comments. These
-are current, implemented, and tested; they supersede the earlier
-`T | none`-only and `range(a, b)`-only boundaries recorded in the prior
-revision. The `release` version of the implementation is unchanged
-(`0.0.2`).
+The **language version** is the semantics this document defines, and it must
+equal the implementation's `LANGUAGE_VERSION` (`src/lib.rs`) on the branch
+that carries this document. It is independent of the **release version**
+(`aura::VERSION`, `CARGO_PKG_VERSION`): a release may ship runtime, tooling,
+or packaging changes without changing the language, and an unreleased branch
+may carry a language version ahead of the last published release. Where the
+two disagree, `LANGUAGE_VERSION` and this document MUST be reconciled before
+publication.
 
-The **language version** above is the semantics this document defines. It is
-independent of the **release version** of the implementation. See
-`src/lib.rs` (`VERSION` vs `LANGUAGE_VERSION`).
+This revision incorporates the intentional **language evolution** recorded in
+`docs/MIGRATION_0_2_1.md`: builtin names reserved as value bindings (`E1009`),
+structural `TypeExpr` nesting bounded at 256 on every substrate (`E1015`),
+type-alias and module nesting bounds (`E1015`), linear-time string lexing, and
+exact-type Python dict keys. Earlier revisions' `T | none`-only and
+`range(a, b)`-only boundaries were superseded by general union types, the
+Rust-style `a..b` range literal, and `<!-- ... --!>` multiline comments.
 
 This document is the **normative syntax and semantic specification** of Aura. It defines
 what Aura programs mean. When this document and any other document or the
