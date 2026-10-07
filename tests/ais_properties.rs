@@ -22,7 +22,6 @@
 
 use proptest::prelude::*;
 
-
 /// A generator for a *legal* Aura value-naming identifier.
 ///
 /// `[a-z][a-z0-9]{1,5}` can still produce a reserved word (`fn`, `if`, `for`,
