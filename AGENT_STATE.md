@@ -16,10 +16,10 @@ before continuing substantial work.
 - Local/remote relationship: authoritative value is `git rev-list
   --left-right --count origin/rewrite/v3-rust...HEAD`; a tracked file cannot
   safely hardcode its own position. At the 2026-10-08 final-collection
-  checkpoint the local tip is `b1a2acb6`, **23 ahead / 0 behind** `b221e6a9`
+  checkpoint the local tip is `ce8deb0a`, **25 ahead / 0 behind** `b221e6a9`
   (the prior parser/docs commits, the semicolon/range/archival trio, the
-  collection identity + docs commits, and the closure fixes; see the
-  canonicalization section below).
+  collection identity + docs commits, the closure fixes, and the direct-type
+  typed-JSON API; see the canonicalization section below).
 - **Remote CI at `b221e6a9` is RED** (run `37639795923`): the
   `playground (wasm runtime)` job fails in `b1_boundary.test.mjs` (44/19) with
   grouping/f-string `guest trap` — the exact defect fixed by the unpushed local
@@ -410,6 +410,15 @@ Commits so far:
   three sequence kinds now share one `sequence_callback_method` body, so
   exactly three `call_value_pub` sites remain. Also added Set `add` to the
   front-end language metadata (`language_metadata` tripwire).
+- `ce8deb0a` **feat(json): direct-type `json_decode_as(text, Type)` API.** The
+  final Keystone typed-JSON contract closes the last explicit human API
+  requirement: the second argument is a **type argument** in the canonical
+  grammar (new `Expr::TypeRef`), resolved by the parser and checker, never a
+  runtime string. A string literal in that position is a compatibility spelling
+  normalized to the same node (one type path). The checker resolves unknown/
+  malformed types statically and `infer` returns the decoded type; both engines
+  decode via the existing recursive decoder. Regression file
+  `tests/keystone_typed_json_api.rs`; spec §22/grammar/website mirrors updated.
 - `f512913b` **fix(stdlib): end the receiver borrow before running a sequence
   callback.** The shared `sequence_callback_method` was invoked with
   `l.borrow().clone()` as an argument, keeping the `RefCell` borrow across the
@@ -440,9 +449,10 @@ closure range is **pushed through `b221e6a9`**. The remote CI at `b221e6a9` is
 `b1_boundary`), and the local commits hold the parser fix that turns that suite
 to green. The local tip is the 2026-10-08 final-collection campaign tip
 (**10 ahead**, unpushed). **Exact next action:** the human decides whether to
-(a) authorize a push of the 10-commit range (site deploys on push — confirm
-acceptance), and (b) review the now-implemented collection model for any change
-of decision. Do not push without explicit authorization. B-1R8 (remove the
+(a) authorize a push of the 25-commit range (site deploys on push — confirm
+acceptance), and (b) review the now-implemented collection model and
+direct-type typed-JSON API for any change of decision. Do not push without
+explicit authorization. B-1R8 (remove the
 recursive engine and the oracle switch) and any runtime publication remain
 separately human-gated. **Validation (TD-22):** use the observable sharded
 `scripts/validate.py` (not a monolithic watch); re-run the full matrix sharded

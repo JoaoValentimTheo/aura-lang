@@ -565,22 +565,26 @@ sync test (documented as non-authoritative; runtime refusal is the decision).
 
 ## Exact next action
 
-0. **Aura 0.3 Keystone final collection model (2026-10-08, LOCAL, UNPUSHED).**
-   Local tip is **10 ahead / 0 behind** remote `b221e6a9`. The campaign commits:
-   `d5bb2fbd` remove general semicolon statement/item sequencing (human
-   override; `;` reserved for the Array type); `49ef5298` project dynamic
-   ranges as `range_like`/`range`; `36c3d49f` archive historical docs;
-   `d0ff3076` implement distinct `List`/`Array`/`Tuple`/`Set`/`Map` identities
-   end-to-end (`[T; N]` array type, contextual bracket-literal realization, no
-   implicit List↔Array conversion, real Tuple, Set with `SetLike`); `86eb6925`
-   finalize the docs (ADR-0005, spec §21, grammar + website mirrors) and add the
-   observable sharded validator `scripts/validate.py`. **The collection model is
-   now implemented**, superseding the earlier "no tuple / no array / no set"
-   decision. Frozen runtimes verified byte-identical; `v0.2.1` unmoved.
-   **Nothing pushed.** **Exact next action:** the human decides whether to
-   authorize a push of the 10-commit range (a push deploys the site — confirm)
-   and reviews the implemented collection model for any change of decision. Do
-   not push without explicit authorization.
+0. **Aura 0.3 Keystone final collection model + typed-JSON API (2026-10-08,
+   LOCAL, UNPUSHED).** Local tip is **25 ahead / 0 behind** remote `b221e6a9`.
+   The campaign commits: `d5bb2fbd` remove general semicolon statement/item
+   sequencing (human override; `;` reserved for the Array type); `49ef5298`
+   project dynamic ranges as `range_like`/`range`; `36c3d49f` archive historical
+   docs; `d0ff3076` implement distinct `List`/`Array`/`Tuple`/`Set`/`Map`
+   identities end-to-end (`[T; N]` array type, contextual bracket-literal
+   realization, no implicit List↔Array conversion, real Tuple, Set with
+   `SetLike`); `86eb6925` finalize the docs (ADR-0005, spec §21, grammar +
+   website mirrors) and add the observable sharded validator
+   `scripts/validate.py`; `ce8deb0a` implement the final
+   `json_decode_as(text, Type)` direct-type API (new `Expr::TypeRef`, canonical
+   type grammar, static result type, string form kept as a normalized
+   compatibility spelling). **The collection model and typed-JSON API are now
+   implemented**, superseding the earlier "no tuple / no array / no set" and
+   string-type decisions. Frozen runtimes verified byte-identical; `v0.2.1`
+   unmoved. **Nothing pushed.** **Exact next action:** the human decides whether
+   to authorize a push of the 25-commit range (a push deploys the site —
+   confirm) and reviews the implemented collection model and typed-JSON API for
+   any change of decision. Do not push without explicit authorization.
 
 1. B-1 and the post-B1 runtime/WASM edge closure are **remotely closed**. The
    Pre-0.3 Foundation super-transaction and the 2026-10-06 adversarial re-audit
