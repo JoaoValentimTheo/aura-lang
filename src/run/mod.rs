@@ -2211,6 +2211,7 @@ impl Interp {
         // an `Expr::TypeRef`, so the runtime consumes the type directly and
         // reuses the existing recursive decoder — no runtime type value, no
         // second parser, and no string-to-type lookup (`LANGUAGE_SPEC.md` §22).
+        #[cfg(feature = "json")]
         if let Expr::Name(name, _) = callee {
             if is_json_decode_as_name(name) {
                 if let [text_arg, type_arg] = args {
@@ -3055,6 +3056,7 @@ fn normalize(i: i64, len: usize) -> Option<usize> {
 }
 
 /// Whether `name` is the `json_decode_as` builtin (bare or qualified).
+#[cfg(feature = "json")]
 pub(crate) fn is_json_decode_as_name(name: &str) -> bool {
     name == "json_decode_as" || name.ends_with("::json_decode_as")
 }

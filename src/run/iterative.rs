@@ -323,6 +323,7 @@ enum Cont {
     /// The JSON text of a `json_decode_as(text, Type)` finished; decode it
     /// against the parser-resolved static type (the second argument is an
     /// `Expr::TypeRef`, never evaluated as a value).
+    #[cfg(feature = "json")]
     TypedDecode {
         ty: crate::ast::TypeExpr,
         span: Span,
@@ -1339,6 +1340,7 @@ impl<'i> Machine<'i> {
                     }
                 }
             }
+            #[cfg(feature = "json")]
             Cont::TypedDecode { ty, span } => {
                 let Ctl::Val(value) = done.ctl else {
                     return Ok(Resume::Redeliver(Done::plain(done.ctl)));
@@ -2467,6 +2469,7 @@ impl<'i> Machine<'i> {
         // existing recursive decoder (`LANGUAGE_SPEC.md` §22). This must run
         // before the ordinary argument-evaluation loop so the type argument is
         // never treated as a value expression.
+        #[cfg(feature = "json")]
         if let Expr::Name(name, _) = &*callee {
             if super::is_json_decode_as_name(name) {
                 if let [text_arg, type_arg] = &*args {
