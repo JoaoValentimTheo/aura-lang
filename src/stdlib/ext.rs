@@ -464,6 +464,22 @@ pub mod json {
         }
     }
 
+    /// Decode JSON text against an already-parsed [`TypeExpr`], producing a
+    /// typed value. Shared by `json_decode_as`'s runtime path: the canonical
+    /// parser resolves `json_decode_as(text, Pokemon)` to a [`TypeExpr`] at
+    /// parse time, so the runtime never re-parses a type spelling
+    /// (`LANGUAGE_SPEC.md` §22).
+    pub fn decode_typed(
+        it: &Interp,
+        text: &str,
+        ty: &crate::ast::TypeExpr,
+        span: Span,
+    ) -> AuraResult<Value> {
+        let j: serde_json::Value = serde_json::from_str(text)
+            .map_err(|e| Diag::new(codes::DECODE_MISMATCH, format!("malformed JSON: {e}"), span))?;
+        decode_as(it, &j, ty, &ty.name(), span)
+    }
+
     fn decode_err(msg: String, span: Span) -> Diag {
         Diag::new(codes::DECODE_MISMATCH, msg, span)
     }

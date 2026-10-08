@@ -1782,6 +1782,9 @@ impl Resolver {
                     .into(),
                 *span,
             ),
+            // A type argument carries no value names; its `TypeExpr` has no
+            // local bindings to rewrite, so it is returned unchanged.
+            Expr::TypeRef(ty, span) => Expr::TypeRef(ty.clone(), *span),
             Expr::Lambda(params, body, span) => {
                 let mut inner = locals.clone();
                 inner.push();

@@ -320,6 +320,13 @@ enum Cont {
         mutable: bool,
         env: Env,
     },
+    /// The JSON text of a `json_decode_as(text, Type)` finished; decode it
+    /// against the parser-resolved static type (the second argument is an
+    /// `Expr::TypeRef`, never evaluated as a value).
+    TypedDecode {
+        ty: crate::ast::TypeExpr,
+        span: Span,
+    },
     /// An `if` condition finished; select the branch.
     IfBranch {
         then: Arc<[Stmt]>,
@@ -1332,6 +1339,20 @@ impl<'i> Machine<'i> {
                     }
                 }
             }
+            Cont::TypedDecode { ty, span } => {
+                let Ctl::Val(value) = done.ctl else {
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                let Value::Str(s) = &value else {
+                    return Err(self.interp.error(
+                        codes::TYPE_MISMATCH,
+                        "json_decode_as expects a string of JSON text",
+                        span,
+                    ));
+                };
+                let decoded = crate::stdlib::ext::json::decode_typed(self.interp, s, &ty, span)?;
+                Ok(Resume::Next(Ctrl::Done(Ctl::Val(decoded))))
+            }
             Cont::LetBind { name, mutable, env } => {
                 if let Ctl::Val(value) = done.ctl {
                     let advanced = env.define_shadowing(name, value, mutable);
@@ -2199,6 +2220,16 @@ impl<'i> Machine<'i> {
         match &**e {
             Expr::Lit(l, _) => Ok(Control::Next(Ctrl::Done(Ctl::Val(literal(l))))),
             Expr::Name(name, span) => self.eval_name(name, *span, env),
+            // A type argument is not a value; it is consumed by the
+            // `json_decode_as` call that owns it, which never routes it
+            // through this evaluator. Reaching here means a type argument was
+            // used as a value, which is a checker error reported upstream; be
+            // defensive and refuse rather than fabricate a value.
+            Expr::TypeRef(_, span) => Err(self.interp.error(
+                codes::TYPE_MISMATCH,
+                "a type name cannot be used as a value here",
+                *span,
+            )),
             Expr::FStr(parts, _) => {
                 // Parts left to right, exactly once each (B-1R3B.7). Literal
                 // text is appended verbatim; each interpolation is evaluated
@@ -2430,6 +2461,28 @@ impl<'i> Machine<'i> {
         env: Env,
         span: Span,
     ) -> Result<Control> {
+        // `json_decode_as(text, Type)`: the second argument is a static type
+        // resolved by the parser (`Expr::TypeRef`), not a value. Evaluate only
+        // the JSON text, then decode against the resolved type through the
+        // existing recursive decoder (`LANGUAGE_SPEC.md` §22). This must run
+        // before the ordinary argument-evaluation loop so the type argument is
+        // never treated as a value expression.
+        if let Expr::Name(name, _) = &*callee {
+            if super::is_json_decode_as_name(name) {
+                if let [text_arg, type_arg] = &*args {
+                    if let Expr::TypeRef(ty, tspan) = &type_arg.value {
+                        self.kont.push(Cont::TypedDecode {
+                            ty: ty.clone(),
+                            span: *tspan,
+                        });
+                        return Ok(Control::Next(Ctrl::EvalExpr(
+                            Arc::new(text_arg.value.clone()),
+                            env,
+                        )));
+                    }
+                }
+            }
+        }
         if args.is_empty() {
             return self.dispatch_call(callee, args, Vec::new(), env, span);
         }

@@ -141,7 +141,7 @@ fn request_returns_status_headers_and_body() {
 fn response_composes_with_typed_json_decode() {
     let server = TestServer::start(OK_RESPONSE);
     let src = format!(
-        "struct User {{ name: string, age: int }}\nfn main() {{\n let r = http_get(\"{}\")\n let u = json_decode_as(r[\"body\"], \"User\")\n print(u.name)\n print(u.age) }}",
+        "struct User {{ name: string, age: int }}\nfn main() {{\n let r = http_get(\"{}\")\n let u = json_decode_as(r[\"body\"], User)\n print(u.name)\n print(u.age) }}",
         server.url("/user")
     );
     let out = run(&src).expect("decode succeeds");

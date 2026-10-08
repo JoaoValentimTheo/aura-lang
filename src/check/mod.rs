@@ -2332,7 +2332,7 @@ impl Checker {
     /// rejected under `-> never`.
     fn expr_diverges(&self, e: &Expr, return_diverges: bool) -> bool {
         match e {
-            Expr::Lit(..) | Expr::Name(..) => false,
+            Expr::Lit(..) | Expr::Name(..) | Expr::TypeRef(..) => false,
             // Every interpolated part is evaluated; a literal part never
             // diverges.
             Expr::FStr(parts, _) => parts.iter().any(|p| match p {
@@ -2596,7 +2596,7 @@ impl Checker {
 
     fn expr_has_reachable_return(&self, e: &Expr) -> bool {
         match e {
-            Expr::Lit(..) | Expr::Name(..) => false,
+            Expr::Lit(..) | Expr::Name(..) | Expr::TypeRef(..) => false,
             Expr::FStr(parts, _) => parts.iter().any(|p| match p {
                 FPart::Lit(_) => false,
                 FPart::Expr(e, _) => self.expr_has_reachable_return(e),
@@ -3677,6 +3677,10 @@ impl Checker {
                 Lit::None => Ty::None,
             },
             Expr::FStr(..) => Ty::String,
+            // A type argument is not a value and has no inferable value type;
+            // its meaning is consumed by the builtin that owns the parameter
+            // (`json_decode_as`), which itself reports the decoded result type.
+            Expr::TypeRef(..) => Ty::Unknown,
             // A tuple is now a distinct identity (§26): infer a `Tuple` of the
             // element types. A parenthesized comma-list is a tuple; a bare
             // grouping `(e)` is not a tuple node and never reaches here.
@@ -3838,6 +3842,15 @@ impl Checker {
                                 self.instantiate_return_ty(&visible[i], args, ty_args)
                             })
                     } else if let Some(sig) = crate::stdlib::signatures::builtin(name) {
+                        // `json_decode_as(text, Type)` has the statically
+                        // resolved target type as its result (`LANGUAGE_SPEC.md`
+                        // §22): the checker knows the decoded type, so it must
+                        // not fall back to `Unknown`.
+                        if name == "json_decode_as" {
+                            if let Some(Expr::TypeRef(t, tspan)) = args.get(1).map(|a| &a.value) {
+                                return self.ty_from_expr(t, *tspan).unwrap_or(Ty::Unknown);
+                            }
+                        }
                         sig.returns.ty()
                     } else {
                         Ty::Unknown
@@ -4081,6 +4094,25 @@ impl Checker {
         }
         for (i, param) in sig.params.iter().enumerate() {
             let Some(arg) = args.get(i) else { break };
+            // A **type argument** (e.g. `json_decode_as`'s second parameter) is
+            // not a value: resolve it with the ordinary type resolver so an
+            // unknown or malformed type is a compile-time diagnostic, and do
+            // not infer a value type for it (`LANGUAGE_SPEC.md` §22).
+            if param.is_type {
+                match &arg.value {
+                    Expr::TypeRef(t, tspan) => {
+                        self.ty_from_expr(t, *tspan)?;
+                    }
+                    _ => {
+                        return Err(Diag::new(
+                            codes::TYPE_MISMATCH,
+                            format!("`{}` argument {} must be a type", sig.name, i + 1),
+                            arg.value.span(),
+                        ));
+                    }
+                }
+                continue;
+            }
             let actual = self.infer(&arg.value);
             if param.accepts.accepts_ty(&actual) == Some(false) {
                 return Err(Diag::new(
@@ -5908,6 +5940,17 @@ impl Checker {
     fn expr_inner(&mut self, e: &Expr) -> Result<()> {
         match e {
             Expr::Lit(_, _) => {}
+            // A type argument is not a standalone expression. It is validated
+            // where it is consumed (`check_builtin_call` for a type-parameter
+            // builtin such as `json_decode_as`); reaching it here means the
+            // type name was used as an ordinary value, which is an error.
+            Expr::TypeRef(_, span) => {
+                return Err(Diag::new(
+                    codes::TYPE_MISMATCH,
+                    "a type name cannot be used as a value here",
+                    *span,
+                ))
+            }
             Expr::Name(name, span) => {
                 // A bare reference to an *overloaded* function carries no
                 // argument types, so there is no way to pick an overload. This
@@ -6068,7 +6111,27 @@ impl Checker {
                         self.reject_named_args("callable", args, *span)?;
                     }
                 }
-                for a in args.iter() {
+                // Each argument expression is checked. A **type argument** of a
+                // type-parameter builtin (`json_decode_as`'s second argument) is
+                // validated by `check_builtin_call` as a type, not as a value,
+                // so it is skipped here.
+                let type_param_indices: Vec<usize> = match f.as_ref() {
+                    Expr::Name(n, _) => crate::stdlib::signatures::builtin(n)
+                        .map(|sig| {
+                            sig.params
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, p)| p.is_type)
+                                .map(|(i, _)| i)
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                    _ => Vec::new(),
+                };
+                for (i, a) in args.iter().enumerate() {
+                    if type_param_indices.contains(&i) {
+                        continue;
+                    }
                     self.expr(&a.value)?;
                 }
             }

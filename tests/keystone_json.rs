@@ -3,10 +3,13 @@
 //! Aura 0.3 Keystone typed JSON decoding (`json_decode_as`, `E4031`).
 //!
 //! Authority: Keystone §22 (HTTP response → JSON → target Aura type →
-//! validated Struct/value). The decode is type-directed: the document is
-//! validated against the declared Aura type, and malformed input, a missing
-//! required field, a wrong field or element type, and a nested mismatch are
-//! each distinguishable.
+//! validated Struct/value). The decode is type-directed: the second argument is
+//! a **type expression** written in the canonical Aura type grammar
+//! (`json_decode_as(text, Pokemon)`), resolved by the parser into a
+//! `TypeExpr`. A string literal in that position is accepted as a compatibility
+//! spelling and normalizes to the same static type, so there is one type path.
+//! Malformed input, a missing required field, a wrong field or element type,
+//! and a nested mismatch are each distinguishable.
 
 use aura::error::codes;
 use aura::run_source;
@@ -22,10 +25,58 @@ fn err(src: &str) -> u16 {
 }
 
 #[test]
-fn decodes_a_struct_with_all_fields() {
+fn decodes_a_struct_with_a_direct_type_argument() {
+    assert_eq!(
+        ok("struct U { name: string, age: int }\nfn main() { let u = json_decode_as('{\"name\": \"a\", \"age\": 3}', U)\n print(u.name)\n print(u.age) }"),
+        "a\n3\n"
+    );
+}
+
+#[test]
+fn a_string_type_argument_is_a_compatibility_spelling() {
+    // The old string spelling still works and resolves through the same type
+    // path; it is not a second implementation.
     assert_eq!(
         ok("struct U { name: string, age: int }\nfn main() { let u = json_decode_as('{\"name\": \"a\", \"age\": 3}', \"U\")\n print(u.name)\n print(u.age) }"),
         "a\n3\n"
+    );
+}
+
+#[test]
+fn the_result_type_is_statically_known() {
+    // The checker knows the decoded type, so a mismatched annotation is a
+    // static error, not a runtime surprise.
+    assert_eq!(
+        err("struct U { name: string }\nfn main() { let u: int = json_decode_as('{\"name\": \"a\"}', U)\n print(u) }"),
+        codes::TYPE_MISMATCH
+    );
+    assert_eq!(
+        err("fn main() { let a: [int; 3] = json_decode_as('[1,2]', [int; 2])\n print(a) }"),
+        codes::TYPE_MISMATCH
+    );
+}
+
+#[test]
+fn an_unknown_target_type_is_a_compile_time_diagnostic() {
+    assert_eq!(
+        err("fn main() { let u = json_decode_as('{}', Nope)\n print(u) }"),
+        codes::UNKNOWN_TYPE
+    );
+    assert_eq!(
+        err("fn main() { let u = json_decode_as('{}', \"Nope\")\n print(u) }"),
+        codes::UNKNOWN_TYPE
+    );
+}
+
+#[test]
+fn a_value_cannot_masquerade_as_a_type() {
+    assert_eq!(
+        err("fn main() { let Pokemon = 1\n let u = json_decode_as('{}', Pokemon)\n print(u) }"),
+        codes::UNKNOWN_TYPE
+    );
+    assert_eq!(
+        err("fn main() { let u = json_decode_as('{}', 5)\n print(u) }"),
+        codes::EXPECTED
     );
 }
 
@@ -34,11 +85,11 @@ fn optional_field_accepts_absence_and_null() {
     // A `T | none` field decodes to `none` when absent or null; a required
     // field does not.
     assert_eq!(
-        ok("struct U { name: string, email: string | none }\nfn main() { let u = json_decode_as('{\"name\": \"a\"}', \"U\")\n print(u.email) }"),
+        ok("struct U { name: string, email: string | none }\nfn main() { let u = json_decode_as('{\"name\": \"a\"}', U)\n print(u.email) }"),
         "none\n"
     );
     assert_eq!(
-        ok("struct U { name: string, email: string | none }\nfn main() { let u = json_decode_as('{\"name\": \"a\", \"email\": null}', \"U\")\n print(u.email) }"),
+        ok("struct U { name: string, email: string | none }\nfn main() { let u = json_decode_as('{\"name\": \"a\", \"email\": null}', U)\n print(u.email) }"),
         "none\n"
     );
 }
@@ -46,7 +97,7 @@ fn optional_field_accepts_absence_and_null() {
 #[test]
 fn decodes_a_list_of_structs() {
     assert_eq!(
-        ok("struct U { name: string }\nfn main() { let us = json_decode_as('[{\"name\": \"a\"}, {\"name\": \"b\"}]', \"[U]\")\n print(len(us))\n print(us[1].name) }"),
+        ok("struct U { name: string }\nfn main() { let us = json_decode_as('[{\"name\": \"a\"}, {\"name\": \"b\"}]', [U])\n print(len(us))\n print(us[1].name) }"),
         "2\nb\n"
     );
 }
@@ -54,7 +105,7 @@ fn decodes_a_list_of_structs() {
 #[test]
 fn decodes_nested_structs() {
     assert_eq!(
-        ok("struct Inner { v: int }\nstruct Outer { name: string, inner: Inner }\nfn main() { let o = json_decode_as('{\"name\": \"x\", \"inner\": {\"v\": 7}}', \"Outer\")\n print(o.inner.v) }"),
+        ok("struct Inner { v: int }\nstruct Outer { name: string, inner: Inner }\nfn main() { let o = json_decode_as('{\"name\": \"x\", \"inner\": {\"v\": 7}}', Outer)\n print(o.inner.v) }"),
         "7\n"
     );
 }
@@ -63,32 +114,29 @@ fn decodes_nested_structs() {
 fn decode_domains_are_distinguishable() {
     // Malformed JSON.
     assert_eq!(
-        err("struct U { name: string }\nfn main() { let u = json_decode_as('nope', \"U\")\n print(u) }"),
+        err(
+            "struct U { name: string }\nfn main() { let u = json_decode_as('nope', U)\n print(u) }"
+        ),
         codes::DECODE_MISMATCH
     );
     // Missing required field.
     assert_eq!(
-        err("struct U { name: string, age: int }\nfn main() { let u = json_decode_as('{\"name\": \"a\"}', \"U\")\n print(u) }"),
+        err("struct U { name: string, age: int }\nfn main() { let u = json_decode_as('{\"name\": \"a\"}', U)\n print(u) }"),
         codes::DECODE_MISMATCH
     );
     // Wrong field type.
     assert_eq!(
-        err("struct U { name: string, age: int }\nfn main() { let u = json_decode_as('{\"name\": \"a\", \"age\": \"x\"}', \"U\")\n print(u) }"),
+        err("struct U { name: string, age: int }\nfn main() { let u = json_decode_as('{\"name\": \"a\", \"age\": \"x\"}', U)\n print(u) }"),
         codes::DECODE_MISMATCH
     );
     // Element mismatch in a collection.
     assert_eq!(
-        err("struct U { tags: [string] }\nfn main() { let u = json_decode_as('{\"tags\": [\"a\", 3]}', \"U\")\n print(u) }"),
+        err("struct U { tags: [string] }\nfn main() { let u = json_decode_as('{\"tags\": [\"a\", 3]}', U)\n print(u) }"),
         codes::DECODE_MISMATCH
     );
     // Unknown field in the document.
     assert_eq!(
-        err("struct U { name: string }\nfn main() { let u = json_decode_as('{\"name\": \"a\", \"x\": 1}', \"U\")\n print(u) }"),
-        codes::DECODE_MISMATCH
-    );
-    // Unknown target type.
-    assert_eq!(
-        err("fn main() { let u = json_decode_as('{}', \"Nope\")\n print(u) }"),
+        err("struct U { name: string }\nfn main() { let u = json_decode_as('{\"name\": \"a\", \"x\": 1}', U)\n print(u) }"),
         codes::DECODE_MISMATCH
     );
 }
@@ -98,7 +146,7 @@ fn decode_is_not_catchable_as_a_user_exception() {
     // A decode mismatch is an ordinary diagnostic (level separation): a `try`
     // does not intercept it.
     assert_eq!(
-        err("struct U { name: string }\nfn main() { try { let u = json_decode_as('nope', \"U\")\n print(u) } catch _ { print(\"caught\") } }"),
+        err("struct U { name: string }\nfn main() { try { let u = json_decode_as('nope', U)\n print(u) } catch _ { print(\"caught\") } }"),
         codes::DECODE_MISMATCH
     );
 }

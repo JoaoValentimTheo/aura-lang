@@ -205,6 +205,13 @@ format_type     = "d" | "b" | "o" | "x" | "X" | "f" | "F" | "e" | "E" | "%" ;
   Constructor arguments are parsed separately; binding and eligibility of named
   arguments belong to the checker. Named method arguments parse today but
   are rejected semantically (`E3001`), so they are not a missing token form.
+* A small set of builtins take a **type argument** in a fixed position
+  (currently only `json_decode_as(text, Type)`). That position is parsed with
+  the canonical type grammar and produces an `Expr::TypeRef` node, not a value
+  expression; the type is resolved once by the parser and never re-parsed at
+  runtime. A string literal in that position is accepted as a compatibility
+  spelling and normalized to the same node. Every other argument is an ordinary
+  expression.
 * Bare names, grouping, indexing and fields are expressions. `()` alone is
   invalid; `() -> e` is a lambda, `(x,)` is a one-element tuple. Assignment is
   a statement, not an expression. No function TypeExpr syntax,

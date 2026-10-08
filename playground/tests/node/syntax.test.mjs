@@ -48,6 +48,12 @@ const cases = [
   ["tuple not list", 'fn main() { print((1, 2) == [1, 2]) }', "false\n"],
   ["set literal", 'fn main() { print({1, 2, 2, 3}) }', "{1, 2, 3}\n"],
   ["empty set", 'fn main() { print(set{}) }', "{}\n"],
+  ["typed json direct struct", 'struct U { n: string }\nfn main() { let u = json_decode_as(\'{"n":"a"}\', U)\n print(u.n) }', "a\n"],
+  ["typed json string compat", 'struct U { n: string }\nfn main() { let u = json_decode_as(\'{"n":"a"}\', "U")\n print(u.n) }', "a\n"],
+  ["typed json array", 'fn main() { print(json_decode_as("[1,2]", [int; 2])) }', "[1, 2]\n"],
+  ["typed json tuple", 'fn main() { print(json_decode_as("[1,\\"x\\"]", (int, string))) }', '(1, "x")\n'],
+  ["typed json unknown type", 'fn main() { let u = json_decode_as(\'{}\', Nope)\n print(u) }', 3002],
+  ["typed json value-as-type", 'fn main() { let u = json_decode_as(\'{}\', 5)\n print(u) }', 1006],
   ["method named arguments already parse", 'fn main() { print("x".contains(value: "x")) }', 3001],
 ];
 const dir = mkdtempSync(join(tmpdir(), "aura-syntax-"));

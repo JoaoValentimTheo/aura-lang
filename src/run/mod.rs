@@ -1865,6 +1865,13 @@ impl Interp {
                 Lit::Bool(b) => Value::Bool(*b),
                 Lit::None => Value::None,
             })),
+            // A type argument is not a value (see the iterative engine's
+            // `Expr::TypeRef` arm); the `json_decode_as` call consumes it.
+            Expr::TypeRef(_, span) => Err(self.error(
+                codes::TYPE_MISMATCH,
+                "a type name cannot be used as a value here",
+                *span,
+            )),
             Expr::Name(name, span) => {
                 if let Some(v) = env.get(name) {
                     Ok(Ctl::Val(v))
@@ -2199,6 +2206,33 @@ impl Interp {
     }
 
     fn eval_call(&mut self, callee: &Expr, args: &[Arg], env: &Env, span: Span) -> Result<Ctl> {
+        // `json_decode_as(text, Type)` carries a **static type** as its second
+        // argument. The canonical parser has already resolved that argument to
+        // an `Expr::TypeRef`, so the runtime consumes the type directly and
+        // reuses the existing recursive decoder — no runtime type value, no
+        // second parser, and no string-to-type lookup (`LANGUAGE_SPEC.md` §22).
+        if let Expr::Name(name, _) = callee {
+            if is_json_decode_as_name(name) {
+                if let [text_arg, type_arg] = args {
+                    if let Expr::TypeRef(ty, tspan) = &type_arg.value {
+                        let tv = match self.eval(&text_arg.value, env)? {
+                            Ctl::Val(v) => v,
+                            other => return Ok(other),
+                        };
+                        let Value::Str(s) = &tv else {
+                            return Err(self.error(
+                                codes::TYPE_MISMATCH,
+                                "json_decode_as expects a string of JSON text",
+                                span,
+                            ));
+                        };
+                        return Ok(Ctl::Val(crate::stdlib::ext::json::decode_typed(
+                            self, &s, ty, *tspan,
+                        )?));
+                    }
+                }
+            }
+        }
         // Evaluate every argument expression in **source order**, once, before
         // any parameter binding. Parameter binding (below) must never reorder
         // evaluation (`LANGUAGE_SPEC.md` §13).
@@ -3020,6 +3054,11 @@ fn normalize(i: i64, len: usize) -> Option<usize> {
     }
 }
 
+/// Whether `name` is the `json_decode_as` builtin (bare or qualified).
+pub(crate) fn is_json_decode_as_name(name: &str) -> bool {
+    name == "json_decode_as" || name.ends_with("::json_decode_as")
+}
+
 fn span_of(e: &Expr) -> Span {
     match e {
         Expr::Lit(_, s)
@@ -3042,6 +3081,7 @@ fn span_of(e: &Expr) -> Span {
         | Expr::If(_, _, _, s)
         | Expr::Match(_, _, s)
         | Expr::Block(_, s) => *s,
+        Expr::TypeRef(_, s) => *s,
         Expr::ListComp { span, .. } | Expr::MapComp { span, .. } => *span,
     }
 }

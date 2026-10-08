@@ -157,11 +157,11 @@ fn main() {{
     print(p["name"])
     print(p["id"])
     print(p["types"][0]["type"]["name"])
-    let stats = json_decode_as(json_encode(p["stats"]), "[Stat]")
+    let stats = json_decode_as(json_encode(p["stats"]), [Stat])
     print(stats[0].base_stat)
     print(stats[2].stat.name)
     print(len(stats))
-    let sprites = json_decode_as(json_encode(p["sprites"]), "SpriteRef")
+    let sprites = json_decode_as(json_encode(p["sprites"]), SpriteRef)
     print(sprites.front_default != none)
     print(p["is_default"])
 }}"#
@@ -210,7 +210,7 @@ fn pokeapi_chain_keeps_a_404_a_plain_status_with_a_decodable_body() {
 fn main() {{
     let r = http_get("{}/api/v2/pokemon/99999")
     print(r["status"])
-    let d = json_decode_as(r["body"], "Detail")
+    let d = json_decode_as(r["body"], Detail)
     print(d.detail)
 }}"#,
         server.url("")
@@ -230,7 +230,7 @@ fn pokeapi_chain_decode_mismatch_reports_the_structured_code() {
 fn main() {{
     let r = http_get("{}/api/v2/pokemon/25")
     let p = json_decode(r["body"])
-    let _stats = json_decode_as(json_encode(p["stats"]), "[Stat]")
+    let _stats = json_decode_as(json_encode(p["stats"]), [Stat])
 }}"#,
         server.url("")
     );
@@ -251,7 +251,7 @@ fn main() {{
     try {{
         let r = http_get("{}/api/v2/pokemon/25")
         let p = json_decode(r["body"])
-        let _stats = json_decode_as(json_encode(p["stats"]), "[Stat]")
+        let _stats = json_decode_as(json_encode(p["stats"]), [Stat])
         print("decoded")
     }} catch _ {{
         print("caught")
@@ -272,7 +272,7 @@ fn pokeapi_chain_rejects_an_undeclared_field_rather_than_ignoring_it() {
         r#"struct TooSmall {{ name: string }}
 fn main() {{
     let r = http_get("{}/api/v2/pokemon/25")
-    let _ = json_decode_as(r["body"], "TooSmall")
+    let _ = json_decode_as(r["body"], TooSmall)
 }}"#,
         server.url("")
     );

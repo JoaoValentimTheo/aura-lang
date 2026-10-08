@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc 67ecb204c8f785f79fbef481812f7e680cc988d7f075b75077c89c3a21a36b44 # shrinks to which = 9, extra = 0, type_idx = 4
 cc 2d91e7f84316be92718a0b168eaf46a6c079d8be486eb4a4993e67d94f89fb47 # shrinks to seed = 50
+cc 6bac485629d8bccb4c9c1003cd8c466b5370bc5df1994ae14176b4cf29bcce7e # shrinks to which = 31, extra = 0, type_idx = 0

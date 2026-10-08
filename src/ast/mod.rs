@@ -392,6 +392,17 @@ pub enum Expr {
     Construct(String, Arc<[Arg]>, Vec<TypeExpr>, Span),
     /// `(a, b)` tuple (kept minimal; single element is a group).
     Tuple(Arc<[Expr]>, Span),
+    /// A **type argument**: a type expression written in a type-argument
+    /// position of a builtin (currently only `json_decode_as`'s second
+    /// argument, e.g. `json_decode_as(text, Pokemon)`).
+    ///
+    /// This is not a value and is never evaluated to a runtime value. It exists
+    /// so the canonical parser resolves the type once, into the same
+    /// [`TypeExpr`] the rest of the compiler uses, and the checker/runtime
+    /// consume that static type directly (`LANGUAGE_SPEC.md` §22). A string
+    /// literal in the same position is accepted as a compatibility spelling and
+    /// normalizes to this node at parse time, so there is exactly one AST form.
+    TypeRef(crate::ast::TypeExpr, Span),
     /// `(x: int, mut y) -> body` or `x -> body`. A lambda shares the function
     /// parameter model (`Param`: name, optional annotation, `mut`), so
     /// functions and lambdas are one semantic model (`LANGUAGE_SPEC.md` §15.4).
@@ -438,6 +449,7 @@ impl Expr {
             | Expr::If(_, _, _, s)
             | Expr::Match(_, _, s)
             | Expr::Block(_, s) => *s,
+            Expr::TypeRef(_, s) => *s,
             Expr::ListComp { span, .. } | Expr::MapComp { span, .. } => *span,
         }
     }

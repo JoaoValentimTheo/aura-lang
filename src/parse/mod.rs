@@ -323,7 +323,7 @@ fn check_expr_depth(root: &Expr, start: usize) -> Result<()> {
         }
         let d = depth + 1;
         match e {
-            Expr::Lit(..) | Expr::Name(..) | Expr::FStr(..) => {}
+            Expr::Lit(..) | Expr::Name(..) | Expr::FStr(..) | Expr::TypeRef(..) => {}
             Expr::Unary(_, o, _) => stack.push((o, d)),
             Expr::Binary(_, l, r, _) => {
                 stack.push((l, d));
@@ -2423,7 +2423,17 @@ impl Parser {
                     let span = self.span();
                     self.count_node(span)?;
                     self.bump();
-                    let args = self.call_args()?;
+                    // `json_decode_as(text, Type)` takes a **type argument** in
+                    // its second position. It is parsed with the compiler's own
+                    // type grammar and does not route through the ordinary
+                    // expression parser, so a type is never mistaken for a value
+                    // (`LANGUAGE_SPEC.md` §22). Every other callee uses the
+                    // ordinary argument list.
+                    let args = if is_json_decode_as(&e) {
+                        self.json_decode_as_args()?
+                    } else {
+                        self.call_args()?
+                    };
                     e = Expr::Call(Arc::new(e), args.into(), Vec::new(), span);
                 }
                 Tok::LBracket => {
@@ -2553,6 +2563,61 @@ impl Parser {
             }
             // A trailing comma before the closing `)` is allowed, so a list of
             // arguments may be extended line by line.
+            self.skip_newlines();
+            if self.eat(&Tok::RParen) {
+                return Ok(out);
+            }
+        }
+    }
+
+    /// Parse the argument list of `json_decode_as(text, Type)`.
+    ///
+    /// The first argument is an ordinary expression (the JSON text). The second
+    /// is a **type**: it is parsed with the canonical type grammar into a
+    /// [`TypeExpr`] and wrapped in [`Expr::TypeRef`], so no value-position
+    /// expression ever represents a type. A string literal in that position is
+    /// accepted as a compatibility spelling and parsed with the same grammar, so
+    /// both spellings yield the identical AST node — there is one type path,
+    /// not two implementations.
+    fn json_decode_as_args(&mut self) -> Result<Vec<Arg>> {
+        let mut out = Vec::new();
+        self.skip_newlines();
+        if self.eat(&Tok::RParen) {
+            return Ok(out);
+        }
+        let mut index = 0usize;
+        loop {
+            self.skip_newlines();
+            let value = if index == 1 {
+                // The second argument is a type (see the doc comment above).
+                let tspan = self.span();
+                match self.at().clone() {
+                    Tok::Str(s) => {
+                        self.bump();
+                        Expr::TypeRef(
+                            crate::parse::parse_type(&s).map_err(|e| {
+                                Diag::new(
+                                    codes::EXPECTED,
+                                    format!("`{s}` is not a valid type spelling: {}", e.message),
+                                    tspan,
+                                )
+                            })?,
+                            tspan,
+                        )
+                    }
+                    _ => Expr::TypeRef(self.ty()?, tspan),
+                }
+            } else {
+                self.expr()?
+            };
+            out.push(Arg { name: None, value });
+            index += 1;
+            self.skip_newlines();
+            if !self.eat(&Tok::Comma) {
+                self.expect(&Tok::RParen)?;
+                return Ok(out);
+            }
+            // A trailing comma before the closing `)` is allowed.
             self.skip_newlines();
             if self.eat(&Tok::RParen) {
                 return Ok(out);
@@ -3691,6 +3756,15 @@ fn starts_expr(t: &Tok) -> bool {
     )
 }
 
+/// Whether `e` names the `json_decode_as` builtin (a bare or qualified
+/// `...::json_decode_as`), whose second argument is a type, not a value.
+fn is_json_decode_as(e: &Expr) -> bool {
+    match e {
+        Expr::Name(n, _) => n == "json_decode_as" || n.ends_with("::json_decode_as"),
+        _ => false,
+    }
+}
+
 fn span_of(e: &Expr) -> Span {
     match e {
         Expr::Lit(_, s)
@@ -3713,6 +3787,7 @@ fn span_of(e: &Expr) -> Span {
         | Expr::If(_, _, _, s)
         | Expr::Match(_, _, s)
         | Expr::Block(_, s) => *s,
+        Expr::TypeRef(_, s) => *s,
         Expr::ListComp { span, .. } | Expr::MapComp { span, .. } => *span,
     }
 }

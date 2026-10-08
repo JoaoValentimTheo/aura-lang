@@ -204,23 +204,23 @@ fn typed_json_preserves_requested_collection_identity() {
     // Typed decode with `[T; N]` produces an Array; dynamic decode a List.
     assert_eq!(
         ok(
-            "fn main() { let a = json_decode_as(\"[1,2]\", \"[int; 2]\")\n print(a == json_decode(\"[1,2]\")) }"
+            "fn main() { let a = json_decode_as(\"[1,2]\", [int; 2])\n print(a == json_decode(\"[1,2]\")) }"
         ),
         "false\n"
     );
     // A length mismatch is E4031.
     assert_eq!(
-        err("fn main() { let _a = json_decode_as(\"[1,2,3]\", \"[int; 2]\") }"),
+        err("fn main() { let _a = json_decode_as(\"[1,2,3]\", [int; 2]) }"),
         codes::DECODE_MISMATCH
     );
     // Typed tuple.
     assert_eq!(
-        ok("fn main() { print(json_decode_as(\"[1,\\\"x\\\"]\", \"(int, string)\")) }"),
+        ok("fn main() { print(json_decode_as(\"[1,\\\"x\\\"]\", (int, string))) }"),
         "(1, \"x\")\n"
     );
     // Typed set rejects duplicate JSON members as a shape mismatch.
     assert_eq!(
-        err("fn main() { let _s = json_decode_as(\"[1,1]\", \"{int}\") }"),
+        err("fn main() { let _s = json_decode_as(\"[1,1]\", {int}) }"),
         codes::DECODE_MISMATCH
     );
 }

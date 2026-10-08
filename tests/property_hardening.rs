@@ -95,12 +95,28 @@ proptest! {
         let (lit, ty) = &pool[type_idx % pool.len()];
         // Arity derived from the registry's own declared bounds.
         let argc = sig.min_args + extra;
-        let args: Vec<&str> = (0..argc).map(|_| *lit).collect();
+        // A **type-parameter** position (e.g. `json_decode_as`'s second
+        // argument) takes a type literal, not a value; every other position
+        // takes the value literal. A generated value in a type position is now
+        // correctly a parse error, so it must not be generated.
+        let args: Vec<&str> = (0..argc)
+            .map(|i| {
+                if sig.params.get(i).is_some_and(|p| p.is_type) {
+                    "int"
+                } else {
+                    *lit
+                }
+            })
+            .collect();
 
         // The registry's own verdict for this shape.
         let arity_ok = arc_in_bounds(sig, argc);
         let types_ok = (0..argc).all(|i| {
             let param = sig.params.get(i).copied().unwrap_or(Param::ANY);
+            // A type parameter is satisfied by the type literal we emit.
+            if param.is_type {
+                return true;
+            }
             match param.accepts {
                 Accepts::Any => true,
                 _ => param.accepts.accepts_ty(ty) != Some(false),

@@ -71,7 +71,7 @@ Every rejection carries a stable code. Codes are grouped by phase:
 | E4028 | Assertion failed | `assert(1 == 2)` |
 | E4029 | No `match` arm matched | `match 5 { 1 -> "a" }` |
 | E4030 | `return` cannot be used as a value | `let x = if true { return 1 } else { 2 }` |
-| E4031 | Typed JSON decode mismatch | `json_decode_as(text, "User")` where the document lacks a required field, has a wrong field/element type, or is malformed JSON |
+| E4031 | Typed JSON decode mismatch | `json_decode_as(text, User)` where the document lacks a required field, has a wrong field/element type, a wrong length/arity, a duplicate Set member, or is malformed JSON |
 | E4999 | Internal error | a bug in Aura itself, never a user mistake |
 
 ## Optional features (`E5xxx`)

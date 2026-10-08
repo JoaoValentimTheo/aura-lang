@@ -217,23 +217,39 @@ impl Returns {
 pub struct Param {
     /// Accepted type classes.
     pub accepts: Accepts,
+    /// Whether this parameter is a **type argument** rather than a value (for
+    /// example `json_decode_as`'s second argument). A type parameter is written
+    /// in the canonical type grammar, resolved by the parser into
+    /// `Expr::TypeRef`, and never evaluated to a runtime value; the checker
+    /// validates it with the ordinary type resolver (`LANGUAGE_SPEC.md` §22).
+    pub is_type: bool,
 }
 
 impl Param {
     /// A parameter accepting any value.
     pub const ANY: Param = Param {
         accepts: Accepts::Any,
+        is_type: false,
     };
     /// A parameter accepting exactly `c`.
     pub const fn one(c: TypeClass) -> Param {
         Param {
             accepts: Accepts::One(c),
+            is_type: false,
         }
     }
     /// A parameter accepting any of `cs`.
     pub const fn any_of(cs: &'static [TypeClass]) -> Param {
         Param {
             accepts: Accepts::AnyOf(cs),
+            is_type: false,
+        }
+    }
+    /// A parameter that is a type, not a value (resolved to `Expr::TypeRef`).
+    pub const fn type_arg() -> Param {
+        Param {
+            accepts: Accepts::Any,
+            is_type: true,
         }
     }
 }
@@ -576,7 +592,7 @@ pub fn builtins() -> &'static [Signature] {
             #[cfg(feature = "json")]
             Signature {
                 name: "json_decode_as",
-                params: vec![Param::one(TypeClass::Str), Param::one(TypeClass::Str)],
+                params: vec![Param::one(TypeClass::Str), Param::type_arg()],
                 min_args: 2,
                 max_args: 2,
                 returns: Returns::Dynamic,
