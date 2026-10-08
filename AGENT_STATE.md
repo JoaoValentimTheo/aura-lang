@@ -15,11 +15,11 @@ before continuing substantial work.
   `git rev-list --left-right --count origin/rewrite/v3-rust...HEAD`.
 - Local/remote relationship: authoritative value is `git rev-list
   --left-right --count origin/rewrite/v3-rust...HEAD`; a tracked file cannot
-  safely hardcode its own position. At the 2026-10-08 final-collection
-  checkpoint the local tip is `ce8deb0a`, **25 ahead / 0 behind** `b221e6a9`
-  (the prior parser/docs commits, the semicolon/range/archival trio, the
-  collection identity + docs commits, the closure fixes, and the direct-type
-  typed-JSON API; see the canonicalization section below).
+  safely hardcode its own position. At the 2026-10-08 validation-infrastructure
+  checkpoint the local tip is `31b49e4a`, **31 ahead / 0 behind** `b221e6a9`
+  (the typed-JSON API + its closure, plus the macOS validation-infrastructure
+  repair — see `docs/engineering/CURRENT_HANDOFF.md` "Validation
+  infrastructure"). The prior collection checkpoint was `ce8deb0a` / 25 ahead.
 - **Remote CI at `b221e6a9` is RED** (run `37639795923`): the
   `playground (wasm runtime)` job fails in `b1_boundary.test.mjs` (44/19) with
   grouping/f-string `guest trap` — the exact defect fixed by the unpushed local

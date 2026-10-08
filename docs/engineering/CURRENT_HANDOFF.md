@@ -4,6 +4,45 @@ Authoritative for **the active task and the exact next action**. Current
 repository state lives in `AGENT_STATE.md`; operating rules in `AGENTS.md`.
 Keep this file short — it is read at the start of every session.
 
+## Validation infrastructure (2026-10-08, local, unpushed)
+
+The pathological macOS validation wall time was **root-caused and fixed**, not
+merely made observable.
+
+- **Root cause.** The first execution of a *freshly linked* Rust test binary
+  costs 30-65 s wall / ~0.00 s user CPU. It is macOS's security assessment of
+  the ad-hoc linker-signed Mach-O image. Reproduced with unique binaries:
+  a fresh binary in `target/debug/deps` (758,385 entries) first-executes in
+  35-62 s; the *same* binary copied to a small scratch dir first-executes in
+  0.4-0.9 s; the second exec anywhere is 0.01 s. Directory size alone is not
+  the cause (750k empty files = 4 s); the freshly lined image in the huge deps
+  directory is.
+- **Fix.** `scripts/validate.py` now discovers the full test surface from
+  `cargo metadata` plus the real artifact stream (lib unit tests, all
+  integration tests, the bin harness, doctests; the previously skipped lib
+  target is now included), compiles each configuration once with live 5 s
+  progress and a separate compile timeout, **stages each freshly linked test
+  binary into `target/validate-run/` and executes it there**, runs each target
+  as its own process group with a per-target deadline (SIGTERM then bounded
+  SIGKILL), persists results atomically and incrementally (resumable even
+  under `--fresh`), and keys the cache on the artifact digest + runtime-input
+  content digest + toolchain + target + feature config. Regression tests:
+  `python3 scripts/test_validate.py` (18 tests, ~4 s).
+- **Measured result.** All three configurations now run end-to-end in **~369 s
+  total** (all-features 97 s, canonical 97 s, bare 44 s; fresh builds):
+  `PASS=185 FAIL=0 TIMEOUT=0 SKIP=1 COMPILE_FAILURE=0`. The single SKIP is the
+  `aura` bin target under `bare` (`required-features = ["cli"]`), reported as
+  SKIP, not FAIL. Previously the matrix exceeded a 600 s shell timeout with no
+  output.
+- **Real defect surfaced.** `tests/module_graph.rs`'s
+  `typed_decode_type_argument_resolves_in_a_child_module` called
+  `json_decode_as` with no `#[cfg(feature = "json")]` gate, so it failed under
+  `--no-default-features`. Gated; bare `module_graph` is 37/0 and
+  all-features 38/0.
+- **Historical evidence preserved.** The prior all-features 59/59 PASS cache is
+  archived at `target/validate-cache/results.pre-repair.json.bak`; it is not
+  presented as a fresh run.
+
 ## Program
 
 B-1 — WebAssembly call-frame implementation nonconformance. The released

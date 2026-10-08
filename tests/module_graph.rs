@@ -538,6 +538,7 @@ fn runtime_error_in_child_keeps_child_provenance() {
     );
 }
 
+#[cfg(feature = "json")]
 #[test]
 fn typed_decode_type_argument_resolves_in_a_child_module() {
     // A `json_decode_as(text, Type)` type argument names a nominal type. Its
