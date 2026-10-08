@@ -111,7 +111,9 @@ pub fn install(it: &mut Interp) {
         let v = arg(&args, 0, "len", span)?;
         match v {
             Value::Str(s) => Ok(Value::Int(s.chars().count() as i64)),
-            Value::List(l) => Ok(Value::Int(l.borrow().len() as i64)),
+            Value::List(l) | Value::Array(l) => Ok(Value::Int(l.borrow().len() as i64)),
+            Value::Tuple(t) => Ok(Value::Int(t.len() as i64)),
+            Value::Set(s) => Ok(Value::Int(s.borrow().len() as i64)),
             Value::Map(m) => Ok(Value::Int(m.borrow().len() as i64)),
             Value::Range(r) => Ok(Value::Int(r.len())),
             other => Err(err(
@@ -493,6 +495,9 @@ pub fn method(
     let class = match recv {
         Value::Str(_) => Some(signatures::TypeClass::Str),
         Value::List(_) => Some(signatures::TypeClass::List),
+        Value::Array(_) => Some(signatures::TypeClass::Array),
+        Value::Tuple(_) => Some(signatures::TypeClass::Tuple),
+        Value::Set(_) => Some(signatures::TypeClass::Set),
         Value::Map(_) => Some(signatures::TypeClass::Map),
         Value::Range(_) => Some(signatures::TypeClass::Range),
         _ => None,
@@ -507,6 +512,11 @@ pub fn method(
     match recv {
         Value::Str(s) => string_method(it, s, name, args, span),
         Value::List(l) => list_method(it, l, name, args, span),
+        // An Array is a fixed-length sequence: it has the read-side list
+        // methods but none of the resizing ones (§20, §64).
+        Value::Array(l) => array_method(it, l, name, args, span),
+        Value::Tuple(t) => tuple_method(it, t, name, args, span),
+        Value::Set(s) => set_method(it, s, name, args, span),
         Value::Map(m) => map_method(it, m, name, args, span),
         Value::Range(r) => match name {
             "len" => Ok(Value::Int(r.len())),
@@ -681,6 +691,158 @@ fn list_method(
             Ok(acc)
         }
         _ => Err(no_method("list", name, span)),
+    }
+}
+
+/// Array methods: the fixed-length sequence reads, but no resizing (§20).
+fn array_method(
+    it: &mut Interp,
+    l: &Rc<RefCell<Vec<Value>>>,
+    name: &str,
+    args: Vec<Value>,
+    span: Span,
+) -> Result<Value> {
+    match name {
+        "len" => Ok(Value::Int(l.borrow().len() as i64)),
+        // Resizing methods are absent: an Array has a fixed length.
+        "push" | "pop" | "insert" | "remove" | "clear" => Err(err(
+            codes::TYPE_MISMATCH,
+            format!("array is a fixed-length sequence; `{name}` would resize it"),
+            span,
+        )),
+        "first" => Ok(l.borrow().first().cloned().unwrap_or(Value::None)),
+        "last" => Ok(l.borrow().last().cloned().unwrap_or(Value::None)),
+        "join" => {
+            let sep = match arg(&args, 0, "join", span)? {
+                Value::Str(s) => s.clone(),
+                other => {
+                    return Err(err(
+                        codes::TYPE_MISMATCH,
+                        format!(
+                            "join expects a string separator, found {}",
+                            other.type_name()
+                        ),
+                        span,
+                    ))
+                }
+            };
+            let parts: Vec<String> = l.borrow().iter().map(Value::display).collect();
+            Ok(Value::str(parts.join(&*sep)))
+        }
+        "contains" => {
+            let needle = arg(&args, 0, "contains", span)?;
+            Ok(Value::Bool(l.borrow().iter().any(|v| v.equals(needle))))
+        }
+        "map" => {
+            let f = arg(&args, 0, "map", span)?.clone();
+            let snapshot = l.borrow().clone();
+            let mut out = Vec::with_capacity(snapshot.len());
+            for item in snapshot {
+                out.push(it.call_value_pub(f.clone(), vec![item], span)?);
+            }
+            Ok(Value::list(out))
+        }
+        "filter" => {
+            let f = arg(&args, 0, "filter", span)?.clone();
+            let snapshot = l.borrow().clone();
+            let mut out = Vec::new();
+            for item in snapshot {
+                let keep = it.call_value_pub(f.clone(), vec![item.clone()], span)?;
+                if keep.truthy() {
+                    out.push(item);
+                }
+            }
+            Ok(Value::list(out))
+        }
+        "reduce" => {
+            let f = arg(&args, 0, "reduce", span)?.clone();
+            let mut acc = arg(&args, 1, "reduce", span)?.clone();
+            let snapshot = l.borrow().clone();
+            for item in snapshot {
+                acc = it.call_value_pub(f.clone(), vec![acc, item], span)?;
+            }
+            Ok(acc)
+        }
+        _ => Err(no_method("array", name, span)),
+    }
+}
+
+/// Tuple methods: a fixed-length, immutable sequence. No mutation of any kind.
+fn tuple_method(
+    it: &mut Interp,
+    t: &Rc<Vec<Value>>,
+    name: &str,
+    args: Vec<Value>,
+    span: Span,
+) -> Result<Value> {
+    match name {
+        "len" => Ok(Value::Int(t.len() as i64)),
+        "first" => Ok(t.first().cloned().unwrap_or(Value::None)),
+        "last" => Ok(t.last().cloned().unwrap_or(Value::None)),
+        "contains" => {
+            let needle = arg(&args, 0, "contains", span)?;
+            Ok(Value::Bool(t.iter().any(|v| v.equals(needle))))
+        }
+        "map" => {
+            let f = arg(&args, 0, "map", span)?.clone();
+            let mut out = Vec::with_capacity(t.len());
+            for item in t.iter() {
+                out.push(it.call_value_pub(f.clone(), vec![item.clone()], span)?);
+            }
+            Ok(Value::list(out))
+        }
+        "filter" => {
+            let f = arg(&args, 0, "filter", span)?.clone();
+            let mut out = Vec::new();
+            for item in t.iter() {
+                let keep = it.call_value_pub(f.clone(), vec![item.clone()], span)?;
+                if keep.truthy() {
+                    out.push(item.clone());
+                }
+            }
+            Ok(Value::list(out))
+        }
+        "reduce" => {
+            let f = arg(&args, 0, "reduce", span)?.clone();
+            let mut acc = arg(&args, 1, "reduce", span)?.clone();
+            for item in t.iter() {
+                acc = it.call_value_pub(f.clone(), vec![acc, item.clone()], span)?;
+            }
+            Ok(acc)
+        }
+        _ => Err(no_method("tuple", name, span)),
+    }
+}
+
+/// Set methods: membership operations over key-capable members. A Set is not
+/// indexable and has no ordering (§31).
+fn set_method(
+    _it: &mut Interp,
+    s: &Rc<RefCell<std::collections::BTreeSet<crate::run::value::MapKey>>>,
+    name: &str,
+    args: Vec<Value>,
+    span: Span,
+) -> Result<Value> {
+    match name {
+        "len" => Ok(Value::Int(s.borrow().len() as i64)),
+        "has" => {
+            let k = map_key(&args, "has", span)?;
+            Ok(Value::Bool(s.borrow().contains(&k)))
+        }
+        "add" => {
+            let k = map_key(&args, "add", span)?;
+            s.borrow_mut().insert(k);
+            Ok(Value::None)
+        }
+        "remove" => {
+            let k = map_key(&args, "remove", span)?;
+            Ok(Value::Bool(s.borrow_mut().remove(&k)))
+        }
+        "contains" => {
+            let k = map_key(&args, "contains", span)?;
+            Ok(Value::Bool(s.borrow().contains(&k)))
+        }
+        _ => Err(no_method("set", name, span)),
     }
 }
 

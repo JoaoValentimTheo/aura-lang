@@ -346,7 +346,7 @@ fn check_expr_depth(root: &Expr, start: usize) -> Result<()> {
                 stack.push((b, d));
                 stack.push((i, d));
             }
-            Expr::List(items, _) | Expr::Tuple(items, _) => {
+            Expr::List(items, _) | Expr::Tuple(items, _) | Expr::Set(items, _) => {
                 for i in items.iter() {
                     stack.push((i, d));
                 }
@@ -1727,17 +1727,65 @@ impl Parser {
             }
             Tok::LBracket => {
                 self.bump();
-                let inner = self.ty()?;
-                self.expect(&Tok::RBracket)?;
-                TypeExpr::List(Box::new(inner))
+                let first = self.ty()?;
+                if self.eat(&Tok::Semi) {
+                    // `[T; N]` — a fixed-length array type. `N` is a
+                    // compile-time non-negative integer length (§7, §17).
+                    self.skip_newlines();
+                    let n = self.array_length()?;
+                    self.expect(&Tok::RBracket)?;
+                    TypeExpr::Array(Box::new(first), n)
+                } else if self.eat(&Tok::Comma) {
+                    // `(T, U, ...)` bracket form is not a tuple; the only
+                    // bracketed multi-member type is the list. Reject it so a
+                    // comma in a bracket type is never a silent accident.
+                    return Err(Diag::new(
+                        codes::EXPECTED,
+                        "a bracketed type is `[T]` or `[T; N]`; a tuple type is `(T, U)`",
+                        self.span(),
+                    ));
+                } else {
+                    self.expect(&Tok::RBracket)?;
+                    TypeExpr::List(Box::new(first))
+                }
+            }
+            Tok::LParen => {
+                // `(T, U, ...)` — a tuple type. `(T)` is grouping (the member
+                // itself); `(T,)` is a one-element tuple.
+                self.bump();
+                self.skip_newlines();
+                let mut members = vec![self.ty()?];
+                self.skip_newlines();
+                let mut trailing_comma = false;
+                while self.eat(&Tok::Comma) {
+                    trailing_comma = true;
+                    self.skip_newlines();
+                    if matches!(self.at(), Tok::RParen) {
+                        break;
+                    }
+                    members.push(self.ty()?);
+                    self.skip_newlines();
+                    trailing_comma = false;
+                }
+                self.expect(&Tok::RParen)?;
+                if members.len() == 1 && !trailing_comma {
+                    members.pop().unwrap()
+                } else {
+                    TypeExpr::Tuple(members)
+                }
             }
             Tok::LBrace => {
                 self.bump();
                 let k = self.ty()?;
-                self.expect(&Tok::Colon)?;
-                let v = self.ty()?;
-                self.expect(&Tok::RBrace)?;
-                TypeExpr::Map(Box::new(k), Box::new(v))
+                if self.eat(&Tok::Colon) {
+                    let v = self.ty()?;
+                    self.expect(&Tok::RBrace)?;
+                    TypeExpr::Map(Box::new(k), Box::new(v))
+                } else {
+                    // `{T}` — a set type.
+                    self.expect(&Tok::RBrace)?;
+                    TypeExpr::Set(Box::new(k))
+                }
             }
             other => {
                 return Err(Diag::new(
@@ -1750,6 +1798,38 @@ impl Parser {
     }
 
     // --------------------------------------------------------------- blocks
+
+    /// Parse the compile-time length `N` of an Array type `[T; N]`.
+    ///
+    /// `N` MUST be a non-negative integer literal; an arbitrary runtime
+    /// expression (`[int; x]`) is rejected (§19). A negative length is
+    /// rejected. A generous upper bound keeps a hostile type from forcing an
+    /// absurd allocation or arithmetic merely by being parsed.
+    fn array_length(&mut self) -> Result<u64> {
+        const MAX_ARRAY_LEN: u64 = 1 << 24;
+        match self.at().clone() {
+            Tok::Int(n) if n >= 0 => {
+                let span = self.bump().span;
+                let n = n as u64;
+                if n > MAX_ARRAY_LEN {
+                    return Err(Diag::new(
+                        codes::TYPE_MISMATCH,
+                        format!("array length {n} exceeds the maximum of {MAX_ARRAY_LEN}"),
+                        span,
+                    ));
+                }
+                Ok(n)
+            }
+            other => Err(Diag::new(
+                codes::EXPECTED,
+                format!(
+                    "an array type length must be a non-negative integer literal, found {}",
+                    other.describe()
+                ),
+                self.span(),
+            )),
+        }
+    }
 
     /// Parse a `{ ... }` block into a shareable statement sequence.
     fn block(&mut self) -> Result<Arc<[Stmt]>> {
@@ -2022,6 +2102,34 @@ impl Parser {
                 }
                 Ok(Pattern::List(parts, span))
             }
+            Tok::LParen => {
+                // `(p, ...)` — a tuple pattern (§28). A comma is required, so
+                // `(p)` stays a parenthesized binding and `(p,)` is a
+                // one-element tuple pattern.
+                self.bump();
+                self.skip_newlines();
+                let mut parts = vec![self.let_pattern()?];
+                self.skip_newlines();
+                let mut trailing = false;
+                while self.eat(&Tok::Comma) {
+                    trailing = true;
+                    self.skip_newlines();
+                    if self.eat(&Tok::RParen) {
+                        break;
+                    }
+                    parts.push(self.let_pattern()?);
+                    self.skip_newlines();
+                    trailing = false;
+                }
+                if !trailing {
+                    self.expect(&Tok::RParen)?;
+                }
+                if parts.len() == 1 && !trailing {
+                    Ok(parts.pop().unwrap_or(Pattern::None(span)))
+                } else {
+                    Ok(Pattern::Tuple(parts, span))
+                }
+            }
             other => {
                 // Literal and `none` patterns are unsupported in `let` and
                 // report `E1006`; a reserved word in binding position keeps
@@ -2037,7 +2145,7 @@ impl Parser {
                 Err(Diag::new(
                     code,
                     format!(
-                        "expected a binding, list, or variant pattern in `let`, found {}",
+                        "expected a binding, list, tuple, or variant pattern in `let`, found {}",
                         other.describe()
                     ),
                     span,
@@ -2157,6 +2265,35 @@ impl Parser {
                     }
                 }
                 Ok(Pattern::List(parts, span))
+            }
+            Tok::LParen => {
+                // `(p, ...)` — a tuple pattern (§28). A comma is required, so
+                // `(p)` is a parenthesized binding (not a tuple pattern), and
+                // `(p,)` is a one-element tuple pattern.
+                self.bump();
+                self.skip_newlines();
+                let mut parts = vec![self.pattern()?];
+                self.skip_newlines();
+                let mut trailing = false;
+                while self.eat(&Tok::Comma) {
+                    trailing = true;
+                    self.skip_newlines();
+                    if self.eat(&Tok::RParen) {
+                        break;
+                    }
+                    parts.push(self.pattern()?);
+                    self.skip_newlines();
+                    trailing = false;
+                }
+                if !trailing {
+                    self.expect(&Tok::RParen)?;
+                }
+                if parts.len() == 1 && !trailing {
+                    // `(p)` is grouping: return the inner pattern.
+                    Ok(parts.pop().unwrap_or(Pattern::None(span)))
+                } else {
+                    Ok(Pattern::Tuple(parts, span))
+                }
             }
             other => Err(Diag::new(
                 codes::EXPECTED,
@@ -2569,6 +2706,34 @@ impl Parser {
                     name
                 };
                 let last = name.rsplit("::").next().unwrap_or(name.as_str());
+                // `set{}` — an empty set literal (§29). `set` stays an
+                // ordinary identifier everywhere else (`let set = 1`); it is
+                // special only when immediately followed by `{`.
+                if name == "set" && matches!(self.at(), Tok::LBrace) {
+                    self.enter_container()?;
+                    self.bump();
+                    let mut items = Vec::new();
+                    self.skip_newlines();
+                    loop {
+                        if self.eat(&Tok::RBrace) {
+                            break;
+                        }
+                        items.push(self.expr()?);
+                        self.skip_newlines();
+                        if !self.eat(&Tok::Comma) {
+                            self.skip_newlines();
+                            self.expect(&Tok::RBrace)?;
+                            break;
+                        }
+                        self.skip_newlines();
+                        if matches!(self.at(), Tok::RBrace) {
+                            self.bump();
+                            break;
+                        }
+                    }
+                    self.leave_container();
+                    return Ok(Expr::Set(items.into(), span));
+                }
                 let is_type_name = last.chars().next().is_some_and(char::is_uppercase);
                 // Explicit generic type arguments: `identity<int>(x)` or
                 // `Box<int> { value: 1 }`. A balanced `<...>` followed by `(`
@@ -2773,6 +2938,32 @@ impl Parser {
                     };
                     self.leave_container();
                     result?
+                } else if self.set_ahead() {
+                    // `{a, b}` / `{a,}` — a set literal (§29). `{a}` and `{}`
+                    // stay blocks because they have no depth-0 comma.
+                    self.enter_container()?;
+                    self.bump();
+                    let mut items = Vec::new();
+                    self.skip_newlines();
+                    loop {
+                        if self.eat(&Tok::RBrace) {
+                            break;
+                        }
+                        items.push(self.expr()?);
+                        self.skip_newlines();
+                        if !self.eat(&Tok::Comma) {
+                            self.skip_newlines();
+                            self.expect(&Tok::RBrace)?;
+                            break;
+                        }
+                        self.skip_newlines();
+                        if matches!(self.at(), Tok::RBrace) {
+                            self.bump();
+                            break;
+                        }
+                    }
+                    self.leave_container();
+                    Expr::Set(items.into(), span)
                 } else {
                     let body = self.block()?;
                     Expr::Block(body, span)
@@ -2959,6 +3150,47 @@ impl Parser {
             self.pos = save;
             None
         }
+    }
+
+    /// Whether the `{` at the current position begins a set literal: a
+    /// depth-0 comma with no depth-0 colon (`{a, b}`, `{a,}`). `{a}` and `{}`
+    /// remain blocks; `{k: v}` is a map (`map_ahead`). This is a linear scan
+    /// like `map_ahead`, not speculative parsing (§36).
+    fn set_ahead(&self) -> bool {
+        let mut i = self.pos + 1;
+        let mut depth = 0i32;
+        while i < self.toks.len() {
+            match &self.toks[i].tok {
+                Tok::Newline => i += 1,
+                Tok::RParen | Tok::RBracket | Tok::RBrace if depth == 0 => return false,
+                Tok::LParen | Tok::LBracket | Tok::LBrace => {
+                    depth += 1;
+                    i += 1;
+                }
+                Tok::RParen | Tok::RBracket | Tok::RBrace => {
+                    depth -= 1;
+                    i += 1;
+                }
+                Tok::Comma if depth == 0 => return true,
+                Tok::Colon if depth == 0 => return false,
+                Tok::Let
+                | Tok::Return
+                | Tok::Throw
+                | Tok::Break
+                | Tok::Continue
+                | Tok::While
+                | Tok::Loop
+                | Tok::For
+                | Tok::Try
+                | Tok::Semi
+                    if depth == 0 =>
+                {
+                    return false
+                }
+                _ => i += 1,
+            }
+        }
+        false
     }
 
     fn map_ahead(&self) -> bool {
@@ -3472,6 +3704,7 @@ fn span_of(e: &Expr) -> Span {
         | Expr::Index(_, _, s)
         | Expr::List(_, s)
         | Expr::Map(_, s)
+        | Expr::Set(_, s)
         | Expr::Construct(_, _, _, s)
         | Expr::Tuple(_, s)
         | Expr::Lambda(_, _, s)

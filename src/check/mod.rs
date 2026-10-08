@@ -153,6 +153,13 @@ fn type_expr_depth_exceeds(t: &TypeExpr, limit: usize) -> bool {
         }
         match node {
             TypeExpr::List(i) => stack.push((i, depth + 1)),
+            TypeExpr::Array(i, _) => stack.push((i, depth + 1)),
+            TypeExpr::Tuple(ms) => {
+                for m in ms {
+                    stack.push((m, depth + 1));
+                }
+            }
+            TypeExpr::Set(i) => stack.push((i, depth + 1)),
             TypeExpr::Map(k, v) => {
                 stack.push((k, depth + 1));
                 stack.push((v, depth + 1));
@@ -179,6 +186,7 @@ fn type_expr_depth_exceeds(t: &TypeExpr, limit: usize) -> bool {
 fn statically_empty_iterable(e: &Expr) -> bool {
     match e {
         Expr::List(items, _) | Expr::Tuple(items, _) => items.is_empty(),
+        Expr::Set(items, _) => items.is_empty(),
         Expr::Map(entries, _) => entries.is_empty(),
         Expr::Range(a, b, _) => match (a.as_ref(), b.as_ref()) {
             (Expr::Lit(Lit::Int(x), _), Expr::Lit(Lit::Int(y), _)) => x == y,
@@ -2424,6 +2432,7 @@ impl Checker {
             Expr::List(xs, _) | Expr::Tuple(xs, _) => {
                 xs.iter().any(|x| self.expr_diverges(x, return_diverges))
             }
+            Expr::Set(xs, _) => xs.iter().any(|x| self.expr_diverges(x, return_diverges)),
             Expr::Map(entries, _) => entries.iter().any(|(k, v)| {
                 self.expr_diverges(k, return_diverges) || self.expr_diverges(v, return_diverges)
             }),
@@ -2615,6 +2624,7 @@ impl Checker {
             Expr::List(xs, _) | Expr::Tuple(xs, _) => {
                 xs.iter().any(|x| self.expr_has_reachable_return(x))
             }
+            Expr::Set(xs, _) => xs.iter().any(|x| self.expr_has_reachable_return(x)),
             Expr::Map(entries, _) => entries.iter().any(|(k, v)| {
                 self.expr_has_reachable_return(k) || self.expr_has_reachable_return(v)
             }),
@@ -2841,6 +2851,52 @@ impl Checker {
                 .map(|s| s.params.iter().map(|p| p.ty.clone()).collect())
                 .collect();
             let actual: Vec<Ty> = args.iter().map(|a| self.infer(&a.value)).collect();
+            // A candidate whose parameter is `[T; N]` accepts a direct bracket
+            // literal as an Array even though the literal infers as `[T]` (the
+            // ONE contextual seam, §16, §47). Compute the argument type each
+            // candidate sees, so overload selection reflects realization.
+            let actual_for = |cand: &[Option<Ty>]| -> Vec<Ty> {
+                args.iter()
+                    .enumerate()
+                    .map(|(i, a)| match cand.get(i).and_then(|t| t.as_ref()) {
+                        Some(Ty::Array(_, n)) => match &a.value {
+                            Expr::List(items, _) => {
+                                let elem = items
+                                    .iter()
+                                    .map(|it| self.infer(it))
+                                    .filter(|t| !matches!(t, Ty::Unknown))
+                                    .fold(None::<Ty>, |acc, t| match acc {
+                                        None => Some(t),
+                                        Some(p) => Some(Ty::union(vec![p, t])),
+                                    })
+                                    .unwrap_or(Ty::Unknown);
+                                Ty::Array(Box::new(elem), *n)
+                            }
+                            _ => actual[i].clone(),
+                        },
+                        _ => actual[i].clone(),
+                    })
+                    .collect()
+            };
+            // Prefer a candidate selected with contextual argument types; fall
+            // back to the plain inferred types.
+            let contextual: Vec<usize> = candidates
+                .iter()
+                .enumerate()
+                .filter_map(|(i, cand)| {
+                    matches!(
+                        crate::types::resolve_overload(
+                            std::slice::from_ref(cand),
+                            &actual_for(cand)
+                        ),
+                        crate::types::OverloadResolution::Selected(_)
+                    )
+                    .then_some(i)
+                })
+                .collect();
+            if let [only] = contextual.as_slice() {
+                return Some(*only);
+            }
             return match crate::types::resolve_overload(&candidates, &actual) {
                 crate::types::OverloadResolution::Selected(i) => Some(i),
                 _ => None,
@@ -3158,6 +3214,11 @@ impl Checker {
             let Some(arg_index) = filled[param_index] else {
                 continue;
             };
+            // A bracket literal passed directly to an `[T; N]` parameter
+            // realizes as an Array (the ONE contextual seam, §16, §47).
+            if self.check_array_literal(&args[arg_index].value, expected, span)? {
+                continue;
+            }
             let actual = self.infer(&args[arg_index].value);
             if !expected.compatible_with(&actual) {
                 return Err(Diag::new(
@@ -3616,19 +3677,20 @@ impl Checker {
                 Lit::None => Ty::None,
             },
             Expr::FStr(..) => Ty::String,
-            // A parenthesized comma-list is list sugar (§21): it is
-            // indistinguishable from a list literal, so it infers the same
-            // list type. (It previously inferred `Unknown`, which let a
-            // `(1, 2)` pass an annotation that `[1, 2]` would be rejected
-            // for, contradicting the "indistinguishable" rule.)
-            Expr::List(items, _) | Expr::Tuple(items, _) => {
+            // A tuple is now a distinct identity (§26): infer a `Tuple` of the
+            // element types. A parenthesized comma-list is a tuple; a bare
+            // grouping `(e)` is not a tuple node and never reaches here.
+            Expr::Tuple(items, _) => {
+                Ty::tuple(items.iter().map(|item| self.infer(item)).collect())
+            }
+            Expr::List(items, _) => {
                 // Infer the element type as the union of every statically known
                 // element, using the language's existing union rule (§5.2). A
                 // first-known-element rule hid provable mismatches: `[1, "x"]`
                 // inferred `[int]`, so `let xs: [int] = [1, "x"]` was accepted.
                 // `Unknown` elements impose no constraint, so a list of only
-                // `Unknown` stays `[Unknown]`. A parenthesized comma-list is
-                // list sugar and infers identically.
+                // `Unknown` stays `[Unknown]`. A bracket literal without an
+                // Array expectation is always a List (§9).
                 let elems: Vec<Ty> = items
                     .iter()
                     .map(|item| self.infer(item))
@@ -3640,6 +3702,22 @@ impl Checker {
                     Ty::union(elems)
                 };
                 Ty::List(Box::new(elem))
+            }
+            Expr::Set(items, _) => {
+                // A set infers `{T}` where `T` is the union of the element
+                // types (§29, §31). Duplicate literal values collapse by set
+                // semantics and do not affect the type.
+                let elems: Vec<Ty> = items
+                    .iter()
+                    .map(|item| self.infer(item))
+                    .filter(|t| !matches!(t, Ty::Unknown))
+                    .collect();
+                let elem = if elems.is_empty() {
+                    Ty::Unknown
+                } else {
+                    Ty::union(elems)
+                };
+                Ty::Set(Box::new(elem))
             }
             Expr::Map(entries, _) => {
                 // Infer each dimension as the union of the entries' static
@@ -3855,7 +3933,7 @@ impl Checker {
             Expr::MapComp { key, value, .. } => {
                 Ty::Map(Box::new(self.infer(key)), Box::new(self.infer(value)))
             }
-            Expr::Index(base, _, _) => {
+            Expr::Index(base, index, _) => {
                 // The result of a *successful* indexing expression. A missing
                 // map key is the runtime error E2003 (not a `none` value), and
                 // an out-of-range list index is E4019, so returning the element
@@ -3863,6 +3941,16 @@ impl Checker {
                 // does not raise.
                 match self.infer(base) {
                     Ty::List(elem) => elem.as_ref().clone(),
+                    Ty::Array(elem, _) => elem.as_ref().clone(),
+                    // A tuple indexed by a literal yields that member's exact
+                    // type; a dynamic index conservatively yields the union of
+                    // all member types (§27).
+                    Ty::Tuple(members) => match index.as_ref() {
+                        Expr::Lit(Lit::Int(n), _) => {
+                            members.get(*n as usize).cloned().unwrap_or(Ty::Unknown)
+                        }
+                        _ => Ty::union(members.clone()),
+                    },
                     Ty::Map(_, v) => v.as_ref().clone(),
                     Ty::String => Ty::String,
                     _ => Ty::Unknown,
@@ -4616,6 +4704,21 @@ impl Checker {
                 }
             }
             TypeExpr::List(inner) => Ty::List(Box::new(self.ty_from_expr(inner, span)?)),
+            TypeExpr::Array(inner, n) => Ty::Array(Box::new(self.ty_from_expr(inner, span)?), *n),
+            TypeExpr::Tuple(members) => {
+                let mut tys = Vec::with_capacity(members.len());
+                for m in members {
+                    tys.push(self.ty_from_expr(m, span)?);
+                }
+                Ty::tuple(tys)
+            }
+            TypeExpr::Set(inner) => {
+                let elem = self.ty_from_expr(inner, span)?;
+                if !elem.is_key_capable() {
+                    return Err(elem.key_type_error(span));
+                }
+                Ty::Set(Box::new(elem))
+            }
             TypeExpr::Map(k, v) => {
                 let key = self.ty_from_expr(k, span)?;
                 if !key.is_key_capable() {
@@ -4655,6 +4758,11 @@ impl Checker {
                 args.iter().map(|a| Self::session_conv(a, params)).collect(),
             ),
             TypeExpr::List(i) => Ty::List(Box::new(Self::session_conv(i, params))),
+            TypeExpr::Array(i, n) => Ty::Array(Box::new(Self::session_conv(i, params)), *n),
+            TypeExpr::Tuple(ms) => {
+                Ty::tuple(ms.iter().map(|m| Self::session_conv(m, params)).collect())
+            }
+            TypeExpr::Set(i) => Ty::Set(Box::new(Self::session_conv(i, params))),
             TypeExpr::Map(k, v) => Ty::Map(
                 Box::new(Self::session_conv(k, params)),
                 Box::new(Self::session_conv(v, params)),
@@ -4942,6 +5050,19 @@ impl Checker {
             TypeExpr::List(inner) => {
                 TypeExpr::List(Box::new(self.resolve_type_expr(inner, span, visiting)?))
             }
+            TypeExpr::Array(inner, n) => {
+                TypeExpr::Array(Box::new(self.resolve_type_expr(inner, span, visiting)?), *n)
+            }
+            TypeExpr::Tuple(ms) => {
+                let mut resolved = Vec::with_capacity(ms.len());
+                for m in ms {
+                    resolved.push(self.resolve_type_expr(m, span, visiting)?);
+                }
+                TypeExpr::Tuple(resolved)
+            }
+            TypeExpr::Set(inner) => {
+                TypeExpr::Set(Box::new(self.resolve_type_expr(inner, span, visiting)?))
+            }
             TypeExpr::Map(k, v) => TypeExpr::Map(
                 Box::new(self.resolve_type_expr(k, span, visiting)?),
                 Box::new(self.resolve_type_expr(v, span, visiting)?),
@@ -5015,6 +5136,15 @@ impl Checker {
                     .collect(),
             ),
             TypeExpr::List(i) => TypeExpr::List(Box::new(self.substitute_type_expr(i, subst))),
+            TypeExpr::Array(i, n) => {
+                TypeExpr::Array(Box::new(self.substitute_type_expr(i, subst)), *n)
+            }
+            TypeExpr::Tuple(ms) => TypeExpr::Tuple(
+                ms.iter()
+                    .map(|m| self.substitute_type_expr(m, subst))
+                    .collect(),
+            ),
+            TypeExpr::Set(i) => TypeExpr::Set(Box::new(self.substitute_type_expr(i, subst))),
             TypeExpr::Map(k, v) => TypeExpr::Map(
                 Box::new(self.substitute_type_expr(k, subst)),
                 Box::new(self.substitute_type_expr(v, subst)),
@@ -5057,6 +5187,13 @@ impl Checker {
                     None => t.clone(),
                 },
                 TypeExpr::List(inner) => TypeExpr::List(Box::new(go(checker, inner, visiting))),
+                TypeExpr::Array(inner, n) => {
+                    TypeExpr::Array(Box::new(go(checker, inner, visiting)), *n)
+                }
+                TypeExpr::Tuple(ms) => {
+                    TypeExpr::Tuple(ms.iter().map(|m| go(checker, m, visiting)).collect())
+                }
+                TypeExpr::Set(inner) => TypeExpr::Set(Box::new(go(checker, inner, visiting))),
                 TypeExpr::Map(k, v) => TypeExpr::Map(
                     Box::new(go(checker, k, visiting)),
                     Box::new(go(checker, v, visiting)),
@@ -5200,6 +5337,11 @@ impl Checker {
         value: &Expr,
         span: Span,
     ) -> Result<()> {
+        // A bracket literal set as an `[T; N]` field realizes as an Array
+        // (§16, §46).
+        if self.check_array_literal(value, expected, span)? {
+            return Ok(());
+        }
         let actual = self.infer(value);
         if !expected.compatible_with(&actual) {
             return Err(Diag::new(
@@ -5334,17 +5476,19 @@ impl Checker {
                 // type is unknown.
                 let new_ty = if let Some(ann) = ann {
                     let expected = self.annotation(ann, *span)?;
-                    let actual = self.infer(value);
-                    if !expected.compatible_with(&actual) {
-                        return Err(Diag::new(
-                            codes::TYPE_MISMATCH,
-                            format!(
-                                "`{name}` is annotated as `{}` but its value is `{}`",
-                                expected.name(),
-                                actual.name()
-                            ),
-                            *span,
-                        ));
+                    if !self.check_array_literal(value, &expected, *span)? {
+                        let actual = self.infer(value);
+                        if !expected.compatible_with(&actual) {
+                            return Err(Diag::new(
+                                codes::TYPE_MISMATCH,
+                                format!(
+                                    "`{name}` is annotated as `{}` but its value is `{}`",
+                                    expected.name(),
+                                    actual.name()
+                                ),
+                                *span,
+                            ));
+                        }
                     }
                     Some(expected)
                 } else {
@@ -5509,6 +5653,18 @@ impl Checker {
                             // the element contract. An `int` index is the only
                             // valid list index.
                             self.check_element_assignable(&elem, &self.infer(value), *span)?;
+                        } else if let Ty::Array(elem, _) = self.infer(base) {
+                            // Indexed assignment on a statically known array
+                            // obeys the element contract; the length is fixed so
+                            // only the element type is checked (§20, §64).
+                            self.check_element_assignable(&elem, &self.infer(value), *span)?;
+                        } else if let Ty::Tuple(_) = self.infer(base) {
+                            // A tuple is immutable.
+                            return Err(Diag::new(
+                                codes::ASSIGN_IMMUTABLE,
+                                "cannot assign through a tuple: a tuple is immutable",
+                                *span,
+                            ));
                         }
                     }
                     Expr::Field(base, fname, fspan) => {
@@ -5581,17 +5737,21 @@ impl Checker {
                 if let Some(v) = v {
                     self.expr(v)?;
                     if let Some(expected) = self.return_type.clone() {
-                        let actual = self.infer(v);
-                        if !return_compatible(&expected, &actual) {
-                            return Err(Diag::new(
-                                codes::RETURN_MISMATCH,
-                                format!(
-                                    "function returns `{}` but the value is `{}`",
-                                    expected.name(),
-                                    actual.name()
-                                ),
-                                *span,
-                            ));
+                        // A bracket literal returned under an `[T; N]` return
+                        // type realizes as an Array (§48).
+                        if !self.check_array_literal(v, &expected, *span)? {
+                            let actual = self.infer(v);
+                            if !return_compatible(&expected, &actual) {
+                                return Err(Diag::new(
+                                    codes::RETURN_MISMATCH,
+                                    format!(
+                                        "function returns `{}` but the value is `{}`",
+                                        expected.name(),
+                                        actual.name()
+                                    ),
+                                    *span,
+                                ));
+                            }
                         }
                     }
                 }
@@ -5686,6 +5846,50 @@ impl Checker {
             }
         }
         Ok(())
+    }
+
+    /// Check an actual bracket literal against an `Array` expectation (the ONE
+    /// contextual-typing seam, §16). Returns `Ok(true)` when it handled the
+    /// case (expected `[T; N]`, actual `[..]`), checking arity and elements
+    /// statically (§11, §50); `Ok(false)` otherwise, so the caller applies its
+    /// ordinary compatibility check.
+    ///
+    /// This is not a general implicit conversion: it applies only to an
+    /// *actual bracket-literal node* under an *actual Array expectation*. A
+    /// binding already inferred as a `List` is not a bracket-literal node, so
+    /// it can never satisfy an Array expectation (§14).
+    fn check_array_literal(&self, value: &Expr, expected: &Ty, span: Span) -> Result<bool> {
+        let (Ty::Array(elem, n), Expr::List(items, _)) = (expected, value) else {
+            return Ok(false);
+        };
+        let got = items.len() as u64;
+        if got != *n {
+            return Err(Diag::new(
+                codes::TYPE_MISMATCH,
+                format!("array literal has {got} element(s) but the expected fixed length is {n}"),
+                span,
+            ));
+        }
+        for item in items.iter() {
+            // A nested bracket literal realizes recursively under the element
+            // type (§45): `[[int; 2]; 2]` gives each inner literal `[int; 2]`.
+            if self.check_array_literal(item, elem, span)? {
+                continue;
+            }
+            let actual = self.infer(item);
+            if !elem.compatible_with(&actual) {
+                return Err(Diag::new(
+                    codes::TYPE_MISMATCH,
+                    format!(
+                        "array element is `{}` but the array element type is `{}`",
+                        actual.name(),
+                        elem.name()
+                    ),
+                    span,
+                ));
+            }
+        }
+        Ok(true)
     }
 
     fn expr(&mut self, e: &Expr) -> Result<()> {
@@ -6156,6 +6360,25 @@ impl Checker {
             Expr::List(vs, _) | Expr::Tuple(vs, _) => {
                 for v in vs.iter() {
                     self.expr(v)?;
+                }
+            }
+            Expr::Set(vs, span) => {
+                for v in vs.iter() {
+                    self.expr(v)?;
+                    // A set element must be key-capable (stable equality/order),
+                    // exactly the map-key capability (§32): a mutable or
+                    // unhashable value could corrupt membership.
+                    let et = self.infer(v);
+                    if !et.is_key_capable() {
+                        return Err(Diag::new(
+                            codes::TYPE_MISMATCH,
+                            format!(
+                                "type `{}` cannot be a set element; set elements must be `string`, `int`, or `bool`",
+                                et.name()
+                            ),
+                            *span,
+                        ));
+                    }
                 }
             }
             Expr::Map(kvs, span) => {

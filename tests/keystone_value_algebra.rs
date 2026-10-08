@@ -123,22 +123,23 @@ fn function_identity_is_not_structural_and_never_cross_kind() {
 }
 
 // ---------------------------------------------------------------------------
-// 2. The one normative absorption: `Tuple` is list sugar
+// 2. The Keystone collection model: Tuple is a distinct identity
 // ---------------------------------------------------------------------------
 
 #[test]
-fn tuple_is_list_sugar_with_no_separate_identity() {
-    // §21: a parenthesized comma-list *is* a list. This is the deliberate
-    // absorption; it is not an accidental collapse.
+fn tuple_is_a_distinct_identity_not_list_sugar() {
+    // Keystone §26 supersedes the earlier list-sugar absorption: a
+    // parenthesized comma-list is now a genuine Tuple with its own runtime
+    // identity, and it is never equal to a list of the same contents.
     assert_eq!(
         ok("fn main() { let t = (1, 2)\n print(t)\n print(t == [1, 2])\n print(len(t))\n print(t[0]) }"),
-        "[1, 2]\ntrue\n2\n1\n"
+        "(1, 2)\nfalse\n2\n1\n"
     );
-    // There is no tuple pattern/annotation spelling, consistent with the
-    // absent type.
+    // A tuple pattern is distinct from a list pattern: a list does not match a
+    // tuple pattern and vice versa (the runtime rejects the mismatch).
     assert_eq!(
-        err("fn main() { let (a, b) = [1, 2]\n print(a) }"),
-        codes::EXPECTED
+        err("fn main() { let (a, b) = [1, 2]\n print(a)\n print(b) }"),
+        codes::TYPE_MISMATCH
     );
 }
 

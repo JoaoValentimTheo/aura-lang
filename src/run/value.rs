@@ -1,7 +1,7 @@
 //! Runtime values.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::rc::Rc;
 
 /// Maximum structural depth traversed by the recursive *display* and *JSON
@@ -155,6 +155,16 @@ pub enum Value {
     None,
     /// `[T]`
     List(Rc<RefCell<Vec<Value>>>),
+    /// `[T; N]` — a fixed-length array. Shares the list buffer representation
+    /// but is a distinct identity: it is not equal to a list, and its length
+    /// is fixed (no resizing).
+    Array(Rc<RefCell<Vec<Value>>>),
+    /// `(T1, T2, ...)` — a fixed-length, immutable, heterogeneous tuple.
+    Tuple(Rc<Vec<Value>>),
+    /// `{T}` — an unordered set of key-capable scalars. A `BTreeSet` gives
+    /// deterministic iteration order and membership by the same stable key
+    /// identity as a map key.
+    Set(Rc<RefCell<BTreeSet<MapKey>>>),
     /// `{K: V}` — keys are key-capable scalars ([`MapKey`]).
     Map(Rc<RefCell<BTreeMap<MapKey, Value>>>),
     /// A struct instance.
@@ -230,6 +240,52 @@ impl Value {
         Value::List(Rc::new(RefCell::new(items)))
     }
 
+    /// An array from already-evaluated elements.
+    #[must_use]
+    pub fn array(items: Vec<Value>) -> Value {
+        Value::Array(Rc::new(RefCell::new(items)))
+    }
+
+    /// A tuple from already-evaluated elements.
+    #[must_use]
+    pub fn tuple(items: Vec<Value>) -> Value {
+        Value::Tuple(Rc::new(items))
+    }
+
+    /// A set from already-evaluated key-capable members. Members are the same
+    /// stable keys a map uses; `None` inputs are dropped (the checker rejects
+    /// a non-key-capable element before execution, so this is only a defensive
+    /// path).
+    #[must_use]
+    pub fn set(members: impl IntoIterator<Item = MapKey>) -> Value {
+        let mut out = BTreeSet::new();
+        for m in members {
+            out.insert(m);
+        }
+        Value::Set(Rc::new(RefCell::new(out)))
+    }
+
+    /// The number of elements, when this value has a length.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        match self {
+            Value::List(l) | Value::Array(l) => l.borrow().len(),
+            Value::Tuple(t) => t.len(),
+            Value::Set(s) => s.borrow().len(),
+            Value::Map(m) => m.borrow().len(),
+            Value::Str(s) => s.chars().count(),
+            Value::Range(r) => usize::try_from(r.len()).unwrap_or(usize::MAX),
+            _ => 0,
+        }
+    }
+
+    /// Whether this value has no elements (a non-collection has length 0 only
+    /// by the fallback above and is never queried for emptiness).
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// A runtime type name for diagnostics.
     #[must_use]
     pub fn type_name(&self) -> &'static str {
@@ -240,6 +296,9 @@ impl Value {
             Value::Bool(_) => "bool",
             Value::None => "none",
             Value::List(_) => "list",
+            Value::Array(_) => "array",
+            Value::Tuple(_) => "tuple",
+            Value::Set(_) => "set",
             Value::Map(_) => "map",
             Value::Instance(_) => "struct",
             Value::Variant(_) => "enum",
@@ -262,6 +321,9 @@ impl Value {
             Value::Bool(_) => Ty::Bool,
             Value::None => Ty::Unknown,
             Value::List(_) => Ty::List(Box::new(Ty::Unknown)),
+            Value::Array(l) => Ty::Array(Box::new(Ty::Unknown), l.borrow().len() as u64),
+            Value::Tuple(t) => Ty::tuple(vec![Ty::Unknown; t.len()]),
+            Value::Set(_) => Ty::Set(Box::new(Ty::Unknown)),
             Value::Map(_) => Ty::Map(Box::new(Ty::Unknown), Box::new(Ty::Unknown)),
             Value::Instance(i) => Ty::Named(i.ty.clone()),
             Value::Variant(v) => Ty::Enum(v.ty.clone()),
@@ -279,7 +341,9 @@ impl Value {
             Value::Int(i) => *i != 0,
             Value::Float(f) => *f != 0.0,
             Value::Str(s) => !s.is_empty(),
-            Value::List(l) => !l.borrow().is_empty(),
+            Value::List(l) | Value::Array(l) => !l.borrow().is_empty(),
+            Value::Tuple(t) => !t.is_empty(),
+            Value::Set(s) => !s.borrow().is_empty(),
             Value::Map(m) => !m.borrow().is_empty(),
             _ => true,
         }
@@ -320,6 +384,51 @@ impl Value {
                     }
                     for (cx, cy) in xb.iter().zip(yb.iter()) {
                         stack.push((cx.clone(), cy.clone()));
+                    }
+                }
+                // An Array is equal only to another Array of the same length
+                // and element-wise equal values. It is NOT equal to a List
+                // (distinct identity, §21/§37).
+                (Value::Array(x), Value::Array(y)) => {
+                    if Rc::ptr_eq(x, y) {
+                        continue;
+                    }
+                    if !seen.insert((rc_addr(x), rc_addr(y))) {
+                        continue;
+                    }
+                    let (xb, yb) = (x.borrow(), y.borrow());
+                    if xb.len() != yb.len() {
+                        return false;
+                    }
+                    for (cx, cy) in xb.iter().zip(yb.iter()) {
+                        stack.push((cx.clone(), cy.clone()));
+                    }
+                }
+                // A Tuple is equal only to another Tuple of the same arity and
+                // element-wise equal values.
+                (Value::Tuple(x), Value::Tuple(y)) => {
+                    if Rc::ptr_eq(x, y) {
+                        continue;
+                    }
+                    if !seen.insert((rc_addr(x), rc_addr(y))) {
+                        continue;
+                    }
+                    if x.len() != y.len() {
+                        return false;
+                    }
+                    for (cx, cy) in x.iter().zip(y.iter()) {
+                        stack.push((cx.clone(), cy.clone()));
+                    }
+                }
+                // A Set is equal to another Set with the same members
+                // (membership-based, order-independent). Members are stable
+                // keys, so no descent is needed.
+                (Value::Set(x), Value::Set(y)) => {
+                    if Rc::ptr_eq(x, y) {
+                        continue;
+                    }
+                    if *x.borrow() != *y.borrow() {
+                        return false;
                     }
                 }
                 (Value::Map(x), Value::Map(y)) => {
@@ -470,6 +579,36 @@ impl Value {
                     .join(", ");
                 format!("[{inner}]")
             }
+            // An Array uses the same bracket spelling as a List (§22); its
+            // distinct identity is observable through the type system,
+            // equality, AIS, and capabilities, not through a special display
+            // form.
+            Value::Array(l) => {
+                let inner = l
+                    .borrow()
+                    .iter()
+                    .map(|v| v.repr(false, depth + 1, budget))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("[{inner}]")
+            }
+            Value::Tuple(t) => {
+                let inner = t
+                    .iter()
+                    .map(|v| v.repr(false, depth + 1, budget))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("({inner})")
+            }
+            Value::Set(s) => {
+                let inner = s
+                    .borrow()
+                    .iter()
+                    .map(|k| k.repr())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{{{inner}}}")
+            }
             Value::Map(m) => {
                 let inner = m
                     .borrow()
@@ -524,10 +663,18 @@ fn rc_addr<T>(rc: &Rc<T>) -> usize {
 /// an `Rc` cycle) is left untouched: its `Rc` drop merely decrements.
 fn take_children(v: &mut Value, out: &mut Vec<Value>) {
     match v {
-        Value::List(rc) => {
+        Value::List(rc) | Value::Array(rc) => {
             if let Some(items) = Rc::get_mut(rc) {
                 out.append(&mut items.borrow_mut());
             }
+        }
+        Value::Tuple(rc) => {
+            if let Some(items) = Rc::get_mut(rc) {
+                out.append(items);
+            }
+        }
+        Value::Set(_) => {
+            // Set members are keys, which own no `Value` children.
         }
         Value::Map(rc) => {
             if let Some(map) = Rc::get_mut(rc) {

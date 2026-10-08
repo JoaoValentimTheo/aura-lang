@@ -77,6 +77,10 @@ pub struct Closure {
     /// `params`. `None` is an unannotated parameter. Used by overload
     /// resolution (`LANGUAGE_SPEC.md` §15.7).
     pub param_tys: Vec<Option<crate::types::Ty>>,
+    /// Declared return type, erased at declaration time. Used so a bracket
+    /// literal in a `return` realizes under the declared Array type (the ONE
+    /// contextual seam, §16, §48). `None` when no return type is written.
+    pub ret_ty: Option<crate::types::Ty>,
     /// Body.
     ///
     /// `Arc`-shared so the iterative evaluator can retain a pending body in a
@@ -262,6 +266,11 @@ pub struct Interp {
     closure_sources: HashMap<usize, SourceId>,
     current_source: Option<SourceId>,
     last_error_source: Option<SourceId>,
+    /// The declared return type of the call frame currently executing (the
+    /// recursive engine's counterpart of the machine's per-frame return type).
+    /// Used so a bracket literal in a `return` realizes under the declared
+    /// Array type (the ONE contextual seam, §16, §48).
+    current_ret_ty: Option<crate::types::Ty>,
     /// The host capability boundary: standard output, standard input, program
     /// arguments, and optional filesystem/clock/sleep capabilities. Every
     /// language-visible interaction with the outside world goes through this;
@@ -354,6 +363,7 @@ impl Interp {
             closure_sources: HashMap::new(),
             current_source: None,
             last_error_source: None,
+            current_ret_ty: None,
             host: crate::host::default_host(),
         };
         crate::stdlib::install(&mut it);
@@ -766,6 +776,7 @@ impl Interp {
                 name,
                 type_params,
                 params,
+                ret,
                 body,
                 ..
             } => {
@@ -780,6 +791,9 @@ impl Interp {
                                 .map(|t| crate::types::Ty::from_expr_erased(t, &tparams))
                         })
                         .collect(),
+                    ret_ty: ret
+                        .as_ref()
+                        .map(|t| crate::types::Ty::from_expr_erased(t, &tparams)),
                     body: body.clone(),
                     env: self.globals.clone(),
                 });
@@ -810,6 +824,7 @@ impl Interp {
                         name,
                         type_params: mtype_params,
                         params,
+                        ret,
                         body,
                         ..
                     } = m
@@ -826,6 +841,9 @@ impl Interp {
                                         .map(|t| crate::types::Ty::from_expr_erased(t, &tparams))
                                 })
                                 .collect(),
+                            ret_ty: ret
+                                .as_ref()
+                                .map(|t| crate::types::Ty::from_expr_erased(t, &tparams)),
                             body: body.clone(),
                             env: self.globals.clone(),
                         });
@@ -951,6 +969,8 @@ impl Interp {
         // limit (E4011) rather than by the expression-nesting limit.
         let saved_ast_depth = std::mem::take(&mut self.ast_depth);
         let saved_source = self.current_source;
+        let saved_ret_ty = self.current_ret_ty.take();
+        self.current_ret_ty = closure.ret_ty.clone();
         if let Some(source) = self
             .closure_sources
             .get(&(Rc::as_ptr(closure) as usize))
@@ -964,6 +984,7 @@ impl Interp {
         }
         self.current_source = saved_source;
         self.ast_depth = saved_ast_depth;
+        self.current_ret_ty = saved_ret_ty;
         self.depth -= 1;
         match r? {
             Ctl::Return(v) | Ctl::Val(v) => Ok(v),
@@ -1003,12 +1024,23 @@ impl Interp {
                 name,
                 value,
                 mutable,
+                ann,
                 ..
             } => {
                 // A `return`/`throw`/`break`/`continue` raised while computing
                 // the initializer propagates out of the statement unchanged
                 // (§14.4); it is not converted to a value-position error here.
-                let v = match self.eval(value, env)? {
+                // When the binding is annotated with an Array type, a bracket
+                // literal initializer realizes as an Array (the ONE contextual
+                // seam, §16).
+                let expected = ann
+                    .as_ref()
+                    .map(|a| crate::types::Ty::from_expr_lenient(a));
+                let result = match &expected {
+                    Some(ty) => self.eval_expected(value, env, ty)?,
+                    None => self.eval(value, env)?,
+                };
+                let v = match result {
                     Ctl::Val(v) => v,
                     other => return Ok(other),
                 };
@@ -1071,13 +1103,23 @@ impl Interp {
             Stmt::Expr(e, _) => self.eval(e, env),
             Stmt::Return(v, _span) => {
                 match v {
-                    Some(v) => match self.eval(v, env)? {
-                        Ctl::Val(value) => Ok(Ctl::Return(value)),
-                        // A `return`/`break`/`throw` produced while computing
-                        // the returned expression propagates directly; for
-                        // example `return match x { 0 -> { return 5 } ... }`.
-                        other => Ok(other),
-                    },
+                    Some(v) => {
+                        // Under a declared Array return type, a bracket literal
+                        // realizes as an Array (§48).
+                        let ret_ty = self.current_ret_ty.clone();
+                        let result = match &ret_ty {
+                            Some(ty) => self.eval_expected(v, env, ty)?,
+                            None => self.eval(v, env)?,
+                        };
+                        match result {
+                            Ctl::Val(value) => Ok(Ctl::Return(value)),
+                            // A `return`/`break`/`throw` produced while
+                            // computing the returned expression propagates
+                            // directly; for example
+                            // `return match x { 0 -> { return 5 } ... }`.
+                            other => Ok(other),
+                        }
+                    }
                     None => Ok(Ctl::Return(Value::None)),
                 }
             }
@@ -1288,7 +1330,9 @@ impl Interp {
 
     fn iterate(&mut self, v: &Value, span: Span) -> Result<Vec<Value>> {
         match v {
-            Value::List(l) => Ok(l.borrow().clone()),
+            Value::List(l) | Value::Array(l) => Ok(l.borrow().clone()),
+            Value::Tuple(t) => Ok((**t).clone()),
+            Value::Set(s) => Ok(s.borrow().iter().map(MapKey::to_value).collect()),
             Value::Str(s) => Ok(s.chars().map(|c| Value::str(c.to_string())).collect()),
             Value::Map(m) => Ok(m.borrow().keys().map(MapKey::to_value).collect()),
             Value::Range(r) => {
@@ -1326,6 +1370,19 @@ impl Interp {
                     self.error(codes::INDEX, format!("list index {i} out of range"), span)
                 })?;
                 Ok(l[n].clone())
+            }
+            (Value::Array(l), Value::Int(i)) => {
+                let l = l.borrow();
+                let n = normalize(*i, l.len()).ok_or_else(|| {
+                    self.error(codes::INDEX, format!("array index {i} out of range"), span)
+                })?;
+                Ok(l[n].clone())
+            }
+            (Value::Tuple(t), Value::Int(i)) => {
+                let n = normalize(*i, t.len()).ok_or_else(|| {
+                    self.error(codes::INDEX, format!("tuple index {i} out of range"), span)
+                })?;
+                Ok(t[n].clone())
             }
             (Value::Str(s), Value::Int(i)) => {
                 let chars: Vec<char> = s.chars().collect();
@@ -1379,6 +1436,22 @@ impl Interp {
                 l[n] = value;
                 Ok(())
             }
+            // Array element mutation is allowed; the length is fixed, so only
+            // an existing index can be written.
+            (Value::Array(l), Value::Int(i)) => {
+                let mut l = l.borrow_mut();
+                let n = normalize(*i, l.len()).ok_or_else(|| {
+                    self.error(codes::INDEX, format!("array index {i} out of range"), span)
+                })?;
+                l[n] = value;
+                Ok(())
+            }
+            // A Tuple is immutable.
+            (Value::Tuple(_), _) => Err(self.error(
+                codes::ASSIGN_IMMUTABLE,
+                "cannot assign through a tuple: a tuple is immutable",
+                span,
+            )),
             (Value::Map(m), key) => match MapKey::from_value(key) {
                 Some(k) => {
                     m.borrow_mut().insert(k, value);
@@ -1481,6 +1554,22 @@ impl Interp {
                 }
                 _ => Err(self.error(codes::TYPE_MISMATCH, "pattern expects a list", *span)),
             },
+            Pattern::Tuple(ps, span) => match value {
+                Value::Tuple(t) => {
+                    if t.len() != ps.len() {
+                        return Err(self.error(
+                            codes::TYPE_MISMATCH,
+                            "tuple pattern arity mismatch",
+                            *span,
+                        ));
+                    }
+                    for (p, v) in ps.iter().zip(t.iter()) {
+                        self.bind_pattern(p, v, env)?;
+                    }
+                    Ok(())
+                }
+                _ => Err(self.error(codes::TYPE_MISMATCH, "pattern expects a tuple", *span)),
+            },
             Pattern::Variant(tag, ps, span) => match value {
                 // `span` is the variant pattern's span, used below.
                 Value::Variant(v) => {
@@ -1534,6 +1623,16 @@ impl Interp {
                 }
                 _ => false,
             },
+            Pattern::Tuple(ps, _) => match value {
+                Value::Tuple(t) => {
+                    t.len() == ps.len()
+                        && ps
+                            .iter()
+                            .zip(t.iter())
+                            .all(|(p, v)| self.match_pattern(p, v))
+                }
+                _ => false,
+            },
             Pattern::Variant(tag, ps, _) => match value {
                 Value::Variant(v) => {
                     &v.tag == tag
@@ -1550,6 +1649,121 @@ impl Interp {
 
     // ------------------------------------------------------- expressions
 
+    /// Build a `Value::Set` from already-evaluated element expressions.
+    ///
+    /// Duplicate values collapse by set semantics (§33). A non-key-capable
+    /// element is rejected; the checker normally catches this statically, and
+    /// this runtime check keeps a dynamically-reached non-key value from
+    /// silently corrupting membership.
+    fn build_set(&mut self, items: &[Expr], env: &Env, span: Span) -> Result<Ctl> {
+        let mut members = std::collections::BTreeSet::new();
+        for item in items {
+            let v = match self.eval(item, env)? {
+                Ctl::Val(v) => v,
+                other => return Ok(other),
+            };
+            match MapKey::from_value(&v) {
+                Some(k) => {
+                    members.insert(k);
+                }
+                None => {
+                    return Err(self.error(
+                        codes::TYPE_MISMATCH,
+                        format!(
+                            "type `{}` cannot be a set element; set elements must be `string`, `int`, or `bool`",
+                            v.type_name()
+                        ),
+                        span,
+                    ))
+                }
+            }
+        }
+        Ok(Ctl::Val(Value::set(members)))
+    }
+
+    /// Resolve the declared parameter types for a *directly named* callee, so
+    /// a bracket literal argument realizes under its parameter type (§16, §47).
+    /// Returns `None` for an unresolved/dynamic callee (no expected context) or
+    /// an ambiguous overload set; a single candidate's parameter types are
+    /// returned. The types are erased annotations, honest about the runtime's
+    /// knowledge.
+    fn resolved_param_tys(&self, callee: &Expr, env: &Env) -> Option<Vec<Option<crate::types::Ty>>> {
+        Self::resolved_param_tys_inner(&self.functions, callee, env)
+    }
+
+    /// The declared type of a struct field, by field name, erased. Used so a
+    /// bracket-literal field value realizes under the declared Array type
+    /// (§46). `None` for a non-struct or unknown field.
+    pub(crate) fn struct_field_ty(&self, name: &str, field: &str) -> Option<crate::types::Ty> {
+        self.struct_field_types
+            .get(name)
+            .and_then(|m| m.get(field))
+            .map(crate::types::Ty::from_expr_lenient)
+    }
+
+    /// The declared type of a struct's positional field at `index`, erased.
+    pub(crate) fn struct_field_ty_at(&self, name: &str, index: usize) -> Option<crate::types::Ty> {
+        let order = self.structs.get(name)?;
+        let field = order.get(index)?;
+        self.struct_field_ty(name, field)
+    }
+
+    /// Public-in-crate entry so the iterative machine shares one resolver.
+    pub(crate) fn resolved_param_tys_pub(
+        &self,
+        callee: &Expr,
+        env: &Env,
+    ) -> Option<Vec<Option<crate::types::Ty>>> {
+        self.resolved_param_tys(callee, env)
+    }
+
+    /// The declared field types aligned with a constructor's arguments, for the
+    /// iterative machine's contextual Array realization (§46).
+    pub(crate) fn construct_field_tys(
+        &self,
+        name: &str,
+        args: &[Arg],
+    ) -> Vec<Option<crate::types::Ty>> {
+        args.iter()
+            .enumerate()
+            .map(|(i, a)| match &a.name {
+                Some(f) => self.struct_field_ty(name, f),
+                None => self.struct_field_ty_at(name, i),
+            })
+            .collect()
+    }
+
+    fn resolved_param_tys_inner(
+        functions: &HashMap<String, Vec<Rc<Closure>>>,
+        callee: &Expr,
+        env: &Env,
+    ) -> Option<Vec<Option<crate::types::Ty>>> {
+        let Expr::Name(name, _) = callee else {
+            return None;
+        };
+        if let Some(v) = env.get(name) {
+            if let Value::Closure(c) = &v {
+                return Some(c.param_tys.clone());
+            }
+            return None;
+        }
+        let set = functions.get(name)?;
+        if set.len() == 1 {
+            return Some(set[0].param_tys.clone());
+        }
+        // A set with an unannotated fallback is the single dynamic option;
+        // otherwise the overload is not statically resolvable here.
+        let dynamic: Vec<_> = set
+            .iter()
+            .filter(|c| c.param_tys.iter().all(Option::is_none))
+            .collect();
+        if dynamic.len() == 1 && set.len() == 1 {
+            Some(dynamic[0].param_tys.clone())
+        } else {
+            None
+        }
+    }
+
     /// Evaluate an expression, propagating control flow.
     pub(crate) fn eval(&mut self, e: &Expr, env: &Env) -> Result<Ctl> {
         self.ast_depth += 1;
@@ -1564,6 +1778,72 @@ impl Interp {
         let result = self.eval_inner(e, env);
         self.ast_depth -= 1;
         result
+    }
+
+    /// Evaluate an expression under an expected type, realizing a bracket
+    /// literal as an Array when the expectation is `[T; N]` (the ONE
+    /// contextual-typing seam, §16). For every other expression/expectation
+    /// this is exactly [`Interp::eval`]: there is no general implicit
+    /// conversion, so an existing `List` binding never becomes an Array (§14).
+    ///
+    /// `expected` is an erased `Ty` (element types may be `Unknown`); only the
+    /// Array *shape* and length matter here, because the checker has already
+    /// proven arity and element compatibility statically. The runtime still
+    /// enforces the length so a dynamically-reached literal cannot build a
+    /// wrongly-sized Array.
+    pub(crate) fn eval_expected(
+        &mut self,
+        e: &Expr,
+        env: &Env,
+        expected: &crate::types::Ty,
+    ) -> Result<Ctl> {
+        if let (crate::types::Ty::Array(elem, n), Expr::List(items, span)) = (expected, e) {
+            self.ast_depth += 1;
+            if self.ast_depth > MAX_AST_DEPTH {
+                self.ast_depth -= 1;
+                return Err(self.error(
+                    codes::NESTING,
+                    "expression nests too deeply to evaluate",
+                    span_of(e),
+                ));
+            }
+            let result = self.eval_array_literal(items, env, elem, *n, *span);
+            self.ast_depth -= 1;
+            return result;
+        }
+        self.eval(e, env)
+    }
+
+    /// Evaluate a bracket literal as an Array: each element is evaluated in
+    /// source order exactly once under the element type (so a nested bracket
+    /// literal realizes as a nested Array, §45), and the resulting arity is
+    /// checked against the declared length `n`.
+    fn eval_array_literal(
+        &mut self,
+        items: &[Expr],
+        env: &Env,
+        elem: &crate::types::Ty,
+        n: u64,
+        span: Span,
+    ) -> Result<Ctl> {
+        let mut out = Vec::with_capacity(items.len());
+        for item in items {
+            match self.eval_expected(item, env, elem)? {
+                Ctl::Val(v) => out.push(v),
+                other => return Ok(other),
+            }
+        }
+        if out.len() as u64 != n {
+            return Err(self.error(
+                codes::TYPE_MISMATCH,
+                format!(
+                    "array literal has {} element(s) but the expected fixed length is {n}",
+                    out.len()
+                ),
+                span,
+            ));
+        }
+        Ok(Ctl::Val(Value::array(out)))
     }
 
     fn eval_inner(&mut self, e: &Expr, env: &Env) -> Result<Ctl> {
@@ -1736,6 +2016,14 @@ impl Interp {
                 }
                 Ok(Ctl::Val(Value::list(out)))
             }
+            Expr::Tuple(items, _) => {
+                let mut out = Vec::with_capacity(items.len());
+                for i in items.iter() {
+                    out.push(val!(self.eval(i, env)));
+                }
+                Ok(Ctl::Val(Value::tuple(out)))
+            }
+            Expr::Set(items, span) => self.build_set(items, env, *span),
             Expr::Map(entries, _) => {
                 let mut map = std::collections::BTreeMap::new();
                 for (k, v) in entries.iter() {
@@ -1816,13 +2104,6 @@ impl Interp {
                 Ok(Ctl::Val(Value::Map(Rc::new(RefCell::new(map)))))
             }
             Expr::Construct(name, args, _ty_args, span) => self.construct(name, args, env, *span),
-            Expr::Tuple(items, _) => {
-                let mut out = Vec::with_capacity(items.len());
-                for i in items.iter() {
-                    out.push(val!(self.eval(i, env)));
-                }
-                Ok(Ctl::Val(Value::list(out)))
-            }
             Expr::Lambda(params, body, _) => {
                 let body_stmts = match body.as_ref() {
                     // A block-bodied lambda uses its block as the function
@@ -1838,6 +2119,7 @@ impl Interp {
                         .iter()
                         .map(|p| p.ty.as_ref().map(crate::types::Ty::from_expr_lenient))
                         .collect(),
+                    ret_ty: None,
                     body: body_stmts,
                     env: env.clone(),
                 });
@@ -1918,9 +2200,24 @@ impl Interp {
         // Evaluate every argument expression in **source order**, once, before
         // any parameter binding. Parameter binding (below) must never reorder
         // evaluation (`LANGUAGE_SPEC.md` §13).
+        //
+        // When the callee resolves to a single known signature, each argument
+        // is evaluated under its declared parameter type, so a bracket literal
+        // passed directly to an `[T; N]` parameter realizes as an Array (the
+        // ONE contextual seam, §16, §47). A value already bound as a `List`
+        // is not a bracket literal and is never converted.
+        let param_tys = self.resolved_param_tys(callee, env);
         let mut vals = Vec::with_capacity(args.len());
         for a in args {
-            match self.eval(&a.value, env)? {
+            let result = match param_tys
+                .as_ref()
+                .and_then(|tys| tys.get(vals.len()))
+                .and_then(|t| t.as_ref())
+            {
+                Some(ty) => self.eval_expected(&a.value, env, ty)?,
+                None => self.eval(&a.value, env)?,
+            };
+            match result {
                 Ctl::Val(v) => vals.push(v),
                 other => return Ok(other),
             }
@@ -2168,10 +2465,42 @@ impl Interp {
     }
 
     fn construct(&mut self, name: &str, args: &[Arg], env: &Env, span: Span) -> Result<Ctl> {
+        // Field types, by name, so a bracket-literal field value realizes under
+        // the declared Array field type (§46). Positional arguments align with
+        // the declared field order.
+        let field_order = self.structs.get(name).cloned();
+        let field_tys: Option<Vec<crate::types::Ty>> = self.struct_field_types.get(name).map(|m| {
+            field_order
+                .as_ref()
+                .map(|order| {
+                    order
+                        .iter()
+                        .map(|f| {
+                            m.get(f)
+                                .map(crate::types::Ty::from_expr_lenient)
+                                .unwrap_or(crate::types::Ty::Unknown)
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        });
         let mut positional = Vec::new();
         let mut named = Vec::new();
-        for a in args {
-            match self.eval(&a.value, env)? {
+        for (i, a) in args.iter().enumerate() {
+            let expected = match &a.name {
+                Some(n) => field_tys.as_ref().and_then(|tys| {
+                    field_order
+                        .as_ref()
+                        .and_then(|order| order.iter().position(|f| f == n))
+                        .and_then(|idx| tys.get(idx))
+                }),
+                None => field_tys.as_ref().and_then(|tys| tys.get(i)),
+            };
+            let result = match expected {
+                Some(ty) => self.eval_expected(&a.value, env, ty)?,
+                None => self.eval(&a.value, env)?,
+            };
+            match result {
                 Ctl::Val(v) => match &a.name {
                     Some(n) => named.push((n.clone(), v)),
                     None => positional.push(v),
@@ -2701,6 +3030,7 @@ fn span_of(e: &Expr) -> Span {
         | Expr::Index(_, _, s)
         | Expr::List(_, s)
         | Expr::Map(_, s)
+        | Expr::Set(_, s)
         | Expr::Construct(_, _, _, s)
         | Expr::Tuple(_, s)
         | Expr::Lambda(_, _, s)

@@ -26,8 +26,9 @@ fn code(src: &str) -> u16 {
 fn list_literal_infers_a_union_of_known_elements() {
     assert_eq!(ok("fn main() { print([1, 2]) }"), "[1, 2]\n");
     assert_eq!(ok("fn main() { print([1, \"x\"]) }"), "[1, \"x\"]\n");
-    // Parenthesized comma-list sugar infers identically.
-    assert_eq!(ok("fn main() { print((1, \"x\")) }"), "[1, \"x\"]\n");
+    // A parenthesized comma-list is now a genuine Tuple (Keystone §26), not
+    // list sugar, so it prints with its tuple identity.
+    assert_eq!(ok("fn main() { print((1, \"x\")) }"), "(1, \"x\")\n");
 }
 
 #[test]

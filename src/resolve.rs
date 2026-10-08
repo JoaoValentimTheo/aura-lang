@@ -1774,6 +1774,14 @@ impl Resolver {
                     .into(),
                 *span,
             ),
+            Expr::Set(items, span) => Expr::Set(
+                items
+                    .iter()
+                    .map(|x| self.rewrite_expr(x, locals, prefix))
+                    .collect::<Result<Vec<_>>>()?
+                    .into(),
+                *span,
+            ),
             Expr::Lambda(params, body, span) => {
                 let mut inner = locals.clone();
                 inner.push();

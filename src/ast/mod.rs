@@ -30,8 +30,17 @@ pub enum TypeExpr {
     Never,
     /// `[T]`
     List(Box<TypeExpr>),
+    /// `[T; N]` — a fixed-length array type: `N` elements, each of type `T`.
+    /// `N` is a compile-time non-negative integer length (never covariance or
+    /// implicit length conversion). Distinct from `List` (`[T]`) in identity.
+    Array(Box<TypeExpr>, u64),
+    /// `(T1, T2, ...)` — a tuple type: a fixed-length, heterogeneous sequence.
+    /// A one-element tuple is `(T,)`; `(T)` is grouping and not a tuple.
+    Tuple(Vec<TypeExpr>),
     /// `{K: V}`
     Map(Box<TypeExpr>, Box<TypeExpr>),
+    /// `{T}` — a set type: unordered membership of `T`.
+    Set(Box<TypeExpr>),
     /// `T1 | T2 | ...` (two or more members; a single member is its own type)
     Union(Vec<TypeExpr>),
     /// A named user type, possibly a generic type parameter. The checker
@@ -55,7 +64,14 @@ impl TypeExpr {
             TypeExpr::None => "none".into(),
             TypeExpr::Never => "never".into(),
             TypeExpr::List(t) => format!("[{}]", t.name()),
+            TypeExpr::Array(t, n) => format!("[{}; {}]", t.name(), n),
+            TypeExpr::Tuple(ts) if ts.len() == 1 => format!("({},)", ts[0].name()),
+            TypeExpr::Tuple(ts) => format!(
+                "({})",
+                ts.iter().map(TypeExpr::name).collect::<Vec<_>>().join(", ")
+            ),
             TypeExpr::Map(k, v) => format!("{{{}: {}}}", k.name(), v.name()),
+            TypeExpr::Set(t) => format!("{{{}}}", t.name()),
             TypeExpr::Union(ms) => ms
                 .iter()
                 .map(TypeExpr::name)
@@ -253,6 +269,9 @@ pub enum Pattern {
     Bind(String, Span),
     /// `[p, p, ...]`.
     List(Vec<Pattern>, Span),
+    /// `(p, p, ...)` — a tuple pattern. A one-element tuple pattern is `(p,)`;
+    /// `(p)` is a parenthesized binding and not a tuple pattern.
+    Tuple(Vec<Pattern>, Span),
     /// `Variant(p, ...)`.
     Variant(String, Vec<Pattern>, Span),
 }
@@ -268,6 +287,7 @@ impl Pattern {
             | Pattern::None(s)
             | Pattern::Bind(_, s)
             | Pattern::List(_, s)
+            | Pattern::Tuple(_, s)
             | Pattern::Variant(_, _, s) => *s,
         }
     }
@@ -283,7 +303,7 @@ impl Pattern {
     fn collect(&self, out: &mut Vec<String>) {
         match self {
             Pattern::Bind(n, _) if n != "_" => out.push(n.clone()),
-            Pattern::List(ps, _) | Pattern::Variant(_, ps, _) => {
+            Pattern::List(ps, _) | Pattern::Tuple(ps, _) | Pattern::Variant(_, ps, _) => {
                 for p in ps {
                     p.collect(out);
                 }
@@ -343,6 +363,8 @@ pub enum Expr {
     },
     /// `{k: v, ...}`.
     Map(Arc<[(Expr, Expr)]>, Span),
+    /// `{a, b, ...}` or `set{}` — a set literal (unordered membership).
+    Set(Arc<[Expr]>, Span),
     /// `{key: value for pattern in iterable}` or
     /// `{key: value for pattern in iterable if filter}`.
     ///
@@ -407,6 +429,7 @@ impl Expr {
             | Expr::Index(_, _, s)
             | Expr::List(_, s)
             | Expr::Map(_, s)
+            | Expr::Set(_, s)
             | Expr::Construct(_, _, _, s)
             | Expr::Tuple(_, s)
             | Expr::Lambda(_, _, s)

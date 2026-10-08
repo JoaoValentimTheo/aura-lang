@@ -28,6 +28,8 @@ pub enum TypeFamily {
     Sequence,
     /// `{K: V}`.
     Mapping,
+    /// `{T}` — unordered membership.
+    SetLike,
     /// A nominal struct.
     Object,
     /// An enum, a union, `never`, or `none` (an inhabitant-set type).
@@ -50,6 +52,7 @@ impl TypeFamily {
             TypeFamily::Scalar => "scalar",
             TypeFamily::Sequence => "sequence",
             TypeFamily::Mapping => "mapping",
+            TypeFamily::SetLike => "set_like",
             TypeFamily::Object => "object",
             TypeFamily::Sum => "sum",
             TypeFamily::Callable => "callable",
@@ -73,6 +76,15 @@ pub enum Ty {
     String,
     /// `[T]`
     List(Box<Ty>),
+    /// `[T; N]` — a fixed-length array of `N` elements each of type `T`. The
+    /// length is part of the type identity: `[int; 2]` and `[int; 3]` are
+    /// different types, with no length covariance.
+    Array(Box<Ty>, u64),
+    /// `(T1, T2, ...)` — a fixed-length heterogeneous tuple. Always two or
+    /// more members (a one-member `(T,)` is normalized to its member).
+    Tuple(Vec<Ty>),
+    /// `{T}` — an unordered set of `T` (a `SetLike` capability).
+    Set(Box<Ty>),
     /// `{K: V}` — a map from key type `K` to value type `V`. `K` is a
     /// key-capable scalar type (`string`, `int`, `bool`), a union of such
     /// types, a generic parameter that must become key-capable when
@@ -123,6 +135,13 @@ impl Ty {
             Ty::Bool => "bool".into(),
             Ty::String => "string".into(),
             Ty::List(t) => format!("[{}]", t.name()),
+            Ty::Array(t, n) => format!("[{}; {}]", t.name(), n),
+            Ty::Tuple(ts) if ts.len() == 1 => format!("({},)", ts[0].name()),
+            Ty::Tuple(ts) => format!(
+                "({})",
+                ts.iter().map(Ty::name).collect::<Vec<_>>().join(", ")
+            ),
+            Ty::Set(t) => format!("{{{}}}", t.name()),
             Ty::Map(k, v) => format!("{{{}: {}}}", k.name(), v.name()),
             Ty::Named(n) => n.clone(),
             Ty::Enum(n) => n.clone(),
@@ -184,7 +203,9 @@ impl Ty {
     pub fn has_param(&self) -> bool {
         match self {
             Ty::Param(_) => true,
-            Ty::List(t) => t.has_param(),
+            Ty::List(t) | Ty::Set(t) => t.has_param(),
+            Ty::Array(t, _) => t.has_param(),
+            Ty::Tuple(ts) => ts.iter().any(Ty::has_param),
             Ty::Map(k, v) => k.has_param() || v.has_param(),
             Ty::Union(ms) => ms.iter().any(Ty::has_param),
             Ty::App(_, args) => args.iter().any(Ty::has_param),
@@ -204,6 +225,9 @@ impl Ty {
                 .cloned()
                 .unwrap_or_else(|| Ty::Param(n.clone())),
             Ty::List(t) => Ty::List(Box::new(t.substitute(sigma))),
+            Ty::Array(t, n) => Ty::Array(Box::new(t.substitute(sigma)), *n),
+            Ty::Tuple(ts) => Ty::Tuple(ts.iter().map(|t| t.substitute(sigma)).collect()),
+            Ty::Set(t) => Ty::Set(Box::new(t.substitute(sigma))),
             Ty::Map(k, v) => Ty::Map(Box::new(k.substitute(sigma)), Box::new(v.substitute(sigma))),
             Ty::Union(ms) => Ty::union(ms.iter().map(|m| m.substitute(sigma)).collect()),
             Ty::App(n, args) => Ty::App(
@@ -221,6 +245,9 @@ impl Ty {
         match self {
             Ty::Param(n) => sigma.get(n).cloned().unwrap_or(Ty::Unknown),
             Ty::List(t) => Ty::List(Box::new(t.erase_params(sigma))),
+            Ty::Array(t, n) => Ty::Array(Box::new(t.erase_params(sigma)), *n),
+            Ty::Tuple(ts) => Ty::Tuple(ts.iter().map(|t| t.erase_params(sigma)).collect()),
+            Ty::Set(t) => Ty::Set(Box::new(t.erase_params(sigma))),
             Ty::Map(k, v) => Ty::Map(
                 Box::new(k.erase_params(sigma)),
                 Box::new(v.erase_params(sigma)),
@@ -231,6 +258,19 @@ impl Ty {
                 args.iter().map(|a| a.erase_params(sigma)).collect(),
             ),
             other => other.clone(),
+        }
+    }
+
+    /// Build a normalized tuple type from members. Arity is preserved exactly,
+    /// including a one-element tuple `(T,)`, which stays a distinct `Tuple`
+    /// identity (it is indexable and iterable, unlike a bare `T`). Only an
+    /// empty member list is degenerate and maps to `Unknown`.
+    #[must_use]
+    pub fn tuple(members: Vec<Ty>) -> Ty {
+        if members.is_empty() {
+            Ty::Unknown
+        } else {
+            Ty::Tuple(members)
         }
     }
 
@@ -285,6 +325,9 @@ impl Ty {
             Ty::Bool => 2,
             Ty::String => 3,
             Ty::List(_) => 4,
+            Ty::Array(_, _) => 4,
+            Ty::Tuple(_) => 4,
+            Ty::Set(_) => 4,
             Ty::Map(_, _) => 5,
             Ty::Named(_) | Ty::Enum(_) => 6,
             Ty::Union(_) => 7,
@@ -343,6 +386,17 @@ impl Ty {
             (Ty::Union(expected), actual) => expected.iter().any(|e| e.compatible_with(actual)),
             (expected, Ty::Union(actual)) => actual.iter().all(|a| expected.compatible_with(a)),
             (Ty::List(a), Ty::List(b)) => a.compatible_with(b),
+            // An Array is compatible only with an Array of the same length and
+            // a compatible element type. There is no implicit List→Array
+            // conversion and no length covariance (§11–§18).
+            (Ty::Array(a, n), Ty::Array(b, m)) => n == m && a.compatible_with(b),
+            // A Tuple is compatible with a Tuple of the same arity and
+            // element-wise compatible member types.
+            (Ty::Tuple(a), Ty::Tuple(b)) => {
+                a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.compatible_with(y))
+            }
+            // A Set is compatible with a Set of a compatible element type.
+            (Ty::Set(a), Ty::Set(b)) => a.compatible_with(b),
             // Map key and value are both invariant under this conservative
             // relation: a map is assignable only when its key type is
             // compatible in both directions (equal up to `Unknown`) and its
@@ -412,6 +466,9 @@ impl Ty {
             Ty::Bool => TypeClass::Bool,
             Ty::String => TypeClass::Str,
             Ty::List(_) => TypeClass::List,
+            Ty::Array(_, _) => TypeClass::Array,
+            Ty::Tuple(_) => TypeClass::Tuple,
+            Ty::Set(_) => TypeClass::Set,
             Ty::Map(_, _) => TypeClass::Map,
             Ty::Named(_) | Ty::Enum(_) | Ty::Union(_) | Ty::Unknown => return None,
             Ty::Param(_) | Ty::App(_, _) | Ty::Never | Ty::None => return None,
@@ -436,6 +493,9 @@ impl Ty {
             Ty::Int | Ty::Float | Ty::Bool => &[TypeFamily::Scalar],
             Ty::String => &[TypeFamily::Scalar, TypeFamily::Sequence],
             Ty::List(_) => &[TypeFamily::Sequence],
+            Ty::Array(_, _) => &[TypeFamily::Sequence],
+            Ty::Tuple(_) => &[TypeFamily::Sequence],
+            Ty::Set(_) => &[TypeFamily::SetLike],
             Ty::Map(_, _) => &[TypeFamily::Mapping],
             // A range is the dynamic `Ty::Named("range")` marker; it is a
             // `RangeLike` capability, never a nominal `Object` (§5.4).
@@ -468,6 +528,9 @@ impl Ty {
             Ty::Bool => "bool",
             Ty::String => "string",
             Ty::List(_) => "list",
+            Ty::Array(_, _) => "array",
+            Ty::Tuple(_) => "tuple",
+            Ty::Set(_) => "set",
             Ty::Map(_, _) => "map",
             Ty::Named(n) if n == "range" => "range",
             Ty::Named(_) => "struct",
@@ -530,6 +593,21 @@ impl Ty {
             // `never` is the bottom type (§4.3): no value can result.
             TypeExpr::Never => Ty::Never,
             TypeExpr::List(inner) => Ty::List(Box::new(Ty::from_expr(inner, types, span)?)),
+            TypeExpr::Array(inner, n) => Ty::Array(Box::new(Ty::from_expr(inner, types, span)?), *n),
+            TypeExpr::Tuple(members) => {
+                let mut tys = Vec::with_capacity(members.len());
+                for m in members {
+                    tys.push(Ty::from_expr(m, types, span)?);
+                }
+                Ty::tuple(tys)
+            }
+            TypeExpr::Set(inner) => {
+                let elem = Ty::from_expr(inner, types, span)?;
+                if !elem.is_key_capable() {
+                    return Err(elem.key_type_error(span));
+                }
+                Ty::Set(Box::new(elem))
+            }
             TypeExpr::Map(k, v) => {
                 let key = Ty::from_expr(k, types, span)?;
                 if !key.is_key_capable() {
@@ -596,7 +674,13 @@ impl Ty {
     fn erase_named_params(&mut self, params: &[String]) {
         match self {
             Ty::Named(n) if params.iter().any(|p| p == n) => *self = Ty::Unknown,
-            Ty::List(t) => t.erase_named_params(params),
+            Ty::List(t) | Ty::Set(t) => t.erase_named_params(params),
+            Ty::Array(t, _) => t.erase_named_params(params),
+            Ty::Tuple(ts) => {
+                for t in ts.iter_mut() {
+                    t.erase_named_params(params);
+                }
+            }
             Ty::Map(k, v) => {
                 k.erase_named_params(params);
                 v.erase_named_params(params);
@@ -632,6 +716,11 @@ impl Ty {
             TypeExpr::None => Ty::None,
             TypeExpr::Never => Ty::Never,
             TypeExpr::List(inner) => Ty::List(Box::new(Ty::from_expr_lenient(inner))),
+            TypeExpr::Array(inner, n) => Ty::Array(Box::new(Ty::from_expr_lenient(inner)), *n),
+            TypeExpr::Tuple(members) => {
+                Ty::tuple(members.iter().map(Ty::from_expr_lenient).collect())
+            }
+            TypeExpr::Set(inner) => Ty::Set(Box::new(Ty::from_expr_lenient(inner))),
             TypeExpr::Map(k, v) => Ty::Map(
                 Box::new(Ty::from_expr_lenient(k)),
                 Box::new(Ty::from_expr_lenient(v)),
@@ -659,6 +748,15 @@ impl Ty {
             Ty::Bool => TypeExpr::Bool,
             Ty::String => TypeExpr::String,
             Ty::List(inner) => TypeExpr::List(Box::new(inner.to_type_expr()?)),
+            Ty::Array(inner, n) => TypeExpr::Array(Box::new(inner.to_type_expr()?), *n),
+            Ty::Tuple(ts) => {
+                let mut members = Vec::with_capacity(ts.len());
+                for t in ts {
+                    members.push(t.to_type_expr()?);
+                }
+                TypeExpr::Tuple(members)
+            }
+            Ty::Set(inner) => TypeExpr::Set(Box::new(inner.to_type_expr()?)),
             Ty::Map(k, v) => {
                 TypeExpr::Map(Box::new(k.to_type_expr()?), Box::new(v.to_type_expr()?))
             }

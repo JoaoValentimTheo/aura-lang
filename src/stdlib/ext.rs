@@ -79,6 +79,30 @@ pub mod json {
                 }
                 serde_json::Value::Array(out)
             }
+            // Array, Tuple, and Set encode to a JSON array (a serialization,
+            // not an identity-preserving round-trip: dynamic decode yields a
+            // List). Set order is deterministic (ascending member order).
+            Value::Array(l) => {
+                let mut out = Vec::with_capacity(l.borrow().len());
+                for x in l.borrow().iter() {
+                    out.push(to_json_depth(x, depth + 1, budget)?);
+                }
+                serde_json::Value::Array(out)
+            }
+            Value::Tuple(t) => {
+                let mut out = Vec::with_capacity(t.len());
+                for x in t.iter() {
+                    out.push(to_json_depth(x, depth + 1, budget)?);
+                }
+                serde_json::Value::Array(out)
+            }
+            Value::Set(s) => {
+                let mut out = Vec::with_capacity(s.borrow().len());
+                for k in s.borrow().iter() {
+                    out.push(to_json_depth(&k.to_value(), depth + 1, budget)?);
+                }
+                serde_json::Value::Array(out)
+            }
             Value::Map(m) => {
                 let mut obj = serde_json::Map::new();
                 for (k, v) in m.borrow().iter() {
@@ -240,6 +264,88 @@ pub mod json {
                 }
                 _ => Err(decode_err(
                     format!("`{path}` is not a list of `{}`", inner.name()),
+                    span,
+                )),
+            },
+            TypeExpr::Array(elem, n) => match j {
+                serde_json::Value::Array(items) => {
+                    if items.len() as u64 != *n {
+                        return Err(decode_err(
+                            format!(
+                                "`{path}` has {} element(s) but `{}` requires exactly {n}",
+                                items.len(),
+                                ty.name()
+                            ),
+                            span,
+                        ));
+                    }
+                    let mut out = Vec::with_capacity(items.len());
+                    for (i, item) in items.iter().enumerate() {
+                        out.push(decode_as(it, item, elem, &format!("{path}[{i}]"), span)?);
+                    }
+                    Ok(Value::array(out))
+                }
+                _ => Err(decode_err(
+                    format!("`{path}` is not an array of `{}`", elem.name()),
+                    span,
+                )),
+            },
+            TypeExpr::Tuple(members) => match j {
+                serde_json::Value::Array(items) => {
+                    if items.len() != members.len() {
+                        return Err(decode_err(
+                            format!(
+                                "`{path}` has {} element(s) but `{}` requires exactly {}",
+                                items.len(),
+                                ty.name(),
+                                members.len()
+                            ),
+                            span,
+                        ));
+                    }
+                    let mut out = Vec::with_capacity(items.len());
+                    for (i, (item, m)) in items.iter().zip(members).enumerate() {
+                        out.push(decode_as(it, item, m, &format!("{path}[{i}]"), span)?);
+                    }
+                    Ok(Value::tuple(out))
+                }
+                _ => Err(decode_err(
+                    format!("`{path}` is not a tuple for `{}`", ty.name()),
+                    span,
+                )),
+            },
+            TypeExpr::Set(inner) => match j {
+                serde_json::Value::Array(items) => {
+                    let mut members = std::collections::BTreeSet::new();
+                    for (i, item) in items.iter().enumerate() {
+                        let v = decode_as(it, item, inner, &format!("{path}[{i}]"), span)?;
+                        let Some(k) = crate::run::value::MapKey::from_value(&v) else {
+                            return Err(decode_err(
+                                format!(
+                                    "`{path}[{i}]` is not a valid set element for `{}`",
+                                    ty.name()
+                                ),
+                                span,
+                            ));
+                        };
+                        // A duplicate JSON element is a shape/data mismatch for
+                        // strict external validation (§34): the source carried
+                        // two pieces of data, and silently collapsing them would
+                        // discard information.
+                        if !members.insert(k) {
+                            return Err(decode_err(
+                                format!(
+                                    "`{path}[{i}]` is a duplicate element; `{}` may not receive duplicate JSON members",
+                                    ty.name()
+                                ),
+                                span,
+                            ));
+                        }
+                    }
+                    Ok(Value::set(members))
+                }
+                _ => Err(decode_err(
+                    format!("`{path}` is not a set of `{}`", inner.name()),
                     span,
                 )),
             },

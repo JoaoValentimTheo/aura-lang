@@ -228,6 +228,11 @@ def main() -> int:
                 "mtime": src_mtime,
             }
             baselines[f"{fingerprint_label()}/{config}/{target}"] = round(elapsed, 3)
+            # Persist incrementally so an interrupted run resumes rather than
+            # restarting already-passed targets.
+            if not args.no_cache:
+                save_json(STATE_PATH, results)
+                save_json(BASELINE_PATH, baselines)
             if status != "PASS":
                 failures += 1
 

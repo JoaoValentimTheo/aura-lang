@@ -325,6 +325,16 @@ fn project_expr(t: &TypeExpr, env: &TypeEnv, params: &[String], depth: usize) ->
         TypeExpr::None => Ty::None,
         TypeExpr::Never => Ty::Never,
         TypeExpr::List(inner) => Ty::List(Box::new(project_expr(inner, env, params, depth))),
+        TypeExpr::Array(inner, n) => {
+            Ty::Array(Box::new(project_expr(inner, env, params, depth)), *n)
+        }
+        TypeExpr::Tuple(members) => Ty::tuple(
+            members
+                .iter()
+                .map(|m| project_expr(m, env, params, depth))
+                .collect(),
+        ),
+        TypeExpr::Set(inner) => Ty::Set(Box::new(project_expr(inner, env, params, depth))),
         TypeExpr::Map(k, v) => Ty::Map(
             Box::new(project_expr(k, env, params, depth)),
             Box::new(project_expr(v, env, params, depth)),
@@ -381,30 +391,45 @@ fn project_ty(t: &crate::types::Ty) -> (Vec<String>, Option<String>, Vec<String>
         "unknown" | "union" | "never" => None,
         k => Some(k.to_string()),
     };
-    // Capabilities mirror the executable truth (`LANGUAGE_SPEC.md` §5.3):
-    //   `len`        accepts string, list, map, range
-    //   iteration    accepts string, list, map (keys), range
-    //   indexing     accepts string, list, map, struct (by field name)
-    //   mutation     is shared for list, map, and struct fields
-    //   ordering     is defined for int, float, bool, string
+    // Capabilities mirror the executable truth (Keystone §40):
+    //   indexable    string, list, array, tuple, map, struct (by field name)
+    //   iterable     string, list, array, tuple, set, map (keys), range
+    //   sized        string, list, array, tuple, set, map, range
+    //   mutation     list/map entries, array elements, set membership, fields
     let mut caps: Vec<String> = Vec::new();
-    if matches!(t, Ty::String | Ty::List(_) | Ty::Map(_, _))
+    if matches!(t, Ty::String | Ty::List(_) | Ty::Array(_, _) | Ty::Tuple(_) | Ty::Map(_, _))
         || matches!(t, Ty::Named(n) if n != "range")
     {
         caps.push("indexable".into());
     }
-    if matches!(t, Ty::String | Ty::List(_) | Ty::Map(_, _))
-        || matches!(t, Ty::Named(n) if n == "range")
+    if matches!(
+        t,
+        Ty::String | Ty::List(_) | Ty::Array(_, _) | Ty::Tuple(_) | Ty::Set(_) | Ty::Map(_, _)
+    ) || matches!(t, Ty::Named(n) if n == "range")
     {
         caps.push("iterable".into());
     }
-    if matches!(t, Ty::String | Ty::List(_) | Ty::Map(_, _))
-        || matches!(t, Ty::Named(n) if n == "range")
+    if matches!(
+        t,
+        Ty::String | Ty::List(_) | Ty::Array(_, _) | Ty::Tuple(_) | Ty::Set(_) | Ty::Map(_, _)
+    ) || matches!(t, Ty::Named(n) if n == "range")
     {
         caps.push("sized".into());
     }
     if matches!(t, Ty::List(_) | Ty::Map(_, _)) || matches!(t, Ty::Named(n) if n != "range") {
         caps.push("mutable".into());
+    }
+    // A fixed-length sequence reports `fixed_length`; an Array additionally has
+    // `mutable_elements` (element mutation without resizing), a Tuple has
+    // neither mutation nor resizing, and a Set has `mutable_membership`.
+    if matches!(t, Ty::Array(_, _) | Ty::Tuple(_)) {
+        caps.push("fixed_length".into());
+    }
+    if matches!(t, Ty::Array(_, _)) {
+        caps.push("mutable_elements".into());
+    }
+    if matches!(t, Ty::Set(_)) {
+        caps.push("mutable_membership".into());
     }
     if matches!(t, Ty::Int | Ty::Float | Ty::Bool | Ty::String) {
         caps.push("orderable".into());

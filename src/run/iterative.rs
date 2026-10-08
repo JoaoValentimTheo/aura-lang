@@ -170,6 +170,18 @@ use crate::ast::{Arg, BinOp, Expr, FPart, FormatSpec, Lit, Pattern, Stmt, UnOp};
 use crate::error::{codes, Result, Span};
 use crate::source::SourceId;
 
+/// Which sequence literal a `Cont::ListNext` accumulator builds.
+#[derive(Debug, Clone)]
+enum SeqKind {
+    /// `[a, b]` — a list.
+    List,
+    /// `(a, b)` — a tuple.
+    Tuple,
+    /// `[a, b]` under an `[T; N]` expectation — an array. Carries the element
+    /// type so a nested bracket literal realizes recursively (§45).
+    Array(Box<crate::types::Ty>, u64),
+}
+
 /// What the machine does after processing one control item.
 enum Control {
     /// Continue with this next work item.
@@ -266,6 +278,10 @@ enum Resume {
 enum Ctrl {
     /// Evaluate an expression in an environment.
     EvalExpr(Arc<Expr>, Env),
+    /// Evaluate an expression under an expected type, realizing a bracket
+    /// literal as an Array when the expectation is `[T; N]` (the ONE
+    /// contextual seam, §16).
+    EvalExprExpected(Arc<Expr>, Env, Box<crate::types::Ty>),
     /// Execute a statement in its resolution environment.
     EvalStmt(Arc<Stmt>, Env),
     /// Enter a statement block (`body`, lexical parent, scoped).
@@ -341,6 +357,15 @@ enum Cont {
         items: Arc<[Expr]>,
         index: usize,
         out: Vec<Value>,
+        env: Env,
+        kind: SeqKind,
+    },
+    /// A set element finished; it is converted to a stable key (rejecting a
+    /// non-key-capable value) and inserted, collapsing duplicates.
+    SetNext {
+        items: Arc<[Expr]>,
+        index: usize,
+        out: std::collections::BTreeSet<crate::run::value::MapKey>,
         env: Env,
     },
     /// A map entry's key finished (B-1R3B.4.2). The key value is validated and
@@ -435,6 +460,10 @@ enum Cont {
         values: Vec<Value>,
         env: Env,
         span: Span,
+        /// Declared parameter types of a directly-named callee, so a bracket
+        /// literal argument realizes under its parameter type (§16, §47).
+        /// `None` for a dynamic/ambiguous callee.
+        param_tys: Option<Vec<Option<crate::types::Ty>>>,
     },
     /// A non-`Name` callee expression finished (R3C.1); apply it to the
     /// already-evaluated arguments exactly like `Interp::eval_call`'s `other`
@@ -602,6 +631,10 @@ enum Cont {
         named: Vec<(String, Value)>,
         env: Env,
         span: Span,
+        /// Declared field types aligned with `args` (positional order, or the
+        /// named field's type), so a bracket-literal field value realizes under
+        /// the declared Array type (§46).
+        field_tys: Vec<Option<crate::types::Ty>>,
     },
     /// A resumable native is mid-call (`map`/`filter`/`reduce`,
     /// `ITERATIVE_EVALUATOR_DESIGN.md` §13). The callback's result is fed back
@@ -871,6 +904,7 @@ impl<'i> Machine<'i> {
         match ctrl {
             Ctrl::Done(ctl) => self.deliver(Done::plain(ctl)),
             Ctrl::EvalExpr(e, env) => self.start_expr(&e, &env),
+            Ctrl::EvalExprExpected(e, env, ty) => self.start_expr_expected(&e, &env, &ty),
             Ctrl::EvalStmt(s, env) => self.start_stmt(&s, &env),
             Ctrl::EnterBlock(body, parent, scoped) => self.start_block(body, parent, scoped),
             Ctrl::ReturnValue(v) => self.deliver(Done::plain(Ctl::Return(v))),
@@ -1392,6 +1426,7 @@ impl<'i> Machine<'i> {
                 index,
                 mut out,
                 env,
+                kind,
             } => {
                 let Ctl::Val(value) = done.ctl else {
                     // A control signal from an element aborts the whole list;
@@ -1407,10 +1442,75 @@ impl<'i> Machine<'i> {
                         index: next,
                         out,
                         env: env.clone(),
+                        kind: kind.clone(),
+                    });
+                    match &kind {
+                        SeqKind::Array(elem_ty, _) => Ok(Resume::Next(
+                            Ctrl::EvalExprExpected(elem, env, elem_ty.clone()),
+                        )),
+                        SeqKind::List | SeqKind::Tuple => {
+                            Ok(Resume::Next(Ctrl::EvalExpr(elem, env)))
+                        }
+                    }
+                } else {
+                    let built = match kind {
+                        SeqKind::List => Value::list(out),
+                        SeqKind::Tuple => Value::tuple(out),
+                        SeqKind::Array(_, n) => {
+                            if out.len() as u64 != n {
+                                return Err(crate::error::Diag::new(
+                                    codes::TYPE_MISMATCH,
+                                    format!(
+                                        "array literal has {} element(s) but the expected fixed length is {n}",
+                                        out.len()
+                                    ),
+                                    Span::default(),
+                                )
+                                .into());
+                            }
+                            Value::array(out)
+                        }
+                    };
+                    Ok(Resume::Next(Ctrl::Done(Ctl::Val(built))))
+                }
+            }
+            Cont::SetNext {
+                items,
+                index,
+                mut out,
+                env,
+            } => {
+                let Ctl::Val(value) = done.ctl else {
+                    return Ok(Resume::Redeliver(Done::plain(done.ctl)));
+                };
+                match crate::run::value::MapKey::from_value(&value) {
+                    Some(k) => {
+                        out.insert(k);
+                    }
+                    None => {
+                        return Err(crate::error::Diag::new(
+                            codes::TYPE_MISMATCH,
+                            format!(
+                                "type `{}` cannot be a set element; set elements must be `string`, `int`, or `bool`",
+                                value.type_name()
+                            ),
+                            Span::default(),
+                        )
+                        .into())
+                    }
+                }
+                let next = index + 1;
+                if next < items.len() {
+                    let elem = Arc::new(items[next].clone());
+                    self.kont.push(Cont::SetNext {
+                        items,
+                        index: next,
+                        out,
+                        env: env.clone(),
                     });
                     Ok(Resume::Next(Ctrl::EvalExpr(elem, env)))
                 } else {
-                    Ok(Resume::Next(Ctrl::Done(Ctl::Val(Value::list(out)))))
+                    Ok(Resume::Next(Ctrl::Done(Ctl::Val(Value::set(out)))))
                 }
             }
             Cont::MapKeyNext {
@@ -1640,6 +1740,7 @@ impl<'i> Machine<'i> {
                 mut values,
                 env,
                 span,
+                param_tys,
             } => {
                 let Ctl::Val(v) = done.ctl else {
                     // A control signal from an argument aborts the call before
@@ -1650,6 +1751,11 @@ impl<'i> Machine<'i> {
                 values.push(v);
                 if index < args.len() {
                     let next = Arc::new(args[index].value.clone());
+                    let idx = index;
+                    let next_ty = param_tys
+                        .as_ref()
+                        .and_then(|t| t.get(idx))
+                        .and_then(|t| t.clone());
                     self.kont.push(Cont::CallArgs {
                         callee,
                         args: args.clone(),
@@ -1657,8 +1763,16 @@ impl<'i> Machine<'i> {
                         values,
                         env: env.clone(),
                         span,
+                        param_tys,
                     });
-                    Ok(Resume::Next(Ctrl::EvalExpr(next, env)))
+                    match next_ty {
+                        Some(ty) => Ok(Resume::Next(Ctrl::EvalExprExpected(
+                            next,
+                            env,
+                            Box::new(ty),
+                        ))),
+                        None => Ok(Resume::Next(Ctrl::EvalExpr(next, env))),
+                    }
                 } else {
                     match self.dispatch_call(callee, args, values, env, span)? {
                         Control::Next(next) => Ok(Resume::Next(next)),
@@ -1674,6 +1788,7 @@ impl<'i> Machine<'i> {
                 mut named,
                 env,
                 span,
+                field_tys,
             } => {
                 let Ctl::Val(v) = done.ctl else {
                     // A control signal from a field argument aborts the
@@ -1687,6 +1802,7 @@ impl<'i> Machine<'i> {
                 }
                 if index < args.len() {
                     let next = Arc::new(args[index].value.clone());
+                    let next_ty = field_tys.get(index).cloned().flatten();
                     self.kont.push(Cont::ConstructArgs {
                         name,
                         args: args.clone(),
@@ -1695,8 +1811,16 @@ impl<'i> Machine<'i> {
                         named,
                         env: env.clone(),
                         span,
+                        field_tys,
                     });
-                    Ok(Resume::Next(Ctrl::EvalExpr(next, env)))
+                    match next_ty {
+                        Some(ty) => Ok(Resume::Next(Ctrl::EvalExprExpected(
+                            next,
+                            env,
+                            Box::new(ty),
+                        ))),
+                        None => Ok(Resume::Next(Ctrl::EvalExpr(next, env))),
+                    }
                 } else {
                     match self.finish_construct(&name, positional, named, span)? {
                         Control::Next(next) => Ok(Resume::Next(next)),
@@ -1820,8 +1944,28 @@ impl<'i> Machine<'i> {
     /// [`Machine::start_block`]).
     #[allow(clippy::unnecessary_wraps)]
     fn start_list(&mut self, items: Arc<[Expr]>, env: &Env) -> Result<Control> {
+        self.start_seq(items, env, SeqKind::List)
+    }
+
+    /// Begin evaluating an ordered sequence literal (`[a, b]` as a List, or
+    /// `(a, b)` as a Tuple). Each element is evaluated in source order, exactly
+    /// once; an empty literal completes immediately.
+    #[allow(clippy::unnecessary_wraps)]
+    fn start_seq(&mut self, items: Arc<[Expr]>, env: &Env, kind: SeqKind) -> Result<Control> {
         if items.is_empty() {
-            return Ok(Control::Next(Ctrl::Done(Ctl::Val(Value::list(Vec::new())))));
+            return Ok(Control::Next(Ctrl::Done(Ctl::Val(match kind {
+                SeqKind::List => Value::list(Vec::new()),
+                SeqKind::Array(_, 0) => Value::array(Vec::new()),
+                SeqKind::Array(_, n) => {
+                    return Err(crate::error::Diag::new(
+                        codes::TYPE_MISMATCH,
+                        format!("array literal has 0 element(s) but the expected fixed length is {n}"),
+                        Span::default(),
+                    )
+                    .into())
+                }
+                SeqKind::Tuple => Value::tuple(Vec::new()),
+            }))));
         }
         // `index` is the element currently being evaluated; `out` holds the
         // elements that already completed.
@@ -1829,6 +1973,34 @@ impl<'i> Machine<'i> {
             items: items.clone(),
             index: 0,
             out: Vec::with_capacity(items.len()),
+            env: env.clone(),
+            kind: kind.clone(),
+        });
+        // An Array element realizes under the element type, so a nested bracket
+        // literal becomes a nested Array (§45).
+        let first = Arc::new(items[0].clone());
+        match &kind {
+            SeqKind::Array(elem, _) => {
+                Ok(Control::Next(Ctrl::EvalExprExpected(first, env.clone(), elem.clone())))
+            }
+            SeqKind::List | SeqKind::Tuple => Ok(Control::Next(Ctrl::EvalExpr(first, env.clone()))),
+        }
+    }
+
+    /// Begin evaluating a set literal `{a, b}` / `set{}`. Each element is
+    /// evaluated in source order, exactly once; the key-capability check and
+    /// duplicate collapse happen as each element completes.
+    #[allow(clippy::unnecessary_wraps)]
+    fn start_set(&mut self, items: Arc<[Expr]>, env: &Env) -> Result<Control> {
+        if items.is_empty() {
+            return Ok(Control::Next(Ctrl::Done(Ctl::Val(Value::set(
+                std::collections::BTreeSet::new(),
+            )))));
+        }
+        self.kont.push(Cont::SetNext {
+            items: items.clone(),
+            index: 0,
+            out: std::collections::BTreeSet::new(),
             env: env.clone(),
         });
         Ok(Control::Next(Ctrl::EvalExpr(
@@ -1988,6 +2160,25 @@ impl<'i> Machine<'i> {
         }
     }
 
+    /// Begin evaluating an expression under an expected type: a bracket literal
+    /// under `[T; N]` realizes as an Array (the ONE contextual seam, §16).
+    /// Every other expression is evaluated normally.
+    fn start_expr_expected(
+        &mut self,
+        e: &Arc<Expr>,
+        env: &Env,
+        expected: &crate::types::Ty,
+    ) -> Result<Control> {
+        if let (crate::types::Ty::Array(elem, n), Expr::List(items, _)) = (expected, &**e) {
+            return self.start_seq(
+                items.clone(),
+                env,
+                SeqKind::Array(Box::new((**elem).clone()), *n),
+            );
+        }
+        self.start_expr(e, env)
+    }
+
     /// Begin evaluating an expression, preserving the `E1015` AST-depth guard.
     fn start_expr(&mut self, e: &Arc<Expr>, env: &Env) -> Result<Control> {
         self.expr_depth += 1;
@@ -2035,12 +2226,13 @@ impl<'i> Machine<'i> {
                 });
                 Ok(Control::Next(Ctrl::EvalExpr(operand.clone(), env.clone())))
             }
-            Expr::List(items, _) | Expr::Tuple(items, _) => {
-                // Left to right, exactly once per element (B-1R3B.4.1). A tuple
-                // literal is list sugar (`LANGUAGE_SPEC.md` §21) and shares the
-                // list evaluation path, exactly like `eval_inner`.
+            Expr::List(items, _) => {
+                // Left to right, exactly once per element (B-1R3B.4.1). An
+                // untyped bracket literal is always a List (§9).
                 self.start_list(items.clone(), env)
             }
+            Expr::Tuple(items, _) => self.start_seq(items.clone(), env, SeqKind::Tuple),
+            Expr::Set(items, _) => self.start_set(items.clone(), env),
             Expr::Map(entries, _) => {
                 // Key then value per entry, in source order, exactly once each
                 // (B-1R3B.4.2). An empty map (`{:}`) completes immediately.
@@ -2126,6 +2318,7 @@ impl<'i> Machine<'i> {
                         .iter()
                         .map(|p| p.ty.as_ref().map(crate::types::Ty::from_expr_lenient))
                         .collect(),
+                    ret_ty: None,
                     body: body_stmts,
                     env: env.clone(),
                 });
@@ -2237,6 +2430,7 @@ impl<'i> Machine<'i> {
         if args.is_empty() {
             return self.dispatch_call(callee, args, Vec::new(), env, span);
         }
+        let param_tys = self.interp.resolved_param_tys_pub(&callee, &env);
         let first = Arc::new(args[0].value.clone());
         self.kont.push(Cont::CallArgs {
             callee,
@@ -2245,8 +2439,16 @@ impl<'i> Machine<'i> {
             values: Vec::with_capacity(args.len()),
             env: env.clone(),
             span,
+            param_tys: param_tys.clone(),
         });
-        Ok(Control::Next(Ctrl::EvalExpr(first, env)))
+        match param_tys.as_ref().and_then(|t| t.first()).and_then(|t| t.as_ref()) {
+            Some(ty) => Ok(Control::Next(Ctrl::EvalExprExpected(
+                first,
+                env,
+                Box::new(ty.clone()),
+            ))),
+            None => Ok(Control::Next(Ctrl::EvalExpr(first, env))),
+        }
     }
 
     /// Begin a constructor: schedule the first field argument, or resolve a
@@ -2265,7 +2467,9 @@ impl<'i> Machine<'i> {
                     .construct_from_values(&name, Vec::new(), Vec::new(), span)?,
             ))));
         }
+        let field_tys = self.interp.construct_field_tys(&name, &args);
         let first = Arc::new(args[0].value.clone());
+        let first_ty = field_tys.first().cloned().flatten();
         self.kont.push(Cont::ConstructArgs {
             name,
             args: args.clone(),
@@ -2274,8 +2478,16 @@ impl<'i> Machine<'i> {
             named: Vec::new(),
             env: env.clone(),
             span,
+            field_tys,
         });
-        Ok(Control::Next(Ctrl::EvalExpr(first, env)))
+        match first_ty {
+            Some(ty) => Ok(Control::Next(Ctrl::EvalExprExpected(
+                first,
+                env,
+                Box::new(ty),
+            ))),
+            None => Ok(Control::Next(Ctrl::EvalExpr(first, env))),
+        }
     }
 
     /// Resolve a constructor whose arguments have all completed, exactly like
@@ -2775,6 +2987,7 @@ impl<'i> Machine<'i> {
                 name,
                 value,
                 mutable,
+                ann,
                 ..
             } => {
                 self.kont.push(Cont::LetBind {
@@ -2782,18 +2995,36 @@ impl<'i> Machine<'i> {
                     mutable: *mutable,
                     env: env.clone(),
                 });
-                Ok(Control::Next(Ctrl::EvalExpr(
-                    Arc::new(value.clone()),
-                    env.clone(),
-                )))
+                // An annotated binding realizes a bracket literal under its
+                // Array annotation (the ONE contextual seam, §16).
+                match ann {
+                    Some(a) => Ok(Control::Next(Ctrl::EvalExprExpected(
+                        Arc::new(value.clone()),
+                        env.clone(),
+                        Box::new(crate::types::Ty::from_expr_lenient(a)),
+                    ))),
+                    None => Ok(Control::Next(Ctrl::EvalExpr(
+                        Arc::new(value.clone()),
+                        env.clone(),
+                    ))),
+                }
             }
             Stmt::Return(value, _) => match value {
                 Some(e) => {
                     self.kont.push(Cont::ReturnFrom);
-                    Ok(Control::Next(Ctrl::EvalExpr(
-                        Arc::new(e.clone()),
-                        env.clone(),
-                    )))
+                    // A `return` under a declared Array return type realizes a
+                    // bracket literal as an Array (§48).
+                    match self.current_ret_ty() {
+                        Some(ty) => Ok(Control::Next(Ctrl::EvalExprExpected(
+                            Arc::new(e.clone()),
+                            env.clone(),
+                            Box::new(ty),
+                        ))),
+                        None => Ok(Control::Next(Ctrl::EvalExpr(
+                            Arc::new(e.clone()),
+                            env.clone(),
+                        ))),
+                    }
                 }
                 None => Ok(Control::Next(Ctrl::Done(Ctl::Return(Value::None)))),
             },
@@ -2935,6 +3166,13 @@ impl<'i> Machine<'i> {
             scoped,
         });
         Ok(Control::Next(Ctrl::EvalStmt(stmt, local)))
+    }
+
+    /// The declared return type of the innermost user frame, if any. Used so a
+    /// bracket literal in a `return` realizes under the declared Array type
+    /// (§48); `main` and natives have none.
+    fn current_ret_ty(&self) -> Option<crate::types::Ty> {
+        self.frames.last().and_then(|f| f.closure.ret_ty.clone())
     }
 
     /// Push a user frame, enforcing the 512/513 contract (`§17`).
@@ -3687,6 +3925,7 @@ mod tests {
             name: "f".to_string(),
             params: Vec::new(),
             param_tys: Vec::new(),
+            ret_ty: None,
             body: Arc::from(Vec::<Stmt>::new()),
             env: globals.clone(),
         });
@@ -3722,6 +3961,7 @@ mod tests {
             name: "f".to_string(),
             params: Vec::new(),
             param_tys: Vec::new(),
+            ret_ty: None,
             body: Arc::from(Vec::<Stmt>::new()),
             env: globals.clone(),
         });
@@ -3750,6 +3990,7 @@ mod tests {
             name: "f".to_string(),
             params: Vec::new(),
             param_tys: Vec::new(),
+            ret_ty: None,
             body: Arc::from(Vec::<Stmt>::new()),
             env: globals.clone(),
         });
@@ -4459,6 +4700,7 @@ mod tests {
             name: "main".to_string(),
             params: Vec::new(),
             param_tys: Vec::new(),
+            ret_ty: None,
             body: Arc::from(vec![Stmt::Expr(e, Span::default())]),
             env: globals,
         });
@@ -4754,6 +4996,7 @@ mod tests {
             name: "main".to_string(),
             params: Vec::new(),
             param_tys: Vec::new(),
+            ret_ty: None,
             body: Arc::from(vec![Stmt::Expr(e, Span::default())]),
             env: globals,
         });
@@ -4966,6 +5209,7 @@ mod tests {
             name: "main".to_string(),
             params: Vec::new(),
             param_tys: Vec::new(),
+            ret_ty: None,
             body: Arc::from(vec![Stmt::Expr(e, Span::default())]),
             env: globals,
         });
