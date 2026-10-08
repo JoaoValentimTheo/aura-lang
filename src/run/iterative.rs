@@ -4515,13 +4515,26 @@ mod tests {
     }
 
     #[test]
-    fn tuple_is_list_sugar() {
-        // `(a, b)` is list sugar (`LANGUAGE_SPEC.md` §21): a list value,
-        // indistinguishable from `[a, b]` (type `list`, same contents).
-        let vals = run_list(&tuple(vec![lit(1), lit(2)]));
-        assert_eq!(vals.len(), 2);
-        assert!(matches!(vals[0], Value::Int(1)));
-        assert!(matches!(vals[1], Value::Int(2)));
+    fn tuple_is_a_distinct_value_kind() {
+        // Keystone §26: `(a, b)` is a genuine Tuple, not list sugar, and is a
+        // distinct runtime value kind from `[a, b]`.
+        match run_expr(&tuple(vec![lit(1), lit(2)])) {
+            Ok(Ctl::Val(v)) => match &v {
+                Value::Tuple(items) => {
+                    assert_eq!(items.len(), 2);
+                    assert!(matches!(items[0], Value::Int(1)));
+                    assert!(matches!(items[1], Value::Int(2)));
+                }
+                other => panic!(
+                    "a tuple literal must produce a tuple, got {}",
+                    other.type_name()
+                ),
+            },
+            Ok(_) => {
+                panic!("a tuple literal must produce Value::Tuple, got a non-value completion")
+            }
+            Err(d) => panic!("a tuple literal must produce Value::Tuple, got {}", d.code),
+        }
     }
 
     #[test]

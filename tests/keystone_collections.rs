@@ -196,6 +196,9 @@ fn set_elements_must_be_key_capable() {
 
 // -------------------------------------------------------------------- JSON
 
+// `json_decode`/`json_decode_as` are feature-gated, so this test runs only when
+// the `json` feature is enabled (it is in the default and canonical configs).
+#[cfg(feature = "json")]
 #[test]
 fn typed_json_preserves_requested_collection_identity() {
     // Typed decode with `[T; N]` produces an Array; dynamic decode a List.
