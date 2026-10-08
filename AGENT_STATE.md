@@ -16,9 +16,9 @@ before continuing substantial work.
 - Local/remote relationship: authoritative value is `git rev-list
   --left-right --count origin/rewrite/v3-rust...HEAD`; a tracked file cannot
   safely hardcode its own position. At the 2026-10-08 final-collection
-  checkpoint the local tip is **10 ahead / 0 behind** `b221e6a9` (the three
-  prior parser/docs commits, the semicolon/range/archival trio, the collection
-  identity commit `d0ff3076`, and the docs finalize commit `86eb6925`; see the
+  checkpoint the local tip is `b1a2acb6`, **23 ahead / 0 behind** `b221e6a9`
+  (the prior parser/docs commits, the semicolon/range/archival trio, the
+  collection identity + docs commits, and the closure fixes; see the
   canonicalization section below).
 - **Remote CI at `b221e6a9` is RED** (run `37639795923`): the
   `playground (wasm runtime)` job fails in `b1_boundary.test.mjs` (44/19) with
@@ -419,6 +419,17 @@ Commits so far:
 
 Frozen `0.0.2`/`0.2.0`/`0.2.1` verified byte-identical (hashes match the table
 above); `v0.2.1` tag unmoved at `3f5f8702`.
+
+**Closure validation (2026-10-08, local green — not GitHub CI).** all-features
+`scripts/validate.py` **58/58 PASS**, 0 FAIL, 0 TIMEOUT (observable/sharded;
+no opaque multi-hour wait). Also green: lib all-features 167/0 and bare 124/0;
+canonical `cli,repl,json,regex,time`; MSRV `+1.83.0 check --all-features`;
+nightly `fuzz` check; playground (differential 233/0, syntax conformance
+65/65 incl. array/tuple/set, boundary 63/0, browser 98/0); website (examples
+22/0, links 2500 OK, a11y 70/0, browser 380/0, cross-release 51/0 ×6 runtimes);
+fmt + clippy `-D warnings` clean. Three real defects were found by this
+validation and fixed with regressions (callback-routing tripwire,
+language-metadata inventory, receiver-borrow snapshot).
 
 ## Exact Next Action
 
