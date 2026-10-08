@@ -404,6 +404,12 @@ Commits so far:
   ADR-0005, LANGUAGE_SPEC §5.1/§5.4/§21 rewrite, grammar + website mirror,
   guide-collections, one-element-tuple repr `(1,)`, resumable callback methods
   on Array/Tuple, migrated superseded tests, regenerated four oracle goldens.
+- `c640fc64` **refactor(stdlib): route array/tuple callbacks through one
+  resumable body.** The `production_routing` tripwire correctly rejected the
+  first cut (it had introduced a second set of recursive callback sites); the
+  three sequence kinds now share one `sequence_callback_method` body, so
+  exactly three `call_value_pub` sites remain. Also added Set `add` to the
+  front-end language metadata (`language_metadata` tripwire).
 
 Frozen `0.0.2`/`0.2.0`/`0.2.1` verified byte-identical (hashes match the table
 above); `v0.2.1` tag unmoved at `3f5f8702`.
