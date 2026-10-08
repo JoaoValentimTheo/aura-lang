@@ -437,6 +437,9 @@ impl Ty {
             Ty::String => &[TypeFamily::Scalar, TypeFamily::Sequence],
             Ty::List(_) => &[TypeFamily::Sequence],
             Ty::Map(_, _) => &[TypeFamily::Mapping],
+            // A range is the dynamic `Ty::Named("range")` marker; it is a
+            // `RangeLike` capability, never a nominal `Object` (§5.4).
+            Ty::Named(n) if n == "range" => &[TypeFamily::RangeLike],
             Ty::Named(_) => &[TypeFamily::Object],
             Ty::Enum(_) | Ty::Union(_) | Ty::Never => &[TypeFamily::Sum],
             Ty::None => &[TypeFamily::Nullish],
@@ -466,6 +469,7 @@ impl Ty {
             Ty::String => "string",
             Ty::List(_) => "list",
             Ty::Map(_, _) => "map",
+            Ty::Named(n) if n == "range" => "range",
             Ty::Named(_) => "struct",
             Ty::Enum(_) => "enum",
             Ty::None => "none",

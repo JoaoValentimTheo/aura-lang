@@ -338,6 +338,23 @@ fn a_union_type_records_the_mixed_element_kinds_rather_than_collapsing() {
 }
 
 #[test]
+fn a_range_projects_range_like_and_never_object() {
+    // §5.4: a range's static carrier is the dynamic `Ty::Named("range")`
+    // marker; its family is `range_like` and its value kind is `range`. It must
+    // never project as a nominal `object`/`struct` (a pure projection defect
+    // with no runtime symptom).
+    use aura::types::{Ty, TypeFamily};
+    let range = Ty::Named("range".to_string());
+    assert_eq!(range.families(), &[TypeFamily::RangeLike]);
+    assert_eq!(range.family(), TypeFamily::RangeLike);
+    assert_eq!(range.value_kind(), "range");
+    // A real struct name still projects `object`/`struct`.
+    let user = Ty::Named("User".to_string());
+    assert_eq!(user.families(), &[TypeFamily::Object]);
+    assert_eq!(user.value_kind(), "struct");
+}
+
+#[test]
 fn ordering_is_defined_only_for_scalars_and_never_across_kinds() {
     // §12: no lexicographic ordering for lists/maps/structs/enums/ranges.
     // Equality across kinds is `false` rather than an error, but *ordering*

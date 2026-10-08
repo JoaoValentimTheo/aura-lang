@@ -388,16 +388,22 @@ fn project_ty(t: &crate::types::Ty) -> (Vec<String>, Option<String>, Vec<String>
     //   mutation     is shared for list, map, and struct fields
     //   ordering     is defined for int, float, bool, string
     let mut caps: Vec<String> = Vec::new();
-    if matches!(t, Ty::String | Ty::List(_) | Ty::Map(_, _) | Ty::Named(_)) {
+    if matches!(t, Ty::String | Ty::List(_) | Ty::Map(_, _))
+        || matches!(t, Ty::Named(n) if n != "range")
+    {
         caps.push("indexable".into());
     }
-    if matches!(t, Ty::String | Ty::List(_) | Ty::Map(_, _)) {
+    if matches!(t, Ty::String | Ty::List(_) | Ty::Map(_, _))
+        || matches!(t, Ty::Named(n) if n == "range")
+    {
         caps.push("iterable".into());
     }
-    if matches!(t, Ty::String | Ty::List(_) | Ty::Map(_, _)) {
+    if matches!(t, Ty::String | Ty::List(_) | Ty::Map(_, _))
+        || matches!(t, Ty::Named(n) if n == "range")
+    {
         caps.push("sized".into());
     }
-    if matches!(t, Ty::List(_) | Ty::Map(_, _) | Ty::Named(_)) {
+    if matches!(t, Ty::List(_) | Ty::Map(_, _)) || matches!(t, Ty::Named(n) if n != "range") {
         caps.push("mutable".into());
     }
     if matches!(t, Ty::Int | Ty::Float | Ty::Bool | Ty::String) {
