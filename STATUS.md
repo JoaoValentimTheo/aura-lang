@@ -1976,3 +1976,38 @@ native/WASM host boundaries, and the stdout/input/host resource policy are
 verified; no unexplained recursive production seam; no further runtime/WASM
 edge required before Pre-0.3. The closure commits are local only; one explicit
 human push authorization is required.
+
+## 2026-10-08 — Aura 0.3 Keystone final collection model (LOCAL, UNPUSHED)
+
+Continuation of the 2026-10-08 canonicalization campaign. The human reopened
+the collection model: `List`, `Array`, `Tuple`, `Set`, and `Map` must be
+distinct semantic identities. Implemented end-to-end and atomically on the
+local branch (unpushed; remote remains `b221e6a9`):
+
+- **Semicolon.** General statement/item sequencing removed; `;` is reserved and
+  now serves only the Array type grammar. `let a = 1; let b = 2` is `E1006`.
+- **Array.** `[T; N]` is a fixed-length sequence; `N` is a compile-time
+  non-negative integer literal (bounded). The bracket literal `[a, b]` is a
+  List by default and realizes as an Array only under an expected `[T; N]`,
+  through one checker seam and one runtime seam per engine. There is no
+  implicit List↔Array conversion; a length or element mismatch is static. This
+  is contextual literal typing, not a general conversion engine.
+- **Tuple.** `(a, b)` is a real Tuple (supersedes the list-sugar absorption);
+  heterogeneous, fixed-length, immutable; distinct tuple patterns.
+- **Set.** `{a, b}` / `set{}` with the `SetLike` family; key-capable members;
+  deterministic order; duplicate literal members collapse; duplicate typed-JSON
+  members are `E4031`.
+- **Supporting.** `Ty`/`Value`/`TypeFamily`/`TypeClass`, equality (same-kind
+  only), indexing, iteration, mutation, patterns, repr, JSON typed decode,
+  AIS type/family/value_kind/capabilities, and resumable callback methods all
+  updated. ADR-0005 and spec §21 revised; grammar + website mirrors synced.
+- **Validation tooling.** `scripts/validate.py` adds an observable, sharded,
+  resumable validator (the macOS first-exec cost is now visible per target).
+- **Evidence.** Focused suites and the collection matrix green; playground
+  native/WASM differential 233/0 with syntax conformance 65/65 (including the
+  new array/tuple/set cases); website suite green; frozen `0.0.2`/`0.2.0`/
+  `0.2.1` byte-identical; `v0.2.1` unmoved. The full sharded all-features
+  matrix is run via `scripts/validate.py` (see `AGENT_STATE.md`).
+
+**Outcome:** collection identities implemented; nothing pushed, tagged,
+released, or deployed. Human push authorization remains the gate.
