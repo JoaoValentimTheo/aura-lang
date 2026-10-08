@@ -97,3 +97,21 @@ language does not already define.
 * Unchanged precedent: `tests/maps.rs::json_does_not_stringify_non_string_keys`.
 * Normative text: `docs/LANGUAGE_SPEC.md`, JSON builtin notes.
 * Frozen artifacts: not modified; `playground/runtimes/0.2.1` bytes unchanged.
+
+## Addendum — new collection kinds (2026-10-08, Keystone collection model)
+
+ADR-0005 adds `Array`, `Tuple`, and `Set`. Their JSON behavior follows the same
+anti-collapse principle, stated in `docs/LANGUAGE_SPEC.md` §21:
+
+* **Encode.** `Array`, `Tuple`, and `Set` encode to a JSON array. This is an
+  accepted serialization, not an identity-preserving round-trip: a dynamic
+  decode of a JSON array yields a `List`, so the container identity is not
+  recovered without a typed target. Set order is its deterministic ascending
+  member order.
+* **Decode.** `json_decode` still yields only `List`/`Map` for arrays/objects.
+  `json_decode_as` with a target `[T; N]`, `(T, ...)`, or `{T}` restores the
+  requested identity; a length, arity, element, or (for a Set) duplicate-member
+  mismatch is `E4031`.
+* **No collapse.** A List, an Array, and a Tuple with the same contents encode
+  identically but remain distinct Aura values; typed decode is the only path
+  that restores which one is wanted. This is documented, not hidden.
