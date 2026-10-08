@@ -335,8 +335,12 @@ See `AGENT_STATE.md` for the exact SHAs and ahead/behind.
   element aborts the list and is redelivered unchanged (later elements are
   never scheduled); completed elements become `Value::list`. `Expr::Tuple`
   shares the list path because the recursive arm is byte-identical and
-  `LANGUAGE_SPEC.md` §21 freezes `(a, b)` as list sugar. No recursive AST
-  evaluation and no fallback.
+  `LANGUAGE_SPEC.md` §21 froze `(a, b)` as list sugar **at that time**. No
+  recursive AST evaluation and no fallback.
+  > **SUPERSEDED (2026-10-08):** the Keystone collection decision (ADR-0005)
+  > makes `Expr::Tuple` a distinct `Value::tuple`; `start_expr` now dispatches
+  > `Expr::List`/`Expr::Tuple`/`Expr::Set` to `start_seq`/`start_set`, and an
+  > `[a, b]` literal under an `[T; N]` expectation realizes a `Value::array`.
 - Oracle: new `tests/oracle/r3b4_golden.tsv` (LF-pinned; 37 supported cases)
   and differential tests `r3b4_list_supported_subset_agrees`,
   `iterative_list_unsupported_fails_explicitly`,
