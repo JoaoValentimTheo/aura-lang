@@ -1171,6 +1171,40 @@ mod tests {
     }
 
     #[test]
+    fn keystone_collection_identities_report_distinct_families_and_value_kinds() {
+        // §21/§39: List, Array, Tuple, and Set must each report a distinct
+        // value kind; the type/family/value-kind levels never collapse.
+        let src = "fn a() -> [int] { return [] }\n\
+                   fn b() -> [int; 2] { return [0, 0] }\n\
+                   fn c() -> (int, string) { return (0, \"x\") }\n\
+                   fn d() -> {int} { return {0} }\n";
+        let module = parse(src).expect("parses");
+        let doc = document("m.aura", src, &module);
+        let sym = |n: &str| {
+            doc.symbols
+                .iter()
+                .find(|s| s.name == n)
+                .unwrap_or_else(|| panic!("{n} declared"))
+        };
+        assert_eq!(sym("a").value_kind.as_deref(), Some("list"));
+        assert_eq!(sym("b").value_kind.as_deref(), Some("array"));
+        assert_eq!(sym("c").value_kind.as_deref(), Some("tuple"));
+        assert_eq!(sym("d").value_kind.as_deref(), Some("set"));
+        // Array/Tuple are `sequence`; Set is `set_like`.
+        assert_eq!(sym("b").families, vec!["sequence"]);
+        assert_eq!(sym("c").families, vec!["sequence"]);
+        assert_eq!(sym("d").families, vec!["set_like"]);
+        // Array reports fixed_length + mutable_elements; Tuple fixed_length
+        // without mutation; Set mutable_membership and not indexable.
+        assert!(sym("b").capabilities.contains(&"fixed_length".to_string()));
+        assert!(sym("b").capabilities.contains(&"mutable_elements".to_string()));
+        assert!(sym("c").capabilities.contains(&"fixed_length".to_string()));
+        assert!(!sym("c").capabilities.contains(&"mutable".to_string()));
+        assert!(sym("d").capabilities.contains(&"mutable_membership".to_string()));
+        assert!(!sym("d").capabilities.contains(&"indexable".to_string()));
+    }
+
+    #[test]
     fn a_string_symbol_is_scalar_and_sequence_but_its_value_kind_is_string() {
         let src = "fn name() -> string { return \"x\" }\n";
         let module = parse(src).expect("parses");
