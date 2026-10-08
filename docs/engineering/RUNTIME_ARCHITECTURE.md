@@ -93,6 +93,7 @@ evaluate an AST node**: `Interp::binary`, `index_get`, `field_get`, `method`,
 |---|---|---|
 | Entry into execution | `on_execution_stack` gives a dedicated 64 MiB stack | runs inline (no thread, no stack knob) |
 | Parser recursion budget | 2048 | 768 (calibrated below the engine ceiling) |
+| Parser grouping backstop (pure parentheses) | 2048 | 192 (a grouping level costs several frames; measured ceiling 262) |
 | Host | `StdHost`/`LimitedHost`/custom | `LimitedHost`/`BrowserHost` |
 | stdout | process stdout (unbounded) | capture buffer (1 MiB policy bound) |
 | fs/clock/sleep | available by default | `E5002` |

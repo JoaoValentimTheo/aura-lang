@@ -561,20 +561,21 @@ sync test (documented as non-authoritative; runtime refusal is the decision).
 
 ## Exact next action
 
-0. **Aura 0.3 Keystone closure range is pushed through `b221e6a9`; remote CI
-   is RED at that SHA.** The `never`/`none`/narrowing checker was hardened
-   across five adversarial review passes (J1–J12 in `KEYSTONE_JEV_LEDGER.md`);
-   the type-family/value-algebra/AIS/MCP/dogfood/FSM work is landed. The local
-   tip is **2 commits ahead** of the remote (`04783231`, `e7505408`): the
-   parser wasm-safety fix that repairs the red `playground (wasm runtime)` job.
-   On the local tip the full matrix is green (native all-features 57 suites +
-   166 lib; bare and canonical 57+57 with lib 124/166; clippy both configs,
-   fmt, MSRV 1.83, nightly fuzz check; playground differential 233/0, browser
-   98/0, worker 12/0, **fresh-wasm boundary 63/0**; website browser 380/0,
-   a11y 70/0, links 2499 OK). **Exact next action:** request explicit human
-   authorization to push the 2-commit repair, then push normally (never force)
-   and verify the exact pushed SHA in CI. Preserve frozen runtimes, `v0.2.1`,
-   `.kilo/**`, and the main oracle golden.
+0. **Aura 0.3 Keystone canonicalization campaign (2026-10-08, LOCAL, UNPUSHED).**
+   Local tip `36c3d49f`, **6 ahead / 0 behind** remote `b221e6a9`. The three
+   campaign commits: `d5bb2fbd` remove general semicolon statement/item
+   sequencing (human override; `;` reserved); `49ef5298` project dynamic
+   ranges as `range_like`/`range`, not `object`/`struct` (§5.4); `36c3d49f`
+   archive historical docs to `docs/archive/` + add
+   `docs/engineering/COLLECTION_MODEL_DECISION_PACKAGE.md`. **No collection
+   syntax was implemented** (no historical Set/Array evidence; the Array
+   `N`/`T` meaning is the blocking human question). Frozen runtimes verified
+   byte-identical; `v0.2.1` unmoved. **Nothing pushed.** Sharded focused
+   validation is green; the monolithic all-features run was user-interrupted
+   and must be re-run sharded before any push (TD-21). **Exact next action:**
+   the human decides (a) whether to authorize a push of the now-6-commit range
+   (a push deploys the site — confirm), and (b) the collection-model decision
+   package. Do not push without explicit authorization.
 
 1. B-1 and the post-B1 runtime/WASM edge closure are **remotely closed**. The
    Pre-0.3 Foundation super-transaction and the 2026-10-06 adversarial re-audit

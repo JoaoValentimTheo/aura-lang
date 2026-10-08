@@ -63,6 +63,7 @@ this transaction.
 |---|---|---|---|
 | AST/type/module nesting (`MAX_AST_DEPTH`) | 256 | `E1015` | all |
 | Parser recursion budget | 2048 native / 768 wasm | `E1015` | calibrated |
+| Parser grouping backstop (pure parentheses) | 2048 native / 192 wasm | `E1015` | calibrated below the measured engine ceiling |
 | Call frames (`MAX_CALL_FRAMES`) | 512 | `E4011` | all |
 | Range materialization | 10,000,000 | `E4013` | all |
 | Format precision | u16::MAX | `E4013` | all |

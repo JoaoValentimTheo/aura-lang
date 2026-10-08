@@ -28,6 +28,7 @@ Every open item was classified for the Aura 0.3 Keystone closure:
 
 | Item | Classification |
 |---|---|
+| TD-22 (interrupted monolithic validation) | **LOCAL VALIDATION GAP, NOT A DEFECT** — the 2026-10-08 canonicalization campaign's single `cargo test --locked --all-features` run was user-stopped after ~50 min (repeated macOS first-exec cost across relinked binaries). All semicolon- and range-affected suites were re-run sharded and are green (syntax_conformance 21/0, syntax_gaps 6/0, corpus 2/0, grammar 6/0, parser 48/0, boundaries 35/0, run 63/0, checker 55/0, contract 11/0, regressions 72/0, compat 17/0, examples 1/0, syntax_docs 3/0, language_metadata 6/0, evaluator_oracle 48/0, keystone_value_algebra 18/0, ais_properties 10/0, modules 20/0, io 20/0; fmt + clippy `-D warnings` clean). Re-run the full matrix sharded via the watchdog before any push. | 
 | TD-21 (optionality permissiveness) | **REAL DEFECT IN THE KEYSTONE CONTRACT — FIXED** (`7959487`); deleted from this register |
 | TD-20 (ungated feature tests) | **REAL DEFECT IN THE KEYSTONE VALIDATION SURFACE — FIXED** (`6bec6e3`); closed |
 | TD-08 (`s` root artifact) | **STALE — ALREADY FIXED** by the hermetic host; closed |
