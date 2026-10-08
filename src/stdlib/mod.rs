@@ -660,9 +660,13 @@ fn list_method(
             out.reverse();
             Ok(Value::list(out))
         }
-        "map" => sequence_callback_method(it, l.borrow().clone(), name, &args, span),
-        "filter" => sequence_callback_method(it, l.borrow().clone(), name, &args, span),
-        "reduce" => sequence_callback_method(it, l.borrow().clone(), name, &args, span),
+        "map" | "filter" | "reduce" => {
+            // Snapshot into a local **before** running the callback: the borrow
+            // must end (the `;`) so a callback that mutates this same list does
+            // not hit "RefCell already borrowed".
+            let snapshot = l.borrow().clone();
+            sequence_callback_method(it, snapshot, name, &args, span)
+        }
         _ => Err(no_method("list", name, span)),
     }
 }
@@ -752,7 +756,8 @@ fn array_method(
             Ok(Value::Bool(l.borrow().iter().any(|v| v.equals(needle))))
         }
         "map" | "filter" | "reduce" => {
-            sequence_callback_method(it, l.borrow().clone(), name, &args, span)
+            let snapshot = l.borrow().clone();
+            sequence_callback_method(it, snapshot, name, &args, span)
         }
         _ => Err(no_method("array", name, span)),
     }
@@ -775,7 +780,8 @@ fn tuple_method(
             Ok(Value::Bool(t.iter().any(|v| v.equals(needle))))
         }
         "map" | "filter" | "reduce" => {
-            sequence_callback_method(it, (**t).clone(), name, &args, span)
+            let snapshot = (**t).clone();
+            sequence_callback_method(it, snapshot, name, &args, span)
         }
         _ => Err(no_method("tuple", name, span)),
     }
