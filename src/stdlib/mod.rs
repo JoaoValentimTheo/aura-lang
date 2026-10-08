@@ -660,20 +660,39 @@ fn list_method(
             out.reverse();
             Ok(Value::list(out))
         }
+        "map" => sequence_callback_method(it, l.borrow().clone(), name, &args, span),
+        "filter" => sequence_callback_method(it, l.borrow().clone(), name, &args, span),
+        "reduce" => sequence_callback_method(it, l.borrow().clone(), name, &args, span),
+        _ => Err(no_method("list", name, span)),
+    }
+}
+
+/// The shared body of the callback-taking sequence methods `map`, `filter`, and
+/// `reduce`. It is the **only** place the standard library invokes a callback
+/// through the recursive `call_value_pub` adapter (three sites, asserted by
+/// `tests/production_routing.rs`); the resumable machine path is the separate
+/// `resumable_method`. `items` is a snapshot, so mutating the receiver during
+/// iteration cannot change what is visited.
+fn sequence_callback_method(
+    it: &mut Interp,
+    items: Vec<Value>,
+    name: &str,
+    args: &[Value],
+    span: Span,
+) -> Result<Value> {
+    match name {
         "map" => {
-            let f = arg(&args, 0, "map", span)?.clone();
-            let snapshot = l.borrow().clone();
-            let mut out = Vec::with_capacity(snapshot.len());
-            for item in snapshot {
+            let f = arg(args, 0, "map", span)?.clone();
+            let mut out = Vec::with_capacity(items.len());
+            for item in items {
                 out.push(it.call_value_pub(f.clone(), vec![item], span)?);
             }
             Ok(Value::list(out))
         }
         "filter" => {
-            let f = arg(&args, 0, "filter", span)?.clone();
-            let snapshot = l.borrow().clone();
+            let f = arg(args, 0, "filter", span)?.clone();
             let mut out = Vec::new();
-            for item in snapshot {
+            for item in items {
                 let keep = it.call_value_pub(f.clone(), vec![item.clone()], span)?;
                 if keep.truthy() {
                     out.push(item);
@@ -682,15 +701,14 @@ fn list_method(
             Ok(Value::list(out))
         }
         "reduce" => {
-            let f = arg(&args, 0, "reduce", span)?.clone();
-            let mut acc = arg(&args, 1, "reduce", span)?.clone();
-            let snapshot = l.borrow().clone();
-            for item in snapshot {
+            let f = arg(args, 0, "reduce", span)?.clone();
+            let mut acc = arg(args, 1, "reduce", span)?.clone();
+            for item in items {
                 acc = it.call_value_pub(f.clone(), vec![acc, item], span)?;
             }
             Ok(acc)
         }
-        _ => Err(no_method("list", name, span)),
+        _ => Err(no_method("sequence", name, span)),
     }
 }
 
@@ -733,35 +751,8 @@ fn array_method(
             let needle = arg(&args, 0, "contains", span)?;
             Ok(Value::Bool(l.borrow().iter().any(|v| v.equals(needle))))
         }
-        "map" => {
-            let f = arg(&args, 0, "map", span)?.clone();
-            let snapshot = l.borrow().clone();
-            let mut out = Vec::with_capacity(snapshot.len());
-            for item in snapshot {
-                out.push(it.call_value_pub(f.clone(), vec![item], span)?);
-            }
-            Ok(Value::list(out))
-        }
-        "filter" => {
-            let f = arg(&args, 0, "filter", span)?.clone();
-            let snapshot = l.borrow().clone();
-            let mut out = Vec::new();
-            for item in snapshot {
-                let keep = it.call_value_pub(f.clone(), vec![item.clone()], span)?;
-                if keep.truthy() {
-                    out.push(item);
-                }
-            }
-            Ok(Value::list(out))
-        }
-        "reduce" => {
-            let f = arg(&args, 0, "reduce", span)?.clone();
-            let mut acc = arg(&args, 1, "reduce", span)?.clone();
-            let snapshot = l.borrow().clone();
-            for item in snapshot {
-                acc = it.call_value_pub(f.clone(), vec![acc, item], span)?;
-            }
-            Ok(acc)
+        "map" | "filter" | "reduce" => {
+            sequence_callback_method(it, l.borrow().clone(), name, &args, span)
         }
         _ => Err(no_method("array", name, span)),
     }
@@ -783,32 +774,8 @@ fn tuple_method(
             let needle = arg(&args, 0, "contains", span)?;
             Ok(Value::Bool(t.iter().any(|v| v.equals(needle))))
         }
-        "map" => {
-            let f = arg(&args, 0, "map", span)?.clone();
-            let mut out = Vec::with_capacity(t.len());
-            for item in t.iter() {
-                out.push(it.call_value_pub(f.clone(), vec![item.clone()], span)?);
-            }
-            Ok(Value::list(out))
-        }
-        "filter" => {
-            let f = arg(&args, 0, "filter", span)?.clone();
-            let mut out = Vec::new();
-            for item in t.iter() {
-                let keep = it.call_value_pub(f.clone(), vec![item.clone()], span)?;
-                if keep.truthy() {
-                    out.push(item.clone());
-                }
-            }
-            Ok(Value::list(out))
-        }
-        "reduce" => {
-            let f = arg(&args, 0, "reduce", span)?.clone();
-            let mut acc = arg(&args, 1, "reduce", span)?.clone();
-            for item in t.iter() {
-                acc = it.call_value_pub(f.clone(), vec![acc, item.clone()], span)?;
-            }
-            Ok(acc)
+        "map" | "filter" | "reduce" => {
+            sequence_callback_method(it, (**t).clone(), name, &args, span)
         }
         _ => Err(no_method("tuple", name, span)),
     }
@@ -872,9 +839,12 @@ fn map_method(
         "values" => Ok(Value::list(m.borrow().values().cloned().collect())),
         "items" => {
             // Eager, non-mutating snapshot: each entry is a two-element list
-            // `[key, value]` (Aura has no tuple type), in canonical ascending
-            // key order, matching map iteration. The result is a fresh list of
-            // fresh pair lists, so later mutation of the map does not affect it.
+            // `[key, value]`, in canonical ascending key order, matching map
+            // iteration. Aura has tuples, but `items()` keeps the established
+            // two-element-list spelling so existing `for [k, v] in m.items()`
+            // patterns (and the released behavior) are unchanged. The result is
+            // a fresh list of fresh pair lists, so later mutation of the map
+            // does not affect it.
             let pairs = m
                 .borrow()
                 .iter()

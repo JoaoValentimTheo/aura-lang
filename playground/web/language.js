@@ -41,10 +41,10 @@ export const BUILTINS = [
 
 // STANDARD METHODS — `aura::stdlib::signatures::methods()`.
 export const METHODS = [
-  "chars", "contains", "ends_with", "filter", "first", "get", "has", "items",
-  "join", "keys", "last", "len", "lower", "map", "pop", "push", "reduce",
-  "remove", "replace", "reverse", "sort", "split", "starts_with", "trim",
-  "upper", "values",
+  "add", "chars", "contains", "ends_with", "filter", "first", "get", "has",
+  "items", "join", "keys", "last", "len", "lower", "map", "pop", "push",
+  "reduce", "remove", "replace", "reverse", "sort", "split", "starts_with",
+  "trim", "upper", "values",
 ];
 
 export const KEYWORD_SET = new Set(KEYWORDS);
