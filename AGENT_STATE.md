@@ -410,6 +410,12 @@ Commits so far:
   three sequence kinds now share one `sequence_callback_method` body, so
   exactly three `call_value_pub` sites remain. Also added Set `add` to the
   front-end language metadata (`language_metadata` tripwire).
+- `f512913b` **fix(stdlib): end the receiver borrow before running a sequence
+  callback.** The shared `sequence_callback_method` was invoked with
+  `l.borrow().clone()` as an argument, keeping the `RefCell` borrow across the
+  callback; a callback that mutated its own receiver panicked. The snapshot is
+  now bound to a local first (matching the established snapshot semantics).
+  Found by `evaluator_oracle` (`callback/callback_list_snapshot`).
 
 Frozen `0.0.2`/`0.2.0`/`0.2.1` verified byte-identical (hashes match the table
 above); `v0.2.1` tag unmoved at `3f5f8702`.
