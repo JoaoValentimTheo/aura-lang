@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 //! Regression tests for the defects catalogued in
-//! `docs/ARCHITECTURE_REVIEW.md`.
+//! `docs/archive/ARCHITECTURE_REVIEW.md`.
 //!
 //! Each test names the finding it locks down, so a future regression is
 //! traceable to the review that demanded the fix.
@@ -142,7 +142,7 @@ fn f10_python_boundary_rejects_lossy_values() {
 }
 
 // ---------------------------------------------------------------------------
-// B1–B6: findings from `docs/SEMANTIC_FREEZE_AUDIT.md`.
+// B1–B6: findings from `docs/archive/SEMANTIC_FREEZE_AUDIT.md`.
 // ---------------------------------------------------------------------------
 
 /// B1: `%` by zero is `E4007` on both int and float, including `-0.0`; valid

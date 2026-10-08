@@ -50,7 +50,8 @@ Semantics and safety: `EXCEPTION_ARCHITECTURE.md`,
 `FUTURE_EXTENSION_BOUNDARIES.md`.
 
 Boundaries and interfaces: `HTTP_ARCHITECTURE.md`, `EMBEDDED_PYTHON_ARCHITECTURE.md`,
-`AIS.md`, `MCP.md`, `DX_AIX.md`, `JSON_VALUE_ALGEBRA_DECISION.md`.
+`AIS.md`, `MCP.md`, `DX_AIX.md`, `JSON_VALUE_ALGEBRA_DECISION.md`,
+`COLLECTION_MODEL_DECISION_PACKAGE.md` (open human decision).
 
 Process: `AURA_ENGINEERING_ORG.md`, `RELEASE_ENGINEERING.md`,
 `TOOLING_RECONCILIATION.md`, `REVIEW_RECORD_T0_T5.md`,
@@ -61,29 +62,30 @@ Process: `AURA_ENGINEERING_ORG.md`, `RELEASE_ENGINEERING.md`,
 These record decisions, audits, and reports from earlier programs. They are
 preserved because AGENTS.md requires historical artifacts to be retained and
 because a future reconstruction may need them. They MUST NOT be treated as
-current semantics:
+current semantics. **They now live under `docs/archive/`** (see
+`docs/archive/README.md`); the paths below are relative to `docs/archive/`:
 
-- `docs/CONFORMANCE_PHASE1..12.md`, `docs/CONFORMANCE_FINAL.md` — the
+- `CONFORMANCE_PHASE1..12.md`, `CONFORMANCE_FINAL.md` — the
   historical conformance audit series (`CONFORMANCE_PHASE<N>`).
-- `docs/FEATURE_001..006_*`, `docs/FEATURE_H1_*`, `docs/FEATURE_ROADMAP.md` —
+- `FEATURE_001..006_*`, `FEATURE_H1_*`, `FEATURE_ROADMAP.md` —
   the `FEATURE_<NNN>` development series.
-- `docs/AUDIT3_TYPE_NESTING_DECISION.md`, `docs/B1R3A_AST_SHARING_DECISION.md`,
-  `docs/HD1_MODULE_MEMBER_BUILTIN_NAMES_DECISION.md`,
-  `docs/WASM_CALL_FRAME_LIMIT_DECISION.md` — decision packages; superseded by
-  their accepted ADRs where one exists.
-- `docs/SEMANTIC_CLOSURE_REPORT.md`, `docs/SEMANTIC_FREEZE_AUDIT.md`,
-  `docs/LANGUAGE_SPEC_CONFORMANCE_REPORT.md`,
-  `docs/FINAL_SEMANTIC_RED_TEAM_REPORT.md`, `docs/ARCHITECTURE_REVIEW.md`,
-  `docs/AURA_TOTAL_HARDENING_INDEPENDENT_REVIEW.md`,
-  `docs/POST_FEATURE_002_STACK_AUDIT.md`, `docs/PRE_MODULES_AUDIT.md`,
-  `docs/CORE_FREEZE.md`, `docs/CORRECTIONS.md` — completed audit and freeze
+- `AUDIT3_TYPE_NESTING_DECISION.md`, `HD1_MODULE_MEMBER_BUILTIN_NAMES_DECISION.md`,
+  `WASM_CALL_FRAME_LIMIT_DECISION.md` — decision packages; superseded by
+  their accepted ADRs where one exists. (`B1R3A_AST_SHARING_DECISION.md` and
+  `WASM_CALL_FRAME_LIMIT_DECISION.md` remain in `docs/` while `src/` and the
+  playground cite them.)
+- `SEMANTIC_CLOSURE_REPORT.md`, `SEMANTIC_FREEZE_AUDIT.md`,
+  `LANGUAGE_SPEC_CONFORMANCE_REPORT.md`,
+  `FINAL_SEMANTIC_RED_TEAM_REPORT.md`, `ARCHITECTURE_REVIEW.md`,
+  `AURA_TOTAL_HARDENING_INDEPENDENT_REVIEW.md`,
+  `POST_FEATURE_002_STACK_AUDIT.md`, `PRE_MODULES_AUDIT.md`,
+  `CORE_FREEZE.md`, `CORRECTIONS.md` — completed audit and freeze
   reports.
-- Root-level `AURA_*.md` (`AURA_COMPLETENESS_MATRIX.md`,
-  `AURA_COMPLETION_*.md`, `AURA_ENGINEERING_*.md`, `AURA_ROAD_TO_V1.md`,
-  `AURA_V1_READINESS.md`, `IMPLEMENT.md`) — completion and readiness snapshots
-  from earlier checkpoints.
-- `docs/RELEASE_0_0_X_DESIGN.md`, `docs/MIGRATION_0_2_1.md` — release history
-  and migration guidance for shipped versions.
+- `RELEASE_0_0_X_DESIGN.md` — historical release-hardening design.
+  (`MIGRATION_0_2_1.md` remains in `docs/` as current migration guidance.)
+- `AURA_*.md` / `IMPLEMENT.md` — earlier planning, completion, and readiness
+  snapshots that used to sit at the repository root; the root now holds only
+  current-authority files.
 
 ## Superseded
 

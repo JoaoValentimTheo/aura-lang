@@ -1370,7 +1370,7 @@ impl Resolver {
                     // disambiguated downstream — it would silently build the
                     // struct. Reject rather than resolve to the wrong value.
                     // (The genuinely ambiguous namespace question is recorded
-                    // as a SPEC GAP in `docs/CONFORMANCE_PHASE2.md`.)
+                    // as a SPEC GAP in `docs/archive/CONFORMANCE_PHASE2.md`.)
                     if self.is_declared_type(&canonical) {
                         return Err(Diag::new(
                             codes::UNKNOWN_TYPE,

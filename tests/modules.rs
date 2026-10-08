@@ -328,7 +328,7 @@ fn use_enum_variant_path_resolves() {
 /// declared first. Now the collision is rejected identically in both orders,
 /// because the flat canonical name `m::A` cannot denote both a struct and a
 /// variant downstream. (The namespace question itself is a SPEC GAP recorded
-/// in `docs/CONFORMANCE_PHASE2.md`; this test locks only the determinism and
+/// in `docs/archive/CONFORMANCE_PHASE2.md`; this test locks only the determinism and
 /// the absence of a silent wrong construction.)
 #[test]
 fn struct_and_variant_same_name_resolve_deterministically() {

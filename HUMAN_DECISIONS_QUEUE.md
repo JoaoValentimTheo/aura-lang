@@ -32,7 +32,7 @@ No owner-level decisions are currently pending.
 ## HD-1 — Module-member identifiers vs builtin-name reservation
 
 - **Status:** RESOLVED by ADR-0002 (`docs/adr/0002-module-member-builtin-names.md`). Original package:
-  `docs/HD1_MODULE_MEMBER_BUILTIN_NAMES_DECISION.md`.
+  `docs/archive/HD1_MODULE_MEMBER_BUILTIN_NAMES_DECISION.md`.
 - **Question:** Does the builtin name reservation (`E1009`) extend to module
   members (`module M { fn sum }`)?
 - **Current behavior:** Module members occupy the module namespace; a member
@@ -45,7 +45,7 @@ No owner-level decisions are currently pending.
 ## HD-2 — AUDIT-3 TypeExpr nesting policy
 
 - **Status:** RESOLVED by ADR-0004 (Option A adopted). Original package:
-  `docs/AUDIT3_TYPE_NESTING_DECISION.md`.
+  `docs/archive/AUDIT3_TYPE_NESTING_DECISION.md`.
 - **Question:** Which TypeExpr nesting policy (Option A or B) does Aura adopt?
 - **Pre-decision behavior (HISTORICAL):** Native accepted ≤2047 / rejected
   2048 (`E1015`); WASM accepted ≤767 / rejected 768 — a substrate divergence.

@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-//! Aura 0.0.1 scripting I/O and arguments (`docs/RELEASE_0_0_X_DESIGN.md`).
+//! Aura 0.0.1 scripting I/O and arguments (`docs/archive/RELEASE_0_0_X_DESIGN.md`).
 //!
 //! `read_line`, `read_file`, `write_file`, `args`, and `E4020`. These exercise
 //! the context-aware execution entry points directly, with in-memory input and

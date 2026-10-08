@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (Architecture Decision Council, 2026-09-30)
 - **Supersedes:** queued decision HD-2 / AUDIT-3 (DECISION-PENDING)
-- **Related:** `docs/AUDIT3_TYPE_NESTING_DECISION.md` (the decision package),
+- **Related:** `docs/archive/AUDIT3_TYPE_NESTING_DECISION.md` (the decision package),
   `LANGUAGE_SPEC.md` §31.1/§31.2, `src/parse/mod.rs`
   (`enforce_depth`, `check_expr_depth`, `parse_recursion_budget`),
   `playground/tests/node/differential.test.mjs`
@@ -17,7 +17,7 @@ acceptance differs between native and WASM for the same source, contradicting
 the architecture's "valid under the semantic limit ⇒ accepted on every
 substrate" invariant.
 
-The decision package (`docs/AUDIT3_TYPE_NESTING_DECISION.md`) offered:
+The decision package (`docs/archive/AUDIT3_TYPE_NESTING_DECISION.md`) offered:
 - **Option A** — count `TypeExpr` nodes toward the 256-node semantic budget
   (eliminate the divergence).
 - **Option B** — document the substrate-dependent bound, change no code.

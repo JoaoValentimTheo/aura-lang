@@ -17,7 +17,7 @@ It is a governance document, not language law. Language law lives in
 
 | Role | Owns | May author | Review authority |
 |---|---|---|---|
-| **Program Director / Principal Architect** | roadmap, milestones, dependency order, scope, `AURA_ROAD_TO_V1.md`, gate enforcement | planning docs | approves milestone closure; does not rubber-stamp |
+| **Program Director / Principal Architect** | roadmap, milestones, dependency order, scope, `docs/archive/AURA_ROAD_TO_V1.md`, gate enforcement | planning docs | approves milestone closure; does not rubber-stamp |
 | **Language Architects** | `LANGUAGE_SPEC.md`, grammar, namespace/type/operator/call law, compatibility | spec changes | required for any semantic change |
 | **Compiler Frontend** | lexer, parser, AST, spans, diagnostics provenance, nesting safety | parser/lexer code | frontend review |
 | **Static Semantics** | resolver, checker, inference, visibility, phase correctness | checker code | semantics review |
@@ -61,8 +61,9 @@ It is a governance document, not language law. Language law lives in
 
 ## Change ownership and conflict control
 
-- The Program Director maintains the work queue (`AURA_ROAD_TO_V1.md`,
-  `AURA_ENGINEERING_CHECKPOINT.md`).
+- The Program Director maintains the work queue (`docs/archive/AURA_ROAD_TO_V1.md`,
+  `docs/archive/AURA_ENGINEERING_CHECKPOINT.md`; current state lives in
+  `AGENT_STATE.md`).
 - No two roles edit the same files concurrently without a declared owner.
 - Substantial work uses short-lived conceptual branches (`feature/*`,
   `fix/*`, `security/*`, `perf/*`, `release/*`) integrated additively; no
@@ -84,9 +85,12 @@ which this organization never requests for retrofit.
 
 ## Durable operational files
 
-- `AURA_ROAD_TO_V1.md` — roadmap and work queue
-- `AURA_V1_READINESS.md` — category readiness matrix
-- `AURA_ENGINEERING_CHECKPOINT.md` — resumable state
+Current repository state lives in `/AGENT_STATE.md`. The historical planning
+snapshots are archived under `docs/archive/`:
+
+- `docs/archive/AURA_ROAD_TO_V1.md` — roadmap and work queue
+- `docs/archive/AURA_V1_READINESS.md` — category readiness matrix
+- `docs/archive/AURA_ENGINEERING_CHECKPOINT.md` — resumable state
 - `HUMAN_DECISIONS_QUEUE.md` — queued human decisions
 - `docs/engineering/TECHNICAL_DEBT.md`
 - `docs/engineering/RISK_REGISTER.md`

@@ -402,7 +402,7 @@ fn else_if_break_continue_loop_context_is_unchanged() {
 }
 
 // ---------------------------------------------------------------------------
-// Aura 0.0.1 scripting I/O builtins (`docs/RELEASE_0_0_X_DESIGN.md`).
+// Aura 0.0.1 scripting I/O builtins (`docs/archive/RELEASE_0_0_X_DESIGN.md`).
 // ---------------------------------------------------------------------------
 
 /// The four release builtins are registered and arity/type-checked by the

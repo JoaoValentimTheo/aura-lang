@@ -27,4 +27,4 @@ produces a decision package rather than an improvised answer.
    it with a new one and mark the old one `Superseded by ADR-N`.
 3. Implement and test the decision in the same train.
 4. Reference the ADR from the code, the specification, and the relevant
-   operational file (`AGENT_STATE.md`, `AURA_V1_READINESS.md`).
+   operational file (`AGENT_STATE.md`, `docs/archive/AURA_V1_READINESS.md`).

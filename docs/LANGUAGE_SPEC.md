@@ -496,7 +496,7 @@ parser in `src/parse/mod.rs`. The canonical EBNF and its lexical/contextual side
 in `docs/grammar.md`; the two MUST agree. The `nl`, name classes, generic
 lookahead, and implicit `END_BOUNDARY` conventions there apply to the excerpts
 below. Open discrepancies are explicitly recorded in
-`docs/CONFORMANCE_PHASE1.md`; observations do not amend normative rules.
+`docs/archive/CONFORMANCE_PHASE1.md`; observations do not amend normative rules.
 
 ### 4.1 Program and items
 
@@ -2501,7 +2501,7 @@ error code. It supports the existing map operations (`len`, `get`, `has`,
 *Evidence:* `Parser::atom` and `Parser::map_ahead` (`src/parse/mod.rs`);
 `Expr::Map` (`src/ast/mod.rs`); `Checker::infer` (`src/check/mod.rs`);
 `Value::Map` and map evaluation (`src/run/value.rs`, `src/run/mod.rs`);
-`tests/run.rs::lists_maps_indexing`; `docs/SEMANTIC_FREEZE_AUDIT.md`.
+`tests/run.rs::lists_maps_indexing`; `docs/archive/SEMANTIC_FREEZE_AUDIT.md`.
 
 ---
 

@@ -15,7 +15,7 @@ release, a new `0.2.0` runtime artifact was built and verified, and the
 Playground and website were updated to present `0.2.0` as the then-current
 stable release (later superseded by `0.2.1`; see below).
 
-`docs/CORE_FREEZE.md` is the status/evidence record for the frozen Core;
+`docs/archive/CORE_FREEZE.md` is the status/evidence record for the frozen Core;
 `docs/LANGUAGE_SPEC.md` remains the semantic authority.
 
 ### Non-goals preserved (historical, as of the Core completion pass)
