@@ -186,6 +186,44 @@ proptest! {
     }
 
     #[test]
+    fn mcp_typed_decode_snapshot_transports_ais_identity_facts(name in legal_ident()) {
+        // The adapter defines no type logic of its own: a typed-decode result
+        // arrives through `structuredContent` with exactly the three identity
+        // levels the AIS snapshot computed. The decoded nominal type is the
+        // generated one, so the resolved identity tracks the source exactly.
+        let ty = name.to_uppercase();
+        let src = format!(
+            "struct {ty} {{ id: int, name: string }}\n\
+             fn load() -> {ty} {{\n\
+                 return json_decode_as('{{\"id\":25,\"name\":\"pikachu\"}}', {ty})\n\
+             }}\n\
+             fn main() {{ print(load().name) }}\n"
+        );
+        let call = serde_json::json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": { "name": "aura_snapshot", "arguments": { "source": src } }
+        });
+        let response = aura::mcp::handle_message(&call).expect("a response");
+        prop_assert_eq!(&response["result"]["isError"], &serde_json::json!(false));
+        let doc = aura::ais::checked_document(
+            "<mcp>",
+            &src,
+            &aura::parse::parse(&src).expect("parses"),
+        );
+        let ais_json = serde_json::to_value(&doc).unwrap();
+        prop_assert_eq!(&response["result"]["structuredContent"], &ais_json);
+        let load = response["result"]["structuredContent"]["symbols"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["name"] == "load")
+            .expect("the adapter transports the load symbol");
+        prop_assert_eq!(&load["type_name"], &serde_json::json!(ty.clone()));
+        prop_assert_eq!(&load["families"], &serde_json::json!(["object"]));
+        prop_assert_eq!(&load["value_kind"], &serde_json::json!("struct"));
+    }
+
+    #[test]
     fn mcp_revision_matches_ais_revision(s in "\\PC{0,200}") {
         let call = serde_json::json!({
             "jsonrpc": "2.0", "id": 1, "method": "tools/call",

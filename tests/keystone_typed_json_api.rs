@@ -143,6 +143,46 @@ fn strict_unknown_field_behavior_remains() {
     );
 }
 
+// 13. AIS reports the statically resolved result type and correct
+//     family/value kind, without a second type analysis.
+#[test]
+fn ais_reports_the_resolved_decode_result_identity() {
+    let src = "struct Pokemon { id: int, name: string }\n\
+               fn load() -> Pokemon {\n\
+                   return json_decode_as('{\"id\":25,\"name\":\"pikachu\"}', Pokemon)\n\
+               }\n\
+               fn main() { print(load().name) }\n";
+    let module = aura::parse::parse(src).expect("parses");
+    let doc = aura::ais::document("api.aura", src, &module);
+    let load = doc
+        .symbols
+        .iter()
+        .find(|s| s.name == "load")
+        .expect("load symbol");
+    // The checker resolved `json_decode_as(text, Pokemon) : Pokemon`, so AIS
+    // projects the resolved nominal type, the `object` family, and the `struct`
+    // value kind — three distinct levels, never inferred from a string.
+    assert_eq!(load.type_name.as_deref(), Some("Pokemon"));
+    assert_eq!(load.families, vec!["object".to_string()]);
+    assert_eq!(load.value_kind.as_deref(), Some("struct"));
+
+    // A contextual collection target resolves to its own identity.
+    let src = "fn load() -> [int; 2] {\n\
+                   return json_decode_as('[1,2]', [int; 2])\n\
+               }\n\
+               fn main() { print(load()[0]) }\n";
+    let module = aura::parse::parse(src).expect("parses");
+    let doc = aura::ais::document("api.aura", src, &module);
+    let load = doc
+        .symbols
+        .iter()
+        .find(|s| s.name == "load")
+        .expect("load symbol");
+    assert_eq!(load.type_name.as_deref(), Some("[int; 2]"));
+    assert_eq!(load.families, vec!["sequence".to_string()]);
+    assert_eq!(load.value_kind.as_deref(), Some("array"));
+}
+
 // The canonical example from the campaign brief, exactly:
 #[test]
 fn the_canonical_brief_example_executes() {
