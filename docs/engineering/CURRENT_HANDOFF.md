@@ -561,21 +561,22 @@ sync test (documented as non-authoritative; runtime refusal is the decision).
 
 ## Exact next action
 
-0. **Aura 0.3 Keystone canonicalization campaign (2026-10-08, LOCAL, UNPUSHED).**
-   Local tip `36c3d49f`, **6 ahead / 0 behind** remote `b221e6a9`. The three
-   campaign commits: `d5bb2fbd` remove general semicolon statement/item
-   sequencing (human override; `;` reserved); `49ef5298` project dynamic
-   ranges as `range_like`/`range`, not `object`/`struct` (§5.4); `36c3d49f`
-   archive historical docs to `docs/archive/` + add
-   `docs/engineering/COLLECTION_MODEL_DECISION_PACKAGE.md`. **No collection
-   syntax was implemented** (no historical Set/Array evidence; the Array
-   `N`/`T` meaning is the blocking human question). Frozen runtimes verified
-   byte-identical; `v0.2.1` unmoved. **Nothing pushed.** Sharded focused
-   validation is green; the monolithic all-features run was user-interrupted
-   and must be re-run sharded before any push (TD-21). **Exact next action:**
-   the human decides (a) whether to authorize a push of the now-6-commit range
-   (a push deploys the site — confirm), and (b) the collection-model decision
-   package. Do not push without explicit authorization.
+0. **Aura 0.3 Keystone final collection model (2026-10-08, LOCAL, UNPUSHED).**
+   Local tip is **10 ahead / 0 behind** remote `b221e6a9`. The campaign commits:
+   `d5bb2fbd` remove general semicolon statement/item sequencing (human
+   override; `;` reserved for the Array type); `49ef5298` project dynamic
+   ranges as `range_like`/`range`; `36c3d49f` archive historical docs;
+   `d0ff3076` implement distinct `List`/`Array`/`Tuple`/`Set`/`Map` identities
+   end-to-end (`[T; N]` array type, contextual bracket-literal realization, no
+   implicit List↔Array conversion, real Tuple, Set with `SetLike`); `86eb6925`
+   finalize the docs (ADR-0005, spec §21, grammar + website mirrors) and add the
+   observable sharded validator `scripts/validate.py`. **The collection model is
+   now implemented**, superseding the earlier "no tuple / no array / no set"
+   decision. Frozen runtimes verified byte-identical; `v0.2.1` unmoved.
+   **Nothing pushed.** **Exact next action:** the human decides whether to
+   authorize a push of the 10-commit range (a push deploys the site — confirm)
+   and reviews the implemented collection model for any change of decision. Do
+   not push without explicit authorization.
 
 1. B-1 and the post-B1 runtime/WASM edge closure are **remotely closed**. The
    Pre-0.3 Foundation super-transaction and the 2026-10-06 adversarial re-audit

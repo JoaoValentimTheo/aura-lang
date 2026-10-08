@@ -15,10 +15,11 @@ before continuing substantial work.
   `git rev-list --left-right --count origin/rewrite/v3-rust...HEAD`.
 - Local/remote relationship: authoritative value is `git rev-list
   --left-right --count origin/rewrite/v3-rust...HEAD`; a tracked file cannot
-  safely hardcode its own position. At the 2026-10-08 canonicalization
-  checkpoint the local tip is `36c3d49f`, **6 ahead / 0 behind** `b221e6a9`
-  (the three prior parser/docs commits plus the three campaign commits; see
-  the canonicalization section below).
+  safely hardcode its own position. At the 2026-10-08 final-collection
+  checkpoint the local tip is **10 ahead / 0 behind** `b221e6a9` (the three
+  prior parser/docs commits, the semicolon/range/archival trio, the collection
+  identity commit `d0ff3076`, and the docs finalize commit `86eb6925`; see the
+  canonicalization section below).
 - **Remote CI at `b221e6a9` is RED** (run `37639795923`): the
   `playground (wasm runtime)` job fails in `b1_boundary.test.mjs` (44/19) with
   grouping/f-string `guest trap` — the exact defect fixed by the unpushed local
@@ -374,33 +375,35 @@ and the authorization to push the 2-commit CI repair.
 
 Human-authorized broad cleanup/reconciliation campaign on top of `8696f8ed`.
 **No push, tag, release, or deploy was performed; the remote remains `b221e6a9`.**
-Local tip is now **6 ahead / 0 behind** `b221e6a9` (the three prior parser/docs
-commits plus three campaign commits):
+
+Commits so far:
 
 - `d5bb2fbd` **fix(parser): remove general semicolon statement/item sequencing.**
   Human override of the earlier decision: `;` is no longer a general statement
   or item separator. `item_separator`/`end_stmt`/`block_vec`/match-arm
-  termination no longer accept `Semi`; the token stays reserved. Grammar,
-  spec (§3.4/§3.7/§19.1/CONF-PARSE-8), website mirrors, corpus, oracle fixtures
-  and goldens updated. Negative regressions: `let a = 1; let b = 2`,
-  `fn a() {}; fn b() {}`, `{;;}` are `E1006`; newline positives green.
-  ("No push during this campaign.")
+  termination no longer accept `Semi`; the token is reserved (now for the Array
+  type grammar). Grammar, spec (§3.4/§3.7/§19.1/CONF-PARSE-8), website mirrors,
+  corpus, oracle fixtures and goldens updated. Negative regressions:
+  `let a = 1; let b = 2`, `fn a() {}; fn b() {}`, `{;;}` are `E1006`.
 - `49ef5298` **fix(types): project dynamic ranges as range_like, not object.**
   §5.4 is normative: a range's family is `RangeLike` and value kind `range`.
-  `Ty::Named("range")` was projected as `Object`/`"struct"`; fixed in
-  `Ty::families()`/`value_kind()` and the AIS capability projection
-  (iterable+sized, not indexable/mutable). Regression in
-  `tests/keystone_value_algebra.rs`.
 - `36c3d49f` **chore(docs): archive historical artifacts + collection decision
   package.** Root-level `AURA_*.md`/`IMPLEMENT.md` and the historical
   `CONFORMANCE_PHASE<N>`/`FEATURE_<NNN>`/audit/report series moved to
-  `docs/archive/` with a pointer README; the root now holds only
-  current-authority files. Added
-  `docs/engineering/COLLECTION_MODEL_DECISION_PACKAGE.md` — the single decision
-  package for the reopened List/Array/Tuple/Set/Map identity question. **No
-  collection syntax was implemented or invented** (repository evidence contains
-  no historical Set/Array syntax; the Array `N`/`T` meaning is the blocking
-  human question).
+  `docs/archive/`.
+- `d0ff3076` **feat(types,runtime): distinct List/Array/Tuple/Set/Map
+  collection identities.** The human collection decision, implemented
+  end-to-end atomically: `[T; N]` Array type (semicolon-separated, compile-time
+  bounded length), contextual bracket-literal realization under an Array
+  expectation (one seam per engine; no implicit List↔Array conversion), real
+  Tuple identity (superseding list sugar), Set `{a, b}`/`set{}` with the
+  `SetLike` family and key-capable members, plus `Ty`/`Value`/`TypeFamily`/
+  equality/indexing/iteration/mutation/patterns/repr/JSON-typed-decode/AIS
+  updates. Also added the observable sharded validator `scripts/validate.py`.
+- `86eb6925` **docs,collections: finalize the Keystone collection algebra.**
+  ADR-0005, LANGUAGE_SPEC §5.1/§5.4/§21 rewrite, grammar + website mirror,
+  guide-collections, one-element-tuple repr `(1,)`, resumable callback methods
+  on Array/Tuple, migrated superseded tests, regenerated four oracle goldens.
 
 Frozen `0.0.2`/`0.2.0`/`0.2.1` verified byte-identical (hashes match the table
 above); `v0.2.1` tag unmoved at `3f5f8702`.
@@ -412,16 +415,15 @@ runtime/WASM edge closure are remotely closed; the **Aura 0.3 Keystone**
 closure range is **pushed through `b221e6a9`**. The remote CI at `b221e6a9` is
 **RED** on the `playground (wasm runtime)` job (grouping/f-string trap in
 `b1_boundary`), and the local commits hold the parser fix that turns that suite
-to green. The local tip is now the 2026-10-08 canonicalization campaign tip
-(6 ahead). **Exact next action:** the human decides whether to (a) authorize a
-push of the now-6-commit range (site deploys on push — confirm acceptance), and
-(b) answer the collection-model decision package's blocking Array question. Do
-not push without explicit authorization. B-1R8 (remove the recursive engine
-and the oracle switch) and any runtime publication remain separately
-human-gated. **Known local validation gap (TD-22):** the monolithic
-`cargo test --locked --all-features` was interrupted by a user stop after ~50
-minutes; the semicolon- and range-affected suites were re-run sharded and are
-green. Re-run the full matrix sharded via the watchdog before any push.
+to green. The local tip is the 2026-10-08 final-collection campaign tip
+(**10 ahead**, unpushed). **Exact next action:** the human decides whether to
+(a) authorize a push of the 10-commit range (site deploys on push — confirm
+acceptance), and (b) review the now-implemented collection model for any change
+of decision. Do not push without explicit authorization. B-1R8 (remove the
+recursive engine and the oracle switch) and any runtime publication remain
+separately human-gated. **Validation (TD-22):** use the observable sharded
+`scripts/validate.py` (not a monolithic watch); re-run the full matrix sharded
+via it before any push.
 
 ## Writer
 

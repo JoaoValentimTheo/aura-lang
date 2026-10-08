@@ -38,6 +38,16 @@ const cases = [
   ["newline separators", 'fn main() {\n print(1)\n print(2)\n}', "1\n2\n"],
   ["semicolon is reserved", 'fn main() { print(1); print(2) }', 1006],
   ["list-rest absent", 'fn main() { let [a, ..b] = [1,2] }', 1006],
+  ["list literal", 'fn main() { print([1, 2]) }', "[1, 2]\n"],
+  ["array contextual", 'fn main() { let a: [int; 2] = [1, 2]\nprint(a) }', "[1, 2]\n"],
+  ["array length mismatch", 'fn main() { let a: [int; 2] = [1, 2, 3] }', 3001],
+  ["array element mismatch", 'fn main() { let a: [int; 2] = [1, "x"] }', 3001],
+  ["array bad length type", 'fn main() { let a: [int; x] = [1, 2] }', 1006],
+  ["tuple literal", 'fn main() { print((1, "x")) }', '(1, "x")\n'],
+  ["one-element tuple", 'fn main() { print((1,)) }', "(1,)\n"],
+  ["tuple not list", 'fn main() { print((1, 2) == [1, 2]) }', "false\n"],
+  ["set literal", 'fn main() { print({1, 2, 2, 3}) }', "{1, 2, 3}\n"],
+  ["empty set", 'fn main() { print(set{}) }', "{}\n"],
   ["method named arguments already parse", 'fn main() { print("x".contains(value: "x")) }', 3001],
 ];
 const dir = mkdtempSync(join(tmpdir(), "aura-syntax-"));
