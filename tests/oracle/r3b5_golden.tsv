@@ -28,7 +28,7 @@ r3b5-value/in_if_condition		ok	0		-	0	0	0	0	int	7
 r3b5-value/empty_in_if_condition		ok	0		-	0	0	0	0	int	7
 r3b5-value/let_binding		ok	0		-	0	0	0	0	range	1..3
 r3b5-value/in_list		ok	0		-	0	0	0	0	list	[1..3, 4..6]
-r3b5-value/in_tuple		ok	0		-	0	0	0	0	list	[1..3, 4..6]
+r3b5-value/in_tuple		ok	0		-	0	0	0	0	tuple	(1..3, 4..6)
 r3b5-value/in_map_value		ok	0		-	0	0	0	0	map	{1: 0..2, 2: 3..5}
 r3b5-value/equal_literals		ok	0		-	0	0	0	0	bool	true
 r3b5-value/unequal_end		ok	0		-	0	0	0	0	bool	false

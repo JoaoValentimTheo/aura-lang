@@ -294,7 +294,11 @@ fn only_the_resumable_builtins_accept_callbacks() {
         .collect();
     assert_eq!(
         method_names,
-        [("map", "list"), ("filter", "list"), ("reduce", "list")],
+        [
+            ("map", "list"), ("filter", "list"), ("reduce", "list"),
+            ("map", "array"), ("filter", "array"), ("reduce", "array"),
+            ("map", "tuple"), ("filter", "tuple"), ("reduce", "tuple"),
+        ],
         "a callback-taking method was added or removed: extend \
          `resumable_method`, then update this list"
     );

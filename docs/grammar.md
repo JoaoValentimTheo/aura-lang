@@ -65,7 +65,10 @@ const_decl      = "const" UPPER_NAME [ ":" type ] "=" expr statement_end
                 | "let" IDENT [ ":" type ] "=" expr statement_end ;
 
 type            = type_member { "|" type_member } ;
-type_member     = "none" | "[" type "]" | "{" type ":" type "}"
+type_member     = "none" | "[" type "]" | "[" type ";" INT "]"
+                | "(" type "," nl [ type nl { "," nl type nl }
+                  [ "," nl ] ] ")"
+                | "{" type "}" | "{" type ":" type "}"
                 | path [ type_args ] ;
 
 block           = "{" { terminator | stmt } "}" ;
@@ -118,7 +121,7 @@ atom            = INT | FLOAT | STRING | FSTRING | "true" | "false" | "none"
                 | "(" expr ")"
                 | "(" expr "," nl [ expr nl { "," nl expr nl }
                   [ "," nl ] ] ")"
-                | lambda | list | map | block | if_expr | match_expr ;
+                | lambda | list | map | set | block | if_expr | match_expr ;
 ctor_args       = nl [ arg nl { "," nl arg nl } [ "," nl ] ] ;
 struct_body     = "{" nl [ field_init nl { "," nl field_init nl }
                   [ "," nl ] ] "}" ;
@@ -134,17 +137,23 @@ map_body        = entry nl ( map_comp | map_rest ) ;
 map_comp        = "for" pattern "in" expr [ "if" expr ] "}" ;
 map_rest        = { "," nl entry nl } [ "," nl ] "}" ;
 entry           = expr ":" expr ;
+set             = "{" nl expr nl { "," nl expr nl } [ "," nl ] "}"
+                | "set" "{" nl ( "}" | expr nl { "," nl expr nl }
+                  [ "," nl ] "}" ) ;
 if_expr         = "if" expr block [ "else" expr ] ;
 match_expr      = "match" expr "{" nl { match_arm nl } "}" ;
 match_arm       = pattern [ "if" expr ] "->"
                   ( block | expr [ terminator ] ) [ "," ] ;
 
 pattern         = literal_pattern | BIND_PATH | UPPER_PATH | list_pattern
+                | tuple_pattern
                 | path "(" nl [ pattern nl { "," nl pattern nl }
                   [ "," nl ] ] ")" ;
 literal_pattern = INT | STRING | "true" | "false" | "none" ;
 list_pattern    = "[" nl [ pattern nl { "," nl pattern nl }
                   [ "," nl ] ] "]" ;
+tuple_pattern   = "(" nl pattern nl { "," nl pattern nl }
+                  [ "," nl ] ")" ;
 
 format_spec     = [ [ FILL ] ( "<" | ">" | "^" ) ] [ "+" | "-" | " " ]
                   [ DIGITS ] [ "." DIGITS ] [ format_type ] ;
@@ -197,11 +206,18 @@ format_type     = "d" | "b" | "o" | "x" | "X" | "f" | "F" | "e" | "E" | "%" ;
   arguments belong to the checker. Named method arguments parse today but
   are rejected semantically (`E3001`), so they are not a missing token form.
 * Bare names, grouping, indexing and fields are expressions. `()` alone is
-  invalid; `() -> e` is a lambda, `(x,)` is a one-element list. Assignment is
-  a statement, not an expression. No tuple type, function TypeExpr syntax,
+  invalid; `() -> e` is a lambda, `(x,)` is a one-element tuple. Assignment is
+  a statement, not an expression. No function TypeExpr syntax,
   struct pattern, negative/float pattern, rest pattern or inclusive range exists.
-* Lists match exact length. `let` destructuring forbids `mut`, annotations and
-  literals; unlike general patterns, it does not accept qualified variant paths.
+* Collections: `[T]` is a List, `[T; N]` is a fixed-length Array (`N` a
+  non-negative integer literal), `(T, U)` is a Tuple, `{T}` is a Set, `{K: V}`
+  is a Map. A bracket literal `[a, b]` is a List unless an expected `[T; N]`
+  makes it an Array (contextual realization, not conversion). `{a, b}` (a
+  depth-0 comma, no depth-0 colon) is a Set; `{a}` and `{}` remain blocks;
+  `set{}` is the empty Set.
+* List and tuple patterns match exact length. `let` destructuring forbids `mut`,
+  annotations and literals; unlike general patterns, it does not accept
+  qualified variant paths.
 * Newlines are accepted only in the explicit `nl` positions above. `else`,
   `catch`, and `finally` must directly follow the previous closing brace without
   NEWLINE. Operators, including pipelines, need their next operand on the same

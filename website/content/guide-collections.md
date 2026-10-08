@@ -3,7 +3,7 @@
 ## Lists
 
 `[a, b, c]` constructs a list. Lists are ordered, mutable, and have reference
-semantics.
+semantics. A bracket literal with no expected array type is always a list.
 
 ```aura
 let mut xs = [1, 2, 3]
@@ -25,6 +25,75 @@ ys.push(3)          # E2001: ys is immutable
   `E4019`.
 * Equality is length- and element-wise.
 * Ordering is not defined.
+
+## Arrays
+
+An array is a **fixed-length** sequence. Its type is `[T; N]`, where `N` is a
+compile-time non-negative integer length. The length is part of the type, so
+`[int; 2]` and `[int; 3]` are different types.
+
+```aura
+let xs: [int; 3] = [1, 2, 3]
+print(xs[1])          # 2
+```
+
+An array element is mutable, but an array cannot be resized:
+
+```aura
+let mut a: [int; 2] = [1, 2]
+a[0] = 9              # ok: element mutation
+a.push(3)             # E2003: an array has no `push`
+```
+
+The literal spelling `[1, 2, 3]` is shared with lists. It is a list by default
+and becomes an array only when the expected type is `[T; N]`:
+
+```aura
+let list = [1, 2, 3]          # List<int>
+let array: [int; 3] = [1, 2, 3]   # Array<int, 3>
+```
+
+There is **no implicit conversion** between a list and an array. A length or
+element mismatch is rejected before the program runs:
+
+```aura
+let bad: [int; 2] = [1, 2, 3]     # E3001: length 3 vs 2
+```
+
+The same realization happens for a direct function argument, a `return` under a
+declared return type, and a struct field value.
+
+## Tuples
+
+`(a, b)` constructs a tuple: a fixed-length, heterogeneous, immutable sequence.
+`(a,)` is a one-element tuple; `(a)` is just grouping.
+
+```aura
+let pair = (1, "Aura")
+print(pair[0])        # 1
+print(pair[1])        # Aura
+```
+
+A tuple is not a list: `(1, 2) == [1, 2]` is `false`. A tuple pattern matches
+only a tuple, and a list pattern matches only a list:
+
+```aura
+let (id, name) = (1, "Ada")
+let [x, y] = [1, 2]
+```
+
+## Sets
+
+`{a, b}` (a brace group with a comma and no colon) and `set{}` construct a set:
+an unordered membership with a deterministic iteration order. Set elements must
+be key-capable scalars (`int`, `bool`, `string`), the same requirement a map
+key has. A set is not indexable.
+
+```aura
+let ids = {1, 2, 2, 3}   # {1, 2, 3}: duplicate literal values collapse
+print(ids.has(2))        # true
+ids.add(4)               # membership mutation
+```
 
 ## Maps
 
@@ -59,20 +128,16 @@ print(scores[1])          # 9.5
 The key parameter must be key-capable when the alias is instantiated, so
 `Map<float, int>` is rejected.
 
-## The empty map
+## The empty map and empty set
 
-`{:}` is the empty-map literal. `{}` is an empty *block*, not an empty map; the
-two are distinct.
+`{:}` is the empty-map literal and `set{}` is the empty-set literal. `{}` is an
+empty *block*, not an empty map; the three are distinct.
 
 ```aura
 let mut empty = {:}
 empty["k"] = 1
+let nothing = set{}
 ```
-
-## Parenthesized lists
-
-Aura has no distinct tuple type. `(a, b)` is list sugar: it constructs a list of
-its elements, indistinguishable from `[a, b]`.
 
 ## Pipelines over collections
 

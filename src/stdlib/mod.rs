@@ -921,25 +921,27 @@ pub(crate) fn resumable_method(
     args: &[Value],
     span: Span,
 ) -> Option<Result<NativeOutcome>> {
-    let Value::List(l) = recv else {
-        return None;
+    // `map`/`filter`/`reduce` are the callback-taking methods. They are
+    // available on List, Array, and Tuple; each is stack-safe through this
+    // resumable path, and each returns a List for `map`/`filter`.
+    let snapshot: Vec<Value> = match recv {
+        Value::List(l) | Value::Array(l) => l.borrow().clone(),
+        Value::Tuple(t) => (**t).clone(),
+        _ => return None,
     };
     match name {
         "map" if args.len() == 1 => {
             let f = args[0].clone();
-            let snapshot = l.borrow().clone();
             let cap = snapshot.len();
             Some(Ok(map_step(f, snapshot, 0, Vec::with_capacity(cap), span)))
         }
         "filter" if args.len() == 1 => {
             let f = args[0].clone();
-            let snapshot = l.borrow().clone();
             Some(Ok(filter_step(f, snapshot, 0, Vec::new(), span)))
         }
         "reduce" if args.len() == 2 => {
             let f = args[0].clone();
             let acc = args[1].clone();
-            let snapshot = l.borrow().clone();
             Some(Ok(reduce_step(f, snapshot, 0, acc, span)))
         }
         _ => None,

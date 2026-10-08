@@ -28,3 +28,9 @@ produces a decision package rather than an improvised answer.
 3. Implement and test the decision in the same train.
 4. Reference the ADR from the code, the specification, and the relevant
    operational file (`AGENT_STATE.md`, `docs/archive/AURA_V1_READINESS.md`).
+
+## Accepted ADRs
+
+- [ADR-0004](0004-typeexpr-nesting-policy.md) — type-expression nesting policy.
+- [ADR-0005](0005-keystone-collection-model.md) — Keystone collection model
+  (List, Array, Tuple, Set, Map).

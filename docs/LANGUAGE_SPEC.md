@@ -582,7 +582,10 @@ be reassigned (`E2001`).
 
 ```ebnf
 type            = type_member { "|" type_member } ;
-type_member     = "none" | "[" type "]" | "{" type ":" type "}"
+type_member     = "none" | "[" type "]" | "[" type ";" INT "]"
+                | "(" type "," nl [ type nl { "," nl type nl }
+                  [ "," nl ] ] ")"
+                | "{" type "}" | "{" type ":" type "}"
                 | path [ type_args ] ;
 ```
 
@@ -709,7 +712,7 @@ atom            = INT | FLOAT | STRING | FSTRING | "true" | "false" | "none"
                 | "(" expr ")"
                 | "(" expr "," nl [ expr nl { "," nl expr nl }
                   [ "," nl ] ] ")"
-                | lambda | list | map | block | if_expr | match_expr ;
+                | lambda | list | map | set | block | if_expr | match_expr ;
 ctor_args       = nl [ arg nl { "," nl arg nl } [ "," nl ] ] ;
 struct_body     = "{" nl [ field_init nl { "," nl field_init nl }
                   [ "," nl ] ] "}" ;
@@ -725,6 +728,9 @@ map_body        = entry nl ( map_comp | map_rest ) ;
 map_comp        = "for" pattern "in" expr [ "if" expr ] "}" ;
 map_rest        = { "," nl entry nl } [ "," nl ] "}" ;
 entry           = expr ":" expr ;
+set             = "{" nl expr nl { "," nl expr nl } [ "," nl ] "}"
+                | "set" "{" nl ( "}" | expr nl { "," nl expr nl }
+                  [ "," nl ] "}" ) ;
 if_expr         = "if" expr block [ "else" expr ] ;
 match_expr      = "match" expr "{" nl { match_arm nl } "}" ;
 match_arm       = pattern [ "if" expr ] "->"
@@ -807,11 +813,14 @@ before `else`, or between `else` and `if`, is `E1006`.
 
 ```ebnf
 pattern         = literal_pattern | BIND_PATH | UPPER_PATH | list_pattern
+                | tuple_pattern
                 | path "(" nl [ pattern nl { "," nl pattern nl }
                   [ "," nl ] ] ")" ;
 literal_pattern = INT | STRING | "true" | "false" | "none" ;
 list_pattern    = "[" nl [ pattern nl { "," nl pattern nl }
                   [ "," nl ] ] "]" ;
+tuple_pattern   = "(" nl pattern nl { "," nl pattern nl }
+                  [ "," nl ] ")" ;
 ```
 
 **Normative rule.** A capitalized identifier in pattern position is a variant
@@ -1064,21 +1073,22 @@ or binding it aliases the same storage (§16.6).
 are *not* synonyms and MUST NOT be collapsed:
 
 1. **Semantic type** — a member of the checker's type domain (§5.2): `int`,
-   `float`, `bool`, `string`, `[T]`, `{K: V}`, `Named(n)`, `Enum(n)`,
-   `Union(...)`, `Param`, `App`, or `Unknown`. Two semantic types are the
-   same only by the equality the checker defines.
+   `float`, `bool`, `string`, `[T]`, `[T; N]`, `(T, ...)`, `{T}`, `{K: V}`,
+   `Named(n)`, `Enum(n)`, `Union(...)`, `Param`, `App`, or `Unknown`. Two
+   semantic types are the same only by the equality the checker defines.
 2. **Type family** — the shared *capability* class a semantic type belongs
    to. A family answers "what operations are valid here", not "what is this".
 3. **Runtime value kind** — the variant of the runtime `Value` model (§5.1):
-   `int`, `float`, `string`, `bool`, `none`, `list`, `map`, `struct`, `enum
-   variant`, `closure`, `native function`, or `range`.
+   `int`, `float`, `string`, `bool`, `none`, `list`, `array`, `tuple`, `set`,
+   `map`, `struct`, `enum variant`, `closure`, `native function`, or `range`.
 
 **Normative rule (family membership).** The families are:
 
 | Family | Semantic types | Runtime value kinds |
 |---|---|---|
 | `Scalar` | `int`, `float`, `bool`, `string` | `int`, `float`, `bool`, `string` |
-| `Sequence` | `[T]`, `string` | `list`, `string` |
+| `Sequence` | `[T]`, `[T; N]`, `(T, ...)`, `string` | `list`, `array`, `tuple`, `string` |
+| `SetLike` | `{T}` | `set` |
 | `Mapping` | `{K: V}` | `map` |
 | `Object` | `Named(n)` | struct instance |
 | `Sum` | `Enum(n)`, `Union(...)` | enum variant, or any member |
@@ -1090,16 +1100,20 @@ are *not* synonyms and MUST NOT be collapsed:
 grants a *capability* (§5.3), never identity. Two types in one family remain
 distinct semantic types and distinct runtime kinds: a `string` is iterable and
 indexable like a list but is never equal to one, a struct and a `string`-keyed
-map may both be JSON objects but never compare equal, and a list, a map, and a
-range share iteration/sizing yet are pairwise unequal. Equality, ordering,
+map may both be JSON objects but never compare equal, and a list, an array, a
+tuple, a set, and a map share iteration/sizing yet are pairwise unequal.
+Equality, ordering,
 display, JSON encoding, patterns, and the static relation are each defined
 per *semantic type*, never per family. Sharing implementation to realize a
 capability is permitted; sharing identity is not.
 
-**Normative rule (one deliberate absorption).** `Tuple`/`(a, b)` is list
-sugar (§21): it has no distinct semantic type, family, or value kind. It is
-the only place where two source spellings denote one identity, and it is a
-language decision, not a collapse of the model above.
+**Normative rule (five collection identities).** Aura 0.3 has five distinct
+collection identities — `List`, `Array`, `Tuple`, `Set`, `Map` — with the value
+kinds `list`, `array`, `tuple`, `set`, `map`. They share the `Sequence`,
+`SetLike`, and `Mapping` capabilities without sharing identity (§21). There is
+no place where two source spellings denote one collection identity: `[a, b]`
+denotes a List unless an expected `[T; N]` makes it an Array, and that is a
+*contextual realization of one spelling under a type*, not two identities.
 
 *Evidence:* `Ty` (`src/types.rs`); `Value`/`Value::type_name`/`Value::ty`
 (`src/run/value.rs`); `TypeClass` (`src/stdlib/signatures.rs`);
@@ -2505,39 +2519,113 @@ error code. It supports the existing map operations (`len`, `get`, `has`,
 
 ---
 
-## 21. Tuples
+## 21. Collections
 
-**Normative rule.** Aura has **no distinct tuple type**. `(a, b)` with a comma
-is **list sugar**: it constructs a list of its elements. Consequently a tuple
-value is indistinguishable from a list: it supports indexing, `len`, equality
-with a list, mutation, and list display.
+**Normative rule (five identities).** Aura 0.3 has five distinct collection
+identities: `List`, `Array`, `Tuple`, `Set`, and `Map`. They share capabilities
+(iteration, sizing) without sharing identity; the identity invariant is
+`List != Array != Tuple != Set != Map`, observed in equality, the type system,
+AIS, and capabilities.
 
-*Non-normative example.* `(1, 2)` displays as `[1, 2]`, is equal to `[1, 2]`,
-and has `.len()` = 2.
+| Kind | Literal | Type | Family | Value kind | Mutable | Iterable | Indexable | Length |
+|---|---|---|---|---|---|---|---|---|
+| List | `[a, b]` | `[T]` | `Sequence` | `list` | elements, resizable | yes | int | dynamic |
+| Array | `[a, b]` (contextual) | `[T; N]` | `Sequence` | `array` | elements, fixed length | yes | int | fixed |
+| Tuple | `(a, b)`, `(a,)` | `(T, U)` | `Sequence` | `tuple` | no | yes | int | fixed |
+| Set | `{a, b}`, `set{}` | `{T}` | `SetLike` | `set` | membership | yes | no | dynamic |
+| Map | `{k: v}`, `{:}` | `{K: V}` | `Mapping` | `map` | entries | keys | key | dynamic |
 
-*Evidence:* `Expr::Tuple` lowers to `Value::list` in `eval_inner`
-(`src/run/mod.rs`).
+### 21.1 List
 
-> **SPECIFICATION STATUS — intentionality.** The elimination of a distinct
-> tuple type is consistent with the grammar note ("Aura has no distinct tuple
-> value") and the list-sugar grammar production. It is frozen as: a
-> parenthesized comma-list denotes a list. The AST retains an `Expr::Tuple`
-> node as an implementation detail; it carries no additional semantics.
->
-> Consequently, the pairs produced by `enumerate`, `zip`, and `items()` are
-> **two-element lists**, not tuples. A pair's honest homogeneous element type is
-> the union of its two positions: `enumerate([T])` is `[[int | T]]`,
-> `zip([T], [U])` is `[[T | U]]`, and `{K: V}.items()` is `[[K | V]]`. Aura does
-> not invent a tuple type to make these prettier.
+**Normative rule.** A bracket literal `[a, b]` with no expected Array type is a
+List (`Ty::List(T)`, `Value::List`). A List is resizable and indexable.
 
-### 21.1 Collection static precision
+*Non-normative example.* `let xs = [1, 2]` infers `List<int>`.
 
-**Normative rule (literal inference).** A list/tuple or map literal infers each
-dimension as the **union** of the statically known component types, using the
-existing union rule (§5.2). `[1, "x"]` is `[int | string]`; `{1: "a", "1":
-"b"}` is `{int | string: string}`. An `Unknown` component imposes no
-constraint, so a list of only `Unknown` stays `[Unknown]` and `{:}` stays
-`{Unknown: Unknown}`. Order does not affect the inferred union.
+### 21.2 Array
+
+**Normative rule.** An Array is a fixed-length sequence. Its type is `[T; N]`,
+where `N` is a **compile-time non-negative integer literal** (not an arbitrary
+runtime expression, §19). The length is part of the type: `[int; 2]` and
+`[int; 3]` are different types, with no length covariance. An Array is
+indexable with `int` and its elements are mutable, but it cannot be resized.
+
+**Normative rule (contextual realization).** The bracket literal `[a, b]` is a
+List by default and realizes as an Array **only** when evaluated under an
+expected `[T; N]` type. The arity must equal `N` and each element must be
+compatible with `T`; a mismatch is rejected statically (`E3001`). This
+realization is a property of an *actual bracket literal under an actual Array
+expectation*, not a general conversion.
+
+**Normative rule (no implicit conversion).** There is no implicit
+`List`→`Array` (or `Array`→`List`) conversion. A binding already inferred as a
+List can never satisfy an Array expectation, even if its contents would fit:
+
+```aura
+fn take(xs: [int; 2]) {
+    print(xs)
+}
+
+fn main() {
+    take([1, 2])          # valid: a bracket literal under `[int; 2]`
+    let list = [1, 2]
+    take(list)            # invalid: `list` is a List, not an Array
+}
+```
+
+*Non-normative example.* `let xs: [int; 2] = [1, 2]` is an Array of two `int`;
+`let xs: [int; 2] = [1, 2, 3]` is rejected (length 3 vs 2); `let xs: [int; 2] =
+[1, "x"]` is rejected (element type).
+
+**Normative rule (contexts).** Contextual Array realization applies at every
+typed expression boundary where an expected type exists: an annotated `let`,
+a directly resolved function argument, a `return` under a declared return type,
+a struct field value, and a nested bracket literal under an element type.
+
+**Normative rule (JSON).** Dynamic JSON arrays decode to List. Typed decoding
+with target `[T; N]` produces an Array; a JSON array whose length differs from
+`N`, or whose elements do not match `T`, is `E4031`.
+
+### 21.3 Tuple
+
+**Normative rule.** `(a, b, ...)` with a comma is a genuine Tuple: a
+fixed-length, heterogeneous, **immutable** sequence. `(a,)` is a one-element
+tuple; `(a)` without a comma is grouping. A Tuple is indexable with `int`; a
+literal index yields that member's exact type, while a dynamic index yields the
+union of the member types. A tuple pattern `(p, q)` matches only a Tuple, and a
+list pattern `[p, q]` matches only a List; they are not interchangeable.
+
+*Non-normative example.* `(1, "Aura")` has type `(int, string)` and displays as
+`(1, "Aura")`; it is not equal to `[1, "Aura"]`.
+
+### 21.4 Set
+
+**Normative rule.** `{a, b}` (a brace group with a comma and no colon) and
+`set{}` are Set literals (`Ty::Set(T)`, `Value::Set`). A Set is an unordered
+membership with deterministic (ascending) iteration order. Set elements must be
+key-capable scalars (`int`, `bool`, `string`) — the same capability a map key
+requires — so a mutable or unhashable value cannot corrupt membership. A Set is
+not indexable. Duplicate literal members collapse by set semantics.
+
+**Normative rule (typed JSON).** A typed Set decodes from a JSON array. Every
+element must satisfy the target type; a duplicate JSON element is `E4031`
+rather than being silently collapsed, because strict external validation must
+not discard data.
+
+### 21.5 Map
+
+**Normative rule.** `{k: v}` and `{:}` are Maps, unchanged from prior versions:
+`Ty::Map(K, V)`, family `Mapping`, `Value::Map`, keys the key-capable scalars
+(§20).
+
+### 21.6 Collection static precision
+
+**Normative rule (literal inference).** A list, tuple, set, or map literal
+infers each dimension as the **union** of the statically known component types,
+using the existing union rule (§5.2). `[1, "x"]` is `[int | string]`;
+`{1: "a", "1": "b"}` is `{int | string: string}`. An `Unknown` component
+imposes no constraint, so a list of only `Unknown` stays `[Unknown]` and `{:}`
+stays `{Unknown: Unknown}`. Order does not affect the inferred union.
 
 **Normative rule (whole-literal checking).** When an expected type is known
 (an annotated `let`, assignment to a typed binding, a statically resolved
@@ -3577,8 +3665,10 @@ and are hereby frozen. Future changes require the RFC process.
    `0.0` and `-0.0` alike.
 9. **Nesting limits.** 256 AST levels (`E1015`); 512 call frames (`E4011`);
    a separate parser recursion backstop for grouping, also `E1015`.
-10. **Parenthesized comma-lists are lists; there is no tuple type.**
-11. **`{}` is a block, not an empty map; `{:}` is the empty-map literal.**
+10. **Five collection identities.** `List`, `Array`, `Tuple`, `Set`, and `Map`
+    are distinct identities (§21). `(a, b)` is a Tuple, not list sugar;
+    `[T; N]` is a fixed-length Array type; `{a, b}`/`set{}` is a Set.
+11. **`{}` is a block, `{:}` is the empty map, `set{}` is the empty set.**
 12. **Modules are in-source; visibility is real.** `module Name { ... }`
     declares a boundary; items are private unless `pub`; `pub module` exports
     a nested module across its parent boundary; `use path [as Alias]` imports a
@@ -3618,7 +3708,9 @@ Each item is classified **DELIBERATELY ABSENT** (a permanent Core decision, not
 a gap) or **POST-CORE RFC** (a candidate for a later, separately designed
 feature). None of these blocks Core completion.
 
-* **DELIBERATELY ABSENT — No tuple type.** `(a, b)` is list sugar (§21).
+* **DELIBERATELY PRESENT — Five collection identities.** `List`, `Array`,
+  `Tuple`, `Set`, and `Map` are distinct (§21); `(a, b)` is a Tuple, not list
+  sugar. (This supersedes the earlier "no tuple type" Core decision.)
 * **DELIBERATELY ABSENT — No `try` without `catch`** (§14.5).
 * **DELIBERATELY ABSENT — `match` arms cannot be bare control-flow keywords**;
   a block is required (§19.4).

@@ -803,12 +803,13 @@ fn trailing_comma_in_list_forms_is_transparent() {
     assert_eq!(out("fn main() { print([]) }"), "[]\n");
 }
 
-/// A one-element parenthesized comma-list is a one-element list (§21).
+/// A one-element parenthesized comma-list is a one-element Tuple (Keystone
+/// §26), distinct from a one-element list.
 #[test]
-fn one_element_list_sugar_is_a_list() {
-    assert_eq!(out("fn main() { print((1,)) }"), "[1]\n");
+fn one_element_tuple_is_a_tuple() {
+    assert_eq!(out("fn main() { print((1,)) }"), "(1,)\n");
     assert_eq!(out("fn main() { print((1,).len()) }"), "1\n");
-    assert_eq!(out("fn main() { print((1,) == [1]) }"), "true\n");
+    assert_eq!(out("fn main() { print((1,) == [1]) }"), "false\n");
 }
 
 /// A literal pattern in `for` is assertive: a matching element runs the body,

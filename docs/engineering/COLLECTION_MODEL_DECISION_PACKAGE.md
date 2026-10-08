@@ -1,9 +1,17 @@
 # Keystone Collection Model — Decision Package
 
-**Status:** OPEN — awaiting human decision. This document is a *decision
-package*, not current authority. Until a human selects an option, the language
-keeps exactly its present behavior: `List` and `Map` are the only collection
-identities; `(a, b)` is list sugar (§21); there is no `Array` and no `Set`.
+**Status:** RESOLVED — implemented. See **ADR-0005**
+(`docs/adr/0005-keystone-collection-model.md`), which records the accepted
+decision, and `docs/LANGUAGE_SPEC.md` §21 for the normative semantics. This
+document is retained as the historical decision package (the analysis that led
+to ADR-0005), not as current authority.
+
+**Resolution.** The human selected Option B (full reopening) with a specific
+Array design: `[T; N]` is the Array **type** (semicolon-separated, `N` a
+compile-time length), the literal stays comma-separated and is contextually
+realized as Array under an `[T; N]` expectation, and `[1; 2; 3]` is not an
+Array literal. `Tuple`, `Set`, `List`, `Array`, and `Map` are now distinct
+identities, implemented end-to-end.
 
 **Authority basis:** `docs/LANGUAGE_SPEC.md` §5.1 (value universe), §5.2 (`Ty`),
 §5.3 (property matrix), §5.4 (families), §11 (equality), §20 (collections),

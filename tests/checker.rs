@@ -941,15 +941,17 @@ fn range_builtin_second_bound_is_statically_checked() {
     assert_eq!(check("fn f(x) { let _ = range(0, x) }"), Ok(()));
 }
 
-/// A parenthesized comma-list is list sugar and is indistinguishable from a
-/// list literal (§21), so it is annotated like a list, not as `Unknown`.
+/// A parenthesized comma-list is now a genuine Tuple (Keystone §26), so it is
+/// checked as a tuple, not as a list: a list annotation is a mismatch, and a
+/// tuple annotation is accepted.
 #[test]
-fn tuple_is_checked_like_a_list() {
+fn tuple_is_checked_as_a_tuple() {
     assert_eq!(
         check("fn main() { let x: [string] = (1, 2) }"),
         Err(codes::TYPE_MISMATCH)
     );
-    assert_eq!(check("fn main() { let _: [int] = (1, 2) }"), Ok(()));
+    assert_eq!(check("fn main() { let _: [int] = (1, 2) }"), Err(codes::TYPE_MISMATCH));
+    assert_eq!(check("fn main() { let _: (int, int) = (1, 2) }"), Ok(()));
 }
 
 // ------------------------------------------ arithmetic result-type inference

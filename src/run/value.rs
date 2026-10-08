@@ -598,7 +598,13 @@ impl Value {
                     .map(|v| v.repr(false, depth + 1, budget))
                     .collect::<Vec<_>>()
                     .join(", ");
-                format!("({inner})")
+                // A one-element tuple prints with a trailing comma so it is
+                // unambiguous versus parenthesized grouping.
+                if t.len() == 1 {
+                    format!("({inner},)")
+                } else {
+                    format!("({inner})")
+                }
             }
             Value::Set(s) => {
                 let inner = s

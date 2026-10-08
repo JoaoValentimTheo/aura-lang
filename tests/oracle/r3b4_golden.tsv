@@ -13,10 +13,10 @@ r3b4-value/unary_inside		ok	0		-	0	0	0	0	list	[-1, true, -1]
 r3b4-value/binary_inside		ok	0		-	0	0	0	0	list	[3, 12, true]
 r3b4-value/short_circuit_inside		ok	0		-	0	0	0	0	list	[false, true]
 r3b4-value/skipped_rhs_inside		ok	0		-	0	0	0	0	list	[true, false]
-r3b4-value/tuple_two		ok	0		-	0	0	0	0	list	[1, 2]
-r3b4-value/tuple_one_trailing		ok	0		-	0	0	0	0	list	[1]
-r3b4-value/tuple_mixed		ok	0		-	0	0	0	0	list	[1, "a", true]
-r3b4-value/tuple_nested		ok	0		-	0	0	0	0	list	[[1, 2], [3, 4]]
+r3b4-value/tuple_two		ok	0		-	0	0	0	0	tuple	(1, 2)
+r3b4-value/tuple_one_trailing		ok	0		-	0	0	0	0	tuple	(1,)
+r3b4-value/tuple_mixed		ok	0		-	0	0	0	0	tuple	(1, "a", true)
+r3b4-value/tuple_nested		ok	0		-	0	0	0	0	tuple	((1, 2), (3, 4))
 r3b4-value/in_block		ok	0		-	0	0	0	0	list	[1, 2]
 r3b4-value/in_if_taken		ok	0		-	0	0	0	0	list	[1, 2]
 r3b4-value/in_if_condition		ok	0		-	0	0	0	0	int	7
