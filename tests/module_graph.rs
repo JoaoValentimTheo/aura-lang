@@ -539,6 +539,37 @@ fn runtime_error_in_child_keeps_child_provenance() {
 }
 
 #[test]
+fn typed_decode_type_argument_resolves_in_a_child_module() {
+    // A `json_decode_as(text, Type)` type argument names a nominal type. Its
+    // `TypeExpr` must be canonicalized/qualified exactly like a declaration
+    // annotation, or a module-local struct would be "unknown" (E3002) when the
+    // source is compiled as a child module rather than the program entry.
+    let (mut provider, root) = provider("fn main() { print(child::load()) }\n");
+    add_source(
+        &mut provider,
+        &root,
+        "child",
+        "child-key",
+        "child.aura",
+        "pub struct U { pub n: string }\n\
+         pub fn load() -> string {\n\
+             let u = json_decode_as('{\"n\":\"ok\"}', U)\n\
+             return u.n\n\
+         }\n",
+    );
+    let compilation =
+        aura::compile_provider_with_mode(&provider, CompileMode::Program).expect("compile");
+    let out = Arc::new(Mutex::new(Vec::new()));
+    compilation
+        .execute_with(Some(Box::new(SharedBuf(out.clone()))), Vec::new(), None)
+        .expect("the child-module type resolves and decodes");
+    assert_eq!(
+        String::from_utf8(out.lock().unwrap().clone()).unwrap(),
+        "ok\n"
+    );
+}
+
+#[test]
 fn external_depth_failure_is_attributed_to_the_child_source() {
     // Module nesting counts toward the semantic AST limit on every substrate
     // (ADR-0004): 256 levels parse, 257 is `E1015`. This test's intent is that

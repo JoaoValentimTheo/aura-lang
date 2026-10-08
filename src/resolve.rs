@@ -1782,9 +1782,11 @@ impl Resolver {
                     .into(),
                 *span,
             ),
-            // A type argument carries no value names; its `TypeExpr` has no
-            // local bindings to rewrite, so it is returned unchanged.
-            Expr::TypeRef(ty, span) => Expr::TypeRef(ty.clone(), *span),
+            // A type argument carries no value names, but its `TypeExpr` names
+            // nominal types that must be canonicalized/qualified exactly like a
+            // declaration annotation, or a module-local type would be "unknown"
+            // when the source is compiled as a child module.
+            Expr::TypeRef(ty, span) => Expr::TypeRef(self.rewrite_type(ty, prefix, *span)?, *span),
             Expr::Lambda(params, body, span) => {
                 let mut inner = locals.clone();
                 inner.push();
