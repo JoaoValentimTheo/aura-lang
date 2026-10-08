@@ -950,7 +950,10 @@ fn tuple_is_checked_as_a_tuple() {
         check("fn main() { let x: [string] = (1, 2) }"),
         Err(codes::TYPE_MISMATCH)
     );
-    assert_eq!(check("fn main() { let _: [int] = (1, 2) }"), Err(codes::TYPE_MISMATCH));
+    assert_eq!(
+        check("fn main() { let _: [int] = (1, 2) }"),
+        Err(codes::TYPE_MISMATCH)
+    );
     assert_eq!(check("fn main() { let _: (int, int) = (1, 2) }"), Ok(()));
 }
 

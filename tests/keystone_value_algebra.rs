@@ -323,7 +323,7 @@ fn annotations_reject_a_provably_different_kind() {
 #[test]
 fn a_union_type_records_the_mixed_element_kinds_rather_than_collapsing() {
     // The inferred element type of a mixed literal is the union of the
-    // distinct member types (§21.1): string-ness is not lost.
+    // distinct member types (§21.6): string-ness is not lost.
     assert_eq!(
         ok("fn main() { let xs = [1, \"a\"]\n print(xs) }"),
         "[1, \"a\"]\n"

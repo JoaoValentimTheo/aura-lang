@@ -397,8 +397,10 @@ fn project_ty(t: &crate::types::Ty) -> (Vec<String>, Option<String>, Vec<String>
     //   sized        string, list, array, tuple, set, map, range
     //   mutation     list/map entries, array elements, set membership, fields
     let mut caps: Vec<String> = Vec::new();
-    if matches!(t, Ty::String | Ty::List(_) | Ty::Array(_, _) | Ty::Tuple(_) | Ty::Map(_, _))
-        || matches!(t, Ty::Named(n) if n != "range")
+    if matches!(
+        t,
+        Ty::String | Ty::List(_) | Ty::Array(_, _) | Ty::Tuple(_) | Ty::Map(_, _)
+    ) || matches!(t, Ty::Named(n) if n != "range")
     {
         caps.push("indexable".into());
     }
@@ -1197,10 +1199,14 @@ mod tests {
         // Array reports fixed_length + mutable_elements; Tuple fixed_length
         // without mutation; Set mutable_membership and not indexable.
         assert!(sym("b").capabilities.contains(&"fixed_length".to_string()));
-        assert!(sym("b").capabilities.contains(&"mutable_elements".to_string()));
+        assert!(sym("b")
+            .capabilities
+            .contains(&"mutable_elements".to_string()));
         assert!(sym("c").capabilities.contains(&"fixed_length".to_string()));
         assert!(!sym("c").capabilities.contains(&"mutable".to_string()));
-        assert!(sym("d").capabilities.contains(&"mutable_membership".to_string()));
+        assert!(sym("d")
+            .capabilities
+            .contains(&"mutable_membership".to_string()));
         assert!(!sym("d").capabilities.contains(&"indexable".to_string()));
     }
 

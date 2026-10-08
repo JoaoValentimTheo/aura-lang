@@ -3680,9 +3680,7 @@ impl Checker {
             // A tuple is now a distinct identity (§26): infer a `Tuple` of the
             // element types. A parenthesized comma-list is a tuple; a bare
             // grouping `(e)` is not a tuple node and never reaches here.
-            Expr::Tuple(items, _) => {
-                Ty::tuple(items.iter().map(|item| self.infer(item)).collect())
-            }
+            Expr::Tuple(items, _) => Ty::tuple(items.iter().map(|item| self.infer(item)).collect()),
             Expr::List(items, _) => {
                 // Infer the element type as the union of every statically known
                 // element, using the language's existing union rule (§5.2). A

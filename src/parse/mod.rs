@@ -1769,7 +1769,7 @@ impl Parser {
                 }
                 self.expect(&Tok::RParen)?;
                 if members.len() == 1 && !trailing_comma {
-                    members.pop().unwrap()
+                    members.swap_remove(0)
                 } else {
                     TypeExpr::Tuple(members)
                 }

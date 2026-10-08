@@ -1445,9 +1445,11 @@ impl<'i> Machine<'i> {
                         kind: kind.clone(),
                     });
                     match &kind {
-                        SeqKind::Array(elem_ty, _) => Ok(Resume::Next(
-                            Ctrl::EvalExprExpected(elem, env, elem_ty.clone()),
-                        )),
+                        SeqKind::Array(elem_ty, _) => Ok(Resume::Next(Ctrl::EvalExprExpected(
+                            elem,
+                            env,
+                            elem_ty.clone(),
+                        ))),
                         SeqKind::List | SeqKind::Tuple => {
                             Ok(Resume::Next(Ctrl::EvalExpr(elem, env)))
                         }
@@ -1465,8 +1467,7 @@ impl<'i> Machine<'i> {
                                         out.len()
                                     ),
                                     Span::default(),
-                                )
-                                .into());
+                                ));
                             }
                             Value::array(out)
                         }
@@ -1495,8 +1496,7 @@ impl<'i> Machine<'i> {
                                 value.type_name()
                             ),
                             Span::default(),
-                        )
-                        .into())
+                        ));
                     }
                 }
                 let next = index + 1;
@@ -1959,10 +1959,11 @@ impl<'i> Machine<'i> {
                 SeqKind::Array(_, n) => {
                     return Err(crate::error::Diag::new(
                         codes::TYPE_MISMATCH,
-                        format!("array literal has 0 element(s) but the expected fixed length is {n}"),
+                        format!(
+                            "array literal has 0 element(s) but the expected fixed length is {n}"
+                        ),
                         Span::default(),
-                    )
-                    .into())
+                    ))
                 }
                 SeqKind::Tuple => Value::tuple(Vec::new()),
             }))));
@@ -1980,9 +1981,11 @@ impl<'i> Machine<'i> {
         // literal becomes a nested Array (§45).
         let first = Arc::new(items[0].clone());
         match &kind {
-            SeqKind::Array(elem, _) => {
-                Ok(Control::Next(Ctrl::EvalExprExpected(first, env.clone(), elem.clone())))
-            }
+            SeqKind::Array(elem, _) => Ok(Control::Next(Ctrl::EvalExprExpected(
+                first,
+                env.clone(),
+                elem.clone(),
+            ))),
             SeqKind::List | SeqKind::Tuple => Ok(Control::Next(Ctrl::EvalExpr(first, env.clone()))),
         }
     }
@@ -2441,7 +2444,11 @@ impl<'i> Machine<'i> {
             span,
             param_tys: param_tys.clone(),
         });
-        match param_tys.as_ref().and_then(|t| t.first()).and_then(|t| t.as_ref()) {
+        match param_tys
+            .as_ref()
+            .and_then(|t| t.first())
+            .and_then(|t| t.as_ref())
+        {
             Some(ty) => Ok(Control::Next(Ctrl::EvalExprExpected(
                 first,
                 env,

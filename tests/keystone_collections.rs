@@ -23,14 +23,20 @@ fn err(src: &str) -> u16 {
 #[test]
 fn array_type_uses_semicolon_between_element_and_length() {
     // `[int; 3]` is an Array type; a `;` between elements is not a literal.
-    assert_eq!(ok("fn main() { let a: [int; 3] = [1, 2, 3]\n print(a[2]) }"), "3\n");
+    assert_eq!(
+        ok("fn main() { let a: [int; 3] = [1, 2, 3]\n print(a[2]) }"),
+        "3\n"
+    );
     // `[1; 3]` is not an Array literal; the `;` is not a value separator.
     assert_eq!(err("fn main() { let x = [1; 3] }"), codes::EXPECTED);
 }
 
 #[test]
 fn array_length_must_be_a_compile_time_integer_literal() {
-    assert_eq!(err("fn main() { let a: [int; x] = [1, 2] }"), codes::EXPECTED);
+    assert_eq!(
+        err("fn main() { let a: [int; x] = [1, 2] }"),
+        codes::EXPECTED
+    );
     assert_eq!(err("fn main() { let a: [int; -1] = [1] }"), codes::EXPECTED);
 }
 
@@ -54,23 +60,30 @@ fn annotated_array_binding_realizes_an_array() {
     );
     // Two arrays with the same contents are equal.
     assert_eq!(
-        ok(
-            "fn main() { let a: [int; 2] = [1, 2]\n let b: [int; 2] = [1, 2]\n print(a == b) }"
-        ),
+        ok("fn main() { let a: [int; 2] = [1, 2]\n let b: [int; 2] = [1, 2]\n print(a == b) }"),
         "true\n"
     );
 }
 
 #[test]
 fn array_length_mismatch_is_static() {
-    assert_eq!(err("fn main() { let a: [int; 2] = [1, 2, 3] }"), codes::TYPE_MISMATCH);
+    assert_eq!(
+        err("fn main() { let a: [int; 2] = [1, 2, 3] }"),
+        codes::TYPE_MISMATCH
+    );
     // Fewer elements than declared is also a mismatch.
-    assert_eq!(err("fn main() { let a: [int; 3] = [1, 2] }"), codes::TYPE_MISMATCH);
+    assert_eq!(
+        err("fn main() { let a: [int; 3] = [1, 2] }"),
+        codes::TYPE_MISMATCH
+    );
 }
 
 #[test]
 fn array_element_mismatch_is_static() {
-    assert_eq!(err("fn main() { let a: [int; 2] = [1, \"x\"] }"), codes::TYPE_MISMATCH);
+    assert_eq!(
+        err("fn main() { let a: [int; 2] = [1, \"x\"] }"),
+        codes::TYPE_MISMATCH
+    );
 }
 
 #[test]
@@ -82,9 +95,7 @@ fn no_implicit_list_to_array_conversion() {
         codes::TYPE_MISMATCH
     );
     assert_eq!(
-        err(
-            "fn take(xs: [int; 2]) { print(xs) }\nfn main() { let list = [1, 2]\n take(list) }"
-        ),
+        err("fn take(xs: [int; 2]) { print(xs) }\nfn main() { let list = [1, 2]\n take(list) }"),
         codes::TYPE_MISMATCH
     );
     // The same spelling passed *directly* is a valid contextual literal.
@@ -115,9 +126,7 @@ fn array_realizes_in_every_typed_context() {
     );
     // Nested: expected type propagates to inner literals.
     assert_eq!(
-        ok(
-            "fn main() { let m: [[int; 2]; 2] = [[1, 2], [3, 4]]\n print(m[1][0]) }"
-        ),
+        ok("fn main() { let m: [[int; 2]; 2] = [[1, 2], [3, 4]]\n print(m[1][0]) }"),
         "3\n"
     );
 }
@@ -179,7 +188,10 @@ fn set_is_distinct_and_has_membership_semantics() {
 
 #[test]
 fn set_elements_must_be_key_capable() {
-    assert_eq!(err("fn main() { let s = {[1], [2]} }"), codes::TYPE_MISMATCH);
+    assert_eq!(
+        err("fn main() { let s = {[1], [2]} }"),
+        codes::TYPE_MISMATCH
+    );
 }
 
 // -------------------------------------------------------------------- JSON

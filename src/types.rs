@@ -593,7 +593,9 @@ impl Ty {
             // `never` is the bottom type (§4.3): no value can result.
             TypeExpr::Never => Ty::Never,
             TypeExpr::List(inner) => Ty::List(Box::new(Ty::from_expr(inner, types, span)?)),
-            TypeExpr::Array(inner, n) => Ty::Array(Box::new(Ty::from_expr(inner, types, span)?), *n),
+            TypeExpr::Array(inner, n) => {
+                Ty::Array(Box::new(Ty::from_expr(inner, types, span)?), *n)
+            }
             TypeExpr::Tuple(members) => {
                 let mut tys = Vec::with_capacity(members.len());
                 for m in members {

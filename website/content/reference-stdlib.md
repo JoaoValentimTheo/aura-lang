@@ -14,7 +14,7 @@ mutate, so this is one rule rather than a per-function special case.
 | Function | Signature | Returns |
 |---|---|---|
 | `print` | `print(...)` | `none` — writes arguments separated by spaces, then a newline |
-| `len` | `len(x)` | `int` — for string, list, map, range |
+| `len` | `len(x)` | `int` — for string, list, array, tuple, set, map, range |
 | `to_string` | `to_string(x)` | `string` |
 | `to_int` | `to_int(x)` | `int` |
 | `to_float` | `to_float(x)` | `float` |
@@ -64,6 +64,24 @@ Capabilities a host does not provide report `E5002`. See
 
 `len` · `push(v)` · `pop()` · `first()` · `last()` · `join(s)` ·
 `contains(v)` · `sort()` · `reverse()` · `map(f)` · `filter(f)` · `reduce(f, init)`
+
+### array
+
+A fixed-length sequence: the read-side list methods, but no resizing.
+
+`len` · `first()` · `last()` · `join(s)` · `contains(v)` · `map(f)` ·
+`filter(f)` · `reduce(f, init)`
+
+### tuple
+
+A fixed-length, immutable sequence.
+
+`len` · `first()` · `last()` · `contains(v)` · `map(f)` · `filter(f)` ·
+`reduce(f, init)`
+
+### set
+
+`len` · `has(v)` · `contains(v)` · `add(v)` · `remove(v)`
 
 ### map
 

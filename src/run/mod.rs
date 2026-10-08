@@ -970,7 +970,7 @@ impl Interp {
         let saved_ast_depth = std::mem::take(&mut self.ast_depth);
         let saved_source = self.current_source;
         let saved_ret_ty = self.current_ret_ty.take();
-        self.current_ret_ty = closure.ret_ty.clone();
+        self.current_ret_ty.clone_from(&closure.ret_ty);
         if let Some(source) = self
             .closure_sources
             .get(&(Rc::as_ptr(closure) as usize))
@@ -1033,9 +1033,7 @@ impl Interp {
                 // When the binding is annotated with an Array type, a bracket
                 // literal initializer realizes as an Array (the ONE contextual
                 // seam, §16).
-                let expected = ann
-                    .as_ref()
-                    .map(|a| crate::types::Ty::from_expr_lenient(a));
+                let expected = ann.as_ref().map(crate::types::Ty::from_expr_lenient);
                 let result = match &expected {
                     Some(ty) => self.eval_expected(value, env, ty)?,
                     None => self.eval(value, env)?,
@@ -1687,7 +1685,11 @@ impl Interp {
     /// an ambiguous overload set; a single candidate's parameter types are
     /// returned. The types are erased annotations, honest about the runtime's
     /// knowledge.
-    fn resolved_param_tys(&self, callee: &Expr, env: &Env) -> Option<Vec<Option<crate::types::Ty>>> {
+    fn resolved_param_tys(
+        &self,
+        callee: &Expr,
+        env: &Env,
+    ) -> Option<Vec<Option<crate::types::Ty>>> {
         Self::resolved_param_tys_inner(&self.functions, callee, env)
     }
 
@@ -2476,9 +2478,10 @@ impl Interp {
                     order
                         .iter()
                         .map(|f| {
-                            m.get(f)
-                                .map(crate::types::Ty::from_expr_lenient)
-                                .unwrap_or(crate::types::Ty::Unknown)
+                            m.get(f).map_or(
+                                crate::types::Ty::Unknown,
+                                crate::types::Ty::from_expr_lenient,
+                            )
                         })
                         .collect()
                 })
