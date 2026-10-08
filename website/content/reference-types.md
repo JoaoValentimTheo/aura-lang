@@ -20,14 +20,23 @@ is wrong. A value whose type cannot be determined has the checker type
 | Type | Description |
 |---|---|
 | `[T]` | list of `T` |
+| `[T; N]` | fixed-length array of `N` elements of type `T` |
+| `(T, U, ...)` | tuple of the given member types |
+| `{T}` | set of `T` |
 | `{K: V}` | map from key type `K` to value type `V` |
 | `Named(name)` | a user struct or alias-resolved type |
 | `Name<T, ...>` | a generic type applied to type arguments |
 | `Enum(name)` | an enum type |
 | `Unknown` | not determined |
 
+List, Array, Tuple, Set, and Map are five distinct identities. The array length
+is part of the type, so `[int; 2]` and `[int; 3]` are different types, and the
+bracket literal `[a, b]` is a list unless the expected type is `[T; N]`. See the
+[Collections](/docs/guide-collections/) guide and specification §21.
+
 A map key must be **key-capable**: `string`, `int`, or `bool`, or a union every
-member of which is key-capable. A map annotation with any other key (for
+member of which is key-capable. A set element has the same requirement. A map
+annotation with any other key (for
 example `float`, `none`, `[int]`, or another map) is rejected (`E3001`). A
 generic parameter is a valid key in a declaration and must be key-capable when
 instantiated, so `type Map<K, V> = {K: V}` is well-formed while `Map<float,
@@ -65,27 +74,36 @@ as before.
 ## Compatibility
 
 "`A` is compatible with `B`" holds when either side is `Unknown`, both are the
-same primitive, both are lists with compatible element types, both are maps
+same primitive, both are lists with compatible element types, both are arrays
+with the same length and compatible element types, both are tuples with the
+same arity and element-wise compatible members, both are sets with a compatible
+element type, both are maps
 with compatible key **and** value types, both are the same nominal type, or a
-union member matches. `int` and `float` are **not**
+union member matches. A list and an array are never compatible, even when the
+contents would fit; there is no implicit conversion. `int` and `float` are
+**not**
 compatible in annotations — there is no implicit numeric coercion in
 annotations, even though mixed arithmetic promotes at runtime. (A union such as
 `int | float` accepts either, because each member is checked separately.)
 
-| Expected ↓ / Actual → | int | float | bool | string | list | map | Named | Enum | Union | Unknown |
-|---|---|---|---|---|---|---|---|---|---|---|
-| `int` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓† | ✓ |
-| `float` | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓† | ✓ |
-| `bool` | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ |
-| `string` | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ |
-| `[T]` | ✗ | ✗ | ✗ | ✗ | ✓* | ✗ | ✗ | ✗ | ✗ | ✓ |
-| `{K: V}` | ✗ | ✗ | ✗ | ✗ | ✗ | ✓* | ✗ | ✗ | ✗ | ✓ |
-| `Named(n)` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓** | ✗ | ✗ | ✓ |
-| `Enum(n)` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓** | ✗ | ✓ |
-| `Union` | ✓‡ | ✓‡ | ✓‡ | ✓‡ | ✓‡ | ✓‡ | ✓‡ | ✓‡ | ✓‡ | ✓ |
-| `Unknown` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Expected ↓ / Actual → | int | float | bool | string | list | array | tuple | set | map | Named | Enum | Union | Unknown |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `int` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓† | ✓ |
+| `float` | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓† | ✓ |
+| `bool` | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ |
+| `string` | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ |
+| `[T]` | ✗ | ✗ | ✗ | ✗ | ✓* | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ |
+| `[T; N]` | ✗ | ✗ | ✗ | ✗ | ✗ | ✓* | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ |
+| `(T, ...)` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓* | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ |
+| `{T}` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓* | ✗ | ✗ | ✗ | ✗ | ✓ |
+| `{K: V}` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓* | ✗ | ✗ | ✗ | ✓ |
+| `Named(n)` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓** | ✗ | ✗ | ✓ |
+| `Enum(n)` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓** | ✗ | ✓ |
+| `Union` | ✓‡ | ✓‡ | ✓‡ | ✓‡ | ✓‡ | ✓‡ | ✓‡ | ✓‡ | ✓‡ | ✓‡ | ✓‡ | ✓‡ | ✓ |
+| `Unknown` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-\* element/value types must themselves be compatible.
+\* element/value/member types must themselves be compatible; an array also
+requires an equal length and a tuple an equal arity.
 \** same nominal name only.
 † a union expected type accepts the value when some member does.
 ‡ a union is accepted when every member matches the expected type, or when any
