@@ -1,1 +1,4 @@
-fn main() { let f=1; let int=2; let x=false; print(f <int>(x)) }
+fn main() { let f=1
+let int=2
+let x=false
+print(f <int>(x)) }

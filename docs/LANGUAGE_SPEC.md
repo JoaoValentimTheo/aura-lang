@@ -239,9 +239,10 @@ their dedicated syntactic contexts (§17.6, §17.7):
 ### 3.4 Whitespace and line structure
 
 **Normative rule.** Space, tab, and carriage return are insignificant
-whitespace. A newline is significant: it terminates a statement (see §3.7). A
-semicolon MAY be used instead of a newline to terminate a statement. Blank
-lines and lines containing only whitespace or a comment are ignored.
+whitespace. A newline is significant: it terminates a statement (see §3.7). Aura
+has **no general statement/item semicolon separator**: `;` is a reserved token,
+not a sequencing operator (§3.7). Blank lines and lines containing only
+whitespace or a comment are ignored.
 
 *Evidence:* `Lexer::next_token` (`src/lex/mod.rs`), `Parser::end_stmt`.
 
@@ -445,13 +446,20 @@ absence value. There is no `null`, `nil`, or `undefined`.
 
 ### 3.7 Statement termination
 
-**Normative rule.** A statement is terminated by a newline or a semicolon.
-Trailing separators are permitted. A real separator is *required* between
-statements and between items; the only exception is the zero-width
-`END_BOUNDARY` directly before `}` or EOF. Adjacent statements or items
-without a separator (`1 2`, `let x = 1 let y = 2`, `fn a() {} fn b() {}`) are
-a parse error (`E1006`). A comment is whitespace, not a separator, so two
-statements separated only by a comment still require a newline or `;`.
+**Normative rule.** A statement is terminated by a newline. Trailing separators
+are permitted. A real separator is *required* between statements and between
+items; the only exception is the zero-width `END_BOUNDARY` directly before `}`
+or EOF. Adjacent statements or items without a separator (`1 2`,
+`let x = 1 let y = 2`, `fn a() {} fn b() {}`) are a parse error (`E1006`). A
+comment is whitespace, not a separator, so two statements separated only by a
+comment still require a newline.
+
+**Normative rule (no general semicolon separator).** Aura does **not** use `;`
+as a general statement or item separator. Any `;` in a general separator
+position is rejected (`E1006`): `let a = 1; let b = 2`, `fn a() {}; fn b() {}`,
+and `{;;}` are all errors. The `;` token is reserved for an explicit
+collection/array grammar use (not yet admitted) and is never general
+sequencing.
 
 **Normative rule.** A newline is significant except at the delimiter-list
 layout positions explicitly marked `nl` in `docs/grammar.md`. In particular, `else`, `catch`, and `finally` MUST appear on
@@ -471,10 +479,10 @@ else { b }        # E1006: a newline before `else` is not allowed
 ```
 
 *Conformance note (CONF-PARSE-8, CLOSED).* The general separator policy is
-decided: a real separator (newline or `;`) is required between statements and
-items, with only the zero-width `END_BOUNDARY` before `}` or EOF as an
-exception. The parser enforces this and rejects accidental adjacency. Multiple
-semicolons in blocks remain permitted by the block production.
+decided: a real separator (newline) is required between statements and items,
+with only the zero-width `END_BOUNDARY` before `}` or EOF as an exception. The
+parser enforces this and rejects accidental adjacency. Aura has no general
+semicolon separator; `;` remains a reserved token.
 
 *Evidence:* `Parser::atom` (`if`/`match`), `Parser::stmt_inner` (`try`);
 `Parser::block` does not skip newlines before a following keyword.
@@ -501,7 +509,7 @@ module_decl     = "module" IDENT "{" nl { item nl } "}" ;
 use_decl        = "use" path [ "as" IDENT ] statement_end ;
 path            = IDENT { "::" IDENT } ;
 nl              = { NEWLINE } ;
-terminator      = NEWLINE | ";" ;
+terminator      = NEWLINE ;
 statement_end   = terminator | END_BOUNDARY ;
 expr_stmt       = expr statement_end ;
 ```
@@ -720,7 +728,7 @@ entry           = expr ":" expr ;
 if_expr         = "if" expr block [ "else" expr ] ;
 match_expr      = "match" expr "{" nl { match_arm nl } "}" ;
 match_arm       = pattern [ "if" expr ] "->"
-                  ( block | expr [ terminator ] ) [ "," | ";" ] ;
+                  ( block | expr [ terminator ] ) [ "," ] ;
 ```
 
 **Normative rule (trailing comma).** A trailing comma is accepted before every
@@ -1160,10 +1168,11 @@ of any other type is `E3001`.
 **Normative rule.** If the value's inferred type is `Unknown`, the annotation
 check passes. This preserves the conservative soundness rule of §2.3.
 
-*Non-normative example.* `let x = none; let y: int = x` is rejected: `x` is
-`none`, a known type, and `none` does not satisfy `int` (§5.2). A value the
-checker genuinely cannot type stays permissive: `let x = json_decode("{}");
-let y: int = x` passes, and a later runtime use of `y` may still fail.
+*Non-normative example.* `let x = none` followed by `let y: int = x` is
+rejected: `x` is `none`, a known type, and `none` does not satisfy `int` (§5.2).
+A value the checker genuinely cannot type stays permissive: `let x =
+json_decode("{}")` followed by `let y: int = x` passes, and a later runtime use
+of `y` may still fail.
 
 **Normative rule (branch joins).** An `if`/`match`/block used as a value has
 the join of its branch values: the union of the branch types (§5.2
@@ -1253,8 +1262,8 @@ checker and the interpreter.
 **Normative rule.** An alias target MUST name an existing type (`E3002`
 otherwise).
 
-**Normative rule.** Aliases MAY be chained (`type A = B; type B = int`); the
-checker resolves them transitively.
+**Normative rule.** Aliases MAY be chained (`type A = B` then, on a later line,
+`type B = int`); the checker resolves them transitively.
 
 **Normative rule.** Aliases are visible throughout a module and, in the REPL,
 across later submissions (§29).
@@ -1264,7 +1273,7 @@ across later submissions (§29).
 **recursive alias** — a `type` whose target refers, directly or through other
 aliases, to itself — has no concrete target and MUST be rejected with `E3002`;
 it MUST NOT recurse without bound or crash the host. This includes recursion
-through a union member (`type A = B | int; type B = A`).
+through a union member (`type A = B | int` then `type B = A`).
 
 *Implementation note.* The checker stores alias targets and substitutes them
 with `resolve_type_expr`; the interpreter has no alias table.
@@ -1774,8 +1783,9 @@ is the value. An expression-bodied lambda returns that expression.
 **Normative rule.** A lambda parameter uses the **same parameter model as a
 function parameter** (`Param`: name, optional type annotation, optional
 `mut`). A lambda parameter may therefore be annotated (`(x: int) -> x + 1`) and
-may be declared `mut` (`(mut x) -> { x = x + 1; return x }`), and the
-annotation is checked and recorded exactly as a function parameter's is.
+may be declared `mut` (a `mut` parameter reassigned inside a block body, with
+each statement on its own line), and the annotation is checked and recorded
+exactly as a function parameter's is.
 There is one signature model for functions, methods, and lambdas; a lambda is
 not a second, weaker model.
 
@@ -1801,7 +1811,8 @@ the mutation is visible to the environment outside the closure.
 
 ```aura
 let mut x = 1
-let f = () -> { x = x + 1; return x }
+let f = () -> { x = x + 1
+return x }
 f()      # 2
 x        # 2
 ```
@@ -1993,9 +2004,9 @@ shadowed, and when a nested scope ends the outer binding becomes visible again.
 **Normative rule.** Shadowing applies to variable bindings. It does **not**
 apply to `const` (a module/session constant declaration), to functions, to
 types, or to other declarations: a duplicate of those is `E2007`/`E2012`.
-`const X = 1; const X = 2` remains `E2007`; so does a top-level `let X` when
-`const X` (or another top-level `let X`) already exists, since a top-level
-`let` is a module constant (§4.2), not a variable binding.
+`const X = 1` followed by `const X = 2` remains `E2007`; so does a top-level
+`let X` when `const X` (or another top-level `let X`) already exists, since a
+top-level `let` is a module constant (§4.2), not a variable binding.
 
 **Normative rule.** Parameters are bindings, but a parameter list MUST NOT
 repeat a name (`E2007`, §16.4). A `let` in the function body may shadow a
@@ -2384,7 +2395,7 @@ match subject {
 
 **Normative rule.** `match` is an expression. Each arm is `pattern [if guard]
 -> body` where `body` is either a block or a single expression terminated by a
-newline or semicolon.
+newline.
 
 ### 19.2 Matching
 
@@ -2978,7 +2989,7 @@ all declarations are registered. A constant's initializer MUST NOT read a
 constant declared later (`E2003`), but functions may read constants freely
 because functions run after initialization. A constant initializer MAY call a
 function, read an earlier constant, or construct any value; a cyclic
-`const A = B; const B = A` is `E2003` at the forward reference.
+`const A = B` / `const B = A` pair is `E2003` at the forward reference.
 
 **Normative rule.** Constants and top-level `let` bindings share the value
 namespace: a value name (function, constant, or top-level `let`) declared

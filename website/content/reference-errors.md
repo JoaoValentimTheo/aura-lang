@@ -25,10 +25,10 @@ Every rejection carries a stable code. Codes are grouped by phase:
 
 | Code  | Meaning | Example trigger |
 |-------|---------|-----------------|
-| E2001 | Assign to immutable | `let x = 1; x = 2`; mutating through an immutable binding (`let xs = [1]; xs.push(2)`, `xs[0] = 9`, `s.f = 1`); a `mut self` method called on an immutable receiver |
+| E2001 | Assign to immutable | `let x = 1` then `x = 2`; mutating through an immutable binding (`let xs = [1]` then `xs.push(2)`, `xs[0] = 9`, `s.f = 1`); a `mut self` method called on an immutable receiver |
 | E2003 | Undefined name or function | `print(nope)`, `nope()` |
 | E2005 | `let` without initializer | `let x` |
-| E2007 | Redeclaration | `const X = 1; const X = 2`; two `main`s; a duplicate function, parameter, or top-level `let` (an ordinary `let`/`let mut` shadows instead, §16.3) |
+| E2007 | Redeclaration | `const X = 1` then `const X = 2`; two `main`s; a duplicate function, parameter, or top-level `let` (an ordinary `let`/`let mut` shadows instead, §16.3) |
 | E2008 | Declaration is never used | `fn f() { let x = 1 }`, `fn f(x: int) { }`, `for v in [1] { }` with `v` unused; discard explicitly with `_`/`_name` |
 | E2009 | `_param` was used | `fn f(_x) { return _x }` |
 | E2010 | Invalid assignment target | `1 = 2` |
@@ -38,7 +38,7 @@ Every rejection carries a stable code. Codes are grouped by phase:
 | E2014 | Duplicate pattern binding | `match xs { [a, a] -> ... }` |
 | E2015 | `break`/`continue` outside a loop | `fn main() { break }` |
 | E2016 | Duplicate struct field | `struct S { x: int, x: string }` |
-| E2017 | Trait implementation missing a required method | `trait T { fn a(self); fn b(self) }` with `impl T for S` providing only `a` |
+| E2017 | Trait implementation missing a required method | `trait T { fn a(self) fn b(self) }` with `impl T for S` providing only `a` |
 | E2018 | Private item accessed across a module boundary | `module m { fn hidden() { } }` then `m::hidden()` |
 | E2019 | Unknown module, or unknown item in a `use` path | `use nope`; `use shapes::Missing` |
 | E2020 | Module-source ownership collision | two provider sources both claim logical module `foo`; or in-source `module foo` plus external `foo` |

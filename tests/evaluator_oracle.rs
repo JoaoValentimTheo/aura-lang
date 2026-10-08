@@ -1543,14 +1543,14 @@ fn hand_verified_anchors() {
         "anchor",
         "eval_order",
         "anchor_order.aura",
-        "fn a() -> int { print(\"a\"); return 1 }\nfn b() -> int { print(\"b\"); return 2 }\nfn add(x: int, y: int) -> int { return x + y }\nfn main() { print(add(a(), b())) }\n",
+        "fn a() -> int { print(\"a\")\n return 1 }\nfn b() -> int { print(\"b\")\n return 2 }\nfn add(x: int, y: int) -> int { return x + y }\nfn main() { print(add(a(), b())) }\n",
         b"a\nb\n3\n",
     );
     expect_ok(
         "anchor",
         "short_circuit",
         "anchor_sc.aura",
-        "fn t() -> bool { print(\"t\"); return true }\nfn main() { print(false and t()) }\n",
+        "fn t() -> bool { print(\"t\")\n return true }\nfn main() { print(false and t()) }\n",
         b"false\n",
     );
     expect_ok(

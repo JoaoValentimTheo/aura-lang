@@ -21,14 +21,14 @@ core/pipe	34320a330a	ok	0		-	0	0	0	0	-	-
 core/module_mode_accepts_no_main		ok	0		-	0	0	0	0	-	-
 core/module_mode_executes_toplevel	746f706c6576656c0a350a	ok	0		-	0	0	0	0	-	-
 diag/div_zero		runtime	4007	division by zero	div_zero.aura	20	21	1	21	-	-
-diag/index_out_of_range		runtime	4019	list index 5 out of range	index.aura	34	35	1	35	-	-
+diag/index_out_of_range		runtime	4019	list index 5 out of range	index.aura	33	34	2	9	-	-
 diag/overflow		runtime	4013	integer overflow	overflow.aura	38	39	1	39	-	-
 diag/type_mismatch_runtime		runtime	3001	expected a number, found string	type_mismatch.aura	20	21	1	21	-	-
 diag/no_match		runtime	4029	no match arm matched the value	no_match.aura	31	36	2	19	-	-
 diag/break_outside_loop		compile	2015	`break`/`continue` can only appear inside a loop	break_outside.aura	12	17	1	13	-	-
 diag/uncaught_throw		runtime	4026	uncaught value: boom	uncaught_throw.aura	12	17	1	13	-	-
 diag/undefined_name_compile		compile	2003	undefined variable `nope`	undefined.aura	18	22	1	19	-	-
-diag/immutable_assign_compile		compile	2001	cannot assign to `x`: it is immutable (declare it `let mut`)	immutable.aura	23	24	1	24	-	-
+diag/immutable_assign_compile		compile	2001	cannot assign to `x`: it is immutable (declare it `let mut`)	immutable.aura	22	23	2	1	-	-
 diag/missing_main_compile		compile	4027	this program has no `fn main()`, so there is nothing to run	no_main.aura	0	0	1	1	-	-
 diag/arithmetic_compile_accept		ok	0		-	0	0	0	0	-	-
 float/nan_inf_signed_zero	696e660a6e616e0a66616c73650a66616c73650a2d302e300a747275650a	ok	0		-	0	0	0	0	-	-

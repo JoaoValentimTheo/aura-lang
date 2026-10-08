@@ -29,14 +29,15 @@ fn statements_require_a_real_separator() {
         codes::EXPECTED
     );
     assert_eq!(code("fn main() { print(1) print(2) }"), codes::EXPECTED);
-    // Newline, `;`, and the boundary before `}` are the only separators.
+    // A newline and the boundary before `}` are the only separators. `;` is a
+    // reserved token, not a statement separator (§3.7).
     assert_eq!(
         ok("fn main() { let x = 1\n let y = 2\n print(x + y) }"),
         "3\n"
     );
     assert_eq!(
-        ok("fn main() { let x = 1; let y = 2; print(x + y) }"),
-        "3\n"
+        code("fn main() { let x = 1; let y = 2; print(x + y) }"),
+        codes::EXPECTED
     );
     assert_eq!(ok("fn main() { print(1) }"), "1\n");
     // Items too: `fn a() {} fn b() {}` on one line is rejected, in every

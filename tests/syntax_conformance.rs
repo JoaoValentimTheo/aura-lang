@@ -232,7 +232,7 @@ fn delimiter_comma_matrix() {
         "(x,) -> x",
         "fn(\nx,\n) -> x",
         "match x { A(a,) -> a, }",
-        "match x { [a,\n] -> a; }",
+        "match x { [a,\n] -> a }",
     ] {
         assert!(parse_expr(src).is_ok(), "{src}: {:?}", parse_expr(src));
     }
@@ -373,14 +373,18 @@ fn comments_and_newlines() {
     ] {
         assert!(parse_stmt(src).is_err());
     }
-    // CONF-PARSE-8 is resolved: a real separator (newline or `;`) is required
+    // CONF-PARSE-8 is resolved: a real separator (newline) is required
     // between statements/items, except for the zero-width boundary directly
     // before `}` or EOF. Accidental adjacency is rejected.
     assert!(parse("1 2").is_err());
     assert!(parse_stmt("{ let x = 1 let y = 2 }").is_err());
-    assert!(parse_stmt("{;;}").is_ok());
     assert!(parse("fn a() {}\nfn b() {}").is_ok());
     assert!(parse("fn a() {} fn b() {}").is_err());
+    // Aura has no general statement/item semicolon separator (§3.7): `;` is a
+    // reserved token and every general separator use is rejected.
+    assert!(parse_stmt("{ let x = 1; let y = 2; x }").is_err());
+    assert!(parse_stmt("{;;}").is_err());
+    assert!(parse("fn a() {}; fn b() {}").is_err());
 }
 
 fn shape(e: &Expr) -> String {
@@ -503,9 +507,9 @@ fn return_accepts_every_unary_expression() {
 #[test]
 fn annotated_block_is_not_misclassified_as_a_map() {
     for src in [
-        "{ let _: int = 1; x }",
-        "{ print(1); let _: int = 2; x }",
-        "{ let f = (x: int) -> x; f(1) }",
+        "{ let _: int = 1\n x }",
+        "{ print(1)\n let _: int = 2\n x }",
+        "{ let f = (x: int) -> x\n f(1) }",
     ] {
         assert!(
             matches!(parse_expr(src).unwrap(), Expr::Block(_, _)),

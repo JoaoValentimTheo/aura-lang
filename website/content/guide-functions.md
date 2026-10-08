@@ -99,7 +99,8 @@ input types, not by whether it mutates the receiver.
 A lambda is `(x) -> e`, `(x: int) -> e`, `(x, y) -> { ... }`, or any of those
 prefixed with `fn` (`fn x -> e` is the single-parameter `fn` form). A lambda
 parameter takes the same name, annotation, and `mut` as a function parameter —
-`(mut n) -> { n = n + 1; return n }` is valid. It captures its
+a `mut` parameter reassigned inside a block body, each statement on its own
+line, is valid. It captures its
 defining environment **by reference**, not by value:
 
 ```aura

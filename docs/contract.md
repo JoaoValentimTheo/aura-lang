@@ -29,7 +29,8 @@ rule changes, the RFC process in `CONTRIBUTING.md` applies.
 * Source is UTF-8. Identifiers are `[A-Za-z_][A-Za-z0-9_]*`.
 * Line comments start with `#`; `<!-- ... --!>` is a multiline comment. Both
   are discarded. An unterminated multiline comment is `E1005`.
-* A newline or `;` terminates a statement.
+* A newline terminates a statement. Aura has no general semicolon separator;
+  `;` is a reserved token.
 * Literals: decimal `123`, hex `0xff`, binary `0b1011`, float `1.5`, `1e9`;
   strings `"abc"` and `'abc'` (interchangeable); f-strings `f"x = {x}"`.
 * `1abc` is an error, never three tokens.
@@ -109,7 +110,7 @@ use geometry::Point          # import a name from an in-source module (see §10)
   ones.
 * A lambda parameter uses the same model as a function parameter: it may be
   annotated and may be `mut` (`(x: int) -> x`, `(mut y) -> …`).
-* An ordinary `let`/`let mut` shadows: `let x = 1; let x = 2` is valid, and the initializer reads the previous binding. `const`, functions, parameters, and types do not shadow: a duplicate is `E2007`/`E2012`.
+* An ordinary `let`/`let mut` shadows: `let x = 1` then `let x = 2` is valid, and the initializer reads the previous binding. `const`, functions, parameters, and types do not shadow: a duplicate is `E2007`/`E2012`.
 * Parameter names starting with `_` must be unused (`E2009`).
 * A struct is built with named fields (`S { a: 1 }`) or positionally in
   declaration order (`S(1)`). Named construction must supply every declared
@@ -185,7 +186,7 @@ Precedence, lowest to highest:
 
 ```
 if cond { } else { }
-match value { 1 -> "one"; _ -> "other" }
+match value { 1 -> "one", _ -> "other" }
 while cond { }
 loop { break }
 for x in items { }

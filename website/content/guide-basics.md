@@ -64,9 +64,9 @@ let mut y = 1
 let y = 20         # y is now an immutable binding
 ```
 
-`mut` belongs to the new binding, so `let mut x = 1; let x = 2; x = 3` is
-`E2001`. Shadowing changes *names*, not *bindings*: a closure that captured an
-earlier binding keeps seeing it:
+`mut` belongs to the new binding, so `let mut x = 1` then `let x = 2` then
+`x = 3` is `E2001`. Shadowing changes *names*, not *bindings*: a closure that
+captured an earlier binding keeps seeing it:
 
 ```aura
 let x = 10
@@ -81,7 +81,7 @@ visible again when the nested scope ends. A loop variable, match binding, and
 catch binding are scoped to their construct and never leak out.
 
 `const`, functions, parameters, and types are **not** shadowable: a duplicate
-is `E2007`/`E2012`. In particular `const X = 1; const X = 2` is `E2007`.
+is `E2007`/`E2012`. In particular `const X = 1` then `const X = 2` is `E2007`.
 
 ### Constants
 

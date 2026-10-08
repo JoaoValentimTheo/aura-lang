@@ -28,7 +28,7 @@ module_decl     = "module" IDENT "{" nl { item nl } "}" ;
 use_decl        = "use" path [ "as" IDENT ] statement_end ;
 path            = IDENT { "::" IDENT } ;
 nl              = { NEWLINE } ;
-terminator      = NEWLINE | ";" ;
+terminator      = NEWLINE ;
 statement_end   = terminator | END_BOUNDARY ;
 expr_stmt       = expr statement_end ;
 
@@ -137,7 +137,7 @@ entry           = expr ":" expr ;
 if_expr         = "if" expr block [ "else" expr ] ;
 match_expr      = "match" expr "{" nl { match_arm nl } "}" ;
 match_arm       = pattern [ "if" expr ] "->"
-                  ( block | expr [ terminator ] ) [ "," | ";" ] ;
+                  ( block | expr [ terminator ] ) [ "," ] ;
 
 pattern         = literal_pattern | BIND_PATH | UPPER_PATH | list_pattern
                 | path "(" nl [ pattern nl { "," nl pattern nl }
@@ -208,10 +208,14 @@ format_type     = "d" | "b" | "o" | "x" | "X" | "f" | "F" | "e" | "E" | "%" ;
   line. Multiline-comment internal newlines produce no NEWLINE token.
 * `END_BOUNDARY` is a zero-width end before `}` or EOF, as established by the
   specification's inline examples. CONF-PARSE-8 is CLOSED: a real separator
-  (newline or `;`) is required between statements and items, and the parser
+  (newline) is required between statements and items, and the parser
   rejects absent separators between adjacent items/statements (`1 2`,
   `let x = 1 let y = 2`). The only zero-width end is `END_BOUNDARY` before `}`
   or EOF. A comment is whitespace, not a separator.
+* Aura has **no general statement/item semicolon separator**: `;` is a reserved
+  token and is rejected in every general separator position (`let a = 1; let b
+  = 2` is `E1006`). Semicolon is reserved for an explicit collection/array
+  grammar use and is not a sequencing operator.
 * `pub impl`, local item declarations, import lists, repeated modifiers, default
   arguments, variadic parameters and method bodies inside traits are invalid.
   The module path separator is `::`; the historical dotted `use a.b` spelling is

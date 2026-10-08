@@ -43,7 +43,7 @@ fn table() -> BTreeMap<&'static str, Expected> {
         ("syntax/conf-parse-5-adjacency.aura", Expected::Ok("true\n")),
         ("syntax/conf-parse-6-return.aura", Expected::Ok("-1\n")),
         ("syntax/conf-parse-7-block.aura", Expected::Ok("1\n")),
-        ("syntax/conf-parse-9-semi.aura", Expected::Ok("1\n")),
+        ("syntax/conf-parse-9-separator.aura", Expected::Ok("1\n2\n")),
         ("aliases/parameterised.aura", Expected::Ok("2\n")),
         ("aliases/transparent_chain.aura", Expected::Ok("5\n")),
         ("ast/gen_00.aura", Expected::Ok("2\n0\n")),

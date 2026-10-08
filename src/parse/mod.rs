@@ -553,21 +553,20 @@ impl Parser {
     }
 
     /// Verify and consume the separator between items in an item list (a
-    /// module body, an `impl` body, or the file root): a newline or `;`, or the
+    /// module body, an `impl` body, or the file root): a newline, or the
     /// zero-width boundary before `}`/EOF (CONF-PARSE-8). `fn a() {} fn b() {}`
-    /// on one line is rejected in every item-list body.
+    /// on one line is rejected in every item-list body. Aura has **no general
+    /// statement/item semicolon separator**; `;` is reserved (see §3.7).
     fn item_separator(&mut self) -> Result<()> {
         match self.at() {
-            Tok::Eof | Tok::RBrace | Tok::Newline | Tok::Semi => {
-                while matches!(self.at(), Tok::Newline | Tok::Semi) {
-                    self.bump();
-                }
+            Tok::Eof | Tok::RBrace | Tok::Newline => {
+                self.skip_newlines();
                 Ok(())
             }
             other => Err(Diag::new(
                 codes::EXPECTED,
                 format!(
-                    "expected a newline or `;` between items, found {}",
+                    "expected a newline between items, found {}",
                     other.describe()
                 ),
                 self.span(),
@@ -577,20 +576,21 @@ impl Parser {
 
     /// Verify and consume the statement separator (§3.7, CONF-PARSE-8).
     ///
-    /// A statement is terminated by a newline or `;`, or by the zero-width
-    /// boundary directly before `}` or EOF. Adjacent statements without a real
-    /// separator (`1 2`, `let x = 1 let y = 2`) are rejected rather than
-    /// accepted as a parser accident.
+    /// A statement is terminated by a newline, or by the zero-width boundary
+    /// directly before `}` or EOF. Adjacent statements without a real separator
+    /// (`1 2`, `let x = 1 let y = 2`) are rejected rather than accepted as a
+    /// parser accident. Aura has **no general statement semicolon separator**;
+    /// `;` is reserved.
     /// The separator token is left in place for the enclosing block/module
     /// loop to consume, so an item parser and its loop never disagree about
     /// which side owns it.
     fn end_stmt(&mut self) -> Result<()> {
         match self.at() {
-            Tok::RBrace | Tok::Eof | Tok::Semi | Tok::Newline => Ok(()),
+            Tok::RBrace | Tok::Eof | Tok::Newline => Ok(()),
             other => Err(Diag::new(
                 codes::EXPECTED,
                 format!(
-                    "expected a newline or `;` between statements, found {}",
+                    "expected a newline between statements, found {}",
                     other.describe()
                 ),
                 self.span(),
@@ -1761,9 +1761,7 @@ impl Parser {
         self.expect(&Tok::LBrace)?;
         let mut stmts = Vec::new();
         loop {
-            while matches!(self.at(), Tok::Newline | Tok::Semi) {
-                self.bump();
-            }
+            self.skip_newlines();
             if matches!(self.at(), Tok::RBrace | Tok::Eof) {
                 break;
             }
@@ -2816,16 +2814,17 @@ impl Parser {
                     } else {
                         let e = self.expr()?;
                         // A match arm's expression body is terminated by `,`,
-                        // `;`, a newline, or the arm block's closing `}`
+                        // a newline, or the arm block's closing `}`
                         // (CONF-PARSE-8; `,` separates arms and is not a
-                        // statement separator elsewhere).
+                        // statement separator elsewhere). Aura has no general
+                        // statement semicolon separator.
                         match self.at() {
-                            Tok::Comma | Tok::Semi | Tok::Newline | Tok::RBrace | Tok::Eof => {}
+                            Tok::Comma | Tok::Newline | Tok::RBrace | Tok::Eof => {}
                             other => {
                                 return Err(Diag::new(
                                     codes::EXPECTED,
                                     format!(
-                                        "expected `,`, `;`, or a newline between match arms, found {}",
+                                        "expected `,` or a newline between match arms, found {}",
                                         other.describe()
                                     ),
                                     self.span(),
@@ -2839,7 +2838,7 @@ impl Parser {
                         guard,
                         body,
                     });
-                    if matches!(self.at(), Tok::Comma | Tok::Semi) {
+                    if matches!(self.at(), Tok::Comma) {
                         self.bump();
                     }
                 }

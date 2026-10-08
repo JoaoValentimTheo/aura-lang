@@ -202,8 +202,10 @@ fn main() { print(inc(add(inc(1), 2))) }
         group: "core",
         name: "arg_order",
         file: "arg_order.aura",
-        source: r#"fn a() -> int { print("a"); return 1 }
-fn b() -> int { print("b"); return 2 }
+        source: r#"fn a() -> int { print("a")
+return 1 }
+fn b() -> int { print("b")
+return 2 }
 fn add(x: int, y: int) -> int { return x + y }
 fn main() { print(add(a(), b())) }
 "#,
@@ -374,7 +376,8 @@ fn main() {
         name: "pipe",
         file: "pipe.aura",
         source: r#"fn inc(x: int) -> int { return x + 1 }
-fn main() { print(41 |> inc); print([1, 2, 3] |> len) }
+fn main() { print(41 |> inc)
+print([1, 2, 3] |> len) }
 "#,
         kind: Kind::ExecuteProgram,
     });
@@ -407,7 +410,7 @@ fn main() { print(41 |> inc); print([1, 2, 3] |> len) }
         group: "diag",
         name: "index_out_of_range",
         file: "index.aura",
-        source: "fn main() { let xs = [1]; print(xs[5]) }\n",
+        source: "fn main() { let xs = [1]\nprint(xs[5]) }\n",
         kind: Kind::ExecuteProgram,
     });
     out.push(Case {
@@ -456,7 +459,7 @@ fn main() { print(41 |> inc); print([1, 2, 3] |> len) }
         group: "diag",
         name: "immutable_assign_compile",
         file: "immutable.aura",
-        source: "fn main() { let x = 1; x = 2 }\n",
+        source: "fn main() { let x = 1\nx = 2 }\n",
         kind: Kind::CompileProgram,
     });
     out.push(Case {
@@ -498,7 +501,7 @@ fn main() {
         group: "float",
         name: "integral_float_display",
         file: "float_int.aura",
-        source: "fn main() { print(1.0); print(to_string(1.0)); print([1.0, 2.0]) }\n",
+        source: "fn main() { print(1.0)\nprint(to_string(1.0))\nprint([1.0, 2.0]) }\n",
         kind: Kind::ExecuteProgram,
     });
 
@@ -578,7 +581,8 @@ fn main() { print(f(510)) }
         file: "callback_snapshot.aura",
         source: r#"fn main() {
   let mut xs = [1, 2, 3]
-  let ys = xs.map((x) -> { xs.push(99); return x })
+  let ys = xs.map((x) -> { xs.push(99)
+return x })
   print(ys)
   print(xs)
 }
@@ -591,7 +595,8 @@ fn main() { print(f(510)) }
         group: "compound",
         name: "index_target_double_eval",
         file: "compound_index.aura",
-        source: r#"fn idx() -> int { print("idx"); return 0 }
+        source: r#"fn idx() -> int { print("idx")
+return 0 }
 fn main() {
   let mut a = [1]
   a[idx()] += 10
@@ -604,8 +609,10 @@ fn main() {
         group: "compound",
         name: "index_rhs_order",
         file: "compound_rhs.aura",
-        source: r#"fn rhs() -> int { print("rhs"); return 5 }
-fn idx() -> int { print("idx"); return 0 }
+        source: r#"fn rhs() -> int { print("rhs")
+return 5 }
+fn idx() -> int { print("idx")
+return 0 }
 fn main() {
   let mut a = [1]
   let r = rhs()
@@ -814,8 +821,10 @@ fn add_call_position_cases(out: &mut Vec<Case>) {
         group: "call-position",
         name: "binary_left",
         file: "cp_binary_left.aura",
-        source: r#"fn a() -> int { print("a"); return 1 }
-fn b() -> int { print("b"); return 2 }
+        source: r#"fn a() -> int { print("a")
+return 1 }
+fn b() -> int { print("b")
+return 2 }
 fn main() { print(a() + b()) }
 "#,
         kind: Kind::ExecuteProgram,
@@ -824,8 +833,10 @@ fn main() { print(a() + b()) }
         group: "call-position",
         name: "binary_right_vs_left",
         file: "cp_binary_right.aura",
-        source: r#"fn a() -> int { print("a"); return 1 }
-fn b() -> int { print("b"); return 2 }
+        source: r#"fn a() -> int { print("a")
+return 1 }
+fn b() -> int { print("b")
+return 2 }
 fn main() { print((a() * 10) + b()) }
 "#,
         kind: Kind::ExecuteProgram,
@@ -834,8 +845,10 @@ fn main() { print((a() * 10) + b()) }
         group: "call-position",
         name: "function_argument",
         file: "cp_arg.aura",
-        source: r#"fn a() -> int { print("a"); return 1 }
-fn b() -> int { print("b"); return 2 }
+        source: r#"fn a() -> int { print("a")
+return 1 }
+fn b() -> int { print("b")
+return 2 }
 fn add(x: int, y: int) -> int { return x + y }
 fn main() { print(add(a(), b())) }
 "#,
@@ -845,8 +858,10 @@ fn main() { print(add(a(), b())) }
         group: "call-position",
         name: "short_circuit",
         file: "cp_short_circuit.aura",
-        source: r#"fn t() -> bool { print("t"); return true }
-fn f() -> bool { print("f"); return false }
+        source: r#"fn t() -> bool { print("t")
+return true }
+fn f() -> bool { print("f")
+return false }
 fn main() {
   print(false and t())
   print(true or f())
@@ -860,8 +875,10 @@ fn main() {
         group: "call-position",
         name: "index_base_and_key",
         file: "cp_index.aura",
-        source: r#"fn base() -> [int] { print("base"); return [10, 20, 30] }
-fn idx() -> int { print("idx"); return 1 }
+        source: r#"fn base() -> [int] { print("base")
+return [10, 20, 30] }
+fn idx() -> int { print("idx")
+return 1 }
 fn main() { print(base()[idx()]) }
 "#,
         kind: Kind::ExecuteProgram,
@@ -871,9 +888,12 @@ fn main() { print(base()[idx()]) }
         name: "method_receiver_and_arg",
         file: "cp_method.aura",
         source: r#"struct S { n: int }
-impl S { fn add(self, x: int) -> int { print("add"); return self.n + x } }
-fn recv() -> S { print("recv"); return S { n: 1 } }
-fn arg() -> int { print("arg"); return 5 }
+impl S { fn add(self, x: int) -> int { print("add")
+return self.n + x } }
+fn recv() -> S { print("recv")
+return S { n: 1 } }
+fn arg() -> int { print("arg")
+return 5 }
 fn main() { print(recv().add(arg())) }
 "#,
         kind: Kind::ExecuteProgram,
@@ -882,8 +902,10 @@ fn main() { print(recv().add(arg())) }
         group: "call-position",
         name: "list_items",
         file: "cp_list.aura",
-        source: r#"fn a() -> int { print("a"); return 1 }
-fn b() -> int { print("b"); return 2 }
+        source: r#"fn a() -> int { print("a")
+return 1 }
+fn b() -> int { print("b")
+return 2 }
 fn main() { print([a(), b()]) }
 "#,
         kind: Kind::ExecuteProgram,
@@ -892,10 +914,14 @@ fn main() { print([a(), b()]) }
         group: "call-position",
         name: "map_key_and_value",
         file: "cp_map.aura",
-        source: r#"fn ka() -> string { print("ka"); return "x" }
-fn kb() -> string { print("kb"); return "y" }
-fn a() -> int { print("a"); return 1 }
-fn b() -> int { print("b"); return 2 }
+        source: r#"fn ka() -> string { print("ka")
+return "x" }
+fn kb() -> string { print("kb")
+return "y" }
+fn a() -> int { print("a")
+return 1 }
+fn b() -> int { print("b")
+return 2 }
 fn main() { print({ka(): a(), kb(): b()}) }
 "#,
         kind: Kind::ExecuteProgram,
@@ -904,8 +930,10 @@ fn main() { print({ka(): a(), kb(): b()}) }
         group: "call-position",
         name: "fstring_interpolation",
         file: "cp_fstr.aura",
-        source: r#"fn a() -> int { print("a"); return 1 }
-fn b() -> int { print("b"); return 2 }
+        source: r#"fn a() -> int { print("a")
+return 1 }
+fn b() -> int { print("b")
+return 2 }
 fn main() { print(f"{a()} {b()}") }
 "#,
         kind: Kind::ExecuteProgram,
@@ -914,7 +942,8 @@ fn main() { print(f"{a()} {b()}") }
         group: "call-position",
         name: "comprehension_value",
         file: "cp_comp_value.aura",
-        source: r#"fn a() -> int { print("a"); return 1 }
+        source: r#"fn a() -> int { print("a")
+return 1 }
 fn main() { print([a() for _ in [1, 2]]) }
 "#,
         kind: Kind::ExecuteProgram,
@@ -923,7 +952,8 @@ fn main() { print([a() for _ in [1, 2]]) }
         group: "call-position",
         name: "comprehension_filter",
         file: "cp_comp_filter.aura",
-        source: r#"fn keep(x: int) -> bool { print(x); return x > 1 }
+        source: r#"fn keep(x: int) -> bool { print(x)
+return x > 1 }
 fn main() { print([x for x in [1, 2, 3] if keep(x)]) }
 "#,
         kind: Kind::ExecuteProgram,
@@ -932,7 +962,8 @@ fn main() { print([x for x in [1, 2, 3] if keep(x)]) }
         group: "call-position",
         name: "match_guard",
         file: "cp_match_guard.aura",
-        source: r#"fn g() -> bool { print("g"); return true }
+        source: r#"fn g() -> bool { print("g")
+return true }
 fn main() { print(match 1 { 1 if g() -> 10
  _ -> 20 }) }
 "#,
@@ -942,8 +973,10 @@ fn main() { print(match 1 { 1 if g() -> 10
         group: "call-position",
         name: "return_expression",
         file: "cp_return.aura",
-        source: r#"fn a() -> int { print("a"); return 1 }
-fn b() -> int { print("b"); return 2 }
+        source: r#"fn a() -> int { print("a")
+return 1 }
+fn b() -> int { print("b")
+return 2 }
 fn r() -> int { return a() + b() }
 fn main() { print(r()) }
 "#,
@@ -953,8 +986,10 @@ fn main() { print(r()) }
         group: "call-position",
         name: "assign_rhs",
         file: "cp_assign.aura",
-        source: r#"fn a() -> int { print("a"); return 1 }
-fn b() -> int { print("b"); return 2 }
+        source: r#"fn a() -> int { print("a")
+return 1 }
+fn b() -> int { print("b")
+return 2 }
 fn main() {
   let mut x = 0
   x = a() + b()
@@ -967,8 +1002,10 @@ fn main() {
         group: "call-position",
         name: "range_bounds",
         file: "cp_range.aura",
-        source: r#"fn a() -> int { print("a"); return 1 }
-fn b() -> int { print("b"); return 4 }
+        source: r#"fn a() -> int { print("a")
+return 1 }
+fn b() -> int { print("b")
+return 4 }
 fn main() { for x in (a()..b()) { print(x) } }
 "#,
         kind: Kind::ExecuteProgram,
@@ -978,8 +1015,10 @@ fn main() { for x in (a()..b()) { print(x) } }
         name: "construct_args",
         file: "cp_construct.aura",
         source: r#"struct P { x: int, y: int }
-fn a() -> int { print("a"); return 1 }
-fn b() -> int { print("b"); return 2 }
+fn a() -> int { print("a")
+return 1 }
+fn b() -> int { print("b")
+return 2 }
 fn main() { print(P { x: a(), y: b() }) }
 "#,
         kind: Kind::ExecuteProgram,
@@ -1042,11 +1081,11 @@ fn add_finally_matrix(out: &mut Vec<Case>) {
     );
     push(
         "pending_break__finally_return",
-        "fn f() { let mut i = 0\n while i < 2 { i = i + 1\n try { break } catch _ { print(\"caught\") } finally { return } } }\nfn main() { f(); print(\"after\") }\n",
+        "fn f() { let mut i = 0\n while i < 2 { i = i + 1\n try { break } catch _ { print(\"caught\") } finally { return } } }\nfn main() { f()\nprint(\"after\") }\n",
     );
     push(
         "pending_break__finally_throw",
-        "fn f() { let mut i = 0\n while i < 2 { i = i + 1\n try { break } catch _ { print(\"caught\") } finally { throw \"T\" } } }\nfn main() { f(); print(\"unreached\") }\n",
+        "fn f() { let mut i = 0\n while i < 2 { i = i + 1\n try { break } catch _ { print(\"caught\") } finally { throw \"T\" } } }\nfn main() { f()\nprint(\"unreached\") }\n",
     );
     push(
         "pending_continue__finally_val",
@@ -1054,11 +1093,11 @@ fn add_finally_matrix(out: &mut Vec<Case>) {
     );
     push(
         "pending_continue__finally_return",
-        "fn f() { let mut i = 0\n while i < 3 { i = i + 1\n try { continue } catch _ { print(\"caught\") } finally { return } } }\nfn main() { f(); print(\"after\") }\n",
+        "fn f() { let mut i = 0\n while i < 3 { i = i + 1\n try { continue } catch _ { print(\"caught\") } finally { return } } }\nfn main() { f()\nprint(\"after\") }\n",
     );
     push(
         "pending_continue__finally_throw",
-        "fn f() { let mut i = 0\n while i < 3 { i = i + 1\n try { continue } catch _ { print(\"caught\") } finally { throw \"T\" } } }\nfn main() { f(); print(\"unreached\") }\n",
+        "fn f() { let mut i = 0\n while i < 3 { i = i + 1\n try { continue } catch _ { print(\"caught\") } finally { throw \"T\" } } }\nfn main() { f()\nprint(\"unreached\") }\n",
     );
     // Fatal error from finally propagates over a pending value.
     push(
@@ -1073,6 +1112,6 @@ fn add_finally_matrix(out: &mut Vec<Case>) {
     // Call inside finally.
     push(
         "call_in_finally",
-        "fn g() -> int { print(\"g\"); return 0 }\nfn f() -> int { try { return 1 } catch _ { return 0 } finally { g() } }\nfn main() { print(f()) }\n",
+        "fn g() -> int { print(\"g\")\nreturn 0 }\nfn f() -> int { try { return 1 } catch _ { return 0 } finally { g() } }\nfn main() { print(f()) }\n",
     );
 }
