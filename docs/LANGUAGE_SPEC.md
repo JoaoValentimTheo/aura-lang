@@ -2482,7 +2482,7 @@ runtime otherwise.
 * Display: `{k: v, ...}` in ascending key order; string keys are quoted, and
   `int`/`bool` keys are written bare.
 * Removal: `m.remove(k)` yields the removed value or `none`.
-* Entries: `m.items()` yields `[[k, v], ...]` in ascending key order (§21.2).
+* Entries: `m.items()` yields `[[k, v], ...]` in ascending key order (§21.7).
 
 ### 20.3 Empty-map literal
 
@@ -2653,7 +2653,7 @@ dynamic (`Unknown`), as are list `first`/`last`/`pop` and `reduce`. Aura has no
 static `none` type; pretending `V` would be a lie. `keys`/`values`/`items` on a
 known map are `[K]`/`[V]`/`[[K | V]]`, and list `sort`/`reverse` are `[T]`.
 
-### 21.2 `map.items()`
+### 21.7 `map.items()`
 
 **Normative rule.** `m.items()` is the canonical spelling for iterating map
 entries. It is eager, non-mutating, and returns a **new** list whose elements
@@ -3741,13 +3741,13 @@ feature). None of these blocks Core completion.
   known struct.** A field read on a value whose type the checker cannot
   determine (for example an unannotated parameter, an `if` expression, or a
   call whose return type is not declared) still infers `Unknown` (§17.5).
-  Indexing a *known* `[T]`/`{K: V}`/`string` does infer the component type
-  (§21.1); only an `Unknown` receiver stays `Unknown`.
+  Indexing a *known* `[T]`/`[T; N]`/`{K: V}`/`string` does infer the component type
+  (§21.6); only an `Unknown` receiver stays `Unknown`.
 * **`if`/`match`/block expressions and lambdas infer `Unknown`** (§2.3), so
   their results are not statically checked.
 * **Methods that can yield `none` stay dynamic.** `map.get`/`map.remove`,
   list `first`/`last`/`pop`, and `reduce` infer `Unknown`, because Aura has no
-  static `none` type (§21.1).
+  static `none` type (§21.6).
 
 ### 34.3 Implementation limitations
 
