@@ -430,15 +430,17 @@ Frozen `0.0.2`/`0.2.0`/`0.2.1` verified byte-identical (hashes match the table
 above); `v0.2.1` tag unmoved at `3f5f8702`.
 
 **Closure validation (2026-10-08, local green — not GitHub CI).** all-features
-`scripts/validate.py` **58/58 PASS**, 0 FAIL, 0 TIMEOUT (observable/sharded;
+`scripts/validate.py` **59/59 PASS**, 0 FAIL, 0 TIMEOUT (observable/sharded;
 no opaque multi-hour wait). Also green: lib all-features 167/0 and bare 124/0;
 canonical `cli,repl,json,regex,time`; MSRV `+1.83.0 check --all-features`;
 nightly `fuzz` check; playground (differential 233/0, syntax conformance
-65/65 incl. array/tuple/set, boundary 63/0, browser 98/0); website (examples
-22/0, links 2500 OK, a11y 70/0, browser 380/0, cross-release 51/0 ×6 runtimes);
-fmt + clippy `-D warnings` clean. Three real defects were found by this
-validation and fixed with regressions (callback-routing tripwire,
-language-metadata inventory, receiver-borrow snapshot).
+77/77 incl. array/tuple/set and the direct-type typed-JSON API, boundary 63/0,
+browser 98/0); website (examples 22/0, links 2500 OK, a11y 70/0, browser
+380/0, cross-release 51/0 ×6 runtimes); fmt + clippy `-D warnings` clean in
+both all-features and bare configurations. Real defects found by this
+validation and fixed with regressions: callback-routing tripwire,
+language-metadata inventory, receiver-borrow snapshot, bare-config
+feature-gating of the typed-decode path.
 
 ## Exact Next Action
 
