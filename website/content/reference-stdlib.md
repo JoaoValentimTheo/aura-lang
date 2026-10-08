@@ -99,6 +99,7 @@ A fixed-length, immutable sequence.
 |---|---|
 | `json_encode` | `json_encode(value)` → `string` |
 | `json_decode` | `json_decode(string)` → value |
+| `json_decode_as` | `json_decode_as(text, Type)` → `Type` (the second argument is a type, e.g. `User`, `[User]`, `[int; 3]`; strict, `E4031` on mismatch) |
 
 ### regex
 
