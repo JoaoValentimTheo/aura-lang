@@ -32,7 +32,7 @@ fn version_model_is_coherent() {
     // runtime is not a release); the language version is the observable
     // language contract; the release version is at least the language version.
     assert_eq!(rt::RUNTIME_VERSION, env!("CARGO_PKG_VERSION"));
-    assert_eq!(rt::ABI_VERSION, 1);
+    assert_eq!(rt::ABI_VERSION, 2);
     assert!(aura::LANGUAGE_VERSION <= aura::VERSION);
 
     // The runtime reports the language contract it actually implements, read
@@ -246,7 +246,7 @@ fn preview_accounting_is_exact_written_equals_retained_plus_omitted() {
     let retained = v["stdout_retained"].as_u64().unwrap() as usize;
     let omitted = v["stdout_omitted"].as_u64().unwrap() as usize;
     assert_eq!(retained, stdout_of(&v).len());
-    assert_eq!(retained + omitted > 0, true);
+    assert!(retained + omitted > 0);
     // The retained prefix begins with the first value the program printed.
     assert!(stdout_of(&v).starts_with("0\n"));
 }
