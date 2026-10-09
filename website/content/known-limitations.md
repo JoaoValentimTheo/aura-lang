@@ -20,14 +20,15 @@ is.
 
 - The semantic **AST nesting limit is 256 levels** (expressions, statements,
   types, and modules), reported as `E1015` on every substrate.
-- **WebAssembly call depth (open defect, B-1, present in released `0.2.1`):**
-  native execution enforces the 512-frame call limit and reports `E4011`. In
-  the browser, execution runs inline on the JavaScript engine stack, and a
-  mainstream recursive program can exhaust that engine stack below 512 frames;
-  the Playground then reports `E4999: Maximum call stack size exceeded` (a
-  Worker error) instead of `E4011`. The 512-frame contract itself is unchanged
-  and native is unaffected. Fixes ship as a new version; released runtime
-  artifacts are immutable (see [Resource limits](/docs/reference-limits/)).
+- **WebAssembly call depth (fixed in `0.3.1`; present in released runtimes up
+  to `0.2.1`):** native execution enforces the 512-frame call limit and reports
+  `E4011`. In the `0.0.2`–`0.2.1` browser runtimes, execution ran inline on the
+  JavaScript engine stack, and a mainstream recursive program could exhaust that
+  engine stack below 512 frames, reporting `E4999: Maximum call stack size
+  exceeded` instead of `E4011`. The `0.3.1` Keystone runtime runs the
+  explicit-continuation evaluator and reports `E4011` at the language boundary;
+  the released `0.2.1` runtime stays frozen and keeps the old behavior. See
+  [Resource limits](/docs/reference-limits/).
 - **Integers are 64-bit.** Arithmetic overflow is a diagnostic (`E4013`), not
   wraparound.
 - **Ranges materialize to at most 10,000,000 elements** (`E4013`).
@@ -56,17 +57,15 @@ is.
 
 ## Pre-1.0 status
 
-- The current **release** is `0.2.1` (published 2026-10-01), which adds
-  builtin-name reservation, unified type nesting, filesystem-backed module
-  acquisition for the CLI, and the multi-file Playground (see the
-  [migration guide](/docs/migration-0-2-1/)).
-- An **unreleased development line** (`0.3` "Keystone") is in progress. It has
-  no published artifact and no version bump: it hardens the checker's
-  `none`/`never`/narrowing rules, formalizes the type-family and Value-algebra
-  identities, and adds the AIS/0.1 semantic interface and its MCP adapter.
-  Nothing from it is available in the released runtime, and no release date is
-  claimed. The published `0.2.1` line remains the language you can download
-  and run today.
+- The current **release** is `0.3.1` (codename **Keystone**), which gives
+  `List`/`Array`/`Tuple`/`Set`/`Map` distinct identities, adds fixed-length
+  contextual Arrays (`[T; N]`), makes `json_decode_as` take a canonical type
+  position, removes general semicolon sequencing, and hardens the parser and
+  runtime (see the [migration guide](/docs/migration-0-3-1/)).
+- The next line, **`0.3.2`**, is planned but **not started**: it has no
+  artifact, version bump, or release date. Candidate work includes the deferred
+  Python-style HTTP standard-library expansion and local macOS CI consolidation.
+  Nothing from it is available, and no release date is claimed.
 - Released runtime artifacts are immutable; fixes ship as a new version.
 - Semantics may still change before 1.0, always with an ADR and a migration
   note.

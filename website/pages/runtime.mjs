@@ -90,23 +90,25 @@ export const runtimePage = {
           source: `# The browser runtime is loaded from an immutable,
 # versioned artifact. Its manifest records, per entry:
 #
-#   id                 0.2.1            (current published release)
+#   id                 0.3.1            (current published release · Keystone)
+#   channel            release
+#   language_version   0.3.1
+#   release_version    0.3.1
+#   host_abi_version   1
+#   codename           Keystone
+#   artifact           0.3.1/aura_playground_runtime.wasm
+#   sha256             96e778ae…256ab
+#   bytes              1951520
+#
+#   id                 0.2.1            (previous release)
 #   channel            release
 #   language_version   0.2.1
-#   release_version    0.2.1
-#   host_abi_version   1
 #   artifact           0.2.1/aura_playground_runtime.wasm
-#   sha256             48c456fc…cc9e
-#   bytes              1768322
 #
-#   id                 0.2.0            (previous release)
+#   id                 0.2.0            (historical release)
 #   channel            release
 #   language_version   0.2.0
-#   artifact           0.2.0/aura_playground_runtime.wasm
-#
-#   id                 0.0.2            (historical release)
-#   channel            release
-#   release_version    0.0.2
+#   release_version    0.2.0
 #
 # Development runtimes from earlier programs (0.0.2-dev.*,
 # 0.2.0-dev.*) remain addressable and selectable under the

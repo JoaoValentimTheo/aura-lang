@@ -47,19 +47,20 @@ The release workflow publishes per-platform tarballs built for:
 * `x86_64-pc-windows-msvc`
 
 They are attached to each [GitHub release](https://github.com/JoaoValentimTheo/aura-lang/releases).
-The most recent tagged release is **v0.2.1** (published 2026-10-01), which adds
-builtin-name reservation for user value bindings (`E1009`), a unified
-type-nesting limit (ADR-0004), filesystem-backed module acquisition for the
-CLI, and the multi-file Playground. Release and language versions are distinct
-identities (ADR-0001); `0.2.0`, `0.0.2`, and `0.0.1` are historical, frozen,
-and remain available.
+The most recent tagged release is **v0.3.1** (codename **Keystone**), which gives
+`List`/`Array`/`Tuple`/`Set`/`Map` distinct identities, adds fixed-length
+contextual Arrays (`[T; N]`), makes `json_decode_as` take a canonical type
+position, removes general semicolon sequencing, and hardens the parser and
+runtime. Release and language versions are distinct identities (ADR-0001);
+`0.2.1`, `0.2.0`, `0.0.2`, and `0.0.1` are historical, frozen, and remain
+available.
 
 Install the latest release from a tagged checkout:
 
 ```bash
-git checkout v0.2.1
+git checkout v0.3.1
 cargo build --release --no-default-features --features cli,repl,json,regex,time
-./target/release/aura version   # aura 0.2.1
+./target/release/aura version   # aura 0.3.1
 ```
 
 ## Feature flags

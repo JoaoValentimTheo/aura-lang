@@ -80,16 +80,22 @@ const PHASES = [
     body: "Conformance suites, differential testing, and fuzzing, plus the train-1 red-team campaign: every finding was fixed with regression coverage, and the language behaves identically across every substrate.",
   },
   {
-    tag: "In progress (unreleased)",
-    kind: "planned",
-    title: "0.3 “Keystone” development line",
-    body: "An unreleased engineering program is in progress on the development branch: checker hardening for <code>none</code>/<code>never</code>/narrowing, the formal type-family and Value-algebra identities, the AIS/0.1 semantic interface, and its MCP adapter. It has no published artifact, version bump, or release date; the released <code>0.2.1</code> remains the language you can download and run. Publication requires a separate, explicit human authorization.",
+    tag: "Released",
+    kind: "success",
+    title: "0.3.1 · Keystone",
+    body: "The Keystone language release: distinct <code>List</code>/<code>Array</code>/<code>Tuple</code>/<code>Set</code>/<code>Map</code> identities with the anti-collapse rule, fixed-length contextual Arrays (<code>[T; N]</code>), the canonical type-position <code>json_decode_as(text, Type)</code>, removal of general semicolon sequencing, and parser/runtime hardening (bounded type and module nesting, bounded alias expansion, bounded grouping/f-string recursion, linear-time string lexing). Ships a new immutable <code>0.3.1</code> Playground runtime; <code>0.0.2</code>, <code>0.2.0</code>, and <code>0.2.1</code> stay frozen.",
   },
   {
-    tag: "Pending human decision",
+    tag: "Planned (not started)",
     kind: "planned",
-    title: "Direction after 0.3",
-    body: "The filesystem-module program (FSM-P1…P6) is delivered and released as 0.2.1, and the 0.3 Keystone line is in progress. The direction after 0.3 has not been selected; nothing is started by assumption. The explicitly deferred candidates include package management, browser persistence, an LSP, a formatter, async, and macros.",
+    title: "0.3.2",
+    body: "The next line after Keystone is planned but not started: it has no artifact, version bump, or release date. Candidate work includes the deferred Python-style HTTP standard-library expansion and local macOS CI consolidation. Nothing here is available today.",
+  },
+  {
+    tag: "Planned (not started)",
+    kind: "planned",
+    title: "Direction after 0.3.2",
+    body: "The direction after 0.3 is not yet selected; nothing is started by assumption. The explicitly deferred candidates include package management, browser persistence, an LSP, a formatter, async, and macros.",
   },
   {
     tag: "Long-term",
@@ -105,7 +111,7 @@ export const roadmapPage = {
   path: "roadmap/",
   activeKey: "roadmap",
   description:
-    "The Aura roadmap: delivered infrastructure (0.0.1, 0.0.2), the completed Aura Core (0.2.0), the released 0.2.1 (filesystem modules and the multi-file Playground), and the in-progress, unreleased 0.3 Keystone line.",
+    "The Aura roadmap: delivered infrastructure (0.0.1, 0.0.2), the completed Aura Core (0.2.0), the released 0.2.1 (filesystem modules and the multi-file Playground), the released 0.3.1 Keystone collection model, and the planned, not-yet-started 0.3.2 line.",
   async render(base) {
     const items = PHASES.map(
       (p) => `<div class="card card--elevated">
@@ -117,7 +123,7 @@ export const roadmapPage = {
     return `${pageHead({
       eyebrow: "Roadmap",
       title: "Where Aura is going",
-      lede: "Aura is built in deliberate stages. Infrastructure and portability came first; the language core and the filesystem-module program are now delivered and released as 0.2.1.",
+      lede: "Aura is built in deliberate stages. Infrastructure and portability came first; the language core, the filesystem-module program (0.2.1), and the Keystone collection model (0.3.1) are delivered and released.",
     })}
 <section class="section">
   <div class="container">

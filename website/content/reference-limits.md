@@ -33,16 +33,16 @@ including the entry call to `main`. More than 512 active calls is `E4011`. This
 is a language rule, not a host-stack limitation: the native runtime runs on a
 dedicated 64 MiB stack sized so this limit is reached first.
 
-**Known limitation in released WebAssembly runtimes (up to `0.2.1`):** the
-browser runtime executes inline on the JavaScript engine stack, whose size is
-not under the artifact's control. On that substrate a mainstream recursive
-program can exhaust the engine stack *below* the 512-frame limit and surface as
-a Worker error (`E4999: Maximum call stack size exceeded`) instead of `E4011`.
-This is an open implementation defect in the WebAssembly runtime — not a
-change to the 512-frame contract, and not present in native execution. It is
-tracked as B-1 in the
-[known limitations](/docs/known-limitations/) and remains in the published
-`0.2.1` runtime; fixes ship as a new version.
+**Fixed in the `0.3.1` WebAssembly runtime.** The `0.0.2`–`0.2.1` browser
+runtimes executed inline on the JavaScript engine stack, whose size is not under
+the artifact's control; on that substrate a mainstream recursive program could
+exhaust the engine stack *below* the 512-frame limit and surface as a Worker
+error (`E4999: Maximum call stack size exceeded`) instead of `E4011`. This was
+an implementation defect in the WebAssembly runtime (tracked as B-1), never a
+change to the 512-frame contract. The `0.3.1` Keystone runtime runs the
+explicit-continuation evaluator and reports `E4011` at the language boundary,
+matching native; the released `0.2.1` runtime stays frozen and keeps the old
+behavior. See the [known limitations](/docs/known-limitations/).
 
 ## Range materialization
 

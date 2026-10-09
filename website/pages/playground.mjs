@@ -31,7 +31,7 @@ export const playgroundPage = {
   <div class="container">
     ${callout(
       "info",
-      "<p>The <strong>Runtime</strong> selector chooses a real, immutable artifact with a recorded hash, not a label. The released <code>0.2.1</code> runtime (the default) exercises the current language — modules, struct methods, traits, method overloading, generics, generic map keys, and the finalized OOP model — while the previous <code>0.2.0</code> and historical <code>0.0.2</code> releases remain frozen and selectable. The browser host has <strong>no host filesystem</strong>: filesystem, clock, and sleep report <code>E5002</code>. Standard input, arguments, and <strong>virtual multi-file projects</strong> work (the files live in your browser session, not on a disk).</p>",
+      "<p>The <strong>Runtime</strong> selector chooses a real, immutable artifact with a recorded hash, not a label. The released <code>0.3.1</code> Keystone runtime (the default) exercises the current language — distinct List/Array/Tuple/Set/Map identities, fixed-length contextual Arrays, the canonical <code>json_decode_as(text, Type)</code>, modules, struct methods, traits, overloading, and generics — while the previous <code>0.2.1</code>, <code>0.2.0</code>, and historical <code>0.0.2</code> releases remain frozen and selectable. The browser host has <strong>no host filesystem</strong>: filesystem, clock, and sleep report <code>E5002</code>. Standard input, arguments, and <strong>virtual multi-file projects</strong> work (the files live in your browser session, not on a disk).</p>",
     )}
   </div>
 </section>

@@ -277,8 +277,9 @@ fn main() {
       <span class="section__eyebrow">Roadmap</span>
       <h2>Where Aura is going.</h2>
       <p class="section__lede">With ${site.releaseVersion} released, the language
-      core and the filesystem-module program (FSM-P1…P6) are delivered. The
-      next major engineering direction has not yet been selected.</p>
+      core, the filesystem-module program (FSM-P1…P6), and the Keystone
+      collection model are delivered. The next line, 0.3.2, is planned but not
+      started.</p>
     </div>
     ${dataTable(
       ["Stage", "Focus", "Status"],
@@ -288,14 +289,15 @@ fn main() {
         ["0.0.2", "WebAssembly, host boundary, Playground, website", chip("Released", "success")],
         ["0.2.0", "Core completion: generic maps, items(), comprehensions, syntax, modules", chip("Released", "success")],
         ["0.2.1", "Filesystem modules, multi-file Playground, E1009, unified nesting limit", chip("Released", "success")],
+        ["0.3.1", "Keystone: distinct collections, contextual Arrays, type-position json_decode_as", chip("Released", "success")],
         ["OOP V1", "Struct methods: <code>impl</code>, <code>self</code>, composition", chip("Delivered", "success")],
         ["OOP V2 & foundation", "Traits, shadowing, mutation, operators, f-strings, stability", chip("Delivered", "success")],
         ["Overloading", "Functions and methods by ordered input types", chip("Delivered", "success")],
         ["OOP completion", "Four pillars mapped to Aura; composition over inheritance", chip("Delivered", "success")],
         ["Hardening", "Conformance, differential testing, fuzzing", chip("Delivered", "success")],
         ["Generics", "Static, erased, nominal parametric polymorphism", chip("Delivered", "success")],
-        ["0.3 “Keystone” line", "In progress, unreleased: checker hardening, Value algebra, AIS/0.1", chip("Unreleased", "planned")],
-        ["Direction after 0.3", "Not yet selected; no successor program is authorized", chip("Pending human decision", "planned")],
+        ["0.3.2 line", "Planned, not started: HTTP stdlib, local macOS CI consolidation", chip("Planned", "planned")],
+        ["Direction after 0.3.2", "Not yet selected; no successor program is authorized", chip("Pending human decision", "planned")],
         ["Python / data", "PyO3 interop and the scientific ecosystem", chip("Long-term", "planned")],
       ],
     )}

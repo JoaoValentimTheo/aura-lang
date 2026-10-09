@@ -11,7 +11,7 @@ export const releasesPage = {
     return `${pageHead({
       eyebrow: "Releases",
       title: "Aura releases",
-      lede: `Aura ${site.currentRelease} is the current public release: builtin-name reservation, a unified type-nesting limit, filesystem-backed module acquisition for the CLI, and the multi-file Playground.`,
+      lede: `Aura ${site.currentRelease} (Keystone) is the current public release: distinct collection identities, fixed-length contextual Arrays, the canonical type-position json_decode_as, and parser/runtime hardening.`,
     })}
 
 <section class="section section--tight">
@@ -19,25 +19,48 @@ export const releasesPage = {
     <div class="card card--elevated">
       <div class="example-card__meta">
         ${chip("Published", "success")}
-        ${chip("0.2.1")}
+        ${chip("0.3.1")}
+        ${chip("Keystone")}
         ${chip("Latest")}
       </div>
+      <h2 style="margin-top:var(--space-3)">Aura 0.3.1</h2>
+      <p>The current release (codename Keystone). It reopens the collection
+      model and changes observable language behavior, so the release and
+      language versions both advance to <code>0.3.1</code>.</p>
+      <ul>
+        <li>Distinct <code>List</code>, <code>Array</code>, <code>Tuple</code>, <code>Set</code>, and <code>Map</code> identities (<code>List != Array != Tuple != Set != Map</code>)</li>
+        <li>Fixed-length contextual Arrays <code>[T; N]</code> with one realization seam and no implicit conversion</li>
+        <li>Canonical type-position <code>json_decode_as(text, Type)</code> with strict <code>E4031</code> shape errors</li>
+        <li>No general semicolon sequencing; <code>;</code> is reserved for the <code>[T; N]</code> type (<code>E1006</code>)</li>
+        <li>Parser/runtime hardening: bounded type/module nesting (<code>E1015</code>), bounded alias expansion, bounded grouping/f-string recursion, O(n) string lexing</li>
+        <li>New immutable <code>0.3.1</code> Playground runtime; <code>0.0.2</code>, <code>0.2.0</code>, and <code>0.2.1</code> stay frozen; Host ABI 1 and Playground API 1 unchanged</li>
+      </ul>
+      <div class="hero__actions">
+        <a class="btn btn--filled" href="${site.releases}" target="_blank" rel="noopener">${icon("external")} Release downloads</a>
+        <a class="btn btn--outlined" href="${url("docs/migration-0-3-1/", base)}">Migration guide</a>
+        <a class="btn btn--text" href="${site.repository}" target="_blank" rel="noopener">${icon("github")} Source</a>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:var(--space-6)">
+      <div class="example-card__meta">
+        ${chip("Previous")}
+        ${chip("0.2.1")}
+      </div>
       <h2 style="margin-top:var(--space-3)">Aura 0.2.1</h2>
-      <p>The current release (published 2026-10-01). It builds on the completed
-      Aura Core and adds module acquisition from the filesystem, multi-file
-      projects in the Playground, and two language-contract tightenings.</p>
+      <p>The previous release. It built on the completed Aura Core and added
+      module acquisition from the filesystem, multi-file projects in the
+      Playground, and two language-contract tightenings. Its runtime is frozen
+      and selectable.</p>
       <ul>
         <li>Filesystem-backed module acquisition: sibling <code>math.aura</code> and directory <code>pkg/mod.aura</code> sources become logical modules</li>
         <li>Multi-file Playground projects over the additive Host ABI 1 <code>aura_project_*</code> transport</li>
         <li>Builtin names reserved as user value bindings (<code>E1009</code>)</li>
         <li>Structural type nesting and alias chains bounded at 256 on every substrate (<code>E1015</code>, ADR-0004)</li>
         <li>O(n) string lexing, exact-type Python dict keys, and red-team robustness fixes</li>
-        <li>Host ABI 1 and Playground API 1 unchanged; Native/WASM parity retained</li>
       </ul>
       <div class="hero__actions">
-        <a class="btn btn--filled" href="${site.releases}" target="_blank" rel="noopener">${icon("external")} Release downloads</a>
         <a class="btn btn--outlined" href="${url("docs/migration-0-2-1/", base)}">Migration guide</a>
-        <a class="btn btn--text" href="${site.repository}" target="_blank" rel="noopener">${icon("github")} Source</a>
       </div>
     </div>
 
@@ -117,8 +140,9 @@ export const releasesPage = {
       [
         ["0.0.1", "0.0.1", "none", chip("Historical (native only)")],
         ["0.0.2", "0.0.1", "WebAssembly, ABI 1", chip("Historical")],
-        ["0.2.0", "0.2.0", "WebAssembly, ABI 1", chip("Previous")],
-        ["0.2.1", "0.2.1", "WebAssembly, ABI 1", chip("Current", "success")],
+        ["0.2.0", "0.2.0", "WebAssembly, ABI 1", chip("Historical")],
+        ["0.2.1", "0.2.1", "WebAssembly, ABI 1", chip("Previous")],
+        ["0.3.1", "0.3.1", "WebAssembly, ABI 1", chip("Current · Keystone", "success")],
       ],
     )}
     <p class="muted">Immutable historical artifacts are never silently

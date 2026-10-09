@@ -82,5 +82,6 @@ needs no `unsafe` and can never gain host authority:
 The result is assembled from Aura's own structured types, so diagnostics are
 real data, never scraped text.
 
-The runtime artifact for the current release is `0.2.1` (1,768,322 bytes,
-SHA-256 `48c456fc…cc9e`); `0.2.0` remains available as the previous release.
+The runtime artifact for the current release is `0.3.1` Keystone (1,951,520
+bytes, SHA-256 `96e778ae…256ab`); `0.2.1` remains available as the previous
+release, and `0.2.0` and `0.0.2` as historical releases.

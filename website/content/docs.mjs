@@ -10,13 +10,14 @@
 //
 // `docsVersion` is the **release** the docs are published with. The language
 // semantics it documents are `docsLanguageVersion`; the two are intentionally
-// distinct (ADR-0001). These pages document the current release `0.2.1`
-// (builtin-name reservation `E1009`, unified type-nesting limit, filesystem
-// module acquisition, and the multi-file Playground); the migration guide
-// covers the `0.2.0 → 0.2.1` step.
+// distinct (ADR-0001). These pages document the current release `0.3.1`
+// (codename Keystone: distinct collection identities, fixed-length contextual
+// Arrays, the canonical type-position `json_decode_as`, parser hardening, and
+// the multi-file Playground); the migration guide covers the
+// `0.2.1 → 0.3.1` step.
 
-export const docsVersion = "0.2.1";
-export const docsLanguageVersion = "0.2.1";
+export const docsVersion = "0.3.1";
+export const docsLanguageVersion = "0.3.1";
 
 export const docGroups = [
   {
@@ -25,6 +26,7 @@ export const docGroups = [
       { slug: "getting-started", title: "Getting started", file: "getting-started.md" },
       { slug: "install", title: "Installing Aura", file: "install.md" },
       { slug: "first-program", title: "Your first program", file: "first-program.md" },
+      { slug: "migration-0-3-1", title: "Migrating to 0.3.1", file: "migration-0-3-1.md" },
       { slug: "migration-0-2-1", title: "Migrating to 0.2.1", file: "migration-0-2-1.md" },
       { slug: "known-limitations", title: "Known limitations", file: "known-limitations.md" },
       { slug: "zen", title: "Zen-to-Win", file: "zen.md" },
