@@ -223,14 +223,14 @@ fn output_below_the_preview_is_complete_and_untruncated() {
 fn preview_mode_continues_past_the_bound_without_e4020() {
     // A finite program whose output far exceeds the preview bound must finish
     // `ok` — the reported defect was a fatal E4020 here.
-    let v = run_with_stdin(
-        "fn main() {\n for i in 0..600000 { print(i) }\n}",
-        "",
-    );
+    let v = run_with_stdin("fn main() {\n for i in 0..600000 { print(i) }\n}", "");
     assert_eq!(v["status"], "ok", "{v}");
     assert!(v["diagnostics"].as_array().unwrap().is_empty());
     let retained = stdout_of(&v).len();
-    assert!(retained <= PREVIEW, "retained {retained} > preview {PREVIEW}");
+    assert!(
+        retained <= PREVIEW,
+        "retained {retained} > preview {PREVIEW}"
+    );
     assert_eq!(v["stdout_retained"].as_u64().unwrap() as usize, retained);
     assert!(v["stdout_omitted"].as_u64().unwrap() > 0);
     assert_eq!(v["stdout_truncated"], true);
@@ -256,10 +256,7 @@ fn preview_truncation_lands_on_a_utf8_boundary() {
     // Print 3-byte characters so the truncation point falls mid-sequence
     // unless the sink trims to a char boundary. The retained preview must be
     // valid UTF-8 (serde already proves that) and end on a whole character.
-    let v = run_with_stdin(
-        "fn main() {\n for _ in 0..200000 { print(\"€\") }\n}",
-        "",
-    );
+    let v = run_with_stdin("fn main() {\n for _ in 0..200000 { print(\"€\") }\n}", "");
     assert_eq!(v["status"], "ok");
     let s = stdout_of(&v);
     assert!(s.chars().all(|c| c == '€' || c == '\n'));

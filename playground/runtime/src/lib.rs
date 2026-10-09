@@ -54,11 +54,11 @@ use std::collections::BTreeSet;
 
 use aura::error::{codes, line_col, Diag, DiagnosticReport, Span};
 use aura::host::BrowserHost;
-use std::sync::Mutex;
 use aura::module_graph::{InMemorySourceProvider, SourceKey};
 use aura::run::value::{MapKey, Value};
 use aura::run::Interp;
 use serde::Deserialize;
+use std::sync::Mutex;
 
 /// The Host ABI version. Bump only for an incompatible ABI change; the
 /// manifest records it so the Playground can refuse a mismatch.
@@ -137,12 +137,8 @@ enum OutputMode {
 impl OutputMode {
     fn sink(self) -> aura::host::OutputSink {
         match self {
-            OutputMode::Preview => {
-                aura::host::OutputSink::preview(limits::PREVIEW_STDOUT_BYTES)
-            }
-            OutputMode::Complete => {
-                aura::host::OutputSink::complete(limits::COMPLETE_STDOUT_BYTES)
-            }
+            OutputMode::Preview => aura::host::OutputSink::preview(limits::PREVIEW_STDOUT_BYTES),
+            OutputMode::Complete => aura::host::OutputSink::complete(limits::COMPLETE_STDOUT_BYTES),
         }
     }
 }
@@ -1186,9 +1182,7 @@ pub extern "C" fn aura_session_start() -> u32 {
         };
     let (module, _sources, _entry) = compilation.into_parts();
     let mut interp = Interp::new();
-    interp.set_host(Box::new(SuspendHost {
-        sink: sink.clone(),
-    }));
+    interp.set_host(Box::new(SuspendHost { sink: sink.clone() }));
     let session = match aura::run::session::RunSession::start(interp, &module) {
         Ok(s) => s,
         Err(d) => {
@@ -1241,8 +1235,7 @@ pub extern "C" fn aura_session_resume() -> u32 {
     SESSION.with(|slot| {
         let mut guard = slot.borrow_mut();
         let Some(hosted) = guard.as_mut() else {
-            let (json, status) =
-                virtual_input_error(codes::INTERNAL, "no session to resume");
+            let (json, status) = virtual_input_error(codes::INTERNAL, "no session to resume");
             set_result(json);
             return status;
         };
@@ -1329,10 +1322,9 @@ fn json_to_response_value(v: &serde_json::Value) -> Result<Value, String> {
             let Some(val) = pair.get(1).and_then(serde_json::Value::as_str) else {
                 continue;
             };
-            header_lines.push(Value::List(std::rc::Rc::new(std::cell::RefCell::new(vec![
-                Value::str(k),
-                Value::str(val),
-            ]))));
+            header_lines.push(Value::List(std::rc::Rc::new(std::cell::RefCell::new(
+                vec![Value::str(k), Value::str(val)],
+            ))));
             let key = MapKey::str(k.to_ascii_lowercase());
             match headers.get(&key) {
                 None => {
@@ -1340,7 +1332,10 @@ fn json_to_response_value(v: &serde_json::Value) -> Result<Value, String> {
                 }
                 Some(Value::Str(prev)) => {
                     let list = vec![Value::str(prev.to_string()), Value::str(val)];
-                    headers.insert(key, Value::List(std::rc::Rc::new(std::cell::RefCell::new(list))));
+                    headers.insert(
+                        key,
+                        Value::List(std::rc::Rc::new(std::cell::RefCell::new(list))),
+                    );
                 }
                 Some(Value::List(items)) => {
                     items.borrow_mut().push(Value::str(val));
