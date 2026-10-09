@@ -31,6 +31,14 @@ frozen artifacts were **not** modified (verified byte-identical).
   (`playground/web/workbench.css`), locked by
   `tests/playground-parity.test.mjs`. Both suites and the full website +
   Playground suites are green locally; nothing is pushed.
+- Follow-up: reorganized the documentation manifest into six meaning-based
+  groups and added the AIS (`/docs/ais/`) and MCP (`/docs/mcp/`) pages under a
+  Semantic Tooling group, grounded in `src/ais.rs`/`src/mcp.rs` with examples
+  generated from the released compiler. New guards: `tests/ais-doc.test.mjs`
+  (real-binary fixtures + golden JSON) and extended
+  `tests/docs-consistency.test.mjs`. Surfaced in CLI/Tools/Architecture. Full
+  website suite green (46 pages); nothing pushed. Website publication is the
+  next human-authorized gate.
 
 **Exact next action:** the human reviews the committed website work and
 authorizes (or declines) a push. A push to this branch triggers `pages.yml` and

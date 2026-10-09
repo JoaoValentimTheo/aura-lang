@@ -53,6 +53,29 @@ content mirrors, and website tooling/tests only; `src/**`,
   (parses `src/stdlib/signatures.rs`), `tests/docs-consistency.test.mjs`
   (route/version/link parity, release-pinned normative links).
 
+### Follow-up: documentation IA + AIS/MCP section (2026-10-09, LOCAL, UNPUSHED)
+
+- Reorganized `website/content/docs.mjs` into six meaning-based groups (Getting
+  Started, Language Guide, Language Reference, Runtime & Tooling, Semantic
+  Tooling, Releases & Migration); every public slug preserved.
+- Added two first-class pages: `website/content/ais.md` (`/docs/ais/`) and
+  `website/content/mcp.md` (`/docs/mcp/`), grounded in `src/ais.rs`,
+  `src/mcp.rs`, and the engineering records, with every example generated from
+  the released compiler. Surfaced AIS/MCP in `cli.md`, `tools.mjs`,
+  `architecture.mjs`, and the docs index.
+- Added `tests/ais-doc.test.mjs` (real-binary fixtures + golden JSON, 89
+  checks) and extended `tests/docs-consistency.test.mjs` (135 checks) with
+  route/group/CLI-dispatch/protocol-version/tool-inventory guards. Fixtures at
+  `website/tests/fixtures/ais/`.
+- Documented contradiction: the engineering record's claim that a body-only
+  edit yields an *empty* delta holds only for a same-length edit; a
+  length-changing body edit reports later declarations `moved` (position
+  refresh, ignored by `is_empty`). The website states this accurately.
+- Validation: full `website/tests/run-all.mjs` green (46 pages; ais-doc 89/0,
+  docs-consistency 135/0, browser 404/0, a11y 82/0, links 3365 OK both bases,
+  base 3364/0; embedded Playground suite unchanged). Frozen runtimes and tag
+  `v0.3.1` untouched. **Nothing pushed.**
+
 ### Follow-up: navigation fix + Playground workbench unification (2026-10-09)
 
 - **Navigation.** The 768px three-row defect is fixed by a tiered architecture
