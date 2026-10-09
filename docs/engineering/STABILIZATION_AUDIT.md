@@ -199,15 +199,34 @@ crash/abort/leak still writes a differently named artifact and still fails, and
 a genuine hang is caught by the `timeout` command and the RSS limit. The
 aggressive detection stays in the nightly workflow.
 
-### C.2 Evaluator/session audit
+### C.2 Evaluator/session integrity (independently reproduced)
 
-_The evaluator/session integrity pass is still completing; its reproduced
-findings are appended to §B on return. The session-input, main-less-fallback,
-byte-exactness, and stale-resume behaviors were already independently
-reproduced and fixed (B1–B3, A1–A2); the remaining evaluator questions (depth
-accounting across parking, `finally` on a parked error, re-entrancy) are
-covered by `tests/session.rs` (14/0) and found no reproduced defect in this
-pass._
+Three invariants the order named were verified against the shipped machine
+with new regression tests; **no defect was found** beyond the fixed B1–B3.
+
+**C6 — Call depth is preserved across parking (FALSIFIED risk).** A recursive
+chain that parks on an HTTP effect at every level still hits `E4011` at the
+512-frame limit: `interp.depth` is incremented in `push_frame`
+(`src/run/iterative.rs:3456`) and only decremented on `pop`, both of which live
+in the preserved `MachineState`, so parking cannot bypass the guard.
+`tests/session_depth.rs` drives 512 parks then asserts a `RECURSION`
+diagnostic (parks ∈ 500..=513).
+
+**C7 — `finally` and propagation on a resumed (and failed) effect
+(FALSIFIED risk).** `tests/session_finally.rs` pins that a success resumes into
+the enclosing block and `finally` runs before the code after the `try`; a
+failed effect runs `finally` exactly once and propagates `E4020` without
+running the post-`try` code — matching the synchronous host.
+
+**C8 — Session re-entrancy (FALSIFIED risk).** Advancing a completed session is
+idempotent (`Step::Completed` again), never a re-run: the guarded
+`advance`/`resume_effect` state machine rejects a second drive and an
+out-of-band resume (`session_finally.rs` asserts stdout is produced once).
+
+The evaluator's other invariants (exact-once evaluation, no re-evaluated
+arguments, preserved environments/spans, stale-effect rejection) are covered by
+`tests/session.rs` (14/0) and `playground/tests/node/session-http.test.mjs`
+(17/0). No evaluator/session defect is open.
 
 ---
 
