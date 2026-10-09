@@ -1,0 +1,4 @@
+# diagnostic.aura — a checker-proved type mismatch (E3001).
+fn main() {
+    let x: int = "not an int"
+}

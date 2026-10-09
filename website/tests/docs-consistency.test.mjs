@@ -135,6 +135,118 @@ if (existsSync(distDocs)) {
   );
 }
 
+/* ------------------------------------------------ AIS / MCP routes */
+// The semantic-tooling pages must exist, live in the intended manifest group,
+// and have a built route, so they cannot be dropped from the documentation.
+const SEMANTIC = ["ais", "mcp"];
+const semanticGroup = docs.docGroups.find((g) => g.title === "Semantic Tooling");
+check("a 'Semantic Tooling' group exists", Boolean(semanticGroup));
+check(
+  "the Semantic Tooling group holds AIS and MCP",
+  Boolean(semanticGroup) &&
+    SEMANTIC.every((slug) => semanticGroup.items.some((it) => it.slug === slug)),
+  semanticGroup ? semanticGroup.items.map((i) => i.slug).join(",") : "no group",
+);
+for (const slug of SEMANTIC) {
+  const entry = all.find((d) => d.slug === slug);
+  check(`AIS/MCP manifest entry exists: ${slug}`, Boolean(entry));
+  check(`AIS/MCP file exists: ${slug}.md`, existsSync(join(website, "content", `${slug}.md`)));
+  check(
+    `AIS/MCP route built: docs/${slug}/`,
+    existsSync(join(website, "dist", "docs", slug, "index.html")),
+  );
+}
+
+/* --------------------------- CLI dispatch agrees with documented commands */
+// The documented CLI verbs must match the real command inventory, so the docs
+// cannot advertise a command the binary does not dispatch (or omit one it does).
+const mainRs = readFileSync(join(repo, "src", "main.rs"), "utf8");
+const cliDocForCommands = readFileSync(join(website, "content", "cli.md"), "utf8");
+for (const cmd of ["run", "check", "eval", "repl", "version", "ais", "mcp"]) {
+  check(
+    `cli.md documents the \`aura ${cmd}\` command`,
+    new RegExp(`\`aura ${cmd}\``).test(cliDocForCommands) ||
+      new RegExp(`aura ${cmd}\\b`).test(cliDocForCommands),
+    cmd,
+  );
+  // `ais`/`mcp` are dispatched behind `#[cfg(feature = "json")]`.
+  check(
+    `main.rs dispatches \`${cmd}\``,
+    new RegExp(`Some\\("${cmd}"\\)`).test(mainRs) ||
+      new RegExp(`\\("${cmd}",`).test(mainRs),
+    cmd,
+  );
+}
+
+/* --------------------- AIS protocol version agrees with the implementation */
+const aisRs = readFileSync(join(repo, "src", "ais.rs"), "utf8");
+const aisProtocol = aisRs.match(/AIS_VERSION:\s*&str\s*=\s*"([^"]+)"/)?.[1];
+check("AIS protocol version parsed from src/ais.rs", Boolean(aisProtocol), String(aisProtocol));
+const aisPage = readFileSync(join(website, "content", "ais.md"), "utf8");
+check(
+  "ais.md names the implementation AIS protocol version",
+  typeof aisProtocol === "string" && aisPage.includes(`AIS/${aisProtocol}`),
+  `version=${aisProtocol}`,
+);
+check(
+  "ais.md reports the released language version",
+  aisPage.includes(site.languageVersion),
+);
+check(
+  "the docs do not advertise a nonexistent AIS version",
+  !/AIS\/0\.[2-9]/.test(aisPage),
+);
+
+/* ------------------------- MCP tools agree with the implementation inventory */
+const mcpRs = readFileSync(join(repo, "src", "mcp.rs"), "utf8");
+const documentedMcpTools = [
+  "aura_snapshot",
+  "aura_slice",
+  "aura_symbol",
+  "aura_diagnostics",
+  "aura_delta",
+  "aura_revision",
+  "aura_capabilities",
+];
+const mcpPage = readFileSync(join(website, "content", "mcp.md"), "utf8");
+for (const tool of documentedMcpTools) {
+  check(`mcp.rs defines tool ${tool}`, mcpRs.includes(`"${tool}"`), tool);
+  check(`mcp.md documents tool ${tool}`, mcpPage.includes(tool), tool);
+}
+for (const uri of ["aura://schema", "aura://versions", "aura://capabilities"]) {
+  check(`mcp.rs defines resource ${uri}`, mcpRs.includes(uri), uri);
+  check(`mcp.md documents resource ${uri}`, mcpPage.includes(uri), uri);
+}
+
+/* ----------------- available vs unavailable tooling claims stay accurate */
+const toolsPageSrc = readFileSync(join(website, "pages", "tools.mjs"), "utf8");
+check(
+  "tools page lists AIS as available",
+  /AIS\/0\.1 semantic interface/.test(toolsPageSrc) && /Available/.test(toolsPageSrc),
+);
+check("tools page lists the MCP adapter as available", /MCP adapter/.test(toolsPageSrc));
+for (const unavailable of ["Language server / LSP", "Debugger / step execution", "Formatter"]) {
+  check(
+    `tools page keeps "${unavailable}" labelled unavailable`,
+    toolsPageSrc.includes(unavailable),
+  );
+}
+check(
+  "tools page does not claim LSP is available",
+  !/LSP[^"]*"?,\s*"Available"/.test(toolsPageSrc),
+);
+// The MCP page must state prompts are not provided.
+check(
+  "mcp.md states prompts are not provided",
+  /[Nn]one\.\s*(\*\*Prompt|\*\*prompts)/.test(mcpPage) || /no prompt|None\./i.test(mcpPage),
+);
+// AIS must not be described as an executable/authority.
+check(
+  "ais.md states AIS is not a runtime, model provider, or authority",
+  /it never executes one|never executes one/i.test(aisPage) &&
+    /compiler is the (only|single) semantic authority|semantic authority/i.test(aisPage),
+);
+
 /* ------------------------------------------------ historical context */
 const known = readFileSync(join(website, "content", "known-limitations.md"), "utf8");
 check(

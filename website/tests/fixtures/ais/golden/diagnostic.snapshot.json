@@ -1,0 +1,53 @@
+{
+  "ais_version": "0.1",
+  "aura_version": "0.3.1",
+  "language_version": "0.3.1",
+  "capabilities": {
+    "symbols": true,
+    "types": true,
+    "diagnostics": true,
+    "flow": false,
+    "completion": false
+  },
+  "source_name": "<stdin>",
+  "revision": "rev:f506cf24ec316ec7",
+  "symbols": [
+    {
+      "name": "main",
+      "kind": "function",
+      "range": {
+        "start": {
+          "line": 2,
+          "column": 1,
+          "offset": 62
+        },
+        "end": {
+          "line": 2,
+          "column": 3,
+          "offset": 64
+        }
+      },
+      "public": false
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": 3001,
+      "code_text": "E3001",
+      "severity": "error",
+      "message": "`x` is annotated as `int` but its value is `string`",
+      "range": {
+        "start": {
+          "line": 3,
+          "column": 5,
+          "offset": 78
+        },
+        "end": {
+          "line": 3,
+          "column": 8,
+          "offset": 81
+        }
+      }
+    }
+  ]
+}

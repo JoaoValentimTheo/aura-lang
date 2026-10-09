@@ -1,0 +1,10 @@
+# collections.aura — the five Keystone collection identities in one program.
+struct Point { x: int, y: int }
+
+fn lists() -> [[int]] { return [[1, 2], [3, 4]] }
+fn fixed() -> [int; 3] { return [1, 2, 3] }
+fn pair() -> (int, string) { return (1, "Aura") }
+fn members() -> {int} { return {1, 2, 3} }
+fn mapping() -> {string: Point} { return {"origin": Point { x: 0, y: 0 }} }
+
+fn main() { print(lists()) }

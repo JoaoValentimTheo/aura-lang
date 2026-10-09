@@ -1,0 +1,95 @@
+{
+  "ais_version": "0.1",
+  "revision": "rev:8bfd91fb9987f1e5",
+  "target": "mapping",
+  "symbol": {
+    "name": "mapping",
+    "kind": "function",
+    "range": {
+      "start": {
+        "line": 8,
+        "column": 1,
+        "offset": 299
+      },
+      "end": {
+        "line": 8,
+        "column": 3,
+        "offset": 301
+      }
+    },
+    "public": false,
+    "type_name": "{string: Point}",
+    "families": [
+      "mapping"
+    ],
+    "value_kind": "map",
+    "capabilities": [
+      "indexable",
+      "iterable",
+      "mutable",
+      "sized"
+    ]
+  },
+  "dependencies": [
+    {
+      "name": "Point",
+      "kind": "struct",
+      "range": {
+        "start": {
+          "line": 2,
+          "column": 1,
+          "offset": 79
+        },
+        "end": {
+          "line": 2,
+          "column": 7,
+          "offset": 85
+        }
+      },
+      "public": false,
+      "families": [
+        "object"
+      ],
+      "value_kind": "struct",
+      "capabilities": [
+        "indexable",
+        "mutable"
+      ],
+      "fields": [
+        {
+          "name": "x",
+          "type_name": "int",
+          "range": {
+            "start": {
+              "line": 2,
+              "column": 16,
+              "offset": 94
+            },
+            "end": {
+              "line": 2,
+              "column": 17,
+              "offset": 95
+            }
+          }
+        },
+        {
+          "name": "y",
+          "type_name": "int",
+          "range": {
+            "start": {
+              "line": 2,
+              "column": 24,
+              "offset": 102
+            },
+            "end": {
+              "line": 2,
+              "column": 25,
+              "offset": 103
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "omitted": 0
+}

@@ -1,0 +1,7 @@
+# identity.aura — the three AIS identity levels over two collection types.
+struct Point { x: int, y: int }
+
+fn lists() -> [[int]] { return [[1, 2], [3, 4]] }
+fn fixed() -> [int; 3] { return [1, 2, 3] }
+
+fn main() { print(lists()) }

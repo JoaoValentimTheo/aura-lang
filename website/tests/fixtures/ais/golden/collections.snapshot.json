@@ -1,0 +1,232 @@
+{
+  "ais_version": "0.1",
+  "aura_version": "0.3.1",
+  "language_version": "0.3.1",
+  "capabilities": {
+    "symbols": true,
+    "types": true,
+    "diagnostics": true,
+    "flow": false,
+    "completion": false
+  },
+  "source_name": "<stdin>",
+  "revision": "rev:8bfd91fb9987f1e5",
+  "symbols": [
+    {
+      "name": "Point",
+      "kind": "struct",
+      "range": {
+        "start": {
+          "line": 2,
+          "column": 1,
+          "offset": 79
+        },
+        "end": {
+          "line": 2,
+          "column": 7,
+          "offset": 85
+        }
+      },
+      "public": false,
+      "families": [
+        "object"
+      ],
+      "value_kind": "struct",
+      "capabilities": [
+        "indexable",
+        "mutable"
+      ],
+      "fields": [
+        {
+          "name": "x",
+          "type_name": "int",
+          "range": {
+            "start": {
+              "line": 2,
+              "column": 16,
+              "offset": 94
+            },
+            "end": {
+              "line": 2,
+              "column": 17,
+              "offset": 95
+            }
+          }
+        },
+        {
+          "name": "y",
+          "type_name": "int",
+          "range": {
+            "start": {
+              "line": 2,
+              "column": 24,
+              "offset": 102
+            },
+            "end": {
+              "line": 2,
+              "column": 25,
+              "offset": 103
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "lists",
+      "kind": "function",
+      "range": {
+        "start": {
+          "line": 4,
+          "column": 1,
+          "offset": 112
+        },
+        "end": {
+          "line": 4,
+          "column": 3,
+          "offset": 114
+        }
+      },
+      "public": false,
+      "type_name": "[[int]]",
+      "families": [
+        "sequence"
+      ],
+      "value_kind": "list",
+      "capabilities": [
+        "indexable",
+        "iterable",
+        "mutable",
+        "sized"
+      ]
+    },
+    {
+      "name": "fixed",
+      "kind": "function",
+      "range": {
+        "start": {
+          "line": 5,
+          "column": 1,
+          "offset": 162
+        },
+        "end": {
+          "line": 5,
+          "column": 3,
+          "offset": 164
+        }
+      },
+      "public": false,
+      "type_name": "[int; 3]",
+      "families": [
+        "sequence"
+      ],
+      "value_kind": "array",
+      "capabilities": [
+        "fixed_length",
+        "indexable",
+        "iterable",
+        "mutable_elements",
+        "sized"
+      ]
+    },
+    {
+      "name": "pair",
+      "kind": "function",
+      "range": {
+        "start": {
+          "line": 6,
+          "column": 1,
+          "offset": 206
+        },
+        "end": {
+          "line": 6,
+          "column": 3,
+          "offset": 208
+        }
+      },
+      "public": false,
+      "type_name": "(int, string)",
+      "families": [
+        "sequence"
+      ],
+      "value_kind": "tuple",
+      "capabilities": [
+        "fixed_length",
+        "indexable",
+        "iterable",
+        "sized"
+      ]
+    },
+    {
+      "name": "members",
+      "kind": "function",
+      "range": {
+        "start": {
+          "line": 7,
+          "column": 1,
+          "offset": 256
+        },
+        "end": {
+          "line": 7,
+          "column": 3,
+          "offset": 258
+        }
+      },
+      "public": false,
+      "type_name": "{int}",
+      "families": [
+        "set_like"
+      ],
+      "value_kind": "set",
+      "capabilities": [
+        "iterable",
+        "mutable_membership",
+        "sized"
+      ]
+    },
+    {
+      "name": "mapping",
+      "kind": "function",
+      "range": {
+        "start": {
+          "line": 8,
+          "column": 1,
+          "offset": 299
+        },
+        "end": {
+          "line": 8,
+          "column": 3,
+          "offset": 301
+        }
+      },
+      "public": false,
+      "type_name": "{string: Point}",
+      "families": [
+        "mapping"
+      ],
+      "value_kind": "map",
+      "capabilities": [
+        "indexable",
+        "iterable",
+        "mutable",
+        "sized"
+      ]
+    },
+    {
+      "name": "main",
+      "kind": "function",
+      "range": {
+        "start": {
+          "line": 10,
+          "column": 1,
+          "offset": 376
+        },
+        "end": {
+          "line": 10,
+          "column": 3,
+          "offset": 378
+        }
+      },
+      "public": false
+    }
+  ]
+}

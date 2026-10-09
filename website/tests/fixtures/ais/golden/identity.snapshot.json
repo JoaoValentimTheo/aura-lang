@@ -1,0 +1,149 @@
+{
+  "ais_version": "0.1",
+  "aura_version": "0.3.1",
+  "language_version": "0.3.1",
+  "capabilities": {
+    "symbols": true,
+    "types": true,
+    "diagnostics": true,
+    "flow": false,
+    "completion": false
+  },
+  "source_name": "<stdin>",
+  "revision": "rev:d3c6c246deed5c66",
+  "symbols": [
+    {
+      "name": "Point",
+      "kind": "struct",
+      "range": {
+        "start": {
+          "line": 2,
+          "column": 1,
+          "offset": 77
+        },
+        "end": {
+          "line": 2,
+          "column": 7,
+          "offset": 83
+        }
+      },
+      "public": false,
+      "families": [
+        "object"
+      ],
+      "value_kind": "struct",
+      "capabilities": [
+        "indexable",
+        "mutable"
+      ],
+      "fields": [
+        {
+          "name": "x",
+          "type_name": "int",
+          "range": {
+            "start": {
+              "line": 2,
+              "column": 16,
+              "offset": 92
+            },
+            "end": {
+              "line": 2,
+              "column": 17,
+              "offset": 93
+            }
+          }
+        },
+        {
+          "name": "y",
+          "type_name": "int",
+          "range": {
+            "start": {
+              "line": 2,
+              "column": 24,
+              "offset": 100
+            },
+            "end": {
+              "line": 2,
+              "column": 25,
+              "offset": 101
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "lists",
+      "kind": "function",
+      "range": {
+        "start": {
+          "line": 4,
+          "column": 1,
+          "offset": 110
+        },
+        "end": {
+          "line": 4,
+          "column": 3,
+          "offset": 112
+        }
+      },
+      "public": false,
+      "type_name": "[[int]]",
+      "families": [
+        "sequence"
+      ],
+      "value_kind": "list",
+      "capabilities": [
+        "indexable",
+        "iterable",
+        "mutable",
+        "sized"
+      ]
+    },
+    {
+      "name": "fixed",
+      "kind": "function",
+      "range": {
+        "start": {
+          "line": 5,
+          "column": 1,
+          "offset": 160
+        },
+        "end": {
+          "line": 5,
+          "column": 3,
+          "offset": 162
+        }
+      },
+      "public": false,
+      "type_name": "[int; 3]",
+      "families": [
+        "sequence"
+      ],
+      "value_kind": "array",
+      "capabilities": [
+        "fixed_length",
+        "indexable",
+        "iterable",
+        "mutable_elements",
+        "sized"
+      ]
+    },
+    {
+      "name": "main",
+      "kind": "function",
+      "range": {
+        "start": {
+          "line": 7,
+          "column": 1,
+          "offset": 205
+        },
+        "end": {
+          "line": 7,
+          "column": 3,
+          "offset": 207
+        }
+      },
+      "public": false
+    }
+  ]
+}

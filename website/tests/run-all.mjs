@@ -35,6 +35,7 @@ run("base", "check-base.mjs");
 run("release-version", "release-version.test.mjs");
 run("stdlib-consistency", "stdlib-consistency.test.mjs");
 run("docs-consistency", "docs-consistency.test.mjs");
+run("ais-doc", "ais-doc.test.mjs");
 run("aurea", "aurea.test.mjs");
 run("aurea-browser", "aurea-browser.test.mjs");
 run("playground-parity", "playground-parity.test.mjs");

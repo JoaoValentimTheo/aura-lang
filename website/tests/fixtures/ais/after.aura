@@ -1,0 +1,6 @@
+struct Point { x: int, y: int }
+struct Size { w: int, h: int }
+
+fn area(p) -> int { return p.x * p.y + 1 }
+
+fn main() { print(area(Point { x: 2, y: 3 })) }
