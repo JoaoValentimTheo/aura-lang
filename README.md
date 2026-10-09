@@ -20,10 +20,14 @@ No Python required to run.
 Aura v3 is a from-scratch Rust rewrite. The previous Python transpiler is
 gone; the last Python release is preserved as tag `v0.2.0a8`.
 
-Version **`v0.2.1`** is the current public release (published 2026-10-01). It
-builds on the completed Aura Core (generic maps keyed by `string`, `int`, or
-`bool`, `map.items()`, comprehensions, the decided Core syntax rules, in-source
-module semantics, generics, the four-pillar object model) and adds:
+Version **`v0.3.1`** (codename **Keystone**) is the current public release. A
+language release, it gives `List`/`Array`/`Tuple`/`Set`/`Map` distinct
+identities, adds fixed-length contextual Arrays (`[T; N]`), makes
+`json_decode_as` take a canonical type position, removes general semicolon
+sequencing, and hardens the parser and runtime. It builds on the completed Aura
+Core (generic maps keyed by `string`, `int`, or `bool`, `map.items()`,
+comprehensions, the decided Core syntax rules, in-source module semantics,
+generics, the four-pillar object model) and on `0.2.1`'s:
 
 - filesystem-backed module acquisition for the CLI (`<name>.aura` siblings and
   `<name>/mod.aura` directories become logical modules through the same
@@ -34,13 +38,13 @@ module semantics, generics, the four-pillar object model) and adds:
 - a unified structural type-nesting limit (256) on every substrate (ADR-0004);
 - exact-type CPython boundary conversion and red-team robustness fixes.
 
-`0.2.0` is the previous release (the Core-completion language release).
-`0.0.2` (WebAssembly runtime, host boundary, Playground, website) and `0.0.1`
-(first usable release) are historical and remain available and frozen;
-`0.0.2-dev.*`, `0.2.0-dev.*`, and `0.2.1-dev.*` are development pre-releases of
-their lines. Release, language, and runtime versions remain distinct constants
-(ADR-0001) so a runtime-only release can advance the release version without
-claiming a language change.
+`0.2.1` is the previous release. `0.2.0` (Core completion), `0.0.2`
+(WebAssembly runtime, host boundary, Playground, website), and `0.0.1` (first
+usable release) are historical and remain available and frozen; the
+`*-dev.*` identities are development pre-releases of their lines. Release,
+language, and runtime versions remain distinct constants (ADR-0001) so a
+runtime-only release can advance the release version without claiming a
+language change. The next line, `0.3.2`, is planned but not started.
 
 | Area | State |
 |------|-------|

@@ -23,7 +23,8 @@ Semantic Versioning, adjusted for Aura's pre-v1 history:
 - Never overwrite a published tag, asset, or artifact byte under the same
   identity.
 - Never force-move a release ref; never `overwrite_files` on a release.
-- Frozen runtimes `0.0.2`, `0.2.0`, and `0.2.1` are immutable forever.
+- Frozen runtimes `0.0.2`, `0.2.0`, `0.2.1`, and `0.3.1` are immutable
+  forever.
 - Every published development runtime identity (`0.2.0-dev.1`, `0.2.0-dev.2`,
   `0.2.1-dev.1`, `0.2.1-dev.2`, …) is immutable; a semantic change requires a
   **new** identity, never an overwrite.

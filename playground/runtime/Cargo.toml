@@ -27,13 +27,17 @@ name = "aura-playground-runtime"
 # at the offending node), which is observable in the WASM runtime's diagnostic
 # output, so `0.2.1-dev.5` superseded it.
 #
-# `0.2.1` promotes that development line to its first release runtime. It is
-# byte-identical in contract to `0.2.1-dev.5` (no semantic change intervened),
-# but a *release* artifact is a distinct identity from a development build, so
-# it is built and published under the clean release version. Its identity is
-# pinned in `playground/build.mjs` like `0.2.0`; advancing the runtime crate
-# later means adding a new pre-release identity and pinning 0.2.1 permanently.
-version = "0.2.1"
+# `0.3.1` is the release runtime of the Keystone line. Keystone changes the
+# observable language contract: List/Array/Tuple/Set/Map have distinct
+# identities, Array is a fixed-length contextual type, `json_decode_as` takes a
+# canonical type position, and general semicolon statement sequencing was
+# removed. A runtime with a different language contract must have a different
+# identity, so this is a new artifact. `0.0.2`, `0.2.0`, and `0.2.1` remain
+# frozen and selectable; their bytes and identities are never touched. This
+# release identity is pinned in `playground/build.mjs`; advancing the runtime
+# crate later means adding a new pre-release identity and pinning 0.3.1
+# permanently.
+version = "0.3.1"
 edition = "2021"
 rust-version = "1.83"
 description = "The Aura Playground WebAssembly execution wrapper: a minimal, zero-import C ABI over the real aura runtime."

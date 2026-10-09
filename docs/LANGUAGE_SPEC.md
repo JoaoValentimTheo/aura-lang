@@ -1,6 +1,6 @@
 # The Aura Language Specification
 
-**Language version:** Aura 0.2.1
+**Language version:** Aura 0.3.1
 **Status:** Current normative specification
 **Baseline commit:** `aba88668856173337b68cd4fb8e046f0467bf561`
 
@@ -14,6 +14,10 @@ two disagree, `LANGUAGE_VERSION` and this document MUST be reconciled before
 publication.
 
 This revision incorporates the intentional **language evolution** recorded in
+`docs/MIGRATION_0_3_1.md` (Keystone): distinct `List`/`Array`/`Tuple`/`Set`/`Map`
+identities (ADR-0005), fixed-length contextual Arrays (`[T; N]`), the canonical
+type-position `json_decode_as(text, Type)`, and the removal of general semicolon
+statement sequencing. It also incorporates the earlier evolution recorded in
 `docs/MIGRATION_0_2_1.md`: builtin names reserved as value bindings (`E1009`),
 structural `TypeExpr` nesting bounded at 256 on every substrate (`E1015`),
 type-alias and module nesting bounds (`E1015`), linear-time string lexing, and

@@ -84,14 +84,17 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 ///
 /// It advances whenever a *language-observable* behavior changes — including a
 /// change in what programs are accepted or rejected — even if the release is a
-/// patch. `0.2.1` is such a change: the builtin-name value-namespace
-/// reservation (`E1009`) rejects programs the `0.2.0` language accepted (those
-/// that collided a binding with a builtin and broke assignment lookup). See
+/// patch. `0.3.1` is such a change: Keystone gives List/Array/Tuple/Set/Map
+/// distinct identities, makes Array a fixed-length contextual type, replaces
+/// the `json_decode_as(text, "Type")` spelling with the canonical
+/// `json_decode_as(text, Type)` type-position form, and removes general
+/// semicolon statement sequencing. See
+/// `docs/adr/0005-keystone-collection-model.md` and
 /// `docs/adr/0001-release-vs-language-version.md`.
 ///
 /// Invariant (checked by `tests/contract.rs`): `LANGUAGE_VERSION` is valid
 /// semver and `LANGUAGE_VERSION <= VERSION`.
-pub const LANGUAGE_VERSION: &str = "0.2.1";
+pub const LANGUAGE_VERSION: &str = "0.3.1";
 
 /// Stack size for the interpreter thread. Recursive Aura programs recurse
 /// through several Rust frames per call, so a generous but bounded stack

@@ -139,9 +139,9 @@ try {
 // ---------------------------------------------------------------------------
 
 // A codename names a release *line* and must never be invented for a line the
-// human has not named. Every existing entry's line is pre-Keystone, so the
-// honest value is the explicit null placeholder; the 0.3 "Keystone" codename
-// exists in the build's registry but no 0.3 runtime is published.
+// human has not named. The 0.3 line is the human-approved "Keystone" line; its
+// published 0.3.1 release runtime must carry that codename. Pre-Keystone lines
+// carry no invented codename.
 let codenameFailures = 0;
 for (const entry of manifest.versions) {
   const line = (entry.release_version || entry.id).split(".").slice(0, 2).join(".");
@@ -155,14 +155,26 @@ for (const entry of manifest.versions) {
     console.error(`FAIL ${entry.id}: codename must be a string or null`);
   }
 }
-check("pre-Keystone lines do not invent a codename", codenameFailures === 0);
+check("the Keystone line carries its codename and others do not invent one", codenameFailures === 0);
 
-// Keystone is a development line: it must not be presented as a published
-// release, and this transaction must not have published any runtime for it.
+// Keystone 0.3.1 is the current published release and must be present as an
+// available release-channel entry carrying the Keystone codename.
+const keystone = manifest.versions.find((v) => v.id === "0.3.1");
+check("the 0.3.1 Keystone release runtime is published", !!keystone && keystone.available);
 check(
-  "no 0.3 runtime is published while Keystone is under development",
-  !manifest.versions.some((v) => (v.release_version || v.id).startsWith("0.3")),
-); 
+  "the 0.3.1 release carries the Keystone codename",
+  keystone && keystone.codename === "Keystone",
+  keystone && JSON.stringify(keystone.codename),
+);
+check(
+  "the 0.3.1 release is a release-channel artifact",
+  keystone && keystone.channel === "release",
+);
+check(
+  "the 0.3.1 release implements the 0.3.1 language",
+  keystone && keystone.language_version === "0.3.1",
+  keystone && keystone.language_version,
+);
 
 // The channel vocabulary is exactly release|development: the UI maps a
 // superseded development entry to a Beta group, but the stored channel stays

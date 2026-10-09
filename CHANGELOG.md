@@ -7,8 +7,47 @@ Git.
 
 ## [Unreleased]
 
-Nothing yet. The `0.2.1` release line is closed; no successor version has been
-selected.
+Nothing yet. The `0.3.1` Keystone line is the current release; the next line,
+`0.3.2`, is planned but not started (no version bump, artifact, or date).
+
+## [0.3.1] — 2026-10-08
+
+The **Keystone** language release (`release = language = 0.3.1`, codename
+`Keystone`). It reopens the collection model and changes observable language
+behavior, so it is a language release, not a patch. See
+`docs/release-notes/v0.3.1.md` and
+`docs/adr/0005-keystone-collection-model.md`.
+
+### Changed
+- **Versioning (ADR-0001).** The release and language identities advance to
+  `0.3.1` because Keystone changes observable language behavior. The Playground
+  runtime is published as the new immutable identity `0.3.1`; `0.0.2`, `0.2.0`,
+  and `0.2.1` remain frozen and selectable.
+- **Distinct collection identities (ADR-0005).** `List`, `Array`, `Tuple`,
+  `Set`, and `Map` are distinct: `List != Array != Tuple != Set != Map`, a
+  struct is never equal to a map, and AIS reports distinct `type_name`,
+  `families`, and `value_kind`. Tuple is no longer list sugar.
+- **Fixed-length contextual Arrays.** Array type syntax is `[T; N]`; a bracket
+  literal is a List by default and an Array only under an expected `[T; N]`
+  type, through one realization seam; no implicit conversion and no length
+  covariance. `[1; 2; 3]` is not an Array literal.
+- **Canonical type-position `json_decode_as`.** The second argument is a type
+  position parsed by the canonical `ty()` grammar; the string spelling
+  normalizes to the same node.
+- **No general semicolon sequencing.** `;` in a general position is `E1006`.
+
+### Added
+- Set type `{T}` (key-capable scalar members, deterministic order; broader
+  membership deferred).
+
+### Fixed
+- Bounded grouping/f-string interpolation recursion on WebAssembly, so a deeply
+  nested source traps the language boundary instead of the host stack.
+- The `0.3.1` WebAssembly runtime runs the explicit-continuation evaluator and
+  reports `E4011` at the 512-frame boundary (the B-1 defect in runtimes up to
+  `0.2.1`).
+- A `json_decode_as` test that was not feature-gated for `json`, so
+  `--no-default-features` builds could fail.
 
 ## [0.2.1] — 2026-10-01
 

@@ -82,7 +82,8 @@ current semantics. **They now live under `docs/archive/`** (see
   `CORE_FREEZE.md`, `CORRECTIONS.md` — completed audit and freeze
   reports.
 - `RELEASE_0_0_X_DESIGN.md` — historical release-hardening design.
-  (`MIGRATION_0_2_1.md` remains in `docs/` as current migration guidance.)
+  (`MIGRATION_0_3_1.md` is the current migration guidance; `MIGRATION_0_2_1.md`
+  is retained as the previous step.)
 - `AURA_*.md` / `IMPLEMENT.md` — earlier planning, completion, and readiness
   snapshots that used to sit at the repository root; the root now holds only
   current-authority files.

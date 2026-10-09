@@ -52,6 +52,11 @@ function codenameFor(releaseLine) {
   return RELEASE_CODENAMES[releaseLine] ?? null;
 }
 
+/** Reduce a version to its release line (`0.3.1` -> `0.3`). */
+function releaseLineOf(version) {
+  return String(version).split(".").slice(0, 2).join(".");
+}
+
 // The frozen 0.0.1 release predates the WebAssembly execution substrate (it
 // spawns OS threads for parsing/execution), so it has no browser runtime. It
 // is recorded as a historical, non-executable entry rather than fabricated.
@@ -128,6 +133,29 @@ const FROZEN_0_2_1 = {
   artifact: "0.2.1/aura_playground_runtime.wasm",
   sha256: "48c456fcda6c50dd6808ccc5f15a0bca4c0b81d7d970172557817decf427cc9e",
   bytes: 1768322,
+};
+
+// The `0.3.1` Keystone release runtime artifact, pinned so it can never drift.
+// Keystone changes the observable language contract (distinct collection
+// identities, fixed-length contextual Arrays, the canonical type-position
+// `json_decode_as`, no general semicolon sequencing), so it is a new release
+// identity on the `0.3` line, whose human-approved codename is "Keystone".
+// While the runtime crate *is* 0.3.1 the dynamic manifest entry describes it
+// exactly; once the crate advances, this pin keeps 0.3.1 in the manifest
+// permanently. Publishing a newer release means adding a *new* pinned entry,
+// never editing this one.
+const FROZEN_0_3_1 = {
+  id: "0.3.1",
+  release_version: "0.3.1",
+  language_version: "0.3.1",
+  runtime_version: "0.3.1",
+  host_abi_version: 1,
+  available: true,
+  channel: "release",
+  codename: "Keystone",
+  artifact: "0.3.1/aura_playground_runtime.wasm",
+  sha256: "96e778ae50bd261f76d49adf04b8650cc3b60678a14c0e0ac555fb54400256ab",
+  bytes: 1951520,
 };
 
 // The final development artifact of the pre-0.2.0 line. It is preserved and
@@ -264,9 +292,13 @@ if (checkOnly) {
       // a historical artifact or the pinned identity, and the build refuses to
       // proceed.
       if (entry.channel === "release") {
-        const pinned = [FROZEN_0_0_1, FROZEN_0_0_2, FROZEN_0_2_0, FROZEN_0_2_1].find(
-          (f) => f.id === entry.id,
-        );
+        const pinned = [
+          FROZEN_0_0_1,
+          FROZEN_0_0_2,
+          FROZEN_0_2_0,
+          FROZEN_0_2_1,
+          FROZEN_0_3_1,
+        ].find((f) => f.id === entry.id);
         if (pinned && entry.available) {
           if (pinned.sha256 !== entry.sha256 || pinned.bytes !== entry.bytes) {
             console.error(
@@ -280,7 +312,7 @@ if (checkOnly) {
   }
   // Every frozen release artifact must still be present, byte-for-byte, even
   // if something removed it from the manifest.
-  for (const frozen of [FROZEN_0_0_2, FROZEN_0_2_0, FROZEN_0_2_1]) {
+  for (const frozen of [FROZEN_0_0_2, FROZEN_0_2_0, FROZEN_0_2_1, FROZEN_0_3_1]) {
     const p = join(runtimesDir, frozen.artifact);
     if (!existsSync(p)) {
       console.error(`build --check: frozen release artifact missing: ${frozen.artifact}`);
@@ -373,6 +405,11 @@ const manifest = {
     // advances to a new development identity, this pinned entry keeps 0.2.1
     // in the manifest permanently.
     ...(runtimeVersion === FROZEN_0_2_1.id ? [] : [FROZEN_0_2_1]),
+    // The 0.3.1 Keystone release is pinned likewise. While the runtime crate
+    // *is* 0.3.1 the dynamic entry below describes it exactly, so it is omitted
+    // here to avoid a duplicate; once the crate advances, this pinned entry
+    // keeps 0.3.1 in the manifest permanently.
+    ...(runtimeVersion === FROZEN_0_3_1.id ? [] : [FROZEN_0_3_1]),
     {
       id: runtimeVersion,
       // A release entry's runtime version equals its release version; a
@@ -388,7 +425,7 @@ const manifest = {
       channel,
       // The codename of this entry's release line, or null when the line has
       // no human-approved codename yet (Keystone §34).
-      codename: codenameFor(releaseVersion),
+      codename: codenameFor(releaseLineOf(releaseVersion)),
       artifact: `${runtimeVersion}/${artifactName}`,
       sha256: hash,
       bytes: wasm.byteLength,

@@ -1,6 +1,6 @@
 {
   "playground_api_version": 1,
-  "current": "0.2.1",
+  "current": "0.3.1",
   "versions": [
     {
       "id": "0.0.1",
@@ -10,11 +10,11 @@
       "host_abi_version": null,
       "available": false,
       "channel": "release",
+      "codename": null,
       "reason": "The published 0.0.1 predates the WebAssembly execution substrate and has no browser runtime. Selecting it will not execute any artifact.",
       "artifact": null,
       "sha256": null,
-      "bytes": null,
-      "codename": null
+      "bytes": null
     },
     {
       "id": "0.0.2",
@@ -24,10 +24,10 @@
       "host_abi_version": 1,
       "available": true,
       "channel": "release",
+      "codename": null,
       "artifact": "0.0.2/aura_playground_runtime.wasm",
       "sha256": "5a4ad3f7e3f786164d65df437d607e7ddd5e25947ea2c8dd9b436a5490b334ed",
-      "bytes": 1366621,
-      "codename": null
+      "bytes": 1366621
     },
     {
       "id": "0.0.2-dev.30",
@@ -37,10 +37,10 @@
       "host_abi_version": 1,
       "available": true,
       "channel": "development",
+      "codename": null,
       "artifact": "0.0.2-dev.30/aura_playground_runtime.wasm",
       "sha256": "916a8282f7afcf67b89662af89d2f69cf562d9dbe41fe88cab1764a3ef19c578",
-      "bytes": 1654216,
-      "codename": null
+      "bytes": 1654216
     },
     {
       "id": "0.2.0-dev.1",
@@ -50,10 +50,10 @@
       "host_abi_version": 1,
       "available": true,
       "channel": "development",
+      "codename": null,
       "artifact": "0.2.0-dev.1/aura_playground_runtime.wasm",
       "sha256": "ba40e89c834896badfb17d5c72aa2dcb227907a7b5ba513c315ef2f2da0adf08",
-      "bytes": 1767068,
-      "codename": null
+      "bytes": 1767068
     },
     {
       "id": "0.2.0-dev.2",
@@ -63,10 +63,10 @@
       "host_abi_version": 1,
       "available": true,
       "channel": "development",
+      "codename": null,
       "artifact": "0.2.0-dev.2/aura_playground_runtime.wasm",
       "sha256": "b69f212bf3f1d8df41b66ad249bf9c9829015b06459569fd2b765a5596b66c06",
-      "bytes": 1767723,
-      "codename": null
+      "bytes": 1767723
     },
     {
       "id": "0.2.0",
@@ -76,10 +76,10 @@
       "host_abi_version": 1,
       "available": true,
       "channel": "release",
+      "codename": null,
       "artifact": "0.2.0/aura_playground_runtime.wasm",
       "sha256": "9937fd8094ef402b7a9233d02bd232405f75b9e70661404646fcda7cd295c5bc",
-      "bytes": 1654161,
-      "codename": null
+      "bytes": 1654161
     },
     {
       "id": "0.2.1",
@@ -89,10 +89,23 @@
       "host_abi_version": 1,
       "available": true,
       "channel": "release",
+      "codename": null,
       "artifact": "0.2.1/aura_playground_runtime.wasm",
       "sha256": "48c456fcda6c50dd6808ccc5f15a0bca4c0b81d7d970172557817decf427cc9e",
-      "bytes": 1768322,
-      "codename": null
+      "bytes": 1768322
+    },
+    {
+      "id": "0.3.1",
+      "release_version": "0.3.1",
+      "language_version": "0.3.1",
+      "runtime_version": "0.3.1",
+      "host_abi_version": 1,
+      "available": true,
+      "channel": "release",
+      "codename": "Keystone",
+      "artifact": "0.3.1/aura_playground_runtime.wasm",
+      "sha256": "96e778ae50bd261f76d49adf04b8650cc3b60678a14c0e0ac555fb54400256ab",
+      "bytes": 1951520
     }
   ]
 }
