@@ -75,19 +75,89 @@ EVIDENCE** (cannot yet prove or disprove).
 
 ---
 
-## B. Findings from parallel subsystem audits
+## B. Findings from the parity/coverage audit (reproduced)
 
-*(Consolidated from three independent read-only passes: spec/grammar
-consistency; evaluator/session integrity; parity and coverage.)*
+Each was independently reproduced by the writer against the released
+compiler/Worker before being recorded. Fixed items are marked; the rest are
+open and awaiting triage.
 
-_Pending — the three audits are running; this section is filled on their
-return and each finding is reproduced by the writer before being accepted._
+### Fixed in this pass
+
+- **B1 — Session inputs dropped (CONFIRMED, FIXED).** The ABI-2 host
+  hardcoded empty `args` and no stdin, so a session run saw `[]\nnone` where
+  the synchronous path saw the supplied values. Reproduced:
+  `run(src,{args:["a"],stdin:"hi\n"})` → `["a"]\nhi\n` vs
+  `startSession(...)` → `[]\nnone\n`. Fixed by carrying args/stdin in
+  `SuspendHost`; pinned by `session-http`.
+- **B2 — `main`-less session fallback (CONFIRMED, FIXED).** `startSession("1 + 2")`
+  returned `E4027` while `run("1 + 2")` evaluated the module. Fixed by
+  mirroring the `NO_MAIN` fallback in `aura_session_start`; pinned.
+- **B3 — Browser `body_bytes` corrupted (CONFIRMED, FIXED).** The Worker
+  derived `body_bytes` from a lossy UTF-8 string; `0xFF` became the 3-byte
+  replacement char (observed `len=7`, byte `239` vs native `len=3`, byte
+  `255`). Fixed by sending raw bytes and consuming them exactly in Rust;
+  pinned by an `http-security` binary case (byte-exact `4\n255\n65`).
+- **B4 — The security/browser-HTTP suites never ran in CI (CONFIRMED, FIXED).**
+  They existed only as manual docs. Now wired into `run-all` under
+  Playwright, and they build the site on demand so the playground CI job
+  (which does not build the website) can run them. CI confirms 20/20 with
+  them.
+- **B5 — Browser response cap and timeout (CONFIRMED, FIXED earlier this
+  session).** See A1/A2.
+
+### Open (confirmed, not yet fixed — no severity above medium)
+
+- **B6 — 3xx behavior diverges (MEDIUM).** Native returns the redirect as an
+  ordinary response (`tests/http.rs` expects `302`); the browser uses
+  `redirect:"manual"` and maps `opaqueredirect` to `E4020`. The Aura-visible
+  difference is unpinned. *Decision required:* document the divergence or
+  synthesize a status-only response.
+- **B7 — Response headers diverge (MEDIUM).** Native preserves duplicates and
+  original casing; the browser `Headers` object hides `Set-Cookie` and
+  comma-joins duplicates. Inherent to the platform; fix is documentation plus
+  an explicit pin.
+- **B8 — Browser-only request bounds (LOW).** `MAX_REQUEST_BYTES` (8 MiB) and
+  `MAX_HEADER_BYTES` (64 KiB) exist only in the Worker; native has no
+  counterpart. Document or add native mirrors.
+- **B9 — `MAX_HTTP_PER_RUN = 64` (LOW).** Browser-only request-count cap;
+  untested. Document as a browser policy.
+- **B10 — Dead `MAX_REDIRECTS` and a header comment that overstates redirect
+  handling (LOW).** Remove the constant and correct the comment.
+- **B11 — Node-side ABI pins (LOW).** `abi.test.mjs` hardcodes
+  `abiVersion === 1`; valid only while `manifest.current` is `0.3.1`. Reading
+  the ABI from the manifest entry future-proofs it.
+- **B12 — `complete` output mode unreachable from the web (LOW).**
+  `encodeOptions` never emits `output-mode`; the UI branch is dead. Wire it or
+  document as harness-only.
+- **B13 — `readBoundedBody` fallback counts UTF-16 units, not bytes (LOW).**
+  Only on a non-streaming engine; the primary path is byte-accurate.
+- **B14 — Multi-file project runs have no browser HTTP (LOW-MEDIUM).** Project
+  runs use `BrowserHost` (HTTP unavailable) while single-source sessions
+  support it; the docs describe browser HTTP generally. Document the scope or
+  add project sessions.
+
+### Coverage gaps (no executable test yet)
+
+Session source/limit rejection; native timeout enforcement with a slow
+server; `MAX_HTTP_PER_RUN`; the `readBoundedBody` fallback; browser
+duplicate-header and redirect-status behavior; HTTP from a multi-file project.
+
+### FALSIFIED (claims checked and not defects)
+
+- Response-cap parity and timeout parity are now real (fixed); input limits
+  (`MAX_ARGS`/`MAX_ARG_BYTES`/`MAX_STDIN`) are shared across `aura_run`,
+  `aura_run_project`, and `aura_session_start`; 4xx/5xx are ordinary
+  responses on both paths; `E4020`/`E5002`/`E4031` mapping and call-site span
+  are consistent.
 
 ---
 
-## C. Coverage and technical-debt observations
+## C. Spec/grammar and evaluator audits
 
-_To be completed from the parity/coverage audit._
+_Two further independent read-only passes (spec/grammar consistency;
+evaluator/session integrity) are completing; their reproduced findings are
+appended here. No production code changes are made for §C during the audit
+stage._
 
 ---
 
