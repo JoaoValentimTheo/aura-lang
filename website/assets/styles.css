@@ -1074,6 +1074,12 @@ table.data td {
   text-align: left;
 }
 
+/* Identifiers stay whole: a table cell never breaks a code token mid-name.
+ * The wrapper scrolls locally if the table grows wider than the column. */
+table.data :not(pre) > code {
+  white-space: nowrap;
+}
+
 table.data th {
   background: var(--au-ink-2);
   font-weight: 650;
@@ -1185,8 +1191,8 @@ table.data tr:last-child td {
   display: flex;
   gap: var(--au-space-1);
   align-items: center;
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 14rem;
+  min-width: 11rem;
   overflow-x: auto;
   scrollbar-width: thin;
 }
