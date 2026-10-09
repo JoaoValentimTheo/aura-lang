@@ -572,26 +572,65 @@ pub mod http {
             Value::Int(i64::from(response.status)),
         );
         m.insert(MapKey::str("body"), Value::str(response.body.clone()));
+        // The raw body bytes as a list of ints (0..=255). This is the
+        // binary-safe view: `body` is a text convenience and may be a lossy
+        // rendering for non-UTF-8 payloads.
+        m.insert(
+            MapKey::str("body_bytes"),
+            Value::List(Rc::new(RefCell::new(
+                response
+                    .body_bytes
+                    .iter()
+                    .map(|b| Value::Int(i64::from(*b)))
+                    .collect(),
+            ))),
+        );
+        // Header materialization (`HTTP_ARCHITECTURE.md`):
+        //
+        //   * `headers` is a map keyed by the lowercased name, so a lookup is
+        //     case-insensitive. A name that occurred once maps to its value; a
+        //     name that occurred more than once maps to a *list* of every
+        //     occurrence in order, so a repeated header (notably
+        //     `Set-Cookie`) is never destroyed by comma-joining — commas are
+        //     only valid for a subset of headers and never for `Set-Cookie`.
+        //   * `header_lines` is the flat, ordered `[[name, value], …]` list,
+        //     preserving duplicates and original casing for a consumer that
+        //     needs the exact wire shape.
         let mut headers: BTreeMap<MapKey, Value> = BTreeMap::new();
         for (k, v) in &response.headers {
-            // A repeated header joins with a comma, per HTTP field semantics.
-            // The key is lowercased so a lookup is case-insensitive by shape.
-            let key = k.to_ascii_lowercase();
-            let entry = headers
-                .entry(MapKey::str(&key))
-                .or_insert_with(|| Value::str(String::new()));
-            if let Value::Str(prev) = entry {
-                let mut joined = prev.to_string();
-                if !joined.is_empty() {
-                    joined.push_str(", ");
+            let key = MapKey::str(k.to_ascii_lowercase());
+            match headers.get(&key) {
+                None => {
+                    headers.insert(key, Value::str(v.clone()));
                 }
-                joined.push_str(v);
-                *entry = Value::str(joined);
+                Some(Value::Str(prev)) => {
+                    let list = vec![Value::str(prev.to_string()), Value::str(v.clone())];
+                    headers.insert(key, Value::List(Rc::new(RefCell::new(list))));
+                }
+                Some(Value::List(items)) => {
+                    items.borrow_mut().push(Value::str(v.clone()));
+                }
+                Some(_) => {}
             }
         }
         m.insert(
             MapKey::str("headers"),
             Value::Map(Rc::new(RefCell::new(headers))),
+        );
+        m.insert(
+            MapKey::str("header_lines"),
+            Value::List(Rc::new(RefCell::new(
+                response
+                    .headers
+                    .iter()
+                    .map(|(k, v)| {
+                        Value::List(Rc::new(RefCell::new(vec![
+                            Value::str(k.clone()),
+                            Value::str(v.clone()),
+                        ])))
+                    })
+                    .collect(),
+            ))),
         );
         Value::Map(Rc::new(RefCell::new(m)))
     }
