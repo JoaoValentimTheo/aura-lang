@@ -70,6 +70,18 @@ const a = countingServer((req, res, cors) => {
     }, 8000);
     return;
   }
+  if (req.url === "/hang") {
+    // Never respond: used to prove the browser request timeout fires.
+    return;
+  }
+  if (req.url === "/big") {
+    // A body larger than the 8 MiB cap, written in chunks.
+    res.writeHead(200, { ...cors, "content-type": "text/plain" });
+    const chunk = "x".repeat(1024 * 1024);
+    for (let i = 0; i < 10; i += 1) res.write(chunk);
+    res.end();
+    return;
+  }
   res.writeHead(200, { ...cors, "content-type": "text/plain" });
   res.end("A");
 });
@@ -276,6 +288,40 @@ async function runAndAnswer(page, { grant = true, allowOrigins = null, timeout =
   // The parked session can still be completed correctly.
   const good = rt.resumeSession({ effect_id: step.result.effect_id, ok: true, response: { status: 200, headers: [], body: "ok" } });
   check("7 correct resume still works", good.result.status === "ok", JSON.stringify(good.result));
+}
+
+// 8) A response larger than the cap is refused with E4020, not buffered.
+{
+  const page = await newPage();
+  await setSource(page, `fn main() {
+    let r = http_get("${originA}/big")
+    print(r["status"])
+  }`);
+  const r = await runAndAnswer(page, { timeout: 30000 });
+  check(
+    "8 oversized response is E4020",
+    /Failed/.test(r.status) && r.diagnostics.some((d) => /E4020/.test(d)),
+    JSON.stringify({ status: r.status, diagnostics: r.diagnostics }),
+  );
+  await page.close();
+}
+
+// 9) A hanging server times out (E4020) without needing Stop.
+{
+  const page = await newPage();
+  await setSource(page, `fn main() {
+    let r = http_request("GET", "${originA}/hang", {"timeout_ms": 3000})
+    print(r["status"])
+  }`);
+  const started = Date.now();
+  const r = await runAndAnswer(page, { timeout: 20000 });
+  const elapsed = Date.now() - started;
+  check(
+    "9 hanging request times out with E4020",
+    /Failed/.test(r.status) && r.diagnostics.some((d) => /E4020/.test(d)) && elapsed < 15000,
+    JSON.stringify({ status: r.status, elapsed, diagnostics: r.diagnostics }),
+  );
+  await page.close();
 }
 
 await browser.close();

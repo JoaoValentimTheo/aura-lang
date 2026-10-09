@@ -4,7 +4,30 @@ Authoritative for **the active task and the exact next action**. Current
 repository state lives in `AGENT_STATE.md`; operating rules in `AGENTS.md`.
 Keep this file short — it is read at the start of every session.
 
-## ACTIVE TASK — AURA 0.3.2 PLAYGROUND & BROWSER HTTP (2026-10-09, LOCAL, UNPUSHED)
+## ACTIVE TASK — FEATURE DEVELOPMENT FROZEN; READ-ONLY AUDIT (2026-10-09)
+
+**AURA FEATURE DEVELOPMENT — FROZEN FOR STABILIZATION.** The 0.3.2 Playground
+development preview is published: `rewrite/v3-rust` at `9f8743ee` (= remote),
+CI 20/20 green, Pages deployed, live Playground verified (stable 0.3.1 runs;
+dev.5 does large-output accounting and real HTTP after consent; PokéAPI →
+`200\npikachu\n`).
+
+No new syntax / stdlib / Host capability / Playground / ABI work. Correctness
+and security defects reproduced against the frozen surface remain eligible for
+narrow fixes.
+
+**Next campaign (this session, read-only first):**
+1. A read-only engineering audit — findings in
+   `docs/engineering/STABILIZATION_AUDIT.md`, each with file/location,
+   governing authority, minimal reproducer, expected vs observed, severity,
+   evidence, smallest safe correction, and a regression plan; classified
+   CONFIRMED / FALSIFIED / DECISION REQUIRED / INSUFFICIENT EVIDENCE.
+2. An **AIS Agent-Native RFC** (design only; no implementation) —
+   `docs/engineering/AIS_AGENT_NATIVE_RFC.md`.
+
+No production code is modified during the audit stage.
+
+## ACTIVE TASK — AURA 0.3.2 PLAYGROUND & BROWSER HTTP (2026-10-09, PUBLISHED)
 
 The full campaign record is `docs/engineering/PLAYGROUND_032_CAMPAIGN.md`.
 

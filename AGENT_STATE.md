@@ -53,6 +53,24 @@ content mirrors, and website tooling/tests only; `src/**`,
   (parses `src/stdlib/signatures.rs`), `tests/docs-consistency.test.mjs`
   (route/version/link parity, release-pinned normative links).
 
+## AURA FEATURE DEVELOPMENT — FROZEN FOR STABILIZATION (2026-10-09)
+
+The 0.3.2 Playground development preview is **published** (branch
+`rewrite/v3-rust`, HEAD `9f8743ee`, = remote; CI 20/20; Pages deployed). From
+this checkpoint:
+
+- **No new language syntax, standard-library functions, Host capabilities,
+  Playground functionality, or ABI changes.**
+- **No unapproved release.** `0.3.1` remains the release; `0.3.2-dev.5`
+  (SHA-256 `72704db2…9ef56`) is an explicitly selected experimental preview,
+  never the default (`manifest.current = 0.3.1`).
+- Existing features may be corrected when a real defect is reproduced; security
+  and correctness defects remain eligible for narrow fixes.
+- The deferred global **binary value model (B)** remains deferred.
+- **Next campaign:** a read-only engineering audit (see
+  `docs/engineering/STABILIZATION_AUDIT.md`) and an **AIS Agent-Native RFC**
+  (design only; no AIS/0.2 implementation until the human reviews it).
+
 ## Aura 0.3.2 — Playground execution & browser HTTP campaign (2026-10-09)
 
 **D1 + D2 approved and implemented; browser HTTP works end to end.** See

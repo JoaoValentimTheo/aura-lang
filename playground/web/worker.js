@@ -49,6 +49,11 @@ const PROJECT_EXPORTS = ["aura_project_reset", "aura_project_push", "aura_run_pr
 const MAX_REDIRECTS = 3;
 const MAX_REQUEST_BYTES = 8 * 1024 * 1024;
 const MAX_HEADER_BYTES = 64 * 1024;
+/** Mirrors the native `MAX_HTTP_BODY_BYTES` policy: a response over this is
+ *  E4020, so the browser can never buffer a body the native host would refuse. */
+const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
+/** Mirrors the native `MAX_HTTP_TIMEOUT_MS` clamp. */
+const MAX_TIMEOUT_MS = 30_000;
 
 function hasVirtualProjects(runtime) {
   return PROJECT_EXPORTS.every((sym) => sym in runtime.exports);
@@ -146,6 +151,9 @@ async function performHttp(runId, effect, abortSignal) {
     };
   }
 
+  // A per-request controller lets the timeout abort *this* fetch, while the
+  // run's outer `abortSignal` (Stop) is forwarded into it below.
+  const timeoutController = new AbortController();
   const init = {
     method: effect.method,
     // No ambient cookies, no stored credentials, no implicit auth.
@@ -153,7 +161,6 @@ async function performHttp(runId, effect, abortSignal) {
     redirect: "manual",
     // Restrictive referrer policy: never leak the Playground URL's query.
     referrerPolicy: "no-referrer",
-    signal: abortSignal,
   };
   if (Array.isArray(effect.headers) && effect.headers.length > 0) {
     const headers = new Headers();
@@ -194,12 +201,37 @@ async function performHttp(runId, effect, abortSignal) {
     init.body = effect.body;
   }
 
+  // Enforce the request timeout the runtime sent (already clamped in Rust to
+  // MAX_HTTP_TIMEOUT_MS). The timer aborts the shared AbortController, so the
+  // in-flight fetch and any body read stop together; the run resumes with
+  // E4020 rather than hanging until the user presses Stop.
+  const timeoutMs = Number.isFinite(effect.timeout_ms) && effect.timeout_ms > 0
+    ? Math.min(effect.timeout_ms, MAX_TIMEOUT_MS)
+    : MAX_TIMEOUT_MS;
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    timeoutController.abort();
+  }, timeoutMs);
+  const onOuterAbort = () => timeoutController.abort();
+  abortSignal.addEventListener("abort", onOuterAbort, { once: true });
+
   let response;
   try {
-    response = await fetch(url, init);
+    response = await fetch(url, { ...init, signal: timeoutController.signal });
   } catch (err) {
+    clearTimeout(timer);
+    abortSignal.removeEventListener("abort", onOuterAbort);
     if (abortSignal.aborted) {
       return { effect_id: effect.effect_id, ok: false, code: 4020, message: "request cancelled" };
+    }
+    if (timedOut) {
+      return {
+        effect_id: effect.effect_id,
+        ok: false,
+        code: 4020,
+        message: `HTTP request timed out after ${timeoutMs} ms`,
+      };
     }
     // Distinguish a browser CORS rejection from a transport failure where the
     // browser lets us; both surface as E4020 (a genuine transport failure) but
@@ -212,6 +244,8 @@ async function performHttp(runId, effect, abortSignal) {
   // `redirect: "manual"` yields either a normal response or an opaque
   // redirect; we never fabricate a readable status for the latter.
   if (response.type === "opaqueredirect") {
+    clearTimeout(timer);
+    abortSignal.removeEventListener("abort", onOuterAbort);
     return {
       effect_id: effect.effect_id,
       ok: false,
@@ -220,10 +254,33 @@ async function performHttp(runId, effect, abortSignal) {
     };
   }
 
+  // Read the body with a hard byte cap, mirroring the native
+  // MAX_HTTP_BODY_BYTES (8 MiB) policy. The body is read as a stream so a
+  // hostile server cannot make the Worker buffer without bound: the cap is
+  // enforced *while reading*, and a body over it is E4020, never a partial
+  // success presented as complete.
   let bodyText = "";
   try {
-    bodyText = await response.text();
+    bodyText = await readBoundedBody(response, MAX_RESPONSE_BYTES);
   } catch (err) {
+    clearTimeout(timer);
+    abortSignal.removeEventListener("abort", onOuterAbort);
+    if (err && err.code === "BODY_TOO_LARGE") {
+      return {
+        effect_id: effect.effect_id,
+        ok: false,
+        code: 4020,
+        message: `HTTP response body exceeds the ${MAX_RESPONSE_BYTES} byte limit`,
+      };
+    }
+    if (abortSignal.aborted || timedOut) {
+      return {
+        effect_id: effect.effect_id,
+        ok: false,
+        code: 4020,
+        message: timedOut ? `HTTP request timed out after ${timeoutMs} ms` : "request cancelled",
+      };
+    }
     return {
       effect_id: effect.effect_id,
       ok: false,
@@ -231,6 +288,8 @@ async function performHttp(runId, effect, abortSignal) {
       message: `HTTP response body could not be read: ${err && err.message ? err.message : err}`,
     };
   }
+  clearTimeout(timer);
+  abortSignal.removeEventListener("abort", onOuterAbort);
   const headers = [];
   response.headers.forEach((value, key) => {
     headers.push([key, value]);
@@ -244,6 +303,60 @@ async function performHttp(runId, effect, abortSignal) {
       body: bodyText,
     },
   };
+}
+
+/**
+ * Read a `Response` body as text, refusing anything over `limit` bytes.
+ *
+ * Throws `{ code: "BODY_TOO_LARGE" }` when the accumulated bytes exceed the
+ * cap, so the caller maps it to E4020. Bytes are decoded at the end; UTF-8
+ * correctness is preserved (a body split across chunks is concatenated before
+ * decode, never decoded per chunk).
+ */
+async function readBoundedBody(response, limit) {
+  if (!response.body || typeof response.body.getReader !== "function") {
+    // No streaming body (very old engine): fall back to text() but check the
+    // declared length first, and the size after, so the cap still holds.
+    const declared = Number(response.headers.get("content-length"));
+    if (Number.isFinite(declared) && declared > limit) {
+      const err = new Error("body too large");
+      err.code = "BODY_TOO_LARGE";
+      throw err;
+    }
+    const text = await response.text();
+    if (text.length > limit) {
+      const err = new Error("body too large");
+      err.code = "BODY_TOO_LARGE";
+      throw err;
+    }
+    return text;
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limit) {
+      try {
+        await reader.cancel();
+      } catch {
+        /* the cap already rejects the body; a cancel failure is moot */
+      }
+      const err = new Error("body too large");
+      err.code = "BODY_TOO_LARGE";
+      throw err;
+    }
+    chunks.push(value);
+  }
+  const merged = new Uint8Array(total);
+  let off = 0;
+  for (const c of chunks) {
+    merged.set(c, off);
+    off += c.byteLength;
+  }
+  return new TextDecoder().decode(merged);
 }
 
 /** Drain a run's pending permission prompts (a cancelled run never leaves one hanging). */
