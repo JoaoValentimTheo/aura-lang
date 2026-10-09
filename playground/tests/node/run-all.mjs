@@ -119,6 +119,11 @@ try {
 // below it. It reuses the fresh wasm built for the differential gate, so the
 // boundary and the parity gate always measure the same artifact.
 run("b1 boundary", [join(here, "b1_boundary.test.mjs"), freshWasm]);
+// Host ABI 2 session + HTTP transport against a loopback server (0.3.2
+// development). Runs on the *committed* dev artifact, which is the one the
+// Playground selects; the fresh wasm is the same source and is covered by the
+// differential/syntax gates above.
+run("session-http", [join(here, "session-http.test.mjs")]);
 if (!differentialRan) {
   console.error("\n=== differential ===\nFAILED: not run");
   process.exit(1);

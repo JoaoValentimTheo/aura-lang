@@ -1,7 +1,6 @@
 # Aura 0.3.2 — Playground Execution & Browser HTTP Campaign
 
-Status: **Gate 2 and Gate 3 complete; Gate 4 (browser HTTP) blocked on a
-human ABI decision. Local, unpushed.** This is a *development* record for the
+Status: **D1 + D2 implemented; Gates 2–6 complete. Local, unpushed.** This is a *development* record for the
 authorized 0.3.2 campaign. It never describes 0.3.2 behavior as a feature of
 the published Aura 0.3.1 release.
 
@@ -198,27 +197,88 @@ host continues to report `E5002`.
 
 ---
 
-## 5. What this pass implements vs defers
+## 5. What this pass implements
 
-Implemented and tested locally:
+D1 and D2 were approved by the human and are implemented in full.
 
-- Output sink with preview/complete modes, counters, and truncation flags
-  (bounded memory, no fatal overflow). Reproduced defect fixed; benchmarks in
-  §7.
-- The new Playground runtime identity `0.3.2-dev.1` carrying the sink; 0.3.1
-  and every frozen artifact untouched; manifest and `--check` green; the
-  published `0.3.1` stays the public default (`PROMOTE_DEV_TO_DEFAULT` false).
-- UI disclosure of retained/omitted bytes in the output panel.
-- Native HTTP header fix (applied on the wire, captured by a loopback test) +
-  binary `body_bytes` + ordered `header_lines` (repeated headers preserved) +
-  a reported method/body policy + `Pending`/`PendingEffect` groundwork in the
-  host error type.
+### D1 — owned, resumable execution (implemented)
 
-Deferred (explicit, with the decision package in §3 pending human review):
+- `Machine` became a **transient view** over `(&mut Interp, &mut MachineState)`
+  (`src/run/iterative.rs`). `MachineState` owns `ctrl`, `kont`, `frames`,
+  `base_depth`, `expr_depth`, `top_env`; nothing self-references.
+- `Control::Park` / `Resume::Park` / `RunOutcome::Parked` carry a
+  `PendingEffect` out of the machine loop.
+- `NativeOutcome::Suspend { effect, wait }` lets a builtin suspend; the machine
+  pushes its `NativeResume` token onto the continuation stack
+  (`Cont::NativeResume { from_effect: true }`) so the exact resume point
+  survives parking.
+- `src/run/session.rs` adds the public `RunSession`: it **owns** the `Interp`
+  and the machine driver as siblings (no self-reference) and drives a module,
+  parking on each effect. `resume_effect`/`fail_effect` continue the *same*
+  machine; a failed effect is delivered to the parked continuation so
+  `finally` runs and an enclosing `try` sees it. Stale/duplicate resumes are
+  rejected (internal diagnostic).
+- The recursive oracle path reports `E5002` on a suspend (it has no transport);
+  production never reaches it.
 
-- **Browser HTTP via suspension** — requires the cross-boundary parking driver
-  (D1) and the additive ABI (D2). Until approved, the browser host continues to
-  deny the capability with `E5002`; the website does not advertise browser HTTP.
+### D2 — Host ABI 2 (implemented)
+
+- `playground/runtime` exports `aura_session_start`, `aura_session_resume`,
+  `aura_session_reset`, `aura_session_resume_reset`,
+  `aura_session_resume_push`; `ABI_VERSION` is now `2`. Payloads are
+  newline-delimited JSON, bounded, pointer-free, and validated in Rust.
+- Status codes extend ABI 1: `0` ok, `1` diagnostic, `2` internal, `3`
+  pending-effect. A pending result is the effect payload the Worker performs.
+- A resume payload is `{effect_id, ok, response}` or `{effect_id, ok:false,
+  code, message}`. A **stale `effect_id`** is rejected without resuming, so a
+  late completion from a cancelled run cannot corrupt a newer one.
+- The response value is built **in Rust** (`json_to_response_value`), so no
+  JavaScript can fabricate a malformed Aura value.
+- `runtime.mjs` feature-detects `supportsSessions`; the Worker only uses
+  sessions when the artifact advertises them. Frozen ABI-1 runtimes are never
+  sent the new commands.
+
+### Browser HTTP transport (implemented)
+
+- The HTTP builtins are resumable natives behind the new **`http-api`**
+  feature (the substrate-neutral builtin surface; `http` implies it and adds
+  the native `ureq` provider). The Playground runtime enables `http-api` and
+  supplies a `SuspendHost` that parks on HTTP.
+- The Worker performs `fetch` with `credentials: "omit"`, `redirect:
+  "manual"`, and `referrerPolicy: "no-referrer"`; it never authorizes an
+  origin itself. Every request first asks the page, which owns the Aurea
+  consent dialog. A deny becomes `E5002` and nothing is dispatched.
+- CORS is respected by the browser: a rejected request surfaces as `E4020`
+  with an explanatory message, never a fabricated status.
+- Grants are session-scoped and per-origin; a redirect that changes origin is
+  re-checked (browser-enforced via `manual`); bounds cover request bytes,
+  header bytes, request count per run, and the existing 8 MiB response cap and
+  30 s timeout.
+
+### Also delivered
+
+- Bounded output sink (preview/complete, exact accounting, UTF-8-safe
+  truncation) with the truncation disclosure in the UI.
+- Native HTTP foundations: outgoing headers applied (loopback-captured),
+  binary `body_bytes`, ordered `header_lines`, reported method/body policy.
+- Development runtime **`0.3.2-dev.5`** (ABI 2), SHA-256
+  `72704db2135add1c92c8c67442661673371e981736bc61e72d3aeac82906d2f1`.
+  `0.3.2-dev.1` and every frozen artifact are preserved; the published `0.3.1`
+  remains the manifest default.
+
+### Verified (evidence)
+
+- Rust: `tests/session.rs` (14 tests: nested calls, closures, loops,
+  mutation across suspension, try/finally, exact-once, stale resume, denied
+  cap, span attribution); the all-features sharded matrix is 63/63 PASS.
+- Node: `session-http.test.mjs` (13) drives the real ABI 2 protocol against a
+  loopback server — every method, headers, bodies, 404, denial, stale resume.
+- Browser: `browser-http.test.mjs` (8) in real Chromium against a local CORS
+  server — GET+JSON, denial, 404, POST body/headers, sequential requests,
+  Stop + recovery.
+- Live: the PokéAPI program in the Playground produced `200\npikachu\n`.
+- Compatibility: frozen `0.0.2`/`0.2.1`/`0.3.1` load, report
+  `supportsSessions=false`, and run unchanged; zero wasm imports preserved.
 
 ## 6. Benchmark — new vs old output path (measured)
 

@@ -8,25 +8,25 @@ Keep this file short — it is read at the start of every session.
 
 The full campaign record is `docs/engineering/PLAYGROUND_032_CAMPAIGN.md`.
 
-- **Gate 2 (output architecture): complete.** A bounded-memory `OutputSink`
-  replaces the fatal 1 MiB stdout cap for the development runtime; the
-  reproduced `E4020` defect is fixed and measured (421 ms, 262 KiB retained of
-  3.9 MiB written). The frozen 0.3.1 release keeps its historical behavior.
-- **Gate 3 (native HTTP foundations): complete.** Outgoing headers applied,
-  binary-safe `body_bytes`, ordered `header_lines`, and a reported method/body
-  policy, each pinned by a loopback test.
-- **Gate 4 (browser HTTP): BLOCKED — human ABI decision required.** Browser
-  `fetch` needs the cross-boundary parking driver (D1: `Machine` owns `Interp`)
-  and an additive ABI (D2: `aura_run_start`/`aura_run_resume`). The decision
-  package is in `PLAYGROUND_032_CAMPAIGN.md` §3. The browser host continues to
-  report `E5002`; nothing is faked.
-- **Runtime identity:** `0.3.2-dev.1` (development, selectable, not the public
-  default). `0.3.1` and all frozen artifacts are byte-identical; `v0.3.1`
-  unmoved.
-- **Exact next action:** a human reviews the two open decisions (D1 evaluator
-  ownership, D2 ABI surface) and the campaign report, then either authorizes
-  the Gateway-4 follow-up order or the promotion of the development runtime.
-  Nothing is pushed.
+- **D1 + D2 implemented.** `Machine` is a transient view over
+  `(&mut Interp, &mut MachineState)`; `PendingEffect` parks and resumes the
+  same machine through `NativeOutcome::Suspend`. `src/run/session.rs` owns the
+  interpreter (no self-reference). Host ABI 2 (`aura_session_*`, ABI `2`,
+  status `3` = pending effect, per-run `effect_id`) is live; `runtime.mjs`
+  feature-detects it and never sends it to a frozen ABI-1 artifact.
+- **Browser HTTP works end to end.** `http_get`/`http_request` (with
+  `headers`/`body`/`timeout_ms`) park on a Host effect; the Worker performs
+  `fetch` after the page's per-origin consent. Denial → `E5002`; CORS
+  rejection → `E4020`; `credentials:"omit"`, `redirect:"manual"`,
+  `referrerPolicy:"no-referrer"`; no proxy.
+- **Runtime identity:** `0.3.2-dev.5` (ABI 2), not the public default.
+  `0.3.1` and all frozen artifacts are byte-identical; `v0.3.1` unmoved.
+- **Evidence:** Rust `session` 14/0, all-features matrix 63/63; Node
+  `session-http` 13/0; Chromium `browser-http` 8/0; live PokéAPI →
+  `200\npikachu\n`; full website + Playground suites green.
+- **Exact next action:** a human reviews the deferred binary-value-model (B)
+  decision and the promotion/publishing of the development runtime. Nothing is
+  pushed, tagged, released, or deployed.
 
 ## ACTIVE TASK — AURA WEBSITE AUREA MIGRATION (2026-10-09, LOCAL, UNPUSHED)
 

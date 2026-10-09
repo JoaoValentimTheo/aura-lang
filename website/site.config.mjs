@@ -32,7 +32,7 @@ export const site = {
   // line is open this is a pre-release; the *published* default runtime
   // remains `releaseVersion` (`manifest.current` stays 0.3.1 until a human
   // authorizes promotion). See `docs/engineering/PLAYGROUND_032_CAMPAIGN.md`.
-  runtimeVersion: "0.3.2-dev.1",
+  runtimeVersion: "0.3.2-dev.5",
   previousRelease: "0.2.1",
   // Historical releases, kept addressable and clearly not current.
   earliestRelease: "0.0.1",

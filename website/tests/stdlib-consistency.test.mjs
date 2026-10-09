@@ -38,8 +38,10 @@ function check(name, cond, detail) {
 // feature gate, and (for methods) the receiver class.
 function parseBlocks(source, keyword) {
   const blocks = [];
+  // A feature name may contain a hyphen (`http-api`), so the character class
+  // must include it or the gate would parse as absent.
   const re = new RegExp(
-    `(#\\[cfg\\(feature = "([a-z]+)"\\)\\]\\s*)?${keyword}\\s*\\{([\\s\\S]*?)\\n\\s*\\}`,
+    `(#\\[cfg\\(feature = "([a-z-]+)"\\)\\]\\s*)?${keyword}\\s*\\{([\\s\\S]*?)\\n\\s*\\}`,
     "g",
   );
   for (const m of source.matchAll(re)) {
@@ -81,10 +83,14 @@ for (const mod of lib.featureModules) {
   for (const [name] of mod.functions) {
     const gate = builtinFeature.get(name);
     if (mod.gated) {
-      // A gated module's functions must carry the matching feature gate.
+      // A gated module's functions must carry the matching feature gate. The
+      // HTTP builtins live behind `http-api` (the substrate-neutral builtin
+      // surface), which the native `http` capability implies — so a gated
+      // `http` builtin is correctly stamped `http-api`, never left ungated.
+      const expected = mod.name === "http" ? "http-api" : mod.name;
       check(
-        `gated ${mod.name} builtin ${name} is behind feature "${mod.name}"`,
-        gate === mod.name,
+        `gated ${mod.name} builtin ${name} is behind feature "${expected}"`,
+        gate === expected,
         `gate=${gate}`,
       );
     } else if (name === "http_request" || name === "http_get") {

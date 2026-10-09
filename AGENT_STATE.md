@@ -55,10 +55,39 @@ content mirrors, and website tooling/tests only; `src/**`,
 
 ## Aura 0.3.2 — Playground execution & browser HTTP campaign (2026-10-09)
 
-**Gate 2 (output architecture) and Gate 3 (native HTTP foundations) are
-complete locally; Gate 4 (browser HTTP) is blocked on a human ABI decision.**
-See `docs/engineering/PLAYGROUND_032_CAMPAIGN.md` for the full inventory,
-design, benchmarks and the decision package. Nothing pushed.
+**D1 + D2 approved and implemented; browser HTTP works end to end.** See
+`docs/engineering/PLAYGROUND_032_CAMPAIGN.md` for the full record. Nothing
+pushed. Summary of the resumed campaign:
+
+- **D1.** `Machine` is now a transient view over `(&mut Interp, &mut
+  MachineState)`; `Control::Park`/`Resume::Park`/`RunOutcome::Parked` and
+  `NativeOutcome::Suspend` carry a `PendingEffect` out of the loop with the
+  native's resume token on the continuation stack. `src/run/session.rs` adds
+  the public `RunSession`, which **owns** the `Interp` (no self-reference) and
+  resumes the same machine exactly. Stale/duplicate resumes are rejected.
+- **D2.** Host ABI 2: `aura_session_start`/`resume`/`reset`/`resume_push`
+  (ABI version `2`), newline-delimited JSON, Rust-validated response values,
+  status `3` = pending effect with a per-run `effect_id`. `runtime.mjs`
+  feature-detects `supportsSessions`; frozen ABI-1 runtimes are never sent the
+  new commands (verified: `0.0.2`/`0.2.1`/`0.3.1` load and run unchanged).
+- **Browser HTTP.** HTTP builtins are resumable natives behind the new
+  `http-api` feature (substrate-neutral; `http` implies it). The Worker does
+  `fetch` with `credentials:"omit"`, `redirect:"manual"`,
+  `referrerPolicy:"no-referrer"` only after the page's per-origin consent;
+  denial is `E5002`, CORS rejection is `E4020`, no proxy, no fabricated
+  statuses. `http_get`/`http_request` + `headers`/`body`/`timeout_ms` kept.
+- **Runtime identity.** `0.3.2-dev.5` (ABI 2), SHA-256
+  `72704db2135add1c92c8c67442661673371e981736bc61e72d3aeac82906d2f1`;
+  `0.3.2-dev.1` and all frozen artifacts preserved; published `0.3.1` stays
+  the default.
+- **Evidence.** Rust `session` 14/0 and the all-features matrix 63/63;
+  Node `session-http` 13/0; Chromium `browser-http` 8/0; live PokéAPI →
+  `200\npikachu\n`; website suite green (browser 404, a11y 82, playground
+  suite incl. browser 107/session-http 13).
+
+**Remaining human gate:** the deferred global **binary value model (B)** for
+arbitrary binary HTTP bodies beyond the additive `body_bytes` view, and the
+promotion/publishing of the development runtime. Nothing is pushed.
 
 - **Output.** `src/host.rs` gains a bounded-memory `OutputSink`
   (`preview`/`complete`, exact retained/written/omitted accounting, UTF-8-safe
