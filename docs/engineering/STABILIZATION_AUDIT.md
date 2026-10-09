@@ -180,6 +180,25 @@ parser: `let t = (1,)` evaluates `t[0] == 1`.
 (builtin value-name reservation) and `E2023` (the reserved `Aura` namespace)
 are both documented and both produced (`src/check/mod.rs` sites found).
 
+**C5 — Fuzz smoke intermittent failure is a misclassified performance signal
+(CONFIRMED, test-infrastructure defect; FIXED).** The `runtime` fuzz target
+occasionally writes a libFuzzer `timeout-*` artifact; the CI classifier treated
+every artifact that was not `slow-unit-*` as a crash, so a finite-but-slow
+generated program failed the job nondeterministically (the job passed on rerun
+of the same source). Reproduced and classified:
+*the generator provably emits no unbounded construct* — there is no `while` or
+`loop` site, every `for` bound is a small constant or a generated list length,
+and every render/equality/encode is bounded by the documented
+`MAX_VALUE_NODES` budget (`src/run/value.rs:33`, whose elision case was
+reproduced: a self-referential `push(c, c)` twice renders in bounded time).
+The worst seeds do ~1M nodes of fan-out rendering (measured: seed 180 at
+~4.9 s release; more under ASan), which crosses libFuzzer's 25 s per-unit
+timeout while the process is still making progress. Both CI and nightly now
+classify `timeout-*` alongside `slow-unit-*` as a performance signal; a genuine
+crash/abort/leak still writes a differently named artifact and still fails, and
+a genuine hang is caught by the `timeout` command and the RSS limit. The
+aggressive detection stays in the nightly workflow.
+
 ### C.2 Evaluator/session audit
 
 _The evaluator/session integrity pass is still completing; its reproduced
