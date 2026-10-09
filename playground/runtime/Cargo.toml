@@ -47,7 +47,7 @@ name = "aura-playground-runtime"
 # semantics are unchanged, so `language_version` stays `0.3.1`; only the
 # runtime identity advances. It is a development pre-release and is never a
 # published release. `0.3.1` remains pinned and immutable.
-version = "0.3.2-dev.5"
+version = "0.3.2-dev.7"
 edition = "2021"
 rust-version = "1.83"
 description = "The Aura Playground WebAssembly execution wrapper: a minimal, zero-import C ABI over the real aura runtime."

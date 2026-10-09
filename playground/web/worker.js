@@ -259,9 +259,9 @@ async function performHttp(runId, effect, abortSignal) {
   // hostile server cannot make the Worker buffer without bound: the cap is
   // enforced *while reading*, and a body over it is E4020, never a partial
   // success presented as complete.
-  let bodyText = "";
+  let bodyBytes = null;
   try {
-    bodyText = await readBoundedBody(response, MAX_RESPONSE_BYTES);
+    bodyBytes = await readBoundedBody(response, MAX_RESPONSE_BYTES);
   } catch (err) {
     clearTimeout(timer);
     abortSignal.removeEventListener("abort", onOuterAbort);
@@ -294,6 +294,9 @@ async function performHttp(runId, effect, abortSignal) {
   response.headers.forEach((value, key) => {
     headers.push([key, value]);
   });
+  // Send the exact bytes (as an int array) so the runtime can build a
+  // byte-accurate `body_bytes`; `body` is the UTF-8 view of the same bytes.
+  const bodyText = new TextDecoder().decode(bodyBytes);
   return {
     effect_id: effect.effect_id,
     ok: true,
@@ -301,35 +304,35 @@ async function performHttp(runId, effect, abortSignal) {
       status: response.status,
       headers,
       body: bodyText,
+      body_bytes: Array.from(bodyBytes),
     },
   };
 }
 
 /**
- * Read a `Response` body as text, refusing anything over `limit` bytes.
+ * Read a `Response` body as raw bytes, refusing anything over `limit` bytes.
  *
  * Throws `{ code: "BODY_TOO_LARGE" }` when the accumulated bytes exceed the
- * cap, so the caller maps it to E4020. Bytes are decoded at the end; UTF-8
- * correctness is preserved (a body split across chunks is concatenated before
- * decode, never decoded per chunk).
+ * cap, so the caller maps it to E4020. Bytes are never decoded here, so a
+ * binary payload survives exactly (the caller derives the UTF-8 view).
  */
 async function readBoundedBody(response, limit) {
   if (!response.body || typeof response.body.getReader !== "function") {
-    // No streaming body (very old engine): fall back to text() but check the
-    // declared length first, and the size after, so the cap still holds.
+    // No streaming body (very old engine): fall back to arrayBuffer() but
+    // check the declared length first, and the size after, so the cap holds.
     const declared = Number(response.headers.get("content-length"));
     if (Number.isFinite(declared) && declared > limit) {
       const err = new Error("body too large");
       err.code = "BODY_TOO_LARGE";
       throw err;
     }
-    const text = await response.text();
-    if (text.length > limit) {
+    const buf = new Uint8Array(await response.arrayBuffer());
+    if (buf.byteLength > limit) {
       const err = new Error("body too large");
       err.code = "BODY_TOO_LARGE";
       throw err;
     }
-    return text;
+    return buf;
   }
   const reader = response.body.getReader();
   const chunks = [];
@@ -356,7 +359,7 @@ async function readBoundedBody(response, limit) {
     merged.set(c, off);
     off += c.byteLength;
   }
-  return new TextDecoder().decode(merged);
+  return merged;
 }
 
 /** Drain a run's pending permission prompts (a cancelled run never leaves one hanging). */

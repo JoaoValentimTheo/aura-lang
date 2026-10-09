@@ -1,4 +1,4 @@
-// Browser HTTP security acceptance gate (0.3.2-dev.5, Host ABI 2).
+// Browser HTTP security acceptance gate (0.3.2-dev.7, Host ABI 2).
 //
 // The order requires adversarial, deterministic evidence — not just the
 // successful PokéAPI demonstration — that the experimental runtime cannot
@@ -74,6 +74,12 @@ const a = countingServer((req, res, cors) => {
     // Never respond: used to prove the browser request timeout fires.
     return;
   }
+  if (req.url === "/binary") {
+    // Raw non-UTF-8 bytes: the Aura body_bytes view must be byte-exact.
+    res.writeHead(200, { ...cors, "content-type": "application/octet-stream" });
+    res.end(Buffer.from([0xff, 0x00, 0xfe, 0x41]));
+    return;
+  }
   if (req.url === "/big") {
     // A body larger than the 8 MiB cap, written in chunks.
     res.writeHead(200, { ...cors, "content-type": "text/plain" });
@@ -96,6 +102,10 @@ const originA = `http://127.0.0.1:${a.server.address().port}`;
 const originB = `http://127.0.0.1:${b.server.address().port}`;
 
 const repo = resolve(here, "../../..");
+// Build the site if it is missing so this suite runs in CI (which does not
+// build the website before the playground job).
+const { ensureSite } = await import("./ensure-site.mjs");
+ensureSite();
 const serve = await import(join(repo, "website/tests/serve.mjs"));
 const { server: site, port: sitePort, base: basePath } = await serve.startServer(0);
 const base = `http://127.0.0.1:${sitePort}${basePath}`;
@@ -115,7 +125,7 @@ async function newPage() {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   await page.goto(`${base}playground/`, { waitUntil: "load" });
   await page.waitForFunction(() => document.querySelectorAll("#version option").length > 0);
-  await page.selectOption("#version", "0.3.2-dev.5");
+  await page.selectOption("#version", "0.3.2-dev.7");
   return page;
 }
 
@@ -278,8 +288,8 @@ async function runAndAnswer(page, { grant = true, allowOrigins = null, timeout =
   const { readFileSync } = await import("node:fs");
   const { AuraRuntime } = await import(join(repo, "playground/web/runtime.mjs"));
   const rt = await AuraRuntime.fromBytes(
-    readFileSync(join(repo, "playground/runtimes/0.3.2-dev.5/aura_playground_runtime.wasm")),
-    "0.3.2-dev.5",
+    readFileSync(join(repo, "playground/runtimes/0.3.2-dev.7/aura_playground_runtime.wasm")),
+    "0.3.2-dev.7",
   );
   let step = rt.startSession(`fn main() { let r = http_get("http://example.test/a")\n print(r["status"]) }`, { args: [], stdin: null });
   check("7 session parks", step.status === 3, String(step.status));
@@ -288,6 +298,24 @@ async function runAndAnswer(page, { grant = true, allowOrigins = null, timeout =
   // The parked session can still be completed correctly.
   const good = rt.resumeSession({ effect_id: step.result.effect_id, ok: true, response: { status: 200, headers: [], body: "ok" } });
   check("7 correct resume still works", good.result.status === "ok", JSON.stringify(good.result));
+}
+
+// 10) A binary (non-UTF-8) response is byte-exact in Aura.
+{
+  const page = await newPage();
+  await setSource(page, `fn main() {
+    let r = http_get("${originA}/binary")
+    print(len(r["body_bytes"]))
+    print(r["body_bytes"][0])
+    print(r["body_bytes"][3])
+  }`);
+  const r = await runAndAnswer(page, { timeout: 20000 });
+  check(
+    "10 binary body_bytes is byte-exact",
+    r.stdout === "4\n255\n65\n",
+    JSON.stringify(r.stdout),
+  );
+  await page.close();
 }
 
 // 8) A response larger than the cap is refused with E4020, not buffered.

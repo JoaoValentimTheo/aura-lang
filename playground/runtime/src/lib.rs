@@ -1082,6 +1082,12 @@ thread_local! {
 /// the user's origin authorization.
 struct SuspendHost {
     sink: aura::host::OutputSink,
+    /// The program's arguments, exactly as the ABI-1 `BrowserHost` receives
+    /// them. The session path must be input-identical to the synchronous path,
+    /// or a program would observe different `args()` on the two transports.
+    args: Vec<String>,
+    /// Standard input, consumed line by line like the ABI-1 host.
+    input: Option<std::io::Cursor<Vec<u8>>>,
 }
 
 impl aura::host::Host for SuspendHost {
@@ -1090,10 +1096,24 @@ impl aura::host::Host for SuspendHost {
         Ok(())
     }
     fn read_line(&mut self) -> aura::host::HostResult<Option<String>> {
-        Ok(None)
+        use std::io::BufRead;
+        let Some(input) = self.input.as_mut() else {
+            return Ok(None);
+        };
+        let mut line = String::new();
+        match input.read_line(&mut line) {
+            Ok(0) => Ok(None),
+            Ok(_) => {
+                if line.ends_with('\n') {
+                    line.pop();
+                }
+                Ok(Some(line))
+            }
+            Err(e) => Err(aura::host::HostError::io(format!("stdin read failed: {e}"))),
+        }
     }
     fn args(&self) -> Vec<String> {
-        Vec::new()
+        self.args.clone()
     }
     fn read_file(&self, _path: &str) -> aura::host::HostResult<Option<String>> {
         Err(aura::host::HostError::unavailable(
@@ -1174,6 +1194,16 @@ pub extern "C" fn aura_session_start() -> u32 {
     let compilation =
         match aura::compile_named_with_mode(source, "<playground>", aura::CompileMode::Program) {
             Ok(c) => c,
+            // No `main`: fall back to module semantics exactly like the
+            // synchronous `execute` path, so a session run of a `main`-less
+            // source observes the same value the ABI-1 path does. Module eval
+            // is a single synchronous step (it cannot suspend today), so it is
+            // driven to completion here and its result is the session result.
+            Err(report) if report.diagnostic().code == codes::NO_MAIN => {
+                let (json, code, _version) = run_module(source, &options_raw, &opts, sink);
+                set_result(json);
+                return code;
+            }
             Err(report) => {
                 let (json, code) = diagnostic_result(report.diagnostic(), source, Some(&sink));
                 set_result(json);
@@ -1182,7 +1212,14 @@ pub extern "C" fn aura_session_start() -> u32 {
         };
     let (module, _sources, _entry) = compilation.into_parts();
     let mut interp = Interp::new();
-    interp.set_host(Box::new(SuspendHost { sink: sink.clone() }));
+    interp.set_host(Box::new(SuspendHost {
+        sink: sink.clone(),
+        args: opts.args.clone(),
+        input: opts
+            .stdin
+            .clone()
+            .map(|s| std::io::Cursor::new(s.into_bytes())),
+    }));
     let session = match aura::run::session::RunSession::start(interp, &module) {
         Ok(s) => s,
         Err(d) => {
@@ -1305,11 +1342,26 @@ fn json_to_response_value(v: &serde_json::Value) -> Result<Value, String> {
         .to_string();
     let mut m: std::collections::BTreeMap<MapKey, Value> = std::collections::BTreeMap::new();
     m.insert(MapKey::str("status"), Value::Int(status as i64));
-    m.insert(MapKey::str("body"), Value::str(&body));
+    // Prefer the exact bytes the transport captured. The Worker sends the raw
+    // response as an int array so `body_bytes` is byte-accurate for binary
+    // payloads; the `body` text is a UTF-8 view of those same bytes. When a
+    // transport predates `body_bytes` and sends only a string, derive the
+    // bytes from it (the lossy fallback, exactly as before).
+    let bytes: Vec<u8> =
+        if let Some(arr) = v.get("body_bytes").and_then(serde_json::Value::as_array) {
+            arr.iter()
+                .filter_map(serde_json::Value::as_u64)
+                .map(|b| b as u8)
+                .collect()
+        } else {
+            body.bytes().collect()
+        };
+    let body_view = String::from_utf8_lossy(&bytes).into_owned();
+    m.insert(MapKey::str("body"), Value::str(&body_view));
     m.insert(
         MapKey::str("body_bytes"),
         Value::List(std::rc::Rc::new(std::cell::RefCell::new(
-            body.bytes().map(|b| Value::Int(i64::from(b))).collect(),
+            bytes.iter().map(|b| Value::Int(i64::from(*b))).collect(),
         ))),
     );
     let mut headers: std::collections::BTreeMap<MapKey, Value> = std::collections::BTreeMap::new();

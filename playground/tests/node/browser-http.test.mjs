@@ -1,7 +1,7 @@
 // Browser HTTP end to end (0.3.2 development, Host ABI 2).
 //
 // This is the real acceptance gate for browser HTTP: a real Chromium, the real
-// Playground page and Worker, the real 0.3.2-dev.5 wasm artifact, and a local
+// Playground page and Worker, the real 0.3.2-dev.7 wasm artifact, and a local
 // CORS-enabled server. The Aura program calls `http_get`/`http_request`; the
 // runtime parks; the Worker performs a real `fetch`; the page's consent UI is
 // answered; the response resumes the same program.
@@ -16,7 +16,11 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const repo = resolve(here, "../..");
+const repo = resolve(here, "../../..");
+// Build the site if it is missing so this suite runs in CI (which does not
+// build the website before the playground job).
+const { ensureSite } = await import("./ensure-site.mjs");
+ensureSite();
 
 let chromium;
 try {
@@ -65,9 +69,8 @@ const port = server.address().port;
 const origin = `http://127.0.0.1:${port}`;
 
 // ---- serve the built Playground (dist) so the Worker + artifacts resolve ---
-const { startServer } = await import(join(repo, "tests/serve.mjs")).then((m) => m).catch(() => ({}));
-// The website test harness serves website/dist; reuse it.
-const serve = await import(join(resolve(repo, ".."), "website/tests/serve.mjs"));
+// The website test harness serves `website/dist`; reuse it.
+const serve = await import(join(repo, "website/tests/serve.mjs"));
 const { server: site, port: sitePort, base: basePath } = await serve.startServer(0);
 
 const browser = await chromium.launch();
@@ -88,7 +91,7 @@ async function newPage() {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   await page.goto(`${base}playground/`, { waitUntil: "load" });
   await page.waitForFunction(() => document.querySelectorAll("#version option").length > 0);
-  await page.selectOption("#version", "0.3.2-dev.5");
+  await page.selectOption("#version", "0.3.2-dev.7");
   return page;
 }
 

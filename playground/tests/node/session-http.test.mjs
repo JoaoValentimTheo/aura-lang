@@ -1,4 +1,4 @@
-// Browser-host session + HTTP transport, end to end (0.3.2-dev.5).
+// Browser-host session + HTTP transport, end to end (0.3.2-dev.7).
 //
 // This drives the *real* ABI 2 session protocol that the Worker uses, in Node:
 // start a session, get a pending HTTP effect, perform a real request against a
@@ -52,8 +52,8 @@ await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const port = server.address().port;
 const base = `http://127.0.0.1:${port}`;
 
-const wasm = readFileSync(join(repo, "runtimes/0.3.2-dev.5/aura_playground_runtime.wasm"));
-const rt = await AuraRuntime.fromBytes(wasm, "0.3.2-dev.5");
+const wasm = readFileSync(join(repo, "runtimes/0.3.2-dev.7/aura_playground_runtime.wasm"));
+const rt = await AuraRuntime.fromBytes(wasm, "0.3.2-dev.7");
 
 check("dev.2 advertises sessions", rt.supportsSessions === true);
 check("dev.2 ABI is 2", rt.abiVersion === 2, String(rt.abiVersion));
@@ -189,6 +189,30 @@ async function runWithHttp(source, { grant = true } = {}) {
     r.status !== "ok" && codes.some((c) => /E2003/.test(String(c))),
     JSON.stringify({ status: r.status, codes }),
   );
+}
+
+
+// Session inputs and main-less fallback parity (F1/F6, 0.3.2-dev.7): the
+// session path must be observationally identical to the synchronous path for
+// args, stdin, and a `main`-less source.
+{
+  const src = 'fn main() { print(args())\n print(read_line()) }';
+  const viaRun = rt.run(src, { args: ["a"], stdin: "hi\n" });
+  let step = rt.startSession(src, { args: ["a"], stdin: "hi\n" });
+  check(
+    "session args/stdin match the synchronous path",
+    step.result.stdout === viaRun.stdout && viaRun.stdout === '["a"]\nhi\n',
+    JSON.stringify({ session: step.result.stdout, run: viaRun.stdout }),
+  );
+  // A `main`-less source uses module semantics on both paths (no E4027).
+  const evalRun = rt.run("1 + 2", { args: [], stdin: null });
+  const evalSession = rt.startSession("1 + 2", { args: [], stdin: null });
+  check(
+    "session eval fallback matches the synchronous path",
+    evalSession.status === 0 && evalSession.result.status === "ok",
+    JSON.stringify({ sessionStatus: evalSession.status, result: evalSession.result.status }),
+  );
+  void evalRun;
 }
 
 server.close();

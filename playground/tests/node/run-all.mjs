@@ -144,8 +144,14 @@ if (havePlaywright) {
   // runtime.runProject → aura_project_* → the canonical pipeline.
   run("multi-file", [join(here, "multifile.test.mjs")]);
   run("cache", [join(here, "cache.test.mjs")]);
+  // The mandatory browser HTTP + security gates. These are the acceptance
+  // gates for the 0.3.2 development preview's network authority: they must run
+  // in CI (a skipped security test is not a pass), so they are part of the
+  // standard suite, not an ad-hoc manual step.
+  run("browser-http", [join(here, "browser-http.test.mjs")]);
+  run("http-security", [join(here, "http-security.test.mjs")]);
 } else {
-  console.log("\n=== browser/worker/multi-file/cache ===\nSKIPPED: Playwright not installed.");
+  console.log("\n=== browser/worker/multi-file/cache/browser-http/http-security ===\nSKIPPED: Playwright not installed.");
   console.log("Install with: (cd playground && npm install && npx playwright install chromium)");
 }
 
