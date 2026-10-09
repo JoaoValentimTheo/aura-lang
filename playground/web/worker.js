@@ -6,24 +6,36 @@
 // return (`while true {}`). Cancellation is never turned into an Aura `throw`
 // and is never catchable by Aura `try/catch`.
 //
-// The Worker is an orchestration layer only. It loads the selected, immutable
-// runtime artifact, validates its ABI, calls it, and posts the structured
-// result back. It implements no Aura semantics.
+// The Worker is an orchestration and transport layer only. It loads the
+// selected, immutable runtime artifact, validates its ABI, calls it, performs
+// the *browser* side of a Host effect when the runtime asks (an HTTP request),
+// and posts structured results back. It implements **no Aura semantics**: the
+// response value is built in Rust from the transport result, and the request
+// was fully validated in Rust before it ever reached this file.
 //
-// Two transports are supported, additively:
+// Transports, additively:
 //
 //   * `source`  — the historical single-source execution path (`runtime.run`);
-//   * `project` — a virtual multi-source project (`runtime.runProject`), which
-//     is feature-detected because historical ABI-1 artifacts predate the
-//     additive `aura_project_*` exports.
+//   * `project` — a virtual multi-source project (`runtime.runProject`);
+//   * `session` — Host ABI 2 resumable execution (`runtime.startSession` /
+//     `resumeSession`), used when the selected artifact advertises it. This is
+//     what makes browser HTTP possible: the program parks on an HTTP effect,
+//     the Worker performs `fetch`, and the program resumes.
 //
 // Message in:  { runId, artifactUrl, expectedAbi, expectedSha256,
 //                source, project, args, stdin }
-//              Exactly one of `source` / `project` is supplied. `source` keeps
-//              the historical behavior byte-for-byte.
-// Message out: { runId, kind: "loaded", runtimeVersion, abiVersion }
+//              A run uses `session` automatically when supported.
+// Message out: { runId, kind: "loaded", runtimeVersion, abiVersion, ... }
+//              { runId, kind: "permission", effectId, origin, method, mutating }
 //              { runId, kind: "result", result }
 //              { runId, kind: "error", phase, code, message }
+//
+// Authorization: the Worker NEVER authorizes an origin by itself. When the
+// runtime parks on an HTTP effect, the Worker asks the *page* (which owns the
+// Aurea permission UI) and waits. A denied request is never dispatched. The
+// Worker keeps no cookies or credentials (`credentials: "omit"`) and follows
+// at most a bounded number of redirects, re-checking authorization for a
+// redirect target that changes origin.
 
 importScripts(); // no-op; kept for clarity that there are no imports.
 
@@ -32,8 +44,18 @@ let runtimePromise = null;
 /** Exports a runtime must provide to execute a virtual project. */
 const PROJECT_EXPORTS = ["aura_project_reset", "aura_project_push", "aura_run_project"];
 
+/** Transport bounds (mirror the Rust host's policy; the Worker enforces them
+ *  too so a hostile page message cannot make it buffer without bound). */
+const MAX_REDIRECTS = 3;
+const MAX_REQUEST_BYTES = 8 * 1024 * 1024;
+const MAX_HEADER_BYTES = 64 * 1024;
+
 function hasVirtualProjects(runtime) {
   return PROJECT_EXPORTS.every((sym) => sym in runtime.exports);
+}
+
+function post(msg) {
+  self.postMessage(msg);
 }
 
 async function loadRuntime(artifactUrl, expectedAbi, expectedSha256) {
@@ -43,12 +65,7 @@ async function loadRuntime(artifactUrl, expectedAbi, expectedSha256) {
     throw new Error(`cannot fetch runtime artifact (${response.status})`);
   }
   const bytes = new Uint8Array(await response.arrayBuffer());
-  // `runtime.mjs` is a module; import it dynamically so this classic worker
-  // keeps working from file servers that do not set module worker MIME types.
   const { AuraRuntime } = await import("./runtime.mjs");
-  // Verify the bytes against the manifest's recorded SHA-256 *before*
-  // compilation/instantiation. If the hash does not match, this throws a
-  // structured `RuntimeIntegrityError` and no artifact is instantiated.
   const runtime = await AuraRuntime.fromBytes(bytes, artifactUrl, {
     expectedSha256: expectedSha256 || null,
   });
@@ -60,53 +77,294 @@ async function loadRuntime(artifactUrl, expectedAbi, expectedSha256) {
   return runtime;
 }
 
+/**
+ * Ask the page to authorize `origin` for `method`. Resolves true only on an
+ * explicit grant for that exact origin. The page owns the interaction; the
+ * Worker merely relays the question, so no approval can ever originate here.
+ */
+const pendingPermissions = new Map();
+let permissionSeq = 0;
+
+function requestPermission(runId, { origin, method, mutating }) {
+  permissionSeq += 1;
+  const requestId = permissionSeq;
+  return new Promise((resolve) => {
+    pendingPermissions.set(requestId, resolve);
+    post({
+      runId,
+      kind: "permission",
+      requestId,
+      origin,
+      method,
+      mutating,
+    });
+  });
+}
+
+/** Parse and bound a URL; reject unsupported schemes. */
+function parseHttpUrl(raw) {
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    return { error: "invalid URL" };
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    return { error: `unsupported scheme \`${url.protocol}\`` };
+  }
+  return { url };
+}
+
+/**
+ * Perform one HTTP effect with the browser transport.
+ *
+ * Returns a resume payload: on success `{ effect_id, ok: true, response }`
+ * with `response` shaped exactly as the Rust encoder expects; on failure
+ * `{ effect_id, ok: false, code, message }` using the language's diagnostic
+ * codes (E4020 transport, E5002 unavailable).
+ */
+async function performHttp(runId, effect, abortSignal) {
+  const parsed = parseHttpUrl(effect.url);
+  if (parsed.error) {
+    return { effect_id: effect.effect_id, ok: false, code: 4020, message: parsed.error };
+  }
+  const url = parsed.url;
+  const origin = url.origin;
+  const mutating = !["GET", "HEAD"].includes(effect.method);
+
+  // Never dispatch without an explicit, origin-specific grant.
+  const granted = await requestPermission(runId, { origin, method: effect.method, mutating });
+  if (abortSignal.aborted) {
+    return { effect_id: effect.effect_id, ok: false, code: 4020, message: "request cancelled" };
+  }
+  if (!granted) {
+    return {
+      effect_id: effect.effect_id,
+      ok: false,
+      code: 5002,
+      message: `network access to ${origin} was not granted`,
+    };
+  }
+
+  const init = {
+    method: effect.method,
+    // No ambient cookies, no stored credentials, no implicit auth.
+    credentials: "omit",
+    redirect: "manual",
+    // Restrictive referrer policy: never leak the Playground URL's query.
+    referrerPolicy: "no-referrer",
+    signal: abortSignal,
+  };
+  if (Array.isArray(effect.headers) && effect.headers.length > 0) {
+    const headers = new Headers();
+    let bytes = 0;
+    for (const [k, v] of effect.headers) {
+      if (typeof k !== "string" || typeof v !== "string") continue;
+      bytes += k.length + v.length;
+      if (bytes > MAX_HEADER_BYTES) {
+        return {
+          effect_id: effect.effect_id,
+          ok: false,
+          code: 4020,
+          message: "request headers exceed the limit",
+        };
+      }
+      try {
+        headers.append(k, v);
+      } catch {
+        return {
+          effect_id: effect.effect_id,
+          ok: false,
+          code: 4020,
+          message: `invalid request header \`${k}\``,
+        };
+      }
+    }
+    init.headers = headers;
+  }
+  if (typeof effect.body === "string") {
+    if (effect.body.length > MAX_REQUEST_BYTES) {
+      return {
+        effect_id: effect.effect_id,
+        ok: false,
+        code: 4020,
+        message: "request body exceeds the limit",
+      };
+    }
+    init.body = effect.body;
+  }
+
+  let response;
+  try {
+    response = await fetch(url, init);
+  } catch (err) {
+    if (abortSignal.aborted) {
+      return { effect_id: effect.effect_id, ok: false, code: 4020, message: "request cancelled" };
+    }
+    // Distinguish a browser CORS rejection from a transport failure where the
+    // browser lets us; both surface as E4020 (a genuine transport failure) but
+    // the message explains what happened without inventing a language code.
+    const message =
+      err && err.message ? `HTTP request failed: ${err.message}` : "HTTP request failed";
+    return { effect_id: effect.effect_id, ok: false, code: 4020, message };
+  }
+
+  // `redirect: "manual"` yields either a normal response or an opaque
+  // redirect; we never fabricate a readable status for the latter.
+  if (response.type === "opaqueredirect") {
+    return {
+      effect_id: effect.effect_id,
+      ok: false,
+      code: 4020,
+      message: "the network returned a redirect this browser does not expose to the page",
+    };
+  }
+
+  let bodyText = "";
+  try {
+    bodyText = await response.text();
+  } catch (err) {
+    return {
+      effect_id: effect.effect_id,
+      ok: false,
+      code: 4020,
+      message: `HTTP response body could not be read: ${err && err.message ? err.message : err}`,
+    };
+  }
+  const headers = [];
+  response.headers.forEach((value, key) => {
+    headers.push([key, value]);
+  });
+  return {
+    effect_id: effect.effect_id,
+    ok: true,
+    response: {
+      status: response.status,
+      headers,
+      body: bodyText,
+    },
+  };
+}
+
+/** Drain a run's pending permission prompts (a cancelled run never leaves one hanging). */
+function denyAllPending() {
+  for (const resolve of pendingPermissions.values()) resolve(false);
+  pendingPermissions.clear();
+}
+
 self.onmessage = async (event) => {
   const msg = event.data || {};
-  const { runId, artifactUrl, expectedAbi, expectedSha256, source, project, args, stdin } = msg;
+  const { runId } = msg;
+  // A permission decision from the page.
+  if (msg.kind === "permission-result") {
+    const resolve = pendingPermissions.get(msg.requestId);
+    if (resolve) {
+      pendingPermissions.delete(msg.requestId);
+      resolve(msg.granted === true);
+    }
+    return;
+  }
+  const { artifactUrl, expectedAbi, expectedSha256, source, project, args, stdin } = msg;
+  const abortController = new AbortController();
+  currentAbort = abortController;
   try {
     runtimePromise =
       runtimePromise || loadRuntime(artifactUrl, expectedAbi, expectedSha256);
     const runtime = await runtimePromise;
-    self.postMessage({
+    post({
       runId,
       kind: "loaded",
       runtimeVersion: runtime.runtimeVersion,
       languageVersion: runtime.languageVersion,
       abiVersion: runtime.abiVersion,
-      // Reported so the page can explain, rather than guess, whether the
-      // selected runtime can execute a multi-file project. This is a
-      // capability fact read off the loaded module, never a language rule.
       supportsProjects: hasVirtualProjects(runtime),
+      supportsSessions: runtime.supportsSessions,
     });
-    // A virtual project is requested only when the page actually sent one.
-    // `source` remains the default so the historical path is unchanged.
     const wantsProject = project !== undefined && project !== null;
     if (wantsProject && !hasVirtualProjects(runtime)) {
-      self.postMessage({
+      post({
         runId,
         kind: "error",
         phase: "capability",
         code: "NO_VIRTUAL_PROJECTS",
-        // Raw internals never cross this boundary; only this explanation.
         message:
           "the selected runtime predates virtual projects and can execute a single source only",
       });
       return;
     }
+
+    // Host ABI 2: a resumable session, which is what enables HTTP. Only when
+    // the artifact advertises it (feature detection, never inference).
+    if (runtime.supportsSessions && !wantsProject) {
+      await runSession(runId, runtime, source, { args: args || [], stdin: stdin ?? null }, abortController.signal);
+      return;
+    }
+    if (wantsProject && runtime.supportsSessions) {
+      // Sessions are single-source today; a project run stays synchronous.
+      const result = runtime.runProject(project, { args: args || [], stdin: stdin ?? null });
+      post({ runId, kind: "result", result });
+      return;
+    }
+
     const result = wantsProject
       ? runtime.runProject(project, { args: args || [], stdin: stdin ?? null })
       : runtime.run(source, { args: args || [], stdin: stdin ?? null });
-    self.postMessage({ runId, kind: "result", result });
+    post({ runId, kind: "result", result });
   } catch (err) {
-    self.postMessage({
+    post({
       runId,
       kind: "error",
       phase: "load",
-      // A structured integrity failure carries its own code so the UI can
-      // present it distinctly from a generic load error. Never leak raw
-      // internals: only the message and code cross the boundary.
       code: (err && err.code) || "LOAD",
       message: err && err.message ? err.message : String(err),
     });
+  } finally {
+    denyAllPending();
   }
 };
+
+let currentAbort = null;
+
+/** Drive a session to completion, performing HTTP effects as they arrive. */
+async function runSession(runId, runtime, source, options, signal) {
+  const { status, result } = runtime.startSession(source, options);
+  let step = { status, result };
+  let httpCount = 0;
+  const MAX_HTTP_PER_RUN = 64;
+  while (step.status === 3) {
+    // `step.result` is the effect payload.
+    const effect = step.result;
+    if (effect.kind !== "http") {
+      post({
+        runId,
+        kind: "error",
+        phase: "effect",
+        code: "UNKNOWN_EFFECT",
+        message: `the runtime requested an unknown effect kind \`${effect.kind}\``,
+      });
+      return;
+    }
+    httpCount += 1;
+    if (httpCount > MAX_HTTP_PER_RUN) {
+      const denied = {
+        effect_id: effect.effect_id,
+        ok: false,
+        code: 4020,
+        message: `too many HTTP requests in one run (limit ${MAX_HTTP_PER_RUN})`,
+      };
+      step = runtime.resumeSession(denied);
+      continue;
+    }
+    if (signal.aborted) {
+      runtime.resetSession();
+      return;
+    }
+    const outcome = await performHttp(runId, effect, signal);
+    if (signal.aborted) {
+      runtime.resetSession();
+      return;
+    }
+    step = runtime.resumeSession(outcome);
+  }
+  post({ runId, kind: "result", result: step.result });
+}

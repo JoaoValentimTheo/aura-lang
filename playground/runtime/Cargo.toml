@@ -47,7 +47,7 @@ name = "aura-playground-runtime"
 # semantics are unchanged, so `language_version` stays `0.3.1`; only the
 # runtime identity advances. It is a development pre-release and is never a
 # published release. `0.3.1` remains pinned and immutable.
-version = "0.3.2-dev.1"
+version = "0.3.2-dev.5"
 edition = "2021"
 rust-version = "1.83"
 description = "The Aura Playground WebAssembly execution wrapper: a minimal, zero-import C ABI over the real aura runtime."
@@ -58,7 +58,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-aura-lang = { path = "../..", default-features = false, features = ["json", "regex", "time"] }
+aura-lang = { path = "../..", default-features = false, features = ["json", "regex", "time", "http-api"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

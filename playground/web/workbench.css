@@ -872,6 +872,91 @@ body {
   display: none;
 }
 
+/* The network capability bar: off by default, and a session-scoped grant
+ * count when the user has authorized origins. Amber when off request, neutral
+ * otherwise; it never implies authority the user did not grant. */
+.network-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--au-space-2);
+  margin-top: var(--au-space-2);
+  padding: var(--au-space-2) var(--au-space-3);
+  border: 1px solid var(--au-line);
+  border-radius: var(--au-radius-sm);
+  background: var(--au-ink-2);
+  font-size: var(--au-type-xs);
+}
+
+.network-bar[hidden] {
+  display: none;
+}
+
+.network-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--au-space-2);
+  color: var(--au-text-muted);
+  font-weight: 600;
+}
+
+.network-indicator__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--au-radius-full);
+  background: var(--au-text-muted);
+}
+
+.network-indicator[data-state="on"] {
+  color: var(--au-help);
+}
+
+.network-indicator[data-state="on"] .network-indicator__dot {
+  background: var(--au-help);
+}
+
+/* The origin consent dialog. It is an in-panel alertdialog (not a native
+ * dialog) so both entry points present identical markup; it is modal to the
+ * output pane and never traps focus beyond its two buttons. */
+.permission {
+  margin-top: var(--au-space-2);
+  padding: var(--au-space-4);
+  border: 1px solid var(--au-warning);
+  border-left-width: 3px;
+  border-radius: var(--au-radius-md);
+  background: var(--au-warning-bg);
+}
+
+.permission[hidden] {
+  display: none;
+}
+
+.permission__title {
+  margin: 0 0 var(--au-space-2);
+  font-size: var(--au-type-small);
+  color: var(--au-text-strong);
+}
+
+.permission__detail {
+  margin: 0 0 var(--au-space-1);
+  font-family: var(--au-font-mono);
+  font-size: var(--au-type-xs);
+  color: var(--au-text);
+  overflow-wrap: anywhere;
+}
+
+.permission__hint {
+  margin: 0 0 var(--au-space-3);
+  font-size: var(--au-type-xs);
+  color: var(--au-text-muted);
+}
+
+.permission__actions {
+  display: flex;
+  gap: var(--au-space-2);
+  justify-content: flex-end;
+}
+
 /* The output footer: a truncation/cap disclosure. It must be visible and
  * unmistakable (the exact counts matter) but is subordinate to the output. */
 .output-note {

@@ -97,6 +97,14 @@ const els = {
   searchNext: document.getElementById("search-next"),
   searchCase: document.getElementById("search-case"),
   searchClose: document.getElementById("search-close"),
+  networkBar: document.getElementById("network-bar"),
+  networkIndicator: document.getElementById("network-indicator"),
+  networkForget: document.getElementById("network-forget"),
+  permissionDialog: document.getElementById("permission-dialog"),
+  permissionTitle: document.getElementById("permission-title"),
+  permissionDetail: document.getElementById("permission-detail"),
+  permissionAllow: document.getElementById("permission-allow"),
+  permissionDeny: document.getElementById("permission-deny"),
 };
 
 // Small, valid examples that teach one idea each. They are shown in the
@@ -591,6 +599,17 @@ function installProjectControls() {
   if (els.fileEntry) els.fileEntry.addEventListener("click", setEntryFile);
   if (els.fileDelete) els.fileDelete.addEventListener("click", deleteFile);
   if (els.projectReset) els.projectReset.addEventListener("click", resetProject);
+  if (els.permissionAllow) els.permissionAllow.addEventListener("click", () => answerPermission(true));
+  if (els.permissionDeny) els.permissionDeny.addEventListener("click", () => answerPermission(false));
+  if (els.networkForget) {
+    els.networkForget.addEventListener("click", () => {
+      grantedOrigins.clear();
+      updateNetworkBar();
+    });
+  }
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && pendingPermission) answerPermission(false);
+  });
 }
 
 // ------------------------------------------------------------------ editor
@@ -1231,10 +1250,96 @@ function stopCurrent(reason) {
   if (currentRun) {
     currentRun.stopped = true;
   }
+  // A pending consent prompt must not outlive its run.
+  hidePermissionDialog();
   // A stop (whether the Stop button or a superseding run) ends the execution
   // but never the environment: the source stays and Run is immediately
   // available again.
   enterState(PLAYGROUND_STATE.STOPPED, reason === "stopped" ? undefined : reason);
+}
+
+// ------------------------------------------------------------- network consent
+//
+// The browser host has no network authority by default. A program that calls
+// `http_get`/`http_request` parks on a Host effect; the Worker asks this page
+// to authorize a *specific origin* before it dispatches anything. Nothing
+// reaches the network until the user grants it here; a deny resolves the
+// Worker's prompt with `false` and no request is sent.
+//
+// Grants are session-scoped (this page load) and keyed by origin, so
+// authorizing origin A never authorizes origin B. The main thread owns the
+// interaction; the Worker can never fabricate approval.
+
+/** Origins the user granted this session. Reset on reload. */
+const grantedOrigins = new Set();
+/** The origin of the prompt currently on screen, if any. */
+let pendingPermission = null;
+
+function updateNetworkBar() {
+  if (!els.networkBar) return;
+  const active = pendingPermission !== null;
+  const count = grantedOrigins.size;
+  els.networkBar.hidden = !(active || count > 0);
+  if (els.networkIndicator) {
+    const label = els.networkIndicator.querySelector("[data-network-label]");
+    if (label) {
+      label.textContent =
+        count === 0 ? "Network: off" : `Network: ${count} origin${count === 1 ? "" : "s"} allowed`;
+    }
+    els.networkIndicator.dataset.state = count === 0 ? "off" : "on";
+  }
+  if (els.networkForget) els.networkForget.hidden = count === 0;
+}
+
+function hidePermissionDialog() {
+  pendingPermission = null;
+  if (els.permissionDialog) els.permissionDialog.hidden = true;
+  updateNetworkBar();
+}
+
+/** Present the origin prompt and resolve the record's pending decision. */
+function handlePermissionRequest(record, msg) {
+  // If the user already granted this exact origin this session, answer
+  // immediately without a second prompt.
+  if (grantedOrigins.has(msg.origin)) {
+    record.worker.postMessage({
+      kind: "permission-result",
+      requestId: msg.requestId,
+      granted: true,
+    });
+    return;
+  }
+  pendingPermission = { record, msg };
+  if (els.permissionDetail) {
+    els.permissionDetail.textContent = `${msg.method} ${msg.origin}`;
+  }
+  if (els.permissionTitle) {
+    els.permissionTitle.textContent = msg.mutating
+      ? "Allow a mutating network request?"
+      : "Allow a network request?";
+  }
+  if (els.permissionDialog) {
+    els.permissionDialog.hidden = false;
+    // Focus the safe choice first so a stray Enter denies.
+    if (els.permissionDeny) els.permissionDeny.focus();
+  }
+  updateNetworkBar();
+}
+
+function answerPermission(granted) {
+  const current = pendingPermission;
+  hidePermissionDialog();
+  if (!current) return;
+  const { record, msg } = current;
+  if (granted) grantedOrigins.add(msg.origin);
+  if (record.worker) {
+    record.worker.postMessage({
+      kind: "permission-result",
+      requestId: msg.requestId,
+      granted,
+    });
+  }
+  updateNetworkBar();
 }
 
 function run() {
@@ -1286,6 +1391,10 @@ function run() {
     // terminated mid-flight cannot resurrect a stale run.
     if (!currentRun || currentRun.runId !== runId) return;
     const msg = event.data || {};
+    if (msg.kind === "permission") {
+      handlePermissionRequest(record, msg);
+      return;
+    }
     if (msg.kind === "loaded") {
       // The worker reports the artifact it actually instantiated. The state
       // stays `running`; the detail just gains the runtime identity.

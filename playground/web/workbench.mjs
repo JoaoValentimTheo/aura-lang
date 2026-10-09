@@ -113,5 +113,40 @@ export function workbenchMarkup() {
     <ul id="diagnostics" class="diagnostics" aria-label="Problems"></ul>
   </div>
   <div id="runtime-note" class="runtime-note" hidden></div>
+
+  <!-- Network capability: the browser host has no network authority until the
+       user grants a specific origin. Denied by default; each prompt names the
+       origin and method, and a mutating request is called out distinctly. -->
+  <div id="network-bar" class="network-bar" hidden>
+    <span id="network-indicator" class="network-indicator" role="status" aria-live="polite">
+      <span class="network-indicator__dot" aria-hidden="true"></span>
+      <span data-network-label>Network: off</span>
+    </span>
+    <button id="network-forget" class="wb-btn wb-btn--ghost" type="button" hidden>
+      Forget grants
+    </button>
+  </div>
+  <div
+    id="permission-dialog"
+    class="permission"
+    role="alertdialog"
+    aria-modal="true"
+    aria-labelledby="permission-title"
+    aria-describedby="permission-detail"
+    hidden
+  >
+    <h3 id="permission-title" class="permission__title">Network access request</h3>
+    <p id="permission-detail" class="permission__detail"></p>
+    <p class="permission__hint">
+      The program will send one request to this origin only. No cookies or
+      stored credentials are included.
+    </p>
+    <div class="permission__actions">
+      <button id="permission-deny" class="wb-btn wb-btn--ghost" type="button">Deny</button>
+      <button id="permission-allow" class="wb-btn wb-btn--primary" type="button">
+        Allow once
+      </button>
+    </div>
+  </div>
 </section>`;
 }

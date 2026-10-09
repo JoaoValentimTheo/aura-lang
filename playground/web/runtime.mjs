@@ -326,6 +326,113 @@ export class AuraRuntime {
     const json = readString(this.exports, "aura_output_len", "aura_output_byte");
     return parseRuntimeResult(json, status);
   }
+
+  /**
+   * Whether this artifact advertises the Host ABI 2 resumable-session surface.
+   *
+   * Feature detection replaces inference: a historical ABI-1 artifact simply
+   * lacks these exports, so the browser transport must fall back to the
+   * synchronous path (and deny HTTP with `E5002`) rather than send it a
+   * command it does not understand.
+   */
+  get supportsSessions() {
+    return SESSION_EXPORTS.every((sym) => sym in this.exports);
+  }
+
+  /**
+   * Start a resumable session over `source` (Host ABI 2).
+   *
+   * Returns `{ status, result }` where `status` is the raw ABI status code and
+   * `result` is the parsed JSON payload. `status === 3` (`PENDING_EFFECT`)
+   * means the program suspended and `result` is the effect payload the caller
+   * must perform before calling {@link AuraRuntime#resumeSession}.
+   *
+   * The runtime keeps the parked interpreter in its own slot until the next
+   * `start`/`reset`, so the session survives between calls without the caller
+   * holding any wasm state.
+   */
+  startSession(source, options = {}) {
+    this.#assertSessions();
+    const src = new TextEncoder().encode(source);
+    const opts = encodeOptions(options);
+    this.exports.aura_session_reset();
+    pushBytes(this.exports, "aura_source_reset", "aura_source_push", src);
+    pushBytes(this.exports, "aura_options_reset", "aura_options_push", opts);
+    const status = this.exports.aura_session_start();
+    const json = readString(this.exports, "aura_output_len", "aura_output_byte");
+    return { status, result: parseSessionPayload(json, status) };
+  }
+
+  /**
+   * Resume the parked session with the completion of its pending effect
+   * (Host ABI 2). `payload` is the effect result object the transport built.
+   */
+  resumeSession(payload) {
+    this.#assertSessions();
+    const bytes = new TextEncoder().encode(JSON.stringify(payload));
+    pushBytes(
+      this.exports,
+      "aura_session_resume_reset",
+      "aura_session_resume_push",
+      bytes,
+    );
+    const status = this.exports.aura_session_resume();
+    const json = readString(this.exports, "aura_output_len", "aura_output_byte");
+    return { status, result: parseSessionPayload(json, status) };
+  }
+
+  /** Abort and discard any parked session. */
+  resetSession() {
+    if (!this.supportsSessions) return;
+    this.exports.aura_session_reset();
+  }
+
+  #assertSessions() {
+    if (!this.supportsSessions) {
+      throw new Error(
+        `runtime artifact ${this.name} does not support resumable sessions (Host ABI 2)`,
+      );
+    }
+  }
+}
+
+/** The exports a runtime must provide to run resumable sessions (Host ABI 2). */
+const SESSION_EXPORTS = [
+  "aura_session_reset",
+  "aura_session_start",
+  "aura_session_resume_reset",
+  "aura_session_resume_push",
+  "aura_session_resume",
+];
+
+/** The ABI status code for a pending Host effect (Host ABI 2). */
+export const SESSION_PENDING_EFFECT = 3;
+
+/**
+ * Parse a session payload: a pending effect is returned verbatim (it is the
+ * effect payload), while a terminal step is parsed like a normal result.
+ */
+function parseSessionPayload(json, status) {
+  if (status === SESSION_PENDING_EFFECT) {
+    try {
+      return JSON.parse(json);
+    } catch (e) {
+      return {
+        status: "internal",
+        diagnostics: [
+          {
+            code: 0,
+            codeText: "E0",
+            message: `runtime produced an unreadable effect payload: ${e.message}`,
+            line: 1,
+            column: 1,
+          },
+        ],
+        abiStatus: status,
+      };
+    }
+  }
+  return parseRuntimeResult(json, status);
 }
 
 /** Access the guest linear memory (used by advanced embedders/tests). */
