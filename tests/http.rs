@@ -82,9 +82,31 @@ impl CapturingServer {
                     break;
                 }
                 let Ok(mut stream) = stream else { break };
+                // Read until the request is complete. A single `read` is
+                // racy: the headers and body can arrive in separate TCP
+                // segments (observed on Linux CI), so capture the header block
+                // first, parse `Content-Length`, then read exactly the body.
+                let mut collected = Vec::new();
                 let mut buf = [0u8; 8192];
-                let n = stream.read(&mut buf).unwrap_or(0);
-                cap.lock().unwrap().extend_from_slice(&buf[..n]);
+                loop {
+                    match stream.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            collected.extend_from_slice(&buf[..n]);
+                            if let Some(header_end) =
+                                collected.windows(4).position(|w| w == b"\r\n\r\n")
+                            {
+                                let header_len = header_end + 4;
+                                let declared = content_length(&collected[..header_end]);
+                                if collected.len() >= header_len + declared {
+                                    break;
+                                }
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+                cap.lock().unwrap().extend_from_slice(&collected);
                 let _ = stream.write_all(response);
             }
         });
@@ -414,4 +436,18 @@ fn get_with_a_body_is_reported_not_silently_dropped() {
         server.request_text().is_empty(),
         "no request must be dispatched"
     );
+}
+
+/// Parse the `Content-Length` from a captured HTTP header block (case
+/// insensitive), defaulting to 0 when absent.
+fn content_length(header_block: &[u8]) -> usize {
+    let text = String::from_utf8_lossy(header_block);
+    for line in text.split("\r\n") {
+        if let Some((name, value)) = line.split_once(':') {
+            if name.eq_ignore_ascii_case("content-length") {
+                return value.trim().parse().unwrap_or(0);
+            }
+        }
+    }
+    0
 }
