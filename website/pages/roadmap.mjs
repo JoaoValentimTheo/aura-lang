@@ -89,7 +89,7 @@ const PHASES = [
     tag: "Planned (not started)",
     kind: "planned",
     title: "0.3.2",
-    body: "The next line after Keystone is planned but not started: it has no artifact, version bump, or release date. Candidate work includes the deferred Python-style HTTP standard-library expansion and local macOS CI consolidation. Nothing here is available today.",
+    body: "The next line after Keystone is planned but not started: it has no artifact, version bump, or release date. Candidate work includes the deferred HTTP standard-library <em>expansion</em> (sessions, cookies, streaming, uploads — the basic feature-gated <code>http_get</code>/<code>http_request</code> already ship in 0.3.1) and local macOS CI consolidation. Nothing here is available today.",
   },
   {
     tag: "Planned (not started)",
@@ -131,7 +131,7 @@ export const roadmapPage = {
       "info",
       "<p>Items marked <strong>Pending human decision</strong> or <strong>Long-term</strong> are not available today and are not started. They are listed so the project's direction is honest and visible.</p>",
     )}
-    <div class="grid grid--2" style="margin-top:var(--space-6)">${items}</div>
+    <div class="grid grid--2" style="margin-top:var(--au-space-6)">${items}</div>
     <div class="divider"></div>
     <div class="prose">
       <h2>Why infrastructure first</h2>

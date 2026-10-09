@@ -136,7 +136,7 @@ export const runtimePage = {
       <div class="card"><h3>Worker isolation</h3><p>Every run happens in a fresh Web Worker, isolated from the UI thread and terminated on Stop.</p></div>
       <div class="card"><h3>Structured results</h3><p>Diagnostics cross the boundary as structured data with stable codes and source positions.</p></div>
     </div>
-    <div class="hero__actions" style="margin-top:var(--space-8)">
+    <div class="hero__actions" style="margin-top:var(--au-space-8)">
       <a class="btn btn--filled" href="${url("playground/", base)}">${icon("play")} Open the Playground</a>
       <a class="btn btn--outlined" href="${url("architecture/", base)}">Architecture</a>
     </div>

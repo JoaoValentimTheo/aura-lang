@@ -97,8 +97,10 @@ export const homePage = {
       <div class="card card--elevated">
         <h3>Explicit capabilities</h3>
         <p>Every interaction with the outside world goes through a host boundary:
-        standard output, input, arguments, filesystem, clock, and sleep. The same
-        program runs natively or in the browser.</p>
+        standard output, input, arguments, filesystem, clock, sleep, and network.
+        The capabilities a host provides differ — the browser Playground has no
+        filesystem, clock, sleep, or network — so the same program runs natively,
+        or in the browser for the capabilities it grants.</p>
       </div>
     </div>
   </div>
@@ -201,7 +203,7 @@ fn main() {
         version selects the artifact that executes — never a moving target.</p>
       </div>
     </div>
-    <div class="hero__actions" style="margin-top:var(--space-8)">
+    <div class="hero__actions" style="margin-top:var(--au-space-8)">
       <a class="btn btn--tonal" href="${url("playground/", base)}">${icon("play")} Open the Playground</a>
       <a class="btn btn--text" href="${url("runtime/", base)}">Runtime details ${icon("arrow")}</a>
     </div>
@@ -217,11 +219,11 @@ fn main() {
           <h2>What exists today.</h2>
           <p class="section__lede">Aura ${site.releaseVersion} is the current public
           release, implementing the <strong>${site.languageVersion}</strong>
-          language. It completes the language core (generic maps and ordered keys,
-          <code>items()</code>, comprehensions, the Core syntax rules, modules)
-          and adds filesystem-backed module acquisition for the CLI, the
-          multi-file Playground, builtin-name reservation (<code>E1009</code>),
-          and a unified type-nesting limit.</p>
+          language. Keystone gives <code>List</code>/<code>Array</code>/<code>Tuple</code>/<code>Set</code>/<code>Map</code>
+          distinct identities, adds fixed-length contextual Arrays
+          (<code>[T; N]</code>), makes <code>json_decode_as</code> take a canonical
+          type position, removes general semicolon sequencing, and hardens the
+          parser and runtime.</p>
         </div>
         ${statusList([
           ["Lexer, parser, AST", "Implemented", "success"],
@@ -296,7 +298,7 @@ fn main() {
         ["OOP completion", "Four pillars mapped to Aura; composition over inheritance", chip("Delivered", "success")],
         ["Hardening", "Conformance, differential testing, fuzzing", chip("Delivered", "success")],
         ["Generics", "Static, erased, nominal parametric polymorphism", chip("Delivered", "success")],
-        ["0.3.2 line", "Planned, not started: HTTP stdlib, local macOS CI consolidation", chip("Planned", "planned")],
+        ["0.3.2 line", "Planned, not started: HTTP stdlib expansion, local macOS CI consolidation", chip("Planned", "planned")],
         ["Direction after 0.3.2", "Not yet selected; no successor program is authorized", chip("Pending human decision", "planned")],
         ["Python / data", "PyO3 interop and the scientific ecosystem", chip("Long-term", "planned")],
       ],

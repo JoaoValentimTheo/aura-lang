@@ -33,7 +33,7 @@ const STEPS = [
   },
   {
     title: "Collections",
-    body: "Lists, generic maps keyed by string, int, or bool, ranges, and higher-order methods.",
+    body: "Five distinct identities — List, Array, Tuple, Set, Map — with ranges and higher-order methods.",
     href: "docs/guide-collections/",
     cta: "Collections",
   },
@@ -94,7 +94,7 @@ export const learnPage = {
     return `${pageHead({
       eyebrow: "Learn",
       title: "Learn Aura",
-      lede: "A guided path that builds up the language a step at a time. Every example can be run in the Playground.",
+      lede: "A guided path that builds up the language a step at a time. Each step's examples run in the Playground; native-only capabilities (filesystem, clock, sleep, HTTP) are labelled where they appear.",
     })}
 <section class="section">
   <div class="container">
@@ -114,7 +114,7 @@ export const learnPage = {
         url("docs/install/", base) +
         "'>Installing Aura</a>.</p>",
     )}
-    <div class="grid grid--3" style="margin-top:var(--space-8)">${cards}</div>
+    <div class="grid grid--3" style="margin-top:var(--au-space-8)">${cards}</div>
   </div>
 </section>`;
   },

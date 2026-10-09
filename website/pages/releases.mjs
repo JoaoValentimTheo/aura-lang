@@ -23,7 +23,7 @@ export const releasesPage = {
         ${chip("Keystone")}
         ${chip("Latest")}
       </div>
-      <h2 style="margin-top:var(--space-3)">Aura 0.3.1</h2>
+      <h2 style="margin-top:var(--au-space-3)">Aura 0.3.1</h2>
       <p>The current release (codename Keystone). It reopens the collection
       model and changes observable language behavior, so the release and
       language versions both advance to <code>0.3.1</code>.</p>
@@ -42,12 +42,12 @@ export const releasesPage = {
       </div>
     </div>
 
-    <div class="card" style="margin-top:var(--space-6)">
+    <div class="card" style="margin-top:var(--au-space-6)">
       <div class="example-card__meta">
         ${chip("Previous")}
         ${chip("0.2.1")}
       </div>
-      <h2 style="margin-top:var(--space-3)">Aura 0.2.1</h2>
+      <h2 style="margin-top:var(--au-space-3)">Aura 0.2.1</h2>
       <p>The previous release. It built on the completed Aura Core and added
       module acquisition from the filesystem, multi-file projects in the
       Playground, and two language-contract tightenings. Its runtime is frozen
@@ -64,12 +64,12 @@ export const releasesPage = {
       </div>
     </div>
 
-    <div class="card" style="margin-top:var(--space-6)">
+    <div class="card" style="margin-top:var(--au-space-6)">
       <div class="example-card__meta">
         ${chip("Previous")}
         ${chip("0.2.0")}
       </div>
-      <h2 style="margin-top:var(--space-3)">Aura 0.2.0</h2>
+      <h2 style="margin-top:var(--au-space-3)">Aura 0.2.0</h2>
       <p>The Core-completion release. It ships the completed Aura Core language —
       generic maps keyed by <code>string</code>, <code>int</code>, or
       <code>bool</code>, <code>map.items()</code>, list and map comprehensions,
@@ -85,12 +85,12 @@ export const releasesPage = {
       </ul>
     </div>
 
-    <div class="card" style="margin-top:var(--space-6)">
+    <div class="card" style="margin-top:var(--au-space-6)">
       <div class="example-card__meta">
         ${chip("Historical")}
         ${chip("0.0.2")}
       </div>
-      <h2 style="margin-top:var(--space-3)">Aura 0.0.2</h2>
+      <h2 style="margin-top:var(--au-space-3)">Aura 0.0.2</h2>
       <p>The infrastructure release. It shipped the frozen 0.0.1 language
       semantics (<strong>language version 0.0.1</strong>) and added portable
       execution, a versioned Playground, and the official website. Its runtime
@@ -104,12 +104,12 @@ export const releasesPage = {
       </ul>
     </div>
 
-    <div class="card" style="margin-top:var(--space-6)">
+    <div class="card" style="margin-top:var(--au-space-6)">
       <div class="example-card__meta">
         ${chip("Historical")}
         ${chip("0.0.1")}
       </div>
-      <h2 style="margin-top:var(--space-3)">Aura 0.0.1</h2>
+      <h2 style="margin-top:var(--au-space-3)">Aura 0.0.1</h2>
       <p>The first usable public release: the language core, the runtime, the
       standard library (including scripting I/O), the CLI, the REPL, and the
       optional Python bridge.</p>
@@ -163,7 +163,7 @@ export const releasesPage = {
       <span class="section__eyebrow">Install</span>
       <h2>Build from source today</h2>
     </div>
-    <pre class="code-block" style="padding:var(--space-4)"><code>git clone ${site.repository}.git
+    <pre class="code-block" style="padding:var(--au-space-4)"><code>git clone ${site.repository}.git
 cd aura-lang
 git checkout v${site.releaseVersion}
 cargo build --release --no-default-features --features cli,repl,json,regex,time

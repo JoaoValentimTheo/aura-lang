@@ -55,7 +55,7 @@ export const aboutPage = {
             <li><strong>Releases:</strong> <a href="${site.releases}" target="_blank" rel="noopener">releases</a></li>
             <li><strong>Website:</strong> ${site.publicUrl}</li>
           </ul>
-          <div class="hero__actions" style="margin-top:var(--space-4)">
+          <div class="hero__actions" style="margin-top:var(--au-space-4)">
             <a class="btn btn--filled" href="${site.repository}" target="_blank" rel="noopener">${icon("github")} Source</a>
             <a class="btn btn--outlined" href="${site.issues}" target="_blank" rel="noopener">Issues</a>
           </div>
@@ -76,8 +76,8 @@ export const aboutPage = {
       <p>Contributions are welcome through issues and pull requests on GitHub.
       Two documents are the project's source of truth:</p>
       <ul>
-        <li><a href="${site.repository}/blob/main/docs/LANGUAGE_SPEC.md" target="_blank" rel="noopener">The language specification</a> — normative semantics.</li>
-        <li><a href="${site.repository}/blob/main/docs/contract.md" target="_blank" rel="noopener">The compatibility contract</a> — the surface a program may rely on.</li>
+        <li><a href="${site.repository}/blob/v${site.releaseVersion}/docs/LANGUAGE_SPEC.md" target="_blank" rel="noopener">The language specification</a> — normative semantics at the current release.</li>
+        <li><a href="${site.repository}/blob/v${site.releaseVersion}/docs/contract.md" target="_blank" rel="noopener">The compatibility contract</a> — the surface a program may rely on.</li>
       </ul>
       <p>Diagnostic codes are part of the public contract; a code is never reused
       for a different meaning. New diagnostics get new numbers, and the test

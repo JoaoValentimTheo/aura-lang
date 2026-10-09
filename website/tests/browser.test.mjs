@@ -156,13 +156,16 @@ function check(name, cond, detail) {
       const el = document.querySelector("[data-nav-toggle]");
       return el && getComputedStyle(el).display !== "none";
     });
-    if (size.width <= 760) {
+    // The nav collapses to a disclosure below the desktop breakpoint (the
+    // eleven-link bar overflows a single row below it).
+    const NAV_COLLAPSE = 1240;
+    if (size.width <= NAV_COLLAPSE) {
       check(`nav toggle visible @ ${size.name}`, toggleVisible === true);
     } else {
       check(`nav toggle hidden @ ${size.name}`, toggleVisible === false);
     }
     // Mobile nav opens.
-    if (size.width <= 760) {
+    if (size.width <= NAV_COLLAPSE) {
       await page.click("[data-nav-toggle]");
       const open = await page.evaluate(
         () => document.getElementById("primary-nav").getAttribute("data-open"),

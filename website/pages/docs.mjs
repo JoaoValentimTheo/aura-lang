@@ -37,10 +37,10 @@ ${docGroups
 <div class="docs-sidebar__group">
   <div class="docs-sidebar__title">Normative documents</div>
   <ul class="docs-sidebar__list">
-    <li><a href="${site.repository}/blob/main/docs/LANGUAGE_SPEC.md" target="_blank" rel="noopener">Language specification</a></li>
-    <li><a href="${site.repository}/blob/main/docs/contract.md" target="_blank" rel="noopener">Compatibility contract</a></li>
-    <li><a href="${site.repository}/blob/main/docs/grammar.md" target="_blank" rel="noopener">Grammar (source)</a></li>
-    <li><a href="${site.repository}/blob/main/docs/errors.md" target="_blank" rel="noopener">Diagnostic codes (source)</a></li>
+    <li><a href="${site.repository}/blob/v${docsVersion}/docs/LANGUAGE_SPEC.md" target="_blank" rel="noopener">Language specification</a></li>
+    <li><a href="${site.repository}/blob/v${docsVersion}/docs/contract.md" target="_blank" rel="noopener">Compatibility contract</a></li>
+    <li><a href="${site.repository}/blob/v${docsVersion}/docs/grammar.md" target="_blank" rel="noopener">Grammar (source)</a></li>
+    <li><a href="${site.repository}/blob/v${docsVersion}/docs/errors.md" target="_blank" rel="noopener">Diagnostic codes (source)</a></li>
   </ul>
 </div>
 </aside>`;
@@ -54,7 +54,7 @@ function toc(headings) {
   <ul>${items
     .map(
       (h) =>
-        `<li><a href="#${h.id}" style="${h.level === 3 ? "padding-left:var(--space-4)" : ""}">${escapeHtml(
+        `<li><a href="#${h.id}" style="${h.level === 3 ? "padding-left:var(--au-space-4)" : ""}">${escapeHtml(
           h.text,
         )}</a></li>`,
     )

@@ -77,7 +77,7 @@ fn main() {
     <div class="section__head">
       <span class="section__eyebrow">Values</span>
       <h2>The value universe</h2>
-      <p class="section__lede">Eleven value kinds, all first-class within their rules.</p>
+      <p class="section__lede">Fourteen value kinds, all first-class within their rules — including five distinct collection identities.</p>
     </div>
     ${dataTable(
       ["Kind", "Description", "Mutable"],
@@ -87,8 +87,11 @@ fn main() {
         ["<code>bool</code>", "<code>true</code> / <code>false</code>", "value"],
         ["<code>string</code>", "immutable UTF-8 text", "value"],
         ["<code>none</code>", "absence", "value"],
-        ["<code>list</code>", "ordered, reference semantics", "shared"],
-        ["<code>map</code>", "{K: V}; K is string, int, or bool; ordered by key", "shared"],
+        ["<code>list</code>", "<code>[T]</code> — ordered, resizable, reference semantics", "shared"],
+        ["<code>array</code>", "<code>[T; N]</code> — fixed length, element-mutable, not resizable", "shared"],
+        ["<code>tuple</code>", "<code>(T, ...)</code> — fixed length, heterogeneous, immutable", "value"],
+        ["<code>set</code>", "<code>{T}</code> — unordered membership of key-capable scalars", "shared"],
+        ["<code>map</code>", "<code>{K: V}</code>; K is string, int, or bool; ordered by key", "shared"],
         ["<code>struct</code>", "named fields in declaration order", "shared fields"],
         ["<code>enum</code>", "tag + positional payload", "value"],
         ["<code>fn</code>", "closure or native", "value"],
@@ -220,7 +223,7 @@ fn main() {
       ["Generics and trait bounds (functions, structs, methods, traits)", "Implemented", "success"],
       ["Python / PyO3 interop", "Long-term", "planned"],
     ])}
-    <div style="margin-top:var(--space-6)">
+    <div style="margin-top:var(--au-space-6)">
       <a class="btn btn--filled" href="${url("docs/reference-grammar/", base)}">Grammar reference</a>
       <a class="btn btn--outlined" href="${url("examples/", base)}">See examples</a>
     </div>

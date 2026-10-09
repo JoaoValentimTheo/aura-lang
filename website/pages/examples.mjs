@@ -67,7 +67,7 @@ export const examplesPage = {
   </div>
 </section>
 <div class="container">${grouped}</div>
-<div class="container" style="margin-top:var(--space-8)">
+<div class="container" style="margin-top:var(--au-space-8)">
   <div class="divider"></div>
   <h2>All examples in detail</h2>
   ${details}

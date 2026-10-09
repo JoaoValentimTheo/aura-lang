@@ -31,7 +31,7 @@ export const toolsPage = {
         )}
         <p>Diagnostics print to standard error with a
         <code>file:line:column:</code> prefix and the stable code:</p>
-        <pre><code>program.aura:3:12: E3001: type mismatch …</code></pre>
+        <pre tabindex="0" role="region" aria-label="Diagnostic example"><code>program.aura:3:12: E3001: type mismatch …</code></pre>
       </div>
       <div>
         ${codeBlock({
@@ -80,7 +80,7 @@ $ aura eval 'print(1 + 2)'
         ["Editor plugins", "Not yet"],
       ],
     )}
-    <div class="hero__actions" style="margin-top:var(--space-6)">
+    <div class="hero__actions" style="margin-top:var(--au-space-6)">
       <a class="btn btn--filled" href="${url("playground/", base)}">${icon("play")} Open the Playground</a>
       <a class="btn btn--outlined" href="${url("docs/cli/", base)}">CLI reference</a>
       <a class="btn btn--text" href="${url("docs/repl/", base)}">REPL reference</a>

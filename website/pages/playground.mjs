@@ -158,7 +158,7 @@ export const playgroundPage = {
     nothing and can reach no DOM, network, or storage.</p>
     <p>
       <a class="eyebrow-link" href="${url("docs/playground-doc/", base)}">Playground documentation →</a>
-      <a class="eyebrow-link" href="${url("docs/runtime-doc/", base)}" style="margin-left:var(--space-4)">Runtime &amp; host →</a>
+      <a class="eyebrow-link" href="${url("docs/runtime-doc/", base)}" style="margin-left:var(--au-space-4)">Runtime &amp; host →</a>
     </p>
   </div>
 </section>
