@@ -107,6 +107,7 @@ export function workbenchMarkup() {
   </div>
   <div id="panel-output" class="panel" role="tabpanel" aria-labelledby="tab-output">
     <pre id="stdout" class="stdout" role="region" aria-label="Standard output"></pre>
+    <p id="output-note" class="output-note" role="status" hidden></p>
   </div>
   <div id="panel-problems" class="panel" role="tabpanel" aria-labelledby="tab-problems" hidden>
     <ul id="diagnostics" class="diagnostics" aria-label="Problems"></ul>

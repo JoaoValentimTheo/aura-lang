@@ -51,10 +51,10 @@
 #![deny(unsafe_code)]
 
 use std::collections::BTreeSet;
-use std::sync::{Arc, Mutex};
 
 use aura::error::{codes, line_col, Diag, DiagnosticReport, Span};
-use aura::host::{BrowserHost, BrowserStdout};
+use aura::host::BrowserHost;
+use std::sync::Mutex;
 use aura::module_graph::{InMemorySourceProvider, SourceKey};
 use aura::run::Interp;
 use serde::Deserialize;
@@ -89,8 +89,24 @@ pub mod status {
 pub mod limits {
     /// Maximum source size accepted, in bytes.
     pub const MAX_SOURCE_BYTES: usize = 256 * 1024;
-    /// Maximum combined stdout captured, in bytes.
+    /// Legacy fatal stdout capture bound, in bytes.
+    ///
+    /// This is the historical `with_stdout_limit` bound (a write crossing it
+    /// is a fatal `E4020`). It is retained for the frozen-release contract and
+    /// for embedders that still want a hard refusal; the current runtime uses
+    /// the bounded [`OutputSink`](aura::host::OutputSink) instead, where a
+    /// full preview continues execution (0.3.2 development).
     pub const MAX_STDOUT_BYTES: usize = 1024 * 1024;
+    /// Default retained preview size, in bytes, for the bounded output sink.
+    ///
+    /// The preview is what the UI displays; bytes past it are counted as
+    /// omitted, never silently lost and never a program failure.
+    pub const PREVIEW_STDOUT_BYTES: usize = 256 * 1024;
+    /// Maximum complete-output capture, in bytes, for a complete-mode sink.
+    ///
+    /// A bounded-memory destination: beyond it, capture is capped and the
+    /// runtime reports the exact bytes committed. This is not "unlimited".
+    pub const COMPLETE_STDOUT_BYTES: usize = 16 * 1024 * 1024;
     /// Maximum standard-input size accepted, in bytes.
     pub const MAX_STDIN_BYTES: usize = 1024 * 1024;
     /// Maximum number of program arguments.
@@ -107,15 +123,40 @@ pub mod limits {
     pub const MAX_SOURCE_NAME_BYTES: usize = 1024;
 }
 
+/// The output-retention mode requested by the embedder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OutputMode {
+    /// Bounded live preview: continue past the bound, count omitted bytes.
+    Preview,
+    /// Bounded complete-output capture: keep everything up to the cap, then
+    /// cap the capture and report the exact committed byte count.
+    Complete,
+}
+
+impl OutputMode {
+    fn sink(self) -> aura::host::OutputSink {
+        match self {
+            OutputMode::Preview => {
+                aura::host::OutputSink::preview(limits::PREVIEW_STDOUT_BYTES)
+            }
+            OutputMode::Complete => {
+                aura::host::OutputSink::complete(limits::COMPLETE_STDOUT_BYTES)
+            }
+        }
+    }
+}
+
 /// A per-run options object, encoded as a compact line protocol:
 ///
 /// ```text
-/// arg <text>\n         (zero or more, in order)
-/// stdin-bytes <n>\n    (then exactly n raw bytes follow)
+/// arg <text>\n                  (zero or more, in order)
+/// stdin-bytes <n>\n             (then exactly n raw bytes follow)
+/// output-mode preview|complete\n (optional; defaults to preview)
 /// ```
 struct Options {
     args: Vec<String>,
     stdin: Option<String>,
+    output_mode: OutputMode,
 }
 
 #[derive(Debug, Deserialize)]
@@ -168,6 +209,7 @@ fn parse_options(raw: &[u8]) -> Result<Options, String> {
     let mut args = Vec::new();
     let mut pos = 0usize;
     let mut stdin = None;
+    let mut output_mode = OutputMode::Preview;
     while pos < raw.len() {
         let rest = &raw[pos..];
         let nl = rest
@@ -196,6 +238,15 @@ fn parse_options(raw: &[u8]) -> Result<Options, String> {
             pos = end;
             continue;
         }
+        if let Some(mode) = text.strip_prefix("output-mode ") {
+            output_mode = match mode {
+                "preview" => OutputMode::Preview,
+                "complete" => OutputMode::Complete,
+                other => return Err(format!("unknown output mode `{other}`")),
+            };
+            pos += nl + 1;
+            continue;
+        }
         let arg = text.strip_prefix("arg ").unwrap_or(text);
         if args.len() >= limits::MAX_ARGS {
             return Err(format!("too many arguments (limit {})", limits::MAX_ARGS));
@@ -209,7 +260,11 @@ fn parse_options(raw: &[u8]) -> Result<Options, String> {
         args.push(arg.to_string());
         pos += nl + 1;
     }
-    Ok(Options { args, stdin })
+    Ok(Options {
+        args,
+        stdin,
+        output_mode,
+    })
 }
 
 fn valid_virtual_key(key: &str) -> bool {
@@ -403,33 +458,72 @@ fn sourced_diag_json(d: &Diag, src: &str, source_name: Option<&str>, first: &mut
     s
 }
 
-fn result_json(status: &str, stdout: &str, result: Option<&str>, diagnostics: &str) -> String {
+/// Assemble the result document.
+///
+/// `sink` carries the bounded output: its retained bytes become `stdout` (the
+/// display preview) and its counters become `stdout_retained` /
+/// `stdout_omitted` / `stdout_truncated` / `stdout_capped` plus `output_mode`.
+/// A `None` sink means the run produced no output state (an input rejection
+/// before execution); the fields are emitted as a coherent empty preview so a
+/// consumer never has to treat their absence as a case.
+fn result_json(
+    status: &str,
+    sink: Option<&aura::host::OutputSink>,
+    result: Option<&str>,
+    diagnostics: &str,
+) -> String {
+    let (stdout, stats, mode, capped) = match sink {
+        Some(s) => {
+            // `capped` distinguishes a complete-mode capture that hit its
+            // capacity from an ordinary preview.
+            let mode = if s.capped() { "complete" } else { "preview" };
+            (s.retained_text(), s.stats(), mode, s.capped())
+        }
+        None => (
+            String::new(),
+            aura::host::OutputStats::default(),
+            "preview",
+            false,
+        ),
+    };
     format!(
-        "{{\"status\":{},\"stdout\":{},\"result\":{},\"diagnostics\":[{}]}}",
+        "{{\"status\":{},\"stdout\":{},\"stdout_retained\":{},\"stdout_omitted\":{},\"stdout_truncated\":{},\"stdout_capped\":{},\"output_mode\":{},\"result\":{},\"diagnostics\":[{}]}}",
         json_string(status),
-        json_string(stdout),
+        json_string(&stdout),
+        stats.retained,
+        stats.omitted,
+        stats.truncated(),
+        capped,
+        json_string(mode),
         result.map_or_else(|| "null".to_string(), json_string),
         diagnostics
     )
 }
 
-fn diagnostic_result(d: &Diag, source: &str, stdout: &str) -> (String, u32) {
+fn diagnostic_result(
+    d: &Diag,
+    source: &str,
+    sink: Option<&aura::host::OutputSink>,
+) -> (String, u32) {
     let mut first = true;
     let diags = diag_json(d, source, &mut first);
     if d.code == codes::INTERNAL {
         (
-            result_json("internal", stdout, None, &diags),
+            result_json("internal", sink, None, &diags),
             status::INTERNAL,
         )
     } else {
         (
-            result_json("diagnostic", stdout, None, &diags),
+            result_json("diagnostic", sink, None, &diags),
             status::DIAGNOSTIC,
         )
     }
 }
 
-fn report_diagnostic_result(report: &DiagnosticReport, stdout: &str) -> (String, u32) {
+fn report_diagnostic_result(
+    report: &DiagnosticReport,
+    sink: Option<&aura::host::OutputSink>,
+) -> (String, u32) {
     let diagnostic = report.diagnostic();
     let source = report
         .source_diagnostic()
@@ -444,12 +538,12 @@ fn report_diagnostic_result(report: &DiagnosticReport, stdout: &str) -> (String,
     );
     if diagnostic.code == codes::INTERNAL {
         (
-            result_json("internal", stdout, None, &diags),
+            result_json("internal", sink, None, &diags),
             status::INTERNAL,
         )
     } else {
         (
-            result_json("diagnostic", stdout, None, &diags),
+            result_json("diagnostic", sink, None, &diags),
             status::DIAGNOSTIC,
         )
     }
@@ -460,7 +554,7 @@ fn virtual_input_error(code: u16, message: impl Into<String>) -> (String, u32) {
     let mut first = true;
     let diags = sourced_diag_json(&diagnostic, "", None, &mut first);
     (
-        result_json("diagnostic", "", None, &diags),
+        result_json("diagnostic", None, None, &diags),
         status::DIAGNOSTIC,
     )
 }
@@ -472,7 +566,7 @@ pub fn execute_bytes(source: &[u8], options_raw: &[u8]) -> (String, u32, &'stati
     match aura::lex::decode_source(source) {
         Ok(source) => execute(source, options_raw),
         Err(d) => {
-            let (json, code) = diagnostic_result(&d, &String::from_utf8_lossy(source), "");
+            let (json, code) = diagnostic_result(&d, &String::from_utf8_lossy(source), None);
             (json, code, aura::LANGUAGE_VERSION)
         }
     }
@@ -523,30 +617,26 @@ pub fn execute_project_bytes(
             return run_virtual_module(&provider, &opts);
         }
         Err(report) => {
-            let (json, code) = report_diagnostic_result(&report, "");
+            let (json, code) = report_diagnostic_result(&report, None);
             return (json, code, aura::LANGUAGE_VERSION);
         }
     };
 
-    let out: BrowserStdout = Arc::new(Mutex::new(Vec::new()));
-    let outcome_out = out.clone();
+    let sink = opts.output_mode.sink();
+    let outcome_sink = sink.clone();
     let stdin = opts.stdin;
     let args = opts.args;
     let outcome = compilation.execute_with_host_factory(move || {
-        Box::new(
-            BrowserHost::with_stdout(outcome_out, stdin, args)
-                .with_stdout_limit(limits::MAX_STDOUT_BYTES),
-        )
+        Box::new(BrowserHost::from_parts(stdin, args).with_output_sink(outcome_sink))
     });
-    let stdout = take_stdout(&out);
     match outcome {
         Ok(()) => (
-            result_json("ok", &stdout, None, ""),
+            result_json("ok", Some(&sink), None, ""),
             status::OK,
             aura::LANGUAGE_VERSION,
         ),
         Err(report) => {
-            let (json, code) = report_diagnostic_result(&report, &stdout);
+            let (json, code) = report_diagnostic_result(&report, Some(&sink));
             (json, code, aura::LANGUAGE_VERSION)
         }
     }
@@ -559,25 +649,23 @@ fn run_virtual_module(
     let compilation = match aura::compile_provider_with_mode(provider, aura::CompileMode::Module) {
         Ok(compilation) => compilation,
         Err(report) => {
-            let (json, code) = report_diagnostic_result(&report, "");
+            let (json, code) = report_diagnostic_result(&report, None);
             return (json, code, aura::LANGUAGE_VERSION);
         }
     };
     let (module, sources, source_id) = compilation.into_parts();
-    let out: BrowserStdout = Arc::new(Mutex::new(Vec::new()));
+    let sink = opts.output_mode.sink();
+    let module_sink = sink.clone();
     let stdin = opts.stdin.clone();
     let args = opts.args.clone();
-    let outcome_out = out.clone();
     let value = aura::on_execution_stack(move || {
-        let host = BrowserHost::with_stdout(outcome_out, stdin, args)
-            .with_stdout_limit(limits::MAX_STDOUT_BYTES);
+        let host = BrowserHost::from_parts(stdin, args).with_output_sink(module_sink);
         let mut interp = Interp::with_host(Box::new(host));
         run_module_capture(&mut interp, &module)
     });
-    let stdout = take_stdout(&out);
     match value {
         Ok(value) => (
-            result_json("ok", &stdout, value.as_deref(), ""),
+            result_json("ok", Some(&sink), value.as_deref(), ""),
             status::OK,
             aura::LANGUAGE_VERSION,
         ),
@@ -586,7 +674,7 @@ fn run_virtual_module(
                 aura::error::SourceDiagnostic::new(diagnostic, source_id),
                 sources,
             );
-            let (json, code) = report_diagnostic_result(&report, &stdout);
+            let (json, code) = report_diagnostic_result(&report, Some(&sink));
             (json, code, aura::LANGUAGE_VERSION)
         }
     }
@@ -608,29 +696,29 @@ pub fn execute(source: &str, options_raw: &[u8]) -> (String, u32, &'static str) 
             format!("source exceeds the {} byte limit", limits::MAX_SOURCE_BYTES),
             Span::default(),
         );
-        let (json, code) = diagnostic_result(&d, source, "");
+        let (json, code) = diagnostic_result(&d, source, None);
         return (json, code, aura::LANGUAGE_VERSION);
     }
     let opts = match parse_options(options_raw) {
         Ok(o) => o,
         Err(message) => {
             let d = Diag::new(codes::IO, message, Span::default());
-            let (json, code) = diagnostic_result(&d, source, "");
+            let (json, code) = diagnostic_result(&d, source, None);
             return (json, code, aura::LANGUAGE_VERSION);
         }
     };
 
-    let out: BrowserStdout = Arc::new(Mutex::new(Vec::new()));
+    let sink = opts.output_mode.sink();
 
     let compilation =
         match aura::compile_named_with_mode(source, "<playground>", aura::CompileMode::Program) {
             Ok(c) => c,
             // No `main`: fall back to module semantics, as `aura eval` does.
             Err(report) if report.diagnostic().code == codes::NO_MAIN => {
-                return run_module(source, options_raw, &opts, out);
+                return run_module(source, options_raw, &opts, sink);
             }
             Err(report) => {
-                let (json, code) = diagnostic_result(report.diagnostic(), source, "");
+                let (json, code) = diagnostic_result(report.diagnostic(), source, None);
                 return (json, code, aura::LANGUAGE_VERSION);
             }
         };
@@ -639,10 +727,11 @@ pub fn execute(source: &str, options_raw: &[u8]) -> (String, u32, &'static str) 
     // Execute on the substrate's execution stack: a dedicated large stack on
     // native (so the language's own `E4011` is authoritative), inline on wasm.
     // This mirrors the library entry points exactly.
-    let outcome_out = out.clone();
+    let outcome_sink = sink.clone();
+    let stdin = opts.stdin;
+    let args = opts.args;
     let outcome = aura::on_execution_stack(move || {
-        let host = BrowserHost::with_stdout(outcome_out, opts.stdin, opts.args)
-            .with_stdout_limit(limits::MAX_STDOUT_BYTES);
+        let host = BrowserHost::from_parts(stdin, args).with_output_sink(outcome_sink);
         let mut interp = Interp::with_host(Box::new(host));
         interp.run_iterative(&program)
     })
@@ -650,7 +739,7 @@ pub fn execute(source: &str, options_raw: &[u8]) -> (String, u32, &'static str) 
     // Keep the source map alive through runtime diagnostic production. The
     // current JSON ABI remains intentionally source-name-free.
     let _sources = sources;
-    finish(outcome, source, out, None)
+    finish(outcome, source, &sink, None)
 }
 
 /// Run a `main`-less source with module semantics and capture the last
@@ -659,41 +748,36 @@ fn run_module(
     source: &str,
     options_raw: &[u8],
     opts: &Options,
-    out: BrowserStdout,
+    sink: aura::host::OutputSink,
 ) -> (String, u32, &'static str) {
     let _ = options_raw;
     let compilation =
         match aura::compile_named_with_mode(source, "<playground>", aura::CompileMode::Module) {
             Ok(c) => c,
             Err(report) => {
-                let (json, code) = diagnostic_result(report.diagnostic(), source, "");
+                let (json, code) = diagnostic_result(report.diagnostic(), source, None);
                 return (json, code, aura::LANGUAGE_VERSION);
             }
         };
     let (module, sources, source_id) = compilation.into_parts();
+    let module_sink = sink.clone();
     let stdin = opts.stdin.clone();
     let args = opts.args.clone();
-    let out2 = out.clone();
     let value = aura::on_execution_stack(move || {
-        let host =
-            BrowserHost::with_stdout(out2, stdin, args).with_stdout_limit(limits::MAX_STDOUT_BYTES);
+        let host = BrowserHost::from_parts(stdin, args).with_output_sink(module_sink);
         let mut interp = Interp::with_host(Box::new(host));
         run_module_capture(&mut interp, &module)
     })
     .map_err(|d| aura::error::SourceDiagnostic::new(d, source_id));
     let _sources = sources;
     match value {
-        Ok(v) => {
-            let stdout = take_stdout(&out);
-            (
-                result_json("ok", &stdout, v.as_deref(), ""),
-                status::OK,
-                aura::LANGUAGE_VERSION,
-            )
-        }
+        Ok(v) => (
+            result_json("ok", Some(&sink), v.as_deref(), ""),
+            status::OK,
+            aura::LANGUAGE_VERSION,
+        ),
         Err(d) => {
-            let stdout = take_stdout(&out);
-            let (json, code) = diagnostic_result(d.diagnostic(), source, &stdout);
+            let (json, code) = diagnostic_result(d.diagnostic(), source, Some(&sink));
             (json, code, aura::LANGUAGE_VERSION)
         }
     }
@@ -735,28 +819,20 @@ fn run_module_capture(
     Ok(last)
 }
 
-fn take_stdout(out: &BrowserStdout) -> String {
-    match out.lock() {
-        Ok(v) => String::from_utf8_lossy(&v).into_owned(),
-        Err(poisoned) => String::from_utf8_lossy(&poisoned.into_inner()).into_owned(),
-    }
-}
-
 fn finish(
     outcome: Result<(), aura::error::SourceDiagnostic>,
     source: &str,
-    out: BrowserStdout,
+    sink: &aura::host::OutputSink,
     _result: Option<&str>,
 ) -> (String, u32, &'static str) {
-    let stdout = take_stdout(&out);
     match outcome {
         Ok(()) => (
-            result_json("ok", &stdout, None, ""),
+            result_json("ok", Some(sink), None, ""),
             status::OK,
             aura::LANGUAGE_VERSION,
         ),
         Err(d) => {
-            let (json, code) = diagnostic_result(d.diagnostic(), source, &stdout);
+            let (json, code) = diagnostic_result(d.diagnostic(), source, Some(sink));
             (json, code, aura::LANGUAGE_VERSION)
         }
     }

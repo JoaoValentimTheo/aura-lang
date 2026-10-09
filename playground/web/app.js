@@ -67,6 +67,7 @@ const els = {
   args: document.getElementById("args"),
   stdin: document.getElementById("stdin"),
   stdout: document.getElementById("stdout"),
+  outputNote: document.getElementById("output-note"),
   diagnostics: document.getElementById("diagnostics"),
   status: document.getElementById("status"),
   runtimeNote: document.getElementById("runtime-note"),
@@ -1371,9 +1372,31 @@ function run() {
   });
 }
 
+// Present the output footer: when the preview dropped bytes, say so plainly
+// and give the exact counts, so a truncated preview is never mistaken for the
+// complete output. The marker is the only place this is surfaced; the numbers
+// come straight from the runtime's sink accounting.
+function renderOutputNote(result) {
+  const note = els.outputNote;
+  if (!note) return;
+  const omitted = Number(result.stdout_omitted || 0);
+  if (omitted > 0) {
+    const retained = Number(result.stdout_retained || 0);
+    const kind = result.stdout_capped
+      ? "Output capped (complete mode)"
+      : "Output truncated (preview mode)";
+    note.textContent = `${kind}: showing ${retained.toLocaleString()} of ${(retained + omitted).toLocaleString()} bytes (${omitted.toLocaleString()} not captured).`;
+    note.hidden = false;
+  } else {
+    note.textContent = "";
+    note.hidden = true;
+  }
+}
+
 function finishRun(record, result) {
   lastResult = result;
   els.stdout.textContent = result.stdout || "";
+  renderOutputNote(result);
   renderDiagnostics(result.diagnostics || []);
   if (result.status === "ok") {
     enterState(PLAYGROUND_STATE.COMPLETED);

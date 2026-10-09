@@ -872,6 +872,22 @@ body {
   display: none;
 }
 
+/* The output footer: a truncation/cap disclosure. It must be visible and
+ * unmistakable (the exact counts matter) but is subordinate to the output. */
+.output-note {
+  margin: var(--au-space-2) 0 0;
+  padding: var(--au-space-2) var(--au-space-3);
+  border-radius: var(--au-radius-sm);
+  background: var(--au-warning-bg);
+  color: var(--au-warning);
+  font-family: var(--au-font-mono);
+  font-size: var(--au-type-label);
+}
+
+.output-note[hidden] {
+  display: none;
+}
+
 /* ------------------------------------------- syntax token colours
  * One semantic token per role; light/dark values live in the token block. */
 .tok-keyword {

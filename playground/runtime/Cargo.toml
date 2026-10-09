@@ -37,7 +37,17 @@ name = "aura-playground-runtime"
 # release identity is pinned in `playground/build.mjs`; advancing the runtime
 # crate later means adding a new pre-release identity and pinning 0.3.1
 # permanently.
-version = "0.3.1"
+#
+# `0.3.2-dev.1` is the first development runtime on the 0.3.2 line. It is a
+# *host-policy* change, not a language-contract change: the Playground now
+# writes standard output through a bounded-memory `OutputSink` (a full preview
+# no longer fails a program with `E4020`), and it carries the additive HTTP
+# foundations (outgoing headers applied, binary-safe `body_bytes`, ordered
+# `header_lines`, and a reported method/body policy). Aura syntax and language
+# semantics are unchanged, so `language_version` stays `0.3.1`; only the
+# runtime identity advances. It is a development pre-release and is never a
+# published release. `0.3.1` remains pinned and immutable.
+version = "0.3.2-dev.1"
 edition = "2021"
 rust-version = "1.83"
 description = "The Aura Playground WebAssembly execution wrapper: a minimal, zero-import C ABI over the real aura runtime."

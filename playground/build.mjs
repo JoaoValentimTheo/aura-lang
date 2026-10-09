@@ -385,13 +385,28 @@ const abiVersion = Number(abiMatch[1]);
 const isRelease = !runtimeVersion.includes("-");
 const channel = isRelease ? "release" : "development";
 
+// Whether a development runtime becomes the selector's default.
+//
+// The historical convention made the newest development build the default
+// while its line was open. The Aura 0.3.2 campaign deliberately keeps the
+// published `0.3.1` release as the public default: the human publication gate
+// owns promotion, and a development artifact must never be the stable public
+// default before it is authorized. A development runtime is still recorded,
+// hashed, labelled `development`, and selectable in the local/preview
+// experience — it simply does not become the default until a human flips this
+// flag (or the crate reaches a release identity). See
+// `docs/engineering/PLAYGROUND_032_CAMPAIGN.md`.
+const PROMOTE_DEV_TO_DEFAULT = false;
+const current =
+  isRelease || PROMOTE_DEV_TO_DEFAULT ? runtimeVersion : releaseVersion;
+
 const manifest = {
   playground_api_version: PLAYGROUND_API_VERSION,
   // The generated runtime is the selector's default. When the crate carries a
   // release version it is a published release; when it carries a pre-release it
   // is a development build on that line. Every frozen and historical entry
   // remains present, honest, and selectable, and is never substituted silently.
-  current: runtimeVersion,
+  current,
   versions: [
     FROZEN_0_0_1,
     FROZEN_0_0_2,
@@ -417,7 +432,14 @@ const manifest = {
       // (`release_version`) while its own identity is the pre-release
       // `runtime_version`. The channel makes the distinction explicit so the
       // UI never presents a development build as a release.
-      release_version: isRelease ? runtimeVersion : releaseVersion,
+      //
+      // A pre-release's release line is its own version without the
+      // pre-release tag (`0.3.2-dev.1` -> `0.3.2`), *not* the core crate's
+      // published release: the development runtime is the first artifact on
+      // its line, so its line must be derived from its own identity.
+      release_version: isRelease
+        ? runtimeVersion
+        : runtimeVersion.replace(/-.*$/, ""),
       language_version: languageVersion,
       runtime_version: runtimeVersion,
       host_abi_version: abiVersion,
