@@ -15,6 +15,14 @@
 // Arrays, the canonical type-position `json_decode_as`, parser hardening, and
 // the multi-file Playground); the migration guide covers the
 // `0.2.1 → 0.3.1` step.
+//
+// The manifest is the authoritative inventory of documentation routes. Pages
+// are grouped by *meaning*, not one page per bullet: closely related topics
+// (e.g. the AIS protocol and its MCP adapter) stay distinct pages because they
+// document distinct surfaces, while topics with no page of their own are
+// covered inside the page that owns them (e.g. "basic examples" live in
+// Getting started and the language guide). Every slug is a preserved public
+// route; slugs are never renamed for aesthetics.
 
 export const docsVersion = "0.3.1";
 export const docsLanguageVersion = "0.3.1";
@@ -23,13 +31,10 @@ export const docGroups = [
   {
     title: "Getting Started",
     items: [
-      { slug: "getting-started", title: "Getting started", file: "getting-started.md" },
-      { slug: "install", title: "Installing Aura", file: "install.md" },
+      { slug: "getting-started", title: "Introduction", file: "getting-started.md" },
+      { slug: "install", title: "Installation", file: "install.md" },
       { slug: "first-program", title: "Your first program", file: "first-program.md" },
-      { slug: "migration-0-3-1", title: "Migrating to 0.3.1", file: "migration-0-3-1.md" },
-      { slug: "migration-0-2-1", title: "Migrating to 0.2.1", file: "migration-0-2-1.md" },
-      { slug: "known-limitations", title: "Known limitations", file: "known-limitations.md" },
-      { slug: "zen", title: "Zen-to-Win", file: "zen.md" },
+      { slug: "zen", title: "Design principles", file: "zen.md" },
     ],
   },
   {
@@ -49,18 +54,18 @@ export const docGroups = [
     ],
   },
   {
-    title: "Reference",
+    title: "Language Reference",
     items: [
       { slug: "reference-grammar", title: "Grammar", file: "reference-grammar.md" },
-      { slug: "reference-operators", title: "Operators", file: "reference-operators.md" },
       { slug: "reference-types", title: "Types", file: "reference-types.md" },
+      { slug: "reference-operators", title: "Operators", file: "reference-operators.md" },
       { slug: "reference-stdlib", title: "Standard library", file: "reference-stdlib.md" },
       { slug: "reference-errors", title: "Diagnostics", file: "reference-errors.md" },
       { slug: "reference-limits", title: "Resource limits", file: "reference-limits.md" },
     ],
   },
   {
-    title: "Tooling",
+    title: "Runtime & Tooling",
     items: [
       { slug: "cli", title: "CLI", file: "cli.md" },
       { slug: "repl", title: "REPL", file: "repl.md" },
@@ -68,6 +73,21 @@ export const docGroups = [
       { slug: "runtime-doc", title: "Runtime & host", file: "runtime-doc.md" },
       { slug: "python", title: "Python interoperability", file: "python.md" },
       { slug: "security", title: "Security", file: "security.md" },
+    ],
+  },
+  {
+    title: "Semantic Tooling",
+    items: [
+      { slug: "ais", title: "Aura Intelligence Schema (AIS)", file: "ais.md" },
+      { slug: "mcp", title: "MCP adapter", file: "mcp.md" },
+    ],
+  },
+  {
+    title: "Releases & Migration",
+    items: [
+      { slug: "migration-0-3-1", title: "Migrating to 0.3.1", file: "migration-0-3-1.md" },
+      { slug: "migration-0-2-1", title: "Migrating to 0.2.1", file: "migration-0-2-1.md" },
+      { slug: "known-limitations", title: "Known limitations", file: "known-limitations.md" },
     ],
   },
 ];
