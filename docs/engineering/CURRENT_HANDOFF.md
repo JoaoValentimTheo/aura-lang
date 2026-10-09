@@ -24,6 +24,13 @@ frozen artifacts were **not** modified (verified byte-identical).
   `website/content/stdlib.mjs` and consumed by the landing + reference pages.
 - New guards: `tests/aurea.test.mjs` (extended), `tests/aurea-browser.test.mjs`,
   `tests/stdlib-consistency.test.mjs`, `tests/docs-consistency.test.mjs`.
+- Follow-up (same session): fixed the reported 768px three-row navigation with a
+  tiered, measured-fit app bar (`tests/nav-fit.test.mjs`), and unified the
+  integrated + standalone Playground on one shared markup
+  (`playground/web/workbench.mjs`) and stylesheet
+  (`playground/web/workbench.css`), locked by
+  `tests/playground-parity.test.mjs`. Both suites and the full website +
+  Playground suites are green locally; nothing is pushed.
 
 **Exact next action:** the human reviews the committed website work and
 authorizes (or declines) a push. A push to this branch triggers `pages.yml` and

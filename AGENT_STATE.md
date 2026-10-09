@@ -52,6 +52,27 @@ content mirrors, and website tooling/tests only; `src/**`,
   `tests/aurea-browser.test.mjs`, `tests/stdlib-consistency.test.mjs`
   (parses `src/stdlib/signatures.rs`), `tests/docs-consistency.test.mjs`
   (route/version/link parity, release-pinned normative links).
+
+### Follow-up: navigation fix + Playground workbench unification (2026-10-09)
+
+- **Navigation.** The 768px three-row defect is fixed by a tiered architecture
+  from one destination source (`site.config.mjs`): a restrained inline set plus
+  a grouped `More` menu (overflow by set difference), collapsing at the
+  measured-fit width (900px) into one compact disclosure; brand/GitHub/theme
+  stay in the closed bar. `tests/nav-fit.test.mjs` proves single-row geometry and
+  full reachability across 20 widths in both bases.
+- **Playground.** The integrated and standalone Playgrounds now share one
+  interface: `playground/web/workbench.mjs` (`workbenchMarkup()`) is the single
+  markup string and `playground/web/workbench.css` the single stylesheet, both on
+  the `--au-*` tokens. The standalone `style.css` is removed.
+  `tests/playground-parity.test.mjs` locks id/stylesheet/token parity. The
+  Playground page's oversized intro became a concise header + About disclosure.
+- **Validation:** full `website/tests/run-all.mjs` green (nav-fit 380,
+  playground-parity 93, aurea 39, browser 390, a11y 70; the embedded Playground
+  suite 79/60/233/63/98/12/42/7 unchanged) plus the standalone
+  `playground/tests/node/run-all.mjs`. Zero horizontal overflow across 13 widths
+  × 17 routes × both themes, and at 200% zoom; zero console errors; frozen
+  `0.0.2`/`0.2.0`/`0.2.1`/`0.3.1` and tag `v0.3.1` untouched. Nothing pushed.
 - **Validation (local, not GitHub CI):** full `website/tests/run-all.mjs`
   green — 44 pages, links 2554 OK, base 2553 OK, browser 388/0, a11y 70/0,
   examples 22/0, aurea 35/0, aurea-browser 31/0, stdlib-consistency 122/0,
