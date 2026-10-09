@@ -1,17 +1,19 @@
-import { url, pageHead, callout } from "../lib/components.mjs";
+import { url, icon, callout } from "../lib/components.mjs";
 import { site } from "../site.config.mjs";
+import { workbenchMarkup } from "../../playground/web/workbench.mjs";
 
 // The Playground page.
 //
 // It reuses the validated Playground engine unchanged: the same
 // `playground/web/app.js` controller, `playground/web/worker.js` Worker, and
-// `playground/web/runtime.mjs` loader. The build copies those assets and the
-// immutable `playground/runtimes` artifacts under `/playground/`, so the
-// controller's relative paths (`./web/worker.js`, `./runtimes/manifest.json`)
-// resolve exactly as they do for the standalone Playground.
+// `playground/web/runtime.mjs` loader, and the same `workbenchMarkup()` that
+// the standalone Playground injects. Only one markup string exists, so the two
+// entry points cannot drift.
 //
-// This page only supplies the *shell*: the site chrome, headings, and the
-// same element ids the controller expects. It contains no execution logic.
+// The build copies `playground/web` and the immutable `playground/runtimes`
+// artifacts under `/playground/`, so the controller's relative paths
+// (`./web/worker.js`, `./runtimes/manifest.json`) resolve exactly as they do
+// for the standalone Playground.
 export const playgroundPage = {
   key: "playground",
   title: "Playground",
@@ -20,146 +22,62 @@ export const playgroundPage = {
   description:
     "The Aura Playground: run the real Aura WebAssembly runtime in your browser, isolated in a Web Worker, with versioned, immutable runtime artifacts.",
   withContainer: false,
+  // The Playground workbench stylesheet (shared with the standalone Playground)
+  // is layered on top of the site's Aurea tokens.
+  extraHead: (base) => `<link rel="stylesheet" href="${url("playground/web/workbench.css", base)}" />`,
   async render(base) {
-    return `${pageHead({
-      eyebrow: "Playground",
-      title: "Aura Playground",
-      lede: "Runs the real Aura runtime compiled to WebAssembly, isolated in a Web Worker. No account, no server execution, no code leaves your browser.",
-    })}
-
-<section class="section section--tight" style="padding-bottom:0">
+    return `<section class="section section--tight" style="padding-bottom:0">
   <div class="container">
+    <div class="playground-head">
+      <div>
+        <span class="section__eyebrow">Playground</span>
+        <h1>Aura Playground</h1>
+        <p class="muted">The real Aura runtime, compiled to WebAssembly and isolated in a Web Worker.
+        <strong>0.3.1</strong> Keystone is the default; earlier releases stay selectable. Nothing leaves your browser.</p>
+      </div>
+      <div class="playground-head__links">
+        <a class="btn btn--outlined btn--small" href="${url("docs/playground-doc/", base)}">Playground docs</a>
+        <a class="btn btn--text btn--small" href="${url("docs/runtime-doc/", base)}">Runtime &amp; host ${icon("arrow")}</a>
+      </div>
+    </div>
     ${callout(
-      "info",
-      "<p>The <strong>Runtime</strong> selector chooses a real, immutable artifact with a recorded hash, not a label. The released <code>0.3.1</code> Keystone runtime (the default) exercises the current language — distinct List/Array/Tuple/Set/Map identities, fixed-length contextual Arrays, the canonical <code>json_decode_as(text, Type)</code>, modules, struct methods, traits, overloading, and generics — while the previous <code>0.2.1</code>, <code>0.2.0</code>, and historical <code>0.0.2</code> releases remain frozen and selectable. The browser host has <strong>no host filesystem</strong>: filesystem, clock, and sleep report <code>E5002</code>. Standard input, arguments, and <strong>virtual multi-file projects</strong> work (the files live in your browser session, not on a disk).</p>",
+      "note",
+      "<p><strong>Capabilities:</strong> the browser host has no filesystem, clock, sleep, or network, so those report <code>E5002</code>. Standard input, arguments, and <strong>virtual multi-file projects</strong> work — files live in your browser session, not on disk. The browser runtime remains <strong>0.3.1</strong>.</p>",
     )}
   </div>
 </section>
 
-<div class="container pg-workbench" data-playground>
-  <aside class="pg-explorer" aria-label="Explorer">
-    <div class="pg-pane__head"><h2>Explorer</h2></div>
-    <div class="pg-explorer__group" aria-label="Examples">
-      <div class="pg-explorer__label">Examples</div>
-      <ul id="examples" class="pg-explorer__list"></ul>
-    </div>
-  </aside>
-
-  <section class="pg-pane pg-pane--editor" aria-label="Editor">
-    <div class="pg-editor__tabs">
-      <div id="file-tabs" class="file-tabs" role="tablist" aria-label="Aura source files"></div>
-      <div class="file-actions">
-        <button id="file-add" class="btn btn--text btn--small" type="button" title="Add a source file">
-          Add file
-        </button>
-        <button id="file-rename" class="btn btn--text btn--small" type="button" title="Rename the active file">
-          Rename
-        </button>
-        <button id="file-entry" class="btn btn--text btn--small" type="button" title="Make the active file the entry point">
-          Set entry
-        </button>
-        <button id="file-delete" class="btn btn--text btn--small" type="button" title="Delete the active file">
-          Delete
-        </button>
-        <button id="project-reset" class="btn btn--text btn--small" type="button" title="Reset the project">
-          Reset
-        </button>
-      </div>
-      <div class="pg-actions">
-        <button id="run" class="btn btn--filled btn--small" type="button" title="Ctrl/Cmd + Enter">
-          Run
-        </button>
-        <button id="stop" class="btn btn--outlined btn--small" type="button" disabled>Stop</button>
-      </div>
-    </div>
-    <div id="project-note" class="project-note" hidden></div>
-    <div class="pg-versions">
-      <label for="version">Runtime</label>
-      <select id="version" aria-label="Aura runtime version"></select>
-    </div>
-    <div id="editor" class="pg-editor-wrap">
-      <pre id="gutter" class="pg-editor__gutter" aria-hidden="true"></pre>
-      <div class="pg-editor__scroll">
-        <pre id="highlight" class="pg-editor__highlight" aria-hidden="true"></pre>
-        <textarea
-          id="source"
-          class="pg-editor__input"
-          spellcheck="false"
-          autocomplete="off"
-          autocapitalize="off"
-          aria-label="Aura source"
-        ></textarea>
-      </div>
-    </div>
-    <div class="pg-inputs">
-      <div class="pg-field">
-        <label for="args">Arguments (one per line)</label>
-        <textarea id="args" spellcheck="false" aria-label="Program arguments"></textarea>
-      </div>
-      <div class="pg-field">
-        <label for="stdin">Standard input</label>
-        <textarea id="stdin" spellcheck="false" aria-label="Standard input"></textarea>
-      </div>
-    </div>
-  </section>
-
-  <section class="pg-pane pg-pane--output" aria-label="Output">
-    <div class="pg-editor__tabs" role="tablist" aria-label="Output views">
-      <button
-        id="tab-output"
-        class="tab"
-        role="tab"
-        type="button"
-        aria-selected="true"
-        aria-controls="panel-output"
-      >
-        Output
-      </button>
-      <button
-        id="tab-problems"
-        class="tab"
-        role="tab"
-        type="button"
-        aria-selected="false"
-        aria-controls="panel-problems"
-      >
-        Problems<span id="problems-count" class="tab__count"></span>
-      </button>
-    </div>
-    <div class="pg-statusbar">
-      <span id="status" class="status" role="status" aria-live="polite">idle</span>
-    </div>
-    <div id="panel-output" class="pg-panel" role="tabpanel" aria-labelledby="tab-output">
-      <pre id="stdout" class="pg-stdout" role="region" aria-label="Standard output"></pre>
-    </div>
-    <div
-      id="panel-problems"
-      class="pg-panel"
-      role="tabpanel"
-      aria-labelledby="tab-problems"
-      hidden
-    >
-      <ul id="diagnostics" class="pg-diagnostics" aria-label="Problems"></ul>
-    </div>
-    <div id="runtime-note" class="pg-note" hidden></div>
-  </section>
+<div class="container">
+  <div class="workbench" data-playground>
+${workbenchMarkup()}
+  </div>
 </div>
 
 <section class="section section--tight">
-  <div class="container prose">
-    <h2>About this Playground</h2>
-    <p>This page uses the <strong>real Aura interpreter</strong> compiled to
-    WebAssembly. There is no JavaScript reimplementation of Aura: the controller
-    sends your source to a Worker, the Worker loads the selected immutable
-    runtime artifact, and the runtime returns a structured result.</p>
-    <p>Execution is isolated from the page in a Web Worker, so a program that
-    loops forever cannot freeze the UI. <strong>Stop</strong> terminates the
-    Worker — the primary hard-cancellation mechanism. The runtime module imports
-    nothing and can reach no DOM, network, or storage.</p>
-    <p>
-      <a class="eyebrow-link" href="${url("docs/playground-doc/", base)}">Playground documentation →</a>
-      <a class="eyebrow-link" href="${url("docs/runtime-doc/", base)}" style="margin-left:var(--au-space-4)">Runtime &amp; host →</a>
-    </p>
+  <div class="container">
+    <details class="about-disclosure">
+      <summary>About this Playground</summary>
+      <div class="prose">
+        <p>This page uses the <strong>real Aura interpreter</strong> compiled to
+        WebAssembly. There is no JavaScript reimplementation of Aura: the
+        controller sends your source to a Worker, the Worker loads the selected
+        immutable runtime artifact, verifies its SHA-256 against the manifest,
+        and the runtime returns a structured result.</p>
+        <p>Execution is isolated from the page in a Web Worker, so a program that
+        loops forever cannot freeze the UI. <strong>Stop</strong> terminates the
+        Worker — the primary hard-cancellation mechanism. The runtime module
+        imports nothing and can reach no DOM, network, or storage.</p>
+        <p>The <strong>Runtime</strong> selector chooses a real, immutable
+        artifact with a recorded hash, not a label. The released
+        <code>${site.releaseVersion}</code> (the default) exercises the current
+        language; the previous <code>0.2.1</code>, <code>0.2.0</code>, and
+        historical <code>0.0.2</code> releases remain frozen and selectable.</p>
+        <p>
+          <a class="eyebrow-link" href="${url("docs/playground-doc/", base)}">Playground documentation ${icon("arrow")}</a>
+          <a class="eyebrow-link" href="${url("docs/runtime-doc/", base)}" style="margin-left:var(--au-space-4)">Runtime &amp; host ${icon("arrow")}</a>
+        </p>
+      </div>
+    </details>
   </div>
 </section>
 

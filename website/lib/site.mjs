@@ -55,6 +55,7 @@ export async function buildSite({ base = "/", pages } = {}) {
         body: await page.render(base),
         activeKey: page.activeKey,
         withContainer: page.withContainer !== false,
+        extraHead: page.extraHead ? page.extraHead(base) : undefined,
         structuredData: page.structuredData
           ? page.structuredData(base)
           : undefined,

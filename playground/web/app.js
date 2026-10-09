@@ -21,6 +21,43 @@
 import { highlight } from "./highlight.js";
 import { candidates } from "./completion.js";
 import { Project, DEFAULT_SOURCE_NAME } from "./project.js";
+import { workbenchMarkup } from "./workbench.mjs";
+
+// The standalone Playground ships a bare `<main id="workbench">` and injects
+// the shared workbench markup here, so it renders the *identical* interface the
+// integrated website Playground embeds statically. The website shell already
+// contains the markup (generated at build time), so this is a no-op there.
+function mountWorkbench() {
+  const mount = document.querySelector("[data-playground]");
+  if (mount && !document.getElementById("source")) {
+    mount.innerHTML = workbenchMarkup();
+  }
+}
+mountWorkbench();
+
+// The standalone shell exposes a theme control; wire it before the controller
+// reads any element. On the website the app bar owns theming, so the button is
+// absent and this is skipped.
+(function wireStandaloneChrome() {
+  const button = document.getElementById("pg-theme");
+  if (!button) return;
+  const root = document.documentElement;
+  const sync = () => {
+    const theme = root.getAttribute("data-theme") || "dark";
+    button.textContent = theme === "dark" ? "Light" : "Dark";
+  };
+  button.addEventListener("click", () => {
+    const theme = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", theme);
+    try {
+      localStorage.setItem("aura-theme", theme);
+    } catch {
+      /* storage is optional */
+    }
+    sync();
+  });
+  sync();
+})();
 
 const els = {
   version: document.getElementById("version"),
@@ -728,7 +765,6 @@ function closeCompletion() {
     els.completion.hidden = true;
     els.completion.innerHTML = "";
   }
-  if (els.source) els.source.setAttribute("aria-expanded", "false");
 }
 
 function renderCompletion() {
@@ -766,7 +802,6 @@ function openCompletion() {
   completion.items = items;
   completion.active = 0;
   els.completion.hidden = false;
-  els.source.setAttribute("aria-expanded", "true");
   renderCompletion();
 }
 
