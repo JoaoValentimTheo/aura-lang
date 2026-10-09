@@ -102,7 +102,7 @@ const required = [
   "sitemap.xml",
   "404.html",
   ".nojekyll",
-  "assets/tokens.css",
+  "assets/aurea.css",
   "assets/styles.css",
   "assets/site.js",
   "assets/favicon.svg",

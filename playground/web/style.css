@@ -1,87 +1,118 @@
 /* Aura Playground — a small, Aura-native browser IDE.
  *
- * A self-contained Material 3 / Material You foundation. Tokens are named to
- * map directly onto a Material You colour scheme so the website can share the
- * same vocabulary. No framework and no runtime CSS dependency.
+ * Self-contained and dependency-free. The Playground now shares Aurea, the
+ * single Aura design system: the `--au-*` tokens below are the same semantic
+ * vocabulary the website consumes, so the Playground and the site never
+ * diverge. There is no Material You / Material 3 palette. Structural values
+ * (radii, spacing, editor metrics) stay local under `--pg-*`.
+ *
+ * Theme resolution: an explicit `data-theme` on <html> wins (the website sets
+ * it); otherwise the OS preference is followed.
  */
 
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
 
-  --md-primary: #4a57a9;
-  --md-on-primary: #ffffff;
-  --md-primary-container: #dfe0ff;
-  --md-on-primary-container: #00105c;
-  --md-surface: #fbf8ff;
-  --md-surface-container-low: #f5f2fb;
-  --md-surface-container: #efedf6;
-  --md-surface-container-high: #e9e7f1;
-  --md-on-surface: #1a1b21;
-  --md-on-surface-variant: #46464f;
-  --md-outline: #777680;
-  --md-outline-variant: #c7c5d0;
-  --md-error: #ba1a1a;
-  --md-on-error: #ffffff;
-  --md-error-container: #ffdad6;
-  --md-on-error-container: #410002;
-  --md-success: #206b45;
-  --md-code-bg: #f7f5fd;
-  --md-code-border: #dddbe6;
+  --au-accent: #8ab4ff;
+  --au-accent-strong: #b7cfff;
+  --au-accent-dim: #2a3a5c;
+  --au-accent-contrast: #06122b;
+  --au-ink-0: #05060a;
+  --au-ink-1: #0a0c12;
+  --au-ink-2: #11141c;
+  --au-text: #d6dae6;
+  --au-text-strong: #f4f6fb;
+  --au-text-muted: #9aa1b4;
+  --au-line: rgb(255 255 255 / 0.10);
+  --au-line-strong: rgb(255 255 255 / 0.22);
+  --au-error: #ff9d9d;
+  --au-error-bg: #2a1113;
+  --au-help: #9fe8b7;
+  --au-code-bg: #0c0e15;
+  --au-code-border: #20242f;
 
-  /* Semantic syntax roles. Website code blocks and the Playground share this
-   * vocabulary, so a colour change happens in one place. Light values meet
-   * WCAG AA contrast on the light code background. */
-  --syntax-keyword: #9b41a8;
-  --syntax-type: #8a5a00;
-  --syntax-function: #2b62c9;
-  --syntax-builtin: #2b62c9;
-  --syntax-string: #2f7d4f;
-  --syntax-number: #b5510a;
-  --syntax-comment: #5b5b66;
-  --syntax-operator: #4a4a54;
-  --syntax-punctuation: #4a4a54;
+  --au-syntax-keyword: #d0a9ff;
+  --au-syntax-type: #7fd4d6;
+  --au-syntax-function: #9db4ff;
+  --au-syntax-string: #8fd5a9;
+  --au-syntax-number: #ffcf8f;
+  --au-syntax-comment: #7d8295;
+  --au-syntax-operator: #b9b9c6;
+  --au-syntax-punctuation: #b9b9c6;
 
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --space: 16px;
-  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  --pg-radius-sm: 6px;
+  --pg-radius-md: 10px;
+  --pg-radius-lg: 12px;
+  --pg-space: 16px;
+  --au-font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --au-font-mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
   --editor-line: 1.55;
   --editor-size: 14px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --md-primary: #bcc2ff;
-    --md-on-primary: #1b2678;
-    --md-primary-container: #333e90;
-    --md-on-primary-container: #dfe0ff;
-    --md-surface: #121318;
-    --md-surface-container-low: #1a1b21;
-    --md-surface-container: #1e1f25;
-    --md-surface-container-high: #292a30;
-    --md-on-surface: #e3e1ec;
-    --md-on-surface-variant: #c7c5d0;
-    --md-outline: #91909a;
-    --md-outline-variant: #46464f;
-    --md-error: #ffb4ab;
-    --md-on-error: #690005;
-    --md-error-container: #93000a;
-    --md-on-error-container: #ffdad6;
-    --md-success: #8fd5a9;
-    --md-code-bg: #17171d;
-    --md-code-border: #2e2f38;
+/* Light palette: an explicit light choice, or the OS light preference when no
+ * explicit dark theme was chosen. */
+[data-theme="light"] {
+  color-scheme: light;
 
-    --syntax-keyword: #d0a9ff;
-    --syntax-type: #7fd4d6;
-    --syntax-function: #9db4ff;
-    --syntax-builtin: #9db4ff;
-    --syntax-string: #8fd5a9;
-    --syntax-number: #ffcf8f;
-    --syntax-comment: #8a8a99;
-    --syntax-operator: #b9b9c6;
-    --syntax-punctuation: #b9b9c6;
+  --au-accent: #2a5bd6;
+  --au-accent-strong: #1f47a8;
+  --au-accent-dim: #d9e3ff;
+  --au-accent-contrast: #ffffff;
+  --au-ink-0: #ffffff;
+  --au-ink-1: #f7f8fb;
+  --au-ink-2: #eef0f6;
+  --au-text: #2b3140;
+  --au-text-strong: #10131a;
+  --au-text-muted: #545b6e;
+  --au-line: rgb(16 19 26 / 0.12);
+  --au-line-strong: rgb(16 19 26 / 0.30);
+  --au-error: #a3231c;
+  --au-error-bg: #fbe7e5;
+  --au-help: #1c613c;
+  --au-code-bg: #f4f5f9;
+  --au-code-border: #d9dce6;
+
+  --au-syntax-keyword: #9b41a8;
+  --au-syntax-type: #8a5a00;
+  --au-syntax-function: #2b62c9;
+  --au-syntax-string: #2f7d4f;
+  --au-syntax-number: #b5510a;
+  --au-syntax-comment: #5b5b66;
+  --au-syntax-operator: #4a4a54;
+  --au-syntax-punctuation: #4a4a54;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+
+    --au-accent: #2a5bd6;
+    --au-accent-strong: #1f47a8;
+    --au-accent-dim: #d9e3ff;
+    --au-accent-contrast: #ffffff;
+    --au-ink-0: #ffffff;
+    --au-ink-1: #f7f8fb;
+    --au-ink-2: #eef0f6;
+    --au-text: #2b3140;
+    --au-text-strong: #10131a;
+    --au-text-muted: #545b6e;
+    --au-line: rgb(16 19 26 / 0.12);
+    --au-line-strong: rgb(16 19 26 / 0.30);
+    --au-error: #a3231c;
+    --au-error-bg: #fbe7e5;
+    --au-help: #1c613c;
+    --au-code-bg: #f4f5f9;
+    --au-code-border: #d9dce6;
+
+    --au-syntax-keyword: #9b41a8;
+    --au-syntax-type: #8a5a00;
+    --au-syntax-function: #2b62c9;
+    --au-syntax-string: #2f7d4f;
+    --au-syntax-number: #b5510a;
+    --au-syntax-comment: #5b5b66;
+    --au-syntax-operator: #4a4a54;
+    --au-syntax-punctuation: #4a4a54;
   }
 }
 
@@ -99,9 +130,9 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  font-family: var(--font-ui);
-  background: var(--md-surface);
-  color: var(--md-on-surface);
+  font-family: var(--au-font-ui);
+  background: var(--au-ink-0);
+  color: var(--au-text);
 }
 
 /* ---------------------------------------------------------------- app bar */
@@ -110,10 +141,10 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space);
+  gap: var(--pg-space);
   padding: 10px 20px;
-  background: var(--md-surface-container);
-  border-bottom: 1px solid var(--md-outline-variant);
+  background: var(--au-ink-1);
+  border-bottom: 1px solid var(--au-line);
 }
 
 .brand {
@@ -122,6 +153,7 @@ body {
   gap: 10px;
   font-weight: 600;
   letter-spacing: 0.01em;
+  color: var(--au-text-strong);
 }
 
 .brand-mark {
@@ -129,16 +161,16 @@ body {
   place-items: center;
   width: 32px;
   height: 32px;
-  border-radius: var(--radius-sm);
-  background: var(--md-primary-container);
-  color: var(--md-on-primary-container);
+  border-radius: var(--pg-radius-sm);
+  background: var(--au-accent-dim);
+  color: var(--au-accent-strong);
   font-size: 18px;
 }
 
 .app-bar__actions {
   display: flex;
   align-items: center;
-  gap: var(--space);
+  gap: var(--pg-space);
   flex-wrap: wrap;
 }
 
@@ -147,16 +179,16 @@ body {
   align-items: center;
   gap: 8px;
   font-size: 0.85rem;
-  color: var(--md-on-surface-variant);
+  color: var(--au-text-muted);
 }
 
 select {
   font: inherit;
   padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--md-outline);
-  background: var(--md-surface);
-  color: var(--md-on-surface);
+  border-radius: var(--pg-radius-sm);
+  border: 1px solid var(--au-line-strong);
+  background: var(--au-ink-0);
+  color: var(--au-text);
   max-width: 22rem;
 }
 
@@ -165,7 +197,7 @@ select:focus-visible,
 .tab:focus-visible,
 .explorer__item:focus-visible,
 .problem__head:focus-visible {
-  outline: 2px solid var(--md-primary);
+  outline: 2px solid var(--au-accent);
   outline-offset: 2px;
 }
 
@@ -180,20 +212,20 @@ select:focus-visible,
   font: inherit;
   font-weight: 600;
   padding: 8px 18px;
-  border-radius: 999px;
-  border: 1px solid var(--md-outline);
+  border-radius: var(--pg-radius-sm);
+  border: 1px solid var(--au-line-strong);
   background: transparent;
-  color: var(--md-on-surface);
+  color: var(--au-text);
   cursor: pointer;
 }
 
 .btn:hover:not(:disabled) {
-  background: var(--md-surface-container-high);
+  background: var(--au-ink-2);
 }
 
 .btn.primary {
-  background: var(--md-primary);
-  color: var(--md-on-primary);
+  background: var(--au-accent);
+  color: var(--au-accent-contrast);
   border-color: transparent;
 }
 
@@ -203,7 +235,7 @@ select:focus-visible,
 }
 
 kbd {
-  font-family: var(--font-mono);
+  font-family: var(--au-font-mono);
   font-size: 0.72em;
   padding: 1px 5px;
   margin-left: 6px;
@@ -218,8 +250,8 @@ kbd {
   flex: 1;
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--space);
-  padding: var(--space);
+  gap: var(--pg-space);
+  padding: var(--pg-space);
   min-height: 0;
 }
 
@@ -229,9 +261,9 @@ kbd {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--md-surface-container);
-  border: 1px solid var(--md-outline-variant);
-  border-radius: var(--radius-lg);
+  background: var(--au-ink-1);
+  border: 1px solid var(--au-line);
+  border-radius: var(--pg-radius-lg);
   overflow: hidden;
 }
 
@@ -244,8 +276,8 @@ kbd {
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--md-on-surface-variant);
-  border-bottom: 1px solid var(--md-outline-variant);
+  color: var(--au-text-muted);
+  border-bottom: 1px solid var(--au-line);
 }
 
 .explorer__group {
@@ -257,7 +289,7 @@ kbd {
   font-size: 0.68rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--md-on-surface-variant);
+  color: var(--au-text-muted);
   padding: 6px 8px;
 }
 
@@ -277,19 +309,19 @@ kbd {
   font-size: 0.85rem;
   padding: 7px 10px;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--pg-radius-sm);
   background: transparent;
-  color: var(--md-on-surface);
+  color: var(--au-text);
   cursor: pointer;
 }
 
 .explorer__item:hover {
-  background: var(--md-surface-container-high);
+  background: var(--au-ink-2);
 }
 
 .explorer__item[aria-current="true"] {
-  background: var(--md-primary-container);
-  color: var(--md-on-primary-container);
+  background: var(--au-accent-dim);
+  color: var(--au-accent-strong);
 }
 
 /* ----------------------------------------------------------------- editor */
@@ -336,20 +368,20 @@ kbd {
 }
 
 .file-tab__entry {
-  color: var(--md-primary);
+  color: var(--au-accent);
   font-size: 0.7rem;
 }
 
 .file-tab[aria-selected="true"] .file-tab__entry {
-  color: var(--md-on-surface);
+  color: var(--au-text-strong);
 }
 
 .project-note {
   padding: 6px 14px;
   font-size: 0.76rem;
-  color: var(--md-on-surface-variant);
-  background: var(--md-surface-container-low);
-  border-bottom: 1px solid var(--md-outline-variant);
+  color: var(--au-text-muted);
+  background: var(--au-ink-2);
+  border-bottom: 1px solid var(--au-line);
 }
 
 .project-note[hidden] {
@@ -361,16 +393,16 @@ kbd {
   font-size: 0.8rem;
   padding: 6px 12px;
   border: 0;
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  border-radius: var(--pg-radius-sm) var(--pg-radius-sm) 0 0;
   background: transparent;
-  color: var(--md-on-surface-variant);
+  color: var(--au-text-muted);
   cursor: pointer;
 }
 
 .tab--active,
 .tab[aria-selected="true"] {
-  background: var(--md-surface);
-  color: var(--md-on-surface);
+  background: var(--au-ink-2);
+  color: var(--au-text-strong);
   font-weight: 600;
 }
 
@@ -383,7 +415,7 @@ kbd {
   display: grid;
   grid-template-columns: auto 1fr;
   min-height: 240px;
-  background: var(--md-code-bg);
+  background: var(--au-code-bg);
 }
 
 .editor__gutter {
@@ -391,11 +423,11 @@ kbd {
   padding: 12px 8px 12px 12px;
   overflow: hidden;
   text-align: right;
-  font-family: var(--font-mono);
+  font-family: var(--au-font-mono);
   font-size: var(--editor-size);
   line-height: var(--editor-line);
-  color: var(--md-on-surface-variant);
-  border-right: 1px solid var(--md-code-border);
+  color: var(--au-text-muted);
+  border-right: 1px solid var(--au-code-border);
   user-select: none;
 }
 
@@ -411,7 +443,7 @@ kbd {
   inset: 0;
   margin: 0;
   padding: 12px;
-  font-family: var(--font-mono);
+  font-family: var(--au-font-mono);
   font-size: var(--editor-size);
   line-height: var(--editor-line);
   tab-size: 4;
@@ -422,7 +454,7 @@ kbd {
 
 .editor__highlight {
   pointer-events: none;
-  color: var(--md-on-surface);
+  color: var(--au-text);
   background: transparent;
   z-index: 0;
 }
@@ -434,20 +466,20 @@ kbd {
   right: 0;
   top: var(--current-line-top, -9999px);
   height: var(--current-line-height, 0);
-  background: color-mix(in srgb, var(--md-primary) 10%, transparent);
+  background: color-mix(in srgb, var(--au-accent) 12%, transparent);
   pointer-events: none;
 }
 
 .editor__input {
   resize: none;
   color: transparent;
-  caret-color: var(--md-primary);
+  caret-color: var(--au-accent-strong);
   background: transparent;
   z-index: 1;
 }
 
 .editor__input::selection {
-  background: color-mix(in srgb, var(--md-primary) 35%, transparent);
+  background: color-mix(in srgb, var(--au-accent) 35%, transparent);
 }
 
 .editor-inputs {
@@ -455,7 +487,7 @@ kbd {
   grid-template-columns: 1fr 1fr;
   gap: 10px;
   padding: 12px;
-  border-top: 1px solid var(--md-outline-variant);
+  border-top: 1px solid var(--au-line);
 }
 
 .field {
@@ -466,19 +498,19 @@ kbd {
 
 .field label {
   font-size: 0.72rem;
-  color: var(--md-on-surface-variant);
+  color: var(--au-text-muted);
 }
 
 .field textarea {
   min-height: 60px;
   resize: vertical;
-  font-family: var(--font-mono);
+  font-family: var(--au-font-mono);
   font-size: 13px;
   padding: 8px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--md-outline-variant);
-  background: var(--md-code-bg);
-  color: var(--md-on-surface);
+  border-radius: var(--pg-radius-sm);
+  border: 1px solid var(--au-line-strong);
+  background: var(--au-ink-0);
+  color: var(--au-text);
 }
 
 /* ----------------------------------------------------------------- output */
@@ -498,30 +530,30 @@ kbd {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space);
+  gap: var(--pg-space);
   padding: 8px 14px;
-  border-bottom: 1px solid var(--md-outline-variant);
+  border-bottom: 1px solid var(--au-line);
 }
 
 .panel__label {
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--md-on-surface-variant);
+  color: var(--au-text-muted);
 }
 
 .status {
   font-size: 0.78rem;
   font-weight: 600;
-  color: var(--md-on-surface-variant);
+  color: var(--au-text-muted);
 }
 
 .status.ok {
-  color: var(--md-success);
+  color: var(--au-help);
 }
 
 .status.error {
-  color: var(--md-error);
+  color: var(--au-error);
 }
 
 .stdout {
@@ -529,7 +561,7 @@ kbd {
   overflow: auto;
   margin: 0;
   padding: 12px 14px;
-  font-family: var(--font-mono);
+  font-family: var(--au-font-mono);
   font-size: 13px;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -548,9 +580,9 @@ kbd {
 }
 
 .problem {
-  border-radius: var(--radius-md);
-  background: var(--md-error-container);
-  color: var(--md-on-error-container);
+  border-radius: var(--pg-radius-md);
+  background: var(--au-error-bg);
+  color: var(--au-error);
   font-size: 13px;
   overflow: hidden;
 }
@@ -570,20 +602,21 @@ kbd {
 }
 
 .problem__head:hover {
-  background: color-mix(in srgb, var(--md-on-error-container) 8%, transparent);
+  background: color-mix(in srgb, var(--au-error) 10%, transparent);
 }
 
 .problem__msg {
   padding: 0 12px 10px;
+  color: var(--au-text);
 }
 
 .diag-code {
   font-weight: 700;
-  font-family: var(--font-mono);
+  font-family: var(--au-font-mono);
 }
 
 .diag-loc {
-  font-family: var(--font-mono);
+  font-family: var(--au-font-mono);
   font-size: 12px;
   opacity: 0.85;
 }
@@ -599,9 +632,9 @@ kbd {
    runtime supplies it and the UI never rewrites it. */
 .diag-source {
   font-size: 0.72rem;
-  color: var(--md-on-surface-variant);
-  background: var(--md-surface-container-high);
-  border-radius: var(--radius-sm);
+  color: var(--au-text-muted);
+  background: var(--au-ink-2);
+  border-radius: var(--pg-radius-sm);
   padding: 1px 6px;
   max-width: 14rem;
   overflow: hidden;
@@ -615,18 +648,19 @@ kbd {
 }
 
 .diagnostics li.empty {
-  background: var(--md-surface-container-high);
-  color: var(--md-on-surface-variant);
+  background: var(--au-ink-2);
+  color: var(--au-text-muted);
   padding: 10px 12px;
-  border-radius: var(--radius-md);
+  border-radius: var(--pg-radius-md);
 }
 
 .runtime-note {
   margin: 10px;
   padding: 10px 12px;
-  border-radius: var(--radius-md);
-  background: var(--md-primary-container);
-  color: var(--md-on-primary-container);
+  border-radius: var(--pg-radius-md);
+  background: var(--au-ink-2);
+  border: 1px solid var(--au-line);
+  color: var(--au-text-muted);
   font-size: 0.82rem;
 }
 
@@ -640,33 +674,33 @@ kbd {
  * block above, so there is no second hardcoded palette. */
 
 .tok-keyword {
-  color: var(--syntax-keyword);
+  color: var(--au-syntax-keyword);
   font-weight: 600;
 }
 .tok-string {
-  color: var(--syntax-string);
+  color: var(--au-syntax-string);
 }
 .tok-number {
-  color: var(--syntax-number);
+  color: var(--au-syntax-number);
 }
 .tok-fn {
-  color: var(--syntax-builtin);
+  color: var(--au-syntax-function);
 }
 .tok-type {
-  color: var(--syntax-type);
+  color: var(--au-syntax-type);
 }
 .tok-comment {
-  color: var(--syntax-comment);
+  color: var(--au-syntax-comment);
   font-style: italic;
 }
 .tok-operator {
-  color: var(--syntax-operator);
+  color: var(--au-syntax-operator);
 }
 .tok-punct {
-  color: var(--syntax-punctuation);
+  color: var(--au-syntax-punctuation);
 }
 .tok-variable {
-  color: var(--md-on-surface);
+  color: var(--au-text);
 }
 
 /* ------------------------------------------------------------- responsive */
@@ -721,8 +755,8 @@ kbd {
 
 .btn.ghost {
   background: transparent;
-  color: var(--md-on-surface-variant);
-  border: 1px solid var(--md-outline-variant);
+  color: var(--au-text-muted);
+  border: 1px solid var(--au-line);
 }
 
 .search {
@@ -730,8 +764,8 @@ kbd {
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
-  background: var(--md-surface-container-low);
-  border-bottom: 1px solid var(--md-outline-variant);
+  background: var(--au-ink-2);
+  border-bottom: 1px solid var(--au-line);
 }
 
 .search__input {
@@ -739,14 +773,14 @@ kbd {
   min-width: 0;
   font: inherit;
   padding: 4px 8px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--md-outline-variant);
-  background: var(--md-surface);
-  color: var(--md-on-surface);
+  border-radius: var(--pg-radius-sm);
+  border: 1px solid var(--au-line-strong);
+  background: var(--au-ink-0);
+  color: var(--au-text);
 }
 
 .search__count {
-  color: var(--md-on-surface-variant);
+  color: var(--au-text-muted);
   font-size: 12px;
   min-width: 70px;
   text-align: right;
@@ -756,7 +790,7 @@ kbd {
   display: flex;
   align-items: center;
   gap: 4px;
-  color: var(--md-on-surface-variant);
+  color: var(--au-text-muted);
   font-size: 12px;
 }
 
@@ -771,9 +805,9 @@ kbd {
   min-width: 200px;
   max-height: 240px;
   overflow-y: auto;
-  background: var(--md-surface-container-high);
-  border: 1px solid var(--md-outline-variant);
-  border-radius: var(--radius-md);
+  background: var(--au-ink-2);
+  border: 1px solid var(--au-line);
+  border-radius: var(--pg-radius-md);
   box-shadow: 0 6px 24px rgb(0 0 0 / 0.25);
 }
 
@@ -782,18 +816,18 @@ kbd {
   justify-content: space-between;
   gap: 12px;
   padding: 4px 8px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--pg-radius-sm);
   cursor: pointer;
-  color: var(--md-on-surface);
+  color: var(--au-text);
 }
 
 .completion__item.is-active {
-  background: var(--md-primary-container);
-  color: var(--md-on-primary-container);
+  background: var(--au-accent-dim);
+  color: var(--au-accent-strong);
 }
 
 .completion__kind {
-  color: var(--md-on-surface-variant);
+  color: var(--au-text-muted);
   font-size: 11px;
 }
 

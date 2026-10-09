@@ -13,15 +13,21 @@ website/
 ├── pages/              one module per route
 ├── content/            documentation and docs manifest (Markdown)
 ├── examples/           the validated example catalog
-├── assets/             design tokens, styles, shared JS, icons
+├── assets/             Aurea tokens + site styles, shared JS, icons
 └── tests/              build validation, links, browser, accessibility
 ```
 
 * **No framework.** A small Node generator emits static HTML. There is no
   client-side router, no server, and no runtime Markdown parsing.
-* **Material 3.** `assets/tokens.css` defines the full Material You role
-  palette; `assets/styles.css` consumes those roles. Light and dark themes are
-  token-driven and respect `prefers-color-scheme`.
+* **Aurea.** `assets/aurea.css` is the Aura-owned, dependency-free design
+  system: it defines the canonical `--au-*` tokens, theme definitions, base
+  element styling, and accessibility primitives. `assets/styles.css` is part of
+  the same system and owns layout, components, and documentation styling; it
+  consumes the tokens and defines none of its own. There is no Material You /
+  Material 3 dependency and no second design system. Dark is the default
+  identity; the light theme is a structural inversion of the same tokens and
+  respects `prefers-color-scheme` (an explicit `data-theme` wins). The
+  Playground shares the same `--au-*` vocabulary.
 * **Static.** The build writes `robots.txt`, `sitemap.xml`, a `404.html`, and
   `.nojekyll`. It is plain static output for GitHub Pages.
 * **Explicit deployment base.** `lib/base.mjs` is the single source of truth

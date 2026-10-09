@@ -1,29 +1,33 @@
 /* Aurea — the Aura design system.
  *
  * Aura-owned, local, dependency-free CSS. No external framework, no CDN, no
- * utility framework: design tokens, component primitives, responsive
- * behaviour, and accessibility live here. Components consume tokens only;
- * magic colours are not scattered through them.
+ * utility framework: the canonical design tokens, theme definitions, base
+ * element styling, foundational primitives, and accessibility rules live here.
+ * Components consume tokens only; magic colours are not scattered through the
+ * site styling.
  *
  * Direction: black-first, high contrast, restrained, technical, clean.
  *
- * Relationship to the site's role palette: this file defines the *Aurea*
- * layer — the structural and tonal primitives (surfaces, borders, focus,
- * rhythm, motion, layout) under the `--au-*` namespace. The existing
- * `tokens.css` role palette (`--md-*`) is consumed by the components as its
- * semantic colour layer. Aurea is deliberately additive: it establishes the
- * black-first surface scale and the accessibility primitives, and it does
- * not duplicate or fork the already-reviewed role colours.
+ * Aurea is the *only* visual authority for the website. There is no second
+ * design system and no Material You / Material 3 role palette anywhere in the
+ * active stylesheet chain. Dark is the default identity; the light theme is a
+ * structural inversion of the same token set, not a separate system.
+ *
+ * Token namespace: every token is `--au-*`. The site styling in `styles.css`
+ * consumes these tokens and defines no tokens of its own.
  *
  * Accessibility contract:
  * - every interactive element has a visible `:focus-visible` indicator;
  * - motion is suppressed under `prefers-reduced-motion`;
  * - targets under `prefers-contrast: more` gain stronger borders;
- * - the surface scale is designed for AA text contrast in both themes.
+ * - the surface scale is designed for AA text contrast in both themes;
+ * - forced-colors mode keeps borders and focus rings visible.
  */
 
 /* --------------------------------------------------------------- tokens */
 :root {
+  color-scheme: dark;
+
   /* Black-first surface scale. Level 0 is the page, and each level lifts. */
   --au-black: #000000;
   --au-ink-0: #05060a;
@@ -40,45 +44,75 @@
   --au-text-muted: #9aa1b4;
   --au-text-faint: #6b7288;
 
-  /* One accent, used sparingly. */
+  /* One accent, used sparingly. `--au-accent-contrast` is text that sits on a
+   * filled accent surface. */
   --au-accent: #8ab4ff;
   --au-accent-strong: #b7cfff;
   --au-accent-dim: #2a3a5c;
+  --au-accent-contrast: #06122b;
 
-  /* Status roles, aligned with the language's diagnostic severity. */
+  /* Status roles, aligned with the language's diagnostic severity. Each has a
+   * foreground and a low-key container background. */
   --au-error: #ff9d9d;
+  --au-error-bg: #2a1113;
   --au-warning: #ffd18a;
+  --au-warning-bg: #2a2110;
   --au-note: #9fd8ff;
+  --au-note-bg: #0f2130;
   --au-help: #9fe8b7;
+  --au-help-bg: #0f2618;
 
   /* Lines. */
   --au-line: rgb(255 255 255 / 0.10);
   --au-line-strong: rgb(255 255 255 / 0.22);
+
+  /* Code surfaces. */
+  --au-code-bg: #0c0e15;
+  --au-code-border: #20242f;
 
   /* Focus: a single, unmistakable indicator. */
   --au-focus: #9ec5ff;
   --au-focus-width: 2px;
   --au-focus-offset: 2px;
 
-  /* Rhythm. */
+  /* Rhythm (4px grid). */
   --au-space-1: 0.25rem;
   --au-space-2: 0.5rem;
   --au-space-3: 0.75rem;
   --au-space-4: 1rem;
+  --au-space-5: 1.25rem;
   --au-space-6: 1.5rem;
   --au-space-8: 2rem;
+  --au-space-10: 2.5rem;
   --au-space-12: 3rem;
   --au-space-16: 4rem;
+  --au-space-20: 5rem;
 
   /* Radii: restrained, technical. */
-  --au-radius-sm: 4px;
+  --au-radius-xs: 3px;
+  --au-radius-sm: 5px;
   --au-radius-md: 8px;
   --au-radius-lg: 12px;
+  --au-radius-full: 999px;
 
   /* Type. */
   --au-font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --au-font-mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+
+  /* Type scale. */
+  --au-type-display: 2.5rem;
+  --au-type-h1: 2rem;
+  --au-type-h2: 1.5rem;
+  --au-type-h3: 1.1875rem;
+  --au-type-h4: 1rem;
+  --au-type-body: 1rem;
+  --au-type-small: 0.875rem;
+  --au-type-xs: 0.75rem;
+  --au-type-label: 0.6875rem;
+
+  /* Measures. */
   --au-measure: 72ch;
+  --au-prose: 46rem;
 
   /* Motion. */
   --au-motion-fast: 120ms;
@@ -88,35 +122,171 @@
   /* Layout. */
   --au-content: 1200px;
   --au-gutter: clamp(1rem, 4vw, 2rem);
+
+  /* Semantic syntax roles, shared by the site code blocks and the Playground
+   * editor so the two never diverge. Values are chosen to meet AA contrast on
+   * the code surface. */
+  --au-syntax-keyword: #d0a9ff;
+  --au-syntax-type: #7fd4d6;
+  --au-syntax-function: #9db4ff;
+  --au-syntax-string: #8fd5a9;
+  --au-syntax-number: #ffcf8f;
+  --au-syntax-comment: #7d8295;
+  --au-syntax-operator: #b9b9c6;
+  --au-syntax-punctuation: #b9b9c6;
 }
 
 /* The light theme keeps the same structure with an inverted ramp; the
  * black-first direction is the default identity, not a requirement that the
  * site be unreadable in daylight. */
 [data-theme="light"] {
+  color-scheme: light;
+
   --au-ink-0: #ffffff;
   --au-ink-1: #f7f8fb;
   --au-ink-2: #eef0f6;
   --au-ink-3: #e3e6ef;
   --au-ink-4: #d5d9e5;
   --au-ink-5: #c3c8d8;
+
   --au-text-strong: #10131a;
   --au-text: #2b3140;
   --au-text-muted: #545b6e;
-  --au-text-faint: #7a8298;
+  --au-text-faint: #737a8d;
+
   --au-accent: #2a5bd6;
   --au-accent-strong: #1f47a8;
   --au-accent-dim: #d9e3ff;
-  --au-error: #b3261e;
-  --au-warning: #8a5a00;
-  --au-note: #1a5f8a;
-  --au-help: #1f6b42;
+  --au-accent-contrast: #ffffff;
+
+  --au-error: #a3231c;
+  --au-error-bg: #fbe7e5;
+  --au-warning: #7a4f00;
+  --au-warning-bg: #fbf0d8;
+  --au-note: #17567f;
+  --au-note-bg: #e2eef8;
+  --au-help: #1c613c;
+  --au-help-bg: #e0f1e6;
+
   --au-line: rgb(16 19 26 / 0.12);
   --au-line-strong: rgb(16 19 26 / 0.30);
+
+  --au-code-bg: #f4f5f9;
+  --au-code-border: #d9dce6;
+
   --au-focus: #1f47a8;
+
+  --au-syntax-keyword: #9b41a8;
+  --au-syntax-type: #8a5a00;
+  --au-syntax-function: #2b62c9;
+  --au-syntax-string: #2f7d4f;
+  --au-syntax-number: #b5510a;
+  --au-syntax-comment: #5b5b66;
+  --au-syntax-operator: #4a4a54;
+  --au-syntax-punctuation: #4a4a54;
 }
 
-/* ---------------------------------------------------------- primitives */
+/* ----------------------------------------------------------------- reset */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--au-font-ui);
+  font-size: var(--au-type-body);
+  line-height: 1.6;
+  background: var(--au-ink-0);
+  color: var(--au-text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* --------------------------------------------------- base typography */
+h1,
+h2,
+h3,
+h4 {
+  margin: 0 0 var(--au-space-3);
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--au-text-strong);
+}
+
+h1 {
+  font-size: var(--au-type-h1);
+}
+h2 {
+  font-size: var(--au-type-h2);
+}
+h3 {
+  font-size: var(--au-type-h3);
+}
+h4 {
+  font-size: var(--au-type-h4);
+}
+
+p {
+  margin: 0 0 var(--au-space-4);
+  color: var(--au-text-muted);
+}
+
+a {
+  color: var(--au-accent);
+  text-decoration: none;
+  border-radius: var(--au-radius-xs);
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+ul,
+ol {
+  padding-left: 1.4em;
+}
+
+li {
+  margin-bottom: var(--au-space-1);
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+code,
+kbd,
+samp {
+  font-family: var(--au-font-mono);
+  font-size: 0.9em;
+}
+
+:not(pre) > code {
+  padding: 0.12em 0.4em;
+  border-radius: var(--au-radius-xs);
+  background: var(--au-ink-3);
+  color: var(--au-text-strong);
+}
+
+hr {
+  border: 0;
+  height: 1px;
+  background: var(--au-line);
+}
+
+/* --------------------------------------------------------- primitives */
 
 /* A surface. Levels use the ink ramp so nesting reads as depth, not shadow. */
 .au-surface {
@@ -138,7 +308,7 @@
 
 /* A technical label: small, tracked, uppercase, muted. */
 .au-label {
-  font-size: 0.6875rem;
+  font-size: var(--au-type-label);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -214,6 +384,19 @@
   color: var(--au-help);
 }
 
+/* Utilities. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Overflow is an invariant: a long token (a path, a URL, an identifier)
  * wraps or scrolls locally instead of widening the page. */
 .au-wrap {
@@ -227,7 +410,7 @@
   min-width: 0;
 }
 
-/* A layout primitive with correct flex shrink semantics: children may not
+/* Layout primitives with correct flex/grid shrink semantics: children may not
  * force the container wider than its parent (min-width: 0). */
 .au-row {
   display: flex;
@@ -251,6 +434,10 @@
 
 /* ------------------------------------------------------- reduced motion */
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
   *,
   *::before,
   *::after {

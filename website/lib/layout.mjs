@@ -20,8 +20,8 @@ function head({ title, description, path, base, pageType = "website", structured
 <meta name="description" content="${escapeHtml(description)}" />
 <link rel="canonical" href="${canonical}" />
 <link rel="icon" href="${url("assets/favicon.svg", base)}" type="image/svg+xml" />
-<meta name="theme-color" content="#4a57a9" media="(prefers-color-scheme: light)" />
-<meta name="theme-color" content="#121318" media="(prefers-color-scheme: dark)" />
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#05060a" media="(prefers-color-scheme: dark)" />
 
 <meta property="og:type" content="${pageType}" />
 <meta property="og:site_name" content="${site.name}" />
@@ -36,7 +36,6 @@ function head({ title, description, path, base, pageType = "website", structured
 <meta name="twitter:image" content="${ogImage}" />
 
 <link rel="stylesheet" href="${url("assets/aurea.css", base)}" />
-<link rel="stylesheet" href="${url("assets/tokens.css", base)}" />
 <link rel="stylesheet" href="${url("assets/styles.css", base)}" />
 <script>
   // Apply the stored theme before first paint to avoid a flash. Kept inline

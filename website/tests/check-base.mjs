@@ -83,9 +83,9 @@ for (const file of htmlFiles) {
 const home = join(dist, "index.html");
 if (existsSync(home)) {
   const html = readFileSync(home, "utf8");
-  if (!html.includes(`${b}assets/tokens.css`)) {
+  if (!html.includes(`${b}assets/aurea.css`)) {
     violations += 1;
-    console.error(`homepage does not link ${b}assets/tokens.css`);
+    console.error(`homepage does not link ${b}assets/aurea.css`);
   }
   if (!html.includes(`${b}assets/styles.css`)) {
     violations += 1;
