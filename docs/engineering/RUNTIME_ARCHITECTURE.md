@@ -95,7 +95,7 @@ evaluate an AST node**: `Interp::binary`, `index_get`, `field_get`, `method`,
 | Parser recursion budget | 2048 | 768 (calibrated below the engine ceiling) |
 | Parser grouping backstop (pure parentheses) | 2048 | 192 (a grouping level costs several frames; measured ceiling 262) |
 | Host | `StdHost`/`LimitedHost`/custom | `LimitedHost`/`BrowserHost` |
-| stdout | process stdout (unbounded) | capture buffer (1 MiB policy bound) |
+| stdout | process stdout (unbounded) | bounded `OutputSink` (256 KiB preview / 16 MiB complete policy bounds; never fatal) |
 | fs/clock/sleep | available by default | `E5002` |
 | CPython | optional (`py`) | absent |
 | **Language semantics** | identical | identical (`engines_agree`, fresh-wasm boundary suite) |

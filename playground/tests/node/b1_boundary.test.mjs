@@ -248,18 +248,18 @@ const patternDepth = (n) => "[".repeat(n) + "_" + "]".repeat(n);
 }
 
 // ---------------------------------------------------------------------------
-// Stdout capture bound on the fresh machine-backed wasm
+// Bounded output sink on the fresh machine-backed wasm (0.3.2 development)
 // ---------------------------------------------------------------------------
 //
-// The host's `MAX_STDOUT_BYTES` (1 MiB) bound is an application resource
-// policy, not language semantics: `print` emits through the host, which
-// accepts a write that lands on the bound and refuses whole any write that
-// would cross it with `E4020`. This pins the exact boundary on the fresh
-// machine-backed artifact: the observed Playground incident (`for i in
-// 1..10000000 { print(i) }` → E4020) must be a structured diagnostic with
-// bounded capture, never an unbounded buffer, a trap, or a partial write.
+// Output no longer turns a full buffer into a fatal `E4020`. The host writes
+// through a bounded-memory `OutputSink` in *preview* mode: it retains a
+// bounded prefix, counts the omitted bytes exactly, and the program finishes
+// `ok`. This pins the new contract on the fresh machine-backed artifact: the
+// reported Playground incident (`for i in 0..600000 { print(i) }` → E4020) is
+// gone; capture stays bounded; the retained prefix is valid UTF-8; and the
+// accounting is honest (retained + omitted, with a truncation flag).
 
-const LIMIT = 1024 * 1024;
+const PREVIEW = 256 * 1024;
 const byteLen = (s) => Buffer.byteLength(s, "utf8");
 
 function runWithStdin(source, stdin) {
@@ -273,117 +273,80 @@ function runWithStdin(source, stdin) {
   }
 }
 
-function hasE4020(r) {
-  return (
-    r.result !== null &&
-    r.result.status !== "ok" &&
-    (r.result.diagnostics || []).some((d) => d.code === 4020)
-  );
-}
-
 {
-  // `print(s)` writes `s`’s bytes plus a newline: stdin of `LIMIT - 2` lands
-  // one byte below the bound, `LIMIT - 1` lands exactly on it.
   const src = `fn main() {\n  let s = read_line()\n  print(s)\n}\n`;
 
-  const below = runWithStdin(src, "a".repeat(LIMIT - 2));
+  const small = runWithStdin(src, "a".repeat(1000));
   check(
-    "stdout below the bound is captured whole",
-    !below.trap && below.result.status === "ok" &&
-      byteLen(below.result.stdout) === LIMIT - 1,
-    below.trap ?? JSON.stringify(below.result),
+    "small output is captured whole and untruncated",
+    !small.trap && small.result.status === "ok" &&
+      small.result.stdout === "a".repeat(1000) + "\n" &&
+      small.result.stdout_truncated === false &&
+      small.result.stdout_omitted === 0,
+    small.trap ?? JSON.stringify(small.result),
   );
 
-  const at = runWithStdin(src, "a".repeat(LIMIT - 1));
+  // A write whose output exceeds the preview: the prefix is retained, the run
+  // still finishes ok, and the omitted count is exact.
+  const big = runWithStdin(src, "a".repeat(PREVIEW * 2));
   check(
-    "stdout landing exactly on the bound is accepted",
-    !at.trap && at.result.status === "ok" && byteLen(at.result.stdout) === LIMIT,
-    at.trap ?? JSON.stringify(at.result),
-  );
-
-  const over = runWithStdin(src, "a".repeat(LIMIT));
-  check(
-    "one oversized write is refused whole with E4020",
-    !over.trap && hasE4020(over) && byteLen(over.result.stdout) === 0,
-    over.trap ?? JSON.stringify(over.result),
-  );
-
-  // Bytes accepted before the crossing write survive; the refused write
-  // contributes nothing.
-  const partial = runWithStdin(
-    `fn main() {\n  print("before")\n  let s = read_line()\n  print(s)\n  print("after")\n}\n`,
-    "a".repeat(LIMIT),
-  );
-  check(
-    "prior output is retained and the refused write adds nothing",
-    !partial.trap && hasE4020(partial) &&
-      partial.result.stdout.startsWith("before\n") &&
-      !partial.result.stdout.includes("after"),
-    partial.trap ?? JSON.stringify({
-      status: partial.result.status,
-      bytes: byteLen(partial.result.stdout),
+    "oversized write is retained partially, not fatal",
+    !big.trap && big.result.status === "ok" &&
+      byteLen(big.result.stdout) === PREVIEW &&
+      big.result.stdout_retained === PREVIEW &&
+      big.result.stdout_omitted >= PREVIEW &&
+      big.result.stdout_truncated === true,
+    big.trap ?? JSON.stringify({
+      status: big.result.status,
+      retained: byteLen(big.result.stdout),
+      omitted: big.result.stdout_omitted,
     }),
   );
 
-  // UTF-8: a 4-byte write landing exactly on the bound is valid and intact;
-  // one byte over is refused whole, leaving the valid prefix.
-  const utfAt = runWithStdin(
-    `fn main() {\n  let s = read_line()\n  print(s)\n  print("€")\n}\n`,
-    "a".repeat(LIMIT - 5),
-  );
-  check(
-    "UTF-8 write landing exactly on the bound is intact",
-    !utfAt.trap && utfAt.result.status === "ok" &&
-      byteLen(utfAt.result.stdout) === LIMIT &&
-      utfAt.result.stdout.endsWith("€\n"),
-    utfAt.trap ?? JSON.stringify({ status: utfAt.result.status, bytes: byteLen(utfAt.result.stdout) }),
-  );
-
-  const utfOver = runWithStdin(
-    `fn main() {\n  let s = read_line()\n  print(s)\n  print("€")\n}\n`,
-    "a".repeat(LIMIT - 4),
-  );
-  check(
-    "UTF-8 write one byte over is refused whole",
-    !utfOver.trap && hasE4020(utfOver) &&
-      byteLen(utfOver.result.stdout) === LIMIT - 3,
-    utfOver.trap ?? JSON.stringify({ status: utfOver.result.status, bytes: byteLen(utfOver.result.stdout) }),
-  );
-
-  // E4020 is fatal: catch cannot intercept it; finally still runs.
-  const fatal = runWithStdin(
-    `fn main() {\n  let s = read_line()\n  try {\n    print(s)\n  } catch _ {\n    print("caught")\n  } finally {\n    print("finally-visible")\n  }\n}\n`,
-    "a".repeat(LIMIT),
-  );
-  check(
-    "E4020 is not catchable and finally still runs",
-    !fatal.trap && hasE4020(fatal) &&
-      !fatal.result.stdout.includes("caught") &&
-      fatal.result.stdout.endsWith("finally-visible\n"),
-    fatal.trap ?? JSON.stringify(fatal.result.stdout.slice(-32)),
-  );
-
-  // The budget is per execution: a second run may again land on the bound.
-  const again = runWithStdin(src, "a".repeat(LIMIT - 1));
-  check(
-    "the bound is per execution (rerun lands on it again)",
-    !again.trap && again.result.status === "ok" && byteLen(again.result.stdout) === LIMIT,
-    again.trap ?? JSON.stringify({ status: again.result.status, bytes: byteLen(again.result.stdout) }),
-  );
-
-  // The reported incident shape: a runaway print loop terminates with a
-  // structured E4020 and bounded capture, never a trap.
+  // The reported defect shape: a finite program printing far more than any
+  // single buffer must finish ok with bounded capture.
   const runaway = run(
     `fn main() {\n  for i in 0..600000 {\n    print(i)\n  }\n}\n`,
   );
   check(
-    "runaway print loop: structured E4020, bounded capture",
-    !runaway.trap && hasE4020(runaway) &&
-      byteLen(runaway.result.stdout) <= LIMIT,
-    runaway.trap ?? JSON.stringify(runaway.result.diagnostics),
+    "runaway print loop finishes ok with bounded capture",
+    !runaway.trap && runaway.result.status === "ok" &&
+      byteLen(runaway.result.stdout) <= PREVIEW &&
+      runaway.result.stdout_omitted > 0 &&
+      runaway.result.stdout.startsWith("0\n"),
+    runaway.trap ?? JSON.stringify({
+      status: runaway.result.status,
+      retained: byteLen(runaway.result.stdout),
+      omitted: runaway.result.stdout_omitted,
+    }),
   );
 
-  // Long computation with tiny output is unaffected by the capture bound.
+  // The retained preview must be valid UTF-8 even when the truncation point
+  // falls inside a multi-byte sequence.
+  const utf = run(
+    `fn main() {\n  for _ in 0..200000 {\n    print("€")\n  }\n}\n`,
+  );
+  check(
+    "UTF-8 preview truncation is intact (no replacement chars)",
+    !utf.trap && utf.result.status === "ok" &&
+      !utf.result.stdout.includes("\uFFFD") &&
+      utf.result.stdout.startsWith("€\n"),
+    utf.trap ?? JSON.stringify({ tail: utf.result.stdout.slice(-8) }),
+  );
+
+  // Two runs report identical bounded counts: the sink is per execution.
+  const a = run(`fn main() {\n  for i in 0..200000 {\n    print(i)\n  }\n}\n`);
+  const b = run(`fn main() {\n  for i in 0..200000 {\n    print(i)\n  }\n}\n`);
+  check(
+    "output sink state is per execution",
+    !a.trap && !b.trap &&
+      a.result.stdout_retained === b.result.stdout_retained &&
+      a.result.stdout_omitted === b.result.stdout_omitted &&
+      a.result.stdout === b.result.stdout,
+    JSON.stringify({ a: a.result.stdout_retained, b: b.result.stdout_retained }),
+  );
+
+// Long computation with tiny output is unaffected by the capture bound.
   const compute = run(
     `fn main() {\n  let mut x = 0\n  for _i in 0..2000000 {\n    x = x + 1\n  }\n  print(x)\n}\n`,
   );

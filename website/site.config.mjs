@@ -28,17 +28,22 @@ export const site = {
   //   * previousRelease     — the prior published release, kept addressable
   releaseVersion: "0.3.1",
   languageVersion: "0.3.1",
-  runtimeVersion: "0.3.1",
+  // The runtime crate's current build identity. While the 0.3.2 development
+  // line is open this is a pre-release; the *published* default runtime
+  // remains `releaseVersion` (`manifest.current` stays 0.3.1 until a human
+  // authorizes promotion). See `docs/engineering/PLAYGROUND_032_CAMPAIGN.md`.
+  runtimeVersion: "0.3.2-dev.1",
   previousRelease: "0.2.1",
   // Historical releases, kept addressable and clearly not current.
   earliestRelease: "0.0.1",
   // Current published release, shown in the header and hero.
   currentRelease: "0.3.1",
-  // No development runtime exists after `0.3.1`. The next line, `0.3.2`, is
-  // planned but not started: it has no manifested artifact, so it is described
-  // as planned work in the roadmap only, never set here as a live development
-  // line (which would require a real development runtime entry).
-  developmentVersion: null,
+  // The `0.3.2` development line is open locally: a development runtime
+  // (`0.3.2-dev.1`) exists in the manifest. It is never a published release:
+  // the released `0.3.1` still ships to GitHub Pages as the default until a
+  // human authorizes otherwise. Setting this here keeps the version-parity
+  // guard honest about the open line.
+  developmentVersion: "0.3.2",
 };
 
 // Primary navigation. `key` links a nav entry to page metadata.

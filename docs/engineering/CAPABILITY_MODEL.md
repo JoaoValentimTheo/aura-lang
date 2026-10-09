@@ -33,7 +33,7 @@ Two runtime surfaces exist:
 
 | Capability | Aura surface | `Host` method | Owning layer | Native default | WASM default |
 |---|---|---|---|---|---|
-| stdout | `print` | `write_stdout` | host | process stdout (unbounded) | capture buffer (1 MiB policy bound) |
+| stdout | `print` | `write_stdout` | host | process stdout (unbounded) | bounded `OutputSink` (256 KiB preview policy bound; overflow counted, not fatal) |
 | stdin | `read_line()` | `read_line` | host | process stdin | provided string (`MAX_STDIN_BYTES`) |
 | args | `args()` | `args` | host | process argv | provided list (`MAX_ARGS`, `MAX_ARG_BYTES`) |
 | filesystem read | `read_file` | `read_file` | host | allowed | unavailable (`E5002`) |
@@ -63,9 +63,12 @@ language surface — `src/host.rs:313`.)
   (`src/host.rs:41`).
 - `LimitedHost` (WASM substrate, native embedders) provides only
   stdout/stdin/args from plain data; every other method is `E5002`.
-- `BrowserHost` adds a stdout capture buffer and an application resource
-  policy (`with_stdout_limit`), enforced atomically before acceptance and
-  surfaced as fatal `E4020`.
+- `BrowserHost` adds a bounded-memory `OutputSink` (0.3.2 development,
+  `OutputSink::preview`/`complete`). A full preview is **not** fatal: bytes
+  past the retention bound are counted as omitted and the program continues.
+  The older `with_stdout_limit` (fatal `E4020` at a fixed bound) is retained
+  for the frozen-release contract; a host configured with a sink does not
+  apply it.
 
 ---
 

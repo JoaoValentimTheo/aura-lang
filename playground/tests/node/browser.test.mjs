@@ -705,8 +705,71 @@ async function runAndWait(page, timeout = 15000) {
   await page.close();
 }
 
+// --- 12. large output, end to end (0.3.2 development runtime) -------------
+{
+  const { page, errors } = await newPage();
+  // The reported incident shape through the real Worker. The *frozen* 0.3.1
+  // release keeps its historical fatal E4020 (pinned below); the 0.3.2
+  // development runtime completes with a bounded preview and an explicit
+  // truncation note.
+  await page.selectOption("#version", "0.3.2-dev.1");
+  await setSource(
+    page,
+    "fn main() {\n  for i in 0..600000 {\n    print(i)\n  }\n}",
+  );
+  const r = await runAndWait(page, 60000);
+  check(
+    "dev runtime completes large output",
+    /completed/i.test(r.status) && r.diagnostics.length === 0,
+    JSON.stringify({ status: r.status, diagnostics: r.diagnostics }),
+  );
+  const shown = await page.evaluate(() => document.getElementById("stdout").textContent.length);
+  check("output panel stays bounded", shown <= 256 * 1024, String(shown));
+  const note = await page.evaluate(() => {
+    const n = document.getElementById("output-note");
+    return { hidden: n.hidden, text: n.textContent };
+  });
+  check("truncation note is shown", note.hidden === false && /truncated/i.test(note.text), JSON.stringify(note));
+  check("no page errors on large output", errors.length === 0, errors.join("; "));
+  await page.close();
+}
+
+// --- 13. the frozen 0.3.1 release keeps the historical stdout bound --------
+{
+  const { page, errors } = await newPage();
+  // The published release artifact is immutable: its behavior must not change.
+  // Selecting 0.3.1 keeps the fatal E4020 at 1 MiB, proving the new output
+  // architecture is a development-runtime change, not a silent rewrite.
+  await page.selectOption("#version", "0.3.1");
+  await setSource(page, "fn main() {\n  for i in 0..600000 {\n    print(i)\n  }\n}");
+  const r = await runAndWait(page, 60000);
+  check(
+    "frozen 0.3.1 keeps the historical E4020",
+    /program diagnostic/i.test(r.status) && r.diagnostics.some((d) => /E4020/.test(d)),
+    JSON.stringify({ status: r.status, diagnostics: r.diagnostics }),
+  );
+  check("no page errors on frozen-runtime overflow", errors.length === 0, errors.join("; "));
+  await page.close();
+}
+
+// --- 14. output preview resets between runs --------------------------------
+{
+  const { page, errors } = await newPage();
+  await page.selectOption("#version", "0.3.2-dev.1");
+  await setSource(page, "fn main() {\n  for i in 0..300000 {\n    print(i)\n  }\n}");
+  await runAndWait(page, 60000);
+  await setSource(page, 'fn main() { print("clean") }');
+  const r = await runAndWait(page);
+  check("preview resets cleanly after a truncated run", r.stdout === "clean\n", JSON.stringify(r));
+  const note = await page.evaluate(() => document.getElementById("output-note").hidden);
+  check("truncation note hidden after a clean run", note === true, String(note));
+  check("no page errors across preview reset", errors.length === 0, errors.join("; "));
+  await page.close();
+}
+
 await browser.close();
 server.close();
 
 console.log(`\nBrowser: ${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
+

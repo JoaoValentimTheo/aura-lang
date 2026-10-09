@@ -4,6 +4,30 @@ Authoritative for **the active task and the exact next action**. Current
 repository state lives in `AGENT_STATE.md`; operating rules in `AGENTS.md`.
 Keep this file short — it is read at the start of every session.
 
+## ACTIVE TASK — AURA 0.3.2 PLAYGROUND & BROWSER HTTP (2026-10-09, LOCAL, UNPUSHED)
+
+The full campaign record is `docs/engineering/PLAYGROUND_032_CAMPAIGN.md`.
+
+- **Gate 2 (output architecture): complete.** A bounded-memory `OutputSink`
+  replaces the fatal 1 MiB stdout cap for the development runtime; the
+  reproduced `E4020` defect is fixed and measured (421 ms, 262 KiB retained of
+  3.9 MiB written). The frozen 0.3.1 release keeps its historical behavior.
+- **Gate 3 (native HTTP foundations): complete.** Outgoing headers applied,
+  binary-safe `body_bytes`, ordered `header_lines`, and a reported method/body
+  policy, each pinned by a loopback test.
+- **Gate 4 (browser HTTP): BLOCKED — human ABI decision required.** Browser
+  `fetch` needs the cross-boundary parking driver (D1: `Machine` owns `Interp`)
+  and an additive ABI (D2: `aura_run_start`/`aura_run_resume`). The decision
+  package is in `PLAYGROUND_032_CAMPAIGN.md` §3. The browser host continues to
+  report `E5002`; nothing is faked.
+- **Runtime identity:** `0.3.2-dev.1` (development, selectable, not the public
+  default). `0.3.1` and all frozen artifacts are byte-identical; `v0.3.1`
+  unmoved.
+- **Exact next action:** a human reviews the two open decisions (D1 evaluator
+  ownership, D2 ABI surface) and the campaign report, then either authorizes
+  the Gateway-4 follow-up order or the promotion of the development runtime.
+  Nothing is pushed.
+
 ## ACTIVE TASK — AURA WEBSITE AUREA MIGRATION (2026-10-09, LOCAL, UNPUSHED)
 
 A full website redesign onto **Aurea** (Aura's own design system) plus a

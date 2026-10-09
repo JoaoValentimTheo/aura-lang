@@ -47,11 +47,30 @@ check(
   "docs language version agrees with the site language version",
   docs.docsLanguageVersion === site.languageVersion,
 );
-check(
-  "runtime manifest current matches the site runtime version",
-  manifest.current === site.runtimeVersion,
-  `manifest=${manifest.current} site=${site.runtimeVersion}`,
-);
+// The manifest's default is the *published* runtime, which stays the release
+// while a development line is open and unpromoted; `site.runtimeVersion`
+// tracks the runtime *crate's* current build identity, which may be a
+// development pre-release. They agree when no development line is open or once
+// a development runtime is promoted to the default (`PROMOTE_DEV_TO_DEFAULT`).
+const lineIsOpen = Boolean(site.developmentVersion);
+if (!lineIsOpen || manifest.current === site.runtimeVersion) {
+  check(
+    "runtime manifest current matches the site runtime version",
+    manifest.current === site.runtimeVersion,
+    `manifest=${manifest.current} site=${site.runtimeVersion}`,
+  );
+} else {
+  check(
+    "open line: manifest default is the published release",
+    manifest.current === site.releaseVersion,
+    `manifest=${manifest.current} release=${site.releaseVersion}`,
+  );
+  check(
+    "open line: the runtime crate identity is a development pre-release of the declared line",
+    site.runtimeVersion.startsWith(`${site.developmentVersion}-`),
+    `runtime=${site.runtimeVersion} development=${site.developmentVersion}`,
+  );
+}
 
 /* ------------------------------------------------ declared pages exist */
 const all = docs.allDocs();

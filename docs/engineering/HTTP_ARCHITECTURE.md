@@ -140,3 +140,40 @@ throttled to ~30 s for processes other than the allowlisted `curl`/`node`
 therefore cannot complete here; that is an environment fact, not a repository
 defect. The deterministic layer exercises the identical Aura-side code path
 with the identical response bytes.
+
+## 8. Native foundations repaired (0.3.2 development)
+
+Four verified defects in the native path were reproduced and fixed in this
+campaign. The public response shape change is **additive only**: no existing
+key changed meaning, so no compatibility decision is required.
+
+- **Outgoing headers are applied.** `HttpRequest.headers` was populated by the
+  stdlib but never applied to the outgoing `ureq` request, so a program that
+  set headers silently sent none. The dispatch now applies every header in
+  order; `tests/http.rs::outgoing_request_headers_reach_the_wire` captures the
+  raw request on a loopback socket and asserts the header is on the wire.
+
+- **Binary-safe body.** The response body was decoded with
+  `String::from_utf8_lossy`, silently corrupting non-UTF-8 payloads.
+  `HttpResponse` now carries `body_bytes: Vec<u8>` (authoritative) alongside
+  the `body` text view. Aura sees `body_bytes` (a `[int]` of 0..=255) and
+  `body` (the text convenience). `body_bytes_is_the_exact_binary_payload`
+  pins a payload with bytes ≥ 0x80.
+
+- **Repeated headers preserved.** The old conversion comma-joined every
+  duplicate, which is wrong for `Set-Cookie`. `headers` now maps a name
+  occurring once to its value and a name occurring more than once to a
+  **list** of every occurrence in order; a new `header_lines` list preserves
+  the exact wire order and casing. `repeated_headers_are_preserved_not_comma_joined`
+  pins two `Set-Cookie` headers.
+
+- **Method/body policy reported.** A body supplied for `GET`/`HEAD` (which by
+  contract carry none) was silently discarded. It is now a caller error
+  (`E4020`), dispatched only after the check, with no request sent.
+  `DELETE` with a body uses `ureq`'s documented `force_send_body` escape
+  hatch; `POST`/`PUT`/`PATCH` always send (an empty body when none is given).
+
+The browser substrate still denies HTTP with `E5002`: browser HTTP requires the
+cross-boundary parking driver described in
+`PLAYGROUND_032_CAMPAIGN.md`, which is a pending human design decision. This
+document does not claim browser HTTP.

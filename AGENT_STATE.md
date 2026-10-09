@@ -53,6 +53,42 @@ content mirrors, and website tooling/tests only; `src/**`,
   (parses `src/stdlib/signatures.rs`), `tests/docs-consistency.test.mjs`
   (route/version/link parity, release-pinned normative links).
 
+## Aura 0.3.2 — Playground execution & browser HTTP campaign (2026-10-09)
+
+**Gate 2 (output architecture) and Gate 3 (native HTTP foundations) are
+complete locally; Gate 4 (browser HTTP) is blocked on a human ABI decision.**
+See `docs/engineering/PLAYGROUND_032_CAMPAIGN.md` for the full inventory,
+design, benchmarks and the decision package. Nothing pushed.
+
+- **Output.** `src/host.rs` gains a bounded-memory `OutputSink`
+  (`preview`/`complete`, exact retained/written/omitted accounting, UTF-8-safe
+  truncation). `BrowserHost::with_output_sink` makes a full preview
+  non-fatal; `with_stdout_limit` (the frozen-release fatal `E4020`) is
+  preserved. The reproduced defect — `for i in 0..600000 { print(i) }` →
+  `E4020` — is fixed: the run finishes `ok`, retaining 262 KiB and omitting
+  the rest (421 ms measured).
+- **Development runtime.** `0.3.2-dev.1` is built, hashed
+  (`a90ad31b…bbc4f63`), manifested as `development`, and selectable; the
+  published `0.3.1` remains the public default (`PROMOTE_DEV_TO_DEFAULT` is
+  `false`). `0.0.2`/`0.2.0`/`0.2.1`/`0.3.1` are byte-identical and `v0.3.1`
+  is unmoved.
+- **Native HTTP.** Four reproduced defects fixed: outgoing headers now reach
+  the wire (loopback-captured), the body is binary-safe (`body_bytes`,
+  additive), repeated headers are preserved (lists + `header_lines`, no
+  comma-join), and a supplied body on GET/HEAD is reported, not dropped.
+  `E5002`/`E4020`/`E4031` keep their meanings.
+- **Host effects.** `HostError::Pending`/`PendingEffect` are in place as the
+  transport foundation; the language-observable behavior is unchanged.
+- **Validation.** Rust: all-features sharded matrix 62/62 PASS; clippy `-D
+  warnings` clean on default, `http`, bare, and wasm; fmt clean; host 19/0,
+  http 16/0. Playground: manifest 88/0, cross-release 69/0 (8 runtimes),
+  differential 233/0, syntax conformance 77, b1 59/0, browser 107/0, worker
+  12/0, multi-file 42/0, cache 7/0. Website suite re-run below.
+- **Blocked (Gate 4).** Browser HTTP needs the cross-boundary parking driver
+  (D1: `Machine` owns `Interp`) and an additive ABI (D2). Presenting them
+  rather than guessing keeps ABI compatibility and the binary value model at
+  the human gate. The browser host still reports `E5002`; no faked HTTP.
+
 ### Follow-up: documentation IA + AIS/MCP section (2026-10-09, LOCAL, UNPUSHED)
 
 - Reorganized `website/content/docs.mjs` into six meaning-based groups (Getting
