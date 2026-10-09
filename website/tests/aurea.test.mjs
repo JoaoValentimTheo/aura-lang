@@ -18,6 +18,13 @@ const read = (rel) => readFileSync(join(root, rel), "utf8");
 const aurea = read("assets/aurea.css");
 const styles = read("assets/styles.css");
 const layout = read("lib/layout.mjs");
+// The Playground workbench stylesheet is the second Aurea consumer; it must
+// obey the same single-system rules (no external reference, no --md-*, no
+// magic colours outside its token block).
+const workbench = readFileSync(
+  join(root, "..", "playground", "web", "workbench.css"),
+  "utf8",
+);
 
 let passed = 0;
 let failed = 0;
@@ -76,6 +83,23 @@ check(
   !layout.includes("tokens.css"),
 );
 
+// The Playground workbench stylesheet is part of the same system.
+const wbRules = workbench.replace(/\/\*[\s\S]*?\*\//g, "");
+check("workbench.css has no --md-* tokens", materialRefs(workbench) === 0);
+check(
+  "workbench.css uses --au-* tokens",
+  wbRules.includes("var(--au-"),
+);
+check(
+  "workbench.css declares no external reference",
+  !/@import|bootstrap|tailwind|cdn|https?:\/\/|fonts\.googleapis/i.test(wbRules),
+);
+check(
+  "workbench.css has no magic colours outside tokens",
+  hexOutsideTokens(workbench) === 0,
+  `${hexOutsideTokens(workbench)} line(s)`,
+);
+
 /* -------------------------------------------------------- token presence */
 // Tokens are CSS custom properties, not magic values.
 check("defines design tokens", /--au-ink-0:/.test(aurea));
@@ -104,9 +128,17 @@ function hexOutsideTokens(css) {
   let inTokens = false;
   let offenders = 0;
   for (const line of lines) {
-    if (line.includes(":root {") || line.includes('[data-theme="light"] {')) inTokens = true;
-    else if (line.trim() === "}") inTokens = false;
-    else if (!inTokens && /#[0-9a-fA-F]{3,8}\b/.test(line)) offenders += 1;
+    // A token block opens on any `:root` or `data-theme` selector (including
+    // the Playground's `:root:not([data-theme])` OS-preference inversion).
+    if (/:root\b[^{]*\{/.test(line) || /\[data-theme[^{]*\{/.test(line)) {
+      inTokens = true;
+      // A one-line block closes on the same line.
+      if (line.includes("}")) inTokens = false;
+    } else if (line.trim() === "}") {
+      inTokens = false;
+    } else if (!inTokens && /#[0-9a-fA-F]{3,8}\b/.test(line)) {
+      offenders += 1;
+    }
   }
   return offenders;
 }

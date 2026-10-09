@@ -37,6 +37,8 @@ run("stdlib-consistency", "stdlib-consistency.test.mjs");
 run("docs-consistency", "docs-consistency.test.mjs");
 run("aurea", "aurea.test.mjs");
 run("aurea-browser", "aurea-browser.test.mjs");
+run("playground-parity", "playground-parity.test.mjs");
+run("nav-fit", "nav-fit.test.mjs");
 
 function haveDeps() {
   try {

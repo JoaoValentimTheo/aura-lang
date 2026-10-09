@@ -69,10 +69,23 @@ deployment request CSS and routes from the domain root.
 ## Playground integration
 
 The [`/playground/`](pages/playground.mjs) page reuses the validated Playground
-**unchanged**. The build copies `playground/web/` and the immutable
-`playground/runtimes/` into `dist/playground/`, so the controller's relative
-paths resolve exactly as they do for the standalone Playground. The website
-page only provides the shell; it contains no execution logic.
+execution engine **unchanged**. The build copies `playground/web/` and the
+immutable `playground/runtimes/` into `dist/playground/`, so the controller's
+relative paths resolve exactly as they do for the standalone Playground.
+
+The two entry points share **one** interface:
+
+* `playground/web/workbench.mjs` exports `workbenchMarkup()`, the single markup
+  string. The static website embeds it at build time; the standalone
+  `playground/index.html` ships an empty `<main data-playground>` and
+  `app.js` injects the same string. There is no second copy of the UI.
+* `playground/web/workbench.css` is the single workbench stylesheet, consumed by
+  both, layered on the same `--au-*` Aurea tokens as the site.
+* `website/tests/playground-parity.test.mjs` asserts the two shells stay in
+  sync (ids, stylesheet, and token parity); `nav-fit.test.mjs` proves the app
+  bar stays a single row across a width sweep.
+
+The website page provides the shell and no execution logic.
 
 ## Hosting
 
