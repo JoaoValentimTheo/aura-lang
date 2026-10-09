@@ -1,4 +1,4 @@
-import { url, icon, codeBlock, pageHead, dataTable } from "../lib/components.mjs";
+import { url, icon, codeBlock, pageHead, dataTable, callout } from "../lib/components.mjs";
 
 export const toolsPage = {
   key: "tools",
@@ -73,6 +73,8 @@ $ aura eval 'print(1 + 2)'
         ["Stable <code>E####</code> diagnostics", "Available"],
         ["Scripting I/O and arguments", "Available"],
         ["Browser Playground (WebAssembly, multi-file projects)", "Available"],
+        ["AIS/0.1 semantic interface (<code>aura ais</code>)", "Available"],
+        ["MCP adapter over stdio (<code>aura mcp</code>)", "Available"],
         ["Language server / LSP", "Not yet"],
         ["Debugger / step execution", "Not yet"],
         ["Package manager", "Not yet"],
@@ -82,9 +84,14 @@ $ aura eval 'print(1 + 2)'
     )}
     <div class="hero__actions" style="margin-top:var(--au-space-6)">
       <a class="btn btn--filled" href="${url("playground/", base)}">${icon("play")} Open the Playground</a>
-      <a class="btn btn--outlined" href="${url("docs/cli/", base)}">CLI reference</a>
-      <a class="btn btn--text" href="${url("docs/repl/", base)}">REPL reference</a>
+      <a class="btn btn--outlined" href="${url("docs/ais/", base)}">AIS documentation</a>
+      <a class="btn btn--outlined" href="${url("docs/mcp/", base)}">MCP adapter</a>
+      <a class="btn btn--text" href="${url("docs/cli/", base)}">CLI reference</a>
     </div>
+    ${callout(
+      "note",
+      "<p><strong>Semantic tooling.</strong> AIS/0.1 exposes the compiler's proved semantic facts as stable machine-readable JSON; the MCP adapter transports that same data over JSON-RPC 2.0. Neither is a second compiler or a model provider — the compiler stays the semantic authority. Both require the <code>json</code> feature (default).</p>",
+    )}
   </div>
 </section>`;
   },

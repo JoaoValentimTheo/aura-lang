@@ -577,6 +577,12 @@
   margin-bottom: var(--au-space-2);
 }
 
+/* A documentation-index card that carries a one-line summary (the semantic
+ * tooling group), set apart by an accent edge rather than a new component. */
+.docs-index__highlight {
+  border-color: var(--au-accent);
+}
+
 .card p:last-child {
   margin-bottom: 0;
 }

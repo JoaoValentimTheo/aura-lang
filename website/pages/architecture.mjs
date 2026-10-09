@@ -140,6 +140,61 @@ export const architecturePage = {
     )}
     <a class="eyebrow-link" href="${url("tools/", base)}">Tools &amp; CLI →</a>
   </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div class="section__head">
+      <span class="section__eyebrow">Semantic boundary</span>
+      <h2>The compiler, AIS, and MCP</h2>
+      <p class="section__lede">The compiler is the single semantic authority.
+      AIS/0.1 is a stable projection of what it proved; the MCP adapter
+      transports that projection. Neither defines meaning, and neither reaches
+      past the host boundary.</p>
+    </div>
+    <div class="grid grid--2">
+      <div>
+        ${codeBlock({
+          source: `Aura source
+    │
+    ▼
+lexer / parser / checker / module system
+    │
+    ▼
+compiler semantic model      ← authority
+    │
+    ├─ DX  (human)   → colored diagnostics, REPL, Playground
+    │
+    └─ AIX (machine) → AIS/0.1
+                          ├── aura ais   (snapshot / slice / delta)
+                          └── aura mcp   (JSON-RPC 2.0 transport)
+
+Neither AIS nor MCP grants a Host capability.`,
+          title: "semantics.txt",
+          base,
+        })}
+      </div>
+      <div class="prose">
+        <h2>Two projections of one truth</h2>
+        <p>The human <strong>DX</strong> renderer and the machine <strong>AIX</strong>
+        payload read the same semantic facts. A diagnostic's colour and prose are
+        a rendering; the structured code, severity, and range are the fact. A
+        tooling consumer reads the fact, never the prose.</p>
+        <h2>Transport, not authority</h2>
+        <p><a href="${url("docs/ais/", base)}">AIS/0.1</a> is the machine
+        projection the compiler emits. The
+        <a href="${url("docs/mcp/", base)}">MCP adapter</a> is a transport over
+        the same data: removing it would change no Aura semantics. The
+        dependency is one-way — <code>src/ais.rs</code> does not depend on
+        <code>src/mcp.rs</code>.</p>
+        <h2>Outside the host boundary</h2>
+        <p>Producing or consuming AIS grants no filesystem, network, Python,
+        secret, environment, or Host authority. AIS describes a program the
+        caller already submitted; it does not read the world on the caller's
+        behalf.</p>
+      </div>
+    </div>
+  </div>
 </section>`;
   },
 };

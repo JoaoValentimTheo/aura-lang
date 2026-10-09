@@ -9,6 +9,8 @@ The `aura` binary is the command-line interface.
 | `aura eval <code>` | Run a one-liner |
 | `aura repl` | Start an interactive session with persistent state |
 | `aura version` | Print the version |
+| `aura ais` | Print an AIS/0.1 semantic payload as JSON (`json` feature) |
+| `aura mcp` | Serve the AIS semantic model over MCP stdio (`json` feature) |
 
 ## `aura run`
 
@@ -43,6 +45,35 @@ aura eval 'let xs = [1, 2, 3]\nprint(len(xs))'
 
 `eval` accepts either a statement or a bare expression. It exposes standard
 input to `read_line()` but `args()` is empty.
+
+## `aura ais`
+
+Print the compiler's semantic model as an AIS/0.1 JSON document. Available when
+the binary is built with the `json` feature (part of the default feature set).
+
+```bash
+aura ais main.aura                     # a semantic snapshot
+aura ais snapshot main.aura            # the explicit equivalent
+aura ais slice main.aura mapping       # a task-focused slice [depth] [budget]
+aura ais delta before.aura after.aura  # declaration-level changes
+aura ais -                             # read source from stdin
+```
+
+A snapshot is emitted even when the source is rejected — the `diagnostics`
+array carries the findings, and the exit code is non-zero so a caller can
+branch without parsing the document. See the
+[AIS documentation](/docs/ais/) for the schema.
+
+## `aura mcp`
+
+Serve the same semantic model over the MCP stdio transport (newline-delimited
+JSON-RPC 2.0). Takes no arguments.
+
+```bash
+aura mcp
+```
+
+See the [MCP adapter documentation](/docs/mcp/) for the tools and resources.
 
 ## Exit codes
 
