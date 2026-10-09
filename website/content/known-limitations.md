@@ -88,8 +88,10 @@ is.
   work beyond it still includes the HTTP standard-library expansion (sessions,
   cookies, streaming, uploads) and local macOS CI consolidation.
 - Browser HTTP is **not** available on the frozen `0.3.1` Playground runtime:
-  a program calling `http_get`/`http_request` there reports `E5002`
-  (unavailable capability). Only the development runtime performs browser HTTP.
+  its builtin registry predates the HTTP surface, so a call to
+  `http_get`/`http_request` is a compile-time `E2003` (undefined name) and no
+  request is possible. Only the development runtime performs browser HTTP, and
+  only after per-origin consent.
 - Released runtime artifacts are immutable; fixes ship as a new version.
 - Semantics may still change before 1.0, always with an ADR and a migration
   note.

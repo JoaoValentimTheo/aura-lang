@@ -41,13 +41,15 @@ and arguments. Filesystem, clock, and sleep are **unavailable** and report
 | `args` | reads the Arguments box (one per line) |
 | `read_file` / `write_file` | `E5002` |
 | `time_now` / `time_unix` / `sleep_ms` | `E5002` |
-| `http_get` / `http_request` | `E5002` on the released `0.3.1` runtime; **available on the `0.3.2` development runtime** behind a per-origin permission prompt |
+| `http_get` / `http_request` | not registered on the released `0.3.1` runtime (a call is `E2003`, undefined name); **available on the `0.3.2` development runtime** behind a per-origin permission prompt |
 
 ### Browser HTTP (development runtime)
 
-The published `0.3.1` runtime has **no** browser network authority: an HTTP
-call there reports `E5002`. The development runtime (`0.3.2-dev.5`, Host ABI 2)
-adds it through an **experimental permission model**:
+The published `0.3.1` runtime predates the HTTP builtin surface, so
+`http_get`/`http_request` are not registered there and a call is a compile-time
+`E2003` (undefined name) — no request is possible. The development runtime
+(`0.3.2-dev.5`, Host ABI 2) adds them through an **experimental permission
+model**:
 
 * Network is **off by default**. Each request asks the page to authorize a
   **specific origin**, and nothing is dispatched until you allow it.

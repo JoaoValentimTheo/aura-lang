@@ -169,6 +169,28 @@ async function runWithHttp(source, { grant = true } = {}) {
   check("correct resume after stale succeeds", good.result.status === "ok", JSON.stringify(good.result));
 }
 
+
+// The frozen 0.3.1 runtime predates the HTTP builtin surface: a call to
+// `http_get` is a compile-time E2003 (undefined name), never a request and
+// never a pending effect. This pins the documented fact so it cannot drift.
+{
+  const frozen = await AuraRuntime.fromBytes(
+    readFileSync(join(repo, "runtimes/0.3.1/aura_playground_runtime.wasm")),
+    "0.3.1",
+  );
+  check("frozen 0.3.1 has no session surface", frozen.supportsSessions === false);
+  const r = frozen.run('fn main() { let x = http_get("https://example.test/")\n print(x) }', {
+    args: [],
+    stdin: null,
+  });
+  const codes = (r.diagnostics || []).map((d) => d.codeText || d.code_text || "");
+  check(
+    "frozen 0.3.1 reports E2003 for http_get (no such builtin)",
+    r.status !== "ok" && codes.some((c) => /E2003/.test(String(c))),
+    JSON.stringify({ status: r.status, codes }),
+  );
+}
+
 server.close();
 console.log(`\nsession-http: ${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
