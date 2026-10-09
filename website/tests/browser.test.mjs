@@ -156,21 +156,29 @@ function check(name, cond, detail) {
       const el = document.querySelector("[data-nav-toggle]");
       return el && getComputedStyle(el).display !== "none";
     });
-    // The nav collapses to a disclosure below the desktop breakpoint (the
-    // eleven-link bar overflows a single row below it).
-    const NAV_COLLAPSE = 1240;
+    // Below the measured-fit breakpoint the inline set and the More menu
+    // collapse into the compact disclosure.
+    const NAV_COLLAPSE = 900;
     if (size.width <= NAV_COLLAPSE) {
       check(`nav toggle visible @ ${size.name}`, toggleVisible === true);
     } else {
       check(`nav toggle hidden @ ${size.name}`, toggleVisible === false);
     }
-    // Mobile nav opens.
+    // The compact navigation opens and exposes every destination.
     if (size.width <= NAV_COLLAPSE) {
       await page.click("[data-nav-toggle]");
-      const open = await page.evaluate(
-        () => document.getElementById("primary-nav").getAttribute("data-open"),
-      );
-      check(`mobile nav opens @ ${size.name}`, open === "true");
+      const open = await page.evaluate(() => {
+        const nav = document.getElementById("compact-nav");
+        return {
+          hidden: nav.hidden,
+          expanded: document
+            .querySelector("[data-nav-toggle]")
+            .getAttribute("aria-expanded"),
+          links: nav.querySelectorAll("a[href]").length,
+        };
+      });
+      check(`compact nav opens @ ${size.name}`, open.hidden === false && open.expanded === "true");
+      check(`compact nav lists every destination @ ${size.name}`, open.links >= 13, String(open.links));
     }
     // Docs pages must not overflow either.
     if (size.name === "mobile") {
@@ -397,6 +405,10 @@ function check(name, cond, detail) {
   // where there is an editing reason to intercept the key.
   const activeId = () =>
     page.evaluate(() => document.activeElement?.id || document.activeElement?.tagName || "");
+  // The Escape-from-editor target is the primary toolbar control. The redesign
+  // places Run and the Find toggle in the workbench toolbar; either is an
+  // acceptable actionable destination.
+  const ACTIONABLE = ["run", "stop", "version", "search-toggle"];
   await page.fill("#source", "");
   await page.focus("#source");
   await page.keyboard.press("Tab");
@@ -427,16 +439,21 @@ function check(name, cond, detail) {
   const afterEscape = await activeId();
   check("Escape leaves the editor for a toolbar control", afterEscape !== "source", afterEscape);
 
-  // From the version combobox a keyboard user can reach the editor and then an
-  // actionable control without the mouse.
+  // The toolbar is keyboard reachable and the editor follows the controls.
   await page.focus("#version");
-  await page.keyboard.press("Tab");
-  check("Tab from the combobox reaches the editor", (await activeId()) === "source");
+  const afterCombobox = await (async () => {
+    for (let i = 0; i < 8; i += 1) {
+      await page.keyboard.press("Tab");
+      if ((await activeId()) === "source") return "source";
+    }
+    return await activeId();
+  })();
+  check("Tab reaches the editor from the toolbar", afterCombobox === "source", afterCombobox);
   await page.keyboard.press("Escape");
   const reachable = await activeId();
   check(
     "editor focus can reach an actionable control",
-    reachable === "run" || reachable === "stop" || reachable === "version",
+    ACTIONABLE.includes(reachable),
     reachable,
   );
 
@@ -786,7 +803,7 @@ function check(name, cond, detail) {
     { timeout: 30000 },
   );
   const m = await page.evaluate(() => {
-    const pane = document.querySelector(".pg-pane");
+    const pane = document.querySelector(".wb-editor");
     const out = document.getElementById("stdout");
     out.scrollTop = out.scrollHeight;
     return {

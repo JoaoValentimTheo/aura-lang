@@ -42,6 +42,12 @@ export const site = {
 };
 
 // Primary navigation. `key` links a nav entry to page metadata.
+//
+// This array is the *single* source of truth for the destination set. The app
+// bar derives every navigation surface from it — the wide inline bar, the
+// "More" menu, and the compact dropdown — so no two navigation surfaces can
+// drift apart. `navPrimary` selects the restrained set rendered inline on wide
+// layouts; `navGroups` labels the remaining destinations in the overflow menu.
 export const nav = [
   { key: "home", label: "Home", href: "" },
   { key: "learn", label: "Learn", href: "learn/" },
@@ -56,6 +62,21 @@ export const nav = [
   { key: "roadmap", label: "Roadmap", href: "roadmap/" },
   { key: "releases", label: "Releases", href: "releases/" },
   { key: "about", label: "About", href: "about/" },
+];
+
+// The restricted set shown inline when there is room; everything else lives in
+// the accessible "More" menu. Both derive from `nav` above.
+export const navPrimary = ["learn", "language", "docs", "playground", "examples"];
+
+// Grouping for the overflow/mobile menus. This must cover every `key` in
+// `nav`, so that the compact menu lists every destination exactly once. The
+// "More" menu is derived from the same groups minus the inline set, so no
+// destination is duplicated across surfaces and none is dropped.
+export const navGroups = [
+  { title: "Overview", keys: ["home", "learn", "language"] },
+  { title: "Language", keys: ["stdlib", "examples", "docs"] },
+  { title: "Platform", keys: ["playground", "runtime", "architecture", "tools"] },
+  { title: "Project", keys: ["roadmap", "releases", "about"] },
 ];
 
 // Footer grouping for a denser set of links.

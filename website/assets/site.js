@@ -64,32 +64,78 @@ function safeSet(key, value) {
   }
 }
 
-/* ------------------------------------------------------------- mobile nav */
+/* --------------------------------------------------------- navigation */
+//
+// Two navigation surfaces share one destination source (the generated markup):
+//
+//   * the wide layout shows a restrained inline set plus a "More" menu that
+//     holds every remaining destination, grouped; and
+//   * the compact layout shows a single disclosure holding every destination.
+//
+// Both are driven here so the interaction contract (aria-expanded, Escape,
+// outside-click dismissal, focus return) is identical and cannot drift.
+
+// The "More" overflow menu (wide layouts).
+for (const menu of document.querySelectorAll("[data-nav-menu]")) {
+  const trigger = menu.querySelector("[data-nav-menu-trigger]");
+  const popup = menu.querySelector(".nav-menu__popup");
+  if (!trigger || !popup) continue;
+
+  const setOpen = (open) => {
+    popup.hidden = !open;
+    trigger.setAttribute("aria-expanded", String(open));
+    menu.setAttribute("data-open", String(open));
+  };
+
+  trigger.addEventListener("click", () => {
+    setOpen(popup.hidden);
+  });
+  // Close on navigation.
+  popup.addEventListener("click", (e) => {
+    if (e.target.closest("a")) setOpen(false);
+  });
+  // Close on outside click.
+  document.addEventListener("click", (e) => {
+    if (!menu.contains(e.target)) setOpen(false);
+  });
+  // Escape closes and returns focus to the trigger; a focus move outside the
+  // menu also closes it, so it can never trap focus.
+  menu.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      setOpen(false);
+      trigger.focus();
+    }
+  });
+  menu.addEventListener("focusout", (e) => {
+    if (!menu.contains(e.relatedTarget)) setOpen(false);
+  });
+}
+
+// The compact disclosure (narrow layouts).
 for (const toggle of document.querySelectorAll("[data-nav-toggle]")) {
   const nav = document.getElementById(toggle.getAttribute("aria-controls"));
   const openIcon = toggle.querySelector("[data-nav-icon-open]");
   const closeIcon = toggle.querySelector("[data-nav-icon-close]");
   if (!nav) continue;
+  const setOpen = (open) => {
+    nav.hidden = !open;
+    nav.setAttribute("data-open", String(open));
+    toggle.setAttribute("aria-expanded", String(open));
+    toggle.setAttribute("aria-label", open ? "Close navigation menu" : "Open navigation menu");
+    if (openIcon) openIcon.hidden = open;
+    if (closeIcon) closeIcon.hidden = !open;
+  };
+  setOpen(false);
   toggle.addEventListener("click", () => {
-    const open = nav.getAttribute("data-open") === "true";
-    nav.setAttribute("data-open", String(!open));
-    toggle.setAttribute("aria-expanded", String(!open));
-    if (openIcon) openIcon.hidden = !open;
-    if (closeIcon) closeIcon.hidden = open;
+    setOpen(nav.hidden);
   });
-  // Close on navigation and on Escape.
+  // Close on navigation and on Escape (returning focus to the toggle).
   nav.addEventListener("click", (e) => {
-    if (e.target.closest("a")) {
-      nav.setAttribute("data-open", "false");
-      toggle.setAttribute("aria-expanded", "false");
-      if (openIcon) openIcon.hidden = false;
-      if (closeIcon) closeIcon.hidden = true;
-    }
+    if (e.target.closest("a")) setOpen(false);
   });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && nav.getAttribute("data-open") === "true") {
-      nav.setAttribute("data-open", "false");
-      toggle.setAttribute("aria-expanded", "false");
+    if (e.key === "Escape" && !nav.hidden) {
+      setOpen(false);
       toggle.focus();
     }
   });

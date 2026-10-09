@@ -128,10 +128,12 @@
 }
 
 .app-bar__inner {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: var(--au-space-4);
+  gap: var(--au-space-3);
   min-height: 60px;
+  min-width: 0;
 }
 
 .brand {
@@ -177,31 +179,55 @@
   border-radius: var(--au-radius-full);
 }
 
+/* ---------------------------------------------------------- navigation
+ *
+ * The bar keeps a single row at every width. It renders a restrained inline
+ * set plus a grouped "More" menu; below the width where those no longer fit,
+ * the inline set and More collapse into one compact disclosure. The brand and
+ * the utilities (GitHub, theme) are always visible in the closed bar.
+ */
 .nav {
   display: flex;
   align-items: center;
   gap: 2px;
   margin-left: auto;
-  flex-wrap: nowrap;
+  min-width: 0;
 }
 
-.nav a {
-  display: inline-block;
-  padding: var(--au-space-2) var(--au-space-2);
+.nav__inline {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.nav a,
+.nav-menu__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--au-space-1);
+  padding: var(--au-space-2) var(--au-space-3);
   border-radius: var(--au-radius-sm);
-  font-size: 0.8125rem;
+  font-size: var(--au-type-small);
   font-weight: 550;
   white-space: nowrap;
   color: var(--au-text-muted);
   text-decoration: none;
+  background: transparent;
+  border: 0;
   border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-family: inherit;
   transition: color var(--au-motion-fast) var(--au-ease),
-    border-color var(--au-motion-fast) var(--au-ease);
+    border-color var(--au-motion-fast) var(--au-ease),
+    background var(--au-motion-fast) var(--au-ease);
 }
 
-.nav a:hover {
+.nav a:hover,
+.nav-menu__trigger:hover {
   color: var(--au-text-strong);
   text-decoration: none;
+  background: var(--au-ink-2);
 }
 
 .nav a[aria-current="page"] {
@@ -209,28 +235,163 @@
   border-bottom-color: var(--au-accent);
 }
 
-.nav > a:last-of-type {
+/* The More trigger carries an accent when the current page lives inside it. */
+.nav-menu[data-has-current="true"] .nav-menu__trigger {
+  color: var(--au-accent-strong);
+  border-bottom-color: var(--au-accent);
+}
+
+.nav-menu {
+  position: relative;
+  margin-left: var(--au-space-2);
+  padding-left: var(--au-space-2);
+  border-left: 1px solid var(--au-line);
+}
+
+.nav-menu__caret {
   display: inline-grid;
   place-items: center;
-  padding: var(--au-space-2);
+  transition: transform var(--au-motion-fast) var(--au-ease);
+}
+
+.nav-menu__caret svg {
+  width: 14px;
+  height: 14px;
+}
+
+.nav-menu[data-open="true"] .nav-menu__caret {
+  transform: rotate(180deg);
+}
+
+.nav-menu__popup {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 120;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: var(--au-space-5);
+  min-width: 480px;
+  padding: var(--au-space-4);
+  background: var(--au-ink-2);
+  border: 1px solid var(--au-line-strong);
+  border-radius: var(--au-radius-md);
+  box-shadow: 0 18px 40px rgb(0 0 0 / 0.35);
+}
+
+.nav-menu__popup[hidden] {
+  display: none;
+}
+
+.nav-menu__heading,
+.nav-compact__heading {
+  margin-bottom: var(--au-space-2);
+  font-size: var(--au-type-label);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--au-text-muted);
+}
+
+.nav-menu__popup ul,
+.nav-compact ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.nav-menu__popup a {
+  display: block;
+  padding: var(--au-space-2) var(--au-space-3);
+  border-radius: var(--au-radius-sm);
+  font-size: var(--au-type-small);
+  color: var(--au-text);
+}
+
+.nav-menu__popup a:hover {
+  background: var(--au-ink-3);
+}
+
+.nav-menu__popup a[aria-current="page"] {
+  color: var(--au-accent-strong);
+  background: var(--au-ink-3);
+  border-bottom-color: transparent;
+}
+
+.app-bar__utils {
+  display: flex;
+  align-items: center;
+  gap: var(--au-space-1);
+  margin-left: auto;
 }
 
 .nav-toggle {
   display: none;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   border: 1px solid var(--au-line);
   border-radius: var(--au-radius-sm);
   background: transparent;
   color: var(--au-text);
   cursor: pointer;
-  margin-left: auto;
 }
 
 .nav-toggle:hover {
   background: var(--au-ink-2);
+}
+
+/* The compact disclosure: full width, below the bar, grouped. */
+.nav-compact {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  z-index: 110;
+  max-height: calc(100vh - 60px);
+  overflow-y: auto;
+  padding: var(--au-space-4) 0 var(--au-space-5);
+  background: var(--au-ink-1);
+  border-bottom: 1px solid var(--au-line);
+  box-shadow: 0 18px 40px rgb(0 0 0 / 0.3);
+}
+
+.nav-compact[hidden] {
+  display: none;
+}
+
+.nav-compact__group {
+  margin-bottom: var(--au-space-4);
+}
+
+.nav-compact__group ul {
+  display: grid;
+  gap: 2px;
+}
+
+.nav-compact__group a {
+  display: block;
+  padding: var(--au-space-3);
+  border-radius: var(--au-radius-sm);
+  font-size: var(--au-type-small);
+  color: var(--au-text);
+}
+
+.nav-compact__group a:hover {
+  background: var(--au-ink-2);
+}
+
+.nav-compact__group a[aria-current="page"] {
+  background: var(--au-ink-3);
+  color: var(--au-accent-strong);
+}
+
+.nav-compact__utils {
+  display: flex;
+  gap: var(--au-space-2);
+  padding-top: var(--au-space-2);
+  border-top: 1px solid var(--au-line);
 }
 
 .icon-btn {
@@ -1100,442 +1261,61 @@ table.data tr:last-child td {
   color: var(--au-accent);
 }
 
-/* --------------------------------------------------------- playground */
-.pg-workbench {
-  display: grid;
-  grid-template-columns: 210px minmax(0, 1.1fr) minmax(0, 1fr);
-  gap: var(--au-space-4);
-  padding: var(--au-space-4) 0 var(--au-space-10);
-  min-height: 72vh;
-  align-items: stretch;
-}
-
-.pg-pane,
-.pg-explorer {
+/* --------------------------------------------------------- playground
+ *
+ * The Playground *workbench* (explorer, editor, output) is a shared stylesheet
+ * (`playground/web/workbench.css`) loaded only by the Playground page, so both
+ * entry points render one interface. These rules cover the page chrome the
+ * website adds around that workbench. */
+.playground-head {
   display: flex;
-  flex-direction: column;
-  gap: var(--au-space-3);
-  background: var(--au-ink-1);
-  border: 1px solid var(--au-line);
-  border-radius: var(--au-radius-lg);
-  padding: var(--au-space-4);
-  min-height: 0;
-  height: min(78vh, 760px);
-  overflow: hidden;
-}
-
-.pg-explorer {
-  padding: var(--au-space-3);
-  gap: var(--au-space-1);
-}
-
-@media (max-height: 560px) {
-  .pg-pane,
-  .pg-explorer {
-    height: auto;
-    min-height: 0;
-    overflow: visible;
-  }
-  .pg-stdout,
-  .pg-diagnostics {
-    max-height: 240px;
-  }
-}
-
-.pg-pane__head {
-  display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: var(--au-space-3);
+  gap: var(--au-space-6);
   flex-wrap: wrap;
+  padding: var(--au-space-8) 0 var(--au-space-5);
 }
 
-.pg-pane__head h2 {
-  margin: 0;
-  font-size: var(--au-type-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--au-text-muted);
+.playground-head h1 {
+  margin-bottom: var(--au-space-2);
 }
 
-.pg-explorer__group {
-  overflow: auto;
+.playground-head p {
+  max-width: var(--au-prose);
+  margin-bottom: 0;
 }
 
-.pg-explorer__label {
-  font-size: var(--au-type-label);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--au-text-muted);
-  padding: var(--au-space-2);
-}
-
-.pg-explorer__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.playground-head__links {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.pg-actions {
-  display: flex;
-  gap: var(--au-space-2);
-  margin-left: auto;
-}
-
-/* The file strip scrolls horizontally rather than wrapping, so a project with
-   many files never pushes the editor actions out of reach. */
-.file-tabs {
-  display: flex;
-  gap: var(--au-space-1);
-  align-items: center;
-  flex: 1 1 14rem;
-  min-width: 11rem;
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
-
-.file-actions {
-  display: flex;
-  gap: var(--au-space-1);
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.file-actions .btn {
-  font-size: var(--au-type-label);
-  padding: 0 var(--au-space-2);
-  text-transform: none;
-  letter-spacing: 0;
-}
-
-.file-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--au-space-1);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.file-tab__entry {
-  color: var(--au-accent);
-  font-size: var(--au-type-label);
-}
-
-.file-tab[aria-selected="true"] .file-tab__entry {
-  color: var(--au-accent-strong);
-}
-
-.project-note {
-  padding: var(--au-space-1) var(--au-space-3);
-  font-size: var(--au-type-xs);
-  color: var(--au-text-muted);
-  background: var(--au-ink-3);
-  border-radius: var(--au-radius-sm);
-}
-
-.project-note[hidden] {
-  display: none;
-}
-
-/* explorer items are buttons rendered by the controller */
-.pg-explorer__list .explorer__item {
-  display: block;
-  width: 100%;
-  text-align: left;
-  font: inherit;
-  font-size: var(--au-type-small);
-  padding: var(--au-space-2) var(--au-space-3);
-  border: 0;
-  border-radius: var(--au-radius-sm);
-  background: transparent;
-  color: var(--au-text);
-  cursor: pointer;
-}
-
-.pg-explorer__list .explorer__item:hover {
-  background: var(--au-ink-3);
-}
-
-.pg-explorer__list .explorer__item[aria-current="true"] {
-  background: var(--au-accent-dim);
-  color: var(--au-accent-strong);
-}
-
-.pg-editor__tabs {
-  display: flex;
-  align-items: center;
   gap: var(--au-space-2);
   flex-wrap: wrap;
 }
 
-.pg-editor__tabs .tab {
-  font: inherit;
-  font-size: var(--au-type-xs);
-  padding: var(--au-space-1) var(--au-space-3);
+/* The workbench on the website is wrapped by this page, which already supplies
+ * the page container; the shared stylesheet supplies the grid itself. */
+.workbench {
+  scroll-margin-top: 76px;
+}
+
+.about-disclosure {
   border: 1px solid var(--au-line);
-  border-radius: var(--au-radius-sm);
-  background: transparent;
-  color: var(--au-text-muted);
-  cursor: pointer;
+  border-radius: var(--au-radius-md);
+  background: var(--au-ink-1);
+  padding: var(--au-space-4) var(--au-space-5);
 }
 
-.pg-editor__tabs .tab--active,
-.pg-editor__tabs .tab[aria-selected="true"] {
-  background: var(--au-ink-3);
+.about-disclosure summary {
+  cursor: pointer;
+  font-weight: 600;
   color: var(--au-text-strong);
-  font-weight: 650;
-  border-color: var(--au-line-strong);
 }
 
-.pg-editor__tabs .tab__count {
-  opacity: 0.8;
+.about-disclosure[open] summary {
+  margin-bottom: var(--au-space-4);
 }
 
-.pg-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--au-space-1);
-}
-
-.pg-field label {
-  font-size: var(--au-type-xs);
-  color: var(--au-text-muted);
-}
-
-.pg-field textarea,
-.pg-field select {
-  font-family: var(--au-font-mono);
-  font-size: var(--au-type-small);
-  padding: var(--au-space-2) var(--au-space-3);
-  border-radius: var(--au-radius-sm);
-  border: 1px solid var(--au-line-strong);
-  background: var(--au-ink-0);
-  color: var(--au-text);
-}
-
-/* Overlay editor: a transparent textarea over a highlighted <pre>. */
-.pg-editor-wrap {
-  flex: 1;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  min-height: 280px;
-  border-radius: var(--au-radius-md);
-  border: 1px solid var(--au-line-strong);
-  background: var(--au-code-bg);
-  overflow: hidden;
-}
-
-.pg-editor__gutter {
-  margin: 0;
-  padding: var(--au-space-3) var(--au-space-2) var(--au-space-3) var(--au-space-3);
-  overflow: hidden;
-  text-align: right;
-  font-family: var(--au-font-mono);
-  font-size: var(--au-type-small);
-  line-height: 1.6;
-  color: var(--au-text-muted);
-  border-right: 1px solid var(--au-line);
-  user-select: none;
-}
-
-.pg-editor__scroll {
-  position: relative;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.pg-editor__highlight,
-.pg-editor__input {
-  position: absolute;
-  inset: 0;
-  margin: 0;
-  padding: var(--au-space-3);
-  font-family: var(--au-font-mono);
-  font-size: var(--au-type-small);
-  line-height: 1.6;
-  tab-size: 4;
-  white-space: pre;
-  overflow: auto;
-  border: 0;
-}
-
-.pg-editor__highlight {
-  pointer-events: none;
-  color: var(--au-text);
-  background: transparent;
-  z-index: 0;
-}
-
-.pg-editor__highlight::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: var(--current-line-top, -9999px);
-  height: var(--current-line-height, 0);
-  background: color-mix(in srgb, var(--au-accent) 12%, transparent);
-  pointer-events: none;
-}
-
-.pg-editor__input {
-  resize: none;
-  color: transparent;
-  caret-color: var(--au-accent-strong);
-  background: transparent;
-  z-index: 1;
-}
-
-.pg-editor__input::selection {
-  background: color-mix(in srgb, var(--au-accent) 35%, transparent);
-}
-
-.pg-inputs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--au-space-3);
-}
-
-.pg-inputs textarea {
-  min-height: 64px;
-  resize: vertical;
-  font-family: var(--au-font-mono);
-  font-size: var(--au-type-xs);
-  padding: var(--au-space-2);
-  border-radius: var(--au-radius-sm);
-  border: 1px solid var(--au-line-strong);
-  background: var(--au-ink-0);
-  color: var(--au-text);
-}
-
-.status {
-  font-size: var(--au-type-xs);
-  font-weight: 650;
-  color: var(--au-text-muted);
-  margin-left: auto;
-}
-
-.pg-statusbar {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.status.ok {
-  color: var(--au-help);
-}
-.status.error {
-  color: var(--au-error);
-}
-
-.pg-panel {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.pg-panel[hidden] {
-  display: none;
-}
-
-.pg-stdout {
-  flex: 1;
-  overflow: auto;
-  margin: 0;
-  padding: var(--au-space-3);
-  border-radius: var(--au-radius-md);
-  background: var(--au-code-bg);
-  border: 1px solid var(--au-code-border);
-  font-family: var(--au-font-mono);
-  font-size: var(--au-type-xs);
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
-  min-height: 120px;
-}
-
-.pg-diagnostics {
-  flex: 1;
-  overflow: auto;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: var(--au-space-2);
-}
-
-.pg-diagnostics li {
-  border-radius: var(--au-radius-md);
-  background: var(--au-error-bg);
-  color: var(--au-error);
-  font-size: var(--au-type-xs);
-  overflow: hidden;
-}
-
-.pg-diagnostics .problem__head {
-  display: flex;
-  align-items: center;
-  gap: var(--au-space-2);
-  width: 100%;
-  font: inherit;
-  padding: var(--au-space-2) var(--au-space-3);
-  border: 0;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  text-align: left;
-}
-
-.pg-diagnostics .problem__head:hover {
-  background: color-mix(in srgb, var(--au-error) 10%, transparent);
-}
-
-.pg-diagnostics .problem__msg {
-  padding: 0 var(--au-space-3) var(--au-space-3);
-  color: var(--au-text);
-}
-
-.pg-diagnostics li.empty {
-  background: var(--au-ink-3);
-  color: var(--au-text-muted);
-  padding: var(--au-space-3);
-}
-
-.pg-diagnostics .diag-code {
-  font-family: var(--au-font-mono);
-  font-weight: 700;
-}
-
-.pg-diagnostics .diag-loc {
-  font-family: var(--au-font-mono);
-  opacity: 0.75;
-}
-
-.pg-diagnostics .diag-phase {
-  margin-left: auto;
-  font-size: var(--au-type-label);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  opacity: 0.75;
-}
-
-.pg-note {
-  padding: var(--au-space-3);
-  border-radius: var(--au-radius-md);
-  background: var(--au-ink-2);
-  border: 1px solid var(--au-line);
-  color: var(--au-text-muted);
-  font-size: var(--au-type-xs);
-}
-
-.pg-versions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--au-space-2);
-  align-items: center;
+.about-disclosure .prose {
+  max-width: var(--au-measure);
 }
 
 /* ------------------------------------------------------ responsive */
@@ -1565,48 +1345,22 @@ table.data tr:last-child td {
   .footer-grid {
     grid-template-columns: 1fr 1fr;
   }
-  .pg-workbench {
-    grid-template-columns: 1fr;
-  }
 }
 
-/* The navigation collapses to a disclosure before it can overflow. The bar
- * holds eleven links plus the brand; below this width a single row no longer
- * fits, so the toggle takes over and the links become a dropdown. */
-@media (max-width: 1240px) {
-  .nav-toggle {
-    display: inline-flex;
-  }
-
+/* Below the width at which the inline set plus More still fit on one row, the
+ * inline navigation and the More menu collapse into a single compact
+ * disclosure. The brand, GitHub, and the theme control stay in the closed bar.
+ * The breakpoint comes from the measured width of the fixed content (brand +
+ * utilities + gaps) plus the inline set with clearance, not a historical
+ * constant; `tests/nav-fit.test.mjs` verifies the bar never wraps or overflows
+ * at the boundary and across a sweep of widths. */
+@media (max-width: 900px) {
   .nav {
     display: none;
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 60px;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0;
-    margin: 0;
-    padding: var(--au-space-3);
-    background: var(--au-ink-1);
-    border-bottom: 1px solid var(--au-line);
-    max-height: calc(100vh - 60px);
-    overflow-y: auto;
   }
 
-  .nav[data-open="true"] {
-    display: flex;
-  }
-
-  .nav a {
-    border-radius: var(--au-radius-sm);
-    padding: var(--au-space-3);
-    border-bottom: 0;
-  }
-
-  .nav a[aria-current="page"] {
-    background: var(--au-ink-3);
+  .nav-toggle {
+    display: inline-flex;
   }
 }
 
@@ -1636,10 +1390,6 @@ table.data tr:last-child td {
   .grid--2,
   .grid--3,
   .grid--4 {
-    grid-template-columns: 1fr;
-  }
-
-  .pg-inputs {
     grid-template-columns: 1fr;
   }
 
