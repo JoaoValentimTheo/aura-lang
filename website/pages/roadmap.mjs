@@ -86,10 +86,10 @@ const PHASES = [
     body: "The Keystone language release: distinct <code>List</code>/<code>Array</code>/<code>Tuple</code>/<code>Set</code>/<code>Map</code> identities with the anti-collapse rule, fixed-length contextual Arrays (<code>[T; N]</code>), the canonical type-position <code>json_decode_as(text, Type)</code>, removal of general semicolon sequencing, and parser/runtime hardening (bounded type and module nesting, bounded alias expansion, bounded grouping/f-string recursion, linear-time string lexing). Ships a new immutable <code>0.3.1</code> Playground runtime; <code>0.0.2</code>, <code>0.2.0</code>, and <code>0.2.1</code> stay frozen.",
   },
   {
-    tag: "Planned (not started)",
-    kind: "planned",
-    title: "0.3.2",
-    body: "The next line after Keystone is planned but not started: it has no artifact, version bump, or release date. Candidate work includes the deferred HTTP standard-library <em>expansion</em> (sessions, cookies, streaming, uploads — the basic feature-gated <code>http_get</code>/<code>http_request</code> already ship in 0.3.1) and local macOS CI consolidation. Nothing here is available today.",
+    tag: "In development",
+    kind: "status",
+    title: "0.3.2 · development preview",
+    body: "The next line after Keystone is under development: it has a development runtime artifact (<code>0.3.2-dev.5</code>, Host ABI 2) selectable in the Playground, but <strong>no release, version bump, or date</strong>. The development runtime adds real <strong>browser HTTP</strong> (<code>http_get</code>/<code>http_request</code> through a user-authorized, per-origin permission model) and a <strong>bounded output policy</strong> that keeps large output from failing a program. The published <code>0.3.1</code> runtime is unchanged and remains the default; nothing here is a release.",
   },
   {
     tag: "Planned (not started)",
@@ -111,7 +111,7 @@ export const roadmapPage = {
   path: "roadmap/",
   activeKey: "roadmap",
   description:
-    "The Aura roadmap: delivered infrastructure (0.0.1, 0.0.2), the completed Aura Core (0.2.0), the released 0.2.1 (filesystem modules and the multi-file Playground), the released 0.3.1 Keystone collection model, and the planned, not-yet-started 0.3.2 line.",
+    "The Aura roadmap: delivered infrastructure (0.0.1, 0.0.2), the completed Aura Core (0.2.0), the released 0.2.1 (filesystem modules and the multi-file Playground), the released 0.3.1 Keystone collection model, and the 0.3.2 development preview (an experimental runtime, not a release).",
   async render(base) {
     const items = PHASES.map(
       (p) => `<div class="card card--elevated">

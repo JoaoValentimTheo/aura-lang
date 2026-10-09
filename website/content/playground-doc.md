@@ -41,6 +41,30 @@ and arguments. Filesystem, clock, and sleep are **unavailable** and report
 | `args` | reads the Arguments box (one per line) |
 | `read_file` / `write_file` | `E5002` |
 | `time_now` / `time_unix` / `sleep_ms` | `E5002` |
+| `http_get` / `http_request` | `E5002` on the released `0.3.1` runtime; **available on the `0.3.2` development runtime** behind a per-origin permission prompt |
+
+### Browser HTTP (development runtime)
+
+The published `0.3.1` runtime has **no** browser network authority: an HTTP
+call there reports `E5002`. The development runtime (`0.3.2-dev.5`, Host ABI 2)
+adds it through an **experimental permission model**:
+
+* Network is **off by default**. Each request asks the page to authorize a
+  **specific origin**, and nothing is dispatched until you allow it.
+* A grant is scoped to one origin for the browser session: allowing one site
+  never authorizes another, and a redirect that changes origin is not followed.
+* Requests carry **no cookies and no stored credentials**
+  (`credentials: "omit"`), and use a restrictive referrer policy.
+* A denial is `E5002`; a browser CORS rejection or transport failure is
+  `E4020`. There is no proxy and no CORS bypass — the browser's own rules
+  apply.
+* Methods and options follow the language: `http_get(url)`,
+  `http_request(method, url)`, `http_request(method, url, options)` with
+  `headers`, `body`, and `timeout_ms`.
+
+This runtime is a **development preview**: it is not a release, it may change,
+and it never becomes the default on its own. The Playground labels it
+`development runtime` in the selector.
 
 ## Multi-file projects
 

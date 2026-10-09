@@ -79,10 +79,17 @@ is.
   contextual Arrays (`[T; N]`), makes `json_decode_as` take a canonical type
   position, removes general semicolon sequencing, and hardens the parser and
   runtime (see the [migration guide](/docs/migration-0-3-1/)).
-- The next line, **`0.3.2`**, is planned but **not started**: it has no
-  artifact, version bump, or release date. Candidate work includes the deferred
-  Python-style HTTP standard-library expansion and local macOS CI consolidation.
-  Nothing from it is available, and no release date is claimed.
+- The next line, **`0.3.2`**, is **in development as a preview**: it has a
+  development runtime artifact (`0.3.2-dev.5`, Host ABI 2) selectable in the
+  Playground, but **no release**, version bump, or date. The published `0.3.1`
+  runtime is the default and is unchanged. The development runtime adds real
+  browser HTTP behind an experimental per-origin permission model and a bounded
+  output policy; it is experimental and may change without notice. Candidate
+  work beyond it still includes the HTTP standard-library expansion (sessions,
+  cookies, streaming, uploads) and local macOS CI consolidation.
+- Browser HTTP is **not** available on the frozen `0.3.1` Playground runtime:
+  a program calling `http_get`/`http_request` there reports `E5002`
+  (unavailable capability). Only the development runtime performs browser HTTP.
 - Released runtime artifacts are immutable; fixes ship as a new version.
 - Semantics may still change before 1.0, always with an ADR and a migration
   note.

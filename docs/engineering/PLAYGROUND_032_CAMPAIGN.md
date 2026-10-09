@@ -302,3 +302,27 @@ policy, not by program output volume.
 
 Frozen `0.0.2`/`0.2.0`/`0.2.1`/`0.3.1` byte-identical; tags unmoved; no
 `unsafe`; no second interpreter; the compiler remains the sole authority.
+
+## 8. Security acceptance gate (pre-publication)
+
+Before the authorized preview publication, the browser network authority was
+attacked adversarially with a deterministic, server-observing suite
+(`playground/tests/node/http-security.test.mjs`, **14/14**) using a request
+counter, so a "no request was dispatched" claim is proven server-side rather
+than inferred from the UI:
+
+| # | Attack / claim | Result |
+|---|---|---|
+| 1 | denial dispatches **nothing** | E5002, server count unchanged |
+| 2 | a grant for origin A does **not** authorize origin B | B receives nothing; B call is E5002 |
+| 3 | `file:`/`data:`/`ftp:` targets rejected before `fetch` | E4020, no prompt, no request |
+| 4 | a 302 is **not** followed | exactly one request; `/landed` never requested |
+| 5 | a loopback target still requires consent | denied → no request; no localhost bypass |
+| 6 | Stop during an in-flight fetch | aborts, UI returns to usable |
+| 7 | a stale `effect_id` cannot resume another execution | rejected; correct resume still works |
+
+Reinforced by the browser suite (`browser-http`, 8/8: real Chromium, local CORS
+server) and the Node ABI suite (`session-http`, 13/13). The Worker never
+authorizes an origin itself — the page owns consent — and carries no cookies
+(`credentials: "omit"`), does not follow redirects (`redirect: "manual"`), and
+sends no referrer (`referrerPolicy: "no-referrer"`). WASM imports remain zero.

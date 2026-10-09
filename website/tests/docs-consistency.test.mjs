@@ -268,9 +268,19 @@ check(
 
 /* ------------------------------------------------ historical context */
 const known = readFileSync(join(website, "content", "known-limitations.md"), "utf8");
+// 0.3.2 is now an open development line (a selectable preview runtime), not a
+// not-started plan. The page must say so honestly: it frames 0.3.2 as a
+// development preview with no release, and it must not present the preview as
+// a released feature.
 check(
-  "known-limitations frames 0.3.2 as planned/not started",
-  /0\.3\.2/.test(known) && /(planned|not started)/i.test(known),
+  "known-limitations frames 0.3.2 as a development preview",
+  /0\.3\.2/.test(known) &&
+    /development (preview|line)|in development/i.test(known) &&
+    /no release|not a release|no release date/i.test(known),
+);
+check(
+  "known-limitations does not call the 0.3.2 preview a release",
+  !/\breleased 0\.3\.2\b/i.test(known) && !/\b0\.3\.2 release\b/i.test(known),
 );
 const migration = readFileSync(join(website, "content", "migration-0-3-1.md"), "utf8");
 check(
