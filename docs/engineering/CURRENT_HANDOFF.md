@@ -4,6 +4,33 @@ Authoritative for **the active task and the exact next action**. Current
 repository state lives in `AGENT_STATE.md`; operating rules in `AGENTS.md`.
 Keep this file short — it is read at the start of every session.
 
+## AURA 0.3.1 KEYSTONE — PUBLISHED (2026-10-08)
+
+The 0.3.1 campaign is **closed**. Aura 0.3.1 (codename Keystone) is published:
+
+- Source tag `v0.3.1` → `b09cbef2` (pushed `rewrite/v3-rust`; local = remote).
+- GitHub Release: https://github.com/JoaoValentimTheo/aura-lang/releases/tag/v0.3.1
+  with platform tarballs (Linux/Windows/macOS), the immutable
+  `aura-playground-runtime-0.3.1.wasm` (+ checksum), `release-manifest.json`,
+  and `sbom.json`.
+- Exact-SHA CI (run 37864894819): **20/20 jobs green**, including the previously
+  red `playground (wasm runtime)`.
+- Pages deploy (run 37864894705): success; live site
+  https://joaovalentimtheo.github.io/aura-lang/ serves `Aura 0.3.1 Keystone`.
+- New runtime: `0.3.1`, language `0.3.1`, codename Keystone, ABI 1, sha256
+  `96e778ae50bd261f76d49adf04b8650cc3b60678a14c0e0ac555fb54400256ab`,
+  1,951,520 bytes. Frozen `0.0.2`/`0.2.0`/`0.2.1` byte-for-byte unchanged;
+  tags `v0.0.2`/`v0.2.0`/`v0.2.1` unmoved.
+- `0.3.1` is a language release (release = language), per ADR-0001, because
+  Keystone changes observable behavior (distinct collection identities,
+  contextual Arrays, canonical type-position `json_decode_as`, no general
+  semicolon sequencing).
+
+**Exact next action:** none for 0.3.1. The campaign is frozen. The next line,
+`0.3.2`, is planned but **not started**; do not begin it (or HTTP expansion, or
+local macOS CI migration) without a separate, explicit human instruction.
+Publication of any 0.3.2 artifact requires a fresh authorization.
+
 ## Validation infrastructure (2026-10-08, local, unpushed)
 
 The pathological macOS validation wall time was **root-caused and fixed**, not

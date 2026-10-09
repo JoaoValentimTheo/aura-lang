@@ -15,11 +15,11 @@ before continuing substantial work.
   `git rev-list --left-right --count origin/rewrite/v3-rust...HEAD`.
 - Local/remote relationship: authoritative value is `git rev-list
   --left-right --count origin/rewrite/v3-rust...HEAD`; a tracked file cannot
-  safely hardcode its own position. At the 2026-10-08 validation-infrastructure
-  checkpoint the local tip is `31b49e4a`, **31 ahead / 0 behind** `b221e6a9`
-  (the typed-JSON API + its closure, plus the macOS validation-infrastructure
-  repair — see `docs/engineering/CURRENT_HANDOFF.md` "Validation
-  infrastructure"). The prior collection checkpoint was `ce8deb0a` / 25 ahead.
+  safely hardcode its own position. **Aura 0.3.1 (Keystone) is PUBLISHED.** The
+  source branch is at `b09cbef2` (tag `v0.3.1`), local = remote (`0/0`). Exact-
+  SHA CI 20/20 green; Pages deployed; GitHub Release `v0.3.1` published with
+  platform artifacts, the immutable `0.3.1` runtime, manifest, and SBOM. See
+  `docs/engineering/CURRENT_HANDOFF.md` "AURA 0.3.1 KEYSTONE — PUBLISHED".
 - **Remote CI at `b221e6a9` is RED** (run `37639795923`): the
   `playground (wasm runtime)` job fails in `b1_boundary.test.mjs` (44/19) with
   grouping/f-string `guest trap` — the exact defect fixed by the unpushed local
