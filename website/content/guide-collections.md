@@ -90,9 +90,9 @@ be key-capable scalars (`int`, `bool`, `string`), the same requirement a map
 key has. A set is not indexable.
 
 ```aura
-let ids = {1, 2, 2, 3}   # {1, 2, 3}: duplicate literal values collapse
-print(ids.has(2))        # true
-ids.add(4)               # membership mutation
+let mut ids = {1, 2, 2, 3}   # {1, 2, 3}: duplicate literal values collapse
+print(ids.has(2))            # true
+ids.add(4)                   # membership mutation requires a `mut` binding
 ```
 
 ## Maps

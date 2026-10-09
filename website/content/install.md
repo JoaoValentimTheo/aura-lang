@@ -11,7 +11,7 @@ the optional Python bridge links CPython only when you ask for it.
 * Optional: CPython for the `py` feature. Supported (CI-tested) versions are
   **3.10–3.13 on Linux**, **3.12 on macOS**, and **3.12 on Windows**; other
   3.10–3.13 lines are best-effort. See the
-  [CPython compatibility target](https://github.com/JoaoValentimTheo/aura-lang/blob/rewrite/v3-rust/docs/CPYTHON_COMPATIBILITY_TARGET.md).
+  [CPython compatibility target](https://github.com/JoaoValentimTheo/aura-lang/blob/v0.3.1/docs/CPYTHON_COMPATIBILITY_TARGET.md).
 
 ## Build from a checkout
 
@@ -69,10 +69,15 @@ cargo build --release --no-default-features --features cli,repl,json,regex,time
 |---|---|---|
 | `cli` | yes | the `aura` binary |
 | `repl` | yes | `aura repl` |
-| `json` | yes | `json_encode`, `json_decode` |
+| `json` | yes | `json_encode`, `json_decode`, `json_decode_as` |
 | `regex` | yes | `regex_match`, `regex_find`, `regex_find_all`, `regex_replace` |
 | `time` | yes | `time_now`, `time_unix`, `sleep_ms` |
 | `py` | yes | `py_eval`, `py_import`, `py_call`, `py_version` |
+| `http` | no | `http_get`, `http_request` (native-only; network is host-owned) |
+
+`http` is deliberately **not** default: it is the only feature that grows the
+native dependency tree, and a build without it has no network surface at all.
+It is unavailable in the browser Playground (`E5002`).
 
 To confirm a build links no CPython, use the pure-Rust feature set above: the
 `pyo3` crate is absent from the dependency graph and every Python builtin

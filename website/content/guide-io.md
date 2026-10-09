@@ -43,6 +43,11 @@ composed from `read_line`.
 
 ## Files
 
+Filesystem access is **native-only**. In the browser Playground there is no
+filesystem, so `read_file`/`write_file` report `E5002` (see
+[Capability availability](#capability-availability) below); the block here
+runs only on a native build.
+
 ```aura
 fn main() {
     let text = read_file("input.txt")
@@ -78,3 +83,11 @@ always available.
 | `read_file` / `write_file` | yes | `E5002` |
 | `time_now` / `time_unix` | yes | `E5002` |
 | `sleep_ms` | yes | `E5002` |
+| `http_get` / `http_request` | only with the non-default `http` feature | `E5002` |
+
+HTTP is a **feature-gated, native-only** capability: a build without
+`--features http` has no network surface at all, and network access is
+host-owned. The browser Playground has no HTTP authority. See
+[HTTP](/docs/reference-stdlib/#http-http-feature). A transport or resource
+failure is `E4020`; a typed JSON mismatch while decoding a response is
+`E4031`.

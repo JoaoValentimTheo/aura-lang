@@ -85,13 +85,18 @@ A fixed-length, immutable sequence.
 
 ### map
 
-`len` · `get(k)` · `has(k)` · `keys()` · `values()` · `remove(k)`
+`len` · `get(k)` · `has(k)` · `keys()` · `values()` · `items()` · `remove(k)`
+
+`items()` yields two-element lists `[key, value]` in ascending key order.
 
 ### range
 
 `len`
 
-## Feature-gated modules
+## Modules
+
+`json`, `regex`, and `time` are part of the default feature set; `http` is a
+separate, non-default native capability.
 
 ### json
 
@@ -119,3 +124,46 @@ A fixed-length, immutable sequence.
 | `sleep_ms` | `sleep_ms(n)` → `none` |
 
 The pattern is always the **first** argument to the regex functions.
+
+## HTTP (`http` feature)
+
+HTTP is a **feature-gated, native-only** capability (`--features http`) and is
+**not** enabled by default: it is the only feature that grows the native
+dependency tree, and a build without it has no network surface at all. Network
+access is **host-owned** — the capability lives in the host, and in the browser
+Playground there is no HTTP authority, so a call reports `E5002`.
+
+| Function | Signature | Returns |
+|---|---|---|
+| `http_get` | `http_get(url)` | `{status: int, headers: {string: string}, body: string}` |
+| `http_request` | `http_request(method, url)` | the same response map |
+| `http_request` | `http_request(method, url, options)` | the same response map |
+
+`method` is one of `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`
+(case-insensitive). `options` is a map with optional keys:
+
+* `headers` — a list of `[key, value]` string pairs;
+* `body` — the request body string (for methods that carry one);
+* `timeout_ms` — a positive integer, clamped to 30,000 ms.
+
+The response map carries `status` (`int`), `headers` (a map of lowercased
+header names to comma-joined values), and `body` (`string`).
+
+```aura
+# Only with a native build that enables the `http` feature.
+# Pass the target URL as an argument, e.g. `aura run fetch.aura <url>`.
+fn main() {
+    let resp = http_get(args()[0])
+    print(resp["status"])
+    print(resp["body"])
+}
+```
+
+A host that does not provide the capability reports `E5002`; a transport or
+resource failure is `E4020`; a typed JSON mismatch while decoding a response
+body is `E4031`.
+
+The released `0.3.1` capability is intentionally small. It does **not** include
+an `http::get` module spelling, HTTP sessions, cookie jars, streaming
+downloads, multipart uploads, or HTTP server APIs — those are future `0.3.2`
+candidates and are not available.

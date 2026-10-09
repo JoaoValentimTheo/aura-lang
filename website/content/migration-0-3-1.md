@@ -6,7 +6,7 @@ advance to `0.3.1`. This guide lists every change in observable behavior and
 what to do about it. Many programs need no changes.
 
 The version-identity model is recorded in
-[ADR-0001](https://github.com/JoaoValentimTheo/aura-lang/blob/rewrite/v3-rust/docs/adr/0001-release-vs-language-version.md):
+[ADR-0001](https://github.com/JoaoValentimTheo/aura-lang/blob/v0.3.1/docs/adr/0001-release-vs-language-version.md):
 the *release* version identifies a published artifact, the *language* version
 identifies the observable language contract, and `language <= release`.
 
@@ -103,5 +103,5 @@ Broader membership is deferred to a later release.
 ---
 
 For the full change list see the
-[`v0.3.1` release notes](https://github.com/JoaoValentimTheo/aura-lang/blob/rewrite/v3-rust/docs/release-notes/v0.3.1.md)
-and [ADR-0005](https://github.com/JoaoValentimTheo/aura-lang/blob/rewrite/v3-rust/docs/adr/0005-keystone-collection-model.md).
+[`v0.3.1` release notes](https://github.com/JoaoValentimTheo/aura-lang/blob/v0.3.1/docs/release-notes/v0.3.1.md)
+and [ADR-0005](https://github.com/JoaoValentimTheo/aura-lang/blob/v0.3.1/docs/adr/0005-keystone-collection-model.md).

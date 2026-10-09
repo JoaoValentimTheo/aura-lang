@@ -4,6 +4,33 @@ Authoritative for **the active task and the exact next action**. Current
 repository state lives in `AGENT_STATE.md`; operating rules in `AGENTS.md`.
 Keep this file short — it is read at the start of every session.
 
+## ACTIVE TASK — AURA WEBSITE AUREA MIGRATION (2026-10-09, LOCAL, UNPUSHED)
+
+A full website redesign onto **Aurea** (Aura's own design system) plus a
+reconciliation of all active website documentation against the published Aura
+0.3.1 contract. Scope: `website/**`, the relevant `docs/**` content mirrors, and
+website tooling/tests. `src/**`, `playground/runtimes/**`, `Cargo.*`, tags, and
+frozen artifacts were **not** modified (verified byte-identical).
+
+- Aurea is the **sole** design system. `website/assets/aurea.css` holds the
+  canonical `--au-*` tokens + dark-default/light-inversion themes + primitives;
+  `website/assets/styles.css` is Aurea-owned layout/component/docs styling with
+  no tokens of its own. The Material 3 `website/assets/tokens.css` was deleted
+  and removed from `lib/layout.mjs`; no `--md-*` reference remains. The
+  standalone Playground stylesheet was rethemed onto the same `--au-*` tokens.
+- Documentation reconciled to 0.3.1 (collections, `never`, pattern catch,
+  semicolon rule, nested-array-call limitation, canonical typed-JSON, HTTP
+  capability); the standard-library inventory is centralized in
+  `website/content/stdlib.mjs` and consumed by the landing + reference pages.
+- New guards: `tests/aurea.test.mjs` (extended), `tests/aurea-browser.test.mjs`,
+  `tests/stdlib-consistency.test.mjs`, `tests/docs-consistency.test.mjs`.
+
+**Exact next action:** the human reviews the committed website work and
+authorizes (or declines) a push. A push to this branch triggers `pages.yml` and
+deploys the site — confirm acceptance before pushing. **Do not push without
+explicit authorization**, and **do not start Aura 0.3.2**. Git reality at this
+checkpoint: local = remote = `b909066f`, `v0.3.1` = `b09cbef2`.
+
 ## AURA 0.3.1 KEYSTONE — PUBLISHED (2026-10-08)
 
 The 0.3.1 campaign is **closed**. Aura 0.3.1 (codename Keystone) is published:

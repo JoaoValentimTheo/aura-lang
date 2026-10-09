@@ -19,8 +19,10 @@ let name = match code {
 | a lowercase name | anything, binding the value |
 | `42`, `"s"`, `true`, `none` | the literal value |
 | `[a, b]` | a list of exactly that arity, then sub-patterns |
-| `Circle(r)` | the variant `Circle`, binding its payload |
-| `Empty` | the variant `Empty` |
+| `(p, q)` | a tuple of exactly that arity, then sub-patterns |
+| `(p,)` | a one-element tuple |
+| `Circle(p)` | the variant `Circle`, binding its payload |
+| `Empty` | the zero-payload variant `Empty` |
 
 Pattern names bind; a capitalized name is a variant. A pattern may bind the same
 name only once (`E2014`).

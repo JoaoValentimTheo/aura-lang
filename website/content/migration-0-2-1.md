@@ -6,7 +6,7 @@ guide lists every change in observable language behavior and what to do about
 it. Most programs need no changes.
 
 The version-identity model is recorded in
-[ADR-0001](https://github.com/JoaoValentimTheo/aura-lang/blob/rewrite/v3-rust/docs/adr/0001-release-vs-language-version.md):
+[ADR-0001](https://github.com/JoaoValentimTheo/aura-lang/blob/v0.3.1/docs/adr/0001-release-vs-language-version.md):
 the *release* version identifies a published artifact, the *language* version
 identifies the observable language contract, and `language <= release`.
 
@@ -51,7 +51,7 @@ Structural nesting of a type annotation — generic application (`Box<…>`), a 
 (`[T]`), or a map (`{K: V}`) — now counts toward the semantic AST limit, so a
 type nested past 256 levels is `E1015` identically on native and WebAssembly.
 A flat union (`A | B | …`) lists alternatives and is not penalized per member.
-See [ADR-0004](https://github.com/JoaoValentimTheo/aura-lang/blob/rewrite/v3-rust/docs/adr/0004-typeexpr-nesting-policy.md).
+See [ADR-0004](https://github.com/JoaoValentimTheo/aura-lang/blob/v0.3.1/docs/adr/0004-typeexpr-nesting-policy.md).
 
 **Fix:** no real program nests types this deeply; this only affects generated or
 adversarial input. If you generate types programmatically, cap nesting at 256.
@@ -79,7 +79,7 @@ At the Python boundary, a dict key converts only when it is a genuine builtin
 scalar (`bool`/`int`/`str`). A user object implementing `__index__` is **not**
 coerced to an integer key; it is rejected `E5002`. Seed-map code that relied on
 duck-typed keys must convert explicitly. See
-[CPython compatibility target](https://github.com/JoaoValentimTheo/aura-lang/blob/rewrite/v3-rust/docs/CPYTHON_COMPATIBILITY_TARGET.md).
+[CPython compatibility target](https://github.com/JoaoValentimTheo/aura-lang/blob/v0.3.1/docs/CPYTHON_COMPATIBILITY_TARGET.md).
 
 ## What did *not* change
 

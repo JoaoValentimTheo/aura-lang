@@ -3,7 +3,7 @@
 A generic declaration takes **type parameters**: placeholders substituted with
 a concrete type before the program runs. Aura's generics are **static**,
 **erased**, and **nominal**. The full architecture decision is
-[`docs/GENERICS.md`](https://github.com/JoaoValentimTheo/aura-lang/blob/rewrite/v3-rust/docs/GENERICS.md);
+[`docs/GENERICS.md`](https://github.com/JoaoValentimTheo/aura-lang/blob/v0.3.1/docs/GENERICS.md);
 the normative rules are in the specification (§36).
 
 ## Generic functions

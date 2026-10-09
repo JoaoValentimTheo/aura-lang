@@ -33,7 +33,10 @@ run("aura-comments", "check-aura-comments.mjs");
 run("links", "check-links.mjs");
 run("base", "check-base.mjs");
 run("release-version", "release-version.test.mjs");
+run("stdlib-consistency", "stdlib-consistency.test.mjs");
+run("docs-consistency", "docs-consistency.test.mjs");
 run("aurea", "aurea.test.mjs");
+run("aurea-browser", "aurea-browser.test.mjs");
 
 function haveDeps() {
   try {

@@ -68,4 +68,4 @@ We advertise only what CI verifies:
 - **UNSUPPORTED:** CPython ≤ 3.9; ≥ 3.14 until tested.
 
 The full normative contract is in
-[`docs/CPYTHON_COMPATIBILITY_TARGET.md`](https://github.com/JoaoValentimTheo/aura-lang/blob/rewrite/v3-rust/docs/CPYTHON_COMPATIBILITY_TARGET.md).
+[`docs/CPYTHON_COMPATIBILITY_TARGET.md`](https://github.com/JoaoValentimTheo/aura-lang/blob/v0.3.1/docs/CPYTHON_COMPATIBILITY_TARGET.md).

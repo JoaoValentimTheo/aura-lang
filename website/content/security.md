@@ -37,7 +37,7 @@ deliberate escape hatch to full host authority through CPython.
 
 Please report suspected vulnerabilities privately through the repository's
 security policy
-([`SECURITY.md`](https://github.com/JoaoValentimTheo/aura-lang/blob/rewrite/v3-rust/SECURITY.md))
+([`SECURITY.md`](https://github.com/JoaoValentimTheo/aura-lang/blob/v0.3.1/SECURITY.md))
 rather than a public issue. The full threat model, trust boundaries, security
 architecture, and incident-response plan live under
 [`docs/security/`](https://github.com/JoaoValentimTheo/aura-lang/tree/rewrite/v3-rust/docs/security).

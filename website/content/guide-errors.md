@@ -34,11 +34,37 @@ fn main() {
 ```
 
 * `try` requires `catch`; there is no `try` without it.
-* The thrown value is bound to the catch name.
 * `finally`, if present, runs once on **every** exit path: normal completion,
   `return`, `break`, `continue`, `throw`, and a fatal runtime error.
 * If `finally` itself raises a control-flow signal, that signal replaces the
   pending outcome.
+
+## Selecting a catch
+
+The clause after `catch` is a **full pattern** (§4.7), exactly as in a `match`
+arm. This lets one `try` dispatch on the thrown value:
+
+```aura
+enum Failure { BadInput(string), Timeout }
+
+try {
+    throw BadInput("missing field")
+} catch BadInput(msg) {
+    print(f"bad input: {msg}")
+} catch Timeout {
+    print("timed out")
+} catch e {
+    print(f"other: {e}")
+}
+```
+
+`catch e` binds any thrown value; `catch _` catches with no binding;
+`catch E::V(x)` selects one nominal variant; `catch none` selects a thrown
+`none`; and `catch 7` selects that literal. When a catch pattern does **not**
+match, the throw continues to the next enclosing `try` (or terminates with
+`E4026`) — it is never silently discarded. The built-in exception namespace
+root `Aura` is reserved (`E2023`), so a user module cannot counterfeit built-in
+exception identity.
 
 ## An uncaught throwable
 

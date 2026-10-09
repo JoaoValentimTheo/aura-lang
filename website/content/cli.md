@@ -56,5 +56,6 @@ my_program.aura:3:12: E3001: type mismatch ...
 ## Building the binary
 
 See [Installing Aura](/docs/install/). The `cli` feature is required for the
-binary; the pure-Rust feature set is
-`cli,repl,json,regex,time`.
+binary; the pure-Rust feature set is `cli,repl,json,regex,time`. The optional
+network capability is the non-default `http` feature (`http_get`,
+`http_request`); it is native-only and unavailable in the browser Playground.

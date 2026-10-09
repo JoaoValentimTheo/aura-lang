@@ -14,6 +14,12 @@ is wrong. A value whose type cannot be determined has the checker type
 | `bool` | `true` or `false` |
 | `string` | immutable UTF-8 text |
 | `none` | absence — the only absence value, with no static `none` type |
+| `never` | the bottom type — no value can result from a `never` expression |
+
+`never` is assignable wherever any type is expected, and a union absorbs it
+(`int | never` is `int`). `throw` diverges, so a branch ending in one is
+`never`; a call to a function declared `-> never` diverges. A function declared
+`-> never` whose body can complete normally is `E3006`.
 
 ## Compound types
 
@@ -109,6 +115,10 @@ requires an equal length and a tuple an equal arity.
 ‡ a union is accepted when every member matches the expected type, or when any
 member matches a union member. A union containing `none` is `Unknown`, not
 `Union`.
+
+Additionally, `never` (the bottom type) is compatible with **every** expected
+type: no value can exist to violate the expectation, so a `never` result is
+accepted in any position.
 
 ## Where annotations are enforced
 

@@ -15,11 +15,28 @@ is.
 - **Static checker is conservative, not a full type system.** It rejects
   definite errors and agrees with the runtime, but does not attempt full
   inference.
+- **No general semicolon sequencing.** Since `0.3.1`, `;` no longer separates
+  statements or items; it is reserved for the Array type grammar. `let a = 1;
+  let b = 2` is `E1006`.
+- **Set membership is scalar-only.** A `Set` element must be a key-capable
+  scalar (`int`, `bool`, or `string`) — the same requirement a map key has.
+  Broader membership is deferred to a future RFC.
+- **Array length is a compile-time literal.** An array type `[T; N]` requires
+  `N` to be a non-negative integer literal (bounded at `2^24`), not an arbitrary
+  const-expression.
 
 ## Runtime and limits
 
 - The semantic **AST nesting limit is 256 levels** (expressions, statements,
   types, and modules), reported as `E1015` on every substrate.
+- **Nested array literal as a direct call argument.** Contextual Array
+  realization (`[a, b]` under an expected `[T; N]`) applies at an annotated
+  `let`, a directly resolved function argument, a declared `return`, a struct
+  field, and a nested bracket literal under an element type. The one released
+  `0.3.1` gap is a **nested** array literal passed **directly** as a call
+  argument, which is not realized as an Array; binding it through a `let`
+  (or annotating that binding) works. This is a documented limitation inherited
+  from the collection campaign, not a silent miscompile.
 - **WebAssembly call depth (fixed in `0.3.1`; present in released runtimes up
   to `0.2.1`):** native execution enforces the 512-frame call limit and reports
   `E4011`. In the `0.0.2`–`0.2.1` browser runtimes, execution ran inline on the

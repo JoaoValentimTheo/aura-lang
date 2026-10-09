@@ -11,8 +11,11 @@ Aura's runtime values are exactly:
 | `bool` | `true` / `false` |
 | `string` | immutable UTF-8 text, indexed by Unicode scalar value |
 | `none` | absence — there is no `null` |
-| `list` | ordered, mutable, reference semantics |
-| `map` | keyed by a key-capable scalar (`string`, `int`, `bool`), ordered by key, mutable, reference semantics |
+| `list` | `[T]` — ordered, mutable, resizable, reference semantics |
+| `array` | `[T; N]` — fixed-length, element-mutable, not resizable |
+| `tuple` | `(T, ...)` — fixed-length, heterogeneous, immutable |
+| `set` | `{T}` — unordered membership of key-capable scalars |
+| `map` | `{K: V}` — keyed by a key-capable scalar (`string`, `int`, `bool`), ordered by key, mutable, reference semantics |
 | `struct` | named fields in declaration order |
 | `enum` | a tag with a positional payload |
 | `fn` | a closure or native function |
@@ -119,8 +122,11 @@ if [] { print("never") } else { print("empty is falsy") }
 
 ## Equality and ordering
 
-Equality is structural for lists and maps, nominal-and-structural for structs,
-and tag-plus-payload for enum variants. `==` always yields a `bool`. Ordering
+Equality is structural for lists, arrays, tuples, sets, and maps,
+nominal-and-structural for structs, and tag-plus-payload for enum variants.
+The five collection identities never collapse: `List != Array != Tuple != Set
+!= Map`, so `[1, 2] == (1, 2)` is `false`, and a struct is never equal to a map.
+`==` always yields a `bool`. Ordering
 (`<`, `<=`, `>`, `>=`) is defined for numbers, strings, and booleans; comparing
 incomparable types is `E3001`. A `NaN` operand makes every ordering comparison
 `false`.

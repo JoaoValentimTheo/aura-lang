@@ -8,30 +8,61 @@ before continuing substantial work.
 ## Repository
 
 - Branch: `rewrite/v3-rust`
-- Remote `origin/rewrite/v3-rust`: **`b221e6a9d3fc2355596b4118c2e789f8c37092d0`**
-  (`fix(ci): gate the AIS CLI surface, repair the fuzz target, migrate a stale
-  catch test`) — the Keystone closure range is **pushed** through this tip.
-  Do not hardcode the ahead count: read it from
-  `git rev-list --left-right --count origin/rewrite/v3-rust...HEAD`.
+- **Git reality (verify with `git rev-parse`, do not trust prose):** local HEAD
+  and `origin/rewrite/v3-rust` are both **`b909066f`** (ahead/behind `0/0`);
+  tag **`v0.3.1` = `b09cbef2`**. Aura 0.3.1 (Keystone) is the current release
+  (release = language = runtime = `0.3.1`) and is **PUBLISHED**. The earlier
+  `b221e6a9`/`v0.2.1` notes below are **historical**; Git is authoritative.
 - Local/remote relationship: authoritative value is `git rev-list
   --left-right --count origin/rewrite/v3-rust...HEAD`; a tracked file cannot
-  safely hardcode its own position. **Aura 0.3.1 (Keystone) is PUBLISHED.** The
-  source branch is at `b09cbef2` (tag `v0.3.1`), local = remote (`0/0`). Exact-
-  SHA CI 20/20 green; Pages deployed; GitHub Release `v0.3.1` published with
-  platform artifacts, the immutable `0.3.1` runtime, manifest, and SBOM. See
-  `docs/engineering/CURRENT_HANDOFF.md` "AURA 0.3.1 KEYSTONE — PUBLISHED".
-- **Remote CI at `b221e6a9` is RED** (run `37639795923`): the
-  `playground (wasm runtime)` job fails in `b1_boundary.test.mjs` (44/19) with
-  grouping/f-string `guest trap` — the exact defect fixed by the unpushed local
-  commits `04783231` (`fix(parser): bound grouping and f-string interpolation
-  recursion on wasm`) and `e7505408` (`test(parser): pin the grouping backstop
-  contract`). Locally the fresh-wasm boundary suite is **63/0** and the native
-  parser/boundaries suites are green. Pushing these two commits is the
-  exact-SHA CI repair; it is human-gated (`docs/engineering/CURRENT_HANDOFF.md`).
-- Current release: **`v0.2.1`**, published 2026-10-01, immutable. Tag
-  `v0.2.1` = commit `3f5f8702`. Release = language = runtime = `0.2.1`;
-  Host ABI 1; Playground API 1.
-- No successor program or version is selected; there is **no `0.2.2`**.
+  safely hardcode its own position.
+- **Historical (superseded by `b909066f`):** the intermediate remote tip
+  `b221e6a9` once carried a red `playground (wasm runtime)` CI job; that was
+  repaired by the parser wasm-safety commits and the range subsequently
+  advanced. Do not act on the old `b221e6a9` state.
+- Historical release: **`v0.2.1`** (2026-10-01, immutable), tag `v0.2.1` =
+  `3f5f8702`. Superseded by `v0.3.1`.
+
+## Aura website — Aurea design-system migration (2026-10-09, LOCAL, UNPUSHED)
+
+A full website redesign + documentation synchronization against the published
+0.3.1 contract, entirely on branch `rewrite/v3-rust` at local HEAD `b909066f`
+(= remote; nothing pushed). Scope was `website/**`, the relevant `docs/**`
+content mirrors, and website tooling/tests only; `src/**`,
+`playground/runtimes/**`, `Cargo.*`, tags, and frozen artifacts were untouched
+(verified byte-identical).
+
+- **Aurea is the sole design system.** `website/assets/aurea.css` defines the
+  canonical `--au-*` tokens, dark-default + light-inversion themes, base
+  element styling, primitives, and accessibility rules.
+  `website/assets/styles.css` is Aurea-owned layout/component/docs styling and
+  defines no tokens. The Material 3 `website/assets/tokens.css` was **deleted**
+  and dropped from `lib/layout.mjs`; no `--md-*` reference survives in the
+  active chain. The standalone Playground stylesheet was rethemed onto the same
+  `--au-*` vocabulary.
+- **Documentation truth** reconciled to 0.3.1: dotted enum construction fixed;
+  five collection identities documented; `never`, pattern-based `catch`, the
+  semicolon rule, the nested-array-call-argument limitation, Set scalar-only
+  membership and the Array length bound recorded; the typed-JSON canonical
+  type-position form and strict `E4031`; HTTP (`http_get`/`http_request`,
+  feature `http`, native-only) documented for the first time with `E5002`/
+  `E4020`/`E4031`; stdlib inventory centralized in `website/content/stdlib.mjs`
+  and rendered by both the landing and reference pages.
+- **New drift guards:** `tests/aurea.test.mjs` (extended),
+  `tests/aurea-browser.test.mjs`, `tests/stdlib-consistency.test.mjs`
+  (parses `src/stdlib/signatures.rs`), `tests/docs-consistency.test.mjs`
+  (route/version/link parity, release-pinned normative links).
+- **Validation (local, not GitHub CI):** full `website/tests/run-all.mjs`
+  green — 44 pages, links 2554 OK, base 2553 OK, browser 388/0, a11y 70/0,
+  examples 22/0, aurea 35/0, aurea-browser 31/0, stdlib-consistency 122/0,
+  docs-consistency 77/0, plus the reused Playground engine suite; zero
+  horizontal overflow across 12 widths × 16 routes; `--base=/` variant green;
+  `node playground/build.mjs --check` matches 8 runtimes. Frozen
+  `0.0.2`/`0.2.0`/`0.2.1` and the `0.3.1` runtime byte-identical; `v0.3.1`
+  unmoved. **Nothing pushed, tagged, or deployed.**
+
+- No successor program or version is selected; there is **no `0.2.2`**, and
+  `0.3.2` is planned but **not started**.
 - Active program: **AURA 0.3 "KEYSTONE" CLOSURE** — the closure range is
   **pushed through `b221e6a9`**; only the 2-commit parser wasm-safety repair
   (`04783231`, `e7505408`) remains unpushed and requires a new human
@@ -444,21 +475,18 @@ feature-gating of the typed-decode path.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: B-1 and the post-B1
-runtime/WASM edge closure are remotely closed; the **Aura 0.3 Keystone**
-closure range is **pushed through `b221e6a9`**. The remote CI at `b221e6a9` is
-**RED** on the `playground (wasm runtime)` job (grouping/f-string trap in
-`b1_boundary`), and the local commits hold the parser fix that turns that suite
-to green. The local tip is the 2026-10-08 final-collection campaign tip
-(**10 ahead**, unpushed). **Exact next action:** the human decides whether to
-(a) authorize a push of the 25-commit range (site deploys on push — confirm
-acceptance), and (b) review the now-implemented collection model and
-direct-type typed-JSON API for any change of decision. Do not push without
-explicit authorization. B-1R8 (remove the
-recursive engine and the oracle switch) and any runtime publication remain
-separately human-gated. **Validation (TD-22):** use the observable sharded
-`scripts/validate.py` (not a monolithic watch); re-run the full matrix sharded
-via it before any push.
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: Aura 0.3.1 (Keystone) is
+published; local = remote = `b909066f`, `v0.3.1` = `b09cbef2`. The **Aura
+website Aurea migration + 0.3.1 documentation synchronization** is complete
+locally and **unpushed** (see the section above). **Exact next action:** the
+human reviews the locally committed website work and authorizes (or declines) a
+push; a push to this branch triggers `pages.yml` and deploys the site, so the
+human must accept that consequence before any push. Do not push without explicit
+authorization, and do not begin Aura 0.3.2 (including HTTP expansion or local
+macOS CI migration). B-1R8 (remove the recursive engine and the oracle switch)
+and any runtime publication remain separately human-gated. **Validation
+(TD-22):** use the observable sharded `scripts/validate.py` (not a monolithic
+watch) for the Rust matrix.
 
 ## Writer
 

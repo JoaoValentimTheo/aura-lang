@@ -94,7 +94,7 @@ fn area(s) -> int {
 fn main() {
     let p = Point { x: 3, y: 4 }
     print(f"({p.x}, {p.y})")
-    print(area(Shape.Circle(2)))
+    print(area(Circle(2)))
 }
 ```
 

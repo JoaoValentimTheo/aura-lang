@@ -57,7 +57,7 @@ fn main() {
 ## What to read next
 
 * **New to programming or to Aura?** Follow [Your first program](/docs/first-program/) and then the language guide.
-* **Want the precise rules?** The [language specification](https://github.com/JoaoValentimTheo/aura-lang/blob/main/docs/LANGUAGE_SPEC.md) is normative.
+* **Want the precise rules?** The [language specification](https://github.com/JoaoValentimTheo/aura-lang/blob/v0.3.1/docs/LANGUAGE_SPEC.md) is normative. The sidebar links the full set of normative documents at the same released tag.
 * **Looking for a specific function?** The [standard library reference](/docs/reference-stdlib/) lists every builtin.
 
 > Aura's diagnostic codes are stable and part of the public contract. When you
