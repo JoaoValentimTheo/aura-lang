@@ -36,6 +36,34 @@ function resolveHref(href, base) {
   return href;
 }
 
+/**
+ * Collect a run of list items starting at `start`, joining each item's wrapped
+ * continuation lines. Returns the item strings and the index after the list.
+ *
+ * A continuation line is a non-blank line that is indented and does not itself
+ * open another block (a new item, a heading, a fence, a blockquote, or a rule).
+ */
+function collectListItems(lines, start, marker) {
+  const values = [];
+  let i = start;
+  while (i < lines.length && marker.test(lines[i])) {
+    let item = lines[i].replace(marker, "");
+    i += 1;
+    while (
+      i < lines.length &&
+      lines[i].trim() !== "" &&
+      /^\s+\S/.test(lines[i]) &&
+      !/^(#{1,6}\s|```|>\s?|\s*[-*]\s|\s*\d+\.\s)/.test(lines[i]) &&
+      !/^---+$/.test(lines[i].trim())
+    ) {
+      item += ` ${lines[i].trim()}`;
+      i += 1;
+    }
+    values.push(item);
+  }
+  return { values, next: i };
+}
+
 function inline(text, base = "/") {
   let s = escapeHtml(text);
   // Inline code first, so its contents are not further processed.
@@ -163,27 +191,25 @@ export function renderMarkdown(markdown, options = {}) {
     }
 
     // Unordered list.
+    //
+    // A list item may wrap onto following indented lines (lazy continuation);
+    // those lines are joined into the same item rather than starting a new
+    // paragraph. A blank line, a new item, or any other block opener ends it.
     if (/^\s*[-*]\s+/.test(line)) {
-      const items = [];
-      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
-        items.push(lines[i].replace(/^\s*[-*]\s+/, ""));
-        i += 1;
-      }
+      const items = collectListItems(lines, i, /^\s*[-*]\s+/);
+      i = items.next;
       out.push(
-        `<ul>${items.map((it) => `<li>${inline(it, base)}</li>`).join("")}</ul>`,
+        `<ul>${items.values.map((it) => `<li>${inline(it, base)}</li>`).join("")}</ul>`,
       );
       continue;
     }
 
     // Ordered list.
     if (/^\s*\d+\.\s+/.test(line)) {
-      const items = [];
-      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
-        items.push(lines[i].replace(/^\s*\d+\.\s+/, ""));
-        i += 1;
-      }
+      const items = collectListItems(lines, i, /^\s*\d+\.\s+/);
+      i = items.next;
       out.push(
-        `<ol>${items.map((it) => `<li>${inline(it, base)}</li>`).join("")}</ol>`,
+        `<ol>${items.values.map((it) => `<li>${inline(it, base)}</li>`).join("")}</ol>`,
       );
       continue;
     }
