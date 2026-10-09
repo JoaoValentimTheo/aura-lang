@@ -39,9 +39,16 @@ json = ["dep:serde_json", "dep:serde"]
 regex = ["dep:regex"]
 time = ["dep:chrono"]
 py = ["dep:pyo3"]
-# The HTTP capability. Non-default: it is the only feature that grows the
-# native dependency tree, and a build without it has no network surface at all.
-http = ["dep:ureq"]
+# The HTTP *builtin surface*: registers `http_get`/`http_request` and their
+# signatures, but provides no network implementation of its own. It is the
+# substrate-neutral half, so a build that executes HTTP through a *host*
+# (the browser Worker) compiles the language surface without linking a native
+# HTTP client. A host without network authority still reports `E5002`.
+http-api = []
+# The native HTTP capability. Non-default: it is the only feature that grows
+# the native dependency tree, and a build without it has no network surface at
+# all. It implies the builtin surface (`http-api`).
+http = ["http-api", "dep:ureq"]
 # Test-only differential evaluator oracle (B-1R2/B-1R3). Never default and
 # never user-facing: it adds no runtime behavior. The iterative machine is
 # always compiled and is the production engine; this flag only gates the

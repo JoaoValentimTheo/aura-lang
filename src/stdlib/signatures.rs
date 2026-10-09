@@ -599,7 +599,7 @@ pub fn builtins() -> &'static [Signature] {
                 mutates_arg: None,
             },
             // ------------------------------------------------------ http
-            #[cfg(feature = "http")]
+            #[cfg(feature = "http-api")]
             Signature {
                 name: "http_request",
                 params: vec![
@@ -612,7 +612,7 @@ pub fn builtins() -> &'static [Signature] {
                 returns: Returns::Dynamic,
                 mutates_arg: None,
             },
-            #[cfg(feature = "http")]
+            #[cfg(feature = "http-api")]
             Signature {
                 name: "http_get",
                 params: vec![Param::one(TypeClass::Str)],

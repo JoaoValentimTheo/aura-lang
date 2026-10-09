@@ -168,6 +168,7 @@ use super::value::{MapKey, Value};
 use super::{Closure, Ctl, Diag, Env, Interp, NativeOutcome, MAX_AST_DEPTH, MAX_CALL_FRAMES};
 use crate::ast::{Arg, BinOp, Expr, FPart, FormatSpec, Lit, Pattern, Stmt, UnOp};
 use crate::error::{codes, Result, Span};
+use crate::host::PendingEffect;
 use crate::source::SourceId;
 
 /// Which sequence literal a `Cont::ListNext` accumulator builds.
@@ -188,6 +189,10 @@ enum Control {
     Next(Ctrl),
     /// No continuations remain; the machine finished with this completion.
     Finished(Ctl),
+    /// A Host effect is pending: the machine suspends here with all owned
+    /// state intact. The session performs the effect and calls
+    /// [`Machine::feed_effect`] to continue from precisely this point.
+    Park(PendingEffect),
 }
 
 /// A completion travelling to the innermost continuation.
@@ -272,10 +277,22 @@ enum Resume {
     Redeliver(Done),
     /// Continue the machine loop with this work item.
     Next(Ctrl),
+    /// A Host effect is pending: suspend here with all owned state intact.
+    Park(PendingEffect),
+}
+
+/// How a drive call ended (D1). `Completed` is a finished program;
+/// `Parked` is a program suspended on a Host effect that a session must
+/// perform and feed back via [`Machine::run_from_effect`].
+pub(crate) enum RunOutcome {
+    /// The machine reached a terminal completion.
+    Completed(Ctl),
+    /// The machine suspended on a Host effect.
+    Parked(PendingEffect),
 }
 
 /// The current computational focus (`ITERATIVE_EVALUATOR_DESIGN.md` §16.2).
-enum Ctrl {
+pub(crate) enum Ctrl {
     /// Evaluate an expression in an environment.
     EvalExpr(Arc<Expr>, Env),
     /// Evaluate an expression under an expected type, realizing a bracket
@@ -652,6 +669,10 @@ enum Cont {
     NativeResume {
         resume: Box<dyn super::NativeResume>,
         span: Span,
+        /// Whether the value about to be delivered is a completed Host effect
+        /// (D1) rather than a callback result. It selects
+        /// `NativeResume::resume_effect` over `resume`.
+        from_effect: bool,
     },
     /// A user-frame boundary (R3C): pop one [`UserFrame`] and map the call's
     /// completion.
@@ -681,9 +702,12 @@ struct UserFrame {
     saved_expr_depth: usize,
 }
 
-/// The explicit continuation machine.
-struct Machine<'i> {
-    interp: &'i mut Interp,
+/// The *owned* execution state of one machine, separated from the interpreter
+/// so it can be parked and resumed across calls (D1,
+/// `PLAYGROUND_032_CAMPAIGN.md`). It contains no borrows and no references into
+/// the interpreter: everything is owned values, so a session may hold it while
+/// the interpreter is idle.
+struct MachineState {
     /// Current computational focus.
     ctrl: Ctrl,
     /// Continuations, innermost last.
@@ -706,39 +730,173 @@ struct Machine<'i> {
     top_env: Option<Env>,
 }
 
-impl<'i> Machine<'i> {
-    /// Create a machine over `interp`.
-    fn new(interp: &'i mut Interp) -> Machine<'i> {
-        let base_depth = interp.depth;
-        Machine {
-            interp,
+impl MachineState {
+    /// A fresh state for a machine that will start on `interp`.
+    fn new(interp: &Interp) -> MachineState {
+        MachineState {
             ctrl: Ctrl::Done(Ctl::Val(Value::None)),
             kont: Vec::new(),
             frames: Vec::new(),
-            base_depth,
+            base_depth: interp.depth,
             expr_depth: 0,
             top_env: None,
         }
     }
+}
 
-    /// Drive the machine to completion.
-    fn run(&mut self, initial: Ctrl) -> Result<Ctl> {
-        self.ctrl = initial;
-        let result = self.run_inner();
-        // Any frames still on the stack are discarded with the machine; the
-        // shared call-depth accounting returns to its entry value so a
-        // subsequent machine (or a native re-entry) sees a consistent count.
-        self.interp.depth = self.base_depth;
-        result
+/// The explicit continuation machine.
+///
+/// `Machine` is a *transient view*: it borrows the interpreter and the owned
+/// [`MachineState`] for the duration of one drive call. Keeping the state out
+/// of the machine (D1) means a session can hold `Interp` and `MachineState`
+/// as separate fields and rebuild the view on each call, so no structure ever
+/// needs a self-reference to park and resume an execution.
+struct Machine<'i> {
+    interp: &'i mut Interp,
+    /// Owned execution focus, continuations and frames.
+    state: &'i mut MachineState,
+}
+
+impl<'i> Machine<'i> {
+    /// Create a machine view over `interp` and `state`.
+    fn new(interp: &'i mut Interp, state: &'i mut MachineState) -> Machine<'i> {
+        Machine { interp, state }
     }
 
-    fn run_inner(&mut self) -> Result<Ctl> {
+    /// Drive the machine to completion or to the first pending Host effect.
+    fn run(&mut self, initial: Ctrl) -> Result<RunOutcome> {
+        self.state.ctrl = initial;
+        self.run_inner()
+    }
+
+    /// Suspend on a pending effect, then continue with the effect's result:
+    /// park the machine, perform nothing here, and let the caller feed the
+    /// value back. The machine is left at exactly the continuation it was on.
+    fn park(effect: PendingEffect) -> RunOutcome {
+        RunOutcome::Parked(effect)
+    }
+
+    /// Resume after a Host effect with the value it produced. The machine
+    /// continues from precisely the continuation it suspended on; nothing is
+    /// re-evaluated and no side effect repeats.
+    fn resume_effect_value(&mut self, value: Value) -> Result<RunOutcome> {
+        self.resume_effect_with(Done::plain(Ctl::Val(value)))
+    }
+
+    fn resume_effect_error(&mut self, diag: Diag) -> Result<RunOutcome> {
+        // Deliver the diagnostic to the same continuation the native is parked
+        // on: `resume_effect` on its token returns a native-owned step, and an
+        // `Err` from that call propagates through the ordinary error path so
+        // `try`/`catch`/`finally` see it exactly like a synchronous failure.
+        self.resume_effect_with_error(diag)
+    }
+
+    fn resume_effect_with(&mut self, done: Done) -> Result<RunOutcome> {
+        let cont = self.state.kont.pop().ok_or_else(|| {
+            Diag::new(
+                codes::INTERNAL,
+                "resumed a Host effect with no pending continuation",
+                Span::default(),
+            )
+        })?;
+        match self.resume(cont, done)? {
+            Resume::Redeliver(done) => match self.deliver(done)? {
+                Control::Next(next) => {
+                    self.state.ctrl = next;
+                    self.run_inner()
+                }
+                Control::Finished(ctl) => Ok(RunOutcome::Completed(ctl)),
+                Control::Park(effect) => Ok(Self::park(effect)),
+            },
+            Resume::Next(next) => {
+                self.state.ctrl = next;
+                self.run_inner()
+            }
+            Resume::Park(effect) => Ok(Self::park(effect)),
+        }
+    }
+
+    /// Feed a *failed* effect. The native's `resume_effect` token receives
+    /// `Err(diag)`; a native that does not handle it propagates the diagnostic
+    /// through the machine's normal error path (which runs `finally` and lets
+    /// an enclosing `try` catch it).
+    fn resume_effect_with_error(&mut self, diag: Diag) -> Result<RunOutcome> {
+        let cont = self.state.kont.pop().ok_or_else(|| {
+            Diag::new(
+                codes::INTERNAL,
+                "resumed a Host effect with no pending continuation",
+                Span::default(),
+            )
+        })?;
+        // The parked continuation is a `Cont::NativeResume`; feed the error to
+        // its `resume_effect` token. Delivering through `resume()` would run
+        // the callback path, so dispatch directly.
+        match cont {
+            Cont::NativeResume { resume, span, .. } => {
+                let step = match resume.resume_effect(self.interp, Err(diag)) {
+                    Ok(step) => step,
+                    Err(propagated) => {
+                        // The native rejected the failure: propagate through
+                        // the machine's ordinary error path so `finally` runs
+                        // and an enclosing `try` may catch it.
+                        return match self.intercept_try_error(propagated) {
+                            Ok(Some(Control::Next(next))) => {
+                                self.state.ctrl = next;
+                                self.run_inner()
+                            }
+                            Ok(Some(Control::Finished(ctl))) => Ok(RunOutcome::Completed(ctl)),
+                            Ok(Some(Control::Park(effect))) => return Ok(Self::park(effect)),
+                            Ok(None) => unreachable!("interception always routes or errors"),
+                            Err(d) => Err(d),
+                        };
+                    }
+                };
+                match self.start_native_resume(step, span)? {
+                    Control::Next(next) => {
+                        self.state.ctrl = next;
+                        self.run_inner()
+                    }
+                    Control::Finished(ctl) => Ok(RunOutcome::Completed(ctl)),
+                    Control::Park(effect) => Ok(Self::park(effect)),
+                }
+            }
+            // Not a native resume (should not happen): re-deliver generically.
+            other => {
+                let result = self.resume(other, Done::plain(Ctl::Val(Value::None)))?;
+                match result {
+                    Resume::Redeliver(done) => match self.deliver(done)? {
+                        Control::Next(next) => {
+                            self.state.ctrl = next;
+                            self.run_inner()
+                        }
+                        Control::Finished(ctl) => Ok(RunOutcome::Completed(ctl)),
+                        Control::Park(effect) => Ok(Self::park(effect)),
+                    },
+                    Resume::Next(next) => {
+                        self.state.ctrl = next;
+                        self.run_inner()
+                    }
+                    Resume::Park(effect) => Ok(Self::park(effect)),
+                }
+            }
+        }
+    }
+
+    /// Restore the shared frame accounting after a drive call ends (completed
+    /// or parked). Called by the session wrapper: a parked machine keeps the
+    /// user-visible depth, so this runs only on completion/failure.
+    fn restore_depth(&mut self) {
+        self.interp.depth = self.state.base_depth;
+    }
+
+    fn run_inner(&mut self) -> Result<RunOutcome> {
         loop {
             // The current focus is machine state, not a Rust call frame.
-            let ctrl = std::mem::replace(&mut self.ctrl, Ctrl::Done(Ctl::Val(Value::None)));
+            let ctrl = std::mem::replace(&mut self.state.ctrl, Ctrl::Done(Ctl::Val(Value::None)));
             match self.step(ctrl) {
-                Ok(Control::Next(next)) => self.ctrl = next,
-                Ok(Control::Finished(ctl)) => return Ok(ctl),
+                Ok(Control::Next(next)) => self.state.ctrl = next,
+                Ok(Control::Finished(ctl)) => return Ok(RunOutcome::Completed(ctl)),
+                Ok(Control::Park(effect)) => return Ok(Self::park(effect)),
                 Err(diag) => {
                     // Source attribution (mirrors `Interp::call`): a fatal
                     // diagnostic is attributed to the source active where it
@@ -755,8 +913,11 @@ impl<'i> Machine<'i> {
                     // unwind (`?`) plus its own frame bookkeeping; the machine
                     // reproduces it by restoring the try's snapshot.
                     match self.intercept_try_error(diag) {
-                        Ok(Some(Control::Next(next))) => self.ctrl = next,
-                        Ok(Some(Control::Finished(ctl))) => return Ok(ctl),
+                        Ok(Some(Control::Next(next))) => self.state.ctrl = next,
+                        Ok(Some(Control::Finished(ctl))) => {
+                            return Ok(RunOutcome::Completed(ctl));
+                        }
+                        Ok(Some(Control::Park(effect))) => return Ok(Self::park(effect)),
                         Ok(None) => unreachable!("interception always routes or errors"),
                         Err(propagated) => {
                             // A `THROWN` signal that escapes every `try` is
@@ -792,7 +953,7 @@ impl<'i> Machine<'i> {
         // Rust's `?` in `Interp::exec_stmt`'s `Try` arm. Iterate rather than
         // returning early so nested regions are all considered.
         loop {
-            let Some(pos) = self.kont.iter().rposition(|c| {
+            let Some(pos) = self.state.kont.iter().rposition(|c| {
                 matches!(
                     c,
                     Cont::TryBody { .. } | Cont::TryCatchEnd { .. } | Cont::TryFinally { .. }
@@ -800,7 +961,7 @@ impl<'i> Machine<'i> {
             }) else {
                 return Err(diag);
             };
-            let mut tail = self.kont.split_off(pos);
+            let mut tail = self.state.kont.split_off(pos);
             let marker = tail.swap_remove(0);
             // Restore the snapshot: pop any frames the body entered and
             // recover the nesting budget and shared depth. (Any `Done.env` in
@@ -816,11 +977,11 @@ impl<'i> Machine<'i> {
                     depth,
                     saved_expr_depth,
                 } => {
-                    while self.frames.len() > frames_len {
+                    while self.state.frames.len() > frames_len {
                         self.pop_frame();
                     }
                     self.interp.depth = depth;
-                    self.expr_depth = saved_expr_depth;
+                    self.state.expr_depth = saved_expr_depth;
                     if diag.code == codes::THROWN {
                         let thrown = self
                             .interp
@@ -830,12 +991,12 @@ impl<'i> Machine<'i> {
                         if self.interp.match_pattern(&catch, &thrown) {
                             let scope = env.child();
                             self.interp.bind_pattern(&catch, &thrown, &scope)?;
-                            self.kont.push(Cont::TryCatchEnd {
+                            self.state.kont.push(Cont::TryCatchEnd {
                                 finally,
                                 env,
-                                frames_len: self.frames.len(),
+                                frames_len: self.state.frames.len(),
                                 depth: self.interp.depth,
-                                saved_expr_depth: self.expr_depth,
+                                saved_expr_depth: self.state.expr_depth,
                             });
                             return Ok(Some(Control::Next(Ctrl::EnterBlock(
                                 catch_body, scope, false,
@@ -847,11 +1008,11 @@ impl<'i> Machine<'i> {
                         self.interp.pending_throw = Some(thrown);
                     }
                     if let Some(f) = finally {
-                        self.kont.push(Cont::TryFinally {
+                        self.state.kont.push(Cont::TryFinally {
                             original: TryResult::Fatal(diag),
-                            frames_len: self.frames.len(),
+                            frames_len: self.state.frames.len(),
                             depth: self.interp.depth,
-                            saved_expr_depth: self.expr_depth,
+                            saved_expr_depth: self.state.expr_depth,
                         });
                         return Ok(Some(Control::Next(Ctrl::EnterBlock(f, env, true))));
                     }
@@ -869,17 +1030,17 @@ impl<'i> Machine<'i> {
                     // Restore the state captured when the catch body was
                     // entered (popping any frames it opened), then run
                     // `finally` or keep unwinding outward.
-                    while self.frames.len() > frames_len {
+                    while self.state.frames.len() > frames_len {
                         self.pop_frame();
                     }
                     self.interp.depth = depth;
-                    self.expr_depth = saved_expr_depth;
+                    self.state.expr_depth = saved_expr_depth;
                     if let Some(f) = finally {
-                        self.kont.push(Cont::TryFinally {
+                        self.state.kont.push(Cont::TryFinally {
                             original: TryResult::Fatal(diag),
-                            frames_len: self.frames.len(),
+                            frames_len: self.state.frames.len(),
                             depth: self.interp.depth,
-                            saved_expr_depth: self.expr_depth,
+                            saved_expr_depth: self.state.expr_depth,
                         });
                         return Ok(Some(Control::Next(Ctrl::EnterBlock(f, env, true))));
                     }
@@ -896,11 +1057,11 @@ impl<'i> Machine<'i> {
                     // it opened, discard the pending outcome (the recursive
                     // engine's `?` on `exec_block(f)` does exactly this), and
                     // keep unwinding outward.
-                    while self.frames.len() > frames_len {
+                    while self.state.frames.len() > frames_len {
                         self.pop_frame();
                     }
                     self.interp.depth = depth;
-                    self.expr_depth = saved_expr_depth;
+                    self.state.expr_depth = saved_expr_depth;
                 }
                 _ => unreachable!("marker selection matched a try region"),
             }
@@ -927,15 +1088,16 @@ impl<'i> Machine<'i> {
     /// recursing.
     fn deliver(&mut self, mut done: Done) -> Result<Control> {
         loop {
-            let Some(cont) = self.kont.pop() else {
+            let Some(cont) = self.state.kont.pop() else {
                 if done.env.is_some() {
-                    self.top_env = done.env.take();
+                    self.state.top_env = done.env.take();
                 }
                 return Ok(Control::Finished(done.ctl));
             };
             match self.resume(cont, done)? {
                 Resume::Redeliver(next) => done = next,
                 Resume::Next(next) => return Ok(Control::Next(next)),
+                Resume::Park(effect) => return Ok(Control::Park(effect)),
             }
         }
     }
@@ -944,7 +1106,7 @@ impl<'i> Machine<'i> {
     fn resume(&mut self, cont: Cont, done: Done) -> Result<Resume> {
         match cont {
             Cont::ExprDepth => {
-                self.expr_depth -= 1;
+                self.state.expr_depth -= 1;
                 Ok(Resume::Redeliver(done))
             }
             Cont::Block {
@@ -963,7 +1125,7 @@ impl<'i> Machine<'i> {
                 let local = done.env.unwrap_or(local);
                 if index < body.len() {
                     let stmt = Arc::new(body[index].clone());
-                    self.kont.push(Cont::Block {
+                    self.state.kont.push(Cont::Block {
                         body,
                         index: index + 1,
                         local: local.clone(),
@@ -992,12 +1154,12 @@ impl<'i> Machine<'i> {
                         if self.interp.match_pattern(&catch, &v) {
                             let scope = env.child();
                             self.interp.bind_pattern(&catch, &v, &scope)?;
-                            self.kont.push(Cont::TryCatchEnd {
+                            self.state.kont.push(Cont::TryCatchEnd {
                                 finally: finally.clone(),
                                 env: env.clone(),
-                                frames_len: self.frames.len(),
+                                frames_len: self.state.frames.len(),
                                 depth: self.interp.depth,
-                                saved_expr_depth: self.expr_depth,
+                                saved_expr_depth: self.state.expr_depth,
                             });
                             return Ok(Resume::Next(Ctrl::EnterBlock(catch_body, scope, false)));
                         }
@@ -1007,11 +1169,11 @@ impl<'i> Machine<'i> {
                 };
                 match finally {
                     Some(f) => {
-                        self.kont.push(Cont::TryFinally {
+                        self.state.kont.push(Cont::TryFinally {
                             original: TryResult::Body(original),
-                            frames_len: self.frames.len(),
+                            frames_len: self.state.frames.len(),
                             depth: self.interp.depth,
-                            saved_expr_depth: self.expr_depth,
+                            saved_expr_depth: self.state.expr_depth,
                         });
                         Ok(Resume::Next(Ctrl::EnterBlock(f, env, true)))
                     }
@@ -1020,11 +1182,11 @@ impl<'i> Machine<'i> {
             }
             Cont::TryCatchEnd { finally, env, .. } => match finally {
                 Some(f) => {
-                    self.kont.push(Cont::TryFinally {
+                    self.state.kont.push(Cont::TryFinally {
                         original: TryResult::Caught(done.ctl),
-                        frames_len: self.frames.len(),
+                        frames_len: self.state.frames.len(),
                         depth: self.interp.depth,
-                        saved_expr_depth: self.expr_depth,
+                        saved_expr_depth: self.state.expr_depth,
                     });
                     Ok(Resume::Next(Ctrl::EnterBlock(f, env, true)))
                 }
@@ -1052,6 +1214,7 @@ impl<'i> Machine<'i> {
                 match self.try_match_arms(arms, subject, 0, env, span)? {
                     Control::Next(next) => Ok(Resume::Next(next)),
                     Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                    Control::Park(effect) => Ok(Resume::Park(effect)),
                 }
             }
             Cont::MatchGuard {
@@ -1079,6 +1242,7 @@ impl<'i> Machine<'i> {
                     match self.try_match_arms(arms, subject, next, env, span)? {
                         Control::Next(next) => Ok(Resume::Next(next)),
                         Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                        Control::Park(effect) => Ok(Resume::Park(effect)),
                     }
                 }
             }
@@ -1092,6 +1256,7 @@ impl<'i> Machine<'i> {
                 match self.step_comp(state)? {
                     Control::Next(next) => Ok(Resume::Next(next)),
                     Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                    Control::Park(effect) => Ok(Resume::Park(effect)),
                 }
             }
             Cont::CompFilter(state, scope) => {
@@ -1102,11 +1267,13 @@ impl<'i> Machine<'i> {
                     match self.after_comp_filter(state, scope) {
                         Control::Next(next) => Ok(Resume::Next(next)),
                         Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                        Control::Park(effect) => Ok(Resume::Park(effect)),
                     }
                 } else {
                     match self.step_comp(state)? {
                         Control::Next(next) => Ok(Resume::Next(next)),
                         Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                        Control::Park(effect) => Ok(Resume::Park(effect)),
                     }
                 }
             }
@@ -1129,7 +1296,8 @@ impl<'i> Machine<'i> {
                     ));
                 };
                 let value = state.spec.value.clone();
-                self.kont
+                self.state
+                    .kont
                     .push(Cont::CompValue(state, scope.clone(), Some(mk)));
                 Ok(Resume::Next(Ctrl::EvalExpr(value, scope)))
             }
@@ -1146,6 +1314,7 @@ impl<'i> Machine<'i> {
                 match self.step_comp(state)? {
                     Control::Next(next) => Ok(Resume::Next(next)),
                     Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                    Control::Park(effect) => Ok(Resume::Park(effect)),
                 }
             }
             Cont::ForIterable {
@@ -1192,7 +1361,7 @@ impl<'i> Machine<'i> {
                     return Ok(Resume::Redeliver(Done::plain(done.ctl)));
                 };
                 if c.truthy() {
-                    self.kont.push(Cont::WhileLoop {
+                    self.state.kont.push(Cont::WhileLoop {
                         cond,
                         body: body.clone(),
                         env: env.clone(),
@@ -1205,7 +1374,7 @@ impl<'i> Machine<'i> {
             Cont::WhileLoop { cond, body, env } => match done.ctl {
                 Ctl::Break => Ok(Resume::Next(Ctrl::Done(Ctl::Val(Value::None)))),
                 Ctl::Continue | Ctl::Val(_) => {
-                    self.kont.push(Cont::WhileCond {
+                    self.state.kont.push(Cont::WhileCond {
                         cond: cond.clone(),
                         body: body.clone(),
                         env: env.clone(),
@@ -1217,7 +1386,7 @@ impl<'i> Machine<'i> {
             Cont::LoopBody { body, env } => match done.ctl {
                 Ctl::Break => Ok(Resume::Next(Ctrl::Done(Ctl::Val(Value::None)))),
                 Ctl::Continue | Ctl::Val(_) => {
-                    self.kont.push(Cont::LoopBody {
+                    self.state.kont.push(Cont::LoopBody {
                         body: body.clone(),
                         env: env.clone(),
                     });
@@ -1263,7 +1432,7 @@ impl<'i> Machine<'i> {
                         // write. The read and write each traverse (and
                         // re-evaluate) the target's subexpressions, exactly
                         // like `read_target` + `write_target`.
-                        self.kont.push(Cont::AssignRead {
+                        self.state.kont.push(Cont::AssignRead {
                             target: target.clone(),
                             op,
                             rhs,
@@ -1299,7 +1468,9 @@ impl<'i> Machine<'i> {
                 };
                 match index {
                     Some(ix) => {
-                        self.kont.push(Cont::TargetIndex { base, phase, span });
+                        self.state
+                            .kont
+                            .push(Cont::TargetIndex { base, phase, span });
                         Ok(Resume::Next(Ctrl::EvalExpr(ix, env)))
                     }
                     None => {
@@ -1393,7 +1564,7 @@ impl<'i> Machine<'i> {
             Cont::BinaryLeft { op, rhs, env, span } => {
                 if let Ctl::Val(lv) = done.ctl {
                     // Left completed: retain it and evaluate right exactly once.
-                    self.kont.push(Cont::BinRight { op, lv, span });
+                    self.state.kont.push(Cont::BinRight { op, lv, span });
                     Ok(Resume::Next(Ctrl::EvalExpr(rhs, env)))
                 } else {
                     // A control signal from the left operand propagates without
@@ -1426,7 +1597,7 @@ impl<'i> Machine<'i> {
                     }
                     // Otherwise the right operand is required: evaluate it
                     // exactly once and take its truthiness.
-                    self.kont.push(Cont::ShortCircuitRight);
+                    self.state.kont.push(Cont::ShortCircuitRight);
                     Ok(Resume::Next(Ctrl::EvalExpr(rhs, env)))
                 } else {
                     // A `return`/`throw`/`break`/`continue` from the left
@@ -1460,7 +1631,7 @@ impl<'i> Machine<'i> {
                 let next = index + 1;
                 if next < items.len() {
                     let elem = Arc::new(items[next].clone());
-                    self.kont.push(Cont::ListNext {
+                    self.state.kont.push(Cont::ListNext {
                         items,
                         index: next,
                         out,
@@ -1525,7 +1696,7 @@ impl<'i> Machine<'i> {
                 let next = index + 1;
                 if next < items.len() {
                     let elem = Arc::new(items[next].clone());
-                    self.kont.push(Cont::SetNext {
+                    self.state.kont.push(Cont::SetNext {
                         items,
                         index: next,
                         out,
@@ -1563,7 +1734,7 @@ impl<'i> Machine<'i> {
                         entries[index].0.span(),
                     ));
                 };
-                self.kont.push(Cont::MapValueNext {
+                self.state.kont.push(Cont::MapValueNext {
                     key,
                     entries: entries.clone(),
                     index,
@@ -1593,7 +1764,7 @@ impl<'i> Machine<'i> {
                 out.insert(key, value);
                 let next = index + 1;
                 if next < entries.len() {
-                    self.kont.push(Cont::MapKeyNext {
+                    self.state.kont.push(Cont::MapKeyNext {
                         entries: entries.clone(),
                         index: next,
                         out,
@@ -1615,7 +1786,7 @@ impl<'i> Machine<'i> {
                     // once. The start is **not** validated yet; the recursive
                     // engine evaluates both operands before checking either,
                     // then checks the start first.
-                    self.kont.push(Cont::RangeEnd { start, span });
+                    self.state.kont.push(Cont::RangeEnd { start, span });
                     Ok(Resume::Next(Ctrl::EvalExpr(end, env)))
                 } else {
                     // A control signal from the start aborts before the end is
@@ -1663,7 +1834,7 @@ impl<'i> Machine<'i> {
                     // evaluate the index exactly once, mirroring
                     // `eval_inner`'s `Expr::Index` arm order. Validation is
                     // deferred to `Cont::IndexApply`.
-                    self.kont.push(Cont::IndexApply { base, span });
+                    self.state.kont.push(Cont::IndexApply { base, span });
                     Ok(Resume::Next(Ctrl::EvalExpr(idx, env)))
                 } else {
                     // A control signal from the target propagates and the index
@@ -1779,7 +1950,7 @@ impl<'i> Machine<'i> {
                         .as_ref()
                         .and_then(|t| t.get(idx))
                         .and_then(|t| t.clone());
-                    self.kont.push(Cont::CallArgs {
+                    self.state.kont.push(Cont::CallArgs {
                         callee,
                         args: args.clone(),
                         index: index + 1,
@@ -1800,6 +1971,7 @@ impl<'i> Machine<'i> {
                     match self.dispatch_call(callee, args, values, env, span)? {
                         Control::Next(next) => Ok(Resume::Next(next)),
                         Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                        Control::Park(effect) => Ok(Resume::Park(effect)),
                     }
                 }
             }
@@ -1826,7 +1998,7 @@ impl<'i> Machine<'i> {
                 if index < args.len() {
                     let next = Arc::new(args[index].value.clone());
                     let next_ty = field_tys.get(index).cloned().flatten();
-                    self.kont.push(Cont::ConstructArgs {
+                    self.state.kont.push(Cont::ConstructArgs {
                         name,
                         args: args.clone(),
                         index: index + 1,
@@ -1848,6 +2020,7 @@ impl<'i> Machine<'i> {
                     match self.finish_construct(&name, positional, named, span)? {
                         Control::Next(next) => Ok(Resume::Next(next)),
                         Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                        Control::Park(effect) => Ok(Resume::Park(effect)),
                     }
                 }
             }
@@ -1857,7 +2030,7 @@ impl<'i> Machine<'i> {
                     // without evaluating the right (mirrors `val!`).
                     return Ok(Resume::Redeliver(Done::plain(done.ctl)));
                 };
-                self.kont.push(Cont::PipeApply { left, span });
+                self.state.kont.push(Cont::PipeApply { left, span });
                 Ok(Resume::Next(Ctrl::EvalExpr(r, env)))
             }
             Cont::PipeApply { left, span } => {
@@ -1869,6 +2042,7 @@ impl<'i> Machine<'i> {
                 match self.start_call_value(f, vec![left], span)? {
                     Control::Next(next) => Ok(Resume::Next(next)),
                     Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                    Control::Park(effect) => Ok(Resume::Park(effect)),
                 }
             }
             Cont::MethodReceiver {
@@ -1885,6 +2059,7 @@ impl<'i> Machine<'i> {
                 match self.start_method(subject, name, args, env, span)? {
                     Control::Next(next) => Ok(Resume::Next(next)),
                     Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                    Control::Park(effect) => Ok(Resume::Park(effect)),
                 }
             }
             Cont::MethodArgs {
@@ -1904,7 +2079,7 @@ impl<'i> Machine<'i> {
                 values.push(v);
                 if index < args.len() {
                     let next = Arc::new(args[index].value.clone());
-                    self.kont.push(Cont::MethodArgs {
+                    self.state.kont.push(Cont::MethodArgs {
                         subject,
                         name,
                         args: args.clone(),
@@ -1918,6 +2093,7 @@ impl<'i> Machine<'i> {
                     match self.finish_method(subject, &name, values, span)? {
                         Control::Next(next) => Ok(Resume::Next(next)),
                         Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                        Control::Park(effect) => Ok(Resume::Park(effect)),
                     }
                 }
             }
@@ -1931,9 +2107,14 @@ impl<'i> Machine<'i> {
                 match self.start_call_value(f, values, span)? {
                     Control::Next(next) => Ok(Resume::Next(next)),
                     Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                    Control::Park(effect) => Ok(Resume::Park(effect)),
                 }
             }
-            Cont::NativeResume { resume, span } => {
+            Cont::NativeResume {
+                resume,
+                span,
+                from_effect,
+            } => {
                 let result = match done.ctl {
                     Ctl::Val(v) => Ok(v),
                     // A control signal from the callback aborts the native and
@@ -1945,10 +2126,15 @@ impl<'i> Machine<'i> {
                         return Ok(Resume::Redeliver(Done::plain(other)));
                     }
                 };
-                let step = resume.resume(self.interp, result)?;
+                let step = if from_effect {
+                    resume.resume_effect(self.interp, result)?
+                } else {
+                    resume.resume(self.interp, result)?
+                };
                 match self.start_native_resume(step, span)? {
                     Control::Next(next) => Ok(Resume::Next(next)),
                     Control::Finished(ctl) => Ok(Resume::Redeliver(Done::plain(ctl))),
+                    Control::Park(effect) => Ok(Resume::Park(effect)),
                 }
             }
             Cont::FrameBoundary { call_span } => self.resume_frame_boundary(done, call_span),
@@ -1993,7 +2179,7 @@ impl<'i> Machine<'i> {
         }
         // `index` is the element currently being evaluated; `out` holds the
         // elements that already completed.
-        self.kont.push(Cont::ListNext {
+        self.state.kont.push(Cont::ListNext {
             items: items.clone(),
             index: 0,
             out: Vec::with_capacity(items.len()),
@@ -2023,7 +2209,7 @@ impl<'i> Machine<'i> {
                 std::collections::BTreeSet::new(),
             )))));
         }
-        self.kont.push(Cont::SetNext {
+        self.state.kont.push(Cont::SetNext {
             items: items.clone(),
             index: 0,
             out: std::collections::BTreeSet::new(),
@@ -2053,7 +2239,7 @@ impl<'i> Machine<'i> {
                 RefCell::new(BTreeMap::new()),
             ))))));
         }
-        self.kont.push(Cont::MapKeyNext {
+        self.state.kont.push(Cont::MapKeyNext {
             entries: entries.clone(),
             index: 0,
             out: BTreeMap::new(),
@@ -2110,7 +2296,7 @@ impl<'i> Machine<'i> {
                     // continuation.
                     let expr = Arc::new(e.clone());
                     let spec = spec.clone();
-                    self.kont.push(Cont::FStrNext {
+                    self.state.kont.push(Cont::FStrNext {
                         parts,
                         index,
                         spec,
@@ -2207,9 +2393,9 @@ impl<'i> Machine<'i> {
 
     /// Begin evaluating an expression, preserving the `E1015` AST-depth guard.
     fn start_expr(&mut self, e: &Arc<Expr>, env: &Env) -> Result<Control> {
-        self.expr_depth += 1;
-        if self.expr_depth > MAX_AST_DEPTH {
-            self.expr_depth -= 1;
+        self.state.expr_depth += 1;
+        if self.state.expr_depth > MAX_AST_DEPTH {
+            self.state.expr_depth -= 1;
             return Err(self.interp.error(
                 codes::NESTING,
                 "expression nests too deeply to evaluate",
@@ -2218,7 +2404,7 @@ impl<'i> Machine<'i> {
         }
         // The guard is popped (and the depth decremented) when this expression
         // completes, exactly like `eval`'s trailing `ast_depth -= 1`.
-        self.kont.push(Cont::ExprDepth);
+        self.state.kont.push(Cont::ExprDepth);
         match &**e {
             Expr::Lit(l, _) => Ok(Control::Next(Ctrl::Done(Ctl::Val(literal(l))))),
             Expr::Name(name, span) => self.eval_name(name, *span, env),
@@ -2246,7 +2432,7 @@ impl<'i> Machine<'i> {
                 true,
             ))),
             Expr::If(cond, then, els, _) => {
-                self.kont.push(Cont::IfBranch {
+                self.state.kont.push(Cont::IfBranch {
                     then: then.clone(),
                     els: els.clone(),
                     env: env.clone(),
@@ -2256,7 +2442,7 @@ impl<'i> Machine<'i> {
             Expr::Unary(op, operand, span) => {
                 // Operand first, exactly once; the operator is applied when the
                 // operand completes (`Cont::UnaryApply`).
-                self.kont.push(Cont::UnaryApply {
+                self.state.kont.push(Cont::UnaryApply {
                     op: *op,
                     span: *span,
                 });
@@ -2280,7 +2466,7 @@ impl<'i> Machine<'i> {
                     // exactly once; the continuation decides whether the right
                     // operand is required at all (B-1R3B.3). Never fall back.
                     BinOp::And | BinOp::Or => {
-                        self.kont.push(Cont::ShortCircuitLeft {
+                        self.state.kont.push(Cont::ShortCircuitLeft {
                             op: *op,
                             rhs: r.clone(),
                             env: env.clone(),
@@ -2289,7 +2475,7 @@ impl<'i> Machine<'i> {
                     }
                     // Eager binary: left first, exactly once.
                     _ => {
-                        self.kont.push(Cont::BinaryLeft {
+                        self.state.kont.push(Cont::BinaryLeft {
                             op: *op,
                             rhs: r.clone(),
                             env: env.clone(),
@@ -2308,7 +2494,7 @@ impl<'i> Machine<'i> {
                 // (which validates start before end after evaluating both).
                 // Both type errors are `E3001` with the recursive messages at
                 // the range's span.
-                self.kont.push(Cont::RangeStart {
+                self.state.kont.push(Cont::RangeStart {
                     end: end.clone(),
                     env: env.clone(),
                     span: *span,
@@ -2321,7 +2507,7 @@ impl<'i> Machine<'i> {
                 // the `eval_inner`'s `Expr::Index` arm order; the lookup itself
                 // is delegated to `Interp::index_get` so list/string/map/instance
                 // semantics and every diagnostic are identical by construction.
-                self.kont.push(Cont::IndexTarget {
+                self.state.kont.push(Cont::IndexTarget {
                     idx: idx.clone(),
                     env: env.clone(),
                     span: *span,
@@ -2333,7 +2519,7 @@ impl<'i> Machine<'i> {
                 // field or zero-argument method with `eval_inner`'s exact rules
                 // (`Cont::FieldReceiver`). The name is syntactic, so it is
                 // copied into the continuation rather than evaluated.
-                self.kont.push(Cont::FieldReceiver {
+                self.state.kont.push(Cont::FieldReceiver {
                     name: name.clone(),
                     span: *span,
                 });
@@ -2368,7 +2554,7 @@ impl<'i> Machine<'i> {
             Expr::Pipe(l, r, span) => {
                 // `l |> r` evaluates `l` once, then `r` once, then applies
                 // `r` to `l`'s value through the ordinary call path.
-                self.kont.push(Cont::PipeRight {
+                self.state.kont.push(Cont::PipeRight {
                     r: r.clone(),
                     env: env.clone(),
                     span: *span,
@@ -2416,7 +2602,7 @@ impl<'i> Machine<'i> {
                 // The receiver is evaluated exactly once, then the arguments in
                 // source order (`Interp::eval_inner`'s `Expr::Method` arm has
                 // the identical order).
-                self.kont.push(Cont::MethodReceiver {
+                self.state.kont.push(Cont::MethodReceiver {
                     name: name.clone(),
                     args: args.clone(),
                     env: env.clone(),
@@ -2444,7 +2630,7 @@ impl<'i> Machine<'i> {
                 // order with `match_pattern`; the first matching (and,
                 // if present, truthy-guarded) arm's body runs in a fresh child
                 // scope; no match is `E4025` (`Interp::eval_inner`).
-                self.kont.push(Cont::MatchSubject {
+                self.state.kont.push(Cont::MatchSubject {
                     arms: arms.clone(),
                     env: env.clone(),
                     span: *span,
@@ -2474,7 +2660,7 @@ impl<'i> Machine<'i> {
             if super::is_json_decode_as_name(name) {
                 if let [text_arg, type_arg] = &*args {
                     if let Expr::TypeRef(ty, tspan) = &type_arg.value {
-                        self.kont.push(Cont::TypedDecode {
+                        self.state.kont.push(Cont::TypedDecode {
                             ty: ty.clone(),
                             span: *tspan,
                         });
@@ -2491,7 +2677,7 @@ impl<'i> Machine<'i> {
         }
         let param_tys = self.interp.resolved_param_tys_pub(&callee, &env);
         let first = Arc::new(args[0].value.clone());
-        self.kont.push(Cont::CallArgs {
+        self.state.kont.push(Cont::CallArgs {
             callee,
             args: args.clone(),
             index: 1,
@@ -2533,7 +2719,7 @@ impl<'i> Machine<'i> {
         let field_tys = self.interp.construct_field_tys(&name, &args);
         let first = Arc::new(args[0].value.clone());
         let first_ty = field_tys.first().cloned().flatten();
-        self.kont.push(Cont::ConstructArgs {
+        self.state.kont.push(Cont::ConstructArgs {
             name,
             args: args.clone(),
             index: 1,
@@ -2582,7 +2768,7 @@ impl<'i> Machine<'i> {
             return self.finish_method(subject, &name, Vec::new(), span);
         }
         let first = Arc::new(args[0].value.clone());
-        self.kont.push(Cont::MethodArgs {
+        self.state.kont.push(Cont::MethodArgs {
             subject,
             name,
             args: args.clone(),
@@ -2653,7 +2839,7 @@ impl<'i> Machine<'i> {
             self.interp.bind_pattern(&arm.pattern, &subject, &scope)?;
             if let Some(g) = &arm.guard {
                 let guard = Arc::new(g.clone());
-                self.kont.push(Cont::MatchGuard {
+                self.state.kont.push(Cont::MatchGuard {
                     arms: arms.clone(),
                     subject: subject.clone(),
                     next: i + 1,
@@ -2679,7 +2865,7 @@ impl<'i> Machine<'i> {
     fn start_comp(&mut self, spec: CompSpec, env: Env, span: Span) -> Control {
         let _ = span;
         let iterable = spec.iterable.clone();
-        self.kont.push(Cont::CompIterable(
+        self.state.kont.push(Cont::CompIterable(
             Box::new(CompState {
                 spec,
                 env: env.clone(),
@@ -2710,7 +2896,7 @@ impl<'i> Machine<'i> {
         self.interp
             .bind_pattern(&state.spec.pattern, &item, &scope)?;
         if let Some(f) = state.spec.filter.clone() {
-            self.kont.push(Cont::CompFilter(state, scope.clone()));
+            self.state.kont.push(Cont::CompFilter(state, scope.clone()));
             Ok(Control::Next(Ctrl::EvalExpr(f, scope)))
         } else {
             Ok(self.after_comp_filter(state, scope))
@@ -2721,11 +2907,13 @@ impl<'i> Machine<'i> {
     /// value directly for a list comprehension (R3E.1).
     fn after_comp_filter(&mut self, state: Box<CompState>, scope: Env) -> Control {
         if let Some(key) = state.spec.key.clone() {
-            self.kont.push(Cont::CompKey(state, scope.clone()));
+            self.state.kont.push(Cont::CompKey(state, scope.clone()));
             Control::Next(Ctrl::EvalExpr(key, scope))
         } else {
             let value = state.spec.value.clone();
-            self.kont.push(Cont::CompValue(state, scope.clone(), None));
+            self.state
+                .kont
+                .push(Cont::CompValue(state, scope.clone(), None));
             Control::Next(Ctrl::EvalExpr(value, scope))
         }
     }
@@ -2751,7 +2939,7 @@ impl<'i> Machine<'i> {
                     next: cursor.next + 1,
                     end: cursor.end,
                 };
-                self.kont.push(Cont::ForNext(ForState {
+                self.state.kont.push(Cont::ForNext(ForState {
                     pattern: pattern.clone(),
                     body: body.clone(),
                     env: env.clone(),
@@ -2766,7 +2954,7 @@ impl<'i> Machine<'i> {
             }
         } else if index < items.len() {
             let item = items[index].clone();
-            self.kont.push(Cont::ForNext(ForState {
+            self.state.kont.push(Cont::ForNext(ForState {
                 pattern: pattern.clone(),
                 body: body.clone(),
                 env: env.clone(),
@@ -2827,7 +3015,7 @@ impl<'i> Machine<'i> {
                 }
             },
             Expr::Index(b, i, _) => {
-                self.kont.push(Cont::TargetBase {
+                self.state.kont.push(Cont::TargetBase {
                     name: None,
                     index: Some(i.clone()),
                     phase,
@@ -2837,7 +3025,7 @@ impl<'i> Machine<'i> {
                 Ok(Resume::Next(Ctrl::EvalExpr(b.clone(), env)))
             }
             Expr::Field(b, name, _) => {
-                self.kont.push(Cont::TargetBase {
+                self.state.kont.push(Cont::TargetBase {
                     name: Some(name.clone()),
                     index: None,
                     phase,
@@ -2881,7 +3069,7 @@ impl<'i> Machine<'i> {
         span: Span,
     ) -> Result<Control> {
         let Expr::Name(name, nspan) = &*callee else {
-            self.kont.push(Cont::CallCallee { values, span });
+            self.state.kont.push(Cont::CallCallee { values, span });
             return Ok(Control::Next(Ctrl::EvalExpr(callee.clone(), env)));
         };
         let nspan = *nspan;
@@ -2989,7 +3177,9 @@ impl<'i> Machine<'i> {
             env.define(p.clone(), v, *mutable);
         }
         self.push_frame(closure.clone(), env.clone(), span)?;
-        self.kont.push(Cont::FrameBoundary { call_span: span });
+        self.state
+            .kont
+            .push(Cont::FrameBoundary { call_span: span });
         Ok(Ctrl::EnterBlock(closure.body.clone(), env, false))
     }
 
@@ -3003,8 +3193,23 @@ impl<'i> Machine<'i> {
         match step {
             NativeOutcome::Done(v) => Ok(Control::Next(Ctrl::Done(Ctl::Val(v)))),
             NativeOutcome::InvokeCallback { f, args, resume } => {
-                self.kont.push(Cont::NativeResume { resume, span });
+                self.state.kont.push(Cont::NativeResume {
+                    resume,
+                    span,
+                    from_effect: false,
+                });
                 self.start_call_value(f, args, span)
+            }
+            NativeOutcome::Suspend { effect, wait } => {
+                // Park: the native's token rides the continuation stack so the
+                // exact resume point survives suspension (D1). Nothing else is
+                // touched — frames, environments, spans and depth are intact.
+                self.state.kont.push(Cont::NativeResume {
+                    resume: wait,
+                    span,
+                    from_effect: true,
+                });
+                Ok(Control::Park(effect))
             }
         }
     }
@@ -3053,7 +3258,7 @@ impl<'i> Machine<'i> {
                 ann,
                 ..
             } => {
-                self.kont.push(Cont::LetBind {
+                self.state.kont.push(Cont::LetBind {
                     name: name.clone(),
                     mutable: *mutable,
                     env: env.clone(),
@@ -3074,7 +3279,7 @@ impl<'i> Machine<'i> {
             }
             Stmt::Return(value, _) => match value {
                 Some(e) => {
-                    self.kont.push(Cont::ReturnFrom);
+                    self.state.kont.push(Cont::ReturnFrom);
                     // A `return` under a declared Array return type realizes a
                     // bracket literal as an Array (§48).
                     match self.current_ret_ty() {
@@ -3096,7 +3301,7 @@ impl<'i> Machine<'i> {
                 // (see `Cont::ThrowFrom`), so an operand that itself throws
                 // keeps its own inner site (RFC 0001), mirroring
                 // `Interp::exec_stmt`'s `Stmt::Throw` arm.
-                self.kont.push(Cont::ThrowFrom { span: *span });
+                self.state.kont.push(Cont::ThrowFrom { span: *span });
                 Ok(Control::Next(Ctrl::EvalExpr(
                     Arc::new(value.clone()),
                     env.clone(),
@@ -3108,7 +3313,7 @@ impl<'i> Machine<'i> {
                 // RHS once, then atomic destructure into a temporary child
                 // scope, then transfer each binding with shadowing semantics
                 // (`Interp::exec_stmt`'s `LetPattern`).
-                self.kont.push(Cont::LetPatternBind {
+                self.state.kont.push(Cont::LetPatternBind {
                     pattern: pattern.clone(),
                     env: env.clone(),
                 });
@@ -3126,7 +3331,7 @@ impl<'i> Machine<'i> {
                 // RHS evaluated first, once; then (for a compound assignment)
                 // the target is read and written, re-evaluating its base/index
                 // subexpressions exactly like `read_target`/`write_target`.
-                self.kont.push(Cont::AssignRhs {
+                self.state.kont.push(Cont::AssignRhs {
                     target: Arc::new(target.clone()),
                     op: *op,
                     env: env.clone(),
@@ -3141,7 +3346,7 @@ impl<'i> Machine<'i> {
                 // The condition is re-evaluated once per iteration in the
                 // enclosing environment; the body runs in a fresh child scope;
                 // `break` yields `none` and `continue` re-tests.
-                self.kont.push(Cont::WhileCond {
+                self.state.kont.push(Cont::WhileCond {
                     cond: Arc::new(cond.clone()),
                     body: body.clone(),
                     env: env.clone(),
@@ -3156,7 +3361,7 @@ impl<'i> Machine<'i> {
                 // lazily (a `break` on a huge range never materializes it);
                 // every other iterable goes through `Interp::iterate`, which
                 // applies the materialization cap.
-                self.kont.push(Cont::ForIterable {
+                self.state.kont.push(Cont::ForIterable {
                     pattern: pattern.clone(),
                     body: body.clone(),
                     env: env.clone(),
@@ -3170,7 +3375,7 @@ impl<'i> Machine<'i> {
             Stmt::Loop(body, _) => {
                 // `loop` repeats until `break`; `continue` starts the next
                 // iteration; any other signal propagates.
-                self.kont.push(Cont::LoopBody {
+                self.state.kont.push(Cont::LoopBody {
                     body: body.clone(),
                     env: env.clone(),
                 });
@@ -3191,14 +3396,14 @@ impl<'i> Machine<'i> {
                 // propagate as fatal but still run `finally`. The body runs in
                 // a fresh scope; the catch scope binds the thrown value; the
                 // finally block runs in the try's enclosing environment.
-                self.kont.push(Cont::TryBody {
+                self.state.kont.push(Cont::TryBody {
                     catch: catch.clone(),
                     catch_body: catch_body.clone(),
                     finally: finally.clone(),
                     env: env.clone(),
-                    frames_len: self.frames.len(),
+                    frames_len: self.state.frames.len(),
                     depth: self.interp.depth,
-                    saved_expr_depth: self.expr_depth,
+                    saved_expr_depth: self.state.expr_depth,
                 });
                 Ok(Control::Next(Ctrl::EnterBlock(
                     body.clone(),
@@ -3222,7 +3427,7 @@ impl<'i> Machine<'i> {
             return Ok(Control::Next(Ctrl::Done(Ctl::Val(Value::None))));
         }
         let stmt = Arc::new(body[0].clone());
-        self.kont.push(Cont::Block {
+        self.state.kont.push(Cont::Block {
             body,
             index: 1,
             local: local.clone(),
@@ -3235,7 +3440,10 @@ impl<'i> Machine<'i> {
     /// bracket literal in a `return` realizes under the declared Array type
     /// (§48); `main` and natives have none.
     fn current_ret_ty(&self) -> Option<crate::types::Ty> {
-        self.frames.last().and_then(|f| f.closure.ret_ty.clone())
+        self.state
+            .frames
+            .last()
+            .and_then(|f| f.closure.ret_ty.clone())
     }
 
     /// Push a user frame, enforcing the 512/513 contract (`§17`).
@@ -3264,13 +3472,13 @@ impl<'i> Machine<'i> {
         if let Some(source) = frame_source {
             self.interp.current_source = Some(source);
         }
-        self.frames.push(UserFrame {
+        self.state.frames.push(UserFrame {
             closure,
             env,
             saved_source,
             frame_source,
             call_span,
-            saved_expr_depth: std::mem::take(&mut self.expr_depth),
+            saved_expr_depth: std::mem::take(&mut self.state.expr_depth),
         });
         Ok(())
     }
@@ -3281,9 +3489,9 @@ impl<'i> Machine<'i> {
     /// return to their caller values whatever the callee's completion was.
     /// Idempotent at zero; no underflow.
     fn pop_frame(&mut self) -> Option<UserFrame> {
-        let frame = self.frames.pop()?;
+        let frame = self.state.frames.pop()?;
         self.interp.current_source = frame.saved_source;
-        self.expr_depth = frame.saved_expr_depth;
+        self.state.expr_depth = frame.saved_expr_depth;
         self.interp.depth -= 1;
         Some(frame)
     }
@@ -3300,10 +3508,174 @@ fn literal(l: &Lit) -> Value {
     }
 }
 
+/// An owned machine driver (D1): the machine focus, continuations and frames
+/// live in this struct; the interpreter is passed to each call and borrowed
+/// only for the duration of that call. Nothing here refers to the interpreter
+/// between calls, so a session can hold the driver while the interpreter is
+/// idle and resume later without a self-reference.
+///
+/// This is the substrate for browser HTTP over Host ABI 2: the driver owns the
+/// execution state, the embedder owns the effect transport and the
+/// interpreter.
+pub(crate) struct Session {
+    /// Owned machine focus/continuations/frames.
+    state: MachineState,
+    /// The effect the session is currently suspended on, if any.
+    pending: Option<PendingEffect>,
+    /// Monotonic count of effects this session has performed, for the
+    /// embedder's accounting and stale-response rejection.
+    effects: u64,
+}
+
+impl Session {
+    /// Create a driver whose base depth is `interp`'s current depth.
+    pub(crate) fn new_for(interp: &Interp) -> Session {
+        Session {
+            state: MachineState::new(interp),
+            pending: None,
+            effects: 0,
+        }
+    }
+
+    /// The effect the session is suspended on, if any.
+    #[must_use]
+    pub(crate) fn pending(&self) -> Option<&PendingEffect> {
+        self.pending.as_ref()
+    }
+
+    /// The number of effects this session has performed.
+    #[must_use]
+    pub(crate) fn effect_count(&self) -> u64 {
+        self.effects
+    }
+
+    /// Drive a Ctrl from a fresh state.
+    pub(crate) fn drive_fresh(&mut self, interp: &mut Interp, ctrl: Ctrl) -> Result<RunOutcome> {
+        self.state = MachineState::new(interp);
+        self.drive(interp, ctrl)
+    }
+
+    /// Drive a Ctrl on the existing state (successive top-level items).
+    pub(crate) fn drive(&mut self, interp: &mut Interp, ctrl: Ctrl) -> Result<RunOutcome> {
+        // Borrow the fields separately so the machine view (which borrows
+        // `state`) can coexist with the driver's `pending` bookkeeping.
+        let Session { state, pending, .. } = self;
+        let mut machine = Machine::new(interp, state);
+        let outcome = machine.run(ctrl);
+        settle(&mut machine, pending, outcome)
+    }
+
+    /// Enter `main` from a fresh state.
+    pub(crate) fn start_main(
+        &mut self,
+        interp: &mut Interp,
+        closure: Rc<Closure>,
+    ) -> Result<RunOutcome> {
+        self.state = MachineState::new(interp);
+        let Session { state, pending, .. } = self;
+        let mut machine = Machine::new(interp, state);
+        let span = Span::default();
+        let env = closure.env.child();
+        machine.push_frame(closure.clone(), env.clone(), span)?;
+        machine
+            .state
+            .kont
+            .push(Cont::FrameBoundary { call_span: span });
+        let outcome = machine.run(Ctrl::EnterBlock(closure.body.clone(), env, false));
+        settle(&mut machine, pending, outcome)
+    }
+
+    /// Resume with a value produced by the pending effect.
+    pub(crate) fn resume_value(&mut self, interp: &mut Interp, value: Value) -> Result<RunOutcome> {
+        if self.pending.is_none() {
+            return Err(Diag::new(
+                codes::INTERNAL,
+                "resume requested with no pending Host effect",
+                Span::default(),
+            ));
+        }
+        self.pending = None;
+        self.effects += 1;
+        let Session { state, pending, .. } = self;
+        let mut machine = Machine::new(interp, state);
+        let outcome = machine.resume_effect_value(value);
+        settle(&mut machine, pending, outcome)
+    }
+
+    /// Resume with a *failed* effect: deliver the diagnostic to the parked
+    /// continuation exactly as a synchronous host failure would be delivered,
+    /// so `try`/`catch`/`finally` see it.
+    pub(crate) fn resume_error(&mut self, interp: &mut Interp, diag: Diag) -> Result<RunOutcome> {
+        if self.pending.is_none() {
+            return Err(Diag::new(
+                codes::INTERNAL,
+                "resume requested with no pending Host effect",
+                Span::default(),
+            ));
+        }
+        self.pending = None;
+        self.effects += 1;
+        let Session { state, pending, .. } = self;
+        let mut machine = Machine::new(interp, state);
+        let outcome = machine.resume_effect_error(diag);
+        settle(&mut machine, pending, outcome)
+    }
+}
+
+/// Record a park's effect and restore depth on completion/failure.
+fn settle(
+    machine: &mut Machine<'_>,
+    pending: &mut Option<PendingEffect>,
+    outcome: Result<RunOutcome>,
+) -> Result<RunOutcome> {
+    match outcome {
+        Ok(RunOutcome::Parked(effect)) => {
+            *pending = Some(effect.clone());
+            Ok(RunOutcome::Parked(effect))
+        }
+        Ok(RunOutcome::Completed(ctl)) => {
+            machine.restore_depth();
+            Ok(RunOutcome::Completed(ctl))
+        }
+        Err(diag) => {
+            machine.restore_depth();
+            Err(diag)
+        }
+    }
+}
+
+/// Drive `machine` to completion on a substrate with no effect transport:
+/// a pending effect means the host cannot suspend, so the capability is
+/// unavailable (`E5002`, via the pending effect's diagnostic mapping).
+fn run_without_effects(machine: &mut Machine<'_>, ctrl: Ctrl) -> Result<Ctl> {
+    match machine.run(ctrl)? {
+        RunOutcome::Completed(ctl) => Ok(ctl),
+        RunOutcome::Parked(effect) => Err(Diag::new(
+            codes::CAPABILITY_UNAVAILABLE,
+            format!(
+                "this host cannot suspend for a pending Host effect ({})",
+                effect_name(&effect)
+            ),
+            Span::default(),
+        )),
+    }
+}
+
+/// A short human name for a pending effect (diagnostics only).
+fn effect_name(effect: &PendingEffect) -> &'static str {
+    match effect {
+        PendingEffect::Http(_) => "HTTP request",
+    }
+}
+
 /// Evaluate `e` in `env` with the explicit continuation machine.
 pub(crate) fn eval_expr(interp: &mut Interp, e: &Expr, env: &Env) -> Result<Ctl> {
-    let mut machine = Machine::new(interp);
-    machine.run(Ctrl::EvalExpr(Arc::new(e.clone()), env.clone()))
+    let mut state = MachineState::new(interp);
+    let mut machine = Machine::new(interp, &mut state);
+    run_without_effects(
+        &mut machine,
+        Ctrl::EvalExpr(Arc::new(e.clone()), env.clone()),
+    )
 }
 
 /// Enter a user closure's body as Aura user frame 1 and run it with the
@@ -3335,19 +3707,30 @@ pub(crate) fn call_closure_body(
     for ((p, mutable), v) in closure.params.iter().zip(args) {
         env.define(p.clone(), v, *mutable);
     }
-    let mut machine = Machine::new(interp);
+    let mut state = MachineState::new(interp);
+    let mut machine = Machine::new(interp, &mut state);
     machine.push_frame(closure.clone(), env.clone(), span)?;
-    machine.kont.push(Cont::FrameBoundary { call_span: span });
-    machine.run(Ctrl::EnterBlock(closure.body.clone(), env, false))
+    machine
+        .state
+        .kont
+        .push(Cont::FrameBoundary { call_span: span });
+    run_without_effects(
+        &mut machine,
+        Ctrl::EnterBlock(closure.body.clone(), env, false),
+    )
 }
 
 /// Execute `s` in `env` with the machine. Returns the completion and the
 /// possibly-advanced environment (a top-level `let` shadowing).
 #[allow(dead_code)]
 pub(crate) fn exec_stmt(interp: &mut Interp, s: &Stmt, env: &Env) -> Result<(Ctl, Option<Env>)> {
-    let mut machine = Machine::new(interp);
-    let ctl = machine.run(Ctrl::EvalStmt(Arc::new(s.clone()), env.clone()))?;
-    Ok((ctl, machine.top_env.take()))
+    let mut state = MachineState::new(interp);
+    let mut machine = Machine::new(interp, &mut state);
+    let ctl = run_without_effects(
+        &mut machine,
+        Ctrl::EvalStmt(Arc::new(s.clone()), env.clone()),
+    )?;
+    Ok((ctl, machine.state.top_env.take()))
 }
 
 /// Span accessor for expression diagnostics.
@@ -3380,9 +3763,13 @@ mod tests {
     fn run_stmts(stmts: Vec<Stmt>) -> Result<(Ctl, Option<Env>)> {
         let mut interp = Interp::new();
         let globals = interp.globals.clone();
-        let mut machine = Machine::new(&mut interp);
-        let ctl = machine.run(Ctrl::EnterBlock(Arc::from(stmts), globals, true))?;
-        Ok((ctl, machine.top_env.take()))
+        let mut state = MachineState::new(&interp);
+        let mut machine = Machine::new(&mut interp, &mut state);
+        let ctl = run_without_effects(
+            &mut machine,
+            Ctrl::EnterBlock(Arc::from(stmts), globals, true),
+        )?;
+        Ok((ctl, machine.state.top_env.take()))
     }
 
     #[test]
@@ -3464,14 +3851,13 @@ mod tests {
             value: lit(1),
             span: Span::default(),
         }];
-        let mut machine = Machine::new(&mut interp);
-        machine
-            .run(Ctrl::EnterBlock(
-                Arc::from(inner.clone()),
-                parent.clone(),
-                true,
-            ))
-            .unwrap();
+        let mut state = MachineState::new(&interp);
+        let mut machine = Machine::new(&mut interp, &mut state);
+        run_without_effects(
+            &mut machine,
+            Ctrl::EnterBlock(Arc::from(inner.clone()), parent.clone(), true),
+        )
+        .unwrap();
         assert!(
             parent.get("only_inside").is_none(),
             "scoped block leaked a binding into its parent"
@@ -3481,10 +3867,13 @@ mod tests {
         // exactly like `exec_block(..., false)`.
         let mut interp = Interp::new();
         let parent = interp.globals.clone();
-        let mut machine = Machine::new(&mut interp);
-        machine
-            .run(Ctrl::EnterBlock(Arc::from(inner), parent.clone(), false))
-            .unwrap();
+        let mut state = MachineState::new(&interp);
+        let mut machine = Machine::new(&mut interp, &mut state);
+        run_without_effects(
+            &mut machine,
+            Ctrl::EnterBlock(Arc::from(inner), parent.clone(), false),
+        )
+        .unwrap();
         assert!(
             parent.get("only_inside").is_some(),
             "unscoped block did not alias its parent"
@@ -3992,13 +4381,14 @@ mod tests {
             body: Arc::from(Vec::<Stmt>::new()),
             env: globals.clone(),
         });
-        let mut machine = Machine::new(&mut interp);
+        let mut state = MachineState::new(&interp);
+        let mut machine = Machine::new(&mut interp, &mut state);
         for i in 0..MAX_CALL_FRAMES {
             machine
                 .push_frame(closure.clone(), globals.clone(), Span::default())
                 .unwrap_or_else(|e| panic!("frame {} rejected: {e:?}", i + 1));
         }
-        assert_eq!(machine.frames.len(), MAX_CALL_FRAMES);
+        assert_eq!(machine.state.frames.len(), MAX_CALL_FRAMES);
         let err = machine
             .push_frame(closure.clone(), globals.clone(), Span::default())
             .err()
@@ -4006,7 +4396,7 @@ mod tests {
         assert_eq!(err.code, codes::RECURSION);
         assert_eq!(err.message, "call depth limit exceeded");
         assert_eq!(
-            machine.frames.len(),
+            machine.state.frames.len(),
             MAX_CALL_FRAMES,
             "rejected frame was pushed"
         );
@@ -4028,11 +4418,12 @@ mod tests {
             body: Arc::from(Vec::<Stmt>::new()),
             env: globals.clone(),
         });
-        let mut machine = Machine::new(&mut interp);
+        let mut state = MachineState::new(&interp);
+        let mut machine = Machine::new(&mut interp, &mut state);
         machine
             .push_frame(closure, globals, Span::default())
             .unwrap();
-        machine.kont.push(Cont::FrameBoundary {
+        machine.state.kont.push(Cont::FrameBoundary {
             call_span: Span::default(),
         });
         let ctl = machine
@@ -4042,7 +4433,7 @@ mod tests {
             Control::Finished(Ctl::Val(Value::Int(5))) => {}
             _ => panic!("expected Finished(Val(5)), got a different control"),
         }
-        assert!(machine.frames.is_empty());
+        assert!(machine.state.frames.is_empty());
     }
 
     #[test]
@@ -4057,11 +4448,12 @@ mod tests {
             body: Arc::from(Vec::<Stmt>::new()),
             env: globals.clone(),
         });
-        let mut machine = Machine::new(&mut interp);
+        let mut state = MachineState::new(&interp);
+        let mut machine = Machine::new(&mut interp, &mut state);
         machine
             .push_frame(closure, globals, Span::default())
             .unwrap();
-        machine.kont.push(Cont::FrameBoundary {
+        machine.state.kont.push(Cont::FrameBoundary {
             call_span: Span::default(),
         });
         let err = machine
@@ -4069,7 +4461,7 @@ mod tests {
             .err()
             .unwrap();
         assert_eq!(err.code, codes::THROWN);
-        assert!(machine.frames.is_empty());
+        assert!(machine.state.frames.is_empty());
     }
 
     #[test]

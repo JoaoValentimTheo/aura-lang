@@ -529,7 +529,7 @@ pub mod json {
     }
 }
 
-#[cfg(feature = "http")]
+#[cfg(feature = "http-api")]
 pub mod http {
     //! HTTP capability surface (Keystone §21).
     //!
@@ -635,16 +635,16 @@ pub mod http {
         Value::Map(Rc::new(RefCell::new(m)))
     }
 
-    /// Perform a request through the host capability.
-    fn request(
-        it: &Interp,
+    /// Validate the method/URL and build the typed request. Shared by the
+    /// synchronous and resumable paths so validation never diverges.
+    fn build_request(
         method: &str,
         url: &str,
         headers: &[(String, String)],
         body: Option<String>,
         timeout_ms: u64,
         span: Span,
-    ) -> Result<Value, Diag> {
+    ) -> Result<HttpRequest, Diag> {
         let method = method.to_ascii_uppercase();
         if !HTTP_METHODS.contains(&method.as_str()) {
             return Err(err(
@@ -656,18 +656,107 @@ pub mod http {
                 span,
             ));
         }
-        let request = HttpRequest {
+        Ok(HttpRequest {
             method,
             url: url.to_string(),
             headers: headers.to_vec(),
             body,
             timeout_ms: timeout_ms.min(MAX_HTTP_TIMEOUT_MS),
-        };
+        })
+    }
+
+    /// Perform a request through the host capability (synchronous path).
+    ///
+    /// A host that reports [`crate::host::HostError::Pending`] (a resumable
+    /// substrate) is not reachable here: the resumable native intercepts that
+    /// before calling this. This remains for the native provider and for a
+    /// direct host that answers synchronously.
+    #[allow(dead_code)]
+    fn request(
+        it: &Interp,
+        method: &str,
+        url: &str,
+        headers: &[(String, String)],
+        body: Option<String>,
+        timeout_ms: u64,
+        span: Span,
+    ) -> Result<Value, Diag> {
+        let request = build_request(method, url, headers, body, timeout_ms, span)?;
         let response = it
             .host()
             .http_request(&request)
             .map_err(|e| e.into_diag(span))?;
         Ok(response_value(&response))
+    }
+
+    /// The resumable request step (D1): validate, then either take the host's
+    /// synchronous response (native provider) or suspend with the typed
+    /// request as a [`PendingEffect::Http`]. On resume, build the Aura value
+    /// from the returned parts exactly as the synchronous path does, so a
+    /// browser response and a native response are indistinguishable to the
+    /// language.
+    fn request_step(
+        it: &mut Interp,
+        method: &str,
+        url: &str,
+        headers: &[(String, String)],
+        body: Option<String>,
+        timeout_ms: u64,
+        span: Span,
+    ) -> Result<crate::run::NativeOutcome, Diag> {
+        let request = build_request(method, url, headers, body, timeout_ms, span)?;
+        match it.host().http_request(&request) {
+            Ok(response) => Ok(crate::run::NativeOutcome::Done(response_value(&response))),
+            Err(crate::host::HostError::Pending(effect)) => {
+                Ok(crate::run::NativeOutcome::Suspend {
+                    effect,
+                    wait: Box::new(HttpWait { span }),
+                })
+            }
+            Err(e) => Err(e.into_diag(span)),
+        }
+    }
+
+    /// The parked continuation of an HTTP request: on resume it builds the
+    /// response value from the effect result.
+    struct HttpWait {
+        span: Span,
+    }
+
+    impl crate::run::NativeResume for HttpWait {
+        fn resume(
+            self: Box<Self>,
+            _it: &mut Interp,
+            _result: Result<Value, Diag>,
+        ) -> Result<crate::run::NativeOutcome, Diag> {
+            // A callback result is never expected on an HTTP token.
+            Err(err(
+                codes::INTERNAL,
+                "an HTTP effect token received a callback result",
+                self.span,
+            ))
+        }
+
+        fn resume_effect(
+            self: Box<Self>,
+            _it: &mut Interp,
+            result: Result<Value, Diag>,
+        ) -> Result<crate::run::NativeOutcome, Diag> {
+            // The effect value is already the Aura response map (built by the
+            // embedder from the transport response via the shared encoder, or
+            // by a native host); a failure propagates as a diagnostic
+            // attributed to the *call site*, exactly like a synchronous
+            // `Host::http_request` failure, so `try`/`catch`/`finally` and the
+            // source span match the native path.
+            result
+                .map(crate::run::NativeOutcome::Done)
+                .map_err(|mut d| {
+                    if d.span == Span::default() {
+                        d.span = self.span;
+                    }
+                    d
+                })
+        }
     }
 
     /// Parse the optional headers argument: `[[ "k", "v" ], …]`.
@@ -715,10 +804,16 @@ pub mod http {
     }
 
     /// Install the HTTP functions.
+    ///
+    /// Both are **resumable natives** (D1): a host that answers synchronously
+    /// (the native `ureq` provider) completes in one step, and a host that
+    /// suspends (the browser Worker) parks the machine on
+    /// [`PendingEffect::Http`](crate::host::PendingEffect::Http) with the typed
+    /// request. Validation happens exactly once, before either path.
     pub fn install(it: &mut Interp) {
         // `http_request(method, url)` / `http_request(method, url, options)`
         // where options is a map with optional `headers`, `body`, `timeout_ms`.
-        it.native("http_request", |it, args, span| {
+        it.native_resumable("http_request", |it, args, span| {
             let method = string_arg(&args, 0, "http_request", span)?;
             let url = string_arg(&args, 1, "http_request", span)?;
             let (headers, body, timeout_ms) = match args.get(2) {
@@ -776,12 +871,12 @@ pub mod http {
                     ));
                 }
             };
-            request(it, &method, &url, &headers, body, timeout_ms, span)
+            request_step(it, &method, &url, &headers, body, timeout_ms, span)
         });
         // Convenience GET: `http_get(url)`.
-        it.native("http_get", |it, args, span| {
+        it.native_resumable("http_get", |it, args, span| {
             let url = string_arg(&args, 0, "http_get", span)?;
-            request(it, "GET", &url, &[], None, MAX_HTTP_TIMEOUT_MS, span)
+            request_step(it, "GET", &url, &[], None, MAX_HTTP_TIMEOUT_MS, span)
         });
     }
 }

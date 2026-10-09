@@ -86,7 +86,7 @@ pub fn install(it: &mut Interp) {
     crate::bridge::install(it);
     #[cfg(feature = "json")]
     ext::json::install(it);
-    #[cfg(feature = "http")]
+    #[cfg(feature = "http-api")]
     ext::http::install(it);
     #[cfg(feature = "regex")]
     ext::regex::install(it);

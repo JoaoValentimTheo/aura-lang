@@ -13,6 +13,9 @@ pub mod value;
 /// rollback (B-1R8 removes it after the final release decision).
 pub(crate) mod iterative;
 
+/// Owned, resumable execution sessions (D1, Host ABI 2).
+pub mod session;
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -291,7 +294,7 @@ type Native = Rc<dyn Fn(&mut Interp, Vec<Value>, Span) -> Result<Value>>;
 /// [`Interp::drive_resumable`], so both engines share one implementation and
 /// one callback order, and a machine-driven native never re-enters the
 /// recursive AST evaluator.
-pub(crate) enum NativeOutcome {
+pub enum NativeOutcome {
     /// The native finished with this value.
     Done(Value),
     /// A callback call is required before the native can continue.
@@ -303,15 +306,51 @@ pub(crate) enum NativeOutcome {
         /// Native-owned continuation state; consumed by `resume`.
         resume: Box<dyn NativeResume>,
     },
+    /// The native suspended on a Host effect (D1). The machine parks with a
+    /// `NativeResume` token on its continuation stack; the session performs
+    /// the effect and feeds the value back through `resume`, which continues
+    /// the native from where it stopped. `wait` is the token to resume.
+    Suspend {
+        /// The pending Host effect the embedder must perform.
+        effect: crate::host::PendingEffect,
+        /// Native-owned continuation state; consumed by `resume`.
+        wait: Box<dyn NativeResume>,
+    },
 }
 
 /// Native-owned resumable state (`ITERATIVE_EVALUATOR_DESIGN.md` §13).
-pub(crate) trait NativeResume {
+///
+/// A token is consumed exactly once, either by [`NativeResume::resume`] (a
+/// callback returned) or by [`NativeResume::resume_effect`] (a Host effect
+/// completed). Keeping both on one trait means a native that suspends on a
+/// Host effect mid-callback-loop — `map`/`filter`/`reduce` over a list built
+/// by HTTP — composes without a second protocol.
+pub trait NativeResume {
     /// Consume the callback's result and produce the native's next step.
     ///
     /// # Errors
     /// Propagates the callback's diagnostic or a native-owned diagnostic.
     fn resume(self: Box<Self>, it: &mut Interp, result: Result<Value>) -> Result<NativeOutcome>;
+
+    /// Consume a completed Host effect's value and produce the next step.
+    ///
+    /// The default rejects the feed (a token that did not suspend on an
+    /// effect), so a buggy embedder cannot silently drive an unrelated native.
+    ///
+    /// # Errors
+    /// Returns an internal diagnostic by default; a resumable native that
+    /// suspended on an effect overrides this.
+    fn resume_effect(
+        self: Box<Self>,
+        _it: &mut Interp,
+        _result: Result<Value>,
+    ) -> Result<NativeOutcome> {
+        Err(Diag::new(
+            codes::INTERNAL,
+            "Host effect fed to a native that did not suspend on one",
+            Span::default(),
+        ))
+    }
 }
 
 /// A native that can suspend on a callback (private registration path).
@@ -337,6 +376,22 @@ impl Interp {
                 NativeOutcome::InvokeCallback { f, args, resume } => {
                     let result = self.call_value(f, args, span);
                     step = resume.resume(self, result);
+                }
+                // The recursive adapter has no effect transport: a suspend
+                // means the capability is unavailable on this path. Production
+                // never reaches here (the machine drives these natives); the
+                // adapter exists only for the recursive oracle/rollback path.
+                NativeOutcome::Suspend { effect, .. } => {
+                    return Err(Diag::new(
+                        codes::CAPABILITY_UNAVAILABLE,
+                        format!(
+                            "the recursive evaluator cannot perform a pending Host effect ({})",
+                            match effect {
+                                crate::host::PendingEffect::Http(_) => "HTTP request",
+                            }
+                        ),
+                        span,
+                    ));
                 }
             }
         }
@@ -422,7 +477,7 @@ impl Interp {
     /// `Native` callback) is exactly the pre-protocol behavior. The iterative
     /// machine looks the name up in `resumable_natives` instead and schedules
     /// each [`NativeOutcome::InvokeCallback`] as machine work.
-    pub(crate) fn native_resumable(
+    pub fn native_resumable(
         &mut self,
         name: &str,
         f: impl Fn(&mut Interp, Vec<Value>, Span) -> Result<NativeOutcome> + 'static,
