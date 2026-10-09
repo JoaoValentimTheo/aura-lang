@@ -21,6 +21,24 @@ pub enum HostError {
     Io(String),
     /// The capability is not available in this host (`E5002`).
     Unavailable(String),
+    /// The operation cannot complete synchronously and must be resumed by the
+    /// embedder (0.3.2 development). The payload names the pending effect so a
+    /// resumable substrate (the browser Worker) can perform it and continue the
+    /// program without restarting it. A host that cannot suspend treats this as
+    /// unavailable. It is **not** a language error and never surfaces to Aura.
+    Pending(PendingEffect),
+}
+
+/// A host effect that a non-blocking substrate must perform out of band.
+///
+/// This is transport data, not a diagnostic: it carries exactly what the
+/// embedder needs to perform the effect and resume the program (for HTTP, the
+/// fully validated request). The language observable is the eventual value or
+/// `E4020`/`E5002`, never the pending state itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PendingEffect {
+    /// An HTTP request the embedder must perform and feed back.
+    Http(HttpRequest),
 }
 
 impl HostError {
@@ -36,12 +54,29 @@ impl HostError {
         HostError::Unavailable(msg.into())
     }
 
+    /// Build a pending-effect signal.
+    #[must_use]
+    pub fn pending(effect: PendingEffect) -> HostError {
+        HostError::Pending(effect)
+    }
+
     /// Convert into a language diagnostic with the given span.
+    ///
+    /// A [`HostError::Pending`] is a programming error at this layer: every
+    /// caller that can receive it must first resolve it by suspending. It maps
+    /// to `E5002` (the capability is not available *synchronously* here) so a
+    /// non-resumable caller that somehow reaches it denies access rather than
+    /// hanging or corrupting execution.
     #[must_use]
     pub fn into_diag(self, span: Span) -> Diag {
         match self {
             HostError::Io(m) => Diag::new(codes::IO, m, span),
             HostError::Unavailable(m) => Diag::new(codes::CAPABILITY_UNAVAILABLE, m, span),
+            HostError::Pending(_) => Diag::new(
+                codes::CAPABILITY_UNAVAILABLE,
+                "the requested capability requires a resumable host",
+                span,
+            ),
         }
     }
 }
@@ -93,9 +128,15 @@ pub struct HttpRequest {
 pub struct HttpResponse {
     /// The numeric status code.
     pub status: u16,
-    /// Response headers, in the order received.
+    /// Response headers, in the order received, preserving every occurrence
+    /// (so repeated headers such as `Set-Cookie` are never silently merged).
     pub headers: Vec<(String, String)>,
-    /// The response body as text (lossily decoded UTF-8).
+    /// The exact response body bytes. Binary-safe: the bytes are never
+    /// lossily replaced.
+    pub body_bytes: Vec<u8>,
+    /// The response body decoded as UTF-8 where it is valid, else a lossy
+    /// view. This is a *convenience view* for text programs; `body_bytes`
+    /// remains authoritative.
     pub body: String,
 }
 
@@ -467,20 +508,50 @@ pub mod http {
             .build()
             .into();
         let method = request.method.to_ascii_uppercase();
+        // Method/body policy (`HTTP_ARCHITECTURE.md`): a body supplied for a
+        // method that by contract carries none is a caller error, reported
+        // rather than silently dropped. GET/HEAD are bodyless; POST/PUT/PATCH
+        // always send (a bodyless one sends empty); DELETE sends a body only
+        // when the program supplied one.
+        if matches!(method.as_str(), "GET" | "HEAD") && request.body.is_some() {
+            return Err(HostError::io(format!(
+                "`{method}` requests do not carry a body; omit the `body` option"
+            )));
+        }
         let body = request.body.as_deref();
+
+        // Apply the caller's headers to every builder. `ureq`'s typed builders
+        // take headers one at a time; a repeated name is appended in order, so
+        // the wire request carries exactly what the program passed.
+        let apply = |mut req: ureq::RequestBuilder<ureq::typestate::WithoutBody>| {
+            for (name, value) in &request.headers {
+                req = req.header(name, value);
+            }
+            req
+        };
+        let apply_body = |mut req: ureq::RequestBuilder<ureq::typestate::WithBody>| {
+            for (name, value) in &request.headers {
+                req = req.header(name, value);
+            }
+            req
+        };
+
         // A body-carrying method sends its body (or an empty one when the
-        // program passed none); the others are bodyless builders that are
-        // sent with `call`.
+        // program passed none); the others are bodyless builders sent with
+        // `call`.
         let response = match (method.as_str(), body) {
-            ("GET", _) => agent.get(&request.url).call(),
-            ("HEAD", _) => agent.head(&request.url).call(),
-            ("DELETE", _) => agent.delete(&request.url).call(),
-            ("POST", Some(b)) => agent.post(&request.url).send(b),
-            ("POST", None) => agent.post(&request.url).send_empty(),
-            ("PUT", Some(b)) => agent.put(&request.url).send(b),
-            ("PUT", None) => agent.put(&request.url).send_empty(),
-            ("PATCH", Some(b)) => agent.patch(&request.url).send(b),
-            ("PATCH", None) => agent.patch(&request.url).send_empty(),
+            ("GET", _) => apply(agent.get(&request.url)).call(),
+            ("HEAD", _) => apply(agent.head(&request.url)).call(),
+            // DELETE is method-body-noncompliant per spec; `force_send_body`
+            // is ureq's documented escape hatch when the program supplies one.
+            ("DELETE", Some(b)) => apply_body(agent.delete(&request.url).force_send_body()).send(b),
+            ("DELETE", None) => apply(agent.delete(&request.url)).call(),
+            ("POST", Some(b)) => apply_body(agent.post(&request.url)).send(b),
+            ("POST", None) => apply_body(agent.post(&request.url)).send_empty(),
+            ("PUT", Some(b)) => apply_body(agent.put(&request.url)).send(b),
+            ("PUT", None) => apply_body(agent.put(&request.url)).send_empty(),
+            ("PATCH", Some(b)) => apply_body(agent.patch(&request.url)).send(b),
+            ("PATCH", None) => apply_body(agent.patch(&request.url)).send_empty(),
             (other, _) => {
                 return Err(HostError::io(format!("unsupported HTTP method `{other}`")));
             }
@@ -517,10 +588,14 @@ pub mod http {
             }
             bytes.extend_from_slice(&buf[..n]);
         }
+        // The bytes are authoritative and never replaced. `body` is a text
+        // view: exact when the payload is valid UTF-8, a lossy view otherwise.
+        // A binary consumer reads `body_bytes`.
         let body = String::from_utf8_lossy(&bytes).into_owned();
         Ok(HttpResponse {
             status,
             headers,
+            body_bytes: bytes,
             body,
         })
     }
@@ -635,6 +710,204 @@ impl Host for LimitedHost {
 /// shared state local to one execution, never global browser state.
 pub type BrowserStdout = std::sync::Arc<std::sync::Mutex<Vec<u8>>>;
 
+/// The retained state of a bounded output sink (0.3.2 development).
+///
+/// A sink is the *only* place output bytes come to rest. It separates the
+/// bytes retained for display from the bytes the program actually wrote, so
+/// the embedder can report "N of M bytes" honestly instead of silently
+/// discarding data or turning a policy bound into a program failure.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct OutputStats {
+    /// Total bytes the program wrote (retained + omitted).
+    pub written: usize,
+    /// Bytes retained in the preview (never more than the preview bound).
+    pub retained: usize,
+    /// Bytes deliberately not retained because the preview was full.
+    pub omitted: usize,
+}
+
+impl OutputStats {
+    /// Whether the preview dropped bytes the program wrote.
+    #[must_use]
+    pub fn truncated(&self) -> bool {
+        self.omitted > 0
+    }
+}
+
+/// How a bounded output sink treats bytes beyond its retention bound.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Overflow {
+    /// Keep executing: count the excess as omitted and continue. This is the
+    /// preview mode — a full preview is not an error.
+    Omit,
+    /// Stop retaining further bytes and flag the capture as capped. The run
+    /// itself continues; only the *capture* is bounded. This is the
+    /// complete-output mode's honest capacity limit.
+    Cap,
+}
+
+/// A bounded-memory standard-output sink (0.3.2 development).
+///
+/// The sink is shared between the host (which writes) and the embedder
+/// (which reads after, or during, execution). It never grows past
+/// `retention_limit` bytes, so a program that prints unboundedly cannot
+/// exhaust memory; the bytes it cannot retain are counted, never silently
+/// lost, and never turned into a program failure.
+#[derive(Debug, Clone)]
+pub struct OutputSink {
+    inner: std::sync::Arc<std::sync::Mutex<OutputSinkState>>,
+}
+
+#[derive(Debug)]
+struct OutputSinkState {
+    retained: Vec<u8>,
+    written: usize,
+    omitted: usize,
+    retention_limit: usize,
+    overflow: Overflow,
+    capped: bool,
+}
+
+impl OutputSink {
+    /// A preview sink retaining at most `limit` bytes and continuing past it.
+    #[must_use]
+    pub fn preview(limit: usize) -> OutputSink {
+        OutputSink {
+            inner: std::sync::Arc::new(std::sync::Mutex::new(OutputSinkState {
+                retained: Vec::new(),
+                written: 0,
+                omitted: 0,
+                retention_limit: limit,
+                overflow: Overflow::Omit,
+                capped: false,
+            })),
+        }
+    }
+
+    /// A sink retaining at most `limit` bytes and flagging capture as capped
+    /// past it (the complete-output mode's bounded capacity).
+    #[must_use]
+    pub fn complete(limit: usize) -> OutputSink {
+        OutputSink {
+            inner: std::sync::Arc::new(std::sync::Mutex::new(OutputSinkState {
+                retained: Vec::new(),
+                written: 0,
+                omitted: 0,
+                retention_limit: limit,
+                overflow: Overflow::Cap,
+                capped: false,
+            })),
+        }
+    }
+
+    /// Lock the state, recovering from poison (the mutation is a single
+    /// infallible step, so recovered bytes are authoritative — a poisoned
+    /// lock must never silently drop accepted output).
+    fn lock(&self) -> std::sync::MutexGuard<'_, OutputSinkState> {
+        match self.inner.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+
+    /// Accept one write. The bytes the sink cannot retain are counted in
+    /// `omitted` and (in [`Overflow::Cap`]) mark the capture capped. Always
+    /// returns `Ok`: a bounded capture is a policy, not a program error.
+    ///
+    /// A retained prefix that would split a UTF-8 sequence is trimmed to the
+    /// last char boundary, so the preview is always valid UTF-8; the trimmed
+    /// bytes are counted as omitted, never lost from accounting.
+    pub fn write(&self, bytes: &[u8]) {
+        let mut state = self.lock();
+        state.written = state.written.saturating_add(bytes.len());
+        let room = state.retention_limit.saturating_sub(state.retained.len());
+        if bytes.len() <= room {
+            state.retained.extend_from_slice(bytes);
+            return;
+        }
+        if room > 0 {
+            // Retain as much as fits, trimmed to a char boundary so the
+            // preview never ends mid-codepoint.
+            let take = utf8_boundary_prefix(&bytes[..room]);
+            state.retained.extend_from_slice(&bytes[..take]);
+            state.omitted = state.omitted.saturating_add(bytes.len() - take);
+        } else {
+            state.omitted = state.omitted.saturating_add(bytes.len());
+        }
+        if state.overflow == Overflow::Cap {
+            state.capped = true;
+        }
+    }
+
+    /// The retained bytes for display.
+    #[must_use]
+    pub fn retained(&self) -> Vec<u8> {
+        self.lock().retained.clone()
+    }
+
+    /// The retained bytes as (valid) UTF-8 for display.
+    #[must_use]
+    pub fn retained_text(&self) -> String {
+        String::from_utf8_lossy(&self.lock().retained).into_owned()
+    }
+
+    /// Retained / written / omitted byte counts.
+    #[must_use]
+    pub fn stats(&self) -> OutputStats {
+        let s = self.lock();
+        OutputStats {
+            written: s.written,
+            retained: s.retained.len(),
+            omitted: s.omitted,
+        }
+    }
+
+    /// Whether complete-output capture hit its capacity bound.
+    #[must_use]
+    pub fn capped(&self) -> bool {
+        self.lock().capped
+    }
+}
+
+/// The largest prefix of `bytes` that ends on a UTF-8 char boundary.
+///
+/// Used to keep a truncated preview valid UTF-8 without scanning back into an
+/// already-accepted buffer. A leading continuation byte (`10xxxxxx`) means the
+/// cut landed inside a sequence, so we shorten to the last lead byte.
+fn utf8_boundary_prefix(bytes: &[u8]) -> usize {
+    let mut end = bytes.len();
+    // Walk back over continuation bytes (at most 3 for a valid sequence).
+    let mut back = 0;
+    while end > 0 && back < 3 {
+        if bytes[end - 1] & 0b1100_0000 == 0b1000_0000 {
+            end -= 1;
+            back += 1;
+        } else {
+            break;
+        }
+    }
+    if end == 0 {
+        return 0;
+    }
+    let lead = bytes[end - 1];
+    let expected = if lead < 0x80 {
+        1
+    } else if lead & 0b1110_0000 == 0b1100_0000 {
+        2
+    } else if lead & 0b1111_0000 == 0b1110_0000 {
+        3
+    } else if lead & 0b1111_1000 == 0b1111_0000 {
+        4
+    } else {
+        1
+    };
+    if bytes.len() - (end - 1) >= expected {
+        bytes.len()
+    } else {
+        end - 1
+    }
+}
+
 /// The browser-hosted Playground host.
 ///
 /// It is a deterministic, self-contained [`Host`]: standard output is
@@ -652,6 +925,11 @@ pub struct BrowserHost {
     input: Option<std::io::Cursor<Vec<u8>>>,
     args: Vec<String>,
     max_stdout: Option<usize>,
+    /// Optional bounded-memory sink (0.3.2 development). When present, writes
+    /// are mirrored into the sink and `max_stdout` is not applied: the sink's
+    /// own retention policy (preview or complete) governs, so a full preview
+    /// never fails the program.
+    sink: Option<OutputSink>,
 }
 
 impl BrowserHost {
@@ -663,6 +941,7 @@ impl BrowserHost {
             input: None,
             args: Vec::new(),
             max_stdout: None,
+            sink: None,
         }
     }
 
@@ -674,6 +953,7 @@ impl BrowserHost {
             input: stdin.map(|s| std::io::Cursor::new(s.into_bytes())),
             args,
             max_stdout: None,
+            sink: None,
         }
     }
 
@@ -692,6 +972,7 @@ impl BrowserHost {
             input: stdin.map(|s| std::io::Cursor::new(s.into_bytes())),
             args,
             max_stdout: None,
+            sink: None,
         }
     }
 
@@ -700,10 +981,32 @@ impl BrowserHost {
     /// rule: exceeding it is a genuine host I/O failure (`E4020`), so a
     /// runaway `print` loop cannot exhaust the embedder's memory before the
     /// embedder terminates execution.
+    ///
+    /// A host also configured with [`BrowserHost::with_output_sink`] ignores
+    /// this bound: the sink's own retention policy governs and a full sink is
+    /// never a program failure. This method is retained for the historical
+    /// 1 MiB capture contract (the released runtimes and their tests).
     #[must_use]
     pub fn with_stdout_limit(mut self, max_bytes: usize) -> BrowserHost {
         self.max_stdout = Some(max_bytes);
         self
+    }
+
+    /// Attach a bounded-memory [`OutputSink`]. When present, output is
+    /// mirrored into the sink and `with_stdout_limit` is not applied, so a
+    /// program that prints more than the retention bound keeps running and the
+    /// embedder reads exact retained/written/omitted counts instead of a fatal
+    /// `E4020`.
+    #[must_use]
+    pub fn with_output_sink(mut self, sink: OutputSink) -> BrowserHost {
+        self.sink = Some(sink);
+        self
+    }
+
+    /// The attached output sink, if any.
+    #[must_use]
+    pub fn output_sink(&self) -> Option<OutputSink> {
+        self.sink.clone()
     }
 
     /// A cloneable handle to this host's standard-output buffer.
@@ -746,6 +1049,16 @@ impl Host for BrowserHost {
         // mutation here is a single infallible `extend_from_slice`), so the
         // recovered bytes are authoritative. Returning `Ok` after dropping a
         // write would corrupt the observable output contract.
+        //
+        // When a bounded sink is attached, it is the sole destination: bytes
+        // go only to the sink (never to the unbounded raw buffer), so memory
+        // is genuinely bounded by the retention policy and a full preview
+        // never fails the program. The embedder reads counts and the retained
+        // prefix from the sink.
+        if let Some(sink) = &self.sink {
+            sink.write(bytes);
+            return Ok(());
+        }
         let mut v = match self.stdout.lock() {
             Ok(v) => v,
             Err(poisoned) => poisoned.into_inner(),
