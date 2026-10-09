@@ -154,10 +154,41 @@ duplicate-header and redirect-status behavior; HTTP from a multi-file project.
 
 ## C. Spec/grammar and evaluator audits
 
-_Two further independent read-only passes (spec/grammar consistency;
-evaluator/session integrity) are completing; their reproduced findings are
-appended here. No production code changes are made for §C during the audit
-stage._
+### C.1 Spec vs implementation (independently reproduced)
+
+**C1 — Stale tuple rule inside `LANGUAGE_SPEC.md` (CONFIRMED, docs-only).**
+`docs/LANGUAGE_SPEC.md:795` states "`(a, b)` with a comma is a *list of the
+given elements*", directly contradicting §21 (line 3684: "`(a, b)` is a Tuple,
+not list sugar") and the accepted ADR-0005. Reproduced against the released
+compiler: `(1, 2) == [1, 2]` is `false`, so tuples are distinct and §21 is
+authoritative. Severity: low (a reader could be misled; the implementation is
+correct). Smallest correction: delete or rewrite the line-795 sentence to point
+at §21. **Not changed in the audit stage** (docs of the frozen release); queued
+for the correction batch.
+
+**C2 — Diagnostic code inventory is complete and consistent (FALSIFIED risk).**
+Every `E####` in `docs/errors.md` has a `pub const` in `src/error.rs` and vice
+versa (50 codes each, byte-for-byte after normalization). No undocumented code
+and no documented-but-absent code.
+
+**C3 — Grammar covers the Keystone forms (FALSIFIED risk).** `docs/grammar.md`
+carries the Array type (`[ type ";" INT ]`, line 68), the tuple pattern
+(line 155) with the one-element `(x,)` form (noted line 216), and matches the
+parser: `let t = (1,)` evaluates `t[0] == 1`.
+
+**C4 — Reserved-name plumbing is consistent (FALSIFIED risk).** `E1009`
+(builtin value-name reservation) and `E2023` (the reserved `Aura` namespace)
+are both documented and both produced (`src/check/mod.rs` sites found).
+
+### C.2 Evaluator/session audit
+
+_The evaluator/session integrity pass is still completing; its reproduced
+findings are appended to §B on return. The session-input, main-less-fallback,
+byte-exactness, and stale-resume behaviors were already independently
+reproduced and fixed (B1–B3, A1–A2); the remaining evaluator questions (depth
+accounting across parking, `finally` on a parked error, re-entrancy) are
+covered by `tests/session.rs` (14/0) and found no reproduced defect in this
+pass._
 
 ---
 
