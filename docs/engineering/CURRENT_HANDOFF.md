@@ -1,5 +1,31 @@
 # Current Engineering Handoff
 
+## Current local task — Directive 002 (2026-10-15)
+
+Release preflight integrity repair in the isolated worktree
+`/private/tmp/aura-directive-002-release-preflight` on
+`repair/directive-002-release-preflight`, from the verified remote base
+`d8b979db55e596340712ce1e4c28f1577c03f4e4`.
+The fix is limited to release/version validation and deterministic regression
+coverage. The original worktree and its unpublished local commit are protected.
+
+**Local validation actually completed:** release-preflight Node regressions
+32/32, Rust contract tests 11/11, `cargo fmt --all -- --check`,
+`cargo clippy --locked --all-targets --all-features -- -D warnings`,
+Playground manifest 88/88, release-manifest 12/12, integrity 39/39, and
+`node playground/build.mjs --check` (9 versioned entries) all passed.
+The broader `node playground/tests/node/run-all.mjs` is **INCOMPLETE**:
+it was interrupted (exit 130) after prolonged inactivity following the
+B-1 boundary checks; do not treat its partial successes as a green full suite.
+The direct release preflight on this development HEAD correctly rejects the
+already-published `v0.3.1` tag, both in pre-tag and mismatched `--on-tag` modes.
+
+**Exact next action:** review the isolated diff and validation record, then
+obtain owner approval before any publication/integration steps. No push, PR,
+merge, tag, version bump, or release is authorized by Directive 002.
+The previous task material below is retained as historical context and must
+not override this active instruction.
+
 Authoritative for **the active task and the exact next action**. Current
 repository state lives in `AGENT_STATE.md`; operating rules in `AGENTS.md`.
 Keep this file short — it is read at the start of every session.

@@ -32,6 +32,13 @@ set -euo pipefail
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
 
+for required_file in Cargo.toml Cargo.lock src/lib.rs; do
+    if [ ! -f "$required_file" ]; then
+        echo "preflight: missing required version source: $required_file" >&2
+        exit 1
+    fi
+done
+
 tag_mode=0
 on_tag=0
 version=""
@@ -43,7 +50,7 @@ for arg in "$@"; do
     esac
 done
 if [ -z "$version" ]; then
-    version=$(grep -m1 '^version = ' Cargo.toml | sed -E 's/^version = "(.*)"/\1/')
+    version=$(grep -m1 '^version = ' Cargo.toml | sed -E 's/^version = "(.*)"/\1/' || true)
     if [ -z "$version" ]; then
         echo "preflight: cannot read version from Cargo.toml" >&2
         exit 1
@@ -54,22 +61,88 @@ echo "preflight: checking release candidate v$version"
 fail=0
 
 # 1. Version agreement.
-crate_version=$(grep -m1 '^version = ' Cargo.toml | sed -E 's/^version = "(.*)"/\1/')
-lock_version=$(grep -m1 -A1 '^name = "aura-lang"' Cargo.lock | grep '^version' | sed -E 's/version = "(.*)"/\1/')
-lib_version=$(grep -oE 'VERSION: &str = "[^"]+"' src/lib.rs | sed -E 's/.*"(.*)"/\1/')
-echo "  Cargo.toml=$crate_version Cargo.lock=$lock_version src/lib.rs=$lib_version"
-if [ "$crate_version" != "$lock_version" ] || [ "$crate_version" != "$lib_version" ]; then
+crate_version=$(grep -m1 '^version = ' Cargo.toml | sed -E 's/^version = "(.*)"/\1/' || true)
+lock_version=$(grep -m1 -A1 '^name = "aura-lang"' Cargo.lock | grep '^version' | sed -E 's/version = "(.*)"/\1/' || true)
+# aura::VERSION is compiled from Cargo, not a string literal. Match the full
+# declaration so LANGUAGE_VERSION cannot accidentally satisfy this check.
+lib_version_declarations=$(grep -Ec '^[[:space:]]*pub[[:space:]]+const[[:space:]]+VERSION[[:space:]]*:[[:space:]]*&str[[:space:]]*=[[:space:]]*env!\("CARGO_PKG_VERSION"\)[[:space:]]*;' src/lib.rs || true)
+echo "  Cargo.toml=$crate_version Cargo.lock=$lock_version aura::VERSION=env!(CARGO_PKG_VERSION)"
+if [ -z "$crate_version" ] || [ -z "$lock_version" ] || [ "$crate_version" != "$lock_version" ]; then
     echo "  FAIL: version identities disagree" >&2
+    fail=1
+fi
+if [ "$lib_version_declarations" != 1 ]; then
+    echo "  FAIL: expected exactly one aura::VERSION declaration derived from CARGO_PKG_VERSION" >&2
+    fail=1
+fi
+if [ "$version" != "$crate_version" ]; then
+    echo "  FAIL: requested release v$version does not match Cargo.toml version $crate_version" >&2
     fail=1
 fi
 
 # 2. ADR-0001 invariant.
-lang_version=$(grep -oE 'LANGUAGE_VERSION: &str = "[^"]+"' src/lib.rs | sed -E 's/.*"(.*)"/\1/')
-lowest=$(printf '%s\n%s\n' "$crate_version" "$lang_version" | sort -V | head -n1)
+lang_declarations=$(grep -Ec '^[[:space:]]*pub[[:space:]]+const[[:space:]]+LANGUAGE_VERSION[[:space:]]*:[[:space:]]*&str[[:space:]]*=[[:space:]]*"[^"]*"[[:space:]]*;' src/lib.rs || true)
+lang_version=$(sed -nE 's/^[[:space:]]*pub[[:space:]]+const[[:space:]]+LANGUAGE_VERSION[[:space:]]*:[[:space:]]*\&str[[:space:]]*=[[:space:]]*"([^"]*)"[[:space:]]*;.*/\1/p' src/lib.rs)
 echo "  release=$crate_version language=$lang_version"
-if [ "$lowest" != "$lang_version" ]; then
-    echo "  FAIL: LANGUAGE_VERSION is ahead of the release version" >&2
+if [ "$lang_declarations" != 1 ]; then
+    echo "  FAIL: missing or invalid LANGUAGE_VERSION string declaration" >&2
     fail=1
+else
+    # Python is installed in release.yml. SemVer precedence differs from
+    # sort -V (notably: prerelease < stable); build metadata has no precedence.
+    if ! python3 - "$crate_version" "$lang_version" <<'PY'
+import re
+import sys
+
+pattern = re.compile(
+    r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+    r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?",
+    re.ASCII,
+)
+
+def parse(value):
+    match = pattern.fullmatch(value)
+    if match is None:
+        return None
+    prerelease = match.group(4)
+    if prerelease is not None:
+        parts = prerelease.split(".")
+        if any(p.isdigit() and len(p) > 1 and p[0] == "0" for p in parts):
+            return None
+    else:
+        parts = None
+    return tuple(map(int, match.group(1, 2, 3))), parts
+
+def compare(left, right):
+    if left[0] != right[0]:
+        return (left[0] > right[0]) - (left[0] < right[0])
+    a, b = left[1], right[1]
+    if a is None or b is None:
+        return (a is None) - (b is None)
+    for x, y in zip(a, b):
+        xn, yn = x.isdigit(), y.isdigit()
+        if xn and yn:
+            xx, yy = int(x), int(y)
+        elif xn != yn:
+            return -1 if xn else 1
+        else:
+            xx, yy = x, y
+        if xx != yy:
+            return (xx > yy) - (xx < yy)
+    return (len(a) > len(b)) - (len(a) < len(b))
+
+release, language = map(parse, sys.argv[1:])
+if release is None or language is None:
+    print("  FAIL: release or LANGUAGE_VERSION is not valid SemVer", file=sys.stderr)
+    sys.exit(1)
+if compare(language, release) > 0:
+    print("  FAIL: LANGUAGE_VERSION is ahead of the release version", file=sys.stderr)
+    sys.exit(1)
+PY
+    then
+        fail=1
+    fi
 fi
 
 # 3. The versioned Playground runtime artifact.

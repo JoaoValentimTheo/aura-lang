@@ -1,5 +1,18 @@
 # Aura Agent State
 
+## Directive 002 — isolated local repair (2026-10-15)
+
+- A dedicated worktree at `/private/tmp/aura-directive-002-release-preflight`
+  uses branch `repair/directive-002-release-preflight`, based on
+  `d8b979db55e596340712ce1e4c28f1577c03f4e4` (the observed
+  `origin/rewrite/v3-rust` tip at isolation time).
+- Scope: release preflight version integrity and hermetic regression coverage.
+  The original worktree at `/Users/joaogabrieltheodoro/projects/aura-lang`
+  and its unpublished local documentation commit must remain untouched.
+- The patch is local only. No push, PR, merge, tag, release, or runtime artifact
+  change has been authorized. Inspect Git before resuming; refer to the
+  Directive 002 report and `CURRENT_HANDOFF.md` for validation and next step.
+
 Compact current engineering state. Rules: `AGENTS.md`. Active task and exact
 next action: `docs/engineering/CURRENT_HANDOFF.md`. Detailed chronology:
 `STATUS.md`. If Git and this file disagree, **Git wins** — reconcile this file
