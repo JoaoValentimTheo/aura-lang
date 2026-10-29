@@ -792,9 +792,9 @@ them was superseded by BFR-II.
 first character is lowercase and a *variant construction* when it is uppercase.
 `IDENT "{" ... "}"` is a struct literal only when the identifier is uppercase.
 
-**Normative rule.** `(a, b)` with a comma is a *list of the given elements*
-(§21); `(expr)` without a comma is a grouping expression and produces no
-distinct value.
+**Normative rule.** `(a, b)` with a comma is a *Tuple* of the given elements
+(§21.3), not list sugar; `(expr)` without a comma is a grouping expression and
+produces no distinct value.
 
 **Normative rule.** In a call argument list, every positional argument MUST
 precede every named argument; a positional argument after a named one is a

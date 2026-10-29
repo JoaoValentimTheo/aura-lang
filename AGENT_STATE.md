@@ -1,17 +1,21 @@
 # Aura Agent State
 
-## Directive 002 — isolated local repair (2026-10-15)
+## Directive 003 — stabilization and hardening campaign (current)
 
-- A dedicated worktree at `/private/tmp/aura-directive-002-release-preflight`
-  uses branch `repair/directive-002-release-preflight`, based on
-  `d8b979db55e596340712ce1e4c28f1577c03f4e4` (the observed
-  `origin/rewrite/v3-rust` tip at isolation time).
-- Scope: release preflight version integrity and hermetic regression coverage.
-  The original worktree at `/Users/joaogabrieltheodoro/projects/aura-lang`
-  and its unpublished local documentation commit must remain untouched.
-- The patch is local only. No push, PR, merge, tag, release, or runtime artifact
-  change has been authorized. Inspect Git before resuming; refer to the
-  Directive 002 report and `CURRENT_HANDOFF.md` for validation and next step.
+- Active branch: `rewrite/v3-rust`, local HEAD **`8cada682`**, one unpublished
+  commit ahead of `origin/rewrite/v3-rust`. The Directive 002 repair (PR #2)
+  and the rustls security remediation (PR #3) are both **merged**; the
+  `/private/tmp/aura-directive-002-release-preflight` worktree and the
+  `repair/directive-002-release-preflight` branch are **historical**.
+- Scope: stabilize, harden, and measure — core language fixes, adversarial
+  security, performance, testing/CI, documentation, and technical debt.
+  Findings ledger: `docs/engineering/STABILIZATION_AUDIT.md`.
+- Constraints in force: no push, merge, tag, release, deploy, force-push,
+  destructive reset, default-branch change, or semantic/Host-ABI/version-policy
+  change without explicit human authorization. Everything so far is local.
+- First completed batch: SemVer precedence centralized in `scripts/semver.py`
+  (+ `aura::version` in-crate), replacing three `sort -V` call sites.
+- Exact next action: `docs/engineering/CURRENT_HANDOFF.md`.
 
 Compact current engineering state. Rules: `AGENTS.md`. Active task and exact
 next action: `docs/engineering/CURRENT_HANDOFF.md`. Detailed chronology:
@@ -22,25 +26,29 @@ before continuing substantial work.
 
 - Branch: `rewrite/v3-rust`
 - **Git reality (verify with `git rev-parse`, do not trust prose):** local HEAD
-  and `origin/rewrite/v3-rust` are both **`b909066f`** (ahead/behind `0/0`);
-  tag **`v0.3.1` = `b09cbef2`**. Aura 0.3.1 (Keystone) is the current release
-  (release = language = runtime = `0.3.1`) and is **PUBLISHED**. The earlier
+  is **`8cada682`**, one commit ahead of `origin/rewrite/v3-rust`
+  (`0` behind / `1` ahead — unpublished). Tag **`v0.3.1` = `b09cbef2`**. Aura
+  0.3.1 (Keystone) is the current release (release = language = `0.3.1`,
+  runtime `0.3.1` is the Playground default) and is **PUBLISHED**. The earlier
   `b221e6a9`/`v0.2.1` notes below are **historical**; Git is authoritative.
 - Local/remote relationship: authoritative value is `git rev-list
   --left-right --count origin/rewrite/v3-rust...HEAD`; a tracked file cannot
   safely hardcode its own position.
-- **Historical (superseded by `b909066f`):** the intermediate remote tip
-  `b221e6a9` once carried a red `playground (wasm runtime)` CI job; that was
-  repaired by the parser wasm-safety commits and the range subsequently
-  advanced. Do not act on the old `b221e6a9` state.
+- **Historical (superseded):** the intermediate remote tip `b221e6a9` once
+  carried a red `playground (wasm runtime)` CI job; that was repaired by the
+  parser wasm-safety commits and the range subsequently advanced. The
+  `b909066f` tip was superseded first by the Directive 002 release-preflight
+  repair (PR #2) and the rustls security remediation (PR #3, merge
+  `07845932`). Do not act on those old states.
 - Historical release: **`v0.2.1`** (2026-10-01, immutable), tag `v0.2.1` =
   `3f5f8702`. Superseded by `v0.3.1`.
 
-## Aura website — Aurea design-system migration (2026-10-09, LOCAL, UNPUSHED)
+## Aura website — Aurea design-system migration (2026-10-09, historical)
 
 A full website redesign + documentation synchronization against the published
 0.3.1 contract, entirely on branch `rewrite/v3-rust` at local HEAD `b909066f`
-(= remote; nothing pushed). Scope was `website/**`, the relevant `docs/**`
+(that state has since been merged forward to `07845932`). Scope was
+`website/**`, the relevant `docs/**`
 content mirrors, and website tooling/tests only; `src/**`,
 `playground/runtimes/**`, `Cargo.*`, tags, and frozen artifacts were untouched
 (verified byte-identical).
@@ -74,8 +82,8 @@ this checkpoint:
 
 - **No new language syntax, standard-library functions, Host capabilities,
   Playground functionality, or ABI changes.**
-- **No unapproved release.** `0.3.1` remains the release; `0.3.2-dev.5`
-  (SHA-256 `72704db2…9ef56`) is an explicitly selected experimental preview,
+- **No unapproved release.** `0.3.1` remains the release; `0.3.2-dev.7`
+  (SHA-256 `4d0ae55d…e7ecd`) is an explicitly selected experimental preview,
   never the default (`manifest.current = 0.3.1`).
 - Existing features may be corrected when a real defect is reproduced; security
   and correctness defects remain eligible for narrow fixes.
@@ -107,10 +115,10 @@ pushed. Summary of the resumed campaign:
   `referrerPolicy:"no-referrer"` only after the page's per-origin consent;
   denial is `E5002`, CORS rejection is `E4020`, no proxy, no fabricated
   statuses. `http_get`/`http_request` + `headers`/`body`/`timeout_ms` kept.
-- **Runtime identity.** `0.3.2-dev.5` (ABI 2), SHA-256
-  `72704db2135add1c92c8c67442661673371e981736bc61e72d3aeac82906d2f1`;
-  `0.3.2-dev.1` and all frozen artifacts preserved; published `0.3.1` stays
-  the default.
+- **Runtime identity.** `0.3.2-dev.7` (ABI 2), SHA-256
+  `4d0ae55dd33c0e3520dcf6b7123c127c1722030a20a2b55a2cd0701405fe7ecd`;
+  `0.3.2-dev.5`, `0.3.2-dev.1`, and all frozen artifacts preserved; published
+  `0.3.1` stays the default.
 - **Evidence.** Rust `session` 14/0 and the all-features matrix 63/63;
   Node `session-http` 13/0; Chromium `browser-http` 8/0; live PokéAPI →
   `200\npikachu\n`; website suite green (browser 404, a11y 82, playground
@@ -616,17 +624,21 @@ feature-gating of the typed-decode path.
 ## Exact Next Action
 
 See `docs/engineering/CURRENT_HANDOFF.md`. In short: Aura 0.3.1 (Keystone) is
-published; local = remote = `b909066f`, `v0.3.1` = `b09cbef2`. The **Aura
-website Aurea migration + 0.3.1 documentation synchronization** is complete
-locally and **unpushed** (see the section above). **Exact next action:** the
-human reviews the locally committed website work and authorizes (or declines) a
-push; a push to this branch triggers `pages.yml` and deploys the site, so the
-human must accept that consequence before any push. Do not push without explicit
-authorization, and do not begin Aura 0.3.2 (including HTTP expansion or local
-macOS CI migration). B-1R8 (remove the recursive engine and the oracle switch)
-and any runtime publication remain separately human-gated. **Validation
-(TD-22):** use the observable sharded `scripts/validate.py` (not a monolithic
-watch) for the Rust matrix.
+published; local HEAD is `8cada682`, one unpublished commit ahead of
+`origin/rewrite/v3-rust`, `v0.3.1` = `b09cbef2`. The **SemVer precedence
+centralization** batch is complete locally and **unpushed**, and the
+documentation drift found by the stabilization audit is corrected in the same
+working tree. **Exact next action:** continue the Directive 003 campaign —
+reclassify the B6–B14 HTTP findings in
+`docs/engineering/STABILIZATION_AUDIT.md` and fix the low-risk ones (B10 dead
+constant, B11 manifest-derived ABI, B12 output mode, B13 byte counting). A push
+to this branch triggers `pages.yml` and deploys the site, so the human must
+accept that consequence before any push. Do not push without explicit
+authorization, and do not begin language features frozen for stabilization.
+B-1R8 (remove the recursive engine and the oracle switch) and any runtime
+publication remain separately human-gated. **Validation (TD-22):** use the
+observable sharded `scripts/validate.py` (not a monolithic watch) for the Rust
+matrix.
 
 ## Writer
 
