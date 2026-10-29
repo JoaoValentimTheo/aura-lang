@@ -2,8 +2,8 @@
 
 ## Current local task — Directive 003 stabilization campaign
 
-Branch `rewrite/v3-rust`, working tree clean, local HEAD **`8cada682`** (one
-unpublished commit ahead of `origin/rewrite/v3-rust`). Everything is local:
+Branch `rewrite/v3-rust`, working tree clean, local HEAD **`c8500c35`** (four
+unpublished commits ahead of `origin/rewrite/v3-rust`). Everything is local:
 no push, PR, merge, tag, release, deploy, force-push, or destructive reset is
 authorized. Directive 002 (PR #2) and the rustls remediation (PR #3) are both
 merged and historical.
@@ -16,28 +16,45 @@ source of truth, replacing three `sort -V` call sites in
 fixed via the new in-crate `aura::version`. Documentation drift corrected:
 `docs/LANGUAGE_SPEC.md` tuple rule (C1), `SECURITY.md` supported versions,
 `README.md` 0.3.2 status, and the `0.3.2-dev.5` → `0.3.2-dev.7` references in
-live-facing docs.
+live-facing docs. All nine HTTP findings B6–B14 were then reclassified against
+the code; the four low-risk ones are fixed and pinned by tests — B10 (dead
+redirect constant and a comment claiming redirect following), B11 (three
+hardcoded `abiVersion === 1` pins now derived from the manifest), B13′ (request
+caps counted UTF-16 units, so a CJK body passed the 8 MiB cap at 3× its limit),
+and B9 (the per-run 64-request budget). B13 was falsified. B6, B7, and B14 are
+escalated because each changes the Host contract for one platform. The REPL
+O(N²) characteristic (TD-13) was re-confirmed in release profile and left
+deferred with its equivalence obstacle documented, and the never-running nightly
+fuzz workflow was recorded as TD-23.
 
 **Local validation actually completed:** `cargo fmt --all -- --check` clean;
 `cargo test --locked --all-targets --all-features` green; the reduced
 `--no-default-features --features cli,repl,json,regex,time` suite green;
 clippy clean on every target this campaign touched; `node playground/build.mjs
---check` (9 versioned entries); Playground node suites 10/11 green and the
-website suites green.
+--check` (9 versioned entries); Playground node suites 11/12 green with 0 `FAIL`
+lines (451 assertions), the sole failure being the unavailable wasm target; and
+the website suites green with 0 `FAIL` lines.
 
 **Environment limitations (not PASS):** this machine has no `rustup`, so
 `cargo +1.83.0` (MSRV), `+nightly`, Miri, and libFuzzer cannot run; and the
 `wasm32-unknown-unknown` target is absent, so the `wasm build` Playground suite
 fails to compile. The local toolchain is 1.99.1 while `rust-toolchain.toml`
 pins 1.98.1, which makes the repo-wide `clippy -D warnings` floor fail on the
-new `assert_is_empty` lint in files this campaign never touched — reproduced
-identically on the pristine baseline, so it is toolchain drift, not a
-regression.
+new `assert_is_empty` lint — 18 sites across `tests/cli.rs` (10), `src/ais.rs`
+(4), `src/mcp.rs`, `tests/ast_sharing.rs`, `tests/parser.rs`, and
+`tests/syntax_gaps.rs`. Every one of those files is untouched by this campaign,
+the lint's help link resolves to `rust-1.99.0`, and the pristine baseline
+reproduces it identically (including 10 hits in `tests/cli.rs` alone), so it is
+toolchain drift rather than a regression. No file changed here intersects that
+set.
 
-**Exact next action:** continue Directive 003 — reclassify the open HTTP
-findings B6–B14 in `docs/engineering/STABILIZATION_AUDIT.md` with reproducers
-and fix the low-risk ones. The previous task material below is retained as
-historical context and must not override this active instruction.
+**Exact next action:** Directive 003 is complete for the waves that do not need
+human authorization. B6, B7, and B14 are escalated in
+`STABILIZATION_AUDIT.md` §D because closing them changes the Host contract;
+TD-23 (the dark nightly fuzz workflow) is likewise human-gated. Await
+authorization before touching any of those, and before publishing the four
+local commits on `rewrite/v3-rust`. The previous task material below is retained
+as historical context and must not override this active instruction.
 
 Authoritative for **the active task and the exact next action**. Current
 repository state lives in `AGENT_STATE.md`; operating rules in `AGENTS.md`.

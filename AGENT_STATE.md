@@ -2,8 +2,8 @@
 
 ## Directive 003 — stabilization and hardening campaign (current)
 
-- Active branch: `rewrite/v3-rust`, local HEAD **`8cada682`**, one unpublished
-  commit ahead of `origin/rewrite/v3-rust`. The Directive 002 repair (PR #2)
+- Active branch: `rewrite/v3-rust`, local HEAD **`c8500c35`**, four unpublished
+  commits ahead of `origin/rewrite/v3-rust`. The Directive 002 repair (PR #2)
   and the rustls security remediation (PR #3) are both **merged**; the
   `/private/tmp/aura-directive-002-release-preflight` worktree and the
   `repair/directive-002-release-preflight` branch are **historical**.
@@ -13,8 +13,15 @@
 - Constraints in force: no push, merge, tag, release, deploy, force-push,
   destructive reset, default-branch change, or semantic/Host-ABI/version-policy
   change without explicit human authorization. Everything so far is local.
-- First completed batch: SemVer precedence centralized in `scripts/semver.py`
-  (+ `aura::version` in-crate), replacing three `sort -V` call sites.
+- Completed batches: (1) SemVer precedence centralized in `scripts/semver.py`
+  (+ `aura::version` in-crate), replacing three `sort -V` call sites;
+  (2) documentation drift reconciled (LANGUAGE_SPEC tuple rule, SECURITY,
+  README, dev.7); (3) Playground HTTP hardening — B10, B11, B13′, B9 fixed and
+  pinned by `transport-bounds.test.mjs` and `abi.test.mjs`, B13 falsified;
+  (4) REPL O(N²) re-confirmed in release profile and the dark nightly fuzz
+  workflow recorded as TD-23.
+- Escalated, awaiting human authorization: B6, B7, B14 (each changes the Host
+  contract for one platform) and TD-23 (every remedy is a protected action).
 - Exact next action: `docs/engineering/CURRENT_HANDOFF.md`.
 
 Compact current engineering state. Rules: `AGENTS.md`. Active task and exact
@@ -26,8 +33,8 @@ before continuing substantial work.
 
 - Branch: `rewrite/v3-rust`
 - **Git reality (verify with `git rev-parse`, do not trust prose):** local HEAD
-  is **`8cada682`**, one commit ahead of `origin/rewrite/v3-rust`
-  (`0` behind / `1` ahead — unpublished). Tag **`v0.3.1` = `b09cbef2`**. Aura
+  is **`c8500c35`**, four commits ahead of `origin/rewrite/v3-rust`
+  (`0` behind / `4` ahead — unpublished). Tag **`v0.3.1` = `b09cbef2`**. Aura
   0.3.1 (Keystone) is the current release (release = language = `0.3.1`,
   runtime `0.3.1` is the Playground default) and is **PUBLISHED**. The earlier
   `b221e6a9`/`v0.2.1` notes below are **historical**; Git is authoritative.
@@ -624,17 +631,18 @@ feature-gating of the typed-decode path.
 ## Exact Next Action
 
 See `docs/engineering/CURRENT_HANDOFF.md`. In short: Aura 0.3.1 (Keystone) is
-published; local HEAD is `8cada682`, one unpublished commit ahead of
-`origin/rewrite/v3-rust`, `v0.3.1` = `b09cbef2`. The **SemVer precedence
-centralization** batch is complete locally and **unpushed**, and the
-documentation drift found by the stabilization audit is corrected in the same
-working tree. **Exact next action:** continue the Directive 003 campaign —
-reclassify the B6–B14 HTTP findings in
-`docs/engineering/STABILIZATION_AUDIT.md` and fix the low-risk ones (B10 dead
-constant, B11 manifest-derived ABI, B12 output mode, B13 byte counting). A push
-to this branch triggers `pages.yml` and deploys the site, so the human must
-accept that consequence before any push. Do not push without explicit
-authorization, and do not begin language features frozen for stabilization.
+published; local HEAD is `c8500c35`, four unpublished commits ahead of
+`origin/rewrite/v3-rust`, `v0.3.1` = `b09cbef2`. The SemVer centralization,
+documentation reconciliation, and Playground HTTP hardening batches are
+complete locally and **unpushed**, as is the REPL/fuzz documentation
+correction. The B6–B14 findings are all reclassified; B10, B11, B13′, and B9
+are fixed and pinned, B13 was falsified. **Exact next action:** nothing further
+is actionable without human authorization — B6, B7, B14 each change the Host
+contract, and TD-23 (the dark nightly fuzz workflow) can only be fixed by a
+merge, a default-branch change, or a new trigger. A push to this branch
+triggers `pages.yml` and deploys the site, so the human must accept that
+consequence before any push. Do not push without explicit authorization, and do
+not begin language features frozen for stabilization.
 B-1R8 (remove the recursive engine and the oracle switch) and any runtime
 publication remain separately human-gated. **Validation (TD-22):** use the
 observable sharded `scripts/validate.py` (not a monolithic watch) for the Rust
