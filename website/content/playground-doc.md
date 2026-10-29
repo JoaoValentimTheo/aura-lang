@@ -54,7 +54,7 @@ model**:
 * Network is **off by default**. Each request asks the page to authorize a
   **specific origin**, and nothing is dispatched until you allow it.
 * A grant is scoped to one origin for the browser session: allowing one site
-  never authorizes another, and a redirect that changes origin is not followed.
+  never authorizes another.
 * Requests carry **no cookies and no stored credentials**
   (`credentials: "omit"`), and use a restrictive referrer policy.
 * A denial is `E5002`; a browser CORS rejection or transport failure is
@@ -63,6 +63,36 @@ model**:
 * Methods and options follow the language: `http_get(url)`,
   `http_request(method, url)`, `http_request(method, url, options)` with
   `headers`, `body`, and `timeout_ms`.
+
+#### Where the browser host differs from the native one
+
+These limits are properties of the browser, not of Aura. They are listed so a
+program that works natively is not assumed to work unchanged in the
+Playground.
+
+* **Redirects are never followed.** Both hosts make the same decision — the
+  native host sets `max_redirects(0)` and hands a `302` back to Aura as an
+  ordinary response, and the browser transport sets `redirect: "manual"`. The
+  browser, however, generally reports a manual redirect as an opaque response
+  with no readable status, so where the native host yields `302` the Playground
+  yields `E4020`. A program that inspects redirect statuses sees them natively
+  only.
+* **Response headers are filtered.** The browser's `Headers` collection hides
+  `Set-Cookie` from page JavaScript and combines repeated headers into one
+  comma-joined value. The native host preserves duplicates and original
+  casing. A program that inspects repeated response headers will observe fewer
+  of them here.
+* **HTTP is session-only.** `http_get` / `http_request` are reachable from a
+  single-source run on a Host ABI 2 runtime, which is what the Playground
+  starts. A **multi-file project** run executes synchronously and has no
+  network capability: a call there is `E5002`. This is a limitation of the
+  current runtime surface, not a setting.
+* **Request budgets.** A request body is capped at 8 MiB and request headers
+  at 64 KiB, both counted in **UTF-8 bytes**, and a **run** may issue at most
+  64 HTTP requests — the 65th is `E4020`. The body and header caps mirror the
+  native host. The per-run request count is a Playground policy with no native
+  counterpart, so a program that makes many requests may finish natively and
+  stop here.
 
 This runtime is a **development preview**: it is not a release, it may change,
 and it never becomes the default on its own. The Playground labels it

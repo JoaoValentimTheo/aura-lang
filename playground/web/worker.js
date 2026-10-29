@@ -33,9 +33,8 @@
 // Authorization: the Worker NEVER authorizes an origin by itself. When the
 // runtime parks on an HTTP effect, the Worker asks the *page* (which owns the
 // Aurea permission UI) and waits. A denied request is never dispatched. The
-// Worker keeps no cookies or credentials (`credentials: "omit"`) and follows
-// at most a bounded number of redirects, re-checking authorization for a
-// redirect target that changes origin.
+// Worker keeps no cookies or credentials (`credentials: "omit"`) and never
+// follows a redirect: a 3xx is surfaced to Aura, never chased to a new origin.
 
 importScripts(); // no-op; kept for clarity that there are no imports.
 
@@ -46,9 +45,19 @@ const PROJECT_EXPORTS = ["aura_project_reset", "aura_project_push", "aura_run_pr
 
 /** Transport bounds (mirror the Rust host's policy; the Worker enforces them
  *  too so a hostile page message cannot make it buffer without bound). */
-const MAX_REDIRECTS = 3;
 const MAX_REQUEST_BYTES = 8 * 1024 * 1024;
 const MAX_HEADER_BYTES = 64 * 1024;
+
+/**
+ * UTF-8 byte length of a string.
+ *
+ * A budget measured with `.length` counts UTF-16 code units, which is a lower
+ * bound: `"一"` is one unit but three bytes, so a body the cap calls 8 MiB can
+ * occupy 24 MiB. Every byte budget below uses this instead.
+ */
+function utf8Bytes(text) {
+  return new TextEncoder().encode(text).length;
+}
 /** Mirrors the native `MAX_HTTP_BODY_BYTES` policy: a response over this is
  *  E4020, so the browser can never buffer a body the native host would refuse. */
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
@@ -167,7 +176,7 @@ async function performHttp(runId, effect, abortSignal) {
     let bytes = 0;
     for (const [k, v] of effect.headers) {
       if (typeof k !== "string" || typeof v !== "string") continue;
-      bytes += k.length + v.length;
+      bytes += utf8Bytes(k) + utf8Bytes(v);
       if (bytes > MAX_HEADER_BYTES) {
         return {
           effect_id: effect.effect_id,
@@ -190,7 +199,13 @@ async function performHttp(runId, effect, abortSignal) {
     init.headers = headers;
   }
   if (typeof effect.body === "string") {
-    if (effect.body.length > MAX_REQUEST_BYTES) {
+    // UTF-16 length is a lower bound on UTF-8 length, so a body already over
+    // the cap in units needs no encoding; only a body that passes that cheap
+    // test is encoded for the exact count.
+    if (
+      effect.body.length > MAX_REQUEST_BYTES ||
+      utf8Bytes(effect.body) > MAX_REQUEST_BYTES
+    ) {
       return {
         effect_id: effect.effect_id,
         ok: false,
