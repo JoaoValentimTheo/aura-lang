@@ -359,6 +359,37 @@ arguments, preserved environments/spans, stale-effect rejection) are covered by
 2. **AIS/0.2**: the RFC proposes additive operations; confirm the priority
    (precision vs size) and the stable-id strategy before any implementation
    (RFC §9).
+3. **Browser/native HTTP divergence (B6, B7, B14)**: three confirmed behavioral
+   gaps remain escalated, because closing any of them changes the Host contract
+   for one platform or the other. B6 (redirect status: native `302`, browser
+   `E4020`) is the sharpest — the same program means two different things — and
+   the recommended remedy is to synthesize a status-only response in the browser
+   rather than follow redirects, which *is* a Host-behavior change. B7 (browser
+   `Headers` hides `Set-Cookie` and comma-joins duplicates) and B14 (`http_request`
+   reachable only from a session on the browser host) are documented as
+   browser-host policy in `website/content/playground-doc.md`. None is fixed
+   unilaterally.
+4. **Nightly fuzzing has never run and cannot be run (TD-23)**: `.github/workflows/fuzz-nightly.yml`
+   is `schedule`-triggered but exists only on `rewrite/v3-rust`; `schedule` fires
+   solely on the default branch (`master`), which lacks the file. It is also the
+   only workflow without a branch `push` trigger, which is exactly why `ci.yml`
+   and `pages.yml` *are* registered despite being absent from `master`. Closing
+   the gap requires a merge to `master`, a default-branch change, or adding that
+   same `push: branches: ["rewrite/**", master, main]` trigger — the first two
+   are protected actions. `workflow_dispatch` is **not** a workaround: GitHub
+   resolves dispatched workflows against the default branch, so
+   `gh workflow list` shows only `CI`, `Release`, and `Deploy website`, and
+   `gh workflow view fuzz-nightly.yml` returns HTTP 404. Fuzzing is unreachable
+   by every trigger the file declares until it reaches `master`.
+5. **REPL O(N²) (TD-13)**: re-confirmed, not fixed. The O(N²) is real
+   (release: 6.8 ms at N=100 → 1886 ms at N=3200, ~3.5–4.0× per doubling) and its
+   cost is entirely `Checker::with_declarations` (linear, 1.8–2.6 µs/decl,
+   called once per submission over a growing list). Making it incremental is
+   **not** a mechanical change: the rebuild is also the rollback mechanism, and a
+   monotonic cache diverges because `with_declarations` restores `value_types`
+   only for bindings with a persisted `ty`, while `Stmt::LetPattern` persists
+   `ty: None`. Any fix needs a differential oracle over randomized submission
+   sequences, so it stays deferred to `v1.1`.
 
 ---
 

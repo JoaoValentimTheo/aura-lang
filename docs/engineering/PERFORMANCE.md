@@ -60,21 +60,26 @@ recorded before/after and an explanation.
 
 `SessionEngine` rebuilds the checker environment from all prior session
 declarations on every submission (`Checker::with_declarations` over the growing
-`decls`). N submissions therefore cost O(N²). Measured (release, single batch of
-`let v{i} = i` submissions):
+`decls`). N submissions therefore cost O(N²). Measured (single batch of
+`let v{i} = i` submissions, Apple M2 / arm64, macOS):
 
-| submissions | ms |
-|--:|--:|
-| 100 | 16.1 |
-| 200 | 48.8 |
-| 400 | 174.7 |
-| 800 | 661.5 |
-| 1600 | 2575.6 |
-| 3200 | 10162.4 |
+| submissions | release ms | debug ms |
+|--:|--:|--:|
+| 100 | 6.8 | 18.4 |
+| 200 | 16.0 | 50.0 |
+| 400 | 40.9 | 176.9 |
+| 800 | 136.5 | 669.6 |
+| 1600 | 491.7 | 2583.9 |
+| 3200 | 1886.4 | 10230.4 |
 
-A doubling ratio of ~4 confirms quadratic. This is a **performance
-characteristic, not a correctness defect**: sessions of ordinary length are
-unaffected. Tracked as TD-13; the guard
+A doubling ratio of ~3.5–4 in either profile confirms quadratic. Debug costs
+~4–5× more at large N, so quote the release column when reasoning about user-
+visible latency and the debug column only for shape. This table previously
+carried the debug figures under a "release" heading; the numbers above were
+re-measured per profile on 2026-10-29 and supersede that mislabel.
+
+This is a **performance characteristic, not a correctness defect**: sessions of
+ordinary length are unaffected. Tracked as TD-13; the guard
 `repl_incremental_state_is_not_worse_than_quadratic` fails only on a *cubic*
 regression. Incremental checking is a deferred optimisation.
 
