@@ -34,6 +34,7 @@ pub mod run;
 pub mod source;
 pub mod stdlib;
 pub mod types;
+pub mod version;
 
 use std::sync::{Arc, Mutex};
 

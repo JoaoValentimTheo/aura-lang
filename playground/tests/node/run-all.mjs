@@ -34,6 +34,10 @@ if (!existsSync(wasm)) {
 }
 
 run("manifest", [join(here, "manifest.test.mjs")]);
+// The shared SemVer 2.0.0 comparator behind every release path. `sort -V`
+// disagreed with the specification (prereleases ranked above the release they
+// lead to), so each path enforced ADR-0001 differently. No runtime needed.
+run("semver", [join(here, "semver.test.mjs")]);
 // The release-manifest generator (section 98) describes a release from the
 // repository's canonical version sources; no runtime needed.
 run("release-manifest", [join(here, "release_manifest.test.mjs")]);

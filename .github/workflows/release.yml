@@ -74,15 +74,12 @@ jobs:
           lang_version=$(grep -oE 'LANGUAGE_VERSION: &str = "[^"]+"' src/lib.rs | sed -E 's/.*"(.*)"/\1/')
           echo "release=$crate_version language=$lang_version"
           # ADR-0001: the language version must not be ahead of the release.
-          if [ "$crate_version" != "$lang_version" ]; then
-            # Equal is the common case; if they differ, language must be the
-            # lower of the two under the same major.minor line. Compare with a
-            # tiny sort check rather than a custom comparator.
-            lowest=$(printf '%s\n%s\n' "$crate_version" "$lang_version" | sort -V | head -n1)
-            if [ "$lowest" != "$lang_version" ]; then
-              echo "LANGUAGE_VERSION ($lang_version) is ahead of release version ($crate_version)" >&2
-              exit 1
-            fi
+          # SemVer precedence lives in scripts/semver.py; `sort -V` ranked
+          # prereleases above the release they lead to, so it disagreed with
+          # the preflight and could not enforce this invariant.
+          if ! python3 scripts/semver.py check "$crate_version" "$lang_version" --quiet; then
+            echo "LANGUAGE_VERSION ($lang_version) is ahead of release version ($crate_version)" >&2
+            exit 1
           fi
           # A tagged release must have its versioned runtime directory present;
           # fail here (early) rather than in publish after a full build.
