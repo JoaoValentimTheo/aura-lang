@@ -2,9 +2,9 @@
 
 ## Directive 003 — stabilization and hardening campaign (current)
 
-- Active branch: `rewrite/v3-rust`, remote HEAD **`da9ab375`** — the merge of
-  **PR #17** (the validation orchestrator's own regression suite is now a CI
-  job). **Seventeen PRs are merged** this campaign: #2 `f96536b6` (Directive 002 preflight),
+- Active branch: `rewrite/v3-rust`, remote HEAD **`47232a79`** — the merge of
+  **PR #19** (browser network consent scoped to the mutation class). **Nineteen
+  PRs are merged** this campaign: #2 `f96536b6` (Directive 002 preflight),
   #3 `07845932` (rustls advisories), #4 `a562bacf` (batches 1–5),
   #5 `eaa3b9ed` (TD-23 + default-branch flip), #6 `4a20fa84` (post-merge
   records), #7 `22e73cce` (B6/B7 divergences + website link),
@@ -16,7 +16,11 @@
   #15 `6458c2e6` (state sync after #14),
   #16 `757eee48` (B7 project-header contract + HTTP transport docs +
   `test:abi` no longer pinned to the frozen `0.0.2` runtime),
-  #17 `da9ab375` (`scripts/test_validate.py` wired into CI). The
+  #17 `da9ab375` (`scripts/test_validate.py` wired into CI),
+  #18 `6cb8c601` (state sync for PRs #15–#17 and the Directive 003-R §4
+  blockers), #19 `47232a79` (browser network consent scoped to the mutation
+  class; `npm run test:site` rebuilds a stale site instead of testing old
+  code). The
   `/private/tmp/aura-directive-002-release-preflight` worktree and the
   `repair/directive-002-release-preflight` branch are **historical**.
 - **The default branch is `rewrite/v3-rust`** (TD-23): flipped from `master`,
@@ -86,10 +90,47 @@
   `TECHNICAL_DEBT.md` now has **zero `OPEN` rows**.
 - Exact next action: `docs/engineering/CURRENT_HANDOFF.md`.
 
-Compact current engineering state. Rules: `AGENTS.md`. Active task and exact
-next action: `docs/engineering/CURRENT_HANDOFF.md`. Detailed chronology:
-`STATUS.md`. If Git and this file disagree, **Git wins** — reconcile this file
-before continuing substantial work.
+## Directive 004 — Kilo → GitHub Copilot agent migration (current P0)
+
+- Seven Kilo roles under `.kilo/agent/` converted to native Copilot custom
+  agents under `.github/agents/`, committed as `dc16b4fe` on
+  `chore/copilot-agent-migration`, all pinned to
+  `customendpoint/Robin/deepseek-ai/deepseek-v4.1-flash-1017`.
+- `.kilo/` is **preserved untouched** as migration reference.
+- **The `400 The requested model is not supported` error is diagnosed to three
+  independent root causes, all proven by controlled experiment:**
+  1. **A — host hardcoded default.** `agentHostMain.js` declares
+     `WS="gpt-5.6-luna"` and uses it as the default for
+     `chat.agentHost.copilot.executionSubagent.model`. `gpt-5.6-luna` is not
+     registered in this BYOK-only deployment, so dispatching an `explore`
+     subagent with no pin reproduces the `400`.
+  2. **B — SDK built-in agent YAMLs.** `@github/copilot/sdk/definitions/
+     {explore,task}.agent.yaml` declare `model: claude-haiku-4.5`, likewise
+     unregistered. Pinning `claude-haiku-4.5` reproduces the `400` exactly.
+  3. **C — platform, not repo (external, unfixable here).**
+     `MEn`/`TEn` in `workbench.desktop.main.js` route `local`/`user`-sourced
+     `agent` and `skill` entries to the **standalone** bundler
+     (`<authority>-standalone`) while plugin/extension/builtin entries go to
+     the **synced** bundler. The Agent Host only ever receives the synced
+     plugin; no `-standalone` plugin directory is ever written to disk, and
+     `agenthost.log` shows exactly one synced-plugin sync and one
+     `appliedCount=0` customization event. Consequently `customAgents` in the
+     Agent Host is structurally empty and `agent_type: aura-scout` returns the
+     7-builtin enumeration.
+- **The available-model set is exactly two entries per surface** (`auto` and
+  the DeepSeek id), from `window3/renderer.log`. Neither `gpt-5.6-luna` nor
+  `claude-haiku-4.5` is present, which is why both `400`s are *correct* server
+  rejections rather than registration bugs.
+- **Working:** the workbench discovers all seven agents
+  (`customizationsDebug.log`: `agents 7 0 2 9`, all seven paths, no
+  rejections) and an explicit `model:` pin makes builtin agent types execute
+  correctly.
+- **Not achievable from this repository:** dispatching a *custom* agent by
+  `agent_type` in the Agent Host harness. Root cause C is a VS Code
+  architecture decision, documented here so no future session re-investigates
+  it.
+- Scope: infrastructure recovery. CORE FIRST work resumes after this migration
+  lands.
 
 ## Repository
 
@@ -692,27 +733,21 @@ feature-gating of the typed-decode path.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: Aura 0.3.1 (Keystone) is
-published; HEAD is `a562bacf` (PR #4 merged), nothing unpublished, and
-`v0.3.1` = `b09cbef2`. Batches 1–5 — SemVer centralization, documentation
-reconciliation, Playground HTTP hardening, the REPL/fuzz record correction, and
-the TLS advisory patches — are **merged**. B10, B11, B13′, and B9 are fixed and
-pinned; B13 was falsified. **Exact next action:** continue Directive 003-R §8's
-third action — resolve TD-23, then B6, B7, and B14 — each on its own branch
-with remote CI, per §7. Two facts measured this campaign reshape the work:
-`master` is a strict ancestor of `rewrite/v3-rust` **572 commits behind and
-carrying none of the five release tags**, which is why the nightly workflow is
-invisible to GitHub; and B6's native/browser parity is **technically
-impossible** because the browser hides the redirect status, which is the
-divergence §4 authorizes formalizing. Do not begin language features frozen for
-stabilization.
-B-1R8 (remove the recursive engine and the oracle switch) and any runtime
-publication remain separately human-gated. **Validation (TD-22):** use the
-observable sharded `scripts/validate.py` (not a monolithic watch) for the Rust
-matrix.
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `47232a79` (PR #19
+merged, nineteen PRs merged this campaign); Aura 0.3.1 (Keystone) is published
+and `v0.3.1` = `b09cbef2`. Batches 1–5, B6/B7/B14, TD-23, TD-24 and TD-27 are
+**merged and closed**. Directive 003-R §4's blockers are closed. Directive 004's
+agent migration is committed as `dc16b4fe` and awaiting its PR.
+**Exact next action:** open and land the Directive 004 migration PR, then resume
+the CORE FIRST campaign — real defects in `src/`, `tests/`, and `fuzz/`, one PR
+per finding, each carrying a reproducible case, a regression test that fails
+before the fix, the fix, and a passing test. Do not begin language features
+frozen for stabilization. B-1R8 (remove the recursive engine and the oracle
+switch) and any runtime publication remain separately human-gated.
+**Validation (TD-22):** use the observable sharded `scripts/validate.py` (not a
+monolithic watch) for the Rust matrix.
 
 ## Writer
 
-NONE (single-writer discipline; the 2026-10-07 recovery session held exclusive
-worktree ownership — a stale external `opencode` writer had already exited on
-its own).
+NONE (single-writer discipline; this session held exclusive worktree ownership
+and released it at session end).
