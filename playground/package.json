@@ -8,7 +8,7 @@
     "build": "node build.mjs",
     "check": "node build.mjs --check",
     "serve": "node tests/node/serve.mjs 8080",
-    "test:abi": "node tests/node/abi.test.mjs runtimes/0.0.2/aura_playground_runtime.wasm",
+    "test:abi": "node tests/node/abi.test.mjs",
     "test:manifest": "node tests/node/manifest.test.mjs",
     "test:browser": "node tests/node/browser.test.mjs",
     "test:worker": "node tests/node/worker.test.mjs",

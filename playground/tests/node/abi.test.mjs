@@ -11,18 +11,26 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AuraRuntime } from "../../web/runtime.mjs";
 
-const wasmPath = process.argv[2];
-if (!wasmPath) {
-  console.error("usage: node abi.test.mjs <runtime.wasm>");
-  process.exit(2);
-}
-
 // The expected Host ABI is a property of the *artifact under test*, not of this
 // test file. Deriving it from the manifest keeps the assertion meaningful when
 // `manifest.current` advances to an ABI-2 entry, instead of turning the pin
 // into a check that fails on a legitimate release.
 const playgroundDir = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const manifest = JSON.parse(readFileSync(join(playgroundDir, "runtimes/manifest.json"), "utf8"));
+
+// With no argument, test the artifact the Playground actually ships. Pinning a
+// frozen historical path here made this suite unrunnable: the only version ever
+// named was 0.0.2, which predates multiline comments, so the script could never
+// pass and silently stopped being a check.
+let wasmPath = process.argv[2];
+if (!wasmPath) {
+  const current = manifest.versions.find((v) => v.id === manifest.current && v.available);
+  if (!current) {
+    console.error("manifest has no current available version");
+    process.exit(2);
+  }
+  wasmPath = join(playgroundDir, "runtimes", current.artifact);
+}
 const resolvedWasm = resolve(wasmPath);
 const entry = manifest.versions.find(
   (version) =>

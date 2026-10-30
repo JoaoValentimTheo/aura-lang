@@ -343,6 +343,73 @@ async function runProjectWithHttp(req, { grant = true } = {}) {
   );
 }
 
+// B7 item 3 on the multi-module path: repeated headers.
+//
+// LANGUAGE_SPEC.md §25 states the per-Host divergence normatively: the browser
+// `Headers` collection combines repeated occurrences into one `", "`-joined
+// value per lowercase name, while the native host preserves duplicates as a
+// list in wire order with the original casing. Both shapes are decoded by the
+// same `json_to_response_value`, so the project path must reproduce them
+// exactly rather than flattening or re-splitting. This suite is named as the
+// multi-module contract in the spec's evidence list, so pinning the divergence
+// here is what keeps that citation true.
+//
+// The two cases are driven by giving the *host* its own header pairs; the
+// program under test is identical, so a difference in output can only come
+// from the decode step.
+{
+  const headerProgram = project(
+    `fn main() {
+    print(child::shape())
+}`,
+    `pub fn shape() -> string {
+    let r = http_get("${base}/json")
+    return to_string(r["headers"]["x-dup"]) + "|" + to_string(len(r["header_lines"]))
+}`,
+  );
+
+  // Resume a project session with an explicit, Host-supplied header list.
+  const runWithHeaders = (headers) => {
+    const first = rt.startProjectSession(headerProgram, { args: [], stdin: null });
+    return rt.resumeSession({
+      effect_id: first.result.effect_id,
+      ok: true,
+      response: { status: 200, headers, body: "{}" },
+    });
+  };
+
+  // Browser: the platform already combined and lowercased the value.
+  const browser = runWithHeaders([
+    ["x-dup", "one, two"],
+    ["x-mixed-case", "kept"],
+  ]);
+  check(
+    "a combined browser header reaches a project as one string",
+    browser.result.stdout === "one, two|2\n",
+    JSON.stringify(browser.result.stdout),
+  );
+
+  // Native: duplicates arrive as separate pairs and must stay a list.
+  const native = runWithHeaders([
+    ["X-Dup", "one"],
+    ["X-Dup", "two"],
+    ["X-Mixed-Case", "kept"],
+  ]);
+  check(
+    "duplicate native headers reach a project as a list",
+    native.result.stdout === '["one", "two"]|3\n',
+    JSON.stringify(native.result.stdout),
+  );
+
+  // The guard must be capable of failing: the two hosts disagree, so a decode
+  // step that flattened both shapes would produce equal output here.
+  check(
+    "the two host header shapes do not collapse to one",
+    browser.result.stdout !== native.result.stdout,
+    JSON.stringify({ browser: browser.result.stdout, native: native.result.stdout }),
+  );
+}
+
 // The single-source session path must be untouched by the project extension.
 {
   const step = rt.startSession('fn main() { print("single") }', { args: [], stdin: null });
