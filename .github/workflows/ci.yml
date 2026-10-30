@@ -396,7 +396,13 @@ jobs:
     name: website (static build + examples + links)
     runs-on: ubuntu-latest
     steps:
+      # `docs-consistency` verifies every release-pinned normative link against
+      # the `v<release>` tag, so this job needs the tag objects. The default
+      # shallow checkout fetches none, and each pinned target then fails with
+      # `fatal: Not a valid object name` for a reason unrelated to the docs.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@1.98.1
         with:
           targets: wasm32-unknown-unknown
