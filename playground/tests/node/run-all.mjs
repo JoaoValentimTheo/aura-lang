@@ -141,15 +141,14 @@ if (!differentialRan) {
   process.exit(1);
 }
 
-let havePlaywright = false;
-try {
-  await import("playwright");
-  havePlaywright = true;
-} catch {
-  havePlaywright = false;
-}
+// Same three-state dependency decision as the suites themselves, so the runner
+// and the suites can never disagree about whether the browser is available.
+const { detect, skipExitCode } = await import(
+  "../../../website/tests/playwright-deps.mjs"
+);
+const browserDeps = detect(import.meta.url);
 
-if (havePlaywright) {
+if (browserDeps.ok) {
   run("browser", [join(here, "browser.test.mjs")]);
   run("worker", [join(here, "worker.test.mjs")]);
   // End-to-end multi-file projects: file tabs → project state → worker →
@@ -159,12 +158,16 @@ if (havePlaywright) {
   // The mandatory browser HTTP + security gates. These are the acceptance
   // gates for the 0.3.2 development preview's network authority: they must run
   // in CI (a skipped security test is not a pass), so they are part of the
-  // standard suite, not an ad-hoc manual step.
+  // standard suite, not an ad-hoc manual step. Both hard-fail on their own when
+  // the browser is missing, independent of AURA_REQUIRE_BROWSER.
   run("browser-http", [join(here, "browser-http.test.mjs")]);
   run("http-security", [join(here, "http-security.test.mjs")]);
 } else {
-  console.log("\n=== browser/worker/multi-file/cache/browser-http/http-security ===\nSKIPPED: Playwright not installed.");
-  console.log("Install with: (cd playground && npm install && npx playwright install chromium)");
+  const code = skipExitCode(
+    browserDeps,
+    "browser/worker/multi-file/cache/browser-http/http-security",
+  );
+  if (code !== 0) process.exit(code);
 }
 
 console.log("\nPlayground suite complete.");

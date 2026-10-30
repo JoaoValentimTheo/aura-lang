@@ -10,6 +10,9 @@
 // methods/bodies/headers, the error taxonomy, and cancellation — with no
 // mocks standing in for any layer.
 
+// A missing browser is a hard failure here: this suite is the acceptance gate
+// for browser HTTP, and a skipped acceptance gate is not a pass.
+
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -22,13 +25,14 @@ const repo = resolve(here, "../../..");
 const { ensureSite } = await import("./ensure-site.mjs");
 ensureSite();
 
-let chromium;
-try {
-  ({ chromium } = await import("playwright"));
-} catch {
-  console.log("browser-http tests: playwright not installed — skipped.");
-  process.exit(0);
+const { detect } = await import(join(repo, "website/tests/playwright-deps.mjs"));
+const deps = detect(import.meta.url);
+if (!deps.ok) {
+  console.error(`browser-http tests: ${deps.reason}`);
+  console.error("This suite is the browser HTTP acceptance gate; it cannot be skipped.");
+  process.exit(1);
 }
+const { chromium } = deps;
 
 // ---- local CORS dev server (deterministic; no public service) --------------
 // `ALLOW` controls the CORS header so a test can force a CORS *failure*.

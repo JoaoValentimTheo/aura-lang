@@ -5,24 +5,24 @@
 // `serious`; lesser findings are reported but do not fail the gate.
 //
 // Usage: node website/tests/a11y.test.mjs
-// Requires `playwright` and `axe-core`; skips if either is missing.
+// Requires `playwright` with Chromium and `axe-core`. When they are absent the
+// suite reports an explicit SKIPPED line and exits 0; a broken install throws,
+// so a failed `npm ci` or a half-downloaded browser is never reported as a
+// clean skip.
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startServer } from "./serve.mjs";
+import { detectAll, skipExitCode } from "./playwright-deps.mjs";
 
-let chromium, axeSource;
-try {
-  ({ chromium } = await import("playwright"));
-  axeSource = readFileSync(
-    fileURLToPath(import.meta.resolve("axe-core/axe.min.js")),
-    "utf8",
-  );
-} catch (err) {
-  console.log(`a11y tests: dependencies unavailable (${err.message}) — skipped.`);
-  process.exit(0);
-}
+const deps = detectAll(import.meta.url, ["axe-core/axe.min.js"]);
+if (!deps.ok) process.exit(skipExitCode(deps, "a11y tests"));
+const { chromium } = deps;
+const axeSource = readFileSync(
+  fileURLToPath(import.meta.resolve("axe-core/axe.min.js")),
+  "utf8",
+);
 
 const routes = [
   "",

@@ -360,10 +360,14 @@ jobs:
   # --------------------------------------------------------------- playground
   # Builds the real Playground wasm runtime, verifies the versioned manifest is
   # immutable and reproducible, and runs the ABI + native/wasm differential
-  # suites. Browser/Worker suites run under Chromium when available.
+  # suites, plus the Chromium browser/Worker/HTTP suites. The browser suites
+  # need `playwright` installed and a downloaded Chromium; `AURA_REQUIRE_BROWSER`
+  # makes a missing browser a failure instead of a silent skip (TD-27).
   playground:
     name: playground (wasm runtime)
     runs-on: ubuntu-latest
+    env:
+      AURA_REQUIRE_BROWSER: "1"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@1.98.1
@@ -373,6 +377,19 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "20"
+      # The browser suites resolve `playwright` from this package, so the
+      # install has to happen before `run-all.mjs`. The Chromium download is
+      # cached between runs; a cache hit still verifies the binary is present.
+      - name: Cache the Chromium download
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ hashFiles('playground/package-lock.json') }}
+      - name: Install Playground test dependencies
+        run: |
+          cd playground
+          npm ci
+          npx playwright install --with-deps chromium
       - name: Format the runtime crate
         run: cargo fmt --manifest-path playground/runtime/Cargo.toml --all -- --check
       - name: Lint the runtime crate
@@ -389,12 +406,16 @@ jobs:
   # --------------------------------------------------------------- website
   # Builds the static website, validates every example against the real wasm
   # runtime, and checks internal links and required assets. The browser and
-  # accessibility suites are skipped here: no job installs Playwright, so they
-  # report SKIPPED rather than passing (see TD-27). Everything that does not
-  # need a browser runs through `website/tests/run-all.mjs`.
+  # accessibility suites run under a real Chromium here (TD-27), and
+  # `AURA_REQUIRE_BROWSER` turns a missing browser into a failure instead of a
+  # silent skip. `website/tests/run-all.mjs` also re-runs the Playground suite,
+  # whose browser-HTTP gate is hard-failing, so this job installs Playground's
+  # dependencies too.
   website:
     name: website (static build + examples + links)
     runs-on: ubuntu-latest
+    env:
+      AURA_REQUIRE_BROWSER: "1"
     steps:
       # `docs-consistency` verifies every release-pinned normative link against
       # the `v<release>` tag, so this job needs the tag objects. The default
@@ -410,6 +431,23 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "20"
+      # Both package installs are required: the website suites resolve
+      # `playwright`/`@axe-core/playwright` from `website/`, and the Playground
+      # suite that `website/tests/run-all.mjs` re-runs resolves `playwright`
+      # from `playground/`. The Chromium binary is shared, so it is downloaded
+      # once here rather than once per package.
+      - name: Cache the Chromium download
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ hashFiles('website/package-lock.json', 'playground/package-lock.json') }}
+      - name: Install website test dependencies
+        run: |
+          cd website
+          npm ci
+          cd ../playground
+          npm ci
+          npx playwright install --with-deps chromium
       - name: Verify the versioned runtime manifest
         run: node playground/build.mjs --check
       # The active GitHub Pages deployment is the project site, so the default
@@ -448,5 +486,5 @@ jobs:
       # whole suite from the runner that owns the list, so adding a suite to
       # `run-all.mjs` is enough to put it in CI. It depends on `dist`, which
       # the default build above just produced for the project-site base.
-      - name: Full website suite (all suites, browser ones self-skip)
+      - name: Full website suite (all suites, including the browser ones)
         run: node website/tests/run-all.mjs

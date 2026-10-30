@@ -27,13 +27,12 @@ import { readFile, stat } from "node:fs/promises";
 import { extname, normalize, join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-let chromium;
-try {
-  ({ chromium } = await import("playwright"));
-} catch {
-  console.error("cache.test.mjs: `playwright` is not installed; skipping.");
-  process.exit(0);
-}
+const { detect, skipExitCode } = await import(
+  "../../../website/tests/playwright-deps.mjs"
+);
+const deps = detect(import.meta.url);
+if (!deps.ok) process.exit(skipExitCode(deps, "cache tests"));
+const { chromium } = deps;
 
 const here = dirname(fileURLToPath(import.meta.url));
 const playground = resolve(here, "../..");
