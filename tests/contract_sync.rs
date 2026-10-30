@@ -422,3 +422,102 @@ fn the_specification_declares_the_implemented_language_version() {
         "docs/LANGUAGE_SPEC.md must declare `{expected}` to match src/lib.rs"
     );
 }
+
+/// Documentation synchronization: the Playground ABI table's declared Host ABI
+/// version must match `ABI_VERSION` in the runtime crate.
+///
+/// The table once said `1` while `playground/runtime/src/lib.rs` declared `2`,
+/// because the runtime gained the `aura_session_*` exports (Host ABI 2) and the
+/// prose was never updated. A host that trusted the document would have
+/// rejected every ABI-2 artifact. Both values are read from the repository, so
+/// the drift cannot return silently: bumping one requires bumping the other in
+/// the same commit.
+#[test]
+fn the_playground_document_declares_the_implemented_host_abi_version() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let runtime = std::fs::read_to_string(root.join("playground/runtime/src/lib.rs"))
+        .expect("the Playground runtime is part of the repository");
+    let declared = runtime
+        .lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix("pub const ABI_VERSION: u32 = ")
+                .and_then(|rest| rest.trim_end_matches(';').parse::<u32>().ok())
+        })
+        .expect("playground/runtime/src/lib.rs must declare `pub const ABI_VERSION: u32`");
+
+    let doc = std::fs::read_to_string(root.join("docs/playground.md"))
+        .expect("the Playground document is part of the repository");
+    let expected = format!("| `aura_abi_version() -> u32` | Host ABI version (`{declared}`) |");
+    assert!(
+        doc.contains(&expected),
+        "docs/playground.md must declare `{expected}` to match ABI_VERSION in \
+         playground/runtime/src/lib.rs"
+    );
+}
+
+/// Documentation synchronization: the Playground document's manifest claims —
+/// how many entries exist, which one is current, and how many are frozen — must
+/// match `playground/runtimes/manifest.json`.
+///
+/// The document said "seven entries" and called `0.2.1` the current release
+/// for roughly one release line after `0.3.1` shipped, because nothing tied the
+/// prose to the registry. The count is derived here rather than restated, so
+/// publishing a runtime makes the document fail until it is updated.
+#[test]
+fn the_playground_document_agrees_with_the_runtime_manifest() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let manifest = std::fs::read_to_string(root.join("playground/runtimes/manifest.json"))
+        .expect("the runtime manifest is part of the repository");
+    let doc = std::fs::read_to_string(root.join("docs/playground.md"))
+        .expect("the Playground document is part of the repository");
+
+    // Minimal extraction: the manifest is generated JSON with one `"key": value`
+    // per line, so a full JSON parser would be dependency weight for two fields.
+    let current = manifest
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("\"current\":"))
+        .and_then(|rest| rest.trim().trim_end_matches(',').strip_prefix('"'))
+        .and_then(|rest| rest.strip_suffix('"'))
+        .expect("playground/runtimes/manifest.json must declare `\"current\"`");
+    assert!(
+        doc.contains(&format!(
+            "`{current}` release is the current published release"
+        )),
+        "docs/playground.md must name `{current}` as the current published release, \
+         matching `\"current\"` in playground/runtimes/manifest.json"
+    );
+
+    let entries = manifest.matches("\"release_version\"").count();
+    assert!(
+        entries >= 9,
+        "the manifest lost entries: found {entries}, expected at least the 9 \
+         historical and current ones (no frozen artifact is ever removed)"
+    );
+    let spelled = |n: usize| match n {
+        1 => "one",
+        2 => "two",
+        3 => "three",
+        4 => "four",
+        5 => "five",
+        6 => "six",
+        7 => "seven",
+        8 => "eight",
+        9 => "nine",
+        10 => "ten",
+        11 => "eleven",
+        12 => "twelve",
+        _ => {
+            panic!("extend `spelled` above {n} when the manifest grows")
+        }
+    };
+    assert!(
+        doc.contains(&format!(
+            "manifest currently lists {} entries",
+            spelled(entries)
+        )),
+        "docs/playground.md must say the manifest lists {} entries to match \
+         playground/runtimes/manifest.json",
+        spelled(entries)
+    );
+}
