@@ -47,7 +47,18 @@ name = "aura-playground-runtime"
 # semantics are unchanged, so `language_version` stays `0.3.1`; only the
 # runtime identity advances. It is a development pre-release and is never a
 # published release. `0.3.1` remains pinned and immutable.
-version = "0.3.2-dev.7"
+#
+# `0.3.2-dev.8` extends Host ABI 2 in place with
+# `aura_session_start_project`, which lets a *virtual multi-source project*
+# suspend on a Host effect. Before it, HTTP inside a multi-file project was
+# silently unavailable: the Worker had to run projects on the synchronous ABI-1
+# path, which cannot perform an effect at all. ABI stays at 2 because the
+# addition is purely additive — every ABI-2 export keeps its meaning and
+# signature, an artifact without the new export still advertises ABI 2 and
+# still runs single-source sessions, and callers feature-detect the new export
+# rather than compare ABI numbers. Language semantics are unchanged, so
+# `language_version` stays `0.3.1`.
+version = "0.3.2-dev.8"
 edition = "2021"
 rust-version = "1.83"
 description = "The Aura Playground WebAssembly execution wrapper: a minimal, zero-import C ABI over the real aura runtime."

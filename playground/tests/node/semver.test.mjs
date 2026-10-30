@@ -123,4 +123,4 @@ check("usage error on an unknown subcommand", run("bogus").code === 64);
 check("usage error on missing operands", run("compare", "1.0.0").code === 64);
 
 console.log(`semver: ${passed} passed, ${failed} failed`);
-if (failed > 0) process.exit(1);
+if (failed > 0) process.exitCode = 1;

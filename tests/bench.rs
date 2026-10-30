@@ -206,34 +206,53 @@ fn time_millis(mut work: impl FnMut()) -> f64 {
     best
 }
 
-/// Ratio of stage cost at 2N to cost at N, using noise-robust per-iteration
-/// timings. Linear work gives ~2; a genuinely quadratic path gives ~4. The
-/// guard allows up to 3.2× to absorb constant-factor and cache effects while
-/// still failing on real quadratic blow-up.
-fn assert_subquadratic(label: &str, stage: impl Fn(usize) + Copy, base: usize) {
-    // Take the best ratio of up to two attempts. Each attempt already uses
-    // min-of-samples above a noise floor; a second attempt (after a short
-    // settle) absorbs a transient CI spike, so only a genuine super-linear
-    // shape can fail the release train.
-    let mut ratio = ratio_of(stage, base);
-    if ratio >= 3.2 {
-        std::thread::sleep(std::time::Duration::from_millis(250));
-        ratio = ratio.min(ratio_of(stage, base));
-    }
-    assert!(
-        ratio < 3.2,
-        "{label}: doubling N scaled {ratio:.2}x, expected sub-quadratic"
-    );
-}
-
-fn ratio_of(stage: impl Fn(usize) + Copy, base: usize) -> f64 {
-    let small = time_millis(|| stage(base));
-    let large = time_millis(|| stage(base * 2));
+/// The doubling ratio `large / small` (1.0 when `small` is not positive).
+fn doubling_ratio(small: f64, large: f64) -> f64 {
     if small <= 0.0 {
         1.0
     } else {
         large / small
     }
+}
+
+/// Best-of-up-to-three doubling measurement, returning `(ratio, small, large)`.
+///
+/// `time_millis` already takes the minimum of several samples above a noise
+/// floor, but a shared runner can still stall a whole sampling window. Noise
+/// only ever *inflates* a timing, so the least-contaminated estimate of each
+/// magnitude is its own minimum across attempts, and the ratio is formed from
+/// those minima. (Minimising the ratio instead would let a fast `small` sample
+/// offset a stalled `large` one, and vice versa.)
+///
+/// The shape is re-checked after every attempt and the loop stops as soon as
+/// the ratio is under `retry_at`, so a healthy run costs a single attempt.
+fn best_doubling_ratio(retry_at: f64, measure: impl Fn() -> (f64, f64)) -> (f64, f64, f64) {
+    const ATTEMPTS: u32 = 3;
+
+    let (mut small, mut large) = measure();
+    for _ in 1..ATTEMPTS {
+        if doubling_ratio(small, large) < retry_at {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        let (next_small, next_large) = measure();
+        small = small.min(next_small);
+        large = large.min(next_large);
+    }
+    (doubling_ratio(small, large), small, large)
+}
+
+/// Assert that a stage scales sub-quadratically. Linear work gives ~2 and a
+/// genuinely quadratic path gives ~4, so the 3.2× limit absorbs constant-factor
+/// and cache effects while still failing on real quadratic blow-up.
+fn assert_subquadratic(label: &str, stage: impl Fn(usize) + Copy, base: usize) {
+    let (ratio, _, _) = best_doubling_ratio(3.2, || {
+        (time_millis(|| stage(base)), time_millis(|| stage(base * 2)))
+    });
+    assert!(
+        ratio < 3.2,
+        "{label}: doubling N scaled {ratio:.2}x, expected sub-quadratic"
+    );
 }
 
 #[test]
@@ -463,6 +482,13 @@ fn module_graph_scales_subquadratically() {
 /// that the cost is *no worse than quadratic*: a doubling ratio near 4 is
 /// expected, and a cubic regression (~8) fails. Making the REPL incremental is
 /// a tracked optimisation, not a correctness fix.
+///
+/// The 6.0× limit is measured, not guessed: over 10 local runs the ratio stayed
+/// in 3.325–3.509, leaving ~70% headroom. A CI run still overran it by 1.5%
+/// because its `large` window stalled at 225ms against a 110ms local baseline
+/// (a 2× inflation, while the same run's `small` was only 17% high — a burst
+/// inside one window, not a uniformly slow runner). The measurement now retries
+/// like every other guard in this file instead of trusting a single sample.
 #[cfg(feature = "repl")]
 #[test]
 fn repl_incremental_state_is_not_worse_than_quadratic() {
@@ -478,9 +504,7 @@ fn repl_incremental_state_is_not_worse_than_quadratic() {
         })
     };
     let base = 150;
-    let small = run(base);
-    let large = run(base * 2);
-    let ratio = if small <= 0.0 { 1.0 } else { large / small };
+    let (ratio, small, large) = best_doubling_ratio(6.0, || (run(base), run(base * 2)));
     // Quadratic ≈ 4; allow headroom for constant-factor/cache effects, but a
     // cubic path is ~8 and must fail.
     assert!(

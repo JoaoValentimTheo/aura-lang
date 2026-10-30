@@ -189,4 +189,4 @@ for (const entry of manifest.versions) {
 check("every entry uses the channel vocabulary", channelFailures === 0);
 
 console.log(`\nManifest: ${passed} passed, ${failed} failed`);
-process.exit(failed === 0 ? 0 : 1);
+process.exitCode = failed === 0 ? 0 : 1;

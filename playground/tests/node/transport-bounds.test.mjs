@@ -324,8 +324,7 @@ const smuggledBody = "一".repeat(3 * 1024 * 1024);
   await worker.internals.runSession(
     "run-limit",
     stubRuntime,
-    "main { }",
-    {},
+    () => stubRuntime.startSession("main { }"),
     new AbortController().signal,
   );
 
@@ -357,4 +356,4 @@ const smuggledBody = "一".repeat(3 * 1024 * 1024);
 }
 
 process.stdout.write(`\ntransport-bounds: ${passed} passed, ${failed} failed\n`);
-process.exit(failed ? 1 : 0);
+process.exitCode = failed ? 1 : 0;

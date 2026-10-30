@@ -410,6 +410,7 @@ self.onmessage = async (event) => {
       abiVersion: runtime.abiVersion,
       supportsProjects: hasVirtualProjects(runtime),
       supportsSessions: runtime.supportsSessions,
+      supportsProjectSessions: runtime.supportsProjectSessions,
     });
     const wantsProject = project !== undefined && project !== null;
     if (wantsProject && !hasVirtualProjects(runtime)) {
@@ -426,15 +427,30 @@ self.onmessage = async (event) => {
 
     // Host ABI 2: a resumable session, which is what enables HTTP. Only when
     // the artifact advertises it (feature detection, never inference).
-    if (runtime.supportsSessions && !wantsProject) {
-      await runSession(runId, runtime, source, { args: args || [], stdin: stdin ?? null }, abortController.signal);
-      return;
-    }
-    if (wantsProject && runtime.supportsSessions) {
-      // Sessions are single-source today; a project run stays synchronous.
-      const result = runtime.runProject(project, { args: args || [], stdin: stdin ?? null });
-      post({ runId, kind: "result", result });
-      return;
+    const options = { args: args || [], stdin: stdin ?? null };
+    if (runtime.supportsSessions) {
+      if (!wantsProject) {
+        await runSession(
+          runId,
+          runtime,
+          () => runtime.startSession(source, options),
+          abortController.signal,
+        );
+        return;
+      }
+      // A project needs a session just as much as a single source does: HTTP
+      // only works by suspending. `supportsProjectSessions` is additive to
+      // ABI 2, so an artifact that predates it keeps the synchronous fallback
+      // (which still denies HTTP with E5002) rather than failing.
+      if (runtime.supportsProjectSessions) {
+        await runSession(
+          runId,
+          runtime,
+          () => runtime.startProjectSession(project, options),
+          abortController.signal,
+        );
+        return;
+      }
     }
 
     const result = wantsProject
@@ -456,9 +472,15 @@ self.onmessage = async (event) => {
 
 let currentAbort = null;
 
-/** Drive a session to completion, performing HTTP effects as they arrive. */
-async function runSession(runId, runtime, source, options, signal) {
-  const { status, result } = runtime.startSession(source, options);
+/**
+ * Drive a session to completion, performing HTTP effects as they arrive.
+ *
+ * `start` begins the session and returns `{status, result}`; both the
+ * single-source and the project entry points share this one effect loop so the
+ * HTTP limits, cancellation, and resume contract cannot drift between them.
+ */
+async function runSession(runId, runtime, start, signal) {
+  const { status, result } = start();
   let step = { status, result };
   let httpCount = 0;
   const MAX_HTTP_PER_RUN = 64;

@@ -358,4 +358,4 @@ function runWithStdin(source, stdin) {
 }
 
 console.log(`\nB-1 substrate boundary: ${passed} passed, ${failed} failed`);
-process.exit(failed === 0 ? 0 : 1);
+process.exitCode = failed === 0 ? 0 : 1;
