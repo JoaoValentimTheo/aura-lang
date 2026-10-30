@@ -405,7 +405,9 @@ from a project rather than silently differing from the single-source path.
 The Worker **never** authorizes an origin by itself. On each HTTP effect it
 posts a `permission` message to the page — which owns the Aurea permission UI —
 and waits for an origin-specific grant keyed to that exact origin, method, and
-mutating flag. A denied request is never dispatched: it resumes the program
+mutating flag. A read grant (`GET`/`HEAD`) never authorizes a write to the same
+origin: confirming a `GET` and later reaching the same origin with a `DELETE`
+prompts again. A denied request is never dispatched: it resumes the program
 with `E5002` and the message `network access to <origin> was not granted`, so
 programs see a refusal through the same unavailable-capability path they
 already handle. A run that is cancelled drains its pending prompt so a prompt

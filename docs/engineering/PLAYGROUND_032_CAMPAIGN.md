@@ -250,10 +250,10 @@ D1 and D2 were approved by the human and are implemented in full.
   consent dialog. A deny becomes `E5002` and nothing is dispatched.
 - CORS is respected by the browser: a rejected request surfaces as `E4020`
   with an explanatory message, never a fabricated status.
-- Grants are session-scoped and per-origin; a redirect that changes origin is
-  re-checked (browser-enforced via `manual`); bounds cover request bytes,
-  header bytes, request count per run, and the existing 8 MiB response cap and
-  30 s timeout.
+- Grants are session-scoped and keyed by origin *and* mutation class; a
+  redirect that changes origin is re-checked (browser-enforced via `manual`);
+  bounds cover request bytes, header bytes, request count per run, and the
+  existing 8 MiB response cap and 30 s timeout.
 
 ### Also delivered
 
