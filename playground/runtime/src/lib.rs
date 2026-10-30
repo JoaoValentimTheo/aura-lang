@@ -57,6 +57,7 @@ use aura::host::BrowserHost;
 use aura::module_graph::{InMemorySourceProvider, SourceKey};
 use aura::run::value::{MapKey, Value};
 use aura::run::Interp;
+use aura::source::SourceMap;
 use serde::Deserialize;
 use std::sync::Mutex;
 
@@ -1060,6 +1061,10 @@ pub mod session_status {
 struct HostedSession {
     session: aura::run::session::RunSession,
     sink: aura::host::OutputSink,
+    /// The session's source registry. A multi-source session attributes a
+    /// diagnostic to the file that owns the failing item, so the registry has
+    /// to outlive `Compilation` and travel with the parked session.
+    sources: SourceMap,
     /// How many effects have been requested (the effect identity the host must
     /// echo back on resume).
     effect_seq: u64,
@@ -1210,7 +1215,7 @@ pub extern "C" fn aura_session_start() -> u32 {
                 return code;
             }
         };
-    let (module, _sources, _entry) = compilation.into_parts();
+    let (module, sources, _entry, _item_sources) = compilation.into_parts_sourced();
     let mut interp = Interp::new();
     interp.set_host(Box::new(SuspendHost {
         sink: sink.clone(),
@@ -1231,6 +1236,107 @@ pub extern "C" fn aura_session_start() -> u32 {
     let mut hosted = HostedSession {
         session,
         sink,
+        sources,
+        effect_seq: 0,
+        pending_id: 0,
+        pending_json: String::new(),
+    };
+    let status = drive_hosted_session(&mut hosted);
+    SESSION.with(|s| *s.borrow_mut() = Some(hosted));
+    status
+}
+
+/// Start a session over the pending *virtual project* (ABI 2).
+///
+/// The multi-source counterpart of [`aura_session_start`]: it consumes the
+/// project fed through `aura_project_push` instead of the single `aura_source`
+/// buffer, so a project run can suspend on a Host effect (HTTP) exactly as a
+/// single-source run does. Without it, HTTP inside a multi-file project was
+/// silently deniable — the Worker had to fall back to the synchronous
+/// `aura_run_project`, which cannot perform effects at all.
+///
+/// Session state, consent, and suspension are *reused*, not reimplemented: the
+/// project is compiled through the same provider path as `aura_run_project`
+/// and driven by the same [`HostedSession`] and [`SuspendHost`] as
+/// `aura_session_start`, so the Worker's existing effect round-trip, timeout,
+/// and cancellation handling apply unchanged.
+///
+/// Returns a [`session_status`] code; the JSON payload is read through the
+/// existing `aura_output_len`/`aura_output_byte` exports.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn aura_session_start_project() -> u32 {
+    let project = lock_recovering(&PENDING_PROJECT).clone();
+    let options_raw = lock_recovering(&PENDING_OPTIONS).clone();
+    let opts = match parse_options(&options_raw) {
+        Ok(options) => options,
+        Err(message) => {
+            let (json, status) = virtual_input_error(codes::IO, message);
+            set_result(json);
+            return status;
+        }
+    };
+    let (provider, is_single_source) = match build_virtual_provider(&project) {
+        Ok(provider) => provider,
+        Err(error) => {
+            let (json, status) = virtual_input_error(error.code, error.message);
+            set_result(json);
+            return status;
+        }
+    };
+    let sink = opts.output_mode.sink();
+    let compilation = match aura::compile_provider_with_mode(&provider, aura::CompileMode::Program)
+    {
+        Ok(compilation) => compilation,
+        // Same `NO_MAIN` fallback as the single-source session path, so a
+        // project that is really one module observes the same value the
+        // synchronous ABI-1 path reports.
+        Err(report) if is_single_source && report.diagnostic().code == codes::NO_MAIN => {
+            let (json, code, _version) = run_virtual_module(&provider, &opts);
+            set_result(json);
+            return code;
+        }
+        Err(report) => {
+            let (json, code) = report_diagnostic_result(&report, Some(&sink));
+            set_result(json);
+            return code;
+        }
+    };
+    let (module, sources, entry_source, item_sources) = compilation.into_parts_sourced();
+    let mut interp = Interp::new();
+    interp.set_host(Box::new(SuspendHost {
+        sink: sink.clone(),
+        args: opts.args.clone(),
+        input: opts
+            .stdin
+            .clone()
+            .map(|s| std::io::Cursor::new(s.into_bytes())),
+    }));
+    // A single-source compilation carries no per-item ownership, and the
+    // session already attributes every item to the entry source in that case.
+    let started = match item_sources.as_deref() {
+        Some(item_sources) => aura::run::session::RunSession::start_sourced(
+            interp,
+            &module,
+            item_sources,
+            entry_source,
+        ),
+        None => aura::run::session::RunSession::start(interp, &module),
+    };
+    let session = match started {
+        Ok(session) => session,
+        Err(d) => {
+            let report =
+                DiagnosticReport::new(aura::error::SourceDiagnostic::new(d, entry_source), sources);
+            let (json, code) = report_diagnostic_result(&report, Some(&sink));
+            set_result(json);
+            return code;
+        }
+    };
+    let mut hosted = HostedSession {
+        session,
+        sink,
+        sources,
         effect_seq: 0,
         pending_id: 0,
         pending_json: String::new(),
@@ -1421,7 +1527,16 @@ fn drive_hosted_session(hosted: &mut HostedSession) -> u32 {
         }
         aura::run::session::Step::Diagnostic(d) => {
             let mut first = true;
-            let diags = diag_json(&d, "", &mut first);
+            // A multi-source session knows which file owns the failing item, so
+            // report that file's name and read the span against its own text.
+            // A single-source session has no owner record and keeps the
+            // historical behaviour (no `source` field).
+            let owner = hosted
+                .session
+                .diagnostic_source()
+                .and_then(|id| hosted.sources.get(id));
+            let (src, name) = owner.map_or(("", None), |s| (s.text(), Some(s.name())));
+            let diags = sourced_diag_json(&d, src, name, &mut first);
             let status = if d.code == codes::INTERNAL {
                 session_status::INTERNAL
             } else {

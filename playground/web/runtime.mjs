@@ -364,6 +364,47 @@ export class AuraRuntime {
   }
 
   /**
+   * Whether this artifact can also start a session over a *virtual project*
+   * (Host ABI 2, additive).
+   *
+   * `aura_session_start_project` was added to ABI 2 without a version bump, so
+   * an artifact built before it still advertises ABI 2 and still runs
+   * single-source sessions. Callers must feature-detect per capability rather
+   * than test the ABI number, exactly as they already do for sessions
+   * themselves.
+   */
+  get supportsProjectSessions() {
+    return "aura_session_start_project" in this.exports;
+  }
+
+  /**
+   * Start a resumable session over a *virtual multi-source project*
+   * (Host ABI 2, additive).
+   *
+   * The multi-file counterpart of {@link AuraRuntime#startSession}: HTTP inside
+   * a project needs a session to suspend, so without this a multi-file program
+   * had to fall back to the synchronous `runProject`, which cannot perform
+   * effects at all. The effect payload and resume contract are identical, so
+   * the caller's effect loop is unchanged.
+   */
+  startProjectSession(project, options = {}) {
+    this.#assertSessions();
+    if (!this.supportsProjectSessions) {
+      throw new Error(
+        `runtime artifact ${this.name} does not support project sessions`,
+      );
+    }
+    const request = new TextEncoder().encode(JSON.stringify(project));
+    const opts = encodeOptions(options);
+    this.exports.aura_session_reset();
+    pushBytes(this.exports, "aura_project_reset", "aura_project_push", request);
+    pushBytes(this.exports, "aura_options_reset", "aura_options_push", opts);
+    const status = this.exports.aura_session_start_project();
+    const json = readString(this.exports, "aura_output_len", "aura_output_byte");
+    return { status, result: parseSessionPayload(json, status) };
+  }
+
+  /**
    * Resume the parked session with the completion of its pending effect
    * (Host ABI 2). `payload` is the effect result object the transport built.
    */
