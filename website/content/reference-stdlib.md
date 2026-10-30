@@ -133,7 +133,7 @@ tree, and a native build without it has no network surface at all. Network
 access is **host-owned**: the capability lives in the host, so a host that does
 not provide it reports `E5002`. The native host provides it when built with
 `--features http`; the browser Playground provides it through a session (see
-[the Playground document](./playground-doc.md)), asking for per-origin consent
+[the Playground document](/docs/playground-doc/)), asking for per-origin consent
 before the first request.
 
 | Function | Signature | Returns |
