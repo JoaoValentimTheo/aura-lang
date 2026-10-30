@@ -116,31 +116,58 @@ unilaterally).
 
 #### Escalated — a semantic/contract decision is required
 
-- **B6 — 3xx behavior diverges (MEDIUM, CONFIRMED, escalate).** Native returns
-  the redirect as an ordinary response — `src/host.rs:503-505` sets
-  `.max_redirects(0)` with the comment "a 3xx is returned to Aura as an
-  ordinary response", and `tests/http.rs:339` asserts status `302`. The browser
-  sets `redirect: "manual"` (`playground/web/worker.js:161`) and maps
+- **B6 — 3xx behavior diverges (MEDIUM, CONFIRMED, RESOLVED as a formalized
+  divergence).** Native returns the redirect as an ordinary response —
+  `src/host.rs:503-505` sets `.max_redirects(0)` with the comment "a 3xx is
+  returned to Aura as an ordinary response", and `tests/http.rs:339` asserts
+  status `302`. The browser sets `redirect: "manual"`
+  (`playground/web/worker.js:170`) and maps
   `response.type === "opaqueredirect"` to `E4020`
-  (`playground/web/worker.js:244-253`). So the *same Aura program* sees a
-  `302` response natively and a diagnostic in the browser. This is a genuine
-  cross-substrate semantic divergence, and closing it either way is a language
-  decision: synthesizing a status-only response invents an Aura-visible
-  response shape that native does not have, while documenting it concedes that
-  one program has two meanings. **No change made.** Recommend: synthesize the
-  `opaqueredirect` into a status-only response (`status`, empty body, no
-  headers) so both substrates report a 3xx, then pin it in
-  `playground/tests/node/browser-http.test.mjs` and re-run `tests/http.rs`.
+  (`playground/web/worker.js:261-269`). So the *same Aura program* sees a `302`
+  response natively and a diagnostic in the browser.
+  **The remedy first recommended here — "synthesize the `opaqueredirect` into a
+  status-only response … so both substrates report a 3xx" — is wrong and was
+  rejected.** An `opaqueredirect` response exposes *no status at all*: the
+  browser hides the code, so `301`, `302`, `303`, `307`, and `308` are
+  indistinguishable. Emitting a `3xx` would therefore mean **inventing a status
+  the platform withholds**, which is precisely what Directive 003-R §4 forbids
+  ("não invente códigos de resposta ocultos pelo navegador"). Exact parity is
+  *technically* impossible here, which is the §4 case that authorizes a
+  **formalized divergence** instead of a workaround. What was missing was the
+  normative contract plus a test pinning the observable behaviour, and that is
+  what was added: `docs/LANGUAGE_SPEC.md` §25 now carries the HTTP contract and
+  the browser-host divergence rule, and case 4 of
+  `playground/tests/node/http-security.test.mjs` now asserts the outcome the
+  program actually observes (`E4020`, no fabricated status) rather than only
+  asserting that the redirect was not followed. The Worker code is unchanged —
+  it was already correct, and its comment already refused to fabricate a status.
 
-- **B7 — Response headers diverge (MEDIUM, CONFIRMED, escalate as docs+pin).**
-  `Headers` in a browser cannot expose `Set-Cookie` at all and comma-joins
-  duplicate names, whereas native preserves duplicates and original casing
-  (`generated/` headers are ordered pairs). This is inherent to the platform
-  and not fixable from the Worker. It nevertheless changes what an Aura program
-  observes, so the fix is a documented, *pinned* limitation rather than a code
-  change. **No change made.** Recommend documenting it in
-  `website/content/playground-doc.md` and asserting the actual (collapsed)
-  behavior in `browser-http.test.mjs` so a platform change is caught.
+- **B7 — Response headers diverge (MEDIUM, CONFIRMED, RESOLVED as a documented
+  divergence).** The audit's original claim was correct, and an intermediate
+  reading of the code during this campaign — which concluded B7 was "docs-only"
+  because `header_lines` appeared to be populated on both substrates — was
+  **wrong**. The data path *looks* symmetric: the Worker builds an ordered
+  `[key, value]` pair array (`playground/web/worker.js:309-311`) and
+  `playground/runtime/src/lib.rs:1367-1405` applies list-on-duplicate logic
+  identical to native `src/stdlib/ext.rs:596-633`. But the symmetry is
+  defeated **upstream of the Worker**: `Headers` is a *combining* collection,
+  so `response.headers.forEach` yields one entry per unique name with the
+  occurrences already joined by `", "`, in sorted lowercased order. Duplicates
+  therefore never reach the pair array as separate entries, and the
+  list-on-duplicate code is dead on the browser path. Native keeps duplicates
+  as a list and `header_lines` in wire order with original casing
+  (`tests/http.rs:377-386`). `Set-Cookie` is additionally never exposed. Both
+  are platform properties, not fixable from the Worker, so this is a
+  **documented divergence**, not a defect. Resolved by stating it normatively
+  in `docs/LANGUAGE_SPEC.md` §25 and accurately in
+  `website/content/reference-stdlib.md` (which previously documented a
+  three-key response, called `headers` "comma-joined" without saying *which*
+  host, and claimed the Playground has no HTTP authority at all).
+  `website/content/playground-doc.md` was already correct and was left alone.
+  No code change, because the Worker cannot do better than the platform.
+  *Lesson recorded:* the divergence lives in `Headers` iteration, so any future
+  reading of this path must start at `response.headers.forEach`, not at the
+  runtime's pair-array consumer.
 
 - **B14 — Multi-file project runs have no browser HTTP (LOW-MEDIUM, CONFIRMED,
   escalate as docs).** `BrowserHost` (`src/host.rs:1045-1135`) does not

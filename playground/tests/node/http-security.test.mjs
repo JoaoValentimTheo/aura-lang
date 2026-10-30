@@ -80,6 +80,27 @@ const a = countingServer((req, res, cors) => {
     res.end(Buffer.from([0xff, 0x00, 0xfe, 0x41]));
     return;
   }
+  if (req.url === "/dup") {
+    // Two headers with the same name and differing values, plus a
+    // mixed-case name. The browser's `Headers` collection combines the first
+    // pair and lowercases everything, so the Playground can only ever observe
+    // one entry per name — this fixture pins that divergence.
+    //
+    // Both custom names must be exposed explicitly: a cross-origin page sees
+    // only the CORS-safelisted response headers plus whatever the origin lists
+    // in `Access-Control-Expose-Headers`. Without this the Aura program would
+    // correctly observe neither header.
+    res.writeHead(200, [
+      ...Object.entries(cors),
+      ["access-control-expose-headers", "x-dup, x-mixed-case"],
+      ["x-dup", "one"],
+      ["x-dup", "two"],
+      ["X-Mixed-Case", "kept"],
+      ["content-type", "text/plain"],
+    ]);
+    res.end("dup");
+    return;
+  }
   if (req.url === "/big") {
     // A body larger than the 8 MiB cap, written in chunks.
     res.writeHead(200, { ...cors, "content-type": "text/plain" });
@@ -224,7 +245,13 @@ async function runAndAnswer(page, { grant = true, allowOrigins = null, timeout =
   }
 }
 
-// 4) A redirect is not followed.
+// 4) A redirect is not followed, and the program is told the truth.
+//
+// B6 contract (LANGUAGE_SPEC.md, "browser host divergence"): a browser fetch
+// with `redirect: "manual"` yields an opaque-redirect response whose status is
+// hidden from the page. The host therefore reports E4020 — it must NOT
+// synthesize a 3xx to imitate the native host, because 301/302/303/307/308 are
+// indistinguishable here and inventing one would misreport the network.
 {
   const before = a.state.count;
   const page = await newPage();
@@ -239,6 +266,26 @@ async function runAndAnswer(page, { grant = true, allowOrigins = null, timeout =
   const landed = a.state.requests.filter((u) => u.includes("/landed")).length;
   check("4 redirect does not expand access (no /landed request)", landed === 0, `${landed}`);
   check("4 exactly one request dispatched", after - before === 1, `${after - before}`);
+  // The observable contract: the program is told the truth. It receives a
+  // transport-level failure that names the redirect — never a fabricated
+  // status and never a silent success. `301`/`302`/`303`/`307`/`308` are
+  // indistinguishable behind an opaque redirect, so any numeric status here
+  // would be an invention.
+  check(
+    "4 redirected call reports E4020",
+    r.diagnostics.some((d) => /E4020/.test(d)),
+    JSON.stringify(r.diagnostics),
+  );
+  // A transport failure aborts the program, so `print(r["status"])` never
+  // runs. Pinning that is what makes "no fabricated status" a real statement:
+  // if a future change synthesized a 3xx, the program would complete and print
+  // it, and both of these checks would fail.
+  check("4 redirected call does not complete", /Failed/.test(r.status), r.status);
+  check(
+    "4 redirected call never prints a status",
+    r.stdout.trim() === "" && !/\b[1-5]\d\d\b/.test(r.stdout),
+    JSON.stringify(r.stdout),
+  );
   await page.close();
 }
 
@@ -300,7 +347,7 @@ async function runAndAnswer(page, { grant = true, allowOrigins = null, timeout =
   check("7 correct resume still works", good.result.status === "ok", JSON.stringify(good.result));
 }
 
-// 10) A binary (non-UTF-8) response is byte-exact in Aura.
+// 8) A binary (non-UTF-8) response is byte-exact in Aura.
 {
   const page = await newPage();
   await setSource(page, `fn main() {
@@ -318,7 +365,7 @@ async function runAndAnswer(page, { grant = true, allowOrigins = null, timeout =
   await page.close();
 }
 
-// 8) A response larger than the cap is refused with E4020, not buffered.
+// 9) A response larger than the cap is refused with E4020, not buffered.
 {
   const page = await newPage();
   await setSource(page, `fn main() {
@@ -334,7 +381,7 @@ async function runAndAnswer(page, { grant = true, allowOrigins = null, timeout =
   await page.close();
 }
 
-// 9) A hanging server times out (E4020) without needing Stop.
+// 10) A hanging server times out (E4020) without needing Stop.
 {
   const page = await newPage();
   await setSource(page, `fn main() {
@@ -348,6 +395,49 @@ async function runAndAnswer(page, { grant = true, allowOrigins = null, timeout =
     "9 hanging request times out with E4020",
     /Failed/.test(r.status) && r.diagnostics.some((d) => /E4020/.test(d)) && elapsed < 15000,
     JSON.stringify({ status: r.status, elapsed, diagnostics: r.diagnostics }),
+  );
+  await page.close();
+}
+
+// 11) Repeated response headers are combined by the platform, not by Aura.
+//
+// B7 contract (LANGUAGE_SPEC.md, "browser host divergence", item 3): a
+// browser Headers collection yields one entry per unique name, already
+// joined by ", ", in sorted lowercased order. The program must therefore see
+// a single combined string for a repeated header — never a list, and never the
+// original casing. This pins the divergence in both directions so a future
+// platform change (or an accidental switch to a raw-header API) is caught.
+{
+  const page = await newPage();
+  await setSource(page, `fn main() {
+    let r = http_request("GET", "${originA}/dup")
+    # A combined platform value prints as a single string; a list would print
+    # as ["one", "two"], so this equality is also the shape check.
+    print(r["headers"]["x-dup"])
+    print(r["headers"]["x-mixed-case"])
+    # header_lines has one pair per pair received, and headers has one key per
+    # unique name. Native keeps a duplicate as a list, so its two counts differ;
+    # the browser combines, so here they must be equal. That equality is the
+    # browser-side invariant, not a cross-host one.
+    print(len(keys(r["headers"])))
+    print(len(r["header_lines"]))
+  }`);
+  const r = await runAndAnswer(page);
+  const lines = r.stdout.split("\n").map((l) => l.trim()).filter(Boolean);
+  check(
+    "11 repeated header arrives as one combined string",
+    lines[0] === "one, two",
+    JSON.stringify({ value: lines[0] }),
+  );
+  check(
+    "11 header names are lowercased",
+    lines[1] === "kept",
+    JSON.stringify({ value: lines[1] }),
+  );
+  check(
+    "11 header_lines has one pair per unique name",
+    lines[2] !== undefined && lines[2] === lines[3],
+    JSON.stringify({ unique_names: lines[2], header_lines: lines[3] }),
   );
   await page.close();
 }
