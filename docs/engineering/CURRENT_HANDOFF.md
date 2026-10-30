@@ -2,10 +2,11 @@
 
 ## Current local task — Directive 003-R, stabilization campaign
 
-`rewrite/v3-rust` is the **default branch** and HEAD is **`19cc4f22`** (the
-merge of PR #13). Thirteen PRs are merged this campaign: #2, #3, #4, #5, #6,
+`rewrite/v3-rust` is the **default branch** and HEAD is **`9548e4df`** (the
+merge of PR #14). Fourteen PRs are merged this campaign: #2, #3, #4, #5, #6,
 #7, #8, #9 (B14), #10 (PR template), #11 (TD-24 cost guard), #12 (CHANGELOG
-`[Unreleased]` + TD-25), #13 (website suite gate + TD-26/TD-27). The Directive 003-R authorization recorded in
+`[Unreleased]` + TD-25), #13 (website suite gate + TD-26), #14 (TD-27
+Playwright gate). The Directive 003-R authorization recorded in
 `AGENTS.md` permits push, PR creation and merge, workflow administration, and
 default-branch changes; force-push, history removal, tag moves, frozen-WASM
 replacement, gate weakening, and unapproved stable releases remain forbidden.
@@ -60,17 +61,27 @@ browser suites self-skipped per TD-27).
   wired here: adding a browser download changes the job's runtime and failure
   modes and deserves its own change with its own evidence.
 
-**Exact next action:** post the Directive 003-R campaign report to issue #1
-(§7 requires delivered PR and CI links), then close TD-27 by wiring Playwright
-into the `website` job — `npm ci` plus `npx playwright install chromium` — so
-the browser, a11y, browser-HTTP and http-security suites actually execute. TD-27
-is the last known unproven surface in CI and covers B14's browser HTTP path.
+**Exact next action:** continue §6 with B7's per-Host header contract tests on
+the multi-module path — the next substantive campaign item, since B7's
+single-module contract is pinned but the project-session path was only covered
+for status codes, not header semantics.
 
-Then continue §6 with B7's per-Host header contract tests on the multi-module
-path, and add doctrines #24-#27 (a green badge proves only the wired subset
-ran; an assertion that demands stale wording enshrines drift; a bare `catch`
-turns an environment problem into a content verdict; an untested environment
-assumption is where a newly wired gate fails first) to `AGENTS.md`.
+**TD-27 — merged `9548e4df`.** Closed the last unproven surface in CI. The
+browser suites had never executed: no job installed Playwright, and nine suites
+treated a missing dependency as *success*, so a broken `npm ci` or a failed
+browser download left CI green. The fix is a shared
+`website/tests/playwright-deps.mjs` helper (`detect` / `detectAll` /
+`strictRequested` / `skipExitCode`), `AURA_REQUIRE_BROWSER=1` on both jobs, and
+real installs with `--with-deps`. Evidence is behavioural: the `playground` job
+logged `Cache not found`, downloaded Chrome for Testing 153.0.8010.12 plus
+FFmpeg and Headless Shell, ran the apt step on ubuntu-24.04, and executed six
+browser suites (199 assertions, zero skipped); the `website` job executed four
+(897 assertions). The download path had never run before because a warm local
+cache made `playwright install` a no-op locally. No gate was weakened.
+
+Doctrines #1-#33 from across the campaign are now durable in `AGENTS.md`
+(`## Hard-won rules`, 28 numbered rules in three groups), so they no longer
+depend on session history.
 
 Authoritative for **the active task and the exact next action**. Current
 repository state lives in `AGENT_STATE.md`; operating rules in `AGENTS.md`.
