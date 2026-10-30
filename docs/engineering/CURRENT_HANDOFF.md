@@ -2,11 +2,13 @@
 
 ## Current local task — Directive 003 stabilization campaign
 
-Branch `rewrite/v3-rust`, working tree clean, local HEAD **`c8500c35`** (four
-unpublished commits ahead of `origin/rewrite/v3-rust`). Everything is local:
-no push, PR, merge, tag, release, deploy, force-push, or destructive reset is
-authorized. Directive 002 (PR #2) and the rustls remediation (PR #3) are both
-merged and historical.
+Branch `rewrite/v3-rust`, working tree clean, HEAD **`a562bacf`** (the merge of
+PR #4; nothing unpublished). The Directive 003-R authorization recorded in
+`AGENTS.md` permits push, PR, merge, and workflow administration; force-push,
+history removal, tag moves, frozen-WASM replacement, gate weakening, and
+unapproved stable releases remain forbidden. Directive 002 (PR #2), the rustls
+remediation (PR #3), and the batch-1 integration (PR #4) are all merged and
+historical.
 
 **Closed so far.** Phase 0 baseline reconstructed (HEAD/tags/branches/CI/ahead-
 behind). SemVer precedence centralized: `scripts/semver.py` is now the single
@@ -30,31 +32,42 @@ fuzz workflow was recorded as TD-23.
 **Local validation actually completed:** `cargo fmt --all -- --check` clean;
 `cargo test --locked --all-targets --all-features` green; the reduced
 `--no-default-features --features cli,repl,json,regex,time` suite green;
-clippy clean on every target this campaign touched; `node playground/build.mjs
---check` (9 versioned entries); Playground node suites 11/12 green with 0 `FAIL`
-lines (451 assertions), the sole failure being the unavailable wasm target; and
-the website suites green with 0 `FAIL` lines.
+`node playground/build.mjs --check` (9 versioned entries); Playground node
+suites 11/12 green with 0 `FAIL` lines (451 assertions), the sole failure being
+the unavailable wasm target; and the website suites green with 0 `FAIL` lines.
 
-**Environment limitations (not PASS):** this machine has no `rustup`, so
-`cargo +1.83.0` (MSRV), `+nightly`, Miri, and libFuzzer cannot run; and the
+**Remote validation (authoritative — PR #4, run 40977704151):** all **20/20**
+checks green, including `clippy`, `MSRV 1.83`, `miri`, `cargo audit`, fuzz
+smoke, extended property tests, 6/6 CPython interop, pure-Rust-links, and the
+three `test` shards. The first run (40976615160) failed **only** `cargo audit`,
+on two advisories published after the base branch's last green run —
+RUSTSEC-2026-0382 (`rustls-webpki` → 0.103.16) and RUSTSEC-2026-0381
+(`webpki-roots` → 1.0.10) — both fixed in `b0744389`. A residual `clipboard-win
+5.4.1` *yanked* warning is deliberately left: no fixed release exists and the
+advisory is warning-level.
+
+**Environment limitations (local only — all now covered by remote CI):** this
+machine has no usable `rustup` toolchain management, so `cargo +1.83.0` (MSRV),
+`+nightly`, Miri, and libFuzzer cannot run locally; and the
 `wasm32-unknown-unknown` target is absent, so the `wasm build` Playground suite
 fails to compile. The local toolchain is 1.99.1 while `rust-toolchain.toml`
-pins 1.98.1, which makes the repo-wide `clippy -D warnings` floor fail on the
-new `assert_is_empty` lint — 18 sites across `tests/cli.rs` (10), `src/ais.rs`
-(4), `src/mcp.rs`, `tests/ast_sharing.rs`, `tests/parser.rs`, and
-`tests/syntax_gaps.rs`. Every one of those files is untouched by this campaign,
-the lint's help link resolves to `rust-1.99.0`, and the pristine baseline
-reproduces it identically (including 10 hits in `tests/cli.rs` alone), so it is
-toolchain drift rather than a regression. No file changed here intersects that
-set.
+pins 1.98.1, which makes the local `clippy -D warnings` floor fail on the new
+`assert_is_empty` lint — 18 sites across six files untouched by this campaign.
+**CI on the pinned 1.98.1 passes clippy twice, so those 18 hits are confirmed
+toolchain drift, not a regression.** Do not "fix" them and do not lower the
+warning floor.
 
-**Exact next action:** Directive 003 is complete for the waves that do not need
-human authorization. B6, B7, and B14 are escalated in
-`STABILIZATION_AUDIT.md` §D because closing them changes the Host contract;
-TD-23 (the dark nightly fuzz workflow) is likewise human-gated. Await
-authorization before touching any of those, and before publishing the four
-local commits on `rewrite/v3-rust`. The previous task material below is retained
-as historical context and must not override this active instruction.
+**Exact next action:** continue Directive 003-R §8's third action — resolve
+TD-23, then B6, B7, and B14, one branch and one PR per finding, each gated on
+remote CI. Two measurements from this campaign determine the shape of that
+work: (a) `master` is a **strict ancestor** of `rewrite/v3-rust`, **572 commits
+behind**, and reachable from **none** of the five release tags — so GitHub
+resolves `schedule` from a branch that contains no `fuzz/` directory, which is
+the whole of TD-23; (b) B6's native/browser parity is **technically
+impossible** (the browser hides the redirect status behind `opaqueredirect`),
+which is exactly the divergent-outcome case §4 authorizes formalizing. The
+previous task material below is retained as historical context and must not
+override this active instruction.
 
 Authoritative for **the active task and the exact next action**. Current
 repository state lives in `AGENT_STATE.md`; operating rules in `AGENTS.md`.
