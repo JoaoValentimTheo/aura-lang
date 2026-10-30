@@ -1533,3 +1533,52 @@ fn audit4_shallow_semantics_unchanged() {
         "true\n"
     );
 }
+
+// ---------------------------------------------------------------------------
+//
+// AUDIT-5: the AUDIT-4 render budget bounds the number of nodes *visited*, so
+// the output length is bounded — but the encoder built a fresh `String` for
+// every node's subtree and then copied it into each enclosing level, so the
+// byte work was quadratic in the rendered size. A fan-out value that
+// legitimately exhausts the whole 1,000,000-node budget therefore cost
+// seconds of memcpy, and rendering it twice (as `to_string` then
+// `json_encode`, or in a loop) multiplied that. The fuzz `runtime` target
+// found this as a libFuzzer *timeout* rather than a crash: the guard was
+// working as designed, the encoder was just too slow.
+//
+// The encoder now appends into one buffer, so cost is linear in the emitted
+// text. These tests pin the cost contract, which the AUDIT-4 tests (which pin
+// only termination and elision) do not.
+// ---------------------------------------------------------------------------
+
+/// AUDIT-5: the emitted size of a budget-exhausting value is a stable
+/// invariant. Each visited node contributes at most `"…"` (three UTF-8 bytes)
+/// plus a two-byte separator, so the render is capped well under the budget.
+/// This is the length the fuzz reproducer printed.
+#[test]
+fn audit5_budget_exhausting_render_has_a_pinned_size() {
+    // `push(c, c)` four times: the value is a cycle of fan-out two, so every
+    // occurrence is revisited until the node budget is spent.
+    let src = "fn main() { let mut c = []\n push(c, c)\n push(c, c)\n push(c, c)\n push(c, c)\n print(len(to_string(c))) }";
+    assert_eq!(out(src).trim(), "11000001");
+}
+
+/// AUDIT-5: exhausting the whole node budget must be fast, not merely
+/// finite. Before the encoder appended into a single buffer this took ~0.9s
+/// of CPU in release and ~3.4s in debug *per render*; the reproducer rendered
+/// several times and overran libFuzzer's 25s timeout on a slower runner.
+#[test]
+fn audit5_budget_exhausting_render_is_fast() {
+    use std::time::Instant;
+    // Two full renders of a budget-exhausting value, mirroring the shape the
+    // fuzzer found: `to_string` and `json_encode` of the same cyclic list.
+    let src = "fn main() { let mut c = []\n push(c, c)\n push(c, c)\n push(c, c)\n push(c, c)\n print(len(to_string(c)))\n print(len(json_encode(c))) }";
+    let start = Instant::now();
+    let _ = out(src);
+    let elapsed = start.elapsed().as_millis();
+    assert!(
+        elapsed < 2_000,
+        "two budget-exhausting renders took {elapsed}ms; the encoder should \
+         cost time linear in the emitted text, not in the node count times its subtree"
+    );
+}

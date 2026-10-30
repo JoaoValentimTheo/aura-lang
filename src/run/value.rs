@@ -28,8 +28,16 @@ pub const MAX_VALUE_DEPTH: usize = 512;
 /// legitimately build and render in the repository's tests and examples is
 /// unaffected (`40,000`-deep values, four-figure collections, and a
 /// ten-million-element list built linearly), while the worst-case render of an
-/// adversarial fan-out value stays bounded — the point of the guard is
-/// guaranteed termination, not throughput.
+/// adversarial fan-out value stays bounded.
+///
+/// The budget bounds *work*, but work is not the same as time: the encoders
+/// must also cost time linear in the emitted text, which is why they append
+/// into a single buffer rather than returning one `String` per subtree
+/// (returning a `String` per node made the byte work quadratic in the rendered
+/// size, and a value that legitimately exhausted this budget cost seconds of
+/// copying per render — found by the fuzz `runtime` target as a timeout, not a
+/// crash). `tests/regressions.rs` pins both the size and the cost contract
+/// under `AUDIT-5`.
 pub const MAX_VALUE_NODES: usize = 1_000_000;
 
 /// A shared node budget for one render traversal.
@@ -136,6 +144,25 @@ impl MapKey {
             MapKey::Int(i) => i.to_string(),
             MapKey::Bool(b) => if *b { "true" } else { "false" }.to_string(),
             MapKey::Str(s) => format!("\"{s}\""),
+        }
+    }
+
+    /// Append the source spelling of this key to `out`.
+    ///
+    /// Keys are key-capable scalars, so a key costs no render budget and
+    /// needs no depth bound.
+    fn write_repr(&self, out: &mut String) {
+        match self {
+            MapKey::Int(i) => {
+                use std::fmt::Write as _;
+                let _ = write!(out, "{i}");
+            }
+            MapKey::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+            MapKey::Str(s) => {
+                out.push('"');
+                out.push_str(s);
+                out.push('"');
+            }
         }
     }
 }
@@ -540,115 +567,145 @@ impl Value {
     /// The display form (used by `print` and `to_string`).
     #[must_use]
     pub fn display(&self) -> String {
-        self.repr(true, 0, &mut RenderBudget::new())
+        let mut out = String::new();
+        self.write_repr(true, 0, &mut RenderBudget::new(), &mut out);
+        out
     }
 
     /// The debug form (quotes strings inside collections).
     #[must_use]
     pub fn debug_repr(&self) -> String {
-        self.repr(false, 0, &mut RenderBudget::new())
+        let mut out = String::new();
+        self.write_repr(false, 0, &mut RenderBudget::new(), &mut out);
+        out
     }
 
-    fn repr(&self, top: bool, depth: usize, budget: &mut RenderBudget) -> String {
-        // A cyclic or very deep value is rendered truncated rather than
-        // recursing until the native stack overflows (`LANGUAGE_SPEC.md`
-        // §31.5). `…` marks the elided remainder. The *total-node* budget
-        // additionally bounds a value whose reference fan-out is two or more,
-        // where the depth bound alone leaves exponential re-traversal.
+    /// Append this value's display form to `out`.
+    ///
+    /// Rendering appends into one buffer rather than returning subtree
+    /// strings, which would copy every node's entire subtree once per
+    /// enclosing level — quadratic byte work in the rendered size, and
+    /// seconds of wall time for a fan-out value that legitimately exhausts
+    /// the node budget.
+    fn write_repr(&self, top: bool, depth: usize, budget: &mut RenderBudget, out: &mut String) {
+        use std::fmt::Write as _;
+
         if depth >= MAX_VALUE_DEPTH || !budget.take() {
-            return "…".to_string();
+            out.push('…');
+            return;
         }
         match self {
-            Value::Int(i) => i.to_string(),
-            Value::Float(f) => format_float(*f),
+            Value::Int(i) => {
+                let _ = write!(out, "{i}");
+            }
+            Value::Float(f) => out.push_str(&format_float(*f)),
             Value::Str(s) => {
                 if top {
-                    (*s).to_string()
+                    out.push_str(s);
                 } else {
-                    format!("\"{s}\"")
+                    out.push('"');
+                    out.push_str(s);
+                    out.push('"');
                 }
             }
-            Value::Bool(b) => if *b { "true" } else { "false" }.to_string(),
-            Value::None => "none".to_string(),
-            Value::List(l) => {
-                let inner = l
-                    .borrow()
-                    .iter()
-                    .map(|v| v.repr(false, depth + 1, budget))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!("[{inner}]")
-            }
+            Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+            Value::None => out.push_str("none"),
+            Value::List(l) => Self::write_items(out, l.borrow().iter(), depth, budget),
             // An Array uses the same bracket spelling as a List (§22); its
             // distinct identity is observable through the type system,
             // equality, AIS, and capabilities, not through a special display
             // form.
-            Value::Array(l) => {
-                let inner = l
-                    .borrow()
-                    .iter()
-                    .map(|v| v.repr(false, depth + 1, budget))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!("[{inner}]")
-            }
+            Value::Array(l) => Self::write_items(out, l.borrow().iter(), depth, budget),
             Value::Tuple(t) => {
-                let inner = t
-                    .iter()
-                    .map(|v| v.repr(false, depth + 1, budget))
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                out.push('(');
+                Self::write_joined(out, t.iter(), depth, budget);
                 // A one-element tuple prints with a trailing comma so it is
                 // unambiguous versus parenthesized grouping.
                 if t.len() == 1 {
-                    format!("({inner},)")
-                } else {
-                    format!("({inner})")
+                    out.push(',');
                 }
+                out.push(')');
             }
             Value::Set(s) => {
-                let inner = s
-                    .borrow()
-                    .iter()
-                    .map(|k| k.repr())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!("{{{inner}}}")
+                out.push('{');
+                let mut first = true;
+                for k in s.borrow().iter() {
+                    if !first {
+                        out.push_str(", ");
+                    }
+                    first = false;
+                    k.write_repr(out);
+                }
+                out.push('}');
             }
             Value::Map(m) => {
-                let inner = m
-                    .borrow()
-                    .iter()
-                    .map(|(k, v)| format!("{}: {}", k.repr(), v.repr(false, depth + 1, budget)))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!("{{{inner}}}")
+                out.push('{');
+                let mut first = true;
+                for (k, v) in m.borrow().iter() {
+                    if !first {
+                        out.push_str(", ");
+                    }
+                    first = false;
+                    k.write_repr(out);
+                    out.push_str(": ");
+                    v.write_repr(false, depth + 1, budget, out);
+                }
+                out.push('}');
             }
             Value::Instance(i) => {
-                let fields = i
-                    .fields
-                    .borrow()
-                    .iter()
-                    .map(|(k, v)| format!("{k}: {}", v.repr(false, depth + 1, budget)))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!("{} {{ {fields} }}", i.ty)
+                let _ = write!(out, "{} {{ ", i.ty);
+                let mut first = true;
+                for (k, v) in i.fields.borrow().iter() {
+                    if !first {
+                        out.push_str(", ");
+                    }
+                    first = false;
+                    let _ = write!(out, "{k}: ");
+                    v.write_repr(false, depth + 1, budget, out);
+                }
+                out.push_str(" }");
             }
             Value::Variant(v) => {
                 if v.payload.is_empty() {
-                    v.tag.clone()
+                    out.push_str(&v.tag);
                 } else {
-                    let inner = v
-                        .payload
-                        .iter()
-                        .map(|x| x.repr(false, depth + 1, budget))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    format!("{}({inner})", v.tag)
+                    out.push_str(&v.tag);
+                    out.push('(');
+                    Self::write_joined(out, v.payload.iter(), depth, budget);
+                    out.push(')');
                 }
             }
-            Value::Closure(_) | Value::Native(_) => "<fn>".to_string(),
-            Value::Range(r) => format!("{}..{}", r.start, r.end),
+            Value::Closure(_) | Value::Native(_) => out.push_str("<fn>"),
+            Value::Range(r) => {
+                let _ = write!(out, "{}..{}", r.start, r.end);
+            }
+        }
+    }
+
+    /// Write `[a, b, c]` from an element iterator.
+    fn write_items<'a>(
+        out: &mut String,
+        items: impl Iterator<Item = &'a Value>,
+        depth: usize,
+        budget: &mut RenderBudget,
+    ) {
+        out.push('[');
+        Self::write_joined(out, items, depth, budget);
+        out.push(']');
+    }
+
+    /// Write elements separated by `", "`, without the enclosing delimiters.
+    fn write_joined<'a>(
+        out: &mut String,
+        items: impl Iterator<Item = &'a Value>,
+        depth: usize,
+        budget: &mut RenderBudget,
+    ) {
+        for (i, v) in items.enumerate() {
+            if i > 0 {
+                out.push_str(", ");
+            }
+            v.write_repr(false, depth + 1, budget, out);
         }
     }
 }
