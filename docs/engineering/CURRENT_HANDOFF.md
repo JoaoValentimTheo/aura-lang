@@ -1,18 +1,75 @@
 # Current Engineering Handoff
 
-## Current local task — Directive 003-R, stabilization campaign
+## Current local task — Directive 004, Copilot agent migration
 
-`rewrite/v3-rust` is the **default branch** and HEAD is **`da9ab375`** (the
-merge of PR #17). Seventeen PRs are merged this campaign: #2, #3, #4, #5, #6,
+`rewrite/v3-rust` is the **default branch** and HEAD is **`47232a79`** (the
+merge of PR #19). Nineteen PRs are merged this campaign: #2, #3, #4, #5, #6,
 #7, #8, #9 (B14), #10 (PR template), #11 (TD-24 cost guard), #12 (CHANGELOG
 `[Unreleased]` + TD-25), #13 (website suite gate + TD-26), #14 (TD-27
 Playwright gate), #15 (state sync), #16 (B7 project-header contract + HTTP
-transport docs + `test:abi`), #17 (validation orchestrator self-tests in CI).
+transport docs + `test:abi`), #17 (validation orchestrator self-tests in CI),
+#18 (state sync for #15–#17), #19 (browser consent scoped to the mutation
+class).
 The Directive 003-R authorization recorded in
 `AGENTS.md` permits push, PR creation and merge, workflow administration, and
 default-branch changes; force-push, history removal, tag moves, frozen-WASM
 replacement, gate weakening, and unapproved stable releases remain forbidden.
 Never report a gate as green unless it actually executed.
+
+### Directive 004 — the `400 The requested model is not supported` diagnosis
+
+The directive assumed the error was a single misconfiguration. Controlled
+experiment showed **three independent root causes**; the first two are
+configuration, the third is a VS Code architecture boundary.
+
+**A — Agent Host hardcoded default.** `agentHostMain.js` declares
+`WS="gpt-5.6-luna"`, used as the default for
+`chat.agentHost.copilot.executionSubagent.model` and returned by
+`_getExecutionSubagentModel()` when unset. `gpt-5.6-luna` is not registered in
+this BYOK-only deployment, so an unpinned `explore` dispatch returns `400`.
+
+**B — SDK built-in agent YAMLs.** `@github/copilot/sdk/definitions/
+{explore,task}.agent.yaml` declare `model: claude-haiku-4.5`. Pinning exactly
+that id reproduces the `400` verbatim, and overriding the
+`github.copilot.chat.exploreAgent.model` setting does not change the outcome.
+
+**C — external platform limitation, not a repo defect.** `MEn`/`TEn` in
+`workbench.desktop.main.js` split customization payloads by source:
+
+```js
+function TEn(s){return(s.type==="skill"||s.type==="agent")&&(s.source===Dr.local||s.source===Dr.user)}
+let w=v.filter(k=>!TEn(k));   // → synced.bundle
+let C=v.filter(TEn);          // → standalone.bundle
+```
+
+`.github/agents/*.agent.md` resolve as `type:"agent", source:local`, so they are
+excluded from the synced plugin by construction. The standalone authority is
+`<sessionType>-<hash>-standalone`; **no such plugin directory is ever written
+to disk** (`ls ~/Library/Application Support/Code/agentPlugins/` shows four
+`vscode-synced-customization-*` authorities and no `-standalone`),
+`agenthost.log` records exactly one synced sync and one
+`appliedCount=0` customization event, `renderer.log` never logs a standalone
+push, and the Rust `runtime.node` never scans `.github/agents/` (its only two
+occurrences are a docs URL and a system-prompt *prohibition*). The Agent Host's
+`customAgents` is therefore structurally empty and `agent_type: aura-scout`
+returns the seven builtin names.
+
+**Consequence:** the seven agents are fully valid and fully discovered by the
+workbench (`customizationsDebug.log`: `agents 7 0 2 9`, all seven paths, zero
+rejections), and an explicit `model:` pin works for builtin agent types. What
+cannot work in this VS Code build is dispatching a *custom* agent by
+`agent_type` in the Agent Host harness. **Do not re-investigate C.** No
+repository change can alter it.
+
+### Resume point
+
+`dc16b4fe` on `chore/copilot-agent-migration` holds the seven converted agents
+plus this state reconciliation. Next: push, open the PR against
+`rewrite/v3-rust`, wait for remote CI, merge, then resume **CORE FIRST** —
+probe `src/`, `tests/`, and `fuzz/` for real defects one finding at a time,
+each with a reproducible case, a regression test that fails before the fix, the
+fix, and a passing test. The website stays frozen per the ADENDO unless it
+blocks the runtime.
 
 **PR #13 — merged `19cc4f22`.** It closed the last red suite on the default
 branch and repaired the gate that hid it. CI evidence: the `website` job ran
