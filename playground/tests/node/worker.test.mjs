@@ -117,4 +117,4 @@ check("no page errors", errors.length === 0, errors.join("; "));
 await browser.close();
 server.close();
 console.log(`\nWorker: ${passed} passed, ${failed} failed`);
-process.exit(failed === 0 ? 0 : 1);
+process.exitCode = failed === 0 ? 0 : 1;

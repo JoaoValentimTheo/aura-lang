@@ -167,4 +167,4 @@ check("both release and development channels are covered", channels.size >= 2);
 }
 
 console.log(`\nIntegrity: ${passed} passed, ${failed} failed`);
-process.exit(failed === 0 ? 0 : 1);
+process.exitCode = failed === 0 ? 0 : 1;

@@ -170,21 +170,54 @@ unilaterally).
   runtime's pair-array consumer.
 
 - **B14 — Multi-file project runs have no browser HTTP (LOW-MEDIUM, CONFIRMED,
-  escalate as docs).** `BrowserHost` (`src/host.rs:1045-1135`) does not
-  override `http_request`, so it inherits the trait default at
-  `src/host.rs:216-220` returning
+  FIXED).** The original diagnosis was correct. `BrowserHost`
+  (`src/host.rs:1045-1135`) does not override `http_request`, so it inherits the
+  trait default at `src/host.rs:216-220` returning
   `unavailable("this host has no network capability (HTTP is unavailable)")`.
-  Only `SuspendHost` (`playground/runtime/src/lib.rs:1083`, impl at 1143-1153)
-  returns `HostError::pending(PendingEffect::Http(..))`, and it is installed
-  only by `aura_session_start`; `aura_run`/`aura_run_project`
-  (`playground/runtime/src/lib.rs:972`, `:987`) construct `BrowserHost`
-  (`:627`, `:659`, `:731`, `:764`). Net effect: a single-source session can do
-  HTTP, a multi-file project cannot. `website/content/playground-doc.md:44,46-70`
-  describes browser HTTP without that scope limit, which is the actual defect.
-  Adding project sessions is a Host-ABI change and is therefore out of scope.
-  **No code change made.** The gap is now stated in
-  `website/content/playground-doc.md` under "Where the browser host differs
-  from the native one".
+  Only `SuspendHost` (`playground/runtime/src/lib.rs`, impl at 1143-1153)
+  returns `HostError::pending(PendingEffect::Http(..))`, and it was installed
+  only by `aura_session_start`; `aura_run`/`aura_run_project` construct
+  `BrowserHost`. Net effect: a single-source session could do HTTP, a multi-file
+  project could not — while `website/content/playground-doc.md` described
+  browser HTTP without that scope limit.
+  **The escalation ("adding project sessions is a Host-ABI change, out of
+  scope") rested on an assumption that did not survive checking: there is no
+  Host ABI 3.** `grep` for `aura_session_start` across `docs/` returns only
+  `STABILIZATION_AUDIT.md` and `PLAYGROUND_032_CAMPAIGN.md`; the runtime's
+  `ABI_VERSION` is `2` and no newer surface is specified or frozen anywhere.
+  So a project entry point *extends ABI 2 in place* rather than breaking it, and
+  §4's "não rompa o Host ABI existente e não modifique runtimes históricos" is
+  satisfied without a version bump: `ABI_VERSION` stays `2`, every existing
+  export keeps its signature, and the new capability is **feature-detected** —
+  `supportsProjectSessions` (`playground/web/runtime.mjs`) is an independent
+  probe of `aura_session_start_project`, deliberately *not* folded into
+  `SESSION_EXPORTS`, so `supportsSessions` remains true for older artifacts.
+  An old runtime therefore degrades to the synchronous `runProject` path (which
+  denies HTTP with `E5002`) instead of failing to load. **No frozen runtime was
+  touched**; the change ships as a new development artifact, `0.3.2-dev.8`.
+  Implementation reuses the existing consent/suspension machinery rather than
+  duplicating it: `aura_session_start_project` mirrors `aura_session_start`,
+  builds the provider with `build_virtual_provider`, and installs the *same*
+  `SuspendHost`. On the JavaScript side both paths share one effect loop —
+  `runSession(runId, runtime, start, signal)` takes a starter thunk — so the
+  64-request budget, cancellation, and the resume contract cannot drift between
+  single-source and project runs. Provenance also survives the session path:
+  diagnostics carry `source` naming the offending module, which requires
+  `HostedSession::sources` to hold the *same* `SourceMap` the compilation
+  produced, because `SourceMap::get` (`src/source.rs:151`) rejects
+  foreign-scope ids.
+  **Verification.** New `playground/tests/node/project-http.test.mjs`
+  (20 checks, registered in `run-all.mjs`) drives a two-module HTTP program
+  against a loopback server and asserts the effect is produced by the non-entry
+  module, its body/method/headers survive, a 404 is an ordinary response, denial
+  yields `E5002`, and a child compile error names `child.aura`. It carries a
+  **negative control** — `runProject` on the same program must yield `E5002`
+  with no effect — so the positive case cannot pass merely because the session
+  started. Mutation-verified against the pre-fix `0.3.2-dev.7` artifact:
+  dev.8 → 20/20, dev.7 → 5 passed / 2 failed (fails as a statement rather than
+  throwing, via a capability guard wrapping the post-detect body).
+  `website/content/playground-doc.md` keeps its scope note, now describing a
+  limitation of *old* artifacts rather than of the Playground.
 
 #### Fixable without a contract change
 
@@ -278,7 +311,14 @@ Still unpinned: session source/limit rejection; native timeout enforcement
 against a slow server; `readBoundedBody`'s non-streaming fallback (exercised
 only when `response.body` is absent); browser duplicate-header and
 redirect-status behavior (both need a real browser, so they live in
-`http-security.test.mjs`'s Playwright gate); HTTP from a multi-file project.
+`http-security.test.mjs`'s Playwright gate).
+
+Now pinned: **HTTP from a multi-file project** (B14) by
+`playground/tests/node/project-http.test.mjs`, which drives a two-module
+program against a loopback server and carries a negative control that requires
+`runProject` on the same program to refuse with `E5002`; it fails 2 checks
+against the pre-fix `0.3.2-dev.7` artifact and passes all 20 against
+`0.3.2-dev.8`.
 
 Now pinned by `playground/tests/node/transport-bounds.test.mjs`: the request body
 and header byte caps (B13′), and the per-run request budget (B9). That test was verified to *fail* against the
@@ -386,16 +426,18 @@ arguments, preserved environments/spans, stale-effect rejection) are covered by
 2. **AIS/0.2**: the RFC proposes additive operations; confirm the priority
    (precision vs size) and the stable-id strategy before any implementation
    (RFC §9).
-3. **Browser/native HTTP divergence (B6, B7, B14)**: three confirmed behavioral
-   gaps remain escalated, because closing any of them changes the Host contract
-   for one platform or the other. B6 (redirect status: native `302`, browser
-   `E4020`) is the sharpest — the same program means two different things — and
-   the recommended remedy is to synthesize a status-only response in the browser
-   rather than follow redirects, which *is* a Host-behavior change. B7 (browser
-   `Headers` hides `Set-Cookie` and comma-joins duplicates) and B14 (`http_request`
-   reachable only from a session on the browser host) are documented as
-   browser-host policy in `website/content/playground-doc.md`. None is fixed
-   unilaterally.
+3. **Browser/native HTTP divergence (B6, B7, B14) — ALL THREE RESOLVED.** B6
+   (redirect status: native `302`, browser `E4020`) turned out to be **not
+   fixable in principle**: an `opaqueredirect` response exposes no status, so
+   synthesizing a `3xx` would mean inventing a code the browser withholds. It is
+   a **formalized divergence** under Directive 003-R §4, pinned by a test and
+   stated in `docs/LANGUAGE_SPEC.md` §25. B7 (browser `Headers` hides
+   `Set-Cookie` and comma-joins duplicates) is a **documented divergence**: the
+   combining happens in `Headers` iteration, upstream of anything the Worker
+   controls. B14 was **implemented** — the escalation assumed a Host ABI 3 was
+   required, but none exists, so the project entry point extends ABI 2 in place
+   behind a feature detect and ships as `0.3.2-dev.8`. See the B6/B7/B14 rows
+   above; no further human decision is needed for any of them.
 4. **Nightly fuzzing has never run and cannot be run (TD-23) — FIXED**: `.github/workflows/fuzz-nightly.yml`
    is `schedule`-triggered but exists only on `rewrite/v3-rust`; `schedule` fires
    solely on the default branch (`master`), which lacks the file. It is also the

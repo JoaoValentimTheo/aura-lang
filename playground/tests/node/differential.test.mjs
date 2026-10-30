@@ -1141,4 +1141,4 @@ if (postError.text === norm({ status: "ok", stdout: "3\n", result: null, diagnos
 }
 
 console.log(`\nDifferential: ${passed} passed, ${failed} failed`);
-process.exit(failed === 0 ? 0 : 1);
+process.exitCode = failed === 0 ? 0 : 1;

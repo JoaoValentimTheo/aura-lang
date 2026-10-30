@@ -3105,6 +3105,17 @@ host property, not a language restriction: a program is not required to be
 portable across hosts, but a call that a host cannot perform is `E5002` rather
 than an invented result or a silent failure.
 
+**Normative rule (HTTP is not scoped to the entry module).** Where a host
+provides HTTP, it provides it to the whole program. A host that runs a
+multi-module program must therefore make HTTP reachable from every module, not
+only from the entry, and the same capability, consent, and budget rules apply
+regardless of which module performs the request. A host that can satisfy this
+only for a single source must report `E5002` for the multi-module case rather
+than silently differing between the two. This is a requirement on Host
+implementations, not on programs: the language has no notion of a privileged
+module, so a program that calls `http_get` in a child module is as valid as one
+that calls it in the entry.
+
 **Normative rule (browser host divergence — deliberate and contractual).** The
 browser host runs behind the browser's own network security model, and that
 model makes exact native parity impossible for exactly three things. These are
@@ -3139,7 +3150,9 @@ map); `src/host.rs` (the `Host` trait boundary, `NativeHost` with
 combination point); `playground/runtime/src/lib.rs`
 (`SuspendHost::http_request`, `json_to_response_value` resume application);
 native contract in `tests/http.rs`; browser contract in
-`playground/tests/node/http-security.test.mjs`; host documentation in
+`playground/tests/node/http-security.test.mjs` and
+`playground/tests/node/session-http.test.mjs`; multi-module HTTP contract in
+`playground/tests/node/project-http.test.mjs`; host documentation in
 `website/content/playground-doc.md`.
 
 ---

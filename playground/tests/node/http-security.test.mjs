@@ -1,4 +1,4 @@
-// Browser HTTP security acceptance gate (0.3.2-dev.7, Host ABI 2).
+// Browser HTTP security acceptance gate (0.3.2-dev.8, Host ABI 2).
 //
 // The order requires adversarial, deterministic evidence — not just the
 // successful PokéAPI demonstration — that the experimental runtime cannot
@@ -146,7 +146,7 @@ async function newPage() {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   await page.goto(`${base}playground/`, { waitUntil: "load" });
   await page.waitForFunction(() => document.querySelectorAll("#version option").length > 0);
-  await page.selectOption("#version", "0.3.2-dev.7");
+  await page.selectOption("#version", "0.3.2-dev.8");
   return page;
 }
 
@@ -335,8 +335,8 @@ async function runAndAnswer(page, { grant = true, allowOrigins = null, timeout =
   const { readFileSync } = await import("node:fs");
   const { AuraRuntime } = await import(join(repo, "playground/web/runtime.mjs"));
   const rt = await AuraRuntime.fromBytes(
-    readFileSync(join(repo, "playground/runtimes/0.3.2-dev.7/aura_playground_runtime.wasm")),
-    "0.3.2-dev.7",
+    readFileSync(join(repo, "playground/runtimes/0.3.2-dev.8/aura_playground_runtime.wasm")),
+    "0.3.2-dev.8",
   );
   let step = rt.startSession(`fn main() { let r = http_get("http://example.test/a")\n print(r["status"]) }`, { args: [], stdin: null });
   check("7 session parks", step.status === 3, String(step.status));
@@ -447,4 +447,4 @@ site.close();
 a.server.close();
 b.server.close();
 console.log(`\nhttp-security: ${passed} passed, ${failed} failed`);
-process.exit(failed === 0 ? 0 : 1);
+process.exitCode = failed === 0 ? 0 : 1;

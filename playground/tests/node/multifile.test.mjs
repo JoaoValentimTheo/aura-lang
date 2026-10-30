@@ -404,4 +404,4 @@ async function selectTab(page, name) {
 await browser.close();
 server.close();
 console.log(`Multi-file: ${passed} passed, ${failed} failed`);
-process.exit(failed === 0 ? 0 : 1);
+process.exitCode = failed === 0 ? 0 : 1;

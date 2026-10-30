@@ -1,7 +1,7 @@
 // Browser HTTP end to end (0.3.2 development, Host ABI 2).
 //
 // This is the real acceptance gate for browser HTTP: a real Chromium, the real
-// Playground page and Worker, the real 0.3.2-dev.7 wasm artifact, and a local
+// Playground page and Worker, the real 0.3.2-dev.8 wasm artifact, and a local
 // CORS-enabled server. The Aura program calls `http_get`/`http_request`; the
 // runtime parks; the Worker performs a real `fetch`; the page's consent UI is
 // answered; the response resumes the same program.
@@ -91,7 +91,7 @@ async function newPage() {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   await page.goto(`${base}playground/`, { waitUntil: "load" });
   await page.waitForFunction(() => document.querySelectorAll("#version option").length > 0);
-  await page.selectOption("#version", "0.3.2-dev.7");
+  await page.selectOption("#version", "0.3.2-dev.8");
   return page;
 }
 
@@ -230,4 +230,4 @@ await browser.close();
 site.close();
 server.close();
 console.log(`\nbrowser-http: ${passed} passed, ${failed} failed`);
-process.exit(failed === 0 ? 0 : 1);
+process.exitCode = failed === 0 ? 0 : 1;

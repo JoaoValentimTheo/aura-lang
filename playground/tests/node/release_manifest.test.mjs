@@ -108,4 +108,4 @@ check(
 );
 
 console.log(`release-manifest: ${passed} passed, ${failed} failed`);
-if (failed > 0) process.exit(1);
+if (failed > 0) process.exitCode = 1;

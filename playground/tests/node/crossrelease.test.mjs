@@ -104,4 +104,4 @@ for (const rt of runtimes) {
 }
 
 console.log(`cross-release: ${passed} passed, ${failed} failed across ${runtimes.length} runtimes`);
-if (failed > 0) process.exit(1);
+if (failed > 0) process.exitCode = 1;

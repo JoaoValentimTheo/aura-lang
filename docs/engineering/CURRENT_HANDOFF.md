@@ -1,73 +1,84 @@
 # Current Engineering Handoff
 
-## Current local task — Directive 003 stabilization campaign
+## Current local task — Directive 003-R, B14 shipping
 
-Branch `rewrite/v3-rust`, working tree clean, HEAD **`a562bacf`** (the merge of
-PR #4; nothing unpublished). The Directive 003-R authorization recorded in
-`AGENTS.md` permits push, PR, merge, and workflow administration; force-push,
-history removal, tag moves, frozen-WASM replacement, gate weakening, and
-unapproved stable releases remain forbidden. Directive 002 (PR #2), the rustls
-remediation (PR #3), and the batch-1 integration (PR #4) are all merged and
-historical.
+Branch `rewrite/v3-rust`, HEAD **`1aa301c6`** (the merge of PR #8). The
+Directive 003-R authorization recorded in `AGENTS.md` permits push, PR, merge,
+and workflow administration; force-push, history removal, tag moves,
+frozen-WASM replacement, gate weakening, and unapproved stable releases remain
+forbidden. Merged so far this campaign: PR #4 (`a562bacf`, batch 1 + rustls
+advisories), PR #6 (`4a20fa84`, B6/B7 divergences), PR #5 (`eaa3b9ed`,
+resolvable doc link), PR #7 (`22e73cce`, website link fix), and PR #8
+(`1aa301c6`, session provenance + encoder cost).
 
-**Closed so far.** Phase 0 baseline reconstructed (HEAD/tags/branches/CI/ahead-
-behind). SemVer precedence centralized: `scripts/semver.py` is now the single
-source of truth, replacing three `sort -V` call sites in
-`scripts/release-preflight.sh`, `scripts/release-manifest.sh`, and
-`.github/workflows/release.yml`; `tests/contract.rs` prerelease blindness is
-fixed via the new in-crate `aura::version`. Documentation drift corrected:
-`docs/LANGUAGE_SPEC.md` tuple rule (C1), `SECURITY.md` supported versions,
-`README.md` 0.3.2 status, and the `0.3.2-dev.5` → `0.3.2-dev.7` references in
-live-facing docs. All nine HTTP findings B6–B14 were then reclassified against
-the code; the four low-risk ones are fixed and pinned by tests — B10 (dead
-redirect constant and a comment claiming redirect following), B11 (three
-hardcoded `abiVersion === 1` pins now derived from the manifest), B13′ (request
-caps counted UTF-16 units, so a CJK body passed the 8 MiB cap at 3× its limit),
-and B9 (the per-run 64-request budget). B13 was falsified. B6, B7, and B14 are
-escalated because each changes the Host contract for one platform. The REPL
-O(N²) characteristic (TD-13) was re-confirmed in release profile and left
-deferred with its equivalence obstacle documented, and the never-running nightly
-fuzz workflow was recorded as TD-23.
+**The four originally-open findings are closed.**
 
-**Local validation actually completed:** `cargo fmt --all -- --check` clean;
-`cargo test --locked --all-targets --all-features` green; the reduced
-`--no-default-features --features cli,repl,json,regex,time` suite green;
-`node playground/build.mjs --check` (9 versioned entries); Playground node
-suites 11/12 green with 0 `FAIL` lines (451 assertions), the sole failure being
-the unavailable wasm target; and the website suites green with 0 `FAIL` lines.
+- **TD-23** — the nightly fuzz workflow was invisible because GitHub resolves
+  `schedule` from the **default branch**, and the default branch was `master`,
+  which has no `fuzz/` directory. `master` is a *strict ancestor* of
+  `rewrite/v3-rust` (`0 587`), reachable from none of the five release tags,
+  with no rulesets, no branch protection, and a tag-triggered-only
+  `release.yml`. After re-verifying every precondition the default branch was
+  flipped with `gh api -X PATCH`; the vestigial Pages `source.branch` was
+  repointed. **Behavioural proof, not YAML presence:** `gh workflow list` now
+  reports `Fuzz (nightly)` where it previously 404'd, and
+  `gh workflow run fuzz-nightly.yml` queued run `40984609515`. No
+  `schedule`-event run exists yet (cron `17 3 * * *`) — do not claim the timer
+  fires until one does.
+- **B6** — browser redirect parity is **impossible**, not merely unbuilt: an
+  `opaqueredirect` response exposes no status, so emitting a `3xx` would mean
+  inventing a code the platform withholds (precisely what §4 forbids). Filed as
+  a **formalized divergence** in `docs/LANGUAGE_SPEC.md` §25 and pinned by case
+  4 of `http-security.test.mjs`.
+- **B7** — `Headers` is a *combining* collection, so duplicates are joined with
+  `", "` upstream of any Worker code; the runtime's list-on-duplicate logic is
+  dead on the browser path. A **documented divergence**, stated normatively.
+  An intermediate "docs-only" reading of this was wrong and is recorded as
+  such.
+- **B14 — implemented and proved.** The escalation assumed a Host ABI 3 was
+  required. There is none (`ABI_VERSION` is `2` and no newer surface is
+  specified anywhere), so the project entry point extends ABI 2 *in place*:
+  `aura_session_start_project` from `0.3.2-dev.8`, feature-detected by
+  `supportsProjectSessions` (deliberately not in `SESSION_EXPORTS`, so
+  `supportsSessions` stays true for older artifacts and they degrade to the
+  synchronous `runProject` path). Consent, suspension, the 64-request budget,
+  cancellation, and resume all reuse the existing `SuspendHost` and one shared
+  `runSession` effect loop, so the two paths cannot drift. Diagnostics keep
+  module provenance across the session because `HostedSession` stores the same
+  `SourceMap` the compilation produced.
 
-**Remote validation (authoritative — PR #4, run 40977704151):** all **20/20**
-checks green, including `clippy`, `MSRV 1.83`, `miri`, `cargo audit`, fuzz
-smoke, extended property tests, 6/6 CPython interop, pure-Rust-links, and the
-three `test` shards. The first run (40976615160) failed **only** `cargo audit`,
-on two advisories published after the base branch's last green run —
-RUSTSEC-2026-0382 (`rustls-webpki` → 0.103.16) and RUSTSEC-2026-0381
-(`webpki-roots` → 1.0.10) — both fixed in `b0744389`. A residual `clipboard-win
-5.4.1` *yanked* warning is deliberately left: no fixed release exists and the
-advisory is warning-level.
+**Local validation actually completed.** `cargo fmt --all -- --check` clean;
+`cargo clippy` clean with `-D warnings` on the pinned **1.98.1** for both the
+main and the runtime crate; `cargo test --all-features` green across 65 test
+binaries; the full Playground suite (`run-all.mjs`, 14 suites) green with
+`project-http` 20/0 newly registered; `node playground/build.mjs --check`
+green over 9 manifested versions; and the **entire** website CI sequence run
+step-by-step (`build.mjs`, `validate-examples` 22/0, `release-version` 32/0,
+`docs-consistency` 137/0, `check-links` 3366/0, `check-base` 3365/0).
 
-**Environment limitations (local only — all now covered by remote CI):** this
-machine has no usable `rustup` toolchain management, so `cargo +1.83.0` (MSRV),
-`+nightly`, Miri, and libFuzzer cannot run locally; and the
-`wasm32-unknown-unknown` target is absent, so the `wasm build` Playground suite
-fails to compile. The local toolchain is 1.99.1 while `rust-toolchain.toml`
-pins 1.98.1, which makes the local `clippy -D warnings` floor fail on the new
-`assert_is_empty` lint — 18 sites across six files untouched by this campaign.
-**CI on the pinned 1.98.1 passes clippy twice, so those 18 hits are confirmed
-toolchain drift, not a regression.** Do not "fix" them and do not lower the
-warning floor.
+**Two real defects found by running those gates, both fixed.**
+`release-version` caught that bumping the runtime crate to `0.3.2-dev.8`
+requires `website/site.config.mjs`'s `runtimeVersion` to move with it — that
+check exists precisely to stop the site advertising a stale artifact identity.
+And the 13-minute intermittent Playground stall was traced to `process.exit()`
+inside top-level-await modules blocking in `node::DisposePlatform()`; final
+summary exits were converted to `process.exitCode`, while the 10 early guards
+that must terminate immediately were deliberately left alone. Exit-code
+propagation was mutation-verified (injecting a failing check yields exit 1 both
+directly and through `run-all.mjs`).
 
-**Exact next action:** continue Directive 003-R §8's third action — resolve
-TD-23, then B6, B7, and B14, one branch and one PR per finding, each gated on
-remote CI. Two measurements from this campaign determine the shape of that
-work: (a) `master` is a **strict ancestor** of `rewrite/v3-rust`, **572 commits
-behind**, and reachable from **none** of the five release tags — so GitHub
-resolves `schedule` from a branch that contains no `fuzz/` directory, which is
-the whole of TD-23; (b) B6's native/browser parity is **technically
-impossible** (the browser hides the redirect status behind `opaqueredirect`),
-which is exactly the divergent-outcome case §4 authorizes formalizing. The
-previous task material below is retained as historical context and must not
-override this active instruction.
+**Environment now unblocked (§5).** `rustup` was installed, so the pinned
+`1.98.1`, `wasm32-unknown-unknown`, and `nightly` are available; the local
+`assert_is_empty` clippy noise is **confirmed toolchain drift** (18 sites,
+clean on 1.98.1) and must not be "fixed". `cargo-audit`, Miri, and Playwright
+remain unavailable locally and are covered by remote CI.
+
+**Exact next action:** push this B14 batch as a branch, open its PR against
+`rewrite/v3-rust`, wait for 20/20, merge, then report the campaign to issue #1
+and fix the stale Python-era `.github/PULL_REQUEST_TEMPLATE.md`. When the cron
+fires, record the first genuine `schedule`-event fuzz run. The previous task
+material below is retained as historical context and must not override this
+active instruction.
 
 Authoritative for **the active task and the exact next action**. Current
 repository state lives in `AGENT_STATE.md`; operating rules in `AGENTS.md`.

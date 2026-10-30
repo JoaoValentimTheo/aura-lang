@@ -48,7 +48,7 @@ and arguments. Filesystem, clock, and sleep are **unavailable** and report
 The published `0.3.1` runtime predates the HTTP builtin surface, so
 `http_get`/`http_request` are not registered there and a call is a compile-time
 `E2003` (undefined name) — no request is possible. The development runtime
-(`0.3.2-dev.7`, Host ABI 2) adds them through an **experimental permission
+(`0.3.2-dev.8`, Host ABI 2) adds them through an **experimental permission
 model**:
 
 * Network is **off by default**. Each request asks the page to authorize a
@@ -82,11 +82,16 @@ Playground.
   comma-joined value. The native host preserves duplicates and original
   casing. A program that inspects repeated response headers will observe fewer
   of them here.
-* **HTTP is session-only.** `http_get` / `http_request` are reachable from a
-  single-source run on a Host ABI 2 runtime, which is what the Playground
-  starts. A **multi-file project** run executes synchronously and has no
-  network capability: a call there is `E5002`. This is a limitation of the
-  current runtime surface, not a setting.
+* **HTTP requires a Host ABI 2 runtime that supports sessions.** `http_get` /
+  `http_request` are reachable from any run — single-source or multi-file
+  project — on a runtime that advertises session support, which every
+  `0.3.2` runtime does. Runtime `0.3.2-dev.8` added project sessions: the
+  entry module and every child module share the same effect loop, permission
+  prompt, and request budget. An **older** `0.3.2` development runtime
+  (`0.3.2-dev.7` and earlier) can only start a session for a single file, so a
+  multi-file project there runs synchronously and a call is `E5002`. The
+  Playground detects this per runtime and falls back rather than failing, so
+  the limitation applies only to pinned old artifacts, not to the current one.
 * **Request budgets.** A request body is capped at 8 MiB and request headers
   at 64 KiB, both counted in **UTF-8 bytes**, and a **run** may issue at most
   64 HTTP requests — the 65th is `E4020`. The body and header caps mirror the
