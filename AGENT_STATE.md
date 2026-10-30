@@ -2,26 +2,39 @@
 
 ## Directive 003 — stabilization and hardening campaign (current)
 
-- Active branch: `rewrite/v3-rust`, local HEAD **`c8500c35`**, four unpublished
-  commits ahead of `origin/rewrite/v3-rust`. The Directive 002 repair (PR #2)
-  and the rustls security remediation (PR #3) are both **merged**; the
+- Active branch: `rewrite/v3-rust`, local HEAD **`a562bacf`** — the merge of
+  **PR #4**, which integrated the first stabilization batch. Nothing is
+  unpublished. Directive 002 (PR #2), the rustls remediation (PR #3), and the
+  batch-1 integration (PR #4) are all **merged**; the
   `/private/tmp/aura-directive-002-release-preflight` worktree and the
   `repair/directive-002-release-preflight` branch are **historical**.
+- **Directive 003-R authorization is in force** (`AGENTS.md`, "Standing
+  authorization"): push, PR, merge, workflow administration, and fixes for B6,
+  B7, B14, TD-23 are permitted. Force-push, history removal, tag moves,
+  frozen-WASM replacement, gate weakening, and unapproved stable releases
+  remain forbidden.
 - Scope: stabilize, harden, and measure — core language fixes, adversarial
   security, performance, testing/CI, documentation, and technical debt.
   Findings ledger: `docs/engineering/STABILIZATION_AUDIT.md`.
-- Constraints in force: no push, merge, tag, release, deploy, force-push,
-  destructive reset, default-branch change, or semantic/Host-ABI/version-policy
-  change without explicit human authorization. Everything so far is local.
+- Constraints in force: still forbidden are force-push, history removal, tag
+  changes, frozen-WASM replacement, gate weakening, and a stable release
+  without an approved candidate. Push, PR, merge, and workflow administration
+  are authorized by Directive 003-R.
 - Completed batches: (1) SemVer precedence centralized in `scripts/semver.py`
   (+ `aura::version` in-crate), replacing three `sort -V` call sites;
   (2) documentation drift reconciled (LANGUAGE_SPEC tuple rule, SECURITY,
   README, dev.7); (3) Playground HTTP hardening — B10, B11, B13′, B9 fixed and
   pinned by `transport-bounds.test.mjs` and `abi.test.mjs`, B13 falsified;
   (4) REPL O(N²) re-confirmed in release profile and the dark nightly fuzz
-  workflow recorded as TD-23.
-- Escalated, awaiting human authorization: B6, B7, B14 (each changes the Host
-  contract for one platform) and TD-23 (every remedy is a protected action).
+  workflow recorded as TD-23; (5) two RustSec advisories in the TLS trust
+  chain patched (`rustls-webpki` 0.103.16, `webpki-roots` 1.0.10). Batches 1–5
+  are **merged** via PR #4 with all 20 remote checks green.
+- Open findings, authorized but not yet fixed: B6 (redirect status parity is
+  technically impossible in the browser — §4 permits formalizing the
+  divergence), B7 (documentation-only: the code is already correct on both
+  hosts), B14 (needs resumable module execution; the ABI-2 session path is
+  single-source today), and TD-23 (workflow is invisible because GitHub
+  resolves `schedule` from the default branch, which is `master`).
 - Exact next action: `docs/engineering/CURRENT_HANDOFF.md`.
 
 Compact current engineering state. Rules: `AGENTS.md`. Active task and exact
@@ -33,8 +46,8 @@ before continuing substantial work.
 
 - Branch: `rewrite/v3-rust`
 - **Git reality (verify with `git rev-parse`, do not trust prose):** local HEAD
-  is **`c8500c35`**, four commits ahead of `origin/rewrite/v3-rust`
-  (`0` behind / `4` ahead — unpublished). Tag **`v0.3.1` = `b09cbef2`**. Aura
+  is **`a562bacf`**, the merge commit of PR #4; `origin/rewrite/v3-rust` is at
+  the same commit (`0` behind / `0` ahead). Tag **`v0.3.1` = `b09cbef2`**. Aura
   0.3.1 (Keystone) is the current release (release = language = `0.3.1`,
   runtime `0.3.1` is the Playground default) and is **PUBLISHED**. The earlier
   `b221e6a9`/`v0.2.1` notes below are **historical**; Git is authoritative.
@@ -631,18 +644,19 @@ feature-gating of the typed-decode path.
 ## Exact Next Action
 
 See `docs/engineering/CURRENT_HANDOFF.md`. In short: Aura 0.3.1 (Keystone) is
-published; local HEAD is `c8500c35`, four unpublished commits ahead of
-`origin/rewrite/v3-rust`, `v0.3.1` = `b09cbef2`. The SemVer centralization,
-documentation reconciliation, and Playground HTTP hardening batches are
-complete locally and **unpushed**, as is the REPL/fuzz documentation
-correction. The B6–B14 findings are all reclassified; B10, B11, B13′, and B9
-are fixed and pinned, B13 was falsified. **Exact next action:** nothing further
-is actionable without human authorization — B6, B7, B14 each change the Host
-contract, and TD-23 (the dark nightly fuzz workflow) can only be fixed by a
-merge, a default-branch change, or a new trigger. A push to this branch
-triggers `pages.yml` and deploys the site, so the human must accept that
-consequence before any push. Do not push without explicit authorization, and do
-not begin language features frozen for stabilization.
+published; HEAD is `a562bacf` (PR #4 merged), nothing unpublished, and
+`v0.3.1` = `b09cbef2`. Batches 1–5 — SemVer centralization, documentation
+reconciliation, Playground HTTP hardening, the REPL/fuzz record correction, and
+the TLS advisory patches — are **merged**. B10, B11, B13′, and B9 are fixed and
+pinned; B13 was falsified. **Exact next action:** continue Directive 003-R §8's
+third action — resolve TD-23, then B6, B7, and B14 — each on its own branch
+with remote CI, per §7. Two facts measured this campaign reshape the work:
+`master` is a strict ancestor of `rewrite/v3-rust` **572 commits behind and
+carrying none of the five release tags**, which is why the nightly workflow is
+invisible to GitHub; and B6's native/browser parity is **technically
+impossible** because the browser hides the redirect status, which is the
+divergence §4 authorizes formalizing. Do not begin language features frozen for
+stabilization.
 B-1R8 (remove the recursive engine and the oracle switch) and any runtime
 publication remain separately human-gated. **Validation (TD-22):** use the
 observable sharded `scripts/validate.py` (not a monolithic watch) for the Rust
