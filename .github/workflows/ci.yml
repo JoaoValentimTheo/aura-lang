@@ -388,8 +388,10 @@ jobs:
 
   # --------------------------------------------------------------- website
   # Builds the static website, validates every example against the real wasm
-  # runtime, and checks internal links and required assets. Browser and
-  # accessibility suites run under Chromium when Playwright is available.
+  # runtime, and checks internal links and required assets. The browser and
+  # accessibility suites are skipped here: no job installs Playwright, so they
+  # report SKIPPED rather than passing (see TD-27). Everything that does not
+  # need a browser runs through `website/tests/run-all.mjs`.
   website:
     name: website (static build + examples + links)
     runs-on: ubuntu-latest
@@ -435,3 +437,10 @@ jobs:
           node website/build.mjs
           grep -q '"/aura-lang/' website/dist/index.html
           echo "default base is /aura-lang/"
+      # The steps above name four of the twelve website suites by hand, so a
+      # suite added later was silently never run (TD-26). This step runs the
+      # whole suite from the runner that owns the list, so adding a suite to
+      # `run-all.mjs` is enough to put it in CI. It depends on `dist`, which
+      # the default build above just produced for the project-site base.
+      - name: Full website suite (all suites, browser ones self-skip)
+        run: node website/tests/run-all.mjs
