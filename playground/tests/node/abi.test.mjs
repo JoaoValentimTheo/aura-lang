@@ -7,6 +7,8 @@
 // Usage: node playground/tests/node/abi.test.mjs <path-to.wasm>
 
 import { readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { AuraRuntime } from "../../web/runtime.mjs";
 
 const wasmPath = process.argv[2];
@@ -14,6 +16,28 @@ if (!wasmPath) {
   console.error("usage: node abi.test.mjs <runtime.wasm>");
   process.exit(2);
 }
+
+// The expected Host ABI is a property of the *artifact under test*, not of this
+// test file. Deriving it from the manifest keeps the assertion meaningful when
+// `manifest.current` advances to an ABI-2 entry, instead of turning the pin
+// into a check that fails on a legitimate release.
+const playgroundDir = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const manifest = JSON.parse(readFileSync(join(playgroundDir, "runtimes/manifest.json"), "utf8"));
+const resolvedWasm = resolve(wasmPath);
+const entry = manifest.versions.find(
+  (version) =>
+    typeof version.artifact === "string" &&
+    resolve(playgroundDir, "runtimes", version.artifact) === resolvedWasm,
+);
+const expectedAbi = entry ? entry.host_abi_version : Number(process.env.AURA_EXPECTED_ABI);
+if (!Number.isInteger(expectedAbi) || expectedAbi < 1) {
+  console.error(
+    `${wasmPath} is not a published artifact and no valid AURA_EXPECTED_ABI was given;` +
+      " cannot state which Host ABI it should report",
+  );
+  process.exit(2);
+}
+const artifactLabel = entry ? `${entry.id} (manifest)` : "unpublished build (AURA_EXPECTED_ABI)";
 
 const bytes = readFileSync(wasmPath);
 const runtime = await AuraRuntime.fromBytes(bytes, "test");
@@ -60,7 +84,11 @@ function expectCode(name, source, code, options) {
 }
 
 // --- ABI identity ---------------------------------------------------------
-check("abi version is 1", runtime.abiVersion === 1, String(runtime.abiVersion));
+check(
+  `abi version is ${expectedAbi} for ${artifactLabel}`,
+  runtime.abiVersion === expectedAbi,
+  String(runtime.abiVersion),
+);
 // The runtime artifact's own version is whatever the crate declares; the ABI
 // test must not hardcode a release so it works for any built artifact. The
 // language version tracks the release line for the current artifact, so it is
@@ -191,7 +219,11 @@ if (supportsVirtualProjects) {
   const success = runProject(successProject);
   check("virtual project executes", success.status === "ok", JSON.stringify(success));
   check("virtual project stdout", success.stdout === "21\n", JSON.stringify(success));
-  check("Host ABI remains 1 with additive VFS exports", runtime.abiVersion === 1);
+  check(
+    "Host ABI is unchanged by the additive VFS exports",
+    runtime.abiVersion === expectedAbi,
+    String(runtime.abiVersion),
+  );
 
   const evalFallback = runProject({
     entry: "root",
@@ -262,7 +294,11 @@ if (supportsVirtualProjects) {
   const recovered = run('fn main() { print("recovered") }');
   check("runtime recovers after rejected VFS request", recovered.stdout === "recovered\n", JSON.stringify(recovered));
 } else {
-  check("historical ABI 1 runtime may omit additive VFS exports", runtime.abiVersion === 1);
+  check(
+    `historical ABI ${expectedAbi} runtime may omit additive VFS exports`,
+    runtime.abiVersion === expectedAbi,
+    String(runtime.abiVersion),
+  );
 }
 
 // --- no-main fallback (eval semantics) ------------------------------------

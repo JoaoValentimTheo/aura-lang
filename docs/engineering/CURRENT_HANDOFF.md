@@ -1,36 +1,66 @@
 # Current Engineering Handoff
 
-## Current local task — Directive 002 (2026-10-15)
+## Current local task — Directive 003 stabilization campaign
 
-Release preflight integrity repair in the isolated worktree
-`/private/tmp/aura-directive-002-release-preflight` on
-`repair/directive-002-release-preflight`, from the verified remote base
-`d8b979db55e596340712ce1e4c28f1577c03f4e4`.
-The fix is limited to release/version validation and deterministic regression
-coverage. The original worktree and its unpublished local commit are protected.
+Branch `rewrite/v3-rust`, working tree clean, local HEAD **`c8500c35`** (four
+unpublished commits ahead of `origin/rewrite/v3-rust`). Everything is local:
+no push, PR, merge, tag, release, deploy, force-push, or destructive reset is
+authorized. Directive 002 (PR #2) and the rustls remediation (PR #3) are both
+merged and historical.
 
-**Local validation actually completed:** release-preflight Node regressions
-32/32, Rust contract tests 11/11, `cargo fmt --all -- --check`,
-`cargo clippy --locked --all-targets --all-features -- -D warnings`,
-Playground manifest 88/88, release-manifest 12/12, integrity 39/39, and
-`node playground/build.mjs --check` (9 versioned entries) all passed.
-The broader `node playground/tests/node/run-all.mjs` is **INCOMPLETE**:
-it was interrupted (exit 130) after prolonged inactivity following the
-B-1 boundary checks; do not treat its partial successes as a green full suite.
-The direct release preflight on this development HEAD correctly rejects the
-already-published `v0.3.1` tag, both in pre-tag and mismatched `--on-tag` modes.
+**Closed so far.** Phase 0 baseline reconstructed (HEAD/tags/branches/CI/ahead-
+behind). SemVer precedence centralized: `scripts/semver.py` is now the single
+source of truth, replacing three `sort -V` call sites in
+`scripts/release-preflight.sh`, `scripts/release-manifest.sh`, and
+`.github/workflows/release.yml`; `tests/contract.rs` prerelease blindness is
+fixed via the new in-crate `aura::version`. Documentation drift corrected:
+`docs/LANGUAGE_SPEC.md` tuple rule (C1), `SECURITY.md` supported versions,
+`README.md` 0.3.2 status, and the `0.3.2-dev.5` → `0.3.2-dev.7` references in
+live-facing docs. All nine HTTP findings B6–B14 were then reclassified against
+the code; the four low-risk ones are fixed and pinned by tests — B10 (dead
+redirect constant and a comment claiming redirect following), B11 (three
+hardcoded `abiVersion === 1` pins now derived from the manifest), B13′ (request
+caps counted UTF-16 units, so a CJK body passed the 8 MiB cap at 3× its limit),
+and B9 (the per-run 64-request budget). B13 was falsified. B6, B7, and B14 are
+escalated because each changes the Host contract for one platform. The REPL
+O(N²) characteristic (TD-13) was re-confirmed in release profile and left
+deferred with its equivalence obstacle documented, and the never-running nightly
+fuzz workflow was recorded as TD-23.
 
-**Exact next action:** review the isolated diff and validation record, then
-obtain owner approval before any publication/integration steps. No push, PR,
-merge, tag, version bump, or release is authorized by Directive 002.
-The previous task material below is retained as historical context and must
-not override this active instruction.
+**Local validation actually completed:** `cargo fmt --all -- --check` clean;
+`cargo test --locked --all-targets --all-features` green; the reduced
+`--no-default-features --features cli,repl,json,regex,time` suite green;
+clippy clean on every target this campaign touched; `node playground/build.mjs
+--check` (9 versioned entries); Playground node suites 11/12 green with 0 `FAIL`
+lines (451 assertions), the sole failure being the unavailable wasm target; and
+the website suites green with 0 `FAIL` lines.
+
+**Environment limitations (not PASS):** this machine has no `rustup`, so
+`cargo +1.83.0` (MSRV), `+nightly`, Miri, and libFuzzer cannot run; and the
+`wasm32-unknown-unknown` target is absent, so the `wasm build` Playground suite
+fails to compile. The local toolchain is 1.99.1 while `rust-toolchain.toml`
+pins 1.98.1, which makes the repo-wide `clippy -D warnings` floor fail on the
+new `assert_is_empty` lint — 18 sites across `tests/cli.rs` (10), `src/ais.rs`
+(4), `src/mcp.rs`, `tests/ast_sharing.rs`, `tests/parser.rs`, and
+`tests/syntax_gaps.rs`. Every one of those files is untouched by this campaign,
+the lint's help link resolves to `rust-1.99.0`, and the pristine baseline
+reproduces it identically (including 10 hits in `tests/cli.rs` alone), so it is
+toolchain drift rather than a regression. No file changed here intersects that
+set.
+
+**Exact next action:** Directive 003 is complete for the waves that do not need
+human authorization. B6, B7, and B14 are escalated in
+`STABILIZATION_AUDIT.md` §D because closing them changes the Host contract;
+TD-23 (the dark nightly fuzz workflow) is likewise human-gated. Await
+authorization before touching any of those, and before publishing the four
+local commits on `rewrite/v3-rust`. The previous task material below is retained
+as historical context and must not override this active instruction.
 
 Authoritative for **the active task and the exact next action**. Current
 repository state lives in `AGENT_STATE.md`; operating rules in `AGENTS.md`.
 Keep this file short — it is read at the start of every session.
 
-## ACTIVE TASK — FEATURE DEVELOPMENT FROZEN; READ-ONLY AUDIT (2026-10-09)
+## HISTORICAL — FEATURE DEVELOPMENT FROZEN; READ-ONLY AUDIT (2026-10-09)
 
 **AURA FEATURE DEVELOPMENT — FROZEN FOR STABILIZATION.** The 0.3.2 Playground
 development preview is published: `rewrite/v3-rust` at `9f8743ee` (= remote),
@@ -53,7 +83,7 @@ narrow fixes.
 
 No production code is modified during the audit stage.
 
-## ACTIVE TASK — AURA 0.3.2 PLAYGROUND & BROWSER HTTP (2026-10-09, PUBLISHED)
+## HISTORICAL — AURA 0.3.2 PLAYGROUND & BROWSER HTTP (2026-10-09, PREVIEW)
 
 The full campaign record is `docs/engineering/PLAYGROUND_032_CAMPAIGN.md`.
 
@@ -68,7 +98,9 @@ The full campaign record is `docs/engineering/PLAYGROUND_032_CAMPAIGN.md`.
   `fetch` after the page's per-origin consent. Denial → `E5002`; CORS
   rejection → `E4020`; `credentials:"omit"`, `redirect:"manual"`,
   `referrerPolicy:"no-referrer"`; no proxy.
-- **Runtime identity:** `0.3.2-dev.5` (ABI 2), not the public default.
+- **Runtime identity:** `0.3.2-dev.5` (ABI 2) at the time of writing; later
+  superseded by `0.3.2-dev.7` (ABI 2), which is the current preview. Neither
+  is the public default (`manifest.current = 0.3.1`).
   `0.3.1` and all frozen artifacts are byte-identical; `v0.3.1` unmoved.
 - **Evidence:** Rust `session` 14/0, all-features matrix 63/63; Node
   `session-http` 13/0; Chromium `browser-http` 8/0; live PokéAPI →
@@ -77,7 +109,7 @@ The full campaign record is `docs/engineering/PLAYGROUND_032_CAMPAIGN.md`.
   decision and the promotion/publishing of the development runtime. Nothing is
   pushed, tagged, released, or deployed.
 
-## ACTIVE TASK — AURA WEBSITE AUREA MIGRATION (2026-10-09, LOCAL, UNPUSHED)
+## HISTORICAL — AURA WEBSITE AUREA MIGRATION (2026-10-09)
 
 A full website redesign onto **Aurea** (Aura's own design system) plus a
 reconciliation of all active website documentation against the published Aura

@@ -191,7 +191,7 @@ fn r10_defined_errors_documented() {
 fn release_version_is_valid_semver_and_derived() {
     assert_eq!(aura::VERSION, env!("CARGO_PKG_VERSION"));
     assert!(
-        parse_semver(aura::VERSION).is_some(),
+        aura::version::is_valid(aura::VERSION),
         "release version is not valid semver: {}",
         aura::VERSION
     );
@@ -206,31 +206,18 @@ fn release_version_is_valid_semver_and_derived() {
 /// release.
 #[test]
 fn language_version_is_valid_semver_and_not_ahead_of_release() {
-    let lang = parse_semver(aura::LANGUAGE_VERSION).unwrap_or_else(|| {
-        panic!(
-            "language version is not valid semver: {}",
-            aura::LANGUAGE_VERSION
-        )
-    });
-    let rel = parse_semver(aura::VERSION).expect("release version checked above");
     assert!(
-        lang <= rel,
+        aura::version::language_not_ahead(aura::LANGUAGE_VERSION, aura::VERSION).unwrap_or_else(
+            || {
+                panic!(
+                    "language version ({}) or release version ({}) is not valid semver",
+                    aura::LANGUAGE_VERSION,
+                    aura::VERSION
+                )
+            }
+        ),
         "LANGUAGE_VERSION ({}) must not exceed RELEASE_VERSION ({})",
         aura::LANGUAGE_VERSION,
         aura::VERSION
     );
-}
-
-/// Parse a `MAJOR.MINOR.PATCH` (optionally with a pre-release suffix ignored
-/// for ordering here) into a comparable tuple. Returns `None` if not semver.
-fn parse_semver(v: &str) -> Option<(u64, u64, u64)> {
-    let core = v.split(['-', '+']).next()?;
-    let mut parts = core.split('.');
-    let major = parts.next()?.parse().ok()?;
-    let minor = parts.next()?.parse().ok()?;
-    let patch = parts.next()?.parse().ok()?;
-    if parts.next().is_some() {
-        return None;
-    }
-    Some((major, minor, patch))
 }

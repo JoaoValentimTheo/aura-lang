@@ -105,45 +105,165 @@ open and awaiting triage.
 - **B5 — Browser response cap and timeout (CONFIRMED, FIXED earlier this
   session).** See A1/A2.
 
-### Open (confirmed, not yet fixed — no severity above medium)
+### Open (reclassified against the code in Directive 003 — see below)
 
-- **B6 — 3xx behavior diverges (MEDIUM).** Native returns the redirect as an
-  ordinary response (`tests/http.rs` expects `302`); the browser uses
-  `redirect:"manual"` and maps `opaqueredirect` to `E4020`. The Aura-visible
-  difference is unpinned. *Decision required:* document the divergence or
-  synthesize a status-only response.
-- **B7 — Response headers diverge (MEDIUM).** Native preserves duplicates and
-  original casing; the browser `Headers` object hides `Set-Cookie` and
-  comma-joins duplicates. Inherent to the platform; fix is documentation plus
-  an explicit pin.
-- **B8 — Browser-only request bounds (LOW).** `MAX_REQUEST_BYTES` (8 MiB) and
-  `MAX_HEADER_BYTES` (64 KiB) exist only in the Worker; native has no
-  counterpart. Document or add native mirrors.
-- **B9 — `MAX_HTTP_PER_RUN = 64` (LOW).** Browser-only request-count cap;
-  untested. Document as a browser policy.
-- **B10 — Dead `MAX_REDIRECTS` and a header comment that overstates redirect
-  handling (LOW).** Remove the constant and correct the comment.
-- **B11 — Node-side ABI pins (LOW).** `abi.test.mjs` hardcodes
-  `abiVersion === 1`; valid only while `manifest.current` is `0.3.1`. Reading
-  the ABI from the manifest entry future-proofs it.
-- **B12 — `complete` output mode unreachable from the web (LOW).**
-  `encodeOptions` never emits `output-mode`; the UI branch is dead. Wire it or
-  document as harness-only.
-- **B13 — `readBoundedBody` fallback counts UTF-16 units, not bytes (LOW).**
-  Only on a non-streaming engine; the primary path is byte-accurate.
-- **B14 — Multi-file project runs have no browser HTTP (LOW-MEDIUM).** Project
-  runs use `BrowserHost` (HTTP unavailable) while single-source sessions
-  support it; the docs describe browser HTTP generally. Document the scope or
-  add project sessions.
+Every B6–B14 claim was re-read against the implementation. Two did not survive
+as written: **B13 is falsified** and a **new defect (B13′)** was found in the
+same function's sibling path. The remaining seven are confirmed and now carry a
+verdict of either *fix* (low risk, no contract change) or *escalate* (a
+semantic or Host-surface decision that Directive 003 forbids making
+unilaterally).
+
+#### Escalated — a semantic/contract decision is required
+
+- **B6 — 3xx behavior diverges (MEDIUM, CONFIRMED, escalate).** Native returns
+  the redirect as an ordinary response — `src/host.rs:503-505` sets
+  `.max_redirects(0)` with the comment "a 3xx is returned to Aura as an
+  ordinary response", and `tests/http.rs:339` asserts status `302`. The browser
+  sets `redirect: "manual"` (`playground/web/worker.js:161`) and maps
+  `response.type === "opaqueredirect"` to `E4020`
+  (`playground/web/worker.js:244-253`). So the *same Aura program* sees a
+  `302` response natively and a diagnostic in the browser. This is a genuine
+  cross-substrate semantic divergence, and closing it either way is a language
+  decision: synthesizing a status-only response invents an Aura-visible
+  response shape that native does not have, while documenting it concedes that
+  one program has two meanings. **No change made.** Recommend: synthesize the
+  `opaqueredirect` into a status-only response (`status`, empty body, no
+  headers) so both substrates report a 3xx, then pin it in
+  `playground/tests/node/browser-http.test.mjs` and re-run `tests/http.rs`.
+
+- **B7 — Response headers diverge (MEDIUM, CONFIRMED, escalate as docs+pin).**
+  `Headers` in a browser cannot expose `Set-Cookie` at all and comma-joins
+  duplicate names, whereas native preserves duplicates and original casing
+  (`generated/` headers are ordered pairs). This is inherent to the platform
+  and not fixable from the Worker. It nevertheless changes what an Aura program
+  observes, so the fix is a documented, *pinned* limitation rather than a code
+  change. **No change made.** Recommend documenting it in
+  `website/content/playground-doc.md` and asserting the actual (collapsed)
+  behavior in `browser-http.test.mjs` so a platform change is caught.
+
+- **B14 — Multi-file project runs have no browser HTTP (LOW-MEDIUM, CONFIRMED,
+  escalate as docs).** `BrowserHost` (`src/host.rs:1045-1135`) does not
+  override `http_request`, so it inherits the trait default at
+  `src/host.rs:216-220` returning
+  `unavailable("this host has no network capability (HTTP is unavailable)")`.
+  Only `SuspendHost` (`playground/runtime/src/lib.rs:1083`, impl at 1143-1153)
+  returns `HostError::pending(PendingEffect::Http(..))`, and it is installed
+  only by `aura_session_start`; `aura_run`/`aura_run_project`
+  (`playground/runtime/src/lib.rs:972`, `:987`) construct `BrowserHost`
+  (`:627`, `:659`, `:731`, `:764`). Net effect: a single-source session can do
+  HTTP, a multi-file project cannot. `website/content/playground-doc.md:44,46-70`
+  describes browser HTTP without that scope limit, which is the actual defect.
+  Adding project sessions is a Host-ABI change and is therefore out of scope.
+  **No code change made.** The gap is now stated in
+  `website/content/playground-doc.md` under "Where the browser host differs
+  from the native one".
+
+#### Fixable without a contract change
+
+- **B8 — Browser-only request bounds (LOW, CONFIRMED, document).**
+  `MAX_REQUEST_BYTES` (8 MiB) and `MAX_HEADER_BYTES` (64 KiB) are enforced only
+  in the Worker (`playground/web/worker.js:50-51` after this batch). Native has
+  no *request* bound at all; `src/host.rs:227`'s `MAX_HTTP_BODY_BYTES` and
+  `:230`'s `MAX_HTTP_TIMEOUT_MS` bound *responses*. Mirroring them natively
+  would change the Host contract for every embedder, so the browser caps stay a
+  documented browser policy. **Documented; no native mirror added.** The caps
+  are now pinned by `playground/tests/node/transport-bounds.test.mjs`, which
+  drives the shipped Worker file in a sandbox.
+
+- **B9 — `MAX_HTTP_PER_RUN = 64` (LOW, CONFIRMED, browser policy).**
+  `playground/web/worker.js:449` caps requests per run, enforced at `:464-470`
+  with code `4020` and message `too many HTTP requests in one run`. It is a
+  deliberate denial-of-service bound with no native analogue, and it was
+  **untested** — `grep -E 'MAX_HTTP_PER_RUN|too many HTTP' playground/tests/node/*.mjs`
+  returned nothing. **Documented as browser policy** in
+  `website/content/playground-doc.md`; the limit itself is unchanged.
+  **Pinned** by `playground/tests/node/transport-bounds.test.mjs`, which drives
+  `runSession` with a stub runtime that parks on an HTTP effect: exactly 64
+  requests are dispatched, the 65th is refused with `E4020` before `fetch` is
+  called, and the run still completes. Disabling the counter makes that test
+  fail 4 checks rather than hang, because the stub stops parking a few effects
+  past the budget.
+
+- **B10 — Dead `MAX_REDIRECTS` and an overstated comment (LOW, CONFIRMED,
+  FIXED).** `MAX_REDIRECTS = 3` was declared and never referenced anywhere in
+  `playground/web/` (only a stale copy in `website/dist/`). Worse, the header
+  comment claimed the Worker "follows at most a bounded number of redirects,
+  re-checking authorization for a redirect target that changes origin" — false,
+  because `redirect: "manual"` follows none. Removed the constant and rewrote
+  the comment to state the actual behavior.
+
+- **B11 — Node-side ABI pins (LOW, CONFIRMED, FIXED).** `abi.test.mjs` asserted
+  `runtime.abiVersion === 1` at three sites. The suite runs against whichever
+  artifact `manifest.current` names (`run-all.mjs:19-23,57`), so the pin was
+  correct only while `current` was `0.3.1` and would have failed the moment
+  `current` advanced to the already-present ABI-2 entry `0.3.2-dev.7`. The
+  expectation is now derived from the manifest entry matching the artifact
+  under test, with an explicit `AURA_EXPECTED_ABI` override for unpublished
+  builds. Verified: `0.3.2-dev.7` now reports 80/80 where the old pin failed.
+
+- **B12 — `complete` output mode unreachable from the web (LOW, CONFIRMED,
+  documented).** `playground/runtime/src/lib.rs:238-243` accepts
+  `output-mode preview|complete` and `OutputMode::Complete`
+  (`COMPLETE_STDOUT_BYTES` = 16 MiB) is fully implemented and covered by
+  `playground/runtime/tests/execute.rs:288`, but `encodeOptions`
+  (`playground/web/runtime.mjs:193-211`) emits only `arg` and `stdin-bytes`, so
+  no browser caller can select it. **It must not be wired naively:** the
+  option parser only recognises `output-mode ` on runtimes that have it, so an
+  ABI-1 artifact silently parses the line as a positional argument. Confirmed
+  against the frozen artifacts — `0.3.1` and `0.2.1` both return
+  `["output-mode complete", "hello"]` from `args()` for options
+  `"output-mode complete\narg hello\n"`, while `0.3.2-dev.7` correctly returns
+  `["hello"]`. Wiring it therefore requires an ABI gate and is left documented
+  as a runtime/harness capability, not a web feature.
+
+- **B13″ — Worker response byte accounting is already correct (FALSIFIED).**
+  The claim was that `readBoundedBody`'s fallback counts UTF-16 units. It does
+  not: the non-streaming path calls
+  `new Uint8Array(await response.arrayBuffer())` and compares `buf.byteLength`,
+  and the streaming path sums `value.byteLength` — both are bytes.
+  `playground/web/worker.js:319-358`. **No defect; no change.**
+
+- **B13′ — Request body and header caps count UTF-16 units, not bytes (LOW,
+  NEW, CONFIRMED, FIXED).** Found while falsifying B13, in the *request*
+  direction of the same file. `playground/web/worker.js:171` measured headers as
+  `k.length + v.length` and `:193` tested `effect.body.length`, both of which
+  are UTF-16 code-unit counts. A JS `.length` is a lower bound on the UTF-8
+  length, so a body of `"一".repeat(8 * 1024 * 1024)` reports `.length ===
+  8388608` — passing an 8 MiB cap — while actually occupying **25,165,824
+  bytes (24 MiB)**, three times the intended bound; `"é"` is 1 unit but 2
+  bytes and `"😀"` is 2 units but 4 bytes. Since the Worker's caps exist to stop
+  a hostile page from making it buffer without bound, measuring in units
+  defeated their purpose for non-ASCII input. Fixed via a `utf8Bytes` helper,
+  keeping the cheap `.length` pre-check as a lower-bound reject so an oversized
+  body is refused without first allocating a full encoded copy.
+  **Pinned** by `playground/tests/node/transport-bounds.test.mjs`, which loads
+  the shipped Worker file in a sandbox and drives `performHttp` directly: a
+  3 Mi-character CJK body (9 MiB encoded, 3 Mi UTF-16 units) is asserted to
+  pass a unit-based cap and to be rejected with `E4020` before `fetch` is
+  called, and a 40 Ki-character Latin-1 header value (80 KiB encoded) likewise.
+  The header case uses Latin-1 because `Headers.append` rejects code points
+  above 255, so CJK is not a reachable header value.
 
 ### Coverage gaps (no executable test yet)
 
-Session source/limit rejection; native timeout enforcement with a slow
-server; `MAX_HTTP_PER_RUN`; the `readBoundedBody` fallback; browser
-duplicate-header and redirect-status behavior; HTTP from a multi-file project.
+Still unpinned: session source/limit rejection; native timeout enforcement
+against a slow server; `readBoundedBody`'s non-streaming fallback (exercised
+only when `response.body` is absent); browser duplicate-header and
+redirect-status behavior (both need a real browser, so they live in
+`http-security.test.mjs`'s Playwright gate); HTTP from a multi-file project.
+
+Now pinned by `playground/tests/node/transport-bounds.test.mjs`: the request body
+and header byte caps (B13′), and the per-run request budget (B9). That test was verified to *fail* against the
+pre-fix accounting — restoring `k.length + v.length` and
+`effect.body.length > MAX_REQUEST_BYTES` produces 4 failures, including
+"rejected body is never dispatched" — so it is a real regression gate rather
+than a restatement of the implementation.
 
 ### FALSIFIED (claims checked and not defects)
 
+- **B13 — `readBoundedBody` fallback counts UTF-16 units.** Falsified; both
+  paths measure bytes. See B13″ above.
 - Response-cap parity and timeout parity are now real (fixed); input limits
   (`MAX_ARGS`/`MAX_ARG_BYTES`/`MAX_STDIN`) are shared across `aura_run`,
   `aura_run_project`, and `aura_session_start`; 4xx/5xx are ordinary
@@ -239,6 +359,37 @@ arguments, preserved environments/spans, stale-effect rejection) are covered by
 2. **AIS/0.2**: the RFC proposes additive operations; confirm the priority
    (precision vs size) and the stable-id strategy before any implementation
    (RFC §9).
+3. **Browser/native HTTP divergence (B6, B7, B14)**: three confirmed behavioral
+   gaps remain escalated, because closing any of them changes the Host contract
+   for one platform or the other. B6 (redirect status: native `302`, browser
+   `E4020`) is the sharpest — the same program means two different things — and
+   the recommended remedy is to synthesize a status-only response in the browser
+   rather than follow redirects, which *is* a Host-behavior change. B7 (browser
+   `Headers` hides `Set-Cookie` and comma-joins duplicates) and B14 (`http_request`
+   reachable only from a session on the browser host) are documented as
+   browser-host policy in `website/content/playground-doc.md`. None is fixed
+   unilaterally.
+4. **Nightly fuzzing has never run and cannot be run (TD-23)**: `.github/workflows/fuzz-nightly.yml`
+   is `schedule`-triggered but exists only on `rewrite/v3-rust`; `schedule` fires
+   solely on the default branch (`master`), which lacks the file. It is also the
+   only workflow without a branch `push` trigger, which is exactly why `ci.yml`
+   and `pages.yml` *are* registered despite being absent from `master`. Closing
+   the gap requires a merge to `master`, a default-branch change, or adding that
+   same `push: branches: ["rewrite/**", master, main]` trigger — the first two
+   are protected actions. `workflow_dispatch` is **not** a workaround: GitHub
+   resolves dispatched workflows against the default branch, so
+   `gh workflow list` shows only `CI`, `Release`, and `Deploy website`, and
+   `gh workflow view fuzz-nightly.yml` returns HTTP 404. Fuzzing is unreachable
+   by every trigger the file declares until it reaches `master`.
+5. **REPL O(N²) (TD-13)**: re-confirmed, not fixed. The O(N²) is real
+   (release: 6.8 ms at N=100 → 1886 ms at N=3200, ~3.5–4.0× per doubling) and its
+   cost is entirely `Checker::with_declarations` (linear, 1.8–2.6 µs/decl,
+   called once per submission over a growing list). Making it incremental is
+   **not** a mechanical change: the rebuild is also the rollback mechanism, and a
+   monotonic cache diverges because `with_declarations` restores `value_types`
+   only for bindings with a persisted `ty`, while `Stmt::LetPattern` persists
+   `ty: None`. Any fix needs a differential oracle over randomized submission
+   sequences, so it stays deferred to `v1.1`.
 
 ---
 

@@ -20,8 +20,11 @@ deliberate escape hatch to full host authority through CPython.
 
 ## Controls
 
-- **Fuzzing.** Lexer, parser, checker, and runtime run under continuous fuzzing;
-  the property suite asserts no host panic under arbitrary input.
+- **Fuzzing.** Lexer, parser, checker, and runtime are exercised by a bounded
+  libFuzzer smoke run on every push and pull request (60 s per target under ASan);
+  the property suite additionally asserts no host panic under arbitrary input.
+  A longer nightly campaign is declared in `fuzz-nightly.yml` but does not run —
+  see TD-23.
 - **Resource limits.** Every user-controlled size is bounded with a structured
   diagnostic, never a crash (`E1015` nesting, `E4013` overflow/range, and so
   on).

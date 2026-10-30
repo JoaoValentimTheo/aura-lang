@@ -32,9 +32,14 @@ else
     lock_hash=$(cat Cargo.lock playground/runtime/Cargo.lock | shasum -a 256 | cut -d' ' -f1)
 fi
 
-# Invariant (ADR-0001): language must not be ahead of release.
-lowest=$(printf '%s\n%s\n' "$release_version" "$language_version" | sort -V | head -n1)
-if [ "$lowest" != "$language_version" ]; then
+# Invariant (ADR-0001): language must not be ahead of release. SemVer
+# precedence lives in scripts/semver.py; `sort -V` ranked prereleases above
+# the release they lead to, so it could not enforce this.
+if [ ! -f scripts/semver.py ]; then
+    echo "missing version comparator: scripts/semver.py" >&2
+    exit 1
+fi
+if ! python3 scripts/semver.py check "$release_version" "$language_version" --quiet; then
     echo "LANGUAGE_VERSION ($language_version) is ahead of release version ($release_version)" >&2
     exit 1
 fi

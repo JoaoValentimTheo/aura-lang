@@ -32,6 +32,8 @@ set -euo pipefail
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
 
+SEMVER="$REPO_ROOT/scripts/semver.py"
+
 for required_file in Cargo.toml Cargo.lock src/lib.rs; do
     if [ ! -f "$required_file" ]; then
         echo "preflight: missing required version source: $required_file" >&2
@@ -88,60 +90,22 @@ if [ "$lang_declarations" != 1 ]; then
     echo "  FAIL: missing or invalid LANGUAGE_VERSION string declaration" >&2
     fail=1
 else
-    # Python is installed in release.yml. SemVer precedence differs from
-    # sort -V (notably: prerelease < stable); build metadata has no precedence.
-    if ! python3 - "$crate_version" "$lang_version" <<'PY'
-import re
-import sys
-
-pattern = re.compile(
-    r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
-    r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
-    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?",
-    re.ASCII,
-)
-
-def parse(value):
-    match = pattern.fullmatch(value)
-    if match is None:
-        return None
-    prerelease = match.group(4)
-    if prerelease is not None:
-        parts = prerelease.split(".")
-        if any(p.isdigit() and len(p) > 1 and p[0] == "0" for p in parts):
-            return None
-    else:
-        parts = None
-    return tuple(map(int, match.group(1, 2, 3))), parts
-
-def compare(left, right):
-    if left[0] != right[0]:
-        return (left[0] > right[0]) - (left[0] < right[0])
-    a, b = left[1], right[1]
-    if a is None or b is None:
-        return (a is None) - (b is None)
-    for x, y in zip(a, b):
-        xn, yn = x.isdigit(), y.isdigit()
-        if xn and yn:
-            xx, yy = int(x), int(y)
-        elif xn != yn:
-            return -1 if xn else 1
-        else:
-            xx, yy = x, y
-        if xx != yy:
-            return (xx > yy) - (xx < yy)
-    return (len(a) > len(b)) - (len(a) < len(b))
-
-release, language = map(parse, sys.argv[1:])
-if release is None or language is None:
-    print("  FAIL: release or LANGUAGE_VERSION is not valid SemVer", file=sys.stderr)
-    sys.exit(1)
-if compare(language, release) > 0:
-    print("  FAIL: LANGUAGE_VERSION is ahead of the release version", file=sys.stderr)
-    sys.exit(1)
-PY
-    then
+    # SemVer precedence lives in scripts/semver.py so the preflight, the
+    # manifest generator, and release.yml cannot disagree about it.
+    if [ ! -f "$SEMVER" ]; then
+        echo "  FAIL: missing version comparator: scripts/semver.py" >&2
         fail=1
+    else
+        # 2 = not valid SemVer, 3 = LANGUAGE_VERSION ahead of the release.
+        # Both are failures here; anything else is a tooling error.
+        semver_status=0
+        python3 "$SEMVER" check "$crate_version" "$lang_version" --quiet || semver_status=$?
+        case "$semver_status" in
+            0) ;;
+            2) echo "  FAIL: release or LANGUAGE_VERSION is not valid SemVer" >&2; fail=1 ;;
+            3) echo "  FAIL: LANGUAGE_VERSION is ahead of the release version" >&2; fail=1 ;;
+            *) echo "  FAIL: scripts/semver.py failed (exit $semver_status)" >&2; fail=1 ;;
+        esac
     fi
 fi
 

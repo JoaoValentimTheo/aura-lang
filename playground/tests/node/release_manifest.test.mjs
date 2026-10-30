@@ -61,13 +61,22 @@ check(
   manifest.playground_api_version === runtimeManifest.playground_api_version,
 );
 
-// ADR-0001: language must never be ahead of release.
-const vnum = (s) => s.split(".").map(Number);
-const [lr, ll] = [vnum(manifest.release_version), vnum(manifest.language_version)];
-const langLeRelease =
-  ll[0] < lr[0] ||
-  (ll[0] === lr[0] && (ll[1] < lr[1] || (ll[1] === lr[1] && (ll[2] ?? 0) <= (lr[2] ?? 0))));
-check("language_version <= release_version", langLeRelease);
+// ADR-0001: language must never be ahead of release. Delegate to the same
+// comparator the release scripts use; a local reimplementation would let the
+// test and the tooling disagree about prerelease precedence.
+let langLeRelease = false;
+let langLeDetail = "comparator did not run";
+try {
+  execFileSync(
+    "python3",
+    [join(repo, "scripts/semver.py"), "check", manifest.release_version, manifest.language_version, "--quiet"],
+    { cwd: repo, stdio: "pipe" },
+  );
+  langLeRelease = true;
+} catch (err) {
+  langLeDetail = `exit ${err.status ?? "?"}: ${String(err.stderr ?? "")}`;
+}
+check("language_version <= release_version", langLeRelease, langLeDetail);
 
 check(
   "current_runtime matches the manifest current pointer",

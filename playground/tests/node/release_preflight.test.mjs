@@ -79,6 +79,12 @@ try {
   writeFileSync(join(dir, "docs", "release-notes", `v${VERSION}.md`), "# notes\n");
   mkdirSync(join(dir, "scripts"), { recursive: true });
   copyFileSync(script, join(dir, "scripts", "release-preflight.sh"));
+  // The preflight delegates SemVer precedence to scripts/semver.py; copy the
+  // real helper so the fixture exercises the shipped comparator.
+  copyFileSync(
+    join(repo, "scripts", "semver.py"),
+    join(dir, "scripts", "semver.py"),
+  );
   git(dir, "add", "-A");
   git(dir, "commit", "-q", "-m", "fixture");
 

@@ -44,7 +44,9 @@ usable release) are historical and remain available and frozen; the
 `*-dev.*` identities are development pre-releases of their lines. Release,
 language, and runtime versions remain distinct constants (ADR-0001) so a
 runtime-only release can advance the release version without claiming a
-language change. The next line, `0.3.2`, is planned but not started.
+language change. The next line, `0.3.2`, is in development as a preview: it
+has no release, version bump, or date, and the published `0.3.1` runtime
+remains the default.
 
 | Area | State |
 |------|-------|

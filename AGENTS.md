@@ -196,8 +196,39 @@ Do not call local validation “GitHub CI”.
 - Preserve valid unrelated dirty-worktree changes.
 - Do not reset, clean, restore, or discard work merely to simplify a task.
 - Do not force-push, and do not rewrite published history.
-- Do not push unless the human explicitly authorizes it.
+- Do not push unless the human explicitly authorizes it (a standing
+  authorization, if any, is recorded below in this file).
 - Do not create releases or tags unless explicitly authorized.
 - Do not bump a runtime version or publish a runtime implicitly.
 - Build and compare bytes before any authorized runtime publication.
 - Preserve every historical artifact.
+- Do not merge into a long-lived branch unless authorized (see below).
+
+## Standing authorization — Directive 003-R (2026-10-29)
+
+The repository owner granted an explicit, standing authorization for the
+Directive 003 stabilization campaign. It is recorded here because it changes
+rules that are otherwise absolute. It applies to this campaign only and lapses
+when the campaign ends.
+
+**Granted.** Creating and modifying development branches; local commits;
+non-force `git push`; using `gh` to read and administer issues, PRs, checks, and
+workflows; publishing the campaign's local commits; opening PRs; reviewing
+them; merging PRs whose technical gates are green; fixing and integrating
+confirmed defects in the core, runtime, Host, WASM, Playground, docs, website,
+and CI; implementing B6, B7, B14 and TD-23 within their stated contracts;
+updating workflows, tests, and validation scripts; dispatching workflows via
+`gh` when available; and accepting the automatic website deploy that follows a
+merge into `rewrite/v3-rust`.
+
+**Still forbidden.** Force-push; rewriting or removing valid history; moving or
+deleting published tags; replacing frozen WASM artifacts; weakening security
+policies or disabling warnings/tests to force a green gate; and publishing a new
+stable release without an approved candidate.
+
+**Still required.** Remote CI must be green before a merge, and a gate that was
+not actually executed is never reported as green. An integration branch is
+preferred over pushing straight to the development branch, so remote CI and
+review happen before integration. Repository branch protection, where it exists,
+is preserved rather than bypassed; if an external human review is required, the
+PR stays open.

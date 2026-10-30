@@ -34,6 +34,10 @@ if (!existsSync(wasm)) {
 }
 
 run("manifest", [join(here, "manifest.test.mjs")]);
+// The shared SemVer 2.0.0 comparator behind every release path. `sort -V`
+// disagreed with the specification (prereleases ranked above the release they
+// lead to), so each path enforced ADR-0001 differently. No runtime needed.
+run("semver", [join(here, "semver.test.mjs")]);
 // The release-manifest generator (section 98) describes a release from the
 // repository's canonical version sources; no runtime needed.
 run("release-manifest", [join(here, "release_manifest.test.mjs")]);
@@ -54,6 +58,11 @@ run("abi", [join(here, "abi.test.mjs"), wasm]);
 // Load-time SHA-256 verification of the fetched artifact bytes (the loader
 // must refuse a mismatched artifact before instantiation).
 run("integrity", [join(here, "integrity.test.mjs")]);
+// The Worker's request byte budgets. A budget counted in UTF-16 code units
+// admits a body three times the cap the native host enforces, so this pins the
+// accounting to UTF-8 bytes. Sandboxes the shipped worker file; no runtime or
+// browser needed.
+run("transport-bounds", [join(here, "transport-bounds.test.mjs")]);
 
 // The native/wasm differential harness needs the native runner built; build it
 // on demand so the parity gate is always exercised. A parity failure is a hard
