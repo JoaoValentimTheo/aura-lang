@@ -11,17 +11,15 @@
 //   * the primary navigation is keyboard-operable and marked current.
 //
 // Usage: node website/tests/aurea-browser.test.mjs
-// Requires `playwright` with Chromium; skips otherwise.
+// Requires `playwright` with Chromium. Absent dependencies report an explicit
+// SKIPPED line; a broken install throws.
 
 import { startServer } from "./serve.mjs";
+import { detect, skipExitCode } from "./playwright-deps.mjs";
 
-let chromium;
-try {
-  ({ chromium } = await import("playwright"));
-} catch {
-  console.log("aurea-browser tests: playwright not installed — skipped.");
-  process.exit(0);
-}
+const deps = detect(import.meta.url);
+if (!deps.ok) process.exit(skipExitCode(deps, "aurea-browser tests"));
+const { chromium } = deps;
 
 const { server, port, base: basePath } = await startServer(0);
 const base = `http://127.0.0.1:${port}${basePath}`;

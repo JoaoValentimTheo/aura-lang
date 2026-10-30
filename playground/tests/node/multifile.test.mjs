@@ -26,13 +26,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startServer } from "./serve.mjs";
 
-let chromium;
-try {
-  ({ chromium } = await import("playwright"));
-} catch {
-  console.error("multifile.test.mjs: `playwright` is not installed; skipping.");
-  process.exit(0);
-}
+const { detect, skipExitCode } = await import(
+  "../../../website/tests/playwright-deps.mjs"
+);
+const deps = detect(import.meta.url);
+if (!deps.ok) process.exit(skipExitCode(deps, "multi-file tests"));
+const { chromium } = deps;
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const manifest = JSON.parse(

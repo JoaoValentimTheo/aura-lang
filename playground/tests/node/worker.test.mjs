@@ -13,13 +13,12 @@
 
 import { startServer } from "./serve.mjs";
 
-let chromium;
-try {
-  ({ chromium } = await import("playwright"));
-} catch {
-  console.error("worker.test.mjs: `playwright` is not installed; skipping.");
-  process.exit(0);
-}
+const { detect, skipExitCode } = await import(
+  "../../../website/tests/playwright-deps.mjs"
+);
+const deps = detect(import.meta.url);
+if (!deps.ok) process.exit(skipExitCode(deps, "worker tests"));
+const { chromium } = deps;
 
 const { server, port } = await startServer(0);
 const base = `http://127.0.0.1:${port}/`;

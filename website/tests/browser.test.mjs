@@ -13,20 +13,20 @@
 //     the selected example, in every navigation mode.
 //
 // Usage: node website/tests/browser.test.mjs
-// Requires `playwright` with Chromium; skips otherwise.
+// Requires `playwright` with Chromium. When they are absent the suite reports
+// an explicit SKIPPED line and exits 0 so a standalone run still works; the
+// runner (`run-all.mjs`) is what owns the decision for CI. A *broken* install
+// throws instead, so it can never be mistaken for a clean skip.
 
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startServer } from "./serve.mjs";
+import { detect, skipExitCode } from "./playwright-deps.mjs";
 
-let chromium;
-try {
-  ({ chromium } = await import("playwright"));
-} catch {
-  console.log("browser tests: playwright not installed — skipped.");
-  process.exit(0);
-}
+const deps = detect(import.meta.url);
+if (!deps.ok) process.exit(skipExitCode(deps, "browser tests"));
+const { chromium } = deps;
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dist = join(here, "..", "dist");

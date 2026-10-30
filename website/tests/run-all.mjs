@@ -2,10 +2,12 @@
 //
 //   node website/tests/run-all.mjs
 //
-// Always runs: example validation against the real runtime, link/asset
-// validation, and the browser integration + responsive + accessibility suites
-// (the latter require Playwright + axe-core and are skipped, never silently
-// passed, when absent).
+// Static suites always run. The four browser suites (aurea-browser, nav-fit,
+// browser, a11y) all need Playwright, and a11y also needs axe-core, so their
+// availability is decided *here*, once: when the dependencies are absent this
+// runner prints one SKIPPED line naming every suite it did not run. It never
+// lets a suite exit 0 on its own behalf, because an unconditional
+// `process.exit(0)` inside a suite is indistinguishable from passing.
 //
 // The build must exist first: `node website/build.mjs`.
 
@@ -13,6 +15,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { detectAll, skipExitCode } from "./playwright-deps.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "../..");
@@ -37,25 +40,21 @@ run("stdlib-consistency", "stdlib-consistency.test.mjs");
 run("docs-consistency", "docs-consistency.test.mjs");
 run("ais-doc", "ais-doc.test.mjs");
 run("aurea", "aurea.test.mjs");
-run("aurea-browser", "aurea-browser.test.mjs");
 run("playground-parity", "playground-parity.test.mjs");
-run("nav-fit", "nav-fit.test.mjs");
 
-function haveDeps() {
-  try {
-    const url = import.meta.resolve("playwright");
-    return existsSync(fileURLToPath(url));
-  } catch {
-    return false;
-  }
-}
-
-if (haveDeps()) {
+// `detectAll` throws if playwright is present but broken, so a failed `npm ci`
+// or a half-downloaded browser can never be reported as a clean skip. It also
+// checks `axe-core`, because the a11y suite needs it and the runner must reach
+// the same verdict the suite would.
+const deps = detectAll(import.meta.url, ["axe-core/axe.min.js"]);
+if (deps.ok) {
+  run("aurea-browser", "aurea-browser.test.mjs");
+  run("nav-fit", "nav-fit.test.mjs");
   run("browser", "browser.test.mjs");
   run("a11y", "a11y.test.mjs");
 } else {
-  console.log("\n=== browser/a11y ===\nSKIPPED: Playwright not installed.");
-  console.log("Install with: (cd website && npm install && npx playwright install chromium)");
+  const code = skipExitCode(deps, "aurea-browser/nav-fit/browser/a11y");
+  if (code !== 0) process.exit(code);
 }
 
 // Also re-verify the Playground's own suite, since the website reuses its

@@ -23,13 +23,12 @@ const manifest = JSON.parse(
 // when the development runtime advances.
 const currentRuntime = manifest.current;
 
-let chromium;
-try {
-  ({ chromium } = await import("playwright"));
-} catch {
-  console.error("browser.test.mjs: `playwright` is not installed; skipping browser integration.");
-  process.exit(0);
-}
+const { detect, skipExitCode } = await import(
+  "../../../website/tests/playwright-deps.mjs"
+);
+const deps = detect(import.meta.url);
+if (!deps.ok) process.exit(skipExitCode(deps, "browser tests"));
+const { chromium } = deps;
 
 const { server, port } = await startServer(0);
 const base = `http://127.0.0.1:${port}/`;
