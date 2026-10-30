@@ -70,6 +70,71 @@ Reviewer consensus is not evidence. Repository state, Git history, executable
 tests, specifications, and reproduced commands are authoritative. Any reviewer
 finding that triggers a change must be independently reproduced by the writer.
 
+## Hard-won rules
+
+Each of these was learned by getting it wrong. They apply to every change; none
+is optional because it seems obvious in hindsight.
+
+**Testing and verification**
+
+1. When a test cannot reach the code path it claims to cover, question the
+   production contract before patching the test.
+2. A throwaway probe beats reasoning. Run the thing.
+3. A red gate on your PR is not automatically your bug — prove pre-existence on
+   the base commit before "fixing" it.
+4. Check whether the guard already exists before writing a new one.
+5. Measure before redesigning a guard; the cost may not be where you assume.
+6. A test passing on fixed code proves nothing until it fails on the broken
+   code. Mutation-verify every guard **in both directions**.
+7. A green CI badge proves only that the **wired subset** ran. Enumerate which
+   test files a job actually invokes; a suite that is present in the tree is not
+   a suite that executes.
+8. A suite's skip is only honest if the **runner** owns the decision and names
+   it. An unconditional `process.exit(0)` inside a suite is indistinguishable
+   from passing.
+9. Count skip sites by grepping, never by recalling. Three became five, then
+   nine.
+10. An assertion that cannot fail is worse than no assertion. An assertion that
+    demands stale wording does not flag drift — it enshrines it.
+11. A bare `catch` that maps every error to `false` converts an environment
+    problem into a content verdict.
+12. An untested environment assumption — tags, dependencies, toolchain — is
+    where a newly wired gate fails first. Simulate the clean environment.
+13. Two distinct environment failures ("package not installed" vs. "binary not
+    downloaded") must stay distinguishable, or the remedy you print is wrong.
+14. A pre-warmed local cache means the download path you "verified" was never
+    exercised.
+15. An absolute wall-clock bound is not a portable contract. Use a deterministic
+    proxy and measure the component, not the system.
+
+**Claims and documentation**
+
+16. Never state a command in a PR body, commit message, or report that you did
+    not actually run.
+17. Before committing a changelog entry that says "claims were corrected", grep
+    the tree — your own commits may have falsified docs elsewhere.
+18. A grep for the wrong symbol proves nothing. Confirm the sentence's subject,
+    and prefer the frozen artifact over the source.
+19. A table row's cell count is a silent rendering contract; check it
+    programmatically.
+20. A SHA you typed from memory is a fabricated pin until the API confirms it.
+
+**Mechanism**
+
+21. `createRequire().resolve()` + `import(fileUrl)` and `require()` are not
+    interchangeable for a CJS package. Probe the loaded shape, not just the
+    path.
+22. Prefer the input shape that reproduces the defect cheapest.
+23. Verify a mutation actually applied before trusting its result.
+24. Run every gate in the job, not the one you were thinking about.
+25. Install the pinned toolchain before blaming lints; local tool drift is not a
+    regression.
+26. 0% CPU means blocked, not slow.
+27. If the file already carries a noise-robust idiom, check whether the failing
+    guard adopted it.
+28. A newly hard-failing gate in a shared runner becomes a requirement on every
+    job that transitively invokes it.
+
 ## Scope discipline
 
 Do the task. Do not opportunistically refactor unrelated production code, and do
