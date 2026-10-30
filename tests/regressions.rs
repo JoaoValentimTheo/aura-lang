@@ -1563,22 +1563,6 @@ fn audit5_budget_exhausting_render_has_a_pinned_size() {
     assert_eq!(out(src).trim(), "11000001");
 }
 
-/// AUDIT-5: exhausting the whole node budget must be fast, not merely
-/// finite. Before the encoder appended into a single buffer this took ~0.9s
-/// of CPU in release and ~3.4s in debug *per render*; the reproducer rendered
-/// several times and overran libFuzzer's 25s timeout on a slower runner.
-#[test]
-fn audit5_budget_exhausting_render_is_fast() {
-    use std::time::Instant;
-    // Two full renders of a budget-exhausting value, mirroring the shape the
-    // fuzzer found: `to_string` and `json_encode` of the same cyclic list.
-    let src = "fn main() { let mut c = []\n push(c, c)\n push(c, c)\n push(c, c)\n push(c, c)\n print(len(to_string(c)))\n print(len(json_encode(c))) }";
-    let start = Instant::now();
-    let _ = out(src);
-    let elapsed = start.elapsed().as_millis();
-    assert!(
-        elapsed < 2_000,
-        "two budget-exhausting renders took {elapsed}ms; the encoder should \
-         cost time linear in the emitted text, not in the node count times its subtree"
-    );
-}
+// The cost contract for this defect is asserted by allocation volume rather
+// than wall clock, because an absolute millisecond bound is not portable across
+// the CI runner matrix. See `tests/render_cost.rs`.
