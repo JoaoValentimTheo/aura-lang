@@ -15,15 +15,17 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, "../../..");
 
 /**
- * The newest mtime under `dir`, or 0 when it does not exist. Recursive so a
- * change to any source file counts.
+ * The newest mtime under `path`, or 0 when it does not exist. Directories are
+ * walked recursively so a change to any source file counts; a plain file is
+ * its own answer.
  */
-function newestMtime(dir) {
-  if (!existsSync(dir)) return 0;
+function newestMtime(path) {
+  if (!existsSync(path)) return 0;
+  const stat = statSync(path);
+  if (!stat.isDirectory()) return stat.mtimeMs;
   let newest = 0;
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = join(dir, entry.name);
-    const mtime = entry.isDirectory() ? newestMtime(full) : statSync(full).mtimeMs;
+  for (const entry of readdirSync(path, { withFileTypes: true })) {
+    const mtime = newestMtime(join(path, entry.name));
     if (mtime > newest) newest = mtime;
   }
   return newest;
@@ -32,23 +34,31 @@ function newestMtime(dir) {
 /**
  * True when the served copy is older than the sources it was built from.
  *
- * The browser suites serve `website/dist`, and the build copies
- * `playground/web` into it verbatim. A stale `dist` therefore runs *old*
- * Playground code: a suite can pass against JavaScript that no longer exists
- * in the tree, or fail against a fix that has not been rebuilt. Comparing
- * mtimes catches both directions.
+ * The browser suites serve `website/dist`, which the build generates from
+ * `website/pages`, `website/lib`, `website/assets`, the site config, and the
+ * Playground's `web` and `runtimes` trees. A stale `dist` therefore runs *old*
+ * Playground code and old HTML: a suite can pass against JavaScript that no
+ * longer exists in the tree, or fail against a fix that has not been rebuilt.
+ *
+ * Comparing against the newest file anywhere under `dist` (rather than one
+ * copied subdirectory) also covers assets and runtimes, which are copied to
+ * other paths and would otherwise go unchecked. The build rewrites every file
+ * with a fresh mtime, so any source newer than the whole output means stale.
  */
 function isStale() {
   const dist = join(repo, "website", "dist");
-  const served = join(dist, "playground", "web");
   if (!existsSync(join(dist, "index.html"))) return true;
-  if (!existsSync(served)) return true;
+  if (!existsSync(join(dist, "playground", "web"))) return true;
   const newestSource = Math.max(
     newestMtime(join(repo, "playground", "web")),
+    newestMtime(join(repo, "playground", "runtimes")),
     newestMtime(join(repo, "website", "pages")),
     newestMtime(join(repo, "website", "lib")),
+    newestMtime(join(repo, "website", "assets")),
+    newestMtime(join(repo, "website", "build.mjs")),
+    newestMtime(join(repo, "website", "site.config.mjs")),
   );
-  return newestSource > newestMtime(served);
+  return newestSource > newestMtime(dist);
 }
 
 /** Ensure `website/dist` exists and reflects the current sources. */

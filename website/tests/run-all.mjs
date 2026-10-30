@@ -9,7 +9,11 @@
 // lets a suite exit 0 on its own behalf, because an unconditional
 // `process.exit(0)` inside a suite is indistinguishable from passing.
 //
-// The build must exist first: `node website/build.mjs`.
+// The build must exist and be current. Seven of the suites below read
+// `website/dist` directly, so a stale build is worse than a missing one: it
+// silently validates old HTML against new sources. `ensureSite` (shared with
+// the Playground suites, which have the same dependency) builds only when the
+// served copy is older than the sources it was generated from.
 
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -21,14 +25,19 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "../..");
 const dist = join(repoRoot, "website", "dist");
 
-function run(name, script, args = []) {
-  process.stdout.write(`\n=== ${name} ===\n`);
-  execFileSync("node", [join(here, script), ...args], { stdio: "inherit" });
-}
+const { ensureSite } = await import(
+  join(repoRoot, "playground", "tests", "node", "ensure-site.mjs")
+);
+ensureSite();
 
 if (!existsSync(dist)) {
   console.error("website/tests: dist missing; run `node website/build.mjs` first");
   process.exit(1);
+}
+
+function run(name, script, args = []) {
+  process.stdout.write(`\n=== ${name} ===\n`);
+  execFileSync("node", [join(here, script), ...args], { stdio: "inherit" });
 }
 
 run("examples", "validate-examples.mjs");
