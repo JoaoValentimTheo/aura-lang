@@ -2,16 +2,17 @@
 
 ## Directive 003 — stabilization and hardening campaign (current)
 
-- Active branch: `rewrite/v3-rust`, remote HEAD **`19cc4f22`** — the merge of
-  **PR #13** (website suite gate + the stale HTTP claims it exposed). **Thirteen
-  PRs are merged** this campaign: #2 `f96536b6` (Directive 002 preflight),
+- Active branch: `rewrite/v3-rust`, remote HEAD **`9548e4df`** — the merge of
+  **PR #14** (TD-27: Playwright was never installed in CI and nine suites
+  treated its absence as success). **Fourteen PRs are merged** this campaign: #2 `f96536b6` (Directive 002 preflight),
   #3 `07845932` (rustls advisories), #4 `a562bacf` (batches 1–5),
   #5 `eaa3b9ed` (TD-23 + default-branch flip), #6 `4a20fa84` (post-merge
   records), #7 `22e73cce` (B6/B7 divergences + website link),
   #8 `1aa301c6` (session provenance + encoder cost), #9 `9654e15d` (B14
   project sessions), #10 `a3b7c377` (PR template + Windows flake),
   #11 `c9f88665` (TD-24 cost guard), #12 `1498cd3c` (CHANGELOG + guards),
-  #13 `19cc4f22` (website gate + stale HTTP docs). The
+  #13 `19cc4f22` (website gate + stale HTTP docs),
+  #14 `9548e4df` (TD-27 Playwright gate). The
   `/private/tmp/aura-directive-002-release-preflight` worktree and the
   `repair/directive-002-release-preflight` branch are **historical**.
 - **The default branch is `rewrite/v3-rust`** (TD-23): flipped from `master`,
@@ -68,6 +69,17 @@
   touched) and ships as the feature-detected `0.3.2-dev.8` artifact, proved by
   `playground/tests/node/project-http.test.mjs` with a negative control.
   TD-23's default-branch flip is executed and behaviourally verified.
+- **TD-27 closed (PR #14).** The browser suites had never run in CI: no job
+  installed Playwright, and nine suites treated its absence as *success*, so a
+  broken `npm ci` or a failed browser download kept CI green. Fixed with a
+  shared `detect`/`skipExitCode` helper, `AURA_REQUIRE_BROWSER=1` on both
+  jobs, and real installs. Proof is behavioural, not structural: the
+  playground job ran **4m7s**, logged `Cache not found`, downloaded Chrome for
+  Testing 153.0.8010.12 and FFmpeg/Headless Shell, ran `--with-deps` apt on
+  ubuntu-24.04, and executed all six browser suites (199 assertions, zero
+  skipped); the website job executed all four (897 assertions). The path had
+  never been exercised before because a warm local cache hid the download.
+  `TECHNICAL_DEBT.md` now has **zero `OPEN` rows**.
 - Exact next action: `docs/engineering/CURRENT_HANDOFF.md`.
 
 Compact current engineering state. Rules: `AGENTS.md`. Active task and exact
@@ -79,7 +91,7 @@ before continuing substantial work.
 
 - Branch: `rewrite/v3-rust`
 - **Git reality (verify with `git rev-parse`, do not trust prose):**
-  `origin/rewrite/v3-rust` is at **`19cc4f22`**, the merge commit of PR #13.
+  `origin/rewrite/v3-rust` is at **`9548e4df`**, the merge commit of PR #14.
   Tag **`v0.3.1` = `b09cbef2`**. Aura 0.3.1 (Keystone) is the current release
   (release = language = `0.3.1`, runtime `0.3.1` is the Playground default) and
   is **PUBLISHED**. The earlier `b221e6a9`/`v0.2.1` notes below are
