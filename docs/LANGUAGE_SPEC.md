@@ -2995,7 +2995,11 @@ returns `[]`. Filesystem access is available in every execution mode.
 * `json_encode(value) -> string`, `json_decode(string) -> value`,
   `json_decode_as(string, Type) -> Type` (feature `json`);
 * `regex_match`, `regex_find`, `regex_find_all`, `regex_replace` (feature `regex`);
-* `time_now`, `time_unix`, `sleep_ms` (feature `time`).
+* `time_now`, `time_unix`, `sleep_ms` (feature `time`);
+* `http_get(string) -> map`, `http_request(string, string, any) -> map`
+  (feature `http-api`, which provides the builtin surface; the native client is
+  the separate, non-default `http` feature; see the normative rule on HTTP
+  below).
 
 **Normative rule (typed JSON decode).** `json_decode_as(text, Type)` validates
 `text` against the Aura type written as its **second argument** and produces a
@@ -3054,8 +3058,8 @@ provably wrong argument type is `E3001` before execution, and is also enforced
 at runtime. An undefined builtin is `E2003`.
 
 **Normative rule (host capabilities).** `read_line`, `read_file`, `write_file`,
-`args`, `print`, and the `time` builtins obtain their effect from the
-interpreter's host. A capability the host does not provide is `E5002`
+`args`, `print`, the `time` builtins, and the HTTP builtins obtain their effect
+from the interpreter's host. A capability the host does not provide is `E5002`
 (unavailable); a genuine I/O failure of a provided capability is `E4020`. The
 native host provides standard input/output, arguments, the filesystem, the
 clock, and sleep; a WebAssembly host may provide fewer, in which case the
@@ -3065,6 +3069,78 @@ on the host.
 *Evidence:* `builtins()` (`src/stdlib/signatures.rs`); natives in
 `src/stdlib/mod.rs`, `src/stdlib/ext.rs`, `src/bridge/mod.rs`; the host
 boundary in `src/host.rs`.
+
+**Normative rule (HTTP).** `http_get(url)` is equivalent to
+`http_request("GET", url)`. `http_request` takes two or three arguments:
+`http_request(method, url)` and `http_request(method, url, options)`, where
+`options` must be a map (passing any other value, including `none`, is
+`E3001`). It performs one HTTP exchange and returns a map with exactly the keys
+`status`, `body`, `body_bytes`, `headers`, and `header_lines`. The
+`options` keys are `headers` (a list of `[name, value]` string pairs), `body`
+(a string), and `timeout_ms` (a positive integer clamped to 30,000 ms).
+
+* `status` is the integer response status.
+* `body` is the body decoded as text. For a payload that is not valid UTF-8 it
+  is a lossy rendering and must not be used to recover the bytes.
+* `body_bytes` is the body as a list of integers in `0..=255`; it is the
+  binary-safe view and always reproduces the received octets exactly.
+* `headers` is a map from **lowercased** header name to value. A name that
+  occurred once maps to its string value; a name that occurred more than once
+  maps to a **list** of every occurrence in arrival order. Repeated headers are
+  therefore never comma-joined, because comma-joining is invalid for some
+  headers (`Set-Cookie` in particular) and would destroy the values.
+* `header_lines` is the flat, ordered list of `[name, value]` pairs preserving
+  duplicates and the original casing, for a consumer that needs the exact wire
+  shape. It is always present when HTTP is available.
+Redirects are never followed. `http_get`/`http_request` report the redirect
+itself rather than the redirect target, so on a host that can observe it,
+`status` is the `3xx` the origin sent; the browser host cannot observe it and is
+covered by item 1 below. No redirect chain is traversed and no `Location` target
+is requested.
+
+**Normative rule (HTTP capability is a host property).** HTTP is available only
+when the host provides it. On a host without it, every HTTP builtin is `E5002`
+and the program must handle that as an ordinary unavailable capability. It is a
+host property, not a language restriction: a program is not required to be
+portable across hosts, but a call that a host cannot perform is `E5002` rather
+than an invented result or a silent failure.
+
+**Normative rule (browser host divergence — deliberate and contractual).** The
+browser host runs behind the browser's own network security model, and that
+model makes exact native parity impossible for exactly three things. These are
+**documented divergences, not defects**, and neither may be "fixed" by
+fabricating data the platform withholds:
+
+1. **Redirects.** A browser fetch with `redirect: "manual"` yields an
+   *opaque-redirect* response whose status, headers, and body are all hidden
+   from the page. The status code is genuinely unavailable to the program, so
+   the browser host reports `E4020` with a message stating that the network
+   returned a redirect the browser does not expose. It must **not** synthesize
+   a `3xx` status to imitate the native host: the real code is unknowable
+   (`301`, `302`, `303`, `307`, and `308` are indistinguishable) and inventing
+   one would misreport the network to the program.
+2. **Forbidden headers.** The browser's `Headers` interface never exposes
+   `Set-Cookie`, and neither `Set-Cookie` nor any other forbidden header may be
+   read from Aura. This is a platform restriction, not a language one.
+3. **Repeated headers.** `Headers` is a *combining* collection: iterating it
+   yields **one** entry per unique name — the occurrences already concatenated
+   with `", "` — in **sorted, lowercased** order. Duplicate occurrences
+   therefore never reach the language as separate entries. On the browser host
+   each name maps to that single combined string, and `header_lines` has one
+   `[name, value]` pair per unique name; original casing and wire order are not
+   recoverable, because the platform discards them before Aura sees the
+   response. Native preserves duplicates as a list and `header_lines` in wire
+   order with the original casing.
+
+*Evidence:* `src/stdlib/ext.rs` (`response_value`, the authoritative response
+map); `src/host.rs` (the `Host` trait boundary, `NativeHost` with
+`max_redirects(0)`, `BrowserHost`); `playground/web/worker.js` (`redirect:
+"manual"`, the opaque-redirect branch, and the `response.headers.forEach`
+combination point); `playground/runtime/src/lib.rs`
+(`SuspendHost::http_request`, `json_to_response_value` resume application);
+native contract in `tests/http.rs`; browser contract in
+`playground/tests/node/http-security.test.mjs`; host documentation in
+`website/content/playground-doc.md`.
 
 ---
 
