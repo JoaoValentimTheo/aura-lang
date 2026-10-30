@@ -55,8 +55,10 @@ boundary. It provides:
 | `now_unix` / `now_local` | `E5002` (unavailable) |
 | `sleep_ms` | `E5002` (unavailable; never busy-waited) |
 
-It holds only plain data and never exposes the DOM, JS, the network,
-localStorage, IndexedDB, process state, or handles. Its optional
+The network is **not** one of `BrowserHost`'s capabilities: `BrowserHost`
+itself holds only plain data and never exposes the DOM, JS, localStorage,
+IndexedDB, process state, or handles. HTTP is a separate, opt-in transport
+layered above it in the Worker — see the HTTP transport section below. Its optional
 stdout limit is an **application** policy, not a language rule: exceeding it is
 `E4020`, so a runaway `print` loop is bounded.
 
@@ -377,3 +379,71 @@ This is a documentation/assurance NIT, not a defect or a security issue. The
 Rust-side toolchain is pinned (`rust-toolchain.toml`), and only the browser
 suites depend on this graph; a package-manager migration is deliberately out of
 scope for the current hardening round.
+
+---
+
+## 9. HTTP transport
+
+Browser HTTP is not a `BrowserHost` capability. The program parks on an HTTP
+effect and the Worker performs the `fetch`, so the network authority lives in
+the Worker — the one place that can be given an origin check and a consent
+prompt — and never inside the interpreter.
+
+### Suspension model
+
+This depends on Host ABI 2 session execution (`runtime.startSession` /
+`resumeSession`). A program that calls `http_get` in a child module produces
+the same effect as one that calls it in the entry module, so a **project**
+session and a single-source session reach the network identically
+(`LANGUAGE_SPEC.md` §25, "HTTP is not scoped to the entry module").
+
+An artifact that does not advertise project sessions reports `E5002` for HTTP
+from a project rather than silently differing from the single-source path.
+
+### Consent
+
+The Worker **never** authorizes an origin by itself. On each HTTP effect it
+posts a `permission` message to the page — which owns the Aurea permission UI —
+and waits for an origin-specific grant keyed to that exact origin, method, and
+mutating flag. A denied request is never dispatched: it resumes the program
+with `E5002` and the message `network access to <origin> was not granted`, so
+programs see a refusal through the same unavailable-capability path they
+already handle. A run that is cancelled drains its pending prompt so a prompt
+is never left hanging.
+
+### Transport rules
+
+| Rule | Behavior |
+|---|---|
+| Credentials | `credentials: "omit"` — the Worker keeps no cookies |
+| Redirects | `redirect: "manual"`; a `3xx` is surfaced, never chased |
+| Response size | `MAX_RESPONSE_BYTES` = 8 MiB, mirroring `MAX_HTTP_BODY_BYTES` |
+| Timeout | per-request `AbortController`, already clamped in Rust to `MAX_HTTP_TIMEOUT_MS` |
+
+### Divergences from native
+
+Three behaviors cannot match native and are **contractual, not defects**
+(`LANGUAGE_SPEC.md` §25):
+
+1. **Redirects.** A `redirect: "manual"` fetch yields an opaque-redirect
+   response whose status is hidden from the page. The browser host reports
+   `E4020` stating a redirect was not exposed; it does not synthesize a `3xx`,
+   because `301`/`302`/`303`/`307`/`308` are indistinguishable there.
+2. **Forbidden headers.** `Set-Cookie` is never exposed by `Headers` and must
+   not be read.
+3. **Repeated headers.** `Headers` combines repeated occurrences into one
+   `", "`-joined value per lowercased name, in sorted order. Each name maps to
+   a single string and `header_lines` has one pair per unique name; original
+   casing and wire order are not recoverable. Native instead preserves
+   duplicates as a list with `header_lines` in wire order.
+
+### Tests
+
+`session-http.test.mjs` (single-source), `project-http.test.mjs`
+(multi-module, including the repeated-header divergence against a
+Host-supplied header list), `browser-http.test.mjs` (live loopback transport),
+and `http-security.test.mjs` (consent, origin checks, forbidden headers). All
+four require a real browser and hard-fail when Playwright or Chromium is
+missing — a silently skipped security suite is not a pass.
+
+---
