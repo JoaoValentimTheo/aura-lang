@@ -2,10 +2,16 @@
 
 ## Directive 003 — stabilization and hardening campaign (current)
 
-- Active branch: `rewrite/v3-rust`, local HEAD **`1aa301c6`** — the merge of
-  **PR #8** (resumable-session provenance and the encoder cost defect).
-  Directive 002 (PR #2), the rustls remediation (PR #3), and integrations
-  PR #4, #5, #6, #7, #8 are all **merged**; the
+- Active branch: `rewrite/v3-rust`, remote HEAD **`19cc4f22`** — the merge of
+  **PR #13** (website suite gate + the stale HTTP claims it exposed). **Thirteen
+  PRs are merged** this campaign: #2 `f96536b6` (Directive 002 preflight),
+  #3 `07845932` (rustls advisories), #4 `a562bacf` (batches 1–5),
+  #5 `eaa3b9ed` (TD-23 + default-branch flip), #6 `4a20fa84` (post-merge
+  records), #7 `22e73cce` (B6/B7 divergences + website link),
+  #8 `1aa301c6` (session provenance + encoder cost), #9 `9654e15d` (B14
+  project sessions), #10 `a3b7c377` (PR template + Windows flake),
+  #11 `c9f88665` (TD-24 cost guard), #12 `1498cd3c` (CHANGELOG + guards),
+  #13 `19cc4f22` (website gate + stale HTTP docs). The
   `/private/tmp/aura-directive-002-release-preflight` worktree and the
   `repair/directive-002-release-preflight` branch are **historical**.
 - **The default branch is `rewrite/v3-rust`** (TD-23): flipped from `master`,
@@ -13,8 +19,15 @@
   protection, no open PRs to `master`, five tags, and a tag-triggered
   `release.yml`. `gh workflow list` now reports `Fuzz (nightly)` where it
   previously 404'd, and `gh workflow run fuzz-nightly.yml` queued a run — the
-  workflow is *registered*. It has **not** yet produced a `schedule`-event run
-  (cron `17 3 * * *`); do not claim otherwise until one exists.
+  workflow is *registered*. **The timer fires:** `schedule`-event run
+  `41037980226` completed successfully on 2026-10-30T10:04Z with all 14 steps
+  green, and the earlier `workflow_dispatch` run `40984609515` also passed.
+  Exactly one `schedule`-event run exists in the workflow's history
+  (`gh run list --workflow fuzz-nightly.yml`): `event=schedule`,
+  `branch=rewrite/v3-rust`, created 2026-10-30T10:04Z. The declared cron is
+  `17 3 * * *` UTC, so the observed firing does not sit at the literal 03:17
+  slot and GitHub may delay scheduled runs. Treat the *firing mechanism* as
+  proven by the event type; treat the *slot* as still to be observed.
 - **Directive 003-R authorization is in force** (`AGENTS.md`, "Standing
   authorization"): push, PR, merge, workflow administration, and fixes for B6,
   B7, B14, TD-23 are permitted. Force-push, history removal, tag moves,
@@ -34,8 +47,19 @@
   pinned by `transport-bounds.test.mjs` and `abi.test.mjs`, B13 falsified;
   (4) REPL O(N²) re-confirmed in release profile and the dark nightly fuzz
   workflow recorded as TD-23; (5) two RustSec advisories in the TLS trust
-  chain patched (`rustls-webpki` 0.103.16, `webpki-roots` 1.0.10). Batches 1–5
-  are **merged** via PR #4 with all 20 remote checks green.
+  chain patched (`rustls-webpki` 0.103.16, `webpki-roots` 1.0.10); (6) B14
+  project sessions shipped as `0.3.2-dev.8` (PR #9); (7) PR template replaced
+  the stale Python-era version, and the Windows-only wall-clock test was
+  root-caused as pre-existing and retired (PR #10); (8) TD-24's encoder cost
+  guard documented accurately (PR #11); (9) `CHANGELOG.md` `[Unreleased]`
+  reconciled with what actually shipped, plus two mutation-verified
+  contract-sync guards (PR #12); (10) the `website` CI job was wiring four of
+  the twelve suites by hand, so the default branch stayed red through eleven
+  green PRs — `run-all.mjs` is now the gate, the stale `native-only`
+  assertion and `guide-io.md` HTTP claims are corrected, and the newly wired
+  `docs-consistency` immediately exposed a shallow-checkout tag defect that
+  was fixed with `fetch-depth: 0` (PR #13). Batches 1–5 are **merged** via
+  PR #4 with all 20 remote checks green; #9–#13 each merged at 20/20 as well.
 - **B6, B7, B14 and TD-23 are all closed.** B6 and B7 are formalized
   divergences (browser `opaqueredirect` exposes no status; `Headers` is a
   combining collection), stated normatively in `docs/LANGUAGE_SPEC.md` §25 and
@@ -54,12 +78,12 @@ before continuing substantial work.
 ## Repository
 
 - Branch: `rewrite/v3-rust`
-- **Git reality (verify with `git rev-parse`, do not trust prose):** local HEAD
-  is **`a562bacf`**, the merge commit of PR #4; `origin/rewrite/v3-rust` is at
-  the same commit (`0` behind / `0` ahead). Tag **`v0.3.1` = `b09cbef2`**. Aura
-  0.3.1 (Keystone) is the current release (release = language = `0.3.1`,
-  runtime `0.3.1` is the Playground default) and is **PUBLISHED**. The earlier
-  `b221e6a9`/`v0.2.1` notes below are **historical**; Git is authoritative.
+- **Git reality (verify with `git rev-parse`, do not trust prose):**
+  `origin/rewrite/v3-rust` is at **`19cc4f22`**, the merge commit of PR #13.
+  Tag **`v0.3.1` = `b09cbef2`**. Aura 0.3.1 (Keystone) is the current release
+  (release = language = `0.3.1`, runtime `0.3.1` is the Playground default) and
+  is **PUBLISHED**. The earlier `b221e6a9`/`v0.2.1` notes below are
+  **historical**; Git is authoritative.
 - Local/remote relationship: authoritative value is `git rev-list
   --left-right --count origin/rewrite/v3-rust...HEAD`; a tracked file cannot
   safely hardcode its own position.

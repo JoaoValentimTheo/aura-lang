@@ -1,84 +1,76 @@
 # Current Engineering Handoff
 
-## Current local task — Directive 003-R, B14 shipping
+## Current local task — Directive 003-R, stabilization campaign
 
-Branch `rewrite/v3-rust`, HEAD **`1aa301c6`** (the merge of PR #8). The
-Directive 003-R authorization recorded in `AGENTS.md` permits push, PR, merge,
-and workflow administration; force-push, history removal, tag moves,
-frozen-WASM replacement, gate weakening, and unapproved stable releases remain
-forbidden. Merged so far this campaign: PR #4 (`a562bacf`, batch 1 + rustls
-advisories), PR #6 (`4a20fa84`, B6/B7 divergences), PR #5 (`eaa3b9ed`,
-resolvable doc link), PR #7 (`22e73cce`, website link fix), and PR #8
-(`1aa301c6`, session provenance + encoder cost).
+`rewrite/v3-rust` is the **default branch** and HEAD is **`19cc4f22`** (the
+merge of PR #13). Thirteen PRs are merged this campaign: #2, #3, #4, #5, #6,
+#7, #8, #9 (B14), #10 (PR template), #11 (TD-24 cost guard), #12 (CHANGELOG
+`[Unreleased]` + TD-25), #13 (website suite gate + TD-26/TD-27). The Directive 003-R authorization recorded in
+`AGENTS.md` permits push, PR creation and merge, workflow administration, and
+default-branch changes; force-push, history removal, tag moves, frozen-WASM
+replacement, gate weakening, and unapproved stable releases remain forbidden.
+Never report a gate as green unless it actually executed.
 
-**The four originally-open findings are closed.**
+**PR #13 — merged `19cc4f22`.** It closed the last red suite on the default
+branch and repaired the gate that hid it. CI evidence: the `website` job ran
+all twelve suites and logged zero `FAIL` lines (`stdlib-consistency` 123/0,
+`docs-consistency` 138/0, `ais-doc` 43/1 skipped, `playground-parity` 93/0,
+`semver` 52/0, `release-manifest` 12/0, `release-preflight` 32/0, `sbom` 9/0,
+browser suites self-skipped per TD-27).
 
-- **TD-23** — the nightly fuzz workflow was invisible because GitHub resolves
-  `schedule` from the **default branch**, and the default branch was `master`,
-  which has no `fuzz/` directory. `master` is a *strict ancestor* of
-  `rewrite/v3-rust` (`0 587`), reachable from none of the five release tags,
-  with no rulesets, no branch protection, and a tag-triggered-only
-  `release.yml`. After re-verifying every precondition the default branch was
-  flipped with `gh api -X PATCH`; the vestigial Pages `source.branch` was
-  repointed. **Behavioural proof, not YAML presence:** `gh workflow list` now
-  reports `Fuzz (nightly)` where it previously 404'd, and
-  `gh workflow run fuzz-nightly.yml` queued run `40984609515`. No
-  `schedule`-event run exists yet (cron `17 3 * * *`) — do not claim the timer
-  fires until one does.
-- **B6** — browser redirect parity is **impossible**, not merely unbuilt: an
-  `opaqueredirect` response exposes no status, so emitting a `3xx` would mean
-  inventing a code the platform withholds (precisely what §4 forbids). Filed as
-  a **formalized divergence** in `docs/LANGUAGE_SPEC.md` §25 and pinned by case
-  4 of `http-security.test.mjs`.
-- **B7** — `Headers` is a *combining* collection, so duplicates are joined with
-  `", "` upstream of any Worker code; the runtime's list-on-duplicate logic is
-  dead on the browser path. A **documented divergence**, stated normatively.
-  An intermediate "docs-only" reading of this was wrong and is recorded as
-  such.
-- **B14 — implemented and proved.** The escalation assumed a Host ABI 3 was
-  required. There is none (`ABI_VERSION` is `2` and no newer surface is
-  specified anywhere), so the project entry point extends ABI 2 *in place*:
-  `aura_session_start_project` from `0.3.2-dev.8`, feature-detected by
-  `supportsProjectSessions` (deliberately not in `SESSION_EXPORTS`, so
-  `supportsSessions` stays true for older artifacts and they degrade to the
-  synchronous `runProject` path). Consent, suspension, the 64-request budget,
-  cancellation, and resume all reuse the existing `SuspendHost` and one shared
-  `runSession` effect loop, so the two paths cannot drift. Diagnostics keep
-  module provenance across the session because `HostedSession` stores the same
-  `SourceMap` the compilation produced.
+- **The default branch was red through eleven green PRs.**
+  `website/tests/stdlib-consistency.test.mjs` asserted
+  `/native-only/i.test(stdlibDoc)`, but `11aeb093` (B6/B7) had deliberately
+  changed `website/content/reference-stdlib.md` to "host-owned" because B14
+  gave the browser Playground HTTP on Host ABI 2. Assertion and doc had
+  contradicted each other, undetected, since that commit. Proved pre-existing
+  at base `c9f88665` by detached checkout before touching anything.
+- **Root cause of the invisibility — TD-26.** The `website` CI job named four
+  suites by hand and never invoked `website/tests/run-all.mjs`, so eight
+  suites ran only when someone remembered. Of those eight, only
+  `stdlib-consistency` was failing (measured, not assumed: `docs-consistency`
+  137, `ais-doc` 89, `aurea` 39, `playground-parity` 93 passed; `nav-fit` and
+  `aurea-browser` self-skip without Playwright).
+- **The fix is bidirectional.** The stale assertion was replaced by two
+  direction-guarded assertions — `host-owned` present **and** `native-only`
+  absent, plus the browser session path present — so drift is caught in both
+  directions. Mutation-verified both ways. An assertion that merely demands
+  current wording cannot detect drift.
+- **`guide-io.md` was also stale**, not just the test. The browser column
+  claimed the filesystem's `native-only` status applied to HTTP and gave
+  `E5002` unconditionally. Corrected to distinguish the default `0.3.1`
+  runtime (ABI 1, no browser HTTP, `E5002`) from the ABI 2 dev line. The
+  filesystem `native-only` claim on line 46 is **correct and untouched**;
+  `strings` on the frozen wasm confirmed the ABI-1 virtual project really
+  does deny HTTP.
+- **Wiring the gate paid for itself immediately.** The first PR carrying
+  `run-all.mjs` went red on `docs-consistency`, which verifies each normative
+  page linked from the docs index still exists at the release tag. CI checks
+  out at `fetch-depth: 1` without tags, so `v0.3.1` was absent and all four
+  `git ls-tree` checks failed. Reproduced exactly with
+  `git clone --depth=1 --no-tags file://$PWD` (zero tags, 133 passed /
+  4 failed); fixed by `fetch-depth: 0` on the job (753 commits, 20 MB `.git`,
+  on a job that already builds 46 pages) plus a tag-resolvability preflight
+  that reports a missing tag once as itself instead of four times as missing
+  documentation. Mutation-verified: tagless 133/5, tags restored 138/0.
+- **TD-27 (OPEN, v0.3.2).** No CI job installs Playwright, so browser, a11y,
+  browser-HTTP and http-security suites have always skipped — including B14's
+  browser HTTP path. The `ci.yml` comment claiming they "run under Chromium
+  when Playwright is available" was false and is corrected. Deliberately not
+  wired here: adding a browser download changes the job's runtime and failure
+  modes and deserves its own change with its own evidence.
 
-**Local validation actually completed.** `cargo fmt --all -- --check` clean;
-`cargo clippy` clean with `-D warnings` on the pinned **1.98.1** for both the
-main and the runtime crate; `cargo test --all-features` green across 65 test
-binaries; the full Playground suite (`run-all.mjs`, 14 suites) green with
-`project-http` 20/0 newly registered; `node playground/build.mjs --check`
-green over 9 manifested versions; and the **entire** website CI sequence run
-step-by-step (`build.mjs`, `validate-examples` 22/0, `release-version` 32/0,
-`docs-consistency` 137/0, `check-links` 3366/0, `check-base` 3365/0).
+**Exact next action:** post the Directive 003-R campaign report to issue #1
+(§7 requires delivered PR and CI links), then close TD-27 by wiring Playwright
+into the `website` job — `npm ci` plus `npx playwright install chromium` — so
+the browser, a11y, browser-HTTP and http-security suites actually execute. TD-27
+is the last known unproven surface in CI and covers B14's browser HTTP path.
 
-**Two real defects found by running those gates, both fixed.**
-`release-version` caught that bumping the runtime crate to `0.3.2-dev.8`
-requires `website/site.config.mjs`'s `runtimeVersion` to move with it — that
-check exists precisely to stop the site advertising a stale artifact identity.
-And the 13-minute intermittent Playground stall was traced to `process.exit()`
-inside top-level-await modules blocking in `node::DisposePlatform()`; final
-summary exits were converted to `process.exitCode`, while the 10 early guards
-that must terminate immediately were deliberately left alone. Exit-code
-propagation was mutation-verified (injecting a failing check yields exit 1 both
-directly and through `run-all.mjs`).
-
-**Environment now unblocked (§5).** `rustup` was installed, so the pinned
-`1.98.1`, `wasm32-unknown-unknown`, and `nightly` are available; the local
-`assert_is_empty` clippy noise is **confirmed toolchain drift** (18 sites,
-clean on 1.98.1) and must not be "fixed". `cargo-audit`, Miri, and Playwright
-remain unavailable locally and are covered by remote CI.
-
-**Exact next action:** push this B14 batch as a branch, open its PR against
-`rewrite/v3-rust`, wait for 20/20, merge, then report the campaign to issue #1
-and fix the stale Python-era `.github/PULL_REQUEST_TEMPLATE.md`. When the cron
-fires, record the first genuine `schedule`-event fuzz run. The previous task
-material below is retained as historical context and must not override this
-active instruction.
+Then continue §6 with B7's per-Host header contract tests on the multi-module
+path, and add doctrines #24-#27 (a green badge proves only the wired subset
+ran; an assertion that demands stale wording enshrines drift; a bare `catch`
+turns an environment problem into a content verdict; an untested environment
+assumption is where a newly wired gate fails first) to `AGENTS.md`.
 
 Authoritative for **the active task and the exact next action**. Current
 repository state lives in `AGENT_STATE.md`; operating rules in `AGENTS.md`.
