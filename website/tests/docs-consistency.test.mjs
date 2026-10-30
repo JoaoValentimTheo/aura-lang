@@ -98,6 +98,28 @@ check(
   /blob\/v\$\{docsVersion\}\//.test(docsPage),
 );
 
+// The release tag must resolve before the per-file checks below mean anything.
+// A shallow, tagless clone (the default for many CI jobs) cannot resolve it,
+// and without this preflight every target would fail for a reason that has
+// nothing to do with the documentation.
+const releaseTag = `v${site.releaseVersion}`;
+let tagResolvable = false;
+try {
+  tagResolvable =
+    execFileSync("git", ["rev-parse", "--verify", `refs/tags/${releaseTag}^{commit}`], {
+      cwd: repo,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim().length > 0;
+} catch {
+  tagResolvable = false;
+}
+check(
+  `release tag ${releaseTag} is resolvable in this clone`,
+  tagResolvable,
+  tagResolvable ? undefined : "checkout must fetch tags (actions/checkout: fetch-depth: 0)",
+);
+
 // Each pinned normative target must exist at the released tag.
 const pinned = [...docsPage.matchAll(/docs\/([A-Za-z0-9_.\-]+\.md)/g)].map((m) => m[1]);
 const uniquePinned = [...new Set(pinned)];
@@ -107,15 +129,17 @@ for (const target of uniquePinned) {
   try {
     const out = execFileSync(
       "git",
-      ["ls-tree", "-r", "--name-only", `v${site.releaseVersion}`, "--", `docs/${target}`],
-      { cwd: repo, encoding: "utf8" },
+      ["ls-tree", "-r", "--name-only", releaseTag, "--", `docs/${target}`],
+      // Suppress git's own `fatal:` chatter; the preflight above explains a
+      // missing tag, so a leaked message here would only be noise.
+      { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
     );
     exists = out.trim().length > 0;
   } catch {
     exists = false;
   }
   check(
-    `pinned normative target exists at v${site.releaseVersion}: docs/${target}`,
+    `pinned normative target exists at ${releaseTag}: docs/${target}`,
     exists,
   );
 }

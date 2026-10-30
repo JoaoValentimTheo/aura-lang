@@ -9,8 +9,10 @@
 //
 // It also enforces the Keystone typed-JSON and HTTP contracts:
 //   * `json_decode_as` is documented with a type position and `E4031`;
-//   * HTTP is documented as feature-gated / native-only and no fabricated
-//     `http::` / session / cookie / streaming API is claimed.
+//   * HTTP is documented as feature-gated and host-owned — never as
+//     native-only, since the browser Playground reaches it through a session
+//     on a Host ABI 2 runtime — and no fabricated `http::` / session / cookie /
+//     streaming API is claimed.
 //
 // No network access. Usage: node website/tests/stdlib-consistency.test.mjs
 
@@ -148,9 +150,21 @@ check(
   "HTTP documented as feature-gated",
   /`http` feature|feature-gated/i.test(stdlibDoc),
 );
+// HTTP used to be documented as "native-only". B14 gave the browser Playground
+// real HTTP through the ABI 2 session mechanism, so that claim became false and
+// this assertion kept demanding it. Assert the current contract in both
+// directions so it cannot silently regress to the old wording.
 check(
-  "HTTP documented as native-only",
-  /native-only/i.test(stdlibDoc),
+  "HTTP documented as host-owned, not native-only",
+  /host-owned/i.test(stdlibDoc) && !/native-only/i.test(stdlibDoc),
+);
+check(
+  "HTTP documents the browser Playground's session path",
+  // Deliberately not the whole sentence: assert the two facts a copyedit must
+  // not drop (the browser host has HTTP, and it goes through a session) rather
+  // than pinning wording that a rewrite may legitimately change.
+  /browser Playground provides it/i.test(stdlibDoc) &&
+    /through a session/i.test(stdlibDoc),
 );
 check(
   "HTTP documents E5002 for an absent host capability",

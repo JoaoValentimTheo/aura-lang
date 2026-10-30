@@ -83,11 +83,13 @@ always available.
 | `read_file` / `write_file` | yes | `E5002` |
 | `time_now` / `time_unix` | yes | `E5002` |
 | `sleep_ms` | yes | `E5002` |
-| `http_get` / `http_request` | only with the non-default `http` feature | `E5002` |
+| `http_get` / `http_request` | only with the non-default `http` feature | only on a Host ABI 2 runtime, with per-origin consent |
 
-HTTP is a **feature-gated, native-only** capability: a build without
-`--features http` has no network surface at all, and network access is
-host-owned. The browser Playground has no HTTP authority. See
+HTTP is a **feature-gated** capability and network access is **host-owned**:
+a native build without `--features http` has no network surface at all. The
+browser Playground reaches HTTP through the session mechanism, so it works
+only on a Host ABI 2 runtime (the default `0.3.1` runtime is ABI 1 and reports
+`E5002`); each origin must be granted consent before the first request. See
 [HTTP](/docs/reference-stdlib/#http-http-feature). A transport or resource
 failure is `E4020`; a typed JSON mismatch while decoding a response is
 `E4031`.
