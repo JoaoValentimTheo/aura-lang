@@ -17,6 +17,7 @@
 //   6. localhost       → a loopback target still requires consent (no bypass)
 //   7. stop            → Stop during an in-flight request aborts it
 //   8. stale effect id → a stale resume cannot drive another execution
+//  12. mutation scope  → a read grant never authorizes a write
 //
 // Requires playwright + Chromium; a missing browser is a hard failure, never a
 // silent skip, because this is a security gate.
@@ -37,10 +38,11 @@ try {
 
 /** A local server that counts every request it receives. */
 function countingServer(handler) {
-  const state = { count: 0, requests: [] };
+  const state = { count: 0, mutating: 0, requests: [] };
   const server = createServer((req, res) => {
     state.count += 1;
     state.requests.push(`${req.method} ${req.url}`);
+    if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) state.mutating += 1;
     const cors = {
       "access-control-allow-origin": "*",
       "access-control-allow-headers": "*",
@@ -438,6 +440,59 @@ async function runAndAnswer(page, { grant = true, allowOrigins = null, timeout =
     "11 header_lines has one pair per unique name",
     lines[2] !== undefined && lines[2] === lines[3],
     JSON.stringify({ unique_names: lines[2], header_lines: lines[3] }),
+  );
+  await page.close();
+}
+
+// 12) Mutation scoping: a grant for a read never authorizes a write.
+//
+// The consent dialog distinguishes reads from writes, so an approval for a GET
+// must not become implicit authorization for a later DELETE on the same
+// origin. The sharp observable is the *number of prompts*: if the read grant
+// leaked into the write, the write is dispatched with no second prompt.
+{
+  const page = await newPage();
+  await setSource(page, `fn main() {
+    let r = http_get("${originA}/method-scope")
+    print(r["status"])
+    let d = http_request("DELETE", "${originA}/method-scope")
+    print(d["status"])
+}`);
+  await page.click("#run");
+  const seen = [];
+  const deadline = Date.now() + 30000;
+  let finished = false;
+  while (Date.now() < deadline) {
+    const prompt = await page.evaluate(() => {
+      const d = document.getElementById("permission-dialog");
+      return d && !d.hidden
+        ? {
+            detail: document.getElementById("permission-detail").textContent,
+            title: document.getElementById("permission-title").textContent,
+          }
+        : null;
+    });
+    if (prompt && !seen.some((s) => s.detail === prompt.detail)) {
+      seen.push(prompt);
+      await page.click("#permission-allow");
+    }
+    const status = await page.evaluate(() => document.getElementById("status").textContent);
+    if (/Completed|Failed|Stopped/.test(status)) {
+      finished = true;
+      break;
+    }
+    await page.waitForTimeout(120);
+  }
+  check("12 the run reached a terminal state", finished === true, "run timed out");
+  check(
+    "12 a write to an already-read origin prompts again",
+    seen.length === 2,
+    `prompts: ${JSON.stringify(seen.map((s) => s.detail))}`,
+  );
+  check(
+    "12 the write prompt is labelled as mutating",
+    seen.some((s) => s.detail.startsWith("DELETE ") && /mutating/i.test(s.title)),
+    JSON.stringify(seen.map((s) => `${s.title} | ${s.detail}`)),
   );
   await page.close();
 }

@@ -603,6 +603,7 @@ function installProjectControls() {
   if (els.permissionDeny) els.permissionDeny.addEventListener("click", () => answerPermission(false));
   if (els.networkForget) {
     els.networkForget.addEventListener("click", () => {
+      grantedGrants.clear();
       grantedOrigins.clear();
       updateNetworkBar();
     });
@@ -1266,11 +1267,24 @@ function stopCurrent(reason) {
 // reaches the network until the user grants it here; a deny resolves the
 // Worker's prompt with `false` and no request is sent.
 //
-// Grants are session-scoped (this page load) and keyed by origin, so
-// authorizing origin A never authorizes origin B. The main thread owns the
-// interaction; the Worker can never fabricate approval.
+// Grants are session-scoped (this page load) and keyed by origin *and*
+// mutation class, so authorizing origin A never authorizes origin B and an
+// approved read never silently approves a later write to the same origin.
+// The main thread owns the interaction; the Worker can never fabricate
+// approval.
 
-/** Origins the user granted this session. Reset on reload. */
+/**
+ * A grant key. Only an exact origin match satisfies a request, and a read
+ * grant (`mutating: false`) cannot satisfy a write, because the key includes
+ * the mutation class.
+ */
+function grantKey(origin, mutating) {
+  return `${mutating ? "mutating" : "read"} ${origin}`;
+}
+
+/** Grants the user made this session. Reset on reload. */
+const grantedGrants = new Set();
+/** Origins the user granted this session, for the status bar. */
 const grantedOrigins = new Set();
 /** The origin of the prompt currently on screen, if any. */
 let pendingPermission = null;
@@ -1299,9 +1313,10 @@ function hidePermissionDialog() {
 
 /** Present the origin prompt and resolve the record's pending decision. */
 function handlePermissionRequest(record, msg) {
-  // If the user already granted this exact origin this session, answer
-  // immediately without a second prompt.
-  if (grantedOrigins.has(msg.origin)) {
+  // If the user already granted this exact origin for this mutation class
+  // this session, answer immediately without a second prompt. A read grant
+  // deliberately does not satisfy a write.
+  if (grantedGrants.has(grantKey(msg.origin, msg.mutating))) {
     record.worker.postMessage({
       kind: "permission-result",
       requestId: msg.requestId,
@@ -1331,7 +1346,10 @@ function answerPermission(granted) {
   hidePermissionDialog();
   if (!current) return;
   const { record, msg } = current;
-  if (granted) grantedOrigins.add(msg.origin);
+  if (granted) {
+    grantedGrants.add(grantKey(msg.origin, msg.mutating));
+    grantedOrigins.add(msg.origin);
+  }
   if (record.worker) {
     record.worker.postMessage({
       kind: "permission-result",
