@@ -110,7 +110,7 @@ byte-oriented:
 
 | Export | Purpose |
 |---|---|
-| `aura_abi_version() -> u32` | Host ABI version (`1`) |
+| `aura_abi_version() -> u32` | Host ABI version (`2`) |
 | `aura_version_len()` / `aura_version_byte(i)` | language version string |
 | `aura_runtime_version_len()` / `aura_runtime_version_byte(i)` | runtime artifact version |
 | `aura_source_reset()` / `aura_source_push(word, nbytes)` | feed source bytes |
@@ -121,12 +121,13 @@ byte-oriented:
 | `aura_output_len()` / `aura_output_byte(i)` | read the JSON result |
 
 The virtual-project exports are an additive Host ABI 1 capability introduced
-by development FSM-P5. Historical ABI-1 runtime artifacts may omit them; the
-JavaScript loader feature-detects the exports, while the existing single-source
-`run` path remains unchanged. Virtual source keys are provider identity only,
-not host paths or Aura module identity. The Playground reports a runtime
-without the exports as a capability limitation rather than flattening a
-multi-file project into one source.
+by development FSM-P5, and the session exports (`aura_session_*`) extend the
+ABI to version 2 without breaking ABI 1. Historical ABI-1 runtime artifacts may
+omit either group; the JavaScript loader feature-detects the exports, while the
+existing single-source `run` path remains unchanged. Virtual source keys are
+provider identity only, not host paths or Aura module identity. The Playground
+reports a runtime without the exports as a capability limitation rather than
+flattening a multi-file project into one source.
 
 The options mini-protocol is `arg <text>\n` lines followed by an optional
 `stdin-bytes <n>\n` header and exactly `n` raw bytes.
@@ -173,29 +174,36 @@ Every frozen release identity is also *pinned in the build script*, so a
 release artifact can never be regenerated or overwritten: the build refuses to
 write `runtimes/<version>/` when the bytes differ, and `--check` compares each
 pinned release against the artifact on disk independently of the manifest. The
-manifest currently lists seven entries — `0.0.1`, `0.0.2`, `0.0.2-dev.30`,
-`0.2.0-dev.1`, `0.2.0-dev.2`, `0.2.0`, and the `0.2.1` release.
+manifest currently lists nine entries — `0.0.1`, `0.0.2`, `0.0.2-dev.30`,
+`0.2.0-dev.1`, `0.2.0-dev.2`, `0.2.0`, `0.2.1`, `0.3.1`, and the `0.3.2-dev.8`
+preview.
 
 ### Development runtimes
 
 A development runtime is an artifact on a release line that is **not** that
-release. The **`0.2.1` release is the current published release** (tag `v0.2.1`,
-2026-10-01): it carries the additive Host ABI 1 virtual-project exports so the
-multi-file Playground can be exercised, and it implements the `0.2.1` language
-contract, which adds the builtin-name value-namespace reservation (`E1009`),
-the unified type-nesting limit (ADR-0004), and the train-1 parser hardening
-(bounded alias-chain resolution depth, module nesting bounded by the semantic
-limit on every substrate, O(n) string lexing, and bounded
-parameterized-alias expansion / physical module depth) on top of the `0.2.0`
-language (see `docs/adr/0001-release-vs-language-version.md`,
-`docs/adr/0004-typeexpr-nesting-policy.md`). Its pre-release `0.2.1-dev.5`
-build carried the same contract; the clean `0.2.1` identity is the promoted
-release. It is never a replacement for `0.2.0` — which remains frozen,
-selectable, and byte-identical. Advancing the runtime means bumping the
-runtime crate's version, never overwriting an existing artifact. The superseded
+release. The **`0.3.1` release is the current published release** (tag `v0.3.1`,
+2026-10-08, codename Keystone). Because Keystone changes observable language
+behavior it is a *language* release as well
+(`release = language = runtime = 0.3.1`), so it implements the `0.3.1` language
+contract — distinct collection identities (ADR-0005), contextual fixed-length
+Arrays, canonical type-position `json_decode_as`, and `;` outside a sequence
+position rejected as `E1006`. It also carries the additive Host ABI 1
+virtual-project exports so the multi-file Playground can be exercised. The
+`0.2.1` language contract it builds on added the builtin-name value-namespace
+reservation (`E1009`), the unified type-nesting limit (ADR-0004), and the
+train-1 parser hardening (bounded alias-chain resolution depth, module nesting
+bounded by the semantic limit on every substrate, O(n) string lexing, and
+bounded parameterized-alias expansion / physical module depth) on top of the
+`0.2.0` language (see `docs/adr/0001-release-vs-language-version.md`,
+`docs/adr/0004-typeexpr-nesting-policy.md`). Its pre-release `0.2.1-dev.5` build
+carried the same contract as the clean `0.2.1` identity it was promoted to.
+`0.3.1` is never a replacement for `0.2.1` or `0.2.0`, which remain frozen,
+selectable, and byte-identical. Advancing the runtime means bumping the runtime
+crate's version, never overwriting an existing artifact. The superseded
 `0.2.0-dev.1`/`0.2.0-dev.2` remain selectable historical development entries;
 the intermediate `0.2.1-dev.1`..`0.2.1-dev.5` builds are preserved on disk,
-unlisted.
+unlisted. `0.3.2` has no release identity yet; its `0.3.2-dev.8` preview is a
+development entry only, and `manifest.current` still points at `0.3.1`.
 
 ### 0.0.1 vs 0.0.2
 
@@ -211,11 +219,12 @@ runtime**, and the manifest records it honestly as `available: false` with a
 reason. The first wasm-executable runtime was the historical **0.0.2** release
 (`runtimes/0.0.2/`). No historical artifact is fabricated or overwritten.
 
-**0.2.1** is the current published release. It is a *language* release
-(`release = language = runtime = 0.2.1`), so its `release_version`,
-`runtime_version`, and `language_version` are all `0.2.1`; the current runtime
-artifact lives at `runtimes/0.2.1/` and is the selector default. The previous
-**0.2.0** release remains frozen and selectable. The historical **0.0.2** entry
+**0.3.1** is the current published release. It is a *language* release
+(`release = language = runtime = 0.3.1`), so its `release_version`,
+`runtime_version`, and `language_version` are all `0.3.1`; the current runtime
+artifact lives at `runtimes/0.3.1/` and is the selector default, as
+`manifest.current` records. The previous **0.2.1** and **0.2.0** releases
+remain frozen and selectable. The historical **0.0.2** entry
 shipped the frozen **0.0.1** language semantics (`language_version: "0.0.1"`),
 distinct from its release identity. The `0.0.2-dev.*` chain is preserved as
 development history and is never the current release.

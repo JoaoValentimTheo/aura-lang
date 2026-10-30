@@ -7,8 +7,87 @@ Git.
 
 ## [Unreleased]
 
-Nothing yet. The `0.3.1` Keystone line is the current release; the next line,
-`0.3.2`, is planned but not started (no version bump, artifact, or date).
+Unreleased work on the `rewrite/v3-rust` development line. `0.3.1` remains the
+current stable release; `0.3.2` has not been versioned, dated, or promoted, and
+the Playground's `manifest.current` is still `0.3.1`. The entries below ship
+only as numbered `0.3.2-dev.N` preview runtimes, which are selectable in the
+Playground but are not releases.
+
+### Added
+- **Multi-module programs in hosted sessions (B14).** `aura_session_start_project`
+  extends Host ABI 2 — there is no ABI 3 — so a hosted session can run a
+  multi-file program through the existing session, consent, and suspension
+  mechanism. Diagnostics are provenance-aware, attributing findings to the file
+  that produced them. Consent, denial, and suspension paths are reused, not
+  widened.
+- **Browser hosts document their divergences instead of pretending to parity
+  (B6, B7).** A `fetch` with `redirect: "manual"` returns an opaque-redirect
+  response whose real status is not readable, so the worker reports `E4020`
+  rather than inventing a code; duplicate response headers cannot reach the
+  runtime because the platform's `Headers` is a combining collection. Both are
+  asserted as contracts.
+- **Nightly fuzzing actually runs (TD-23).** `rewrite/v3-rust` is now the
+  default branch, which is the only branch whose copy of
+  `fuzz-nightly.yml` the `schedule` trigger resolves. Previously the workflow
+  existed only on a non-default branch and was never registered at all. Proven
+  behaviourally, not structurally: the 03:17 UTC cron fired run `41037980226`
+  (created 10:04Z after GitHub's scheduler queue delay), which ran the
+  front-end targets for 30 minutes each plus a 5-minute runtime sweep and
+  produced no crash artifacts. The workflow file existing was never the
+  evidence; an executed scheduled run was.
+- **Allocation-based cost guards for the encoder.** One guard previously
+  asserted an absolute millisecond bound, which is not portable. It is replaced
+  by a byte-per-output-byte measurement, which is deterministic and
+  platform-independent.
+- **A shared, retrying helper for scaling guards.** The bench suite asserted
+  sub-quadratic growth from a single timing sample. All twelve scaling guards
+  now retry a limited number of times and take each magnitude's own minimum,
+  which distinguishes a transient burst from a real regression without
+  loosening any threshold.
+
+### Changed
+- **Authoritative test commands and validation evidence.** The pull request
+  template now carries the current commands and requires recorded results, so a
+  claim without an executed command is visible in review.
+- **Documentation was reconciled with the shipped contract.** Version and type
+  claims were corrected, a Playground document link that 404'd was fixed, and
+  the technical-debt ledger no longer describes defects that have been closed.
+  This changelog itself claimed the `0.3.2` line was "planned but not started"
+  while the `0.3.2-dev.1`, `-dev.5`, `-dev.7`, and `-dev.8` previews were
+  already committed; it now distinguishes "not released" from "nothing exists".
+- **The Playground document now matches the runtime it describes.**
+  `docs/playground.md` documented `aura_abi_version()` as `1` while the runtime
+  declares `ABI_VERSION = 2`, named `0.2.1` as the current published release
+  after `0.3.1` had shipped, and counted seven manifest entries when there were
+  nine. All three drifted independently and all three are now derived from the
+  repository rather than restated: two `tests/contract_sync.rs` guards read
+  `ABI_VERSION` out of the runtime source and `current` plus the entry count out
+  of `runtimes/manifest.json`, so the prose cannot drift again without a failing
+  test. ADR-0001's `Host ABI 1` was deliberately left unchanged — it is a dated
+  snapshot of the 2026-09-30 state, not a current claim.
+
+### Fixed
+- **Hosted sessions could not resume.** A resumable `aura_session_*` session
+  treated a completed step as a completed program, so a `main` that was only
+  reached after an earlier step was never executed; two routing defects in the
+  same state machine caused the remaining paths to be mis-dispatched. Step
+  completion and program completion are now distinct states.
+- **Sessions dropped initializer bindings.** Values bound by an initializer
+  were not preserved across a park/resume boundary. Pinned by tests covering
+  depth, `finally`, and re-entrancy.
+- **Value encoding was quadratic in the rendered size.** `Value::display`
+  rebuilt each subtree's `String` once per enclosing level, so byte work grew
+  with output times depth. The fuzz `runtime` target reported this as a
+  libFuzzer *timeout* rather than a crash. The encoder now appends into a single
+  buffer: release 0.884s -> 0.024s (37x), debug 3.444s -> 0.268s (12.8x), with
+  byte-identical output.
+- **Two RustSec advisories in the TLS trust chain** were patched, and the
+  unmaintained `rustls-pemfile` dependency was dropped.
+- **SemVer precedence was centralized** and comparator bugs corrected, so
+  version ordering is decided in one place instead of by ad-hoc string
+  comparison.
+- **Playground HTTP request caps are measured in UTF-8 bytes**, not characters,
+  and the ABI expectations are derived rather than hand-copied.
 
 ## [0.3.1] — 2026-10-08
 
