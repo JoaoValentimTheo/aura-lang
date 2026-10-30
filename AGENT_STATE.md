@@ -2,9 +2,9 @@
 
 ## Directive 003 — stabilization and hardening campaign (current)
 
-- Active branch: `rewrite/v3-rust`, remote HEAD **`9548e4df`** — the merge of
-  **PR #14** (TD-27: Playwright was never installed in CI and nine suites
-  treated its absence as success). **Fourteen PRs are merged** this campaign: #2 `f96536b6` (Directive 002 preflight),
+- Active branch: `rewrite/v3-rust`, remote HEAD **`da9ab375`** — the merge of
+  **PR #17** (the validation orchestrator's own regression suite is now a CI
+  job). **Seventeen PRs are merged** this campaign: #2 `f96536b6` (Directive 002 preflight),
   #3 `07845932` (rustls advisories), #4 `a562bacf` (batches 1–5),
   #5 `eaa3b9ed` (TD-23 + default-branch flip), #6 `4a20fa84` (post-merge
   records), #7 `22e73cce` (B6/B7 divergences + website link),
@@ -12,7 +12,11 @@
   project sessions), #10 `a3b7c377` (PR template + Windows flake),
   #11 `c9f88665` (TD-24 cost guard), #12 `1498cd3c` (CHANGELOG + guards),
   #13 `19cc4f22` (website gate + stale HTTP docs),
-  #14 `9548e4df` (TD-27 Playwright gate). The
+  #14 `9548e4df` (TD-27 Playwright gate),
+  #15 `6458c2e6` (state sync after #14),
+  #16 `757eee48` (B7 project-header contract + HTTP transport docs +
+  `test:abi` no longer pinned to the frozen `0.0.2` runtime),
+  #17 `da9ab375` (`scripts/test_validate.py` wired into CI). The
   `/private/tmp/aura-directive-002-release-preflight` worktree and the
   `repair/directive-002-release-preflight` branch are **historical**.
 - **The default branch is `rewrite/v3-rust`** (TD-23): flipped from `master`,
@@ -91,7 +95,7 @@ before continuing substantial work.
 
 - Branch: `rewrite/v3-rust`
 - **Git reality (verify with `git rev-parse`, do not trust prose):**
-  `origin/rewrite/v3-rust` is at **`9548e4df`**, the merge commit of PR #14.
+  `origin/rewrite/v3-rust` is at **`da9ab375`**, the merge commit of PR #17.
   Tag **`v0.3.1` = `b09cbef2`**. Aura 0.3.1 (Keystone) is the current release
   (release = language = `0.3.1`, runtime `0.3.1` is the Playground default) and
   is **PUBLISHED**. The earlier `b221e6a9`/`v0.2.1` notes below are

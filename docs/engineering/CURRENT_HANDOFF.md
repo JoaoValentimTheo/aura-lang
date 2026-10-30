@@ -2,11 +2,13 @@
 
 ## Current local task — Directive 003-R, stabilization campaign
 
-`rewrite/v3-rust` is the **default branch** and HEAD is **`9548e4df`** (the
-merge of PR #14). Fourteen PRs are merged this campaign: #2, #3, #4, #5, #6,
+`rewrite/v3-rust` is the **default branch** and HEAD is **`da9ab375`** (the
+merge of PR #17). Seventeen PRs are merged this campaign: #2, #3, #4, #5, #6,
 #7, #8, #9 (B14), #10 (PR template), #11 (TD-24 cost guard), #12 (CHANGELOG
 `[Unreleased]` + TD-25), #13 (website suite gate + TD-26), #14 (TD-27
-Playwright gate). The Directive 003-R authorization recorded in
+Playwright gate), #15 (state sync), #16 (B7 project-header contract + HTTP
+transport docs + `test:abi`), #17 (validation orchestrator self-tests in CI).
+The Directive 003-R authorization recorded in
 `AGENTS.md` permits push, PR creation and merge, workflow administration, and
 default-branch changes; force-push, history removal, tag moves, frozen-WASM
 replacement, gate weakening, and unapproved stable releases remain forbidden.
@@ -61,10 +63,20 @@ browser suites self-skipped per TD-27).
   wired here: adding a browser download changes the job's runtime and failure
   modes and deserves its own change with its own evidence.
 
-**Exact next action:** continue §6 with B7's per-Host header contract tests on
-the multi-module path — the next substantive campaign item, since B7's
-single-module contract is pinned but the project-session path was only covered
-for status codes, not header semantics.
+**Exact next action:** PR #16 completed the B7 project-header contract, so the
+item that used to be listed here is done. Directive 003-R §4 is now fully
+closed: B6 is a formalized divergence pinned by `http-security.test.mjs`
+("4 redirected call reports E4020", plus "never prints a status"), B7's
+single-module and project-session header contracts are both pinned, B14 shipped
+as `0.3.2-dev.8`, and TD-23 is behaviourally verified (scheduled run
+`41037980226` executed 30 min per front-end target plus a 5 min runtime sweep,
+96 min wall time, no crash artifacts). Continue §6 on the remaining
+high-yield surfaces — Host/Python/WASM security, benchmark regressions,
+fuzz-target coverage, differential/property suites, supply chain, and any
+`test:*`-style script or suite that no runner invokes. Two such rot instances
+are already fixed (`test:abi` in #16, `scripts/test_validate.py` in #17); an
+audit of both test trees found every remaining suite wired, so look next for
+*assertions* that cannot fail rather than for unwired files.
 
 **TD-27 — merged `9548e4df`.** Closed the last unproven surface in CI. The
 browser suites had never executed: no job installed Playwright, and nine suites
