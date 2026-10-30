@@ -335,10 +335,33 @@ impl Compilation {
         self.entry_source
     }
 
+    /// Per-item source ownership, when the compilation was assembled from
+    /// several sources. `None` for a one-source compilation, whose items all
+    /// belong to [`Compilation::entry_source`].
+    #[must_use]
+    pub fn item_sources(&self) -> Option<&[SourceId]> {
+        self.item_sources.as_deref()
+    }
+
     /// Consume the compilation and return its components.
     #[must_use]
     pub fn into_parts(self) -> (ast::Module, SourceMap, SourceId) {
         (self.module, self.sources, self.entry_source)
+    }
+
+    /// Consume the compilation, retaining per-item source ownership.
+    ///
+    /// A caller that executes through a resumable session needs the provenance
+    /// [`Compilation::into_parts`] discards, so a multi-source run can still
+    /// attribute a diagnostic to the file that owns the failing item.
+    #[must_use]
+    pub fn into_parts_sourced(self) -> (ast::Module, SourceMap, SourceId, Option<Vec<SourceId>>) {
+        (
+            self.module,
+            self.sources,
+            self.entry_source,
+            self.item_sources,
+        )
     }
 
     /// Execute this compilation with an explicit runtime context.

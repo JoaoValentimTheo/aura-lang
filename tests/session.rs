@@ -135,6 +135,80 @@ fn drive_steps(
     }
 }
 
+/// A global initializer must not end the session: `main` still has to run.
+///
+/// Regression: `advance` used to report `Completed` after the first
+/// initializer, so a program with any top-level binding silently never
+/// reached `main` on the resumable path (the synchronous engine was fine).
+#[test]
+fn session_runs_main_after_a_global_initializer() {
+    let (rig, last) = drive_steps("const X = 1\nfn main() {\n    print(X + 1)\n}\n", |_, _| {
+        panic!("no effect expected")
+    });
+    assert!(matches!(last, Step::Completed), "{last:?}");
+    assert_eq!(rig.stdout(), "2\n");
+}
+
+/// Several initializers run in order before `main`.
+#[test]
+fn session_runs_main_after_several_global_initializers() {
+    let source = "const A = 2\nconst B = A * 3\nfn main() {\n    print(B)\n}\n";
+    let (rig, last) = drive_steps(source, |_, _| panic!("no effect expected"));
+    assert!(matches!(last, Step::Completed), "{last:?}");
+    assert_eq!(rig.stdout(), "6\n");
+}
+
+/// A `const` initializer that parks on an effect must resume into its binding.
+///
+/// Regression: the resume path routed the resumed outcome as if it were
+/// top-level completion, so `finish_global` never ran for the parked
+/// initializer: the binding stayed undefined and `main` never saw it. The
+/// session reported `Completed` with `done == false`.
+#[test]
+fn session_binds_a_const_that_parks_on_an_effect() {
+    let src = r#"const R = http_get("http://example.test/a")
+fn main() {
+    print(R["status"])
+}
+"#;
+    let (rig, last) = drive_steps(src, |_, _| Ok(response_value(200, "ok")));
+    assert!(matches!(last, Step::Completed), "{last:?}");
+    assert_eq!(rig.seen().len(), 1);
+    assert_eq!(rig.stdout(), "200\n");
+}
+
+/// An initializer that parks *twice* keeps its binding across both resumes.
+///
+/// The in-flight item must survive every park, not just the first: dropping it
+/// on the second would silently lose the binding again.
+#[test]
+fn session_binds_a_const_that_parks_twice() {
+    let src = r#"const R = http_get("http://example.test/a")["status"] + http_get("http://example.test/b")["status"]
+fn main() {
+    print(R)
+}
+"#;
+    let (rig, last) = drive_steps(src, |_, _| Ok(response_value(200, "ok")));
+    assert!(matches!(last, Step::Completed), "{last:?}");
+    assert_eq!(rig.seen().len(), 2);
+    assert_eq!(rig.stdout(), "400\n");
+}
+
+/// A *failed* effect on a parked initializer must fail the session, naming
+/// the initializer's own source.
+#[test]
+fn session_reports_a_failed_initializer_effect() {
+    let src = r#"const R = http_get("http://example.test/a")
+fn main() {
+    print(R["status"])
+}
+"#;
+    let (_rig, last) = drive_steps(src, |_, _| {
+        Err(Diag::new(codes::IO, "connection refused", Span::default()))
+    });
+    assert!(matches!(last, Step::Diagnostic(_)), "{last:?}");
+}
+
 const HTTP_OK: &str = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok";
 
 /// Build the Aura response value for a scripted effect (mirrors the native
@@ -484,3 +558,195 @@ fn multi_effect_program_prints_nothing_twice() {
 // HTTP suite even though the scripted host replaces the socket.
 #[allow(dead_code)]
 const _LOOPBACK_RESPONSE: &str = HTTP_OK;
+
+// ---------------------------------------------------------------------------
+// B14 — a provider-backed (multi-source) session keeps per-item provenance
+// ---------------------------------------------------------------------------
+
+/// Drive a provider-compiled project, returning the rig, the terminal step,
+/// and the source that terminal diagnostic is attributed to.
+fn drive_project(
+    sources: &[(&str, &str, &str)],
+    entry: &str,
+    answer: impl Fn(usize, &HttpRequest) -> Result<Value, Diag>,
+) -> (Rig, Step, Option<String>) {
+    use aura::module_graph::{InMemorySourceProvider, SourceKey};
+
+    let mut provider = InMemorySourceProvider::new(SourceKey::new(entry));
+    for (key, name, text) in sources {
+        provider
+            .insert_source(SourceKey::new(*key), *name, *text)
+            .expect("insert source");
+    }
+    // Every non-entry source is a child of the entry, in sorted order.
+    let mut ordered: Vec<&(&str, &str, &str)> =
+        sources.iter().filter(|(key, _, _)| *key != entry).collect();
+    ordered.sort_by_key(|(k, _, _)| *k);
+    for (key, _, _) in ordered {
+        provider
+            .add_child(
+                &SourceKey::new(entry),
+                key.rsplit('/').next().unwrap_or(key),
+                &SourceKey::new(*key),
+            )
+            .expect("add child");
+    }
+
+    let compilation =
+        aura::compile_provider_with_mode(&provider, aura::CompileMode::Program).expect("compile");
+    let (module, sources_map, entry_source, item_sources) = compilation.into_parts_sourced();
+    let item_sources = item_sources.expect("provider compilations retain provenance");
+
+    let rig = Rig::new();
+    let host = SuspendHost::new(rig.out.clone(), rig.seen.clone());
+    let mut interp = Interp::new();
+    interp.set_host(Box::new(host));
+    let mut session =
+        RunSession::start_sourced(interp, &module, &item_sources, entry_source).expect("session");
+
+    let mut index = 0usize;
+    let mut last = session.advance();
+    loop {
+        match &last {
+            Step::Completed => return (rig, last, None),
+            Step::Diagnostic(_) => {
+                let owner = session
+                    .diagnostic_source()
+                    .and_then(|id| sources_map.get(id))
+                    .map(|source| source.name().to_string());
+                return (rig, last, owner);
+            }
+            Step::Pending(_) => {
+                let effect = session.pending().cloned().expect("pending");
+                let aura::host::PendingEffect::Http(request) = effect;
+                let result = answer(index, &request);
+                index += 1;
+                last = match result {
+                    Ok(v) => session.resume_effect(v),
+                    Err(d) => session.fail_effect(d),
+                };
+            }
+        }
+    }
+}
+
+#[test]
+fn project_session_suspends_and_names_the_failing_source() {
+    // Two sources: `main.aura` calls into `net.aura`, which performs the
+    // request. The session must still park (so B14 gets HTTP at all) *and*
+    // attribute a later failure to the file that raised it.
+    let sources = [
+        (
+            "main",
+            "main.aura",
+            r#"fn main() {
+    let r = net::fetch()
+    print(r["status"])
+    net::fail_now()
+}"#,
+        ),
+        (
+            "net",
+            "net.aura",
+            r#"pub fn fetch() {
+    http_get("http://example.test/p")
+}
+
+pub fn fail_now() {
+    let d = 1 / 0
+    print(d)
+}"#,
+        ),
+    ];
+
+    let (rig, last, owner) = drive_project(&sources, "main", |_, _| Ok(response_value(204, "")));
+    assert_eq!(rig.stdout(), "204\n");
+    assert_eq!(
+        rig.seen().len(),
+        1,
+        "the request must be issued exactly once"
+    );
+    assert_eq!(rig.seen()[0].method, "GET");
+    match &last {
+        Step::Diagnostic(d) => assert_ne!(d.code, aura::error::codes::INTERNAL, "{d:?}"),
+        other => panic!("expected a diagnostic, got {other:?}"),
+    }
+    assert_eq!(
+        owner.as_deref(),
+        Some("net.aura"),
+        "a runtime diagnostic must name the file that raised it"
+    );
+}
+
+#[test]
+fn project_session_completes_when_every_source_is_clean() {
+    let sources = [
+        (
+            "main",
+            "main.aura",
+            r#"fn main() {
+    print(util::twice(21))
+}"#,
+        ),
+        (
+            "util",
+            "util.aura",
+            r#"pub fn twice(n: int) -> int {
+    n * 2
+}"#,
+        ),
+    ];
+    let (rig, last, owner) = drive_project(&sources, "main", |_, _| {
+        panic!("no effect expected");
+    });
+    assert!(matches!(last, Step::Completed), "{last:?}");
+    assert_eq!(rig.stdout(), "42\n");
+    assert!(owner.is_none());
+}
+
+#[test]
+fn project_session_names_a_failing_global_initializer() {
+    // A *global* initializer failure is not inside any function body, so it has
+    // no closure provenance to consult: the session must attribute it from the
+    // item's own source instead.
+    let sources = [
+        (
+            "main",
+            "main.aura",
+            r#"fn main() {
+    print(bad::value)
+}"#,
+        ),
+        ("bad", "bad.aura", r#"pub let value = 1 / 0"#),
+    ];
+    let (_rig, last, owner) = drive_project(&sources, "main", |_, _| {
+        panic!("no effect expected");
+    });
+    assert!(matches!(last, Step::Diagnostic(_)), "{last:?}");
+    assert_eq!(
+        owner.as_deref(),
+        Some("bad.aura"),
+        "a failing global initializer must name its own source"
+    );
+}
+
+#[test]
+fn project_session_names_a_lambda_created_in_a_global_initializer() {
+    // A lambda captures the source that was current when it was *built*. This
+    // one is built while evaluating `bad.aura`'s global initializer, so its
+    // later failure belongs to `bad.aura`, not to the caller in `main`.
+    let sources = [
+        (
+            "main",
+            "main.aura",
+            r#"fn main() {
+    print(bad::f())
+}"#,
+        ),
+        ("bad", "bad.aura", r#"pub let f = () -> 1 / 0"#),
+    ];
+    let (_rig, last, owner) = drive_project(&sources, "main", |_, _| {
+        panic!("no effect expected");
+    });
+    assert_eq!(owner.as_deref(), Some("bad.aura"), "{last:?}");
+}

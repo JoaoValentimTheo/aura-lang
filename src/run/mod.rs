@@ -825,7 +825,26 @@ impl Interp {
         self.declare_item_with_source(item, None);
     }
 
-    fn declare_item_with_source(&mut self, item: &Item, source: Option<SourceId>) {
+    /// Set the source every subsequently evaluated expression is attributed
+    /// to. Used by resumable sessions, which interleave items from several
+    /// sources and so cannot rely on the single `entry_source` of a
+    /// synchronous run.
+    pub(crate) const fn set_current_source(&mut self, source: Option<SourceId>) {
+        self.current_source = source;
+    }
+
+    /// Take the source recorded for the most recent failure, if the raise site
+    /// was known. Mirrors what `run_iterative_sourced` reads.
+    pub(crate) fn take_error_source(&mut self) -> Option<SourceId> {
+        self.last_error_source.take()
+    }
+
+    /// Clear the recorded failure source before evaluating an item.
+    pub(crate) const fn clear_error_source(&mut self) {
+        self.last_error_source = None;
+    }
+
+    pub(crate) fn declare_item_with_source(&mut self, item: &Item, source: Option<SourceId>) {
         match item {
             Item::Fn {
                 name,
