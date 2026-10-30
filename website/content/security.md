@@ -23,8 +23,10 @@ deliberate escape hatch to full host authority through CPython.
 - **Fuzzing.** Lexer, parser, checker, and runtime are exercised by a bounded
   libFuzzer smoke run on every push and pull request (60 s per target under ASan);
   the property suite additionally asserts no host panic under arbitrary input.
-  A longer nightly campaign is declared in `fuzz-nightly.yml` but does not run —
-  see TD-23.
+  A longer nightly campaign (`fuzz-nightly.yml`) runs on the default branch, so
+  the four targets get an extended run every night on top of the per-push smoke.
+  A nightly crash fails the run and uploads its artifacts rather than being
+  hidden behind `continue-on-error`.
 - **Resource limits.** Every user-controlled size is bounded with a structured
   diagnostic, never a crash (`E1015` nesting, `E4013` overflow/range, and so
   on).

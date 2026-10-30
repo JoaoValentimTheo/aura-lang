@@ -8,6 +8,19 @@ name: Fuzz (nightly)
 # `continue-on-error` (a nightly run that always looks green cannot signal a
 # regression). Crash artifacts are uploaded regardless of outcome.
 #
+# IMPORTANT — this file only takes effect on the repository's DEFAULT branch.
+# GitHub resolves both `schedule` and `workflow_dispatch` from the default
+# branch, and a branch-local workflow with neither `push` nor `pull_request`
+# is not even registered. When this file lived only on `rewrite/v3-rust` the
+# workflow did not exist as far as the scheduler was concerned (the API
+# answered `HTTP 404` for it), so the nightly run never fired — despite the
+# YAML being present and correct. Adding a `push` trigger would register the
+# workflow and make dispatch reachable, but would NOT make the cron fire: the
+# scheduled run still executes the default branch's copy, which had no `fuzz/`
+# directory at all. The remedy is to make this the default branch. See TD-23
+# in `docs/engineering/TECHNICAL_DEBT.md`. Do not "fix" the schedule by adding
+# a `push` trigger and assuming the cron came back to life.
+#
 # Supply chain: actions are pinned by version (never `@main`/`@latest`),
 # matching the repository's existing policy; the workflow requests only
 # `contents: read`.

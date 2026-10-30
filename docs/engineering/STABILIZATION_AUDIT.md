@@ -369,18 +369,29 @@ arguments, preserved environments/spans, stale-effect rejection) are covered by
    reachable only from a session on the browser host) are documented as
    browser-host policy in `website/content/playground-doc.md`. None is fixed
    unilaterally.
-4. **Nightly fuzzing has never run and cannot be run (TD-23)**: `.github/workflows/fuzz-nightly.yml`
+4. **Nightly fuzzing has never run and cannot be run (TD-23) — FIXED**: `.github/workflows/fuzz-nightly.yml`
    is `schedule`-triggered but exists only on `rewrite/v3-rust`; `schedule` fires
    solely on the default branch (`master`), which lacks the file. It is also the
    only workflow without a branch `push` trigger, which is exactly why `ci.yml`
-   and `pages.yml` *are* registered despite being absent from `master`. Closing
-   the gap requires a merge to `master`, a default-branch change, or adding that
-   same `push: branches: ["rewrite/**", master, main]` trigger — the first two
-   are protected actions. `workflow_dispatch` is **not** a workaround: GitHub
-   resolves dispatched workflows against the default branch, so
-   `gh workflow list` shows only `CI`, `Release`, and `Deploy website`, and
-   `gh workflow view fuzz-nightly.yml` returns HTTP 404. Fuzzing is unreachable
-   by every trigger the file declares until it reaches `master`.
+   and `pages.yml` *are* registered despite being absent from `master`.
+   `workflow_dispatch` is **not** a workaround: GitHub resolves dispatched
+   workflows against the default branch, so `gh workflow list` showed only `CI`,
+   `Release`, and `Deploy website`, and `gh workflow view fuzz-nightly.yml`
+   returned HTTP 404.
+   The remedy originally recorded here — adding the same
+   `push: branches: ["rewrite/**", master, main]` trigger — is **wrong** and was
+   superseded: a `push` trigger *registers* the workflow and makes dispatch
+   reachable, but the cron still executes the **default branch's** copy, which has
+   no `fuzz/` directory, so the night would stay dark while the workflow looked
+   enabled. That is a false green. **`rewrite/v3-rust` was instead made the
+   default branch**, which makes this branch's cron live without duplicating
+   files. All preconditions were verified first: `master` is a strict ancestor
+   (`0 572`, no history lost), the five release tags are untouched and none was
+   ever on `master`, no open PR targeted `master`, neither branch is protected,
+   rulesets are empty, `release.yml` triggers on tags so it is branch-independent,
+   and the `github-pages` environment allowlist already contains
+   `rewrite/v3-rust`. The fix is confirmed behaviourally — the workflow appears in
+   `gh workflow list` and a dispatched run goes green — not by the YAML existing.
 5. **REPL O(N²) (TD-13)**: re-confirmed, not fixed. The O(N²) is real
    (release: 6.8 ms at N=100 → 1886 ms at N=3200, ~3.5–4.0× per doubling) and its
    cost is entirely `Checker::with_declarations` (linear, 1.8–2.6 µs/decl,
