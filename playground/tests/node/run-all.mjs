@@ -133,6 +133,9 @@ run("b1 boundary", [join(here, "b1_boundary.test.mjs"), freshWasm]);
 // Playground selects; the fresh wasm is the same source and is covered by the
 // differential/syntax gates above.
 run("session-http", [join(here, "session-http.test.mjs")]);
+// B14: HTTP from a virtual *project*. Same committed dev artifact, same resume
+// contract, but the effect is produced by a non-entry module.
+run("project-http", [join(here, "project-http.test.mjs")]);
 if (!differentialRan) {
   console.error("\n=== differential ===\nFAILED: not run");
   process.exit(1);

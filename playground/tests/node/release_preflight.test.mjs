@@ -202,4 +202,4 @@ try {
 }
 
 console.log(`release-preflight: ${passed} passed, ${failed} failed`);
-if (failed > 0) process.exit(1);
+if (failed > 0) process.exitCode = 1;

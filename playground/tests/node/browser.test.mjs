@@ -712,7 +712,7 @@ async function runAndWait(page, timeout = 15000) {
   // release keeps its historical fatal E4020 (pinned below); the 0.3.2
   // development runtime completes with a bounded preview and an explicit
   // truncation note.
-  await page.selectOption("#version", "0.3.2-dev.7");
+  await page.selectOption("#version", "0.3.2-dev.8");
   await setSource(
     page,
     "fn main() {\n  for i in 0..600000 {\n    print(i)\n  }\n}",
@@ -755,7 +755,7 @@ async function runAndWait(page, timeout = 15000) {
 // --- 14. output preview resets between runs --------------------------------
 {
   const { page, errors } = await newPage();
-  await page.selectOption("#version", "0.3.2-dev.7");
+  await page.selectOption("#version", "0.3.2-dev.8");
   await setSource(page, "fn main() {\n  for i in 0..300000 {\n    print(i)\n  }\n}");
   await runAndWait(page, 60000);
   await setSource(page, 'fn main() { print("clean") }');
@@ -771,5 +771,5 @@ await browser.close();
 server.close();
 
 console.log(`\nBrowser: ${passed} passed, ${failed} failed`);
-process.exit(failed === 0 ? 0 : 1);
+process.exitCode = failed === 0 ? 0 : 1;
 

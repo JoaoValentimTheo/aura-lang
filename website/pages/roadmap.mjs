@@ -89,7 +89,7 @@ const PHASES = [
     tag: "In development",
     kind: "status",
     title: "0.3.2 · development preview",
-    body: "The next line after Keystone is under development: it has a development runtime artifact (<code>0.3.2-dev.7</code>, Host ABI 2) selectable in the Playground, but <strong>no release, version bump, or date</strong>. The development runtime adds real <strong>browser HTTP</strong> (<code>http_get</code>/<code>http_request</code> through a user-authorized, per-origin permission model) and a <strong>bounded output policy</strong> that keeps large output from failing a program. The published <code>0.3.1</code> runtime is unchanged and remains the default; nothing here is a release.",
+    body: "The next line after Keystone is under development: it has a development runtime artifact (<code>0.3.2-dev.8</code>, Host ABI 2) selectable in the Playground, but <strong>no release, version bump, or date</strong>. The development runtime adds real <strong>browser HTTP</strong> (<code>http_get</code>/<code>http_request</code> through a user-authorized, per-origin permission model) and a <strong>bounded output policy</strong> that keeps large output from failing a program. The published <code>0.3.1</code> runtime is unchanged and remains the default; nothing here is a release.",
   },
   {
     tag: "Planned (not started)",

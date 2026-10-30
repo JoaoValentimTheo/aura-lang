@@ -2,12 +2,19 @@
 
 ## Directive 003 — stabilization and hardening campaign (current)
 
-- Active branch: `rewrite/v3-rust`, local HEAD **`a562bacf`** — the merge of
-  **PR #4**, which integrated the first stabilization batch. Nothing is
-  unpublished. Directive 002 (PR #2), the rustls remediation (PR #3), and the
-  batch-1 integration (PR #4) are all **merged**; the
+- Active branch: `rewrite/v3-rust`, local HEAD **`1aa301c6`** — the merge of
+  **PR #8** (resumable-session provenance and the encoder cost defect).
+  Directive 002 (PR #2), the rustls remediation (PR #3), and integrations
+  PR #4, #5, #6, #7, #8 are all **merged**; the
   `/private/tmp/aura-directive-002-release-preflight` worktree and the
   `repair/directive-002-release-preflight` branch are **historical**.
+- **The default branch is `rewrite/v3-rust`** (TD-23): flipped from `master`,
+  which is a strict ancestor (`0 587`), after verifying no rulesets, no branch
+  protection, no open PRs to `master`, five tags, and a tag-triggered
+  `release.yml`. `gh workflow list` now reports `Fuzz (nightly)` where it
+  previously 404'd, and `gh workflow run fuzz-nightly.yml` queued a run — the
+  workflow is *registered*. It has **not** yet produced a `schedule`-event run
+  (cron `17 3 * * *`); do not claim otherwise until one exists.
 - **Directive 003-R authorization is in force** (`AGENTS.md`, "Standing
   authorization"): push, PR, merge, workflow administration, and fixes for B6,
   B7, B14, TD-23 are permitted. Force-push, history removal, tag moves,
@@ -29,12 +36,14 @@
   workflow recorded as TD-23; (5) two RustSec advisories in the TLS trust
   chain patched (`rustls-webpki` 0.103.16, `webpki-roots` 1.0.10). Batches 1–5
   are **merged** via PR #4 with all 20 remote checks green.
-- Open findings, authorized but not yet fixed: B6 (redirect status parity is
-  technically impossible in the browser — §4 permits formalizing the
-  divergence), B7 (documentation-only: the code is already correct on both
-  hosts), B14 (needs resumable module execution; the ABI-2 session path is
-  single-source today), and TD-23 (workflow is invisible because GitHub
-  resolves `schedule` from the default branch, which is `master`).
+- **B6, B7, B14 and TD-23 are all closed.** B6 and B7 are formalized
+  divergences (browser `opaqueredirect` exposes no status; `Headers` is a
+  combining collection), stated normatively in `docs/LANGUAGE_SPEC.md` §25 and
+  pinned by tests. B14 is **implemented**: `aura_session_start_project`
+  extends Host ABI 2 *in place* (`ABI_VERSION` stays `2`, no frozen runtime
+  touched) and ships as the feature-detected `0.3.2-dev.8` artifact, proved by
+  `playground/tests/node/project-http.test.mjs` with a negative control.
+  TD-23's default-branch flip is executed and behaviourally verified.
 - Exact next action: `docs/engineering/CURRENT_HANDOFF.md`.
 
 Compact current engineering state. Rules: `AGENTS.md`. Active task and exact
