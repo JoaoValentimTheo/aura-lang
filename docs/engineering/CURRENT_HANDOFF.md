@@ -165,13 +165,13 @@ G01 dependency study — every result below is a real compile, not a lookup:
 
 ```text
 touch src/lib.rs && cargo +1.83.0 check --locked --all-features
-    -> Checking aura-lang v0.3.1 ... Finished in 5.21s   exit 0
+    -> Checking aura-lang v0.3.1, Finished               exit 0
 /tmp/msrv_rusq   rusqlite 0.37.0 bundled, cargo +1.83.0 check --locked
-    -> Checking rusqlite v0.37.0 ... Finished in 4.91s   exit 0
+    -> Checking rusqlite v0.37.0, Finished               exit 0
 /tmp/msrv_pg     tokio-postgres 0.7.13, default-features=false
-    -> block-buffer-0.12.1/Cargo.toml, edition2024 required   exit 101
+    -> block-buffer-0.12.1/Cargo.toml: edition2024 required   exit 101
 /tmp/msrv_count  sqlx 0.7.4 (188 pkgs, 5 edition-2024)
-    -> getrandom-0.4.3/Cargo.toml, edition2024 required       exit 101
+    -> edition2024 required; first blocker getrandom-0.4.3    exit 101
 cargo update -p idna_adapter --precise 1.2.1   # applied
 cargo update -p hashbrown --precise 0.15.5     # error: ambiguous
 cargo update -p icu_provider --precise 2.0.0   # error: requires ^2.4.0
