@@ -407,6 +407,83 @@ fn type_parameter_cannot_shadow_any_visible_declared_type() {
     );
 }
 
+// -------------------------------------- method type-parameter bounds (E3002)
+
+const TRAIT_DEFS: &str = "trait Named { fn name(self) -> string }\n\
+struct Dog { n: string }\n\
+impl Named for Dog { fn name(self) -> string { return self.n } }\n";
+
+/// `LANGUAGE_SPEC.md` §36.4: a bound is a static contract naming a real trait.
+/// `check_type_param_bounds` enforced this at every declaration site except the
+/// four method sites, so an unknown trait was silently accepted inside an
+/// `impl` and inside a `trait` while the identical bound on a free function was
+/// `E3002`. A method's parameters obey the same declaration rules (§36.5).
+#[test]
+fn method_type_parameter_bound_must_name_a_known_trait() {
+    // Trait method declaration.
+    assert_eq!(
+        code("trait C { fn h<U: NoSuchTrait>(self, x: U) -> U }\nfn main() { }"),
+        codes::UNKNOWN_TYPE
+    );
+    // Inherent impl method.
+    assert_eq!(
+        code("struct B<T> { v: T }\nimpl<T> B<T> { fn f<U: NoSuchTrait>(self, x: U) -> U { return x } }\nfn main() { }"),
+        codes::UNKNOWN_TYPE
+    );
+    // Trait-impl method, whose declaration is checked in the conformance pass.
+    assert_eq!(
+        code(&format!(
+            "{TRAIT_DEFS}trait C {{ fn h<U: Named>(self, x: U) -> string }}\n\
+impl C for Dog {{ fn h<U: NoSuchTrait>(self, _x: U) -> string {{ return \"k\" }} }}\n\
+fn main() {{ }}"
+        )),
+        codes::UNKNOWN_TYPE
+    );
+    // A function bound is still rejected, so the rule is not site-specific.
+    assert_eq!(
+        code("fn f<T: NoSuchTrait>(x: T) -> T { return x }\nfn main() { }"),
+        codes::UNKNOWN_TYPE
+    );
+}
+
+/// The diagnostic must name the offending parameter, not merely fail.
+#[test]
+fn method_type_parameter_bound_diagnostic_names_the_parameter() {
+    let err = run_source(
+        "struct B<T> { v: T }\nimpl<T> B<T> { fn f<U: NoSuchTrait>(self, _x: U) -> int { return 1 } }\nfn main() { }",
+        "<generics>",
+    )
+    .expect_err("expected a rejected bound");
+    let message = &err.message;
+    assert!(message.contains("NoSuchTrait"), "{message}");
+    assert!(message.contains("bound of `U`"), "{message}");
+}
+
+/// A valid bound on a method must keep working at both sites, and a method
+/// that adds its own bound must still be callable — the negative tests above
+/// must not have been bought by rejecting every method bound.
+#[test]
+fn method_type_parameter_with_a_valid_bound_still_runs() {
+    // Inherent impl method with a real bound.
+    assert_eq!(
+        ok(&format!(
+            "{TRAIT_DEFS}struct B {{ v: int }}\n\
+impl B {{ fn f<U: Named>(self, x: U) -> string {{ return x.name() }} }}\n\
+fn main() {{ let b = B {{ v: 1 }}\n let d = Dog {{ n: \"rex\" }}\n print(b.f(d)) }}"
+        )),
+        "rex\n"
+    );
+    // Trait declaration and its impl, both carrying the bound.
+    assert_eq!(
+        ok(&format!(
+            "{TRAIT_DEFS}trait C {{ fn h<U: Named>(self, x: U) -> string }}\n\
+impl C for Dog {{ fn h<U: Named>(self, x: U) -> string {{ return x.name() }} }}\n\
+fn main() {{ let d = Dog {{ n: \"rex\" }}\n print(d.h(d)) }}"
+        )),
+        "rex\n"
+    );
+}
+
 // ---------------------------------------- generic return-position checking
 
 /// `LANGUAGE_SPEC.md` §15.2: every `return` in a function with a declared
