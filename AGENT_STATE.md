@@ -2,10 +2,10 @@
 
 ## Directive 003 — stabilization and hardening campaign (current)
 
-- Active branch: `rewrite/v3-rust`, remote HEAD **`a0423769`** — the merge of
-  **PR #27** (state sync recording PR #26, CORE FIRST: a body's implicit value
-  is now validated against the declared return type).
-  **Twenty-six PRs are merged** this campaign:
+- Active branch: `rewrite/v3-rust`, remote HEAD **`cff9d4a5`** — the merge of
+  **PR #28** (CORE FIRST: three defects in transitive `pub use` re-export
+  resolution, fixed and regression-tested).
+  **Twenty-seven PRs are merged** this campaign:
   #2 `f96536b6` (Directive 002 preflight),
   #3 `07845932` (rustls advisories), #4 `a562bacf` (batches 1–5),
   #5 `eaa3b9ed` (TD-23 + default-branch flip), #6 `4a20fa84` (post-merge
@@ -29,7 +29,8 @@
   `02c3c897` (CORE FIRST: Set `add`/`has`/`contains`/`remove` element typing),
   #25 `69cd4dba` (state sync for #24 and the CORE FIRST probe results),
   #26 `b843dc85` (CORE FIRST: return-type tail validation, three defects),
-  #27 `a0423769` (state sync for #26).
+  #27 `a0423769` (state sync for #26), #28 `cff9d4a5` (CORE FIRST: transitive
+  `pub use` re-export chains resolve in every source order).
   The
   `/private/tmp/aura-directive-002-release-preflight` worktree and the
   `repair/directive-002-release-preflight` branch are **historical**.
@@ -142,7 +143,7 @@
 - Scope: infrastructure recovery. CORE FIRST work resumes after this migration
   lands.
 
-## CORE FIRST — `pub use` re-export resolution — fixed, unpublished
+## CORE FIRST — `pub use` re-export resolution — merged, `cff9d4a5` (PR #28)
 
 **Three** independent defects in `src/resolve.rs`, all violating the §27 clause
 that "a re-export chain resolves transitively and terminates deterministically"
@@ -1143,17 +1144,35 @@ and `v0.3.1` = `b09cbef2`. Batches 1–5, B6/B7/B14, TD-23, TD-24, TD-27,
 Directive 004, TD-13, the resolver type-parameter leak, the set key-method
 element typing and return-type tail validation are **merged and closed**.
 Directive 003-R §4's blockers are closed.
-**Exact next action:** merge PR #28 (`fix/pub-use-reexport-resolution`, the
-`pub use` re-export resolution fix above) once remote CI is green, then begin the
-next CORE FIRST work
-item — a real, reproduced defect in `src/`, `tests/`, or `fuzz/`, shipped as one
-PR carrying a reproducible case, a regression test that fails before the fix, the
-fix, and a passing test.
+**Exact next action:** PR #28 is merged (`cff9d4a5`, CI 21/21).
+Begin the next CORE FIRST work item — a real, reproduced defect in `src/`,
+`tests/`, or `fuzz/`, shipped as one PR carrying a reproducible case, a
+regression test that fails before the fix, the fix, and a passing test.
 Highest-value unfinished leads already recorded here: (a) lexer/parser
 ambiguities, precedence, adversarial input and error recovery,
 (b) checker scopes, generics, mutability, (c) evaluator control flow, closures,
 resource limits, (d) collections and bounds, (e) module cycles,
 (f) Host/Python/WASM capability and panic boundaries.
+Probed and found conformant this round (do not re-investigate): integer
+division/modulo truncate toward zero (`-7 % 3 == -1`, `-7 / 3 == -2`);
+`i64::MAX + 1`, `2 ^ 63`, `i64::MIN / -1` and `i64::MIN % -1` all raise
+`E4013` with no Rust panic escaping; `-9223372036854775808` is a legal literal
+and `1 / 0` is `E4007`; negative indexing wraps on list, tuple and string per
+spec 1420/2473 and out-of-range is `E4019`; string indexing is char-based
+(`"héllo"[1]` is `é`); map missing key is `E2003` per spec 2668; `for` binds a
+fresh cell per iteration so `[() -> i for i in 0..3]` prints `0 1 2` while a
+`while` loop captures one shared cell and prints `3 3 3`; recursion stops at the
+documented 512 frames with `E4011` (spec 1865/3654); a zero-payload variant is
+constructed as `A()` and a bare `A` is `E2003` per spec 2389; qualified variant
+paths `Color::Red()` and `Opt::Some(1)` work; generic `Box<T>`/`id<T>` infer
+through struct fields and lists; `filter`/`map`/`reduce` work with `(x) -> e`
+lambda syntax; private struct fields are rejected across modules with `E2018`.
+**Three earlier "findings" were my own syntax errors, not defects:** a lambda is
+`(x) -> e` or `fn x -> e`, never `|x| e` (spec 724/1809); `enum` and `match`
+arms require newlines between variants (spec 555, rule 10 in the module-traps
+list); slices `xs[1..3]` are not supported (`E3001: cannot index list with
+range`). `index_of`, `sorted` and `P::sum` as a value are not in the method
+inventory — do not treat their rejection as a defect.
 Probed and found conformant (do not re-investigate): HOF arity and ordering
 (`reduce` is `(list, fn, init)`), `zip` truncating to the shortest input,
 `map`/`filter`/`enumerate`, closure capture by reference with per-call cells,

@@ -1,11 +1,100 @@
 # Current Engineering Handoff
 
-## Current task — CORE FIRST: `pub use` re-export resolution (three defects)
+## Current task — CORE FIRST probe round: semantics sweep (no defect found)
 
-**Status:** fixed on `fix/pub-use-reexport-resolution` (PR #28); full validation
-floor green; not yet merged.
+**Status:** complete, no confirmed defect. No code change is pending from this
+round. The next work item is a *new* reproduced defect.
 
-### The contract
+### What was done
+
+Thirty-plus CLI probes were run against a rebuilt `--release` binary, each in its
+own fresh directory (`/tmp/probe.sh <name> <source>` creates `/tmp/pb/<name>/`).
+Directory scanning for modules means one stray `.aura` file poisons every path
+in that directory, so **never reuse a probe directory** — this is the single
+biggest source of false findings.
+
+Every observed behaviour matched `docs/LANGUAGE_SPEC.md`. Three apparent
+anomalies were my own syntax errors, not defects:
+
+- **Lambda syntax.** `|x| e` is not Aura. The production is `(x) -> e`,
+  `(x: int) -> e`, `() -> e`, or `fn x -> e`, with an optional block body
+  (spec 724, 1807–1821). `E1006: expected an expression, found \`|\`` is correct.
+- **`enum`/`match` layout.** Variants and arms need newlines between them
+  (spec 555). A single-line `enum E { A, B, C }` is `E1006` by design.
+- **Zero-payload variants.** Spec 2389 requires `A()` with empty parentheses. A
+  bare `Color::Red` in expression position is `E2003` and that is correct;
+  `Color::Red()` yields `Red`. Do not "fix" this.
+
+Two further leads were checked against the spec and are **not** defects:
+`list<fn() -> int>` / `-> fn(int) -> int` are rejected with `E1006: expected a
+type, found \`fn\``, and `xs.sorted()` / `xs.index_of(…)` are `E2003` because
+neither is in the §24.1 method inventory.
+
+### Probe results
+
+| Probe | Program | Observed | Verdict |
+|---|---|---|---|
+| `p1` | `xs[-1]` | `30` | correct (spec 1420, 2473) |
+| `p2` | `"héllo"[1]` | `é` | correct, char-based |
+| `p3` | `xs[-4]` | `E4019: list index -4 out of range` | correct |
+| `p4` | `m["missing"]` | `E2003: map has no key` | correct (spec 2668) |
+| `p5` | `t[0]`, `t[-1]` | `1`, `3` | correct |
+| `p6` | `-7%3`, `7%-3`, `-7/3`, `7/-3` | `-1`,`1`,`-2`,`-2` | correct (truncating) |
+| `p7`,`p10`–`p12` | `i64::MAX+1`, `2^63`, `i64::MIN/-1`, `i64::MIN%-1` | `E4013` | correct, no Rust panic escapes |
+| `p8` | `1 / 0` | `E4007` | correct |
+| `p9` | `-9223372036854775808` | prints | correct |
+| `p13`,`p18` | `list<fn() -> int>`, `-> fn(int) -> int` | `E1006: expected a type, found \`fn\`` | limitation, not in the type grammar |
+| `p19` | `() -> { n = n + 1 }` ×2 | `2` | correct |
+| `p20` | `(a:int)->a+1`, `(a,b)->a+b`, `fn a->a*2` | `2`,`5`,`8` | correct |
+| `p17`,`p21`,`p28`,`p37` | mutating a non-`mut` binding | `E2001` | correct |
+| `p23` | `for` binding captured | `0 1 2` | correct — fresh cell per iteration |
+| `p24` | `while` captured | `3 3 3` | correct — one shared cell |
+| `p25` | `-> any` | `E3002: unknown type \`any\`` | correct |
+| `p26`,`p27` | `down(1000)`, infinite recursion | `E4011: call depth limit exceeded` | correct (512 frames) |
+| `p29` | `"x" * 5` | `E3001` | correct |
+| `p31` | map/set iteration | `a b c` / `1 2 3` | correct — sorted |
+| `p32` | `\u{1F600}` | `E1003` | correct — not in the escape table |
+| `p33` | trait + `<T: Shape>` | `9` | correct |
+| `p34`,`p43` | `xs[1..]`, `xs[1..3]` | `E1006` / `E3001: cannot index list with range` | correct — no slicing |
+| `p35`,`p38`–`p42`,`p44`,`p46` | bare variant | `E2003` | **correct — spec 2389 needs `()`** |
+| `p47`,`p48` | `Color::Red()`, `f(E::C())` | `Red`, `3` | correct |
+| `p50`,`p51` | generic struct + `id<T>` | `1`,`hi`,`[1, 2]` | correct |
+| `p53` | `filter`/`map`/`reduce` | `[2,4]`,`[2,4,6,8,10]`,`15` | correct |
+| `p52`,`p54` | `P::sum`, `p |> P::scaled(2)` | `E2003` | correct — spec 756 excludes associated fns |
+| `p55` | `3 |> add(4)`, `3 |> ((x)->x*2)` | `7`, `6` | correct |
+| `p56`,`p57` | `p |> p.scaled(10)`, `xs |> xs.len()` | `E3001` | correct — the pipe *prepends* the LHS |
+| `p58` | `xs |> len()` | `3` | correct |
+| `p60`,`p61` | `pub a, b` / cross-module private field | `1`,`2` / `E2018` | correct (spec 3320–3327) |
+| `p62`,`p63` | `xs.sorted()`, `ys.index_of(2)` | `E2003: no method …` | correct — not in §24.1 |
+
+### TD-13 is closed — do not re-open
+
+`TECHNICAL_DEBT.md:41` already marks the REPL O(N²) row as a legitimate future
+feature with no correctness impact, and PR #21 delivered the incremental path:
+`src/repl.rs` uses `Checker::session()` plus
+`extend_declarations(&state.decls[watermark..])` (line 429) and keeps the full
+`Checker::with_declarations` rebuild only as the rollback path (line 544).
+`extend_declarations` (`src/check/mod.rs:791–940`) already replicates the
+`value_types` asymmetry the equivalence obstacle depended on — see its own
+comment at 925–928. `tests/repl.rs::repl_incremental_state_is_not_worse_than_quadratic`
+guards it.
+
+### Open question — cyclic `pub use`
+
+Probe `r1` from the previous round (`module a { pub use b::f } module b { pub use
+a::f }`) reports `E2019` naming whichever module navigation reached first. It
+terminates deterministically, satisfying the letter of §27, but the message
+describes a *missing* name rather than a *cycle*. Deciding whether that warrants
+a dedicated diagnostic needs a spec reading first — do not change it on
+intuition alone.
+
+---
+
+
+## Previous task — CORE FIRST: `pub use` re-export resolution (three defects) — merged `cff9d4a5` (PR #28)
+
+**Merged as PR #28 (`cff9d4a5`), CI 21/21 green on round 1.**
+
 
 `docs/LANGUAGE_SPEC.md` §27 (3311–3318) states that `pub use` makes the imported
 name an exported name of the current module, that a private declaration cannot be
