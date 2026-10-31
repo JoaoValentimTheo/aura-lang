@@ -643,6 +643,12 @@ pub struct Checker {
     item_sources: Vec<SourceId>,
     active_source: Option<SourceId>,
     active_item_order: usize,
+    /// Function names whose overload set gained a signature since the last
+    /// duplicate-scan, so [`Checker::hoist`] can restrict its `E2007` scan to
+    /// names that could actually have become duplicates. A REPL session keeps
+    /// one checker across submissions, and rescanning every name each time
+    /// made session depth quadratic.
+    rescan_functions: std::collections::HashSet<String>,
 }
 
 impl Checker {
@@ -700,6 +706,7 @@ impl Checker {
             item_sources: Vec::new(),
             active_source: None,
             active_item_order: 0,
+            rescan_functions: std::collections::HashSet::new(),
         }
     }
 
@@ -748,18 +755,43 @@ impl Checker {
     #[must_use]
     pub fn with_declarations(decls: &[GlobalDecl]) -> Checker {
         let mut c = Checker::new();
+        c.extend_declarations(decls);
+        c
+    }
+
+    /// Build a bare checker for a REPL session.
+    ///
+    /// Session state accumulates in place through
+    /// [`Checker::extend_declarations`] and [`Checker::reset_transient`], so a
+    /// session does not rebuild every table from the whole declaration list on
+    /// each submission.
+    pub(crate) fn session() -> Checker {
+        Checker::new()
+    }
+
+    /// Register declarations this checker has not seen yet.
+    ///
+    /// Only *new* declarations may be passed. Registration is unconditional —
+    /// a repeated type is a duplicate-type diagnostic, a repeated function adds
+    /// an overload, and the hoist pass fills overload slots positionally — so
+    /// re-applying a declaration that is already registered corrupts the
+    /// tables.
+    pub(crate) fn extend_declarations(&mut self, new: &[GlobalDecl]) {
         // Register type names first, so field/payload annotations that refer
         // to types declared in any order resolve.
-        for d in decls {
+        for d in new {
             match d {
                 GlobalDecl::Binding {
                     name,
                     mutable,
                     ty: _,
                 } => {
-                    c.scopes[0].declares.insert(name.clone(), Span::default());
-                    c.scopes[0].vars.insert(name.clone(), *mutable);
-                    c.session_value_names.insert(name.clone(), Span::default());
+                    self.scopes[0]
+                        .declares
+                        .insert(name.clone(), Span::default());
+                    self.scopes[0].vars.insert(name.clone(), *mutable);
+                    self.session_value_names
+                        .insert(name.clone(), Span::default());
                 }
                 GlobalDecl::Function {
                     name,
@@ -767,19 +799,22 @@ impl Checker {
                     params,
                     type_params,
                 } => {
-                    c.scopes[0].declares.insert(name.clone(), Span::default());
-                    c.scopes[0].vars.insert(name.clone(), false);
-                    c.session_value_names.insert(name.clone(), Span::default());
+                    self.scopes[0]
+                        .declares
+                        .insert(name.clone(), Span::default());
+                    self.scopes[0].vars.insert(name.clone(), false);
+                    self.session_value_names
+                        .insert(name.clone(), Span::default());
                     let pnames: Vec<String> = type_params.iter().map(|(n, _)| n.clone()).collect();
-                    let ret_ty = ret.as_ref().map(|t| c.session_type(t, &pnames));
+                    let ret_ty = ret.as_ref().map(|t| self.session_type(t, &pnames));
                     let param_tys = params
                         .iter()
                         .map(|p| ParamSig {
                             name: p.name.clone(),
-                            ty: p.ty.as_ref().map(|t| c.session_type(t, &pnames)),
+                            ty: p.ty.as_ref().map(|t| self.session_type(t, &pnames)),
                         })
                         .collect();
-                    c.functions.entry(name.clone()).or_default().push(FnSig {
+                    self.functions.entry(name.clone()).or_default().push(FnSig {
                         ret: ret_ty,
                         params: param_tys,
                         mut_receiver: false,
@@ -790,44 +825,51 @@ impl Checker {
                         order: None,
                         type_params: type_params.clone(),
                     });
+                    self.rescan_functions.insert(name.clone());
                 }
                 GlobalDecl::Struct {
                     name, type_params, ..
                 } => {
-                    c.scopes[0].declares.insert(name.clone(), Span::default());
-                    c.scopes[0].vars.insert(name.clone(), false);
-                    c.types.insert(name.clone(), Span::default());
-                    c.type_kinds.insert(name.clone(), "struct".to_string());
-                    c.type_type_params.insert(
+                    self.scopes[0]
+                        .declares
+                        .insert(name.clone(), Span::default());
+                    self.scopes[0].vars.insert(name.clone(), false);
+                    self.types.insert(name.clone(), Span::default());
+                    self.type_kinds.insert(name.clone(), "struct".to_string());
+                    self.type_type_params.insert(
                         name.clone(),
                         type_params.iter().map(|(n, _)| n.clone()).collect(),
                     );
-                    c.type_type_param_bounds.insert(
+                    self.type_type_param_bounds.insert(
                         name.clone(),
                         type_params.iter().map(|(_, b)| b.clone()).collect(),
                     );
                 }
                 GlobalDecl::Enum { name, .. } => {
-                    c.scopes[0].declares.insert(name.clone(), Span::default());
-                    c.scopes[0].vars.insert(name.clone(), false);
-                    c.types.insert(name.clone(), Span::default());
-                    c.type_kinds.insert(name.clone(), "enum".to_string());
+                    self.scopes[0]
+                        .declares
+                        .insert(name.clone(), Span::default());
+                    self.scopes[0].vars.insert(name.clone(), false);
+                    self.types.insert(name.clone(), Span::default());
+                    self.type_kinds.insert(name.clone(), "enum".to_string());
                 }
                 GlobalDecl::Alias {
                     name,
                     type_params,
                     target,
                 } => {
-                    c.scopes[0].declares.insert(name.clone(), Span::default());
-                    c.scopes[0].vars.insert(name.clone(), false);
-                    c.types.insert(name.clone(), Span::default());
-                    c.type_kinds.insert(name.clone(), "alias".to_string());
-                    c.alias_targets.insert(name.clone(), target.clone());
-                    c.type_type_params.insert(
+                    self.scopes[0]
+                        .declares
+                        .insert(name.clone(), Span::default());
+                    self.scopes[0].vars.insert(name.clone(), false);
+                    self.types.insert(name.clone(), Span::default());
+                    self.type_kinds.insert(name.clone(), "alias".to_string());
+                    self.alias_targets.insert(name.clone(), target.clone());
+                    self.type_type_params.insert(
                         name.clone(),
                         type_params.iter().map(|(n, _)| n.clone()).collect(),
                     );
-                    c.type_type_param_bounds.insert(
+                    self.type_type_param_bounds.insert(
                         name.clone(),
                         type_params.iter().map(|(_, b)| b.clone()).collect(),
                     );
@@ -838,7 +880,7 @@ impl Checker {
         }
         // Then record fields, payloads, and variant tags, resolving aliases
         // now that every alias target is known.
-        for d in decls {
+        for d in new {
             match d {
                 GlobalDecl::Struct {
                     name,
@@ -850,22 +892,22 @@ impl Checker {
                     let mut order = Vec::new();
                     let mut public = HashMap::new();
                     for (f, t, is_pub) in fields {
-                        map.insert(f.clone(), c.session_type(t, &pnames));
+                        map.insert(f.clone(), self.session_type(t, &pnames));
                         order.push(f.clone());
                         public.insert(f.clone(), *is_pub);
                     }
-                    c.struct_fields.insert(name.clone(), map);
-                    c.struct_field_order.insert(name.clone(), order);
-                    c.struct_public_fields.insert(name.clone(), public);
+                    self.struct_fields.insert(name.clone(), map);
+                    self.struct_field_order.insert(name.clone(), order);
+                    self.struct_public_fields.insert(name.clone(), public);
                 }
                 GlobalDecl::Enum { variants, .. } => {
                     for (tag, payload) in variants {
                         let mut tys = Vec::with_capacity(payload.len());
                         for t in payload {
-                            tys.push(Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t)));
+                            tys.push(Ty::from_expr_lenient(&self.resolve_type_expr_lenient(t)));
                         }
-                        c.variants.insert(tag.clone(), String::new());
-                        c.variant_payloads.insert(tag.clone(), tys);
+                        self.variants.insert(tag.clone(), String::new());
+                        self.variant_payloads.insert(tag.clone(), tys);
                     }
                 }
                 // A persisted binding's declared type, restored into the same
@@ -874,8 +916,8 @@ impl Checker {
                 GlobalDecl::Binding {
                     name, ty: Some(t), ..
                 } => {
-                    let restored = Ty::from_expr_lenient(&c.resolve_type_expr_lenient(t));
-                    c.value_types[0].insert(name.clone(), restored);
+                    let restored = Ty::from_expr_lenient(&self.resolve_type_expr_lenient(t));
+                    self.value_types[0].insert(name.clone(), restored);
                 }
                 GlobalDecl::Impl {
                     target,
@@ -893,8 +935,8 @@ impl Checker {
                     let pnames: Vec<String> = type_params.iter().map(|(n, _)| n.clone()).collect();
                     let mut restored: Vec<(String, FnSig)> = Vec::new();
                     for m in methods {
-                        let ret_ty = m.ret.as_ref().map(|t| c.session_type(t, &pnames));
-                        let param_tys = params_of(&m.params, &c, &pnames);
+                        let ret_ty = m.ret.as_ref().map(|t| self.session_type(t, &pnames));
+                        let param_tys = params_of(&m.params, &*self, &pnames);
                         restored.push((
                             m.name.clone(),
                             FnSig {
@@ -910,12 +952,12 @@ impl Checker {
                             },
                         ));
                     }
-                    let table = c.struct_methods.entry(target.clone()).or_default();
+                    let table = self.struct_methods.entry(target.clone()).or_default();
                     for (name, sig) in restored {
                         table.entry(name).or_default().push(sig);
                     }
                     if let Some(tname) = trait_name {
-                        c.trait_impls
+                        self.trait_impls
                             .insert((target.clone(), tname.clone()), Span::default());
                     }
                 }
@@ -930,8 +972,8 @@ impl Checker {
                     let pnames: Vec<String> = type_params.iter().map(|(n, _)| n.clone()).collect();
                     let mut table: Vec<(String, FnSig)> = Vec::with_capacity(methods.len());
                     for m in methods {
-                        let ret_ty = m.ret.as_ref().map(|t| c.session_type(t, &pnames));
-                        let param_tys = params_of(&m.params, &c, &pnames);
+                        let ret_ty = m.ret.as_ref().map(|t| self.session_type(t, &pnames));
+                        let param_tys = params_of(&m.params, &*self, &pnames);
                         table.push((
                             m.name.clone(),
                             FnSig {
@@ -947,16 +989,67 @@ impl Checker {
                             },
                         ));
                     }
-                    c.trait_type_params.insert(
+                    self.trait_type_params.insert(
                         name.clone(),
                         type_params.iter().map(|(n, _)| n.clone()).collect(),
                     );
-                    c.traits.insert(name.clone(), table);
+                    self.traits.insert(name.clone(), table);
                 }
                 _ => {}
             }
         }
-        c
+    }
+
+    /// Restore the per-submission state to what [`Checker::new`] starts with,
+    /// keeping everything a REPL session carries between submissions.
+    ///
+    /// A session keeps the tables that describe *declarations*: types, function
+    /// and method signatures, trait impls, enum variants, aliases, and the
+    /// session scope with its annotated binding types. Everything that
+    /// describes the submission currently being checked is rebuilt from scratch
+    /// by a fresh checker, so it is reset here rather than leaked into the next
+    /// submission.
+    pub(crate) fn reset_transient(&mut self) {
+        self.has_main = false;
+        self.return_type = None;
+        self.pending_narrowing = None;
+        self.break_owner.clear();
+        self.loop_spans.clear();
+        self.lambda_writes.clear();
+        self.saved_lambda_writes.clear();
+        self.closure_writes.clear();
+        self.write_log.clear();
+        self.last_if_writes = None;
+        self.closure_call_names.clear();
+        self.lambda_last_writes = None;
+        self.closure_all_writes.clear();
+        self.record_narrowings = false;
+        self.observed_narrowings.clear();
+        self.unused_analysis = true;
+        self.underscore_params.clear();
+        self.used_names.clear();
+        self.depth = 0;
+        self.loop_depth = 0;
+        self.active_const = None;
+        // A submission that returned a diagnostic mid-way leaves the module
+        // path and the type-parameter stack descended. Both are save/restore
+        // scoped inside one check, so a leaked value silently changes
+        // method-visibility and generic-arity decisions.
+        self.current_module.clear();
+        self.current_type_params.clear();
+        self.item_sources.clear();
+        self.active_source = None;
+        self.active_item_order = 0;
+        self.type_budget.set(MAX_TYPE_NODES);
+        // The body scope stack and the annotated-binding map are per-submission
+        // frames. Trim them back to the session frame and clear the per-body
+        // bookkeeping inside it; `scopes[0].vars`, `scopes[0].declares` and
+        // `value_types[0]` hold the accumulated session bindings and are kept.
+        self.scopes.truncate(1);
+        self.scopes[0].unread.clear();
+        self.scopes[0].narrowed.clear();
+        self.value_types.truncate(1);
+        self.rescan_functions.clear();
     }
 
     /// Check a module against this checker.
@@ -1082,8 +1175,16 @@ impl Checker {
                     });
                     let base = self.functions.get(name).map_or(0, Vec::len) - 1;
                     new_fn_base.entry(name.clone()).or_insert(base);
+                    self.rescan_functions.insert(name.clone());
                     self.scopes[0].declares.entry(name.clone()).or_insert(*span);
                     self.scopes[0].vars.insert(name.clone(), false);
+                    // Mirror the session-value registration that
+                    // `extend_declarations` performs for `GlobalDecl::Function`.
+                    // A REPL session keeps this checker across submissions and
+                    // never rebuilds it, so without this write a function
+                    // declared here stays invisible to the `is_session` guard
+                    // above and a later same-name constant would be accepted.
+                    self.session_value_names.insert(name.clone(), *span);
                 }
                 Item::Const { name, span, .. } => {
                     // Top-level `let` bindings are module constants in the
@@ -1117,6 +1218,9 @@ impl Checker {
                     self.scopes[0].vars.insert(name.clone(), false);
                     let ord = self.const_order.len();
                     self.const_order.insert(name.clone(), ord);
+                    // Mirror `extend_declarations`' `GlobalDecl::Binding` write,
+                    // for the reason given in the `Item::Fn` arm above.
+                    self.session_value_names.insert(name.clone(), *span);
                 }
                 Item::Struct {
                     name,
@@ -1341,7 +1445,13 @@ impl Checker {
         // is always the same. Iterating `self.functions` directly would depend
         // on `HashMap` iteration order and make the reported error — and so the
         // CLI exit code — nondeterministic.
-        let mut names: Vec<&String> = self.functions.keys().collect();
+        // Only a name whose overload set gained a signature since the previous
+        // scan can carry a new duplicate: `hoist` and `extend_declarations` are
+        // the only writers that can add to an existing set, and a checker that
+        // reported a duplicate is discarded and rebuilt from its declaration
+        // list. Rescanning every name on every REPL submission made session
+        // depth quadratic, so the candidate list is the touched names only.
+        let mut names: Vec<String> = self.rescan_functions.drain().collect();
         names.sort_by(|left, right| {
             let key = |name: &String| {
                 let set = &self.functions[name];
@@ -1359,7 +1469,7 @@ impl Checker {
                 .cmp(&key(right))
                 .then_with(|| left.as_bytes().cmp(right.as_bytes()))
         });
-        for name in names {
+        for name in &names {
             let set = &self.functions[name];
             for i in 0..set.len() {
                 for j in (i + 1)..set.len() {

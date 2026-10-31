@@ -4,22 +4,52 @@
 //! executed in a persistent interpreter session. Declarations register
 //! functions, structs, and enums; expressions are evaluated and printed.
 //! `:quit` (or Ctrl-D) exits; `:help` lists commands.
+//!
+//! The checker is carried across submissions and extended with each new
+//! declaration instead of being rebuilt, so the cost of a submission depends
+//! on the declaration it adds rather than on the length of the session.
 
 use std::io::{BufRead, Write};
 
 use crate::ast::{Item, Stmt, TypeParam};
-use crate::check::{GlobalDecl, MethodDecl, ParamDecl};
+use crate::check::{Checker, GlobalDecl, MethodDecl, ParamDecl};
 use crate::error::{Diag, SourceDiagnostic, Span};
-use crate::resolve::{resolve_stmt, resolve_with_session, session_items, Session};
+use crate::resolve::{resolve_stmt, resolve_with_session, session_items, Resolver, Session};
 use crate::run::{Ctl, Interp};
 use crate::source::{SourceId, SourceMap};
+
+/// The declarations a REPL session has accepted, together with the checker and
+/// resolver that have registered them.
+///
+/// The three declaration-side fields form one invariant: `checker` has
+/// registered exactly the first `applied` entries of `decls`. Because a
+/// submission resets the checker's transient state and then registers only
+/// `decls[applied..]`, the watermark and the declaration list must always move
+/// together — grouping them keeps a caller from pairing a checker with the
+/// wrong watermark.
+///
+/// `resolver` is carried for the same reason as `checker`: every table it
+/// accumulates is monotone, so each submission extends it with the session's
+/// new declarations instead of rebuilding the whole session's resolution state.
+pub(crate) struct SessionState {
+    decls: Vec<GlobalDecl>,
+    /// The checker, carried across submissions. Each submission resets its
+    /// transient state and registers only the declarations it added, so the
+    /// tables are never rebuilt from the whole session.
+    checker: Checker,
+    /// How many leading entries of `decls` the checker has registered.
+    applied: usize,
+    /// The resolver, carried across submissions for the same reason.
+    resolver: Resolver,
+}
 
 /// The persistent state of one REPL session, independent of how lines are
 /// obtained. Both the buffered driver and the interactive (rustyline) driver
 /// share this, so they cannot drift.
 pub struct SessionEngine {
     interp: Interp,
-    decls: Vec<GlobalDecl>,
+    /// The session's accepted declarations and the checker holding them.
+    state: SessionState,
     session: Session,
     /// Source records for completed submissions, retained so locations from
     /// earlier cells never alias later ones.
@@ -44,7 +74,12 @@ impl SessionEngine {
     pub fn new() -> SessionEngine {
         SessionEngine {
             interp: Interp::new(),
-            decls: Vec::new(),
+            state: SessionState {
+                decls: Vec::new(),
+                checker: Checker::session(),
+                applied: 0,
+                resolver: Resolver::session(),
+            },
             session: Session::default(),
             sources: SourceMap::new(),
             next_submission: 1,
@@ -93,7 +128,7 @@ impl SessionEngine {
         self.next_submission += 1;
         eval_line(
             &mut self.interp,
-            &mut self.decls,
+            &mut self.state,
             &mut self.session,
             source_id,
             &source,
@@ -283,7 +318,7 @@ fn unbalanced(src: &str) -> bool {
 
 fn eval_line<W: Write>(
     interp: &mut Interp,
-    decls: &mut Vec<GlobalDecl>,
+    state: &mut SessionState,
     session: &mut Session,
     source_id: SourceId,
     source: &str,
@@ -296,21 +331,22 @@ fn eval_line<W: Write>(
         // Resolve free references against the session's modules, so a bare
         // `shapes::area` or a `use`-imported name is canonicalized (and its
         // visibility enforced) exactly as in a whole module.
-        let stmt = match resolve_stmt(stmt, session) {
+        let stmt = match resolve_stmt(stmt, &mut state.resolver, session) {
             Ok(s) => s,
             Err(e) => {
                 emit_diag(writer, source_id, e);
                 return;
             }
         };
-        let mut checker = crate::check::Checker::with_declarations(decls);
-        if let Err(e) = checker.check_stmt(&stmt) {
-            emit_diag(writer, source_id, e);
+        state.checker.reset_transient();
+        state.resolver.reset_transient();
+        if let Err(e) = state.checker.check_stmt(&stmt) {
+            abort_submission(state, session, writer, source_id, e);
             return;
         }
         // Capture the inferred binding type here, while the checker still has
         // the statement checked and the session declarations loaded.
-        let inferred_ty = checker.let_binding_type(&stmt);
+        let inferred_ty = state.checker.let_binding_type(&stmt);
         let executed = match interp.exec_stmt_globals_iterative(&stmt) {
             // A bare expression echoes its value; declarations stay silent.
             Ok(Ctl::Val(v)) if matches!(stmt, Stmt::Expr(..)) => {
@@ -337,6 +373,11 @@ fn eval_line<W: Write>(
         // statically inferred nominal type (a user struct, or a builtin type)
         // is persisted so later submissions keep the same type information a
         // single module would have (`LANGUAGE_SPEC.md` §3.2, §17.6).
+        // Register the declarations this submission added, instead of
+        // rebuilding every table from the whole session. `watermark` is where
+        // the previous submissions end, so only the tail is new.
+        let watermark = state.applied;
+        let mut replaced: Vec<usize> = Vec::new();
         if let Stmt::Let {
             name, mutable, ann, ..
         } = &stmt
@@ -351,13 +392,15 @@ fn eval_line<W: Write>(
                 mutable: *mutable,
                 ty,
             };
-            if let Some(slot) = decls
-                .iter_mut()
-                .find(|d| matches!(d, GlobalDecl::Binding { name: n, .. } if n == name))
+            if let Some(idx) = state
+                .decls
+                .iter()
+                .position(|d| matches!(d, GlobalDecl::Binding { name: n, .. } if n == name))
             {
-                *slot = decl;
+                state.decls[idx] = decl;
+                replaced.push(idx);
             } else {
-                decls.push(decl);
+                state.decls.push(decl);
             }
         }
         // A destructuring `let` persists each name it bound, but only when the
@@ -372,16 +415,26 @@ fn eval_line<W: Write>(
                         mutable: false,
                         ty: None,
                     };
-                    if let Some(slot) = decls
-                        .iter_mut()
-                        .find(|d| matches!(d, GlobalDecl::Binding { name: n, .. } if n == &name))
-                    {
-                        *slot = decl;
+                    if let Some(idx) = state.decls.iter().position(
+                        |d| matches!(d, GlobalDecl::Binding { name: n, .. } if n == &name),
+                    ) {
+                        state.decls[idx] = decl;
+                        replaced.push(idx);
                     } else {
-                        decls.push(decl);
+                        state.decls.push(decl);
                     }
                 }
             }
+        }
+        state.checker.extend_declarations(&state.decls[watermark..]);
+        state.applied = state.decls.len();
+        // A replaced binding sits *before* the watermark, so it is not in the
+        // tail just applied. Re-registering a `Binding` is an idempotent
+        // overwrite, so this only updates the shadowed slot's type.
+        for idx in replaced {
+            state
+                .checker
+                .extend_declarations(std::slice::from_ref(&state.decls[idx]));
         }
         return;
     }
@@ -391,16 +444,21 @@ fn eval_line<W: Write>(
             // Modules are real boundaries, so resolve the submission against
             // the session's modules before checking: a `pub` item becomes
             // reachable by its canonical path, a private one is `E2018`.
-            let (module, additions) = match resolve_with_session(module, session) {
-                Ok(m) => m,
-                Err(e) => {
-                    emit_diag(writer, source_id, e);
-                    return;
-                }
-            };
-            let mut checker = crate::check::Checker::with_declarations(decls);
-            if let Err(e) = checker.check_repl_mode(&module, crate::CompileMode::Module) {
-                emit_diag(writer, source_id, e);
+            let (module, additions) =
+                match resolve_with_session(module, &mut state.resolver, session) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        emit_diag(writer, source_id, e);
+                        return;
+                    }
+                };
+            state.checker.reset_transient();
+            state.resolver.reset_transient();
+            if let Err(e) = state
+                .checker
+                .check_repl_mode(&module, crate::CompileMode::Module)
+            {
+                abort_submission(state, session, writer, source_id, e);
                 return;
             }
             // Execute first; only persist declarations the session accepted.
@@ -419,17 +477,21 @@ fn eval_line<W: Write>(
                     other => interp.run_item_iterative(other),
                 };
                 if let Err(e) = result {
-                    emit_diag(writer, source_id, e);
+                    abort_submission(state, session, writer, source_id, e);
                     return;
                 }
             }
             for item in &module.items {
                 for d in declarations_of(item) {
-                    if !decls.iter().any(|e| same_decl(e, &d)) {
-                        decls.push(d);
+                    if !state.decls.iter().any(|e| same_decl(e, &d)) {
+                        state.decls.push(d);
                     }
                 }
             }
+            // Checking the module hoisted these items into the very tables
+            // `extend_declarations` writes, so the watermark only has to catch
+            // up; re-applying them would duplicate methods and variants.
+            state.applied = state.decls.len();
             // Persist the canonical declarations so later submissions resolve
             // and visibility-check them against the same module tree.
             for item in session_items(&module) {
@@ -461,6 +523,29 @@ fn eval_line<W: Write>(
             }
         }
     }
+}
+
+/// Abandon a submission that failed to check or execute, leaving the session
+/// exactly as it was before the submission started.
+///
+/// The cached checker and resolver register declarations as they walk a
+/// submission, so a submission that ends in a diagnostic has usually already
+/// inserted some of them. Rebuilding both from the declarations the session
+/// actually accepted restores the state per-submission engines would have had.
+/// The cost is proportional to the session, but it is paid only on the failing
+/// path; a successful submission never rebuilds.
+fn abort_submission<W: Write>(
+    state: &mut SessionState,
+    session: &Session,
+    writer: &mut W,
+    source: SourceId,
+    diag: Diag,
+) {
+    state.checker = Checker::with_declarations(&state.decls);
+    state.applied = state.decls.len();
+    state.resolver = Resolver::session();
+    state.resolver.extend_session(session);
+    emit_diag(writer, source, diag);
 }
 
 /// Attach the current submission identity at the REPL source boundary while

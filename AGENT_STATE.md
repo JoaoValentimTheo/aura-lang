@@ -2,8 +2,8 @@
 
 ## Directive 003 — stabilization and hardening campaign (current)
 
-- Active branch: `rewrite/v3-rust`, remote HEAD **`47232a79`** — the merge of
-  **PR #19** (browser network consent scoped to the mutation class). **Nineteen
+- Active branch: `rewrite/v3-rust`, remote HEAD **`38f5fed5`** — the merge of
+  **PR #20** (Directive 004: Kilo → GitHub Copilot agent migration). **Twenty
   PRs are merged** this campaign: #2 `f96536b6` (Directive 002 preflight),
   #3 `07845932` (rustls advisories), #4 `a562bacf` (batches 1–5),
   #5 `eaa3b9ed` (TD-23 + default-branch flip), #6 `4a20fa84` (post-merge
@@ -20,7 +20,7 @@
   #18 `6cb8c601` (state sync for PRs #15–#17 and the Directive 003-R §4
   blockers), #19 `47232a79` (browser network consent scoped to the mutation
   class; `npm run test:site` rebuilds a stale site instead of testing old
-  code). The
+  code), #20 `38f5fed5` (Directive 004: the seven agents). The
   `/private/tmp/aura-directive-002-release-preflight` worktree and the
   `repair/directive-002-release-preflight` branch are **historical**.
 - **The default branch is `rewrite/v3-rust`** (TD-23): flipped from `master`,
@@ -132,11 +132,110 @@
 - Scope: infrastructure recovery. CORE FIRST work resumes after this migration
   lands.
 
+## CORE FIRST — REPL session linearization (TD-13) — current
+
+Directive 003-R ADENDO "CORE FIRST" makes the language core the campaign's top
+priority. The first CORE FIRST finding is the directive-authorized REPL
+O(N²) defect, reproduced, root-caused, fixed in three layers plus two follow-on
+narrowings, and pinned by five new/rewritten regression guards.
+
+- **Symptom (pre-fix, release, min-of-3, distinct names):** `let v{i} = {i}` at
+  N=250/500/1000/2000/4000 cost 0.174/0.337/1.174/4.548/**18.299 s** (~4.0×
+  per doubling). The `fn` path was far worse: N=4000 cost **98.270 s**.
+  Cost scaled with the count of **distinct** declarations; shadowing one name
+  stayed linear. A marginal-cost probe (`1+1` submissions on top of a fixed
+  declaration count) showed **~658 µs per submission at every depth** — i.e. a
+  constant per-submission cost multiplied by session depth, which is the
+  signature of the defect.
+- **Root cause:** `SessionEngine::eval_line` rebuilt the whole `Checker` from
+  every prior declaration via `Checker::with_declarations` on each submission,
+  so submission *k* did O(k) work. Localized to `with_declarations`
+  (`src/check/mod.rs`) called from `src/repl.rs`.
+- **Layer 1 — incremental checker.** `SessionEngine` now owns one `Checker` for
+  the session; `reset_transient()` clears per-submission frames and
+  `extend_declarations(&decls[applied..])` registers only new declarations. The
+  module path needs no `extend_declarations` call: `check_repl_mode` → `check`
+  → `hoist` + annotation pass + `item()` already register every table.
+- **Layer 2 — `abort_submission` (found by the oracle).** A cached checker means
+  a failing submission leaves partial mutations. A 25-case REPL oracle caught
+  it: `fn k(int)` twice then `k(1)` reported `E3001 ... 2 overloads accept`
+  instead of `1`, because `hoist` pushed the duplicate signature before the
+  duplicate scan rejected it. `abort_submission` rebuilds the checker from the
+  session on the three paths that can fail *after* mutating (stmt-path
+  `check_stmt`, module-path `check_repl_mode`, module-path execution). Resolve
+  failures are deliberately not hooked — nothing has mutated yet.
+- **Layer 3 — `session_value_names` symmetry (found by a second oracle).**
+  `hoist` never wrote `session_value_names` while `extend_declarations` does, so
+  the cross-kind clash checks (`Item::Fn`, `Item::Const`) silently stopped
+  firing across submissions: `const X = 1` then `const X = 2` went from
+  `E2007`+`1` to `2`. Both `hoist` writes added.
+- **Q1 — duplicate-scan narrowing.** The overload duplicate scan re-examined
+  every name in `self.functions` on every submission, but a duplicate can only
+  be created by a signature pushed during the *current* call. `self.functions`
+  has exactly three write sites and `add_global` pushes only into an empty set,
+  so the scan now drains a `rescan_functions: HashSet<String>` and scans only
+  those names — with the comparator, nested loop, side effect and `E2007`
+  diagnostic byte-identical.
+- **Q2 — persisted resolver.** `Resolver` is now kept in `SessionState` instead
+  of being rebuilt per submission. `extend_session` seeds items/imports past
+  `seeded_items`/`seeded_imports` watermarks (stored on the resolver, so the
+  move is idempotent by construction); `reset_transient` clears only
+  `applied_imports`, `item_sources`, `active_source`, `resolved_sources`.
+  Imports must **never** be re-applied (`apply_use`'s `name_visible_locally`
+  check would raise a spurious `E2007` on a second application), and the
+  watermarks must **not** be reset or the quadratic cost returns. Every other
+  resolver table is monotone/append-only and safe to persist.
+- **Measured result.** `let` path: N=4000 from **18.299 s → 0.238 s** (93.5×
+  faster at N=4000 pre-Q1; the shipped tree measures 0.045/0.082/0.153/0.238 s
+  at N=500/1000/2000/4000, ratios 1.85/1.86/1.55 — linear). `fn` path: N=4000
+  from **6.621 s → 2.734 s (Q1) → 0.411 s (Q2)**, **16.1×**, ratio 3.88× →
+  2.47×; shape to N=16000 is 0.080/0.148/0.295/0.763/2.008 s
+  (1.86/1.99/2.59/2.63×), linear modulo cut-off effects. Against the pre-fix
+  binary at N=4000 the `fn` path improved **98.270 → 0.411 s (239×)**.
+- **Diagnosis method (reusable).** `sample`-based profiling does not work in
+  this harness — it attaches to the shell wrapper, not the `aura` child. In-source
+  phase instrumentation behind an env var (12 `AtomicU64` counters) was used
+  instead and attributed the module path at N=2000 to **check 56% / resolve
+  43%**, exec/decl/items ~0%. A surgical ablation (`AURA_SKIP_SEED` alone, a
+  scan-only skip alone, then both) proved each contributor independently and
+  that their **sum** is necessary and sufficient: ablating either alone left the
+  path quadratic, ablating both made it linear. An earlier "no dominant driver"
+  conclusion was overturned by that combined experiment.
+- **Ablation discipline.** Skipping an inner block with `return` returns from
+  the whole enclosing function and silently disables everything after it; the
+  first `AURA_SKIP_SCAN` measurement was confounded this way and was re-run by
+  replacing the block's *data* (`Vec::new()`) rather than its control flow.
+  Always replace data, never control flow.
+- **Guards (five).** `tests/repl_cost.rs` (new): a counting global allocator
+  proves a submission's allocation volume does not grow with session depth —
+  it measured **4.19× for 4× depth** before the fix and passes now. It cannot
+  see CPU-only costs, which is exactly why Q1 and Q2 are guarded in
+  `tests/bench.rs` instead: `repl_incremental_state_is_linear_in_session_depth`
+  (rewritten and renamed from the old "no worse than quadratic" TD-13 guard;
+  base 800, limit 3.2×, quadratic path measured 3.33–3.51) and
+  `repl_function_declarations_are_linear_in_session_depth` (new; base 800, the
+  pre-fix path measured 4.18× at that base). Two new `tests/repl.rs` tests pin
+  the cross-kind name-collision `E2007`s; all three such tests were proven to
+  fail without the Layer 3 fix.
+- **Equivalence evidence:** a 25-case REPL oracle (`/tmp/probe_matrix.py`) and a
+  6-case session-names oracle (`/tmp/probe_session_names.py`) both report
+  **zero divergence** against the pre-fix binary, after every layer, after Q1,
+  after Q2, and after the `SessionState` refactor.
+- **`SessionState`** groups `decls`/`checker`/`applied`/`resolver` so
+  `abort_submission` fits clippy's 7-argument limit honestly rather than via
+  `#[allow(clippy::too_many_arguments)]`.
+- **Deliberate non-fixes (recorded so they are not re-litigated):**
+  `type_param_scope` can leak a frame when the `Item::Impl` arm hits an early
+  `Err` (four `?` between push and pop). Harmless with a per-submission
+  resolver, latent with a persisted one. It is **not** cleared in
+  `reset_transient`; no oracle case diverges. The O(Σ set²) → O(Σ set) keyed
+  duplicate scan is also deferred (`Ty` has `Eq` but not `Hash`).
+
 ## Repository
 
 - Branch: `rewrite/v3-rust`
 - **Git reality (verify with `git rev-parse`, do not trust prose):**
-  `origin/rewrite/v3-rust` is at **`da9ab375`**, the merge commit of PR #17.
+  `origin/rewrite/v3-rust` is at **`38f5fed5`**, the merge commit of PR #20.
   Tag **`v0.3.1` = `b09cbef2`**. Aura 0.3.1 (Keystone) is the current release
   (release = language = `0.3.1`, runtime `0.3.1` is the Playground default) and
   is **PUBLISHED**. The earlier `b221e6a9`/`v0.2.1` notes below are
@@ -733,12 +832,13 @@ feature-gating of the typed-decode path.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `47232a79` (PR #19
-merged, nineteen PRs merged this campaign); Aura 0.3.1 (Keystone) is published
-and `v0.3.1` = `b09cbef2`. Batches 1–5, B6/B7/B14, TD-23, TD-24 and TD-27 are
-**merged and closed**. Directive 003-R §4's blockers are closed. Directive 004's
-agent migration is committed as `dc16b4fe` and awaiting its PR.
-**Exact next action:** open and land the Directive 004 migration PR, then resume
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `38f5fed5` (PR #20
+merged, twenty PRs merged this campaign); Aura 0.3.1 (Keystone) is published
+and `v0.3.1` = `b09cbef2`. Batches 1–5, B6/B7/B14, TD-23, TD-24, TD-27 and
+Directive 004 are **merged and closed**. Directive 003-R §4's blockers are
+closed. The first CORE FIRST fix — REPL session linearization (TD-13) — is on
+`perf/repl-linear-session` and awaiting its PR.
+**Exact next action:** open and land the REPL linearization PR, then continue
 the CORE FIRST campaign — real defects in `src/`, `tests/`, and `fuzz/`, one PR
 per finding, each carrying a reproducible case, a regression test that fails
 before the fix, the fix, and a passing test. Do not begin language features

@@ -497,6 +497,27 @@ fn session_function_redefinition_is_rejected() {
     assert!(out.contains('1'), "{out}");
 }
 
+/// A constant declared after a function that shares its name is a
+/// redeclaration (`E2007`): functions and constants share the value namespace,
+/// exactly as in a module.
+#[test]
+fn session_const_after_same_named_function_is_rejected() {
+    let out = body("fn X() { return 1 }\nconst X = 2\nX\n:quit\n");
+    assert!(out.contains("E2007"), "{out}");
+    // The rejected constant does not replace the function.
+    assert!(out.contains("<fn>"), "{out}");
+}
+
+/// A function declared after a constant that shares its name is a
+/// redeclaration (`E2007`), the mirror of the case above.
+#[test]
+fn session_function_after_same_named_const_is_rejected() {
+    let out = body("const X = 1\nfn X() { return 2 }\nX\n:quit\n");
+    assert!(out.contains("E2007"), "{out}");
+    // The rejected function does not replace the constant's value.
+    assert!(out.contains('1'), "{out}");
+}
+
 /// A struct declared after a function that shares its name is still persisted:
 /// value and type namespaces are separate, exactly as in a module.
 #[test]
