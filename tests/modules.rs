@@ -462,6 +462,123 @@ fn pub_use_re_exports_an_item() {
 }
 
 #[test]
+fn use_through_a_re_exporting_module_binds_the_real_target() {
+    // A `use` of a name that a module re-exports must resolve to the
+    // declaration site, not to the re-exporting alias (§27). Qualified access
+    // through the alias already worked; the imported binding did not.
+    assert_eq!(
+        ok("module a { pub fn f() -> int { return 3 } }\nmodule b { pub use a::f }\nuse b::f\nfn main() { print(f()) }"),
+        "3\n"
+    );
+    // The bound name is callable and carries the real signature.
+    assert_eq!(
+        ok("module a { pub fn add(x: int) -> int { return x + 1 } }\nmodule b { pub use a::add }\nuse b::add\nfn main() { print(add(41)) }"),
+        "42\n"
+    );
+    // A two-hop re-export chain is followed transitively to the declaration.
+    assert_eq!(
+        ok("module a { pub fn f() -> int { return 4 } }\nmodule b { pub use a::f }\nmodule c { pub use b::f }\nuse c::f\nfn main() { print(f()) }"),
+        "4\n"
+    );
+    // A re-exported type is usable as an annotation.
+    assert_eq!(
+        ok("module a { pub struct S { pub x: int } }\nmodule b { pub use a::S }\nuse b::S\nfn main() { let s: S = S { x: 5 }\n print(s.x) }"),
+        "5\n"
+    );
+    // A re-exported enum variant is importable, and its canonical identity is
+    // the declaration site — exactly what `b::A(2)` and `use a::E::A` already
+    // print, so the imported binding must not print the alias either.
+    assert_eq!(
+        ok("module a { pub enum E { A(int) } }\nmodule b { pub use a::E::A }\nuse b::A\nfn main() { print(A(2)) }"),
+        "a::A(2)\n"
+    );
+    // Renaming still works through a re-export.
+    assert_eq!(
+        ok("module a { pub fn f() -> int { return 6 } }\nmodule b { pub use a::f }\nuse b::f as g\nfn main() { print(g()) }"),
+        "6\n"
+    );
+    // Positive control: importing a directly declared item is unchanged.
+    assert_eq!(
+        ok("module a { pub fn f() -> int { return 7 } }\nuse a::f\nfn main() { print(f()) }"),
+        "7\n"
+    );
+}
+
+#[test]
+fn use_through_a_re_export_keeps_the_private_target_rejected() {
+    // Following the chain must not launder a private declaration into scope:
+    // the visibility check has to run against the declaration site.
+    assert_eq!(
+        code("module a { fn g() -> int { return 5 } }\nmodule b { pub use a::g }\nuse b::g\nfn main() { print(g()) }"),
+        codes::PRIVATE_ACCESS
+    );
+}
+
+#[test]
+fn a_transitive_re_export_chain_resolves_in_every_source_order() {
+    // A `pub use` chain that spans *sibling* modules depends on imports that a
+    // single declaration-order sweep has not applied yet. The chain must
+    // resolve from the whole program's state, not from how far the sweep has
+    // got, so both orders below have to reach the same declaration (§27).
+    let chain = |order: &[&str]| {
+        let bodies = [
+            ("m2", "module m2 { pub fn f() -> int { return 5 } }"),
+            ("m1", "module m1 { pub use m2::f }"),
+            ("m0", "module m0 { pub use m1::f }"),
+        ];
+        let mut src = String::from("use m0::f\n");
+        for want in order {
+            let body = bodies
+                .iter()
+                .find(|(name, _)| name == want)
+                .map(|(_, body)| *body)
+                .expect("every order names a declared module");
+            src.push_str(body);
+            src.push('\n');
+        }
+        src.push_str("fn main() { print(f()) }");
+        src
+    };
+    // Terminal module declared first, then the re-exporters: the original
+    // declaration order still has to work.
+    assert_eq!(ok(&chain(&["m2", "m1", "m0"])), "5\n");
+    // Terminal module declared last, which is the order a single sweep cannot
+    // resolve: each re-export names a module the sweep has not visited.
+    assert_eq!(ok(&chain(&["m0", "m1", "m2"])), "5\n");
+
+    // The same must hold for a chain deep enough that one retry round cannot
+    // settle it, and for a chain whose middle hop also declares its own item.
+    let mut deep = String::from("use h0::f\n");
+    for i in 0..8 {
+        use std::fmt::Write as _;
+        let _ = writeln!(deep, "module h{i} {{ pub use h{}::f }}", i + 1);
+    }
+    deep.push_str("module h8 { pub fn f() -> int { return 77 } }\nfn main() { print(f()) }");
+    assert_eq!(ok(&deep), "77\n");
+
+    assert_eq!(
+        ok("use m0::f\nuse m0::g\nmodule m0 { pub use m1::f\n pub use m1::g }\nmodule m1 { pub use m2::f\n pub fn g() -> int { return 8 } }\nmodule m2 { pub fn f() -> int { return 7 } }\nfn main() { print(f())\n print(g()) }"),
+        "7\n8\n"
+    );
+
+    // An unresolvable cycle still terminates with a diagnostic instead of
+    // looping, and a name that no hop declares is still `E2019`.
+    assert_eq!(
+        code("use a::f\nmodule a { pub use b::f }\nmodule b { pub use a::f }\nfn main() { print(f()) }"),
+        codes::UNKNOWN_MODULE
+    );
+    assert_eq!(
+        code("use m0::nope\nmodule m0 { pub use m1::f }\nmodule m1 { pub fn f() -> int { return 1 } }\nfn main() { print(f()) }"),
+        codes::UNKNOWN_MODULE
+    );
+    // Deferral must not launder a private declaration either.
+    assert_eq!(
+        code("use m0::f\nmodule m0 { pub use m1::f }\nmodule m1 { fn f() -> int { return 1 } }\nfn main() { print(f()) }"),
+        codes::PRIVATE_ACCESS
+    );
+}
+
+#[test]
 fn module_alias_binds_a_lexical_path() {
     assert_eq!(
         ok("module a { pub fn f() -> int { return 6 } }\nuse a as m\nfn main() { print(m::f()) }"),

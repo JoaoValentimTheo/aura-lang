@@ -1,6 +1,209 @@
 # Current Engineering Handoff
 
-## Current task — CORE FIRST: return-type tail validation — merged
+## Current task — CORE FIRST: `pub use` re-export resolution (three defects)
+
+**Status:** fixed on `fix/pub-use-reexport-resolution` (PR #28); full validation
+floor green; not yet merged.
+
+### The contract
+
+`docs/LANGUAGE_SPEC.md` §27 (3311–3318) states that `pub use` makes the imported
+name an exported name of the current module, that a private declaration cannot be
+published through a public re-export (`E2018`), and that **"a re-export chain
+resolves transitively and terminates deterministically."**
+
+`Resolver::lookup_qualified` — the expression/`::`-path resolver — honours that
+chain via `follow_reexport`. The `use`-import path did not. Three independent
+defects fell out of that asymmetry. Defects A and B were fixed first; validating
+them exposed C, which proved the first two fixes incomplete. All three are in.
+
+### Defect A — the `use` path bound the alias, not the declaration site
+
+`apply_use` called `resolve_use_path` and bound the returned canonical name
+directly. For
+
+```aura
+module a { pub fn f() -> int { return 1 } }
+module b { pub use a::f }
+use b::f
+fn main() { print(f()) }
+```
+
+the binding became `b::f` — a name no item is declared under. It failed only at
+first use, as `E2003` (`undefined function \`b::f\``), quoting the *alias*. The
+diagnostic's quoted name is the evidence: `b::f` means the chain was not
+followed; `a::f` would mean it was.
+
+**Fix:** wrap the lookup in `follow_reexport`, exactly as `lookup_qualified`
+already does. `follow_reexport` is cycle-safe (bounded by `reexports.len() + 1`,
+breaks on self-reference), so the new caller inherits that safety.
+
+**Wrong test expectation caught.** The enum-variant assertion initially expected
+`b::A(2)` and failed with `left: "a::A(2)"`. Three fresh probe directories
+(`use b` + `b::A(2)`, `use a::E::A` + `A(2)`, `use b::A` + `A(2)`) all print
+**`a::A(2)`** — a variant's canonical identity is its declaration site (§27,
+3329–3335). The assertion, not the fix, was wrong; it now expects `a::A(2)`.
+
+### Defect B — an import could run before the re-export it names existed
+
+`apply_imports` applied a module's own imports *before* recursing into its
+children, and `src/module_graph.rs:723` pushes child `Item::Module` *after* the
+parent's own items. So a root `use facade::g`, where `facade` says
+`pub use inner::g`, resolved before `facade`'s `pub use` had been registered and
+failed `E2019` (`` `g` is not declared in module `facade` ``).
+
+This contradicted `collect_module`'s own doc comment (552–559), which promises
+imports are applied "only after **every** module and item in the file has been
+declared, so an import may name an item declared later or in a sibling module
+regardless of source order." The comment was literally false.
+
+### Defect C — a sibling-module chain was source-order dependent
+
+Reproducer `t_rev` (only the module declaration order differs from `t_fwd`):
+
+```aura
+use m0::f
+module m0 { pub use m1::f }
+module m1 { pub use m2::f }
+module m2 { pub fn f() -> int { return 5 } }
+fn main() { print(f()) }
+```
+
+Before: `error[E2019]: \`f\` is not declared in module \`m1\``. The diagnostic
+naming the **middle** hop is the evidence that navigation stopped one link short.
+`t_fwd` (same modules, reversed order) printed `5`. Both now print `5`.
+
+Two causes, both required:
+
+1. **Missing `reexports` consult in navigation.** `resolve_use_path_inner` was
+   asymmetric: its single-segment branch returned `follow_reexport(c)` —
+   reexport-aware — but the multi-segment navigation loop's final-segment branch
+   returned a bare `Ok(canonical)` on an `items`/`module_paths` hit, never
+   consulting `self.reexports` and never following the hop. `apply_use` mirrors a
+   public re-export into `items` **only** when the canonical is already present
+   (855–868), so it cannot bootstrap a chain whose tail is not yet declared —
+   which is why consulting `reexports` is necessary, not merely tidy. The branch
+   now checks `items` **or** `reexports` and returns `follow_reexport(&canonical)`
+   from either.
+2. **Per-level deferral could not converge.** Defect B's fix deferred `E2019`
+   imports and retried them once at the end of *that module's own recursion
+   level*. But the dependency crosses sibling modules in either source order:
+   `m0` re-exporting `m1::f` while `m1` re-exports `m2::f` needs `m1`'s import to
+   have run, and `m1`'s own level completes *earlier* than the root's retry — so a
+   module-local retry waits for work that has already finished and cannot make
+   progress. Deferrals now bubble to a single driver at the top of
+   `apply_imports`, which iterates a **bounded fixpoint**: each round must settle
+   at least one pending import for progress to be real, so `pending.len() + 1`
+   rounds bound the search; a genuinely unknown name survives them all and still
+   reports `E2019` with correct provenance.
+
+### Why the fix is safe
+
+- **Deferring cannot corrupt state.** All five `UNKNOWN_MODULE` raise sites are
+  strictly *pre-mutation* (`apply_use` 773–782, `resolve_use_path_inner`
+  1050/1102/1121/1128), so a deferred import leaves no partial binding, cannot
+  double-push `applied_imports`, and cannot insert into
+  `type_scope`/`value_scope`/`variant_scope`.
+- **`activate_item` runs again before every attempt**, including each retry.
+  `resolve_sourced` wraps a `collect_module` failure with `attach_source`, which
+  reads `active_source`. Recursing into a child leaves it pointing at the child's
+  last item, so without re-activation a retried root error would be attributed to
+  the wrong file — breaking `resolver_error_in_child_keeps_child_provenance`
+  (`tests/module_graph.rs:384–405`), which still passes.
+- **No new `Resolver` field**, so `reset_transient` and the REPL path are
+  untouched. The fixpoint state is all function-local.
+- **The `pub use` `E2018` check stays hoisted** above the first mutation (done for
+  defect A/B), so the newly reachable navigation paths cannot leave a binding
+  behind on rejection.
+- **Cycles terminate.** `follow_reexport` breaks on self-reference, so a cyclic
+  `pub use` (probe `r1`) reports `E2019` deterministically instead of looping.
+
+### Regression coverage added
+
+`tests/modules.rs` (in-source modules, no filesystem fixtures):
+
+- `use_through_a_re_exporting_module_binds_the_real_target` — re-exported `fn`,
+  argument-bearing `fn` with signature preserved, two-hop chain `c → b → a`,
+  re-exported `struct` used as an annotation, re-exported enum variant printing
+  `a::A(2)`, rename through a re-export (`use b::f as g`), and a
+  direct-declaration positive control.
+- `use_through_a_re_export_keeps_the_private_target_rejected` — `E2018` negative
+  control, proving the new `follow_reexport` call cannot launder visibility.
+- `a_transitive_re_export_chain_resolves_in_every_source_order` — the three-module
+  sibling chain in **both** declaration orders, an 8-hop chain, a mixed chain
+  whose middle hop also declares its own item, a cycle, a genuinely missing name,
+  and a private tail.
+
+`tests/module_graph.rs`:
+
+- `use_through_an_external_re_export_resolves_regardless_of_source_order` — runs
+  the same logical graph in both registration orders, which is what pins defect B
+  (order-independence) separately from defect A.
+- `a_transitive_re_export_across_sibling_sources_resolves_in_every_order` — the
+  three-source sibling chain in both registration orders, plus a missing name
+  across files still reporting `E2019`. This is what pins defect C.
+
+**Both new tests were proved to fail against the pre-fix `src/resolve.rs`** by
+copying the fixed file aside, `git stash push -- src/resolve.rs`, re-running, then
+restoring. That is the only evidence that a regression test actually guards
+anything, so do not skip it when extending this work.
+
+### Validation actually run
+
+| Command | Result |
+|---|---|
+| `cargo test --locked --test modules` | 23 passed, 0 failed |
+| `cargo test --locked --test module_graph` | 40 passed, 0 failed |
+| `cargo test --locked --test checker` | 59 passed, 0 failed |
+| `cargo test --locked --test keystone_types` | 48 passed, 0 failed |
+| `cargo test --locked --test source_provenance` | 14 passed, 0 failed |
+| `cargo fmt --all -- --check` | clean |
+| `cargo clippy --locked --all-targets --all-features -- -D warnings` | clean |
+| `cargo test --locked --all-targets --all-features` | all green (40 targets) |
+| `cargo test --locked --all-targets --no-default-features --features cli,repl,json,regex,time` | all green |
+| `RUSTFLAGS="-D warnings" cargo check --locked --lib --no-default-features --features cli` | clean |
+| `cargo +1.83.0 check --locked --all-features` | clean |
+| `cargo +nightly check --manifest-path fuzz/Cargo.toml --all-targets` | clean |
+| `node playground/tests/node/run-all.mjs` | all green (`http-security` 26/26) |
+| `node playground/build.mjs --check` | manifest matches 9 version(s) |
+| `node website/build.mjs` | 46 pages |
+| `node website/tests/run-all.mjs` | all green |
+
+Thirteen CLI probes in fresh `/tmp/tc*` directories confirmed, with each probe in
+its own directory (directory scanning for modules means one stray `.aura` file
+poisons every path there — never reuse a probe directory):
+
+| Probe | Expected | Observed |
+|---|---|---|
+| `t_rev` sibling chain, declaration order | `5` | `5` (was `E2019` on `m1`) |
+| `t_fwd` same, reversed | `5` | `5` |
+| `s_rev` / `s_fwd` nested-module variants | `5` | `5` |
+| `s_nest` doubly nested | `6` | `6` |
+| `r3` 8-hop chain, reverse order | `77` | `77` (was `E2019`) |
+| `diamond` two paths to one `fn` | `9` | `9` |
+| `mixed` middle hop also declares its own item | `7`, `8` | `7`, `8` |
+| `r1` cyclic `pub use` | terminates | `E2019` |
+| `r2` self re-export in the `fn`'s own module | rejected | `E2007` |
+| `modpath` final segment is a real private module | rejected | `E2018` |
+| `private_tail` chain ending on a private item | rejected | `E2018` |
+| `missing` genuinely absent deep name | rejected | `E2019` |
+
+### No spec change
+
+The code violated §27 and `collect_module`'s own doc comment; the fix satisfies
+both. No normative text was amended.
+
+### Open question — cyclic `pub use`
+
+Probe `r1` (`module a { pub use b::f } module b { pub use a::f }`) reports
+`E2019` naming whichever module navigation reached first. It terminates
+deterministically, so it satisfies the letter of §27, but the message describes a
+*missing* name rather than a *cycle*. Deciding whether that warrants a dedicated
+diagnostic needs a spec reading first — do not change it on intuition alone.
+
+---
+
+## Previous task — CORE FIRST: return-type tail validation — merged
 
 **Merged as PR #26 (`b843dc85`), CI 21/21 green on round 1.** No red gate, no
 retry, no gate weakened. `mergeStateStatus` was `CLEAN` and `reviewDecision`

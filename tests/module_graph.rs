@@ -962,3 +962,118 @@ fn deep_physical_wrapper_chain_is_bounded_by_the_semantic_limit() {
     let error = build(MAX_AST_DEPTH + 1).unwrap_err();
     assert_eq!(error.diagnostic().code, codes::NESTING);
 }
+
+#[test]
+fn use_through_an_external_re_export_resolves_regardless_of_source_order() {
+    // A `.aura` file that re-exports another file's item is a pass-B product:
+    // the `pub use` is registered when imports are applied, so an entry file's
+    // `use facade::g` must not be resolved before `facade`'s imports run.
+    let run = |reverse: bool| {
+        let (mut provider, root) = provider("use facade::g\nfn main() { print(g()) }");
+        let facade = if reverse {
+            add_source(
+                &mut provider,
+                &root,
+                "facade",
+                "facade",
+                "facade.aura",
+                "pub use inner::g",
+            )
+        } else {
+            key("facade")
+        };
+        if reverse {
+            add_source(
+                &mut provider,
+                &facade,
+                "inner",
+                "inner",
+                "inner.aura",
+                "pub fn g() -> int { return 7 }",
+            );
+        } else {
+            let facade_key = add_source(
+                &mut provider,
+                &root,
+                "facade",
+                "facade",
+                "facade.aura",
+                "pub use inner::g",
+            );
+            add_source(
+                &mut provider,
+                &facade_key,
+                "inner",
+                "inner",
+                "inner.aura",
+                "pub fn g() -> int { return 7 }",
+            );
+        }
+        run_graph(build(&provider))
+    };
+    // `facade.aura` says `pub use inner::g`, so `inner` is its child. Both
+    // registration orders must resolve to the same binding.
+    assert_eq!(
+        run(false).unwrap_or_else(|e| panic!("{}", e.message)),
+        "7\n"
+    );
+    assert_eq!(run(true).unwrap_or_else(|e| panic!("{}", e.message)), "7\n");
+}
+
+#[test]
+fn a_transitive_re_export_across_sibling_sources_resolves_in_every_order() {
+    // Three sibling `.aura` files where each re-exports the next one's item.
+    // `m0`'s `pub use m1::f` cannot be applied until `m1`'s own `pub use m2::f`
+    // has been, and the graph records the children in whatever order the
+    // provider advertised them — so the chain has to resolve from the whole
+    // graph's state rather than from the order the sources were registered in.
+    let run = |order: [&str; 3]| {
+        let (mut provider, root) = provider("use m0::f\nfn main() { print(f()) }");
+        let bodies = [
+            ("m0", "pub use m1::f"),
+            ("m1", "pub use m2::f"),
+            ("m2", "pub fn f() -> int { return 5 }"),
+        ];
+        for name in order {
+            let body = bodies
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, b)| *b)
+                .expect("every order names an advertised child");
+            add_source(
+                &mut provider,
+                &root,
+                name,
+                name,
+                &format!("{name}.aura"),
+                body,
+            );
+        }
+        run_graph(build(&provider))
+    };
+    // Declaration order: each re-export names a source registered later.
+    assert_eq!(
+        run(["m0", "m1", "m2"]).unwrap_or_else(|e| panic!("{}", e.message)),
+        "5\n"
+    );
+    // Reversed: the terminal source is registered first.
+    assert_eq!(
+        run(["m2", "m1", "m0"]).unwrap_or_else(|e| panic!("{}", e.message)),
+        "5\n"
+    );
+    // A genuinely missing name across files still reports `E2019`.
+    let (mut provider, root) = provider("use m0::nope\nfn main() { print(1) }");
+    add_source(&mut provider, &root, "m0", "m0", "m0.aura", "pub use m1::f");
+    add_source(
+        &mut provider,
+        &root,
+        "m1",
+        "m1",
+        "m1.aura",
+        "pub fn f() -> int { return 1 }",
+    );
+    assert_eq!(
+        run_graph(build(&provider)).unwrap_err().code,
+        codes::UNKNOWN_MODULE
+    );
+}
