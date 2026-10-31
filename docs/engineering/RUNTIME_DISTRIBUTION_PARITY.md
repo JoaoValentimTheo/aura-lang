@@ -312,15 +312,54 @@ It is **not** a regression from this work, which touches no Rust file
 (`git diff --stat -- src/ tests/ Cargo.toml Cargo.lock` is empty). Classification:
 
 - passes 3/3 in isolation and 5/5 as a whole file on the working tree;
-- passed the full suite on the base commit;
 - **the base commit `85b42fa5` itself fails the same guard on repeated
   full-suite runs** — 2 of 3 repetitions failed, with `lex(long_string)` at
-  `4.22x` and `3.24x` and no worktree difference at all;
+  `4.22x` and `3.24x` and no worktree difference at all. The base commit does
+  *not* pass the full suite reliably, so it cannot be used as the green
+  reference;
 - the guard is a wall-clock ratio on an 8-core machine that was carrying
   substantial background load (`3.34 4.19 3.85`).
 
+The same guard had already failed in **remote CI** before this directive, on an
+unrelated case and an unrelated commit: run
+[`41110991797`](https://github.com/JoaoValentimTheo/aura-lang/actions/runs/41110991797)
+at `47232a79` failed `test (macos-latest)` with
+`run(calls): doubling N scaled 3.20x` at the very same
+`tests/bench.rs:252`. That commit was merged regardless, which establishes
+that this guard was already known-flaky on the host class CI uses.
+
 So the guard is load-sensitive and pre-existing. The threshold was **not**
 loosened: weakening a timing guard to obtain green is explicitly out of bounds.
+PR #41 in fact failed this same guard twice on `macos-latest` — once on
+`parse(deep_expr)` at `3.35x` and once on `module_graph(children)` at `3.35x`,
+**a different case each time**, which is the signature of a contended ratio
+rather than a deterministic regression. A re-run of the failed job passed, and
+the post-merge run on the identical tree was green end to end.
+
+### PR, checks and preview deployment
+
+| Item | Value |
+|---|---|
+| Pull request | [#41](https://github.com/JoaoValentimTheo/aura-lang/pull/41) — merged |
+| Branch | `directive-007-runtime-distribution-parity` |
+| Head commit | `ce1b253890faeff65f7b8edb0ae541a35f9703b6` |
+| Merge commit | `ba8204acd7f7d22033f8d49a1bc2fcccc2c38ea7` |
+| PR checks at merge | 21/21 `SUCCESS` |
+| Post-merge CI | [`41240576369`](https://github.com/JoaoValentimTheo/aura-lang/actions/runs/41240576369) — success, 21/21 jobs |
+| Preview deployment | [`41240576317`](https://github.com/JoaoValentimTheo/aura-lang/actions/runs/41240576317) — success, 1 m 41 s |
+
+The post-merge run is the stronger of the two: it exercised the merged tree on
+`rewrite/v3-rust` with every job green, including `playground (wasm runtime)`,
+which is the job that now hosts the distribution-parity gate, and
+`test (macos-latest)`, the job that had flaked. Its success on the identical
+tree is independent confirmation that the earlier failures were the timing
+guard and not this work.
+
+The preview deploy that follows a merge to `rewrite/v3-rust` ran and succeeded,
+so `0.3.2-dev.9` is reachable through the normal Playground flow. It is
+**not** the default: `manifest.current` is still `0.3.1` and
+`PROMOTE_DEV_TO_DEFAULT` remains `false`. Nothing was tagged or published by
+this directive.
 
 ## 9. Residual risks
 
@@ -354,6 +393,14 @@ regressions pass on the distributable bytes with zero wrong results and zero
 traps, the known critical divergences are corrected in the new preview, the
 protection against a semantically stale distribution is automated, historical
 artifacts are intact, and the required CI is green.
+
+The evidence for the last clause is the post-merge run on the merged tree
+(`ba8204ac`, 21/21 jobs) rather than the PR run alone. PR #41 itself first
+reported `macos-latest` red on a timing guard that is reproduced on the base
+commit and in prior CI history; it passed on re-run and on the post-merge run.
+That sequence is recorded above rather than smoothed over: the gate executed,
+failed for a reason that is not this work, and passed when the host was not
+contended.
 
 This authorizes none of the following, each of which needs its own human
 decision: creating a `v0.3.2` tag, publishing a stable release, promoting

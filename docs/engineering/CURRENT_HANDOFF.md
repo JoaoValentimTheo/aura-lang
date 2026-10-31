@@ -51,6 +51,21 @@
   (parser 429 338 runs, checker 256 777, runtime 729 — no crashes),
   `run-all.mjs` all suites, website build + suite, both `--check` modes, 9/9
   artifacts hash+size verified.
+- **Delivered and merged.** PR **#41**
+  (`directive-007-runtime-distribution-parity`, head `ce1b2538`) merged as
+  **`ba8204ac`** with **21/21 checks `SUCCESS`**. Post-merge CI
+  [`41240576369`](https://github.com/JoaoValentimTheo/aura-lang/actions/runs/41240576369)
+  is green on all 21 jobs at `ba8204ac`, and the Pages deploy
+  [`41240576317`](https://github.com/JoaoValentimTheo/aura-lang/actions/runs/41240576317)
+  succeeded. Budget used: **1 of 2** authorized PRs.
+- **The `macos-latest` flake behaved as diagnosed, not as claimed.** PR #41
+  first reported that job red twice on **different** bench cases
+  (`parse(deep_expr)` 3.35x, then `module_graph(children)` 3.35x); a re-run
+  passed, and the post-merge run on the identical tree was green. Prior CI
+  history had already failed the same `tests/bench.rs:252` guard on an
+  unrelated commit (`47232a79`, run `41110991797`). The guard was **not**
+  touched. The canonical branch is not protected, so nothing was bypassed —
+  the required checks genuinely ran and passed.
 - Report:
   [`docs/engineering/RUNTIME_DISTRIBUTION_PARITY.md`](docs/engineering/RUNTIME_DISTRIBUTION_PARITY.md).
 - **Next action:** nothing pending. Directive 008 is **not** authorized. Any
