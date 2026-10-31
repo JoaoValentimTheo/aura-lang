@@ -1,11 +1,41 @@
 # Aura Agent State
 
-## Directive 003 — stabilization and hardening campaign (current)
+## Directive 005 — Campaign 003 closed (`COMPLETE`, verdict `GO`)
 
-- Active branch: `rewrite/v3-rust`, remote HEAD **`00aeb188`** — the merge of
-  **PR #38** (CORE FIRST: statically empty `range` reachability). The working
-  tree is clean; the next CORE FIRST finding is not yet selected.
-  **Thirty-eight PRs are merged** this campaign:
+- **Campaign 003 is closed.** The closure report is
+  [`docs/engineering/CAMPAIGN_003_CLOSURE.md`](docs/engineering/CAMPAIGN_003_CLOSURE.md).
+- Active branch `rewrite/v3-rust` at **`8cc9ed32`** (= `origin/rewrite/v3-rust`),
+  the documentation commit that followed the `#38` merge `00aeb188`.
+- Six-area bounded audit result: **six `PASS`, zero P0/P1**. No corrective PR
+  was opened under Directive 005 (budget 0/6). The single corrective-candidate
+  finding (sibling module contamination) was **falsified** against
+  `docs/FILESYSTEM_MODULES_DESIGN.md` and must not be re-opened.
+- Validation floor fully executed and green: 1477 passed / 0 failed / 14
+  ignored (66 suites), `fmt`, `clippy -D warnings`, MSRV 1.83, Miri 132/0,
+  no-default-features matrix, `artifact-smoke` 12/0, all five fuzz targets
+  clean with an empty `fuzz/artifacts`, Playground and all seven website
+  suites, frozen runtimes 8/8 `sha=OK bytes=OK`.
+- Remote CI on `8cc9ed32`: **21/21 jobs green** (run `41217451481`), website
+  deploy `41217451457` green.
+- Stable version remains **`0.3.1`**; no tag, version bump, frozen artifact or
+  publication was touched.
+- **`GO` authorizes release-candidate preparation only.** Stable release
+  promotion remains human-gated.
+
+**Do not start a new campaign.** Directive 005 explicitly forbids continuing to
+hunt for low-priority defects. Deferred P2/P3 work is enumerated in §5 of the
+closure report and belongs to a future, separately authorized campaign.
+
+## Directive 003 — stabilization and hardening campaign (closed)
+
+- Active branch: `rewrite/v3-rust`, campaign HEAD **`8cc9ed32`** — the
+  documentation commit that followed the merge of
+  **PR #38** (CORE FIRST: statically empty `range` reachability, remote merge
+  `00aeb188`). The working tree is clean; the next CORE FIRST finding is not yet
+  selected, and Directive 005 closed the campaign before one was chosen.
+  **Thirty-seven PRs are merged** this campaign (`#2`–`#38`; `#1` does not
+  exist — GitHub reports "Could not resolve to a PullRequest with the number
+  1"):
   #2 `f96536b6` (Directive 002 preflight),
   #3 `07845932` (rustls advisories), #4 `a562bacf` (batches 1–5),
   #5 `eaa3b9ed` (TD-23 + default-branch flip), #6 `4a20fa84` (post-merge
@@ -1371,9 +1401,16 @@ feature-gating of the typed-decode path.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `00aeb188`, the
-merge of PR #38 (statically empty `range` reachability); thirty-eight PRs merged
-this campaign; Aura 0.3.1 (Keystone) is published and `v0.3.1` = `b09cbef2`.
+**None — Campaign 003 is closed under Directive 005.** The next action is a
+human decision, not an engineering one: whether to authorize release-candidate
+preparation, and separately whether to promote a release candidate to stable.
+Neither is authorized by this campaign.
+
+See `docs/engineering/CAMPAIGN_003_CLOSURE.md` for the report and
+`docs/engineering/CURRENT_HANDOFF.md` for the handoff checkpoint. In short: HEAD is
+`8cc9ed32` (the docs commit after the PR #38 merge `00aeb188`); thirty-seven PRs
+merged this campaign (`#2`–`#38`); Aura 0.3.1 (Keystone) is published and
+`v0.3.1` = `b09cbef2`.
 Batches 1–5, B6/B7/B14, TD-23, TD-24, TD-27,
 Directive 004, TD-13, the resolver type-parameter leak, the set key-method
 element typing, return-type tail validation, `pub use` re-export resolution, the
@@ -1383,13 +1420,13 @@ header-value encoding and statically empty `range` reachability are **merged and
 closed**.
 Directive 003-R §4's blockers are closed.
 
-**Exact next action:** the working tree is clean on `rewrite/v3-rust` at
-`00aeb188`. Branch the next CORE FIRST work item — a real, reproduced defect in
-`src/`, `tests/`, or `fuzz/`, shipped as one PR carrying a reproducible case, a
-regression test that fails before the fix, the fix, and a passing test.
+**Exact next action:** none. The working tree is clean on `rewrite/v3-rust` at
+`8cc9ed32`. Directive 005 closed the campaign; the former instruction to branch
+the next CORE FIRST work item is **withdrawn** — do not open a new corrective PR
+or start a new campaign without a fresh human directive.
 
-Highest-value unfinished leads already recorded here: (a) lexer/parser
-ambiguities, precedence, adversarial input and error recovery,
+Highest-value leads recorded for a *future authorized* campaign (not a mandate):
+(a) lexer/parser ambiguities, precedence, adversarial input and error recovery,
 (b) checker scopes, generics, mutability, (c) evaluator control flow, closures,
 resource limits, (d) collections and bounds, (e) module cycles,
 (f) Host/Python/WASM capability and panic boundaries.
