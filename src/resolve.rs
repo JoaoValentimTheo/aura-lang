@@ -141,14 +141,22 @@ pub struct Session {
 /// imports). The caller applies the additions only after the submission is
 /// accepted, so a failed submission cannot corrupt the session.
 ///
+/// `resolver` is carried across submissions. Every table it accumulates is
+/// monotone, so it is extended with the session's new declarations rather than
+/// rebuilt from the whole session — which is what made each submission cost
+/// O(session).
+///
 /// # Errors
 /// As [`resolve`].
-pub fn resolve_with_session(module: Module, session: &Session) -> Result<(Module, Session)> {
-    let mut r = Resolver::new();
-    r.seed_session(&session.items, &session.imports);
-    r.collect_module(&module.items, &[])?;
-    let imports = r.root_imports();
-    let resolved = r.flatten(&module.items, &[])?;
+pub fn resolve_with_session(
+    module: Module,
+    resolver: &mut Resolver,
+    session: &Session,
+) -> Result<(Module, Session)> {
+    resolver.extend_session(session);
+    resolver.collect_module(&module.items, &[])?;
+    let imports = resolver.root_imports();
+    let resolved = resolver.flatten(&module.items, &[])?;
     let additions = Session {
         items: session_items(&resolved),
         imports,
@@ -157,12 +165,17 @@ pub fn resolve_with_session(module: Module, session: &Session) -> Result<(Module
 }
 
 /// Resolve a single REPL statement (a `let`, an assignment, or an expression)
-/// against the carried `session`, returning the statement with every free
-/// reference rewritten to its canonical name and visibility enforced.
+/// against `session`, returning the statement with every free reference
+/// rewritten to its canonical name and visibility enforced.
+///
+/// `resolver` is carried across submissions, exactly as for
+/// [`resolve_with_session`]; extending it here keeps the statement path from
+/// depending on which kind of submission happened to run before it.
 ///
 /// # Errors
 /// As [`resolve`].
-pub fn resolve_stmt(stmt: Stmt, session: &Session) -> Result<Stmt> {
+pub fn resolve_stmt(stmt: Stmt, resolver: &mut Resolver, session: &Session) -> Result<Stmt> {
+    resolver.extend_session(session);
     let module = Module {
         items: vec![Item::Fn {
             name: "@repl-stmt".to_string(),
@@ -175,10 +188,8 @@ pub fn resolve_stmt(stmt: Stmt, session: &Session) -> Result<Stmt> {
             span: Span::default(),
         }],
     };
-    let mut r = Resolver::new();
-    r.seed_session(&session.items, &session.imports);
-    r.collect_module(&module.items, &[])?;
-    let resolved = r.flatten(&module.items, &[])?;
+    resolver.collect_module(&module.items, &[])?;
+    let resolved = resolver.flatten(&module.items, &[])?;
     let Some(Item::Fn { body, .. }) = resolved.items.into_iter().next() else {
         return Err(Diag::new(
             codes::INTERNAL,
@@ -258,7 +269,7 @@ struct ItemInfo {
     namespace: Namespace,
 }
 
-struct Resolver {
+pub struct Resolver {
     /// Every declared item, keyed by canonical name.
     items: HashMap<String, ItemInfo>,
     /// Per module path, its direct child modules: local name → child path.
@@ -290,6 +301,12 @@ struct Resolver {
     /// Every import applied, as `(module, local, canonical)`. The REPL persists
     /// the ones whose module is the root.
     applied_imports: Vec<(Vec<String>, String, String)>,
+    /// How many of the session's retained declarations have already been seeded
+    /// into `self`. A persisted resolver is only ever extended, so this is the
+    /// watermark past which a session's items are new.
+    seeded_items: usize,
+    /// How many of the session's retained imports have already been seeded.
+    seeded_imports: usize,
     /// The generic type parameters currently in scope, innermost last. A name
     /// here is a compile-time placeholder and must NOT be canonicalized to a
     /// declared type, even if one of the same name exists. Interior-mutable so
@@ -301,6 +318,7 @@ struct Resolver {
 }
 
 impl Resolver {
+    /// A resolver holding no session state, ready for standalone resolution.
     fn new() -> Resolver {
         Resolver {
             items: HashMap::new(),
@@ -313,11 +331,45 @@ impl Resolver {
             module_aliases: HashMap::new(),
             reexports: HashMap::new(),
             applied_imports: Vec::new(),
+            seeded_items: 0,
+            seeded_imports: 0,
             type_param_scope: std::cell::RefCell::new(Vec::new()),
             item_sources: HashMap::new(),
             active_source: None,
             resolved_sources: Vec::new(),
         }
+    }
+
+    /// A resolver for a REPL session, carried across submissions so each one
+    /// costs only the work its own input needs rather than rebuilding the whole
+    /// session's resolution state.
+    ///
+    /// Gated on `repl`: the session lifecycle it exists for lives in
+    /// [`crate::repl`], so in a build without that feature nothing can call it.
+    #[cfg(feature = "repl")]
+    pub(crate) fn session() -> Resolver {
+        Resolver::new()
+    }
+
+    /// Reset the state that belongs to a single submission.
+    ///
+    /// Everything else this resolver accumulates — `items`, `modules`, the
+    /// scopes, `module_paths`, `module_aliases`, `reexports`, `enum_variants` —
+    /// is monotone: entries are only added, and re-adding the same entry is a
+    /// no-op, so it is correct (and necessary for the cost model) to keep it
+    /// across submissions. The tables cleared here are per-submission: imports
+    /// must never be re-applied (`use` records a binding, and applying it twice
+    /// would report a spurious clash), and the source-provenance tables only
+    /// describe the item pointers of the submission being resolved.
+    ///
+    /// Gated on `repl` alongside [`Resolver::session`]; without that feature
+    /// there is no session to reset.
+    #[cfg(feature = "repl")]
+    pub(crate) fn reset_transient(&mut self) {
+        self.applied_imports.clear();
+        self.item_sources.clear();
+        self.active_source = None;
+        self.resolved_sources.clear();
     }
 
     fn activate_item(&mut self, item: &Item) {
@@ -399,8 +451,14 @@ impl Resolver {
     /// Seed the resolver with declarations and imports carried from earlier
     /// REPL submissions, so a later submission resolves and visibility-checks
     /// them exactly as within one module.
-    fn seed_session(&mut self, session: &[SessionItem], imports: &[SessionImport]) {
-        for item in session {
+    ///
+    /// The session only ever grows, and every table written here is monotone,
+    /// so this seeds just the entries added since the previous call. Re-seeding
+    /// an already-known entry would be a no-op, but it would still cost
+    /// O(session) per submission — the sum of which is what made a REPL
+    /// submission quadratic in session depth.
+    pub(crate) fn extend_session(&mut self, session: &Session) {
+        for item in &session.items[self.seeded_items..] {
             let local = item
                 .name
                 .rsplit("::")
@@ -446,9 +504,10 @@ impl Resolver {
                     .or_insert(child);
             }
         }
+        self.seeded_items = session.items.len();
         // Retained imports become root bindings, exactly as if the `use` that
         // created them appeared at the root of this submission.
-        for imp in imports {
+        for imp in &session.imports[self.seeded_imports..] {
             self.value_scope
                 .entry(Vec::new())
                 .or_default()
@@ -458,6 +517,7 @@ impl Resolver {
                 .or_default()
                 .insert(imp.local.clone(), imp.canonical.clone());
         }
+        self.seeded_imports = session.imports.len();
     }
 
     // ------------------------------------------------------------- collection

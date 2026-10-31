@@ -1,22 +1,238 @@
 # Current Engineering Handoff
 
-## Current local task — Directive 004, Copilot agent migration
+## Current local task — CORE FIRST: REPL session linearization (TD-13)
 
-`rewrite/v3-rust` is the **default branch** and HEAD is **`47232a79`** (the
-merge of PR #19). Nineteen PRs are merged this campaign: #2, #3, #4, #5, #6,
-#7, #8, #9 (B14), #10 (PR template), #11 (TD-24 cost guard), #12 (CHANGELOG
-`[Unreleased]` + TD-25), #13 (website suite gate + TD-26), #14 (TD-27
-Playwright gate), #15 (state sync), #16 (B7 project-header contract + HTTP
-transport docs + `test:abi`), #17 (validation orchestrator self-tests in CI),
-#18 (state sync for #15–#17), #19 (browser consent scoped to the mutation
-class).
+`rewrite/v3-rust` is the **default branch** and HEAD is **`38f5fed5`** (the
+merge of PR #20). Twenty PRs are merged this campaign: #2, #3, #4, #5, #6, #7,
+#8, #9 (B14), #10 (PR template), #11 (TD-24 cost guard), #12 (CHANGELOG
+`[Unreleased]` + TD-25), #13 (website suite gate + TD-26), #14 (TD-27 Playwright
+gate), #15 (state sync), #16 (B7 project-header contract + HTTP transport docs +
+`test:abi`), #17 (validation orchestrator self-tests in CI), #18 (state sync for
+#15–#17), #19 (browser consent scoped to the mutation class), #20 (Directive
+004: the seven agents).
 The Directive 003-R authorization recorded in
 `AGENTS.md` permits push, PR creation and merge, workflow administration, and
 default-branch changes; force-push, history removal, tag moves, frozen-WASM
 replacement, gate weakening, and unapproved stable releases remain forbidden.
 Never report a gate as green unless it actually executed.
 
-### Directive 004 — the `400 The requested model is not supported` diagnosis
+### The finding
+
+The ADENDO "CORE FIRST" made the directive-authorized REPL O(N²) defect the
+first core priority. It was reproduced, quantified, localized, fixed, and
+pinned. Branch `perf/repl-linear-session` off `38f5fed5`.
+
+**Symptom.** Release profile, min-of-3, distinct declarations: the `let` path at
+N=250/500/1000/2000/4000 cost 0.174/0.337/1.174/4.548/**18.299 s**; the `fn`
+path at N=4000 cost **98.270 s**. Cost scaled with the number of **distinct**
+declarations — shadowing the same name stayed linear — and a marginal-cost probe
+(extra `1+1` submissions over a fixed declaration count) showed a **constant
+~658 µs per submission at every depth**, which is a fixed per-submission cost
+multiplied by session depth.
+
+**Root cause.** `SessionEngine::eval_line` called `Checker::with_declarations`
+on every submission, rebuilding the whole checker from every prior declaration,
+so submission *k* did O(k) work.
+
+### The fix — three layers plus two follow-on narrowings
+
+1. **Incremental checker.** `SessionEngine` owns one `Checker` for the session;
+   `reset_transient()` clears per-submission frames and
+   `extend_declarations(&decls[applied..])` registers only the new declarations.
+   The module path needs no `extend_declarations` call — `check_repl_mode` →
+   `check` → `hoist` + annotation pass + `item()` already register every table.
+2. **`abort_submission` (found by the oracle).** With a cached checker a failing
+   submission leaves partial mutations. `fn k(int)` twice then `k(1)` reported
+   `E3001 ... 2 overloads accept` instead of `1`, because `hoist` pushed the
+   duplicate signature before the duplicate scan rejected it. The helper rebuilds
+   the checker from the session on the three paths that can fail *after*
+   mutating: stmt-path `check_stmt`, module-path `check_repl_mode`, and
+   module-path execution. Resolve failures are deliberately not hooked — nothing
+   has mutated yet — and neither are the `executed == false` stmt arms, because
+   the persistence block that follows must still record the user's binding.
+3. **`session_value_names` symmetry.** `hoist` never wrote the table that
+   `extend_declarations` maintains, so the cross-kind clash checks in the
+   `Item::Fn` and `Item::Const` arms silently stopped firing across submissions:
+   `const X = 1` then `const X = 2` went from `E2007`+`1` to `2`, and `fn X` then
+   `const X` from `E2007`+`<fn>` to `2`. Both writes added.
+4. **Q1 — duplicate-scan narrowing.** The overload duplicate scan re-examined
+   every name in `self.functions` on every submission, but a duplicate can only
+   be created by a signature pushed during the *current* call: `self.functions`
+   has exactly three write sites and `add_global` pushes only into an empty set.
+   The scan now drains a `rescan_functions: HashSet<String>` and scans only those
+   names, leaving the comparator, the nested loop, the `active_source` side
+   effect and the `E2007` diagnostic byte-identical.
+5. **Q2 — persisted resolver.** `Resolver` now lives in `SessionState` instead of
+   being rebuilt per submission. `extend_session` seeds items and imports past
+   `seeded_items`/`seeded_imports` watermarks held on the resolver, which makes
+   the move idempotent by construction; `reset_transient` clears only
+   `applied_imports`, `item_sources`, `active_source`, `resolved_sources`.
+   Imports must **never** be re-applied — `apply_use`'s `name_visible_locally`
+   check would raise a spurious `E2007` — and the watermarks must **not** be
+   reset or the quadratic cost returns. Every other resolver table is
+   monotone/append-only and safe to persist.
+
+### Measured result
+
+| Build | `let` N=4000 | `fn` N=4000 |
+|---|---|---|
+| pre-fix | 18.299 s | 98.270 s (and 6.621 s from a mid-campaign baseline) |
+| after Q1 | — | 2.734 s |
+| **after Q2 (shipped)** | **0.238 s** | **0.411 s** |
+
+`fn` path N=4000: **6.621 → 0.411 s = 16.1×**, doubling ratio 3.88× → 2.47×;
+against the pre-fix binary **98.270 → 0.411 s = 239×**. The `let` path at N=4000
+is **93.5×** faster than its pre-fix baseline. Shape to N=16000 for `fn`:
+0.080/0.148/0.295/0.763/2.008 s (1.86/1.99/2.59/2.63×) — linear modulo cut-off
+effects.
+
+### Method notes worth keeping
+
+- **`sample`-based profiling does not work in this harness.** It attaches to the
+  shell wrapper, not the `aura` child, and yields `???`/`start`/`__wait4`
+  frames. In-source phase instrumentation behind an env var (12 `AtomicU64`
+  counters) is the reliable substitute; it attributed the module path at N=2000
+  to **check 56% / resolve 43%**, with exec/decl/items ~0%.
+- **Ablate data, never control flow.** An early `AURA_SKIP_SCAN` used
+  `return Ok(())` inside an inner block, which returns from the entire enclosing
+  function and disables everything after it; the measurement was confounded and
+  had to be re-run by substituting `Vec::new()` for the block's input instead.
+- **The combined ablation is what proved the model.** Neither Q1 nor Q2 alone
+  linearizes the `fn` path (each ablation alone left it quadratic); ablating both
+  together gave 0.044/0.078/0.149/0.313 s, i.e. linear — the two contributors are
+  additive and their sum is necessary *and* sufficient. An earlier
+  "no dominant driver" reading was overturned by exactly that experiment.
+- **The `aura` binary needs an explicit `repl` subcommand.** Piping stdin to
+  `target/release/aura` with no arguments prints the usage banner and exits 0 in
+  ~13 ms, so a naive timing probe silently reports meaningless numbers at every
+  depth.
+
+### Guards
+
+- `tests/repl_cost.rs` (new, untracked until this commit): a counting global
+  allocator asserts a submission's allocation volume does not grow with session
+  depth. It measured **4.19× for 4× depth** before the fix and passes now. It
+  *cannot* see CPU-only costs, which is precisely why Q1 and Q2 are guarded by
+  wall clock in `tests/bench.rs` instead.
+- `tests/bench.rs`: `repl_incremental_state_is_linear_in_session_depth` —
+  rewritten and renamed from the old weaker "no worse than quadratic" TD-13
+  guard (base 800, shared 3.2× limit; the quadratic path measured 3.33–3.51
+  there), and `repl_function_declarations_are_linear_in_session_depth` — new,
+  covering the module path that Q1 and Q2 actually change (base 800; the
+  rescanning path measured 4.18× at that base, the incremental path ~1.9).
+- `tests/repl.rs`: two new tests pin the cross-kind `E2007`s
+  (`session_const_after_same_named_function_is_rejected`,
+  `session_function_after_same_named_const_is_rejected`). All three such tests,
+  including the pre-existing `const_persists_and_cannot_be_redefined`, were
+  proven to fail without layer 3.
+
+### Equivalence evidence
+
+A 25-case REPL oracle (stdout + diagnostics per submission) and a 6-case
+session-names oracle both report **zero divergence** against the pre-fix binary —
+checked after each layer, after Q1, after Q2, and again after the `SessionState`
+refactor. `SessionState` groups `decls`/`checker`/`applied`/`resolver` so
+`abort_submission` fits clippy's 7-argument limit honestly, not via
+`#[allow(clippy::too_many_arguments)]`.
+
+### Validation actually executed on the shipped tree
+
+- `cargo fmt --all -- --check` → clean
+- `cargo clippy --locked --all-targets --all-features -- -D warnings` → clean
+- `cargo test --locked --all-targets --all-features` → 66 suites pass, 0 failed
+- `cargo test --locked --all-targets --no-default-features --features cli,repl,json,regex,time` → 66 suites pass, 0 failed
+- `cargo test --locked --test repl --test repl_cost --test bench --features repl` → 53 / 3 / 15 passed, 2 ignored
+- `cargo +1.83.0 check --locked --all-features` → clean
+- `RUSTFLAGS="-D warnings" cargo check --locked --lib --no-default-features --features cli` → clean (plus `cli,json,regex,time`, `http-api`, `cli,evaluator-oracle`, `json,regex,time`, `py`: all clean)
+- `cargo +nightly check --manifest-path fuzz/Cargo.toml --all-targets` → clean
+- `cargo clippy --manifest-path playground/runtime/Cargo.toml --all-targets -- -D warnings` → clean
+- `cargo build --manifest-path playground/runtime/Cargo.toml --release --target wasm32-unknown-unknown` → clean
+- `node playground/tests/node/run-all.mjs` → all suites 0 failed
+- `RUSTDOCFLAGS="-D warnings" cargo test --doc` → 0 tests, clean (both feature sets)
+- both oracles → 25/25 and 6/6 identical against `/tmp/p_before.json` and `/tmp/sn_before2.json`
+
+Not run locally: miri (deferred to remote CI, which runs it green), browser
+suites. Neither touches this change.
+
+### Full validation floor — permanent lesson from PR #21
+
+The first push of this branch was **5-failed / 16-passed** on remote CI, and every
+failure reduced to one real defect in the change: `Checker::session`,
+`Checker::reset_transient`, `Resolver::session` and `Resolver::reset_transient`
+are `pub(crate)` and reachable only from `src/repl.rs`, which `src/lib.rs:30`
+gates with `#[cfg(feature = "repl")]`. In any build **without** `repl` they are
+dead code, and CI's `RUSTFLAGS: -D warnings` makes that a hard build error.
+
+**Why the local floor missed it:** every command in it enabled `repl` —
+`--all-features` does, and so did the "CI feature set"
+`cli,repl,json,regex,time`. Nothing in the matrix ever built the library without
+that feature. Jobs that do, and therefore caught it: `miri`
+(`--lib --no-default-features --features cli`), `language contract`
+(`cargo run --no-default-features --features cli -- version`), `fuzz smoke`,
+`playground (wasm runtime)`'s "Lint the runtime crate", and the `website` job's
+`playground/tests/node/run-all.mjs` step.
+
+**The rule:** a `pub(crate)` helper reachable only from a feature-gated module is
+dead code in every other feature set, and `--all-features` validation cannot see
+it. The floor now includes
+
+```
+RUSTFLAGS="-D warnings" cargo check --locked --lib --no-default-features --features cli
+```
+
+Use `--lib`, **not** `--all-targets`: `tests/cli.rs` uses `serde_json`
+unconditionally (lines 795 and 916) and fails with 24 `E0433` errors under
+`--all-targets --no-default-features --features cli`. That breakage is
+**pre-existing** — verified with `git show --name-only 404980e5`, which does not
+list `tests/cli.rs` — and CI never builds that combination. Recorded as a known
+gap, not a regression of this PR.
+
+The alternative fixes were rejected deliberately: making the four methods `pub`
+widens the public API to silence a lint, and `#[allow(dead_code)]` weakens a
+warning to buy green. Both are forbidden by the PR template and Directive 003-R.
+Gating with `#[cfg(feature = "repl")]` is the honest statement of the fact that
+these methods only exist for the session lifecycle. One consequence: the
+intra-doc link `[`Checker::reset_transient`]` inside `Checker::session` had to
+become a plain code span, because a link target that is feature-gated away would
+otherwise fail `rustdoc::broken-intra-doc-links` under `-D warnings`.
+
+Also worth knowing: `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --lib` reports
+**8 pre-existing** broken intra-doc links, all in `src/run/` (`RunSession`,
+`session_impl::Session`, private `Interp` methods). CI never runs `cargo doc`, and
+none of those files are touched here, but do not mistake them for a new failure.
+
+### Resume point
+
+The `#[cfg(feature = "repl")]` fix is applied and fully validated locally on
+`perf/repl-linear-session` and is ready to commit on top of `404980e5`.
+**Exact next action:** commit `src/check/mod.rs` and `src/resolve.rs`, push,
+update PR #21's validation table with the no-`repl` results, confirm all 21 remote
+checks actually run and pass, merge, then reconcile `AGENT_STATE.md` and this file
+to the merge SHA. After that, continue CORE FIRST with the next confirmed defect —
+the `Stmt::Let` partial-mutation leak test is the smallest open item, followed by
+lexer/parser ambiguities and error recovery, checker scopes/generics/mutability,
+evaluator control flow and resource limits, collection bounds, module cycles, and
+runtime panic boundaries. One PR per finding. Do not begin language features
+frozen for stabilization. B-1R8 and any runtime publication remain separately
+human-gated.
+
+### Deliberate non-fixes
+
+- `type_param_scope` can leak a frame when the `Item::Impl` arm returns early
+  through one of four `?` operators between push and pop. Harmless with a
+  per-submission resolver, latent with a persisted one. It is **not** cleared in
+  `reset_transient`; no oracle case diverges. Decide deliberately before touching
+  it.
+- The O(Σ set²) → O(Σ set) keyed duplicate-scan rewrite is deferred: `Ty` derives
+  `Eq` but not `Hash`, so a key must be `(usize, Vec<Option<Ty>>)` compared with
+  `Eq`.
+
+## Directive 004 — Kilo → GitHub Copilot agent migration (merged, `38f5fed5`)
+
+Merged as PR #20 (`dc16b4fe` + `d931f888`), CI 21/21 green including miri, branch
+deleted. Kept here because the `400` diagnosis is expensive to rediscover.
+
+### The `400 The requested model is not supported` diagnosis
 
 The directive assumed the error was a single misconfiguration. Controlled
 experiment showed **three independent root causes**; the first two are
@@ -61,15 +277,7 @@ cannot work in this VS Code build is dispatching a *custom* agent by
 `agent_type` in the Agent Host harness. **Do not re-investigate C.** No
 repository change can alter it.
 
-### Resume point
-
-`dc16b4fe` on `chore/copilot-agent-migration` holds the seven converted agents
-plus this state reconciliation. Next: push, open the PR against
-`rewrite/v3-rust`, wait for remote CI, merge, then resume **CORE FIRST** —
-probe `src/`, `tests/`, and `fuzz/` for real defects one finding at a time,
-each with a reproducible case, a regression test that fails before the fix, the
-fix, and a passing test. The website stays frozen per the ADENDO unless it
-blocks the runtime.
+Merged and closed; nothing about Directive 004 remains open.
 
 **PR #13 — merged `19cc4f22`.** It closed the last red suite on the default
 branch and repaired the gate that hid it. CI evidence: the `website` job ran

@@ -476,41 +476,78 @@ fn module_graph_scales_subquadratically() {
     );
 }
 
-/// REPL submissions rebuild the checker environment from all prior session
-/// declarations each time (`Checker::with_declarations`), so N submissions is
-/// **O(N²)** by design (recorded as TD-13). This guard therefore asserts only
-/// that the cost is *no worse than quadratic*: a doubling ratio near 4 is
-/// expected, and a cubic regression (~8) fails. Making the REPL incremental is
-/// a tracked optimisation, not a correctness fix.
+/// A REPL submission's cost must not grow with the depth of the session.
 ///
-/// The 6.0× limit is measured, not guessed: over 10 local runs the ratio stayed
-/// in 3.325–3.509, leaving ~70% headroom. A CI run still overran it by 1.5%
-/// because its `large` window stalled at 225ms against a 110ms local baseline
-/// (a 2× inflation, while the same run's `small` was only 17% high — a burst
-/// inside one window, not a uniformly slow runner). The measurement now retries
-/// like every other guard in this file instead of trusting a single sample.
+/// `SessionEngine` keeps one `Checker` and one `Resolver` for the whole session:
+/// `reset_transient` clears the per-submission frames and `extend_declarations` /
+/// `extend_session` register only the declarations and items the previous
+/// submission added. A submission therefore costs time proportional to its own
+/// size, not to the session, which makes N submissions linear overall (TD-13).
+///
+/// This guard used to assert the weaker "no worse than quadratic" property,
+/// because the REPL rebuilt the checker from every prior declaration on each
+/// submission and was genuinely quadratic. Now that the rebuild is gone, the
+/// shared 3.2× sub-quadratic limit applies here as it does everywhere else in
+/// this file, and a return to the old per-submission rebuild fails it: the
+/// quadratic path measured 3.325–3.509 at this base, while the incremental
+/// path measures ~2.1.
+///
+/// This covers the statement path, where `SessionEngine` itself registers the
+/// declaration. The module path (see the `fn` guard below) has two extra
+/// quadratic contributors that never show up here, which is why it is measured
+/// separately rather than folded into one guard.
 #[cfg(feature = "repl")]
 #[test]
-fn repl_incremental_state_is_not_worse_than_quadratic() {
+fn repl_incremental_state_is_linear_in_session_depth() {
     use aura::repl::SessionEngine;
-    let run = |n: usize| {
-        time_millis(|| {
+    assert_subquadratic(
+        "repl(submissions)",
+        |n| {
             let mut engine = SessionEngine::new();
             let mut sink = Vec::new();
             for i in 0..n {
                 let line = format!("let v{i} = {i}");
                 let _ = engine.feed_line(&line, &mut sink);
             }
-        })
-    };
-    let base = 150;
-    let (ratio, small, large) = best_doubling_ratio(6.0, || (run(base), run(base * 2)));
-    // Quadratic ≈ 4; allow headroom for constant-factor/cache effects, but a
-    // cubic path is ~8 and must fail.
-    assert!(
-        ratio < 6.0,
-        "repl(batches): doubling N scaled {ratio:.2}x ({small:.3}ms -> {large:.3}ms); \
-         expected no worse than quadratic (TD-13)"
+        },
+        // Each submission is well under a millisecond, so a small base would be
+        // lost in scheduler noise; 800 keeps both windows measurable.
+        800,
+    );
+}
+
+/// Declaring `fn`s across a session must also stay linear.
+///
+/// Function declarations take the module path, not the statement path: the
+/// submission is parsed as a module, resolved with `resolve_with_session`, and
+/// checked with `check_repl_mode`, so it exercises `hoist`'s overload
+/// registration and the resolver's session seeding — work the `let` guard above
+/// never touches. Both of those used to rescan the whole accumulated session on
+/// every submission. The duplicate-overload scan now looks only at names whose
+/// overload set grew in the current call (`rescan_functions`), and the resolver
+/// only seeds items past a watermark (`seeded_items` / `seeded_imports`).
+///
+/// Both regressions are CPU-only, so they are invisible to the allocation-based
+/// guard in `tests/repl_cost.rs`; timing is the only way to catch them. A
+/// return to the old rescanning path measured 4.18× at this base, while the
+/// incremental path measures ~1.9.
+#[cfg(feature = "repl")]
+#[test]
+fn repl_function_declarations_are_linear_in_session_depth() {
+    use aura::repl::SessionEngine;
+    assert_subquadratic(
+        "repl(fn declarations)",
+        |n| {
+            let mut engine = SessionEngine::new();
+            let mut sink = Vec::new();
+            for i in 0..n {
+                let line = format!("fn f{i}() {{ return {i} }}");
+                let _ = engine.feed_line(&line, &mut sink);
+            }
+        },
+        // A `fn` submission costs several times a `let` one, so 800 already
+        // gives both windows a comfortably measurable duration.
+        800,
     );
 }
 
