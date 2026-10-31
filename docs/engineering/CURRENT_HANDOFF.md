@@ -1,10 +1,12 @@
 # Current Engineering Handoff
 
-## Current task — CORE FIRST: a statically empty `range` is not statically empty
+## Current task — CORE FIRST: a statically empty `range` is not statically empty — merged `00aeb188` (PR #38)
 
-**Status:** reproduced, fixed, and validated locally on `rewrite/v3-rust` at
-`29736de7`; not yet committed or pushed. Two files change: `src/check/mod.rs`
-and `tests/keystone_types.rs`.
+**Status:** merged as `00aeb188`; twenty-one remote checks green,
+`mergeStateStatus=CLEAN`. Post-merge diff `29736de7..00aeb188` contains exactly
+the five intended files (`src/check/mod.rs`, `tests/keystone_types.rs`,
+`CHANGELOG.md`, this handoff, `AGENT_STATE.md`), and the working tree is clean.
+Nothing open; the next CORE FIRST finding is not yet selected.
 
 ### The defect
 
@@ -58,8 +60,10 @@ a free function, so the `expr_inner` frame hazard (REG-1) is untouched.
 
 ### Next exact action
 
-Commit both files, push a branch, open the PR with the template, and merge
-after the twenty-one remote checks are green.
+Done. Committed `77cb34d6`, pushed `fix/statically-empty-range-reachability`,
+opened PR #38, obtained 21/21 green checks, and merged with
+`gh pr merge 38 --merge --delete-branch`. Select the next CORE FIRST finding
+from the lead list in `AGENT_STATE.md`.
 
 ---
 

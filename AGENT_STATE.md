@@ -2,10 +2,10 @@
 
 ## Directive 003 — stabilization and hardening campaign (current)
 
-- Active branch: `rewrite/v3-rust`, remote HEAD **`fb3e8dee`** — the merge of
-  **PR #37** (CORE FIRST: HTTP header-value encoding). The working tree is
-  clean; the next CORE FIRST finding is not yet selected.
-  **Thirty-seven PRs are merged** this campaign:
+- Active branch: `rewrite/v3-rust`, remote HEAD **`00aeb188`** — the merge of
+  **PR #38** (CORE FIRST: statically empty `range` reachability). The working
+  tree is clean; the next CORE FIRST finding is not yet selected.
+  **Thirty-eight PRs are merged** this campaign:
   #2 `f96536b6` (Directive 002 preflight),
   #3 `07845932` (rustls advisories), #4 `a562bacf` (batches 1–5),
   #5 `eaa3b9ed` (TD-23 + default-branch flip), #6 `4a20fa84` (post-merge
@@ -39,7 +39,8 @@
   #34 `1fa01db0` (CORE FIRST: f-string zero-pad sign placement),
   #35 `4aff6d5c` (CORE FIRST: generic-bound method resolution),
   #36 `4cbf6afb` (CORE FIRST: JSON decode depth parity),
-  #37 `fb3e8dee` (CORE FIRST: HTTP header-value encoding in both directions).
+  #37 `fb3e8dee` (CORE FIRST: HTTP header-value encoding in both directions),
+  #38 `00aeb188` (CORE FIRST: statically empty `range` reachability).
   The
   `/private/tmp/aura-directive-002-release-preflight` worktree and the
   `repair/directive-002-release-preflight` branch are **historical**.
@@ -1370,30 +1371,22 @@ feature-gating of the typed-decode path.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `29736de7`
-(post-#37 state sync; PR #37 itself is `fb3e8dee`), thirty-seven PRs merged this
-campaign; Aura 0.3.1 (Keystone) is published and `v0.3.1` = `b09cbef2`.
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `00aeb188`, the
+merge of PR #38 (statically empty `range` reachability); thirty-eight PRs merged
+this campaign; Aura 0.3.1 (Keystone) is published and `v0.3.1` = `b09cbef2`.
 Batches 1–5, B6/B7/B14, TD-23, TD-24, TD-27,
 Directive 004, TD-13, the resolver type-parameter leak, the set key-method
 element typing, return-type tail validation, `pub use` re-export resolution, the
 f-string exponent case, the `sort` total order, the f-string zero-pad sign
-placement, generic-bound method resolution, JSON decode depth parity and HTTP
-header-value encoding are **merged and closed**.
+placement, generic-bound method resolution, JSON decode depth parity, HTTP
+header-value encoding and statically empty `range` reachability are **merged and
+closed**.
 Directive 003-R §4's blockers are closed.
 
-**In flight (uncommitted):** the statically-empty-`range` reachability fix —
-`src/check/mod.rs` plus a regression test in `tests/keystone_types.rs`. Eight
-range shapes wrongly reported `E3006`; the spec (four statements, see the
-handoff) already required the correct behaviour, so this is a conformance
-defect with no spec edit. Locally validated: `keystone_types` 49/49,
-`scripts/validate.py` 200 pass / 0 fail, all-features and no-default-features
-`--all-targets` 66 suites green each, fmt and clippy `-D warnings` clean, MSRV
-`+1.83.0 check`, nightly fuzz check, playground build `--check` + node tests,
-website build + tests. Soundness re-proved at runtime: none of the eight
-claimed-empty shapes runs its body, and the ascending counterparts still do.
-
-**Exact next action:** commit those two files, push a branch, open the PR with
-the template, and merge once the twenty-one remote checks are green.
+**Exact next action:** the working tree is clean on `rewrite/v3-rust` at
+`00aeb188`. Branch the next CORE FIRST work item — a real, reproduced defect in
+`src/`, `tests/`, or `fuzz/`, shipped as one PR carrying a reproducible case, a
+regression test that fails before the fix, the fix, and a passing test.
 
 Highest-value unfinished leads already recorded here: (a) lexer/parser
 ambiguities, precedence, adversarial input and error recovery,
