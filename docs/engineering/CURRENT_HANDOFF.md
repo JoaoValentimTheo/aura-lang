@@ -1,6 +1,144 @@
 # Current Engineering Handoff
 
-## Current task — CORE FIRST: return-type tail validation — merged
+## Current task — CORE FIRST: `pub use` re-export resolution (two defects)
+
+**Status:** fixed on `fix/pub-use-reexport-resolution`; local validation floor
+green. Not yet published.
+
+### The contract
+
+`docs/LANGUAGE_SPEC.md` §27 (3311–3318) states that `pub use` makes the imported
+name an exported name of the current module, that a private declaration cannot be
+published through a public re-export (`E2018`), and that **"a re-export chain
+resolves transitively and terminates deterministically."**
+
+`Resolver::lookup_qualified` — the expression/`::`-path resolver — honours that
+chain via `follow_reexport`. The `use`-import path did not. Two independent
+defects fell out of that asymmetry.
+
+### Defect A — the `use` path bound the alias, not the declaration site
+
+`apply_use` called `resolve_use_path` and bound the returned canonical name
+directly. For
+
+```aura
+module a { pub fn f() -> int { return 1 } }
+module b { pub use a::f }
+use b::f
+fn main() { print(f()) }
+```
+
+the binding became `b::f` — a name no item is declared under. It failed only at
+first use, as `E2003` (`undefined function \`b::f\``), quoting the *alias*. The
+diagnostic's quoted name is the evidence: `b::f` means the chain was not
+followed; `a::f` would mean it was.
+
+**Fix:** wrap the lookup in `follow_reexport`, exactly as `lookup_qualified`
+already does. `follow_reexport` is cycle-safe (bounded by `reexports.len() + 1`,
+breaks on self-reference), so the new caller inherits that safety.
+
+**Wrong test expectation caught.** The enum-variant assertion initially expected
+`b::A(2)` and failed with `left: "a::A(2)"`. Three fresh probe directories
+(`use b` + `b::A(2)`, `use a::E::A` + `A(2)`, `use b::A` + `A(2)`) all print
+**`a::A(2)`** — a variant's canonical identity is its declaration site (§27,
+3329–3335). The assertion, not the fix, was wrong; it now expects `a::A(2)`.
+
+### Defect B — an import could run before the re-export it names existed
+
+`apply_imports` applied a module's own imports *before* recursing into its
+children, and `src/module_graph.rs:723` pushes child `Item::Module` *after* the
+parent's own items. So a root `use facade::g`, where `facade` says
+`pub use inner::g`, resolved before `facade`'s `pub use` had been registered and
+failed `E2019` (`` `g` is not declared in module `facade` ``).
+
+This contradicted `collect_module`'s own doc comment (552–559), which promises
+imports are applied "only after **every** module and item in the file has been
+declared, so an import may name an item declared later or in a sibling module
+regardless of source order." The comment was literally false.
+
+**Fix — per-level deferral, no new `Resolver` field.** A `deferred: Vec<&Item>`
+local to each `apply_imports` level. A `use` that fails with `E2019` is pushed
+onto it rather than propagated; the level applies its own imports in source
+order, recurses into its children, then retries the deferred imports once. A
+second failure propagates.
+
+- **Why keying on `E2019` alone makes deferral safe.** Every `UNKNOWN_MODULE`
+  raise site is strictly *before* `apply_use`'s first scope mutation, so a
+  deferred import cannot leave a partial binding, cannot double-push
+  `applied_imports`, and cannot insert into `type_scope`/`value_scope`/
+  `variant_scope`.
+- **Why that also removed the need for an `E2018` hoist** — except for the
+  `pub use` visibility check, which was *not* pre-mutation. It ran after the
+  scope insert and after the `applied_imports` push, so a rejected public
+  re-export left a binding behind. It is now hoisted above the first mutation,
+  making `apply_use` fail-atomically for every rejection. Probe `p3` confirms the
+  diagnostic still reports the declaration-site span (`facade.aura:1:5`).
+- **Why per-level is sufficient.** `declare_module` (pass A) already visits the
+  whole tree, so all names are known before pass B. Only `pub use` registrations
+  are time-dependent, and a root import needs exactly the subtree below it, which
+  the recursion completes before the retry loop.
+- **Why `activate_item` runs again before each retry.** `resolve_sourced` wraps a
+  `collect_module` failure with `attach_source`, which reads `active_source`.
+  Recursing into a child leaves it pointing at the child's last item, so without
+  re-activation a retried root error would be attributed to the wrong file —
+  breaking `resolver_error_in_child_keeps_child_provenance`
+  (`tests/module_graph.rs:384–405`), which still passes.
+- **Exactly-once retry.** Each deferred import is retried once and a second
+  failure propagates, so there is no fixed-point loop and no unbounded retry.
+
+### Regression coverage added
+
+`tests/modules.rs` (in-source modules, no filesystem fixtures):
+
+- `use_through_a_re_exporting_module_binds_the_real_target` — re-exported `fn`,
+  argument-bearing `fn` with signature preserved, two-hop chain `c → b → a`,
+  re-exported `struct` used as an annotation, re-exported enum variant printing
+  `a::A(2)`, rename through a re-export (`use b::f as g`), and a
+  direct-declaration positive control.
+- `use_through_a_re_export_keeps_the_private_target_rejected` — `E2018` negative
+  control, proving the new `follow_reexport` call cannot launder visibility.
+
+`tests/module_graph.rs`:
+
+- `use_through_an_external_re_export_resolves_regardless_of_source_order` — runs
+  the same logical graph in both registration orders, which is what pins defect B
+  (order-independence) separately from defect A.
+
+### Validation actually run
+
+| Command | Result |
+|---|---|
+| `cargo test --locked --test modules` | 22 passed, 0 failed |
+| `cargo test --locked --test module_graph` | 39 passed, 0 failed |
+| `cargo test --locked --test checker` | 59 passed, 0 failed |
+| `cargo test --locked --test keystone_types` | 48 passed, 0 failed |
+| `cargo test --locked --test source_provenance` | 14 passed, 0 failed |
+| `cargo fmt --all -- --check` | clean |
+| `cargo clippy --locked --all-targets --all-features -- -D warnings` | clean |
+| `cargo test --locked --all-targets --all-features` | all green |
+| `cargo test --locked --all-targets --no-default-features --features cli,repl,json,regex,time` | all green |
+| `RUSTFLAGS="-D warnings" cargo check --locked --lib --no-default-features --features cli` | clean |
+| `cargo +1.83.0 check --locked --all-features` | clean |
+| `cargo +nightly check --manifest-path fuzz/Cargo.toml --all-targets` | clean |
+| `node playground/tests/node/run-all.mjs` | all green |
+| `node playground/build.mjs --check` | manifest matches 9 version(s) |
+| `node website/build.mjs` | 46 pages |
+| `node website/tests/run-all.mjs` | all green |
+
+Ten CLI probes in fresh `/tmp/lp2/` directories confirmed: forward order,
+two-hop chain, private target rejected (`E2018`), genuinely unknown module still
+`E2019`, in-source children-before-root-use, `E2007` collision, alias through a
+re-export, `E1009` builtin name, children declared before the root `use`, and
+module alias plus qualified access.
+
+### No spec change
+
+The code violated §27 and `collect_module`'s own doc comment; the fix satisfies
+both. No normative text was amended.
+
+---
+
+## Previous task — CORE FIRST: return-type tail validation — merged
 
 **Merged as PR #26 (`b843dc85`), CI 21/21 green on round 1.** No red gate, no
 retry, no gate weakened. `mergeStateStatus` was `CLEAN` and `reviewDecision`

@@ -462,6 +462,59 @@ fn pub_use_re_exports_an_item() {
 }
 
 #[test]
+fn use_through_a_re_exporting_module_binds_the_real_target() {
+    // A `use` of a name that a module re-exports must resolve to the
+    // declaration site, not to the re-exporting alias (§27). Qualified access
+    // through the alias already worked; the imported binding did not.
+    assert_eq!(
+        ok("module a { pub fn f() -> int { return 3 } }\nmodule b { pub use a::f }\nuse b::f\nfn main() { print(f()) }"),
+        "3\n"
+    );
+    // The bound name is callable and carries the real signature.
+    assert_eq!(
+        ok("module a { pub fn add(x: int) -> int { return x + 1 } }\nmodule b { pub use a::add }\nuse b::add\nfn main() { print(add(41)) }"),
+        "42\n"
+    );
+    // A two-hop re-export chain is followed transitively to the declaration.
+    assert_eq!(
+        ok("module a { pub fn f() -> int { return 4 } }\nmodule b { pub use a::f }\nmodule c { pub use b::f }\nuse c::f\nfn main() { print(f()) }"),
+        "4\n"
+    );
+    // A re-exported type is usable as an annotation.
+    assert_eq!(
+        ok("module a { pub struct S { pub x: int } }\nmodule b { pub use a::S }\nuse b::S\nfn main() { let s: S = S { x: 5 }\n print(s.x) }"),
+        "5\n"
+    );
+    // A re-exported enum variant is importable, and its canonical identity is
+    // the declaration site — exactly what `b::A(2)` and `use a::E::A` already
+    // print, so the imported binding must not print the alias either.
+    assert_eq!(
+        ok("module a { pub enum E { A(int) } }\nmodule b { pub use a::E::A }\nuse b::A\nfn main() { print(A(2)) }"),
+        "a::A(2)\n"
+    );
+    // Renaming still works through a re-export.
+    assert_eq!(
+        ok("module a { pub fn f() -> int { return 6 } }\nmodule b { pub use a::f }\nuse b::f as g\nfn main() { print(g()) }"),
+        "6\n"
+    );
+    // Positive control: importing a directly declared item is unchanged.
+    assert_eq!(
+        ok("module a { pub fn f() -> int { return 7 } }\nuse a::f\nfn main() { print(f()) }"),
+        "7\n"
+    );
+}
+
+#[test]
+fn use_through_a_re_export_keeps_the_private_target_rejected() {
+    // Following the chain must not launder a private declaration into scope:
+    // the visibility check has to run against the declaration site.
+    assert_eq!(
+        code("module a { fn g() -> int { return 5 } }\nmodule b { pub use a::g }\nuse b::g\nfn main() { print(g()) }"),
+        codes::PRIVATE_ACCESS
+    );
+}
+
+#[test]
 fn module_alias_binds_a_lexical_path() {
     assert_eq!(
         ok("module a { pub fn f() -> int { return 6 } }\nuse a as m\nfn main() { print(m::f()) }"),

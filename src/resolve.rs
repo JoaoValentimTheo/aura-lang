@@ -676,16 +676,30 @@ impl Resolver {
 
     /// Pass B: apply `use` imports from every module, now that the whole
     /// program's declarations are known.
+    ///
+    /// A module's own imports are applied before it descends into its children,
+    /// so that an inner module can still name a binding its parent imported.
+    /// That order has one consequence: `use facade::g` where `facade` re-exports
+    /// `g` names an item that only exists once `facade`'s own imports have run.
+    /// Such an import is deferred and retried after this module's children, by
+    /// which point every descendant's `pub use` is registered (§27: a re-export
+    /// chain resolves transitively). Deferring is safe because every unknown-name
+    /// failure is raised before the import mutates any scope, so a deferred
+    /// import leaves no partial binding behind, and it is pushed to
+    /// `applied_imports` exactly once.
     fn apply_imports(&mut self, items: &[Item], prefix: &[String]) -> Result<()> {
+        let mut deferred: Vec<&Item> = Vec::new();
         for item in items {
             self.activate_item(item);
             match item {
-                Item::Use {
-                    path,
-                    alias,
-                    public,
-                    span,
-                } => self.apply_use(path, alias.as_deref(), *public, prefix, *span)?,
+                Item::Use { .. } => {
+                    if let Err(diag) = self.apply_use_item(item, prefix) {
+                        if diag.code != codes::UNKNOWN_MODULE {
+                            return Err(diag);
+                        }
+                        deferred.push(item);
+                    }
+                }
                 Item::Module {
                     items: inner, name, ..
                 } => {
@@ -695,6 +709,26 @@ impl Resolver {
                 }
                 _ => {}
             }
+        }
+        for item in deferred {
+            // Provenance has to be restored first: a child module visited above
+            // left `active_source` pointing at its own items.
+            self.activate_item(item);
+            self.apply_use_item(item, prefix)?;
+        }
+        Ok(())
+    }
+
+    /// Apply one `Item::Use`, unpacking its fields for [`Resolver::apply_use`].
+    fn apply_use_item(&mut self, item: &Item, prefix: &[String]) -> Result<()> {
+        if let Item::Use {
+            path,
+            alias,
+            public,
+            span,
+        } = item
+        {
+            self.apply_use(path, alias.as_deref(), *public, prefix, *span)?;
         }
         Ok(())
     }
@@ -730,7 +764,12 @@ impl Resolver {
                 .insert(local, target);
             return Ok(());
         }
-        let canonical = self.resolve_use_path(prefix, path, span)?;
+        // A `use` of a name a module re-exports must bind the declaration site,
+        // not the re-exporting alias (§27: a re-export chain resolves
+        // transitively). Qualified access already follows the chain
+        // (`lookup_qualified`); the imported binding has to do the same, or the
+        // alias is bound and fails only later, at first use.
+        let canonical = self.follow_reexport(&self.resolve_use_path(prefix, path, span)?);
         if !self.items.contains_key(&canonical) {
             return Err(Diag::new(
                 codes::UNKNOWN_MODULE,
@@ -773,6 +812,22 @@ impl Resolver {
                 span,
             ));
         }
+        // `pub use path::Item` re-exports: the re-exporting module gains an
+        // exported name `prefix::local` that denotes `canonical` (§27,
+        // CONF-RESOLVE-8). No privilege escalation: the target must itself be
+        // visible here (checked above), and a private declaration cannot be
+        // published through a public re-export. Checked before any scope is
+        // mutated, so a rejected re-export leaves no binding behind.
+        if public && !self.is_publicly_visible(&canonical) {
+            return Err(Diag::new(
+                codes::PRIVATE_ACCESS,
+                format!(
+                    "`{}` is private where it is declared; a `pub use` cannot re-export it",
+                    path.join("::")
+                ),
+                span,
+            ));
+        }
         // An imported type is also usable as a value (a struct name in a
         // constructor or a bare variant reference), so bind it in both
         // namespaces when it is a type.
@@ -794,22 +849,10 @@ impl Resolver {
         }
         self.applied_imports
             .push((prefix.to_vec(), local.clone(), canonical.clone()));
-        // `pub use path::Item` re-exports: the re-exporting module gains an
-        // exported name `prefix::local` that denotes `canonical` (§27,
-        // CONF-RESOLVE-8). No privilege escalation: the target must itself be
-        // visible here (checked above), and a private declaration cannot be
-        // published through a public re-export.
+        // No privilege escalation: the target must itself be visible here
+        // (checked above), and a private declaration cannot be published
+        // through a public re-export (checked above, before any mutation).
         if public {
-            if !self.is_publicly_visible(&canonical) {
-                return Err(Diag::new(
-                    codes::PRIVATE_ACCESS,
-                    format!(
-                        "`{}` is private where it is declared; a `pub use` cannot re-export it",
-                        path.join("::")
-                    ),
-                    span,
-                ));
-            }
             self.reexports
                 .insert(join(prefix, &local), canonical.clone());
             // Mark the re-exported public name as an exported item.

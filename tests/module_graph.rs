@@ -962,3 +962,60 @@ fn deep_physical_wrapper_chain_is_bounded_by_the_semantic_limit() {
     let error = build(MAX_AST_DEPTH + 1).unwrap_err();
     assert_eq!(error.diagnostic().code, codes::NESTING);
 }
+
+#[test]
+fn use_through_an_external_re_export_resolves_regardless_of_source_order() {
+    // A `.aura` file that re-exports another file's item is a pass-B product:
+    // the `pub use` is registered when imports are applied, so an entry file's
+    // `use facade::g` must not be resolved before `facade`'s imports run.
+    let run = |reverse: bool| {
+        let (mut provider, root) = provider("use facade::g\nfn main() { print(g()) }");
+        let facade = if reverse {
+            add_source(
+                &mut provider,
+                &root,
+                "facade",
+                "facade",
+                "facade.aura",
+                "pub use inner::g",
+            )
+        } else {
+            key("facade")
+        };
+        if reverse {
+            add_source(
+                &mut provider,
+                &facade,
+                "inner",
+                "inner",
+                "inner.aura",
+                "pub fn g() -> int { return 7 }",
+            );
+        } else {
+            let facade_key = add_source(
+                &mut provider,
+                &root,
+                "facade",
+                "facade",
+                "facade.aura",
+                "pub use inner::g",
+            );
+            add_source(
+                &mut provider,
+                &facade_key,
+                "inner",
+                "inner",
+                "inner.aura",
+                "pub fn g() -> int { return 7 }",
+            );
+        }
+        run_graph(build(&provider))
+    };
+    // `facade.aura` says `pub use inner::g`, so `inner` is its child. Both
+    // registration orders must resolve to the same binding.
+    assert_eq!(
+        run(false).unwrap_or_else(|e| panic!("{}", e.message)),
+        "7\n"
+    );
+    assert_eq!(run(true).unwrap_or_else(|e| panic!("{}", e.message)), "7\n");
+}

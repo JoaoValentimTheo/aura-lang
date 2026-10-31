@@ -141,6 +141,43 @@
 - Scope: infrastructure recovery. CORE FIRST work resumes after this migration
   lands.
 
+## CORE FIRST — `pub use` re-export resolution — fixed, unpublished
+
+Two independent defects in `src/resolve.rs`, both violating the §27 clause that
+"a re-export chain resolves transitively and terminates deterministically"
+(`docs/LANGUAGE_SPEC.md` 3311–3318). The expression/`::`-path resolver
+(`lookup_qualified`) already followed the chain; the `use`-import path did not.
+
+- **Defect A:** `apply_use` bound the *alias* (`b::f`) instead of the declaration
+  site (`a::f`), so the import failed only at first use, as `E2003` quoting the
+  alias. Fixed by wrapping the lookup in `follow_reexport`, as `lookup_qualified`
+  already does. The new test's enum-variant assertion was itself wrong — three
+  probes confirm a variant's canonical identity is its declaration site
+  (`a::A(2)`), so the expectation was corrected, not the fix.
+- **Defect B:** `apply_imports` applied a module's imports *before* recursing into
+  its children, while `module_graph` pushes child `Item::Module` *after* the
+  parent's items. A root `use facade::g` therefore ran before `facade`'s
+  `pub use inner::g` was registered and failed `E2019`. This contradicted
+  `collect_module`'s own doc comment (552–559).
+- **Fix shape:** a per-level `deferred: Vec<&Item>` — an `E2019` failure is
+  deferred and retried once after that level's children, with `activate_item`
+  re-run so provenance stays correct. Safe because every `UNKNOWN_MODULE` raise
+  site is strictly pre-mutation. No new `Resolver` field, so `reset_transient`
+  and the REPL path are untouched.
+- **Adjacent defect fixed:** the `pub use` visibility check ran *after* the scope
+  insert and the `applied_imports` push, so a rejected public re-export left a
+  binding behind. Hoisted above the first mutation, making `apply_use`
+  fail-atomically for every rejection.
+- Regression coverage: `use_through_a_re_exporting_module_binds_the_real_target`,
+  `use_through_a_re_export_keeps_the_private_target_rejected` (`tests/modules.rs`),
+  `use_through_an_external_re_export_resolves_regardless_of_source_order`
+  (`tests/module_graph.rs`, both registration orders — this is what pins B
+  separately from A). Ten CLI probes in fresh directories confirmed the fix and
+  every adjacent contract (`E2007`, `E1009`, `E2018`, `E2019`, module aliases).
+- Full validation floor green including MSRV, nightly fuzz, playground and
+  website. **No spec change** — the code was wrong, not the normative text.
+- Branch `fix/pub-use-reexport-resolution`, not yet published.
+
 ## CORE FIRST — return-type tail validation — merged, `b843dc85` (PR #26)
 
 A body's implicit value is the value of its last statement (§15.1), and §6.4
@@ -1051,15 +1088,17 @@ feature-gating of the typed-decode path.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `b843dc85` (PR #26
-merged, twenty-five PRs merged this campaign); Aura 0.3.1 (Keystone) is published
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `a0423769` (PR #27
+merged, twenty-seven PRs merged this campaign); Aura 0.3.1 (Keystone) is published
 and `v0.3.1` = `b09cbef2`. Batches 1–5, B6/B7/B14, TD-23, TD-24, TD-27,
 Directive 004, TD-13, the resolver type-parameter leak, the set key-method
 element typing and return-type tail validation are **merged and closed**.
 Directive 003-R §4's blockers are closed.
-**Exact next action:** begin the next CORE FIRST work item — a real, reproduced
-defect in `src/`, `tests/`, or `fuzz/`, shipped as one PR carrying a reproducible
-case, a regression test that fails before the fix, the fix, and a passing test.
+**Exact next action:** publish `fix/pub-use-reexport-resolution` (the `pub use`
+re-export resolution fix above) as one PR, then begin the next CORE FIRST work
+item — a real, reproduced defect in `src/`, `tests/`, or `fuzz/`, shipped as one
+PR carrying a reproducible case, a regression test that fails before the fix, the
+fix, and a passing test.
 Highest-value unfinished leads already recorded here: (a) lexer/parser
 ambiguities, precedence, adversarial input and error recovery,
 (b) checker scopes, generics, mutability, (c) evaluator control flow, closures,
