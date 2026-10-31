@@ -2,9 +2,9 @@
 
 ## Directive 003 — stabilization and hardening campaign (current)
 
-- Active branch: `rewrite/v3-rust`, remote HEAD **`92f5cf18`** — the merge of
-  **PR #22** (CORE FIRST: the resolver's type-parameter frame is now popped on
-  the error path). **Twenty-two PRs are merged** this campaign:
+- Active branch: `rewrite/v3-rust`, remote HEAD **`02c3c897`** — the merge of
+  **PR #24** (CORE FIRST: the set key-method surface is now type-checked).
+  **Twenty-four PRs are merged** this campaign:
   #2 `f96536b6` (Directive 002 preflight),
   #3 `07845932` (rustls advisories), #4 `a562bacf` (batches 1–5),
   #5 `eaa3b9ed` (TD-23 + default-branch flip), #6 `4a20fa84` (post-merge
@@ -24,7 +24,9 @@
   code), #20 `38f5fed5` (Directive 004: the seven agents), #21 `2fe944fb`
   (CORE FIRST: REPL session state incremental, TD-13 closed, session APIs
   feature-gated), #22 `92f5cf18` (CORE FIRST: resolver type-parameter frame
-  popped on the error path). The
+  popped on the error path), #23 `db9b511a` (state sync after #22), #24
+  `02c3c897` (CORE FIRST: Set `add`/`has`/`contains`/`remove` element typing).
+  The
   `/private/tmp/aura-directive-002-release-preflight` worktree and the
   `repair/directive-002-release-preflight` branch are **historical**.
 - **The default branch is `rewrite/v3-rust`** (TD-23): flipped from `master`,
@@ -135,6 +137,58 @@
   it.
 - Scope: infrastructure recovery. CORE FIRST work resumes after this migration
   lands.
+
+## CORE FIRST — set key-method element typing — merged, `02c3c897` (PR #24)
+
+`TypeClass::Set` had **no element branch at all** in `Checker::check_method_call`.
+The entire set key-method surface (`add`, `has`, `contains`, `remove`) was
+therefore statically unchecked, while the structurally identical map key methods
+were correctly rejected with `E3001`. `List.push` was checked correctly, so the
+asymmetry — not a missing feature — was the defect.
+
+```aura
+let mut s = set{1}
+s.add("x")      // accepted; ran to completion producing {1, "x"}
+s.has("x")      // accepted; silently returned false, no diagnostic
+s.remove(1.5)   // accepted; failed only at runtime
+```
+
+Not caught with an explicit `{int}` annotation, a declared return type, or an
+`{int}` parameter, and still not caught when the receiver arrived through a
+`{int}`-returning function. `Set.add` and `Set.remove` are registered with
+`Param::ANY` / `Ty::Unknown` (`src/stdlib/signatures.rs:1205`, `:1214`), so the
+coarse signature table cannot express the constraint and the checker must.
+
+- **Fix:** `check_element_assignable` gained a `container: &str` noun so the
+  diagnostic can name list, array, or set; its four existing call sites pass
+  `"list"`/`"list"`/`"list"`/`"array"` and their messages are unchanged byte for
+  byte. Two branches were added to `check_method_call`: `Set` + `add`, and
+  `Set` + `has`/`contains`/`remove`. Both reject a non-key-capable argument
+  first (so the diagnostic is right even when the element type is `Unknown`),
+  then check agreement with the receiver's proven element type.
+- **Set-specific wording is deliberate.** `Ty::key_type_error()` says "map key",
+  so it is left untouched for maps rather than made ambiguous; the new branches
+  reuse the set-literal path's existing message.
+- **Guards:** `tests/collections.rs::
+  typed_set_mutation_obeys_the_element_type` and
+  `::typed_set_key_methods_obey_the_element_type`. Both failed pre-fix with
+  `expected the program to be rejected: ""`. They cover annotated, inferred and
+  declared-return receivers; the accept path; union receivers; the untyped
+  `set{}` receiver (no false rejection); all three query methods; and
+  non-key-capable arguments.
+- **Docs:** `docs/LANGUAGE_SPEC.md` had **no `set` method table at all**, so the
+  roster existed only in code. §24.1 now has one beside the string/list/map
+  tables, and §21.4 states the check-time typing contract normatively.
+- **Merged as PR #24 (`02c3c897`), CI 21/21 green on round 1.** All six local
+  template gates were run first and are recorded in the PR body with their
+  results; `mergeStateStatus` was `CLEAN` and `reviewDecision` empty, so no
+  external human approval was required or simulated.
+- **Considered and rejected as defects:** `list.contains`, `array.contains`,
+  `tuple.contains` and `range.contains` also take `Param::ANY` and return
+  `false` for a foreign argument, but that is the documented contract (spec
+  §24.1 "1 any") and it cannot corrupt state. `reduce`'s `Param::ANY`
+  accumulator *is* checked, because overload resolution rejects `"s"` against
+  the numeric `+` in the body.
 
 ## CORE FIRST — resolver type-parameter leak — merged, `92f5cf18` (PR #22)
 
@@ -336,7 +390,7 @@ defect found by round 1 and fixed by `3a42deee`.
 
 - Branch: `rewrite/v3-rust`
 - **Git reality (verify with `git rev-parse`, do not trust prose):**
-  `origin/rewrite/v3-rust` is at **`92f5cf18`**, the merge commit of PR #22.
+  `origin/rewrite/v3-rust` is at **`02c3c897`**, the merge commit of PR #24.
   Tag **`v0.3.1` = `b09cbef2`**. Aura 0.3.1 (Keystone) is the current release
   (release = language = `0.3.1`, runtime `0.3.1` is the Playground default) and
   is **PUBLISHED**. The earlier `b221e6a9`/`v0.2.1` notes below are
@@ -933,20 +987,26 @@ feature-gating of the typed-decode path.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `92f5cf18` (PR #22
-merged, twenty-two PRs merged this campaign); Aura 0.3.1 (Keystone) is published
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `02c3c897` (PR #24
+merged, twenty-four PRs merged this campaign); Aura 0.3.1 (Keystone) is published
 and `v0.3.1` = `b09cbef2`. Batches 1–5, B6/B7/B14, TD-23, TD-24, TD-27,
-Directive 004, TD-13 and the resolver type-parameter leak are **merged and
-closed**. Directive 003-R §4's blockers are closed.
+Directive 004, TD-13, the resolver type-parameter leak and the set key-method
+element typing are **merged and closed**. Directive 003-R §4's blockers are
+closed.
 **Exact next action:** begin the next CORE FIRST work item — a real, reproduced
 defect in `src/`, `tests/`, or `fuzz/`, shipped as one PR carrying a reproducible
 case, a regression test that fails before the fix, the fix, and a passing test.
-Highest-value unfinished leads already recorded here: (a) the `Stmt::Let`
-second-order partial-mutation leak test, (b) lexer/parser ambiguities,
-precedence, adversarial input and error recovery, (c) checker scopes, generics,
-mutability, (d) evaluator control flow, closures, resource limits,
-(e) collections and bounds, (f) module cycles, (g) Host/Python/WASM capability
-and panic boundaries.
+Highest-value unfinished leads already recorded here: (a) lexer/parser
+ambiguities, precedence, adversarial input and error recovery,
+(b) checker scopes, generics, mutability, (c) evaluator control flow, closures,
+resource limits, (d) collections and bounds, (e) module cycles,
+(f) Host/Python/WASM capability and panic boundaries.
+Probed and found conformant (do not re-investigate): HOF arity and ordering
+(`reduce` is `(list, fn, init)`), `zip` truncating to the shortest input,
+`map`/`filter`/`enumerate`, closure capture by reference with per-call cells,
+`regex_*` on malformed patterns (`E3001` with the parse error) and linear-time
+behavior on adversarial input, and `contains` on a foreign argument returning
+`false` (documented "1 any", cannot corrupt state).
 Do not begin language features frozen for stabilization. B-1R8 (remove the
 recursive engine and the oracle switch) and any runtime publication remain
 separately human-gated.
