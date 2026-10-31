@@ -30,7 +30,11 @@ if ! git diff --quiet -- .codex/config.toml; then
     codex_state=MODIFIED
 fi
 
-writer=$(sed -n '/^## Writer$/,/^## /{/^NONE$/p;/^WEB-GPT$/p;}' AGENT_STATE.md | head -n 1)
+# The `## Writer` value is a single word optionally followed by a parenthetical
+# justification, e.g. `NONE (single-writer discipline; ...)`. Match the leading
+# token only, so a qualified value is not reported as UNKNOWN.
+writer=$(sed -n '/^## Writer$/,/^## /{/^NONE/p;/^WEB-GPT/p;}' AGENT_STATE.md \
+    | head -n 1 | sed 's/[[:space:]].*//')
 if test -z "$writer"; then
     writer=UNKNOWN
 fi

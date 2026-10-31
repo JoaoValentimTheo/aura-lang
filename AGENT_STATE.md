@@ -1,5 +1,67 @@
 # Aura Agent State
 
+## Directive 008 — NEBULA 0.3.2 campaign (`G00`, `IN_PROGRESS`)
+
+**Reconciled baseline.** Branch `rewrite/v3-rust`; local `HEAD` `c4f76907` ==
+`origin/rewrite/v3-rust`; tree clean at campaign start; zero open pull
+requests. Directive 007 dev.9 evidence is intact (PR #41 → `ba8204ac`, CI run
+`41240576369` 21/21 green, Pages `41240576317` succeeded; PR #42 →
+`c4f76907`).
+
+**Frozen artifacts unaltered.** `playground/runtimes/` holds 47 tracked files:
+`manifest.json` plus 46 `.wasm`. Only 8 of the 46 are registered in
+`manifest.json` (the other 38 are retained historical development builds).
+All 8 registered artifacts re-hashed: 8 verified, 0 mismatched, 0 missing.
+`git status --short playground/runtimes` empty. `manifest.current` is still
+`"0.3.1"`; `0.3.2` is not released, versioned, or promoted.
+
+**§0.4 provenance.** The three documents Directive 008 cites as inputs —
+`AQL_Nebula_RFC_Draft.md`, `NEBULA_SQLGUARD_CONTRACT.md`,
+`Aura_0.3.2_Nebula_Inventario_Geral.md` — **do not exist** in this repository.
+`docs/engineering/` has no `*NEBULA*` or `*AQL*` file; `docs/rfcs/` holds only
+`README.md` and `0001-exception-catch-selection.md`. The G02 RFC set must
+therefore be reconstructed from the directive text plus repository evidence,
+each RFC carrying an explicit provenance note, with no approval implied.
+
+**P3 preflight fix.** `scripts/agent-state.sh` reported `WRITER=UNKNOWN` on a
+clean tree because its `## Writer` extraction required an exact line and
+`AGENT_STATE.md` records `NONE (single-writer discipline; …)`. The extraction
+now matches the leading token only: `WRITER=UNKNOWN` → `WRITER=NONE`. Writer
+policy unchanged; `CURRENT_TRACK`/`CURRENT_PHASE`/`AUDIT3` left brittle
+deliberately (out of the §0.5 trivial scope).
+
+**Language-surface probes (fresh directory each, output byte-verified with
+`od -c`).** `@` is unlexable (`E1001`; no `At` token in `src/lex`);
+`entity`/`relation` are not reserved (probe printed exactly `3\n`);
+`try` is statement-only (`let x = try {…} catch e {…}` → `E1006`; `Tok::Try`
+reachable only via `stmt_inner` at `src/parse/mod.rs:1979`, also `:3249`,
+`:3285`, `:3733`); generic enums already work end-to-end
+(`enum R<T,E> { Ok(T), Err(E) }` + `R::Ok(7)` + `match` → exactly `7\n`);
+match arms use `->` (`=>` invalid). `docs/grammar.md:97` defines
+`try_stmt = "try" block "catch" pattern block [ "finally" block ]`;
+`docs/LANGUAGE_SPEC.md:1741` states `catch` is mandatory.
+
+**No database infrastructure exists.** No `sqlx`/`sqlite`/`rusqlite`/
+`postgres`/`mysql`/`mongodb`/`tokio` in `Cargo.toml` or `Cargo.lock`. Every
+G07–G16 dependency is net-new supply-chain surface needing per-driver ADR and
+audit. `py` is a full CPython process, not a sandbox.
+
+**Version namespaces.** `Cargo.toml` 0.3.1 / edition 2021 / MSRV 1.83;
+`AIS_VERSION = "0.1"` (`src/ais.rs:40`); `ABI_VERSION = 2`
+(`playground/runtime/src/lib.rs:66`); playground API 1. `AQL_VERSION` and
+`SQLGUARD_VERSION` do not exist yet and are introduced as **own** namespaces.
+
+**Campaign plan published:** `docs/engineering/NEBULA_CAMPAIGN.md` — baseline,
+scope, P0/P1/P2 classification, G00–G19 wave table with verbatim gates, status
+vocabulary, ID'd backlog (NBL-001…NBL-190), risks R-01…R-09, evidence
+criteria, architecture constraints, delegation, blocking policy, checkpoint
+format, and the mandatory STOP.
+
+**Blocking risk.** `try`-as-expression versus the catch-mandatory `try_stmt` is
+the top grammar ambiguity (R-01). It gates G03 and every `Result`-returning
+API. If it cannot be resolved unambiguously, §3.3 requires suspending that
+form and requesting a decision — never a heuristic parser.
+
 ## Directive 007 — runtime distribution parity (`0.3.2-dev.9`, `PASS`)
 
 - **The distributed WASM carried its own, older semantics.** Freeze point
@@ -1528,12 +1590,26 @@ feature-gating of the typed-decode path.
 
 ## Exact Next Action
 
-**None — Campaign 003 is closed under Directive 005.** The next action is a
-human decision, not an engineering one: whether to authorize release-candidate
-preparation, and separately whether to promote a release candidate to stable.
-Neither is authorized by this campaign.
+**Directive 008 — NEBULA: send the G00 documentation PR, obtain green remote
+CI, and merge. Then G01.**
 
-See `docs/engineering/CAMPAIGN_003_CLOSURE.md` for the report and
+Wave `G00` is `IN_PROGRESS`. The published artifacts are
+`docs/engineering/NEBULA_CAMPAIGN.md` (campaign plan) plus the
+`scripts/agent-state.sh` writer-extraction fix, on branch
+`docs/nebula-campaign-g00`. G00 closes when remote CI is green and the PR is
+integrated; nothing else may start until then.
+
+On G00 `PASS`, the next exact action is **G01**: publish the approved
+dependency table (including a per-driver ADR skeleton and audit status for each
+proposed database crate), roles and ownership, the ID'd backlog already listed
+in `NEBULA_CAMPAIGN.md` §5, risks, and evidence criteria. `GATE G01` forbids
+any new code before the critical contracts exist.
+
+**Campaign 003 remains closed** under Directive 005. Release-candidate
+preparation and stable promotion are still human decisions, and Directive 008
+explicitly forbids tagging or publishing `0.3.2` at the end of this campaign.
+
+See `docs/engineering/CAMPAIGN_003_CLOSURE.md` for that report and
 `docs/engineering/CURRENT_HANDOFF.md` for the handoff checkpoint. In short: HEAD
 is `86e2b5ba` (the merge of the closure report, PR #39, on top of the audit
 commit `8cc9ed32`); thirty-eight PRs merged this campaign (`#2`–`#39`; 37
@@ -1596,5 +1672,6 @@ above — the sharded runner alone will not catch feature-gated dead code.
 
 ## Writer
 
-NONE (single-writer discipline; the Directive 007 session held exclusive
-worktree ownership and releases it when the technical PR is integrated).
+NONE (single-writer discipline; the Directive 008 NEBULA session held exclusive
+worktree ownership while publishing the G00 baseline and releases it when the
+G00 documentation PR is integrated).
