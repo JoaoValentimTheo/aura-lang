@@ -4,8 +4,10 @@
 
 - **Campaign 003 is closed.** The closure report is
   [`docs/engineering/CAMPAIGN_003_CLOSURE.md`](docs/engineering/CAMPAIGN_003_CLOSURE.md).
-- Active branch `rewrite/v3-rust` at **`8cc9ed32`** (= `origin/rewrite/v3-rust`),
-  the documentation commit that followed the `#38` merge `00aeb188`.
+- Active branch `rewrite/v3-rust` at **`86e2b5ba`** (= `origin/rewrite/v3-rust`),
+  the merge of **PR #39** (this closure report). The audit itself was performed
+  at `8cc9ed32`, the documentation commit that followed the `#38` merge
+  `00aeb188`.
 - Six-area bounded audit result: **six `PASS`, zero P0/P1**. No corrective PR
   was opened under Directive 005 (budget 0/6). The single corrective-candidate
   finding (sibling module contamination) was **falsified** against
@@ -15,8 +17,10 @@
   no-default-features matrix, `artifact-smoke` 12/0, all five fuzz targets
   clean with an empty `fuzz/artifacts`, Playground and all seven website
   suites, frozen runtimes 8/8 `sha=OK bytes=OK`.
-- Remote CI on `8cc9ed32`: **21/21 jobs green** (run `41217451481`), website
-  deploy `41217451457` green.
+- Remote CI on the audit commit `8cc9ed32`: **21/21 jobs green** (run
+  `41217451481`), website deploy `41217451457` green. On the final commit
+  `86e2b5ba`: **21/21 jobs green** (run `41223357639`), website deploy
+  `41223357675` green.
 - Stable version remains **`0.3.1`**; no tag, version bump, frozen artifact or
   publication was touched.
 - **`GO` authorizes release-candidate preparation only.** Stable release
@@ -28,12 +32,13 @@ closure report and belongs to a future, separately authorized campaign.
 
 ## Directive 003 — stabilization and hardening campaign (closed)
 
-- Active branch: `rewrite/v3-rust`, campaign HEAD **`8cc9ed32`** — the
-  documentation commit that followed the merge of
+- Active branch: `rewrite/v3-rust`, campaign HEAD **`86e2b5ba`** — the merge of
+  the Directive 005 closure report (**PR #39**). The last corrective merge was
   **PR #38** (CORE FIRST: statically empty `range` reachability, remote merge
-  `00aeb188`). The working tree is clean; the next CORE FIRST finding is not yet
-  selected, and Directive 005 closed the campaign before one was chosen.
-  **Thirty-seven PRs are merged** this campaign (`#2`–`#38`; `#1` does not
+  `00aeb188`), recorded by the documentation commit `8cc9ed32`. The working
+  tree is clean; the next CORE FIRST finding was never selected, and Directive
+  005 closed the campaign before one was chosen.
+  **Thirty-eight PRs are merged** this campaign (`#2`–`#39`; `#1` does not
   exist — GitHub reports "Could not resolve to a PullRequest with the number
   1"):
   #2 `f96536b6` (Directive 002 preflight),
@@ -70,7 +75,9 @@ closure report and belongs to a future, separately authorized campaign.
   #35 `4aff6d5c` (CORE FIRST: generic-bound method resolution),
   #36 `4cbf6afb` (CORE FIRST: JSON decode depth parity),
   #37 `fb3e8dee` (CORE FIRST: HTTP header-value encoding in both directions),
-  #38 `00aeb188` (CORE FIRST: statically empty `range` reachability).
+  #38 `00aeb188` (CORE FIRST: statically empty `range` reachability),
+  #39 `86e2b5ba` (Directive 005 closure report — documentation only; the
+  campaign's only non-corrective PR).
   The
   `/private/tmp/aura-directive-002-release-preflight` worktree and the
   `repair/directive-002-release-preflight` branch are **historical**.
@@ -1407,10 +1414,11 @@ preparation, and separately whether to promote a release candidate to stable.
 Neither is authorized by this campaign.
 
 See `docs/engineering/CAMPAIGN_003_CLOSURE.md` for the report and
-`docs/engineering/CURRENT_HANDOFF.md` for the handoff checkpoint. In short: HEAD is
-`8cc9ed32` (the docs commit after the PR #38 merge `00aeb188`); thirty-seven PRs
-merged this campaign (`#2`–`#38`); Aura 0.3.1 (Keystone) is published and
-`v0.3.1` = `b09cbef2`.
+`docs/engineering/CURRENT_HANDOFF.md` for the handoff checkpoint. In short: HEAD
+is `86e2b5ba` (the merge of the closure report, PR #39, on top of the audit
+commit `8cc9ed32`); thirty-eight PRs merged this campaign (`#2`–`#39`; 37
+corrective plus the documentation-only #39); Aura 0.3.1 (Keystone) is published
+and `v0.3.1` = `b09cbef2`.
 Batches 1–5, B6/B7/B14, TD-23, TD-24, TD-27,
 Directive 004, TD-13, the resolver type-parameter leak, the set key-method
 element typing, return-type tail validation, `pub use` re-export resolution, the
@@ -1421,7 +1429,7 @@ closed**.
 Directive 003-R §4's blockers are closed.
 
 **Exact next action:** none. The working tree is clean on `rewrite/v3-rust` at
-`8cc9ed32`. Directive 005 closed the campaign; the former instruction to branch
+`86e2b5ba`. Directive 005 closed the campaign; the former instruction to branch
 the next CORE FIRST work item is **withdrawn** — do not open a new corrective PR
 or start a new campaign without a fresh human directive.
 

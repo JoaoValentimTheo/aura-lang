@@ -5,15 +5,18 @@
 **Status:** the stabilization campaign is **closed**. Report:
 [`CAMPAIGN_003_CLOSURE.md`](./CAMPAIGN_003_CLOSURE.md).
 
-- Branch `rewrite/v3-rust` at **`8cc9ed32`** = `origin/rewrite/v3-rust`; worktree
-  clean; crate and published stable version both **`0.3.1`** (Keystone).
+- Branch `rewrite/v3-rust` at **`86e2b5ba`** = `origin/rewrite/v3-rust` (merge of
+  **PR #39**, this closure); worktree clean; crate and published stable version
+  both **`0.3.1`** (Keystone).
 - Six-area bounded audit: **six `PASS`, zero P0/P1**. Validation floor fully
   executed and green (1477 passed / 0 failed / 14 ignored across 66 suites;
   `fmt`; `clippy -D warnings`; MSRV 1.83; Miri 132/0; no-default-features
   matrix; `artifact-smoke` 12/0; all five fuzz targets clean with an empty
   `fuzz/artifacts`; Playground and all seven website suites; frozen runtimes
-  8/8 `sha=OK bytes=OK`). Remote CI on `8cc9ed32`: 21/21 jobs green
-  (run `41217451481`), website deploy `41217451457` green.
+  8/8 `sha=OK bytes=OK`). Remote CI on the audit commit `8cc9ed32`: 21/21 jobs
+  green (run `41217451481`), website deploy `41217451457` green. Post-merge CI on
+  `86e2b5ba`: 21/21 jobs green (run `41223357639`), website deploy
+  `41223357675` green.
 - **Zero** corrective PRs were opened under Directive 005 (budget 0/6). The one
   corrective candidate raised (sibling module contamination) was **falsified**
   against `docs/FILESYSTEM_MODULES_DESIGN.md` — eager structural discovery is

@@ -19,26 +19,31 @@ Verdict for release-candidate preparation: **`GO`**.
 | Item | Value |
 |---|---|
 | Branch | `rewrite/v3-rust` |
-| Final commit | `8cc9ed32caff89ea7265113bffd19c8085a99bd4` |
-| Subject | `docs: record PR #38 merge and re-arm the CORE FIRST lead list` |
+| Final commit | `86e2b5bad9f4ee92085d162d3a613242dcfb0296` (merge of PR #39) |
+| Pre-report audit commit | `8cc9ed32caff89ea7265113bffd19c8085a99bd4` |
+| Subject | `Merge pull request #39 from JoaoValentimTheo/docs/campaign-003-closure` (the final commit is the PR #39 merge; the audit commit `8cc9ed32` was `docs: record PR #38 merge and re-arm the CORE FIRST lead list`) |
 | Remote | `origin/rewrite/v3-rust` at the same commit (verified with `git fetch origin` + `git rev-parse`) |
 | Worktree | clean (`git status --short` empty) |
+| Post-report reconciliation | A Markdown-only commit follows directly on `rewrite/v3-rust`, updating the three state documents to name `86e2b5ba` instead of the audit commit. It changes no code, test, workflow, version or frozen artifact, and it is recorded in `AGENT_STATE.md` rather than by amending this table. |
 | Crate version | `0.3.1` ([Cargo.toml](../../Cargo.toml)) |
 | Playground current runtime | `0.3.1` "Keystone" ([manifest.json](../../playground/runtimes/manifest.json)) |
 
 Remote and local were reconciled before the audit began and re-verified after
 it. `PR #1` does not exist: GitHub returns *"Could not resolve to a PullRequest
-with the number 1"*. The campaign's PRs are the contiguous range `#2`–`#38`.
+with the number 1"*. The campaign's PRs are the contiguous range `#2`–`#39`
+(`#39` being this closure report).
 
 ### PR inventory
 
 | Metric | Count |
 |---|---|
-| Campaign PRs merged in total | **37** (`#2`–`#38`) |
+| Campaign PRs merged in total | **38** (`#2`–`#39`) |
+| Of which corrective | **37** (`#2`–`#38`) |
+| Of which documentation-only | **1** (`#39`, this report) |
 | Open PRs at closure time | 0 |
 | Closed-without-merge PRs | 0 |
 | Corrective PRs opened **under Directive 005** | **0** (budget 0/6 consumed) |
-| Corrective PRs opened for this report | 1 (documentation only) |
+| PRs opened under Directive 005 | 1 (documentation only) |
 
 No P0 or P1 defect was reproduced, so the Directive 005 §5 correction procedure
 was never triggered. The only PR produced by this directive carries this report
@@ -153,8 +158,11 @@ with `ASAN_OPTIONS=detect_leaks=0` applied to `runtime` only, per the documented
 
 | Item | Result |
 |---|---|
-| CI run `41217451481` (push, `rewrite/v3-rust`, commit `8cc9ed32`) | **success**, 21/21 jobs green |
+| CI run `41217451481` (push, `rewrite/v3-rust`, audit commit `8cc9ed32`) | **success**, 21/21 jobs green |
 | Website deploy run `41217451457` | **success** |
+| CI run `41222603532` (PR #39 head, `62f15a0f`) | **success**, 21/21 jobs green |
+| CI run `41223357639` (push, `rewrite/v3-rust`, final commit `86e2b5ba`) | **success**, 21/21 jobs green |
+| Website deploy run `41223357675` (final commit `86e2b5ba`) | **success** |
 | Fuzz nightly — `schedule` event run `41037980226` | success, 14/14 steps |
 
 CI jobs green on the final commit: `cargo audit`, `clippy (all features)`,
