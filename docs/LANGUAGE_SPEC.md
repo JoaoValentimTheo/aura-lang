@@ -3092,8 +3092,17 @@ the target, a duplicate JSON element where the target is a Set, or a field not
 declared by the struct. A `T | none` field accepts absence or JSON `null` and
 decodes to `none`. A decode mismatch is an ordinary diagnostic, not a catchable
 throwable (§14.5); it is also distinct from a network, Host, internal, or
-user-exception failure. `json_decode` remains the permissive, non-type-directed
-form (dynamic JSON arrays decode to `List`, objects to `Map`).
+user-exception failure. Both decode entry points report a mismatch — a malformed
+document or one nested beyond the value bound — as `E4031`. `json_decode`
+remains the permissive, non-type-directed form (dynamic JSON arrays decode to
+`List`, objects to `Map`).
+
+**Normative rule (JSON decode depth).** `json_decode` and `json_decode_as`
+accept any document whose nesting does not exceed `MAX_VALUE_DEPTH` (§31.6), so
+every document `json_encode` can emit is one `json_decode` can read back. A
+malformed document, or one nested more deeply than the bound, is a deterministic
+`E4031`, never a host stack overflow. This bound is symmetric by construction:
+an asymmetric one would let Aura emit documents it could not consume.
 
 **Normative rule (JSON keys are strings).** A JSON object's keys are strings by
 the JSON standard, so JSON is not Aura's generic-map model. `json_decode`
@@ -3552,6 +3561,7 @@ scope. Value and type namespaces are separate, so a session may hold `fn S` and
 | E4028 | assertion failed |
 | E4029 | no `match` arm matched |
 | E4030 | `return` used a value where none is allowed |
+| E4031 | JSON decode mismatch (malformed document or nesting beyond the value bound) |
 | E4099 | (internal) throw crossing a call boundary |
 | E4999 | internal error (never a user mistake) |
 | E5001 | Python error |
@@ -3752,10 +3762,16 @@ from itself is not reclaimed; this is memory-safe and is not an error.
 These bounds concern *value* depth, not *AST* depth (`§31.1`). A shallow
 program may build an arbitrarily deep value at runtime, and vice versa.
 
+**Normative rule.** Decoding is bounded by the same `MAX_VALUE_DEPTH` as
+encoding: `json_decode` and `json_decode_as` accept a document nested up to that
+depth and reject a deeper one with `E4031` (§24). The bound is enforced before
+the host deserializer recurses, so a hostile document cannot exhaust the native
+stack (§31.5).
+
 *Evidence:* `MAX_VALUE_DEPTH`, `MAX_VALUE_NODES`, `RenderBudget`,
 `Value::repr`, `Value::equals`, `Value::drop` (`src/run/value.rs`);
-`to_json`/`from_json`
-(`src/stdlib/ext.rs`); `tests/regressions.rs::bh1_*`.
+`to_json`/`from_json`/`parse_json` (`src/stdlib/ext.rs`);
+`tests/regressions.rs::bh1_*`.
 
 ### 31.7 Format-output bounds
 
