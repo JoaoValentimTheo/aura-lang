@@ -272,19 +272,7 @@ pub fn install(it: &mut Interp) {
     });
     it.native("sort", |_it, args, span| {
         arity(&args, 1, 1, "sort", span)?;
-        let list = arg(&args, 0, "sort", span)?;
-        match list {
-            Value::List(l) => {
-                let mut out = l.borrow().clone();
-                out.sort_by(|a, b| a.cmp_val(b).unwrap_or(std::cmp::Ordering::Equal));
-                Ok(Value::list(out))
-            }
-            other => Err(err(
-                codes::TYPE_MISMATCH,
-                format!("`sort` expects a list, found {}", other.type_name()),
-                span,
-            )),
-        }
+        sorted(as_list(arg(&args, 0, "sort", span)?, "sort", span)?, span)
     });
     it.native("reverse", |_it, args, span| {
         arity(&args, 1, 1, "reverse", span)?;
@@ -480,6 +468,56 @@ fn as_list(v: &Value, what: &str, span: Span) -> Result<Vec<Value>> {
     }
 }
 
+/// The ordering class `sort` compares within; `None` means not orderable.
+fn sort_class(v: &Value) -> Option<u8> {
+    match v {
+        Value::Int(_) | Value::Float(_) => Some(0),
+        Value::Str(_) => Some(1),
+        Value::Bool(_) => Some(2),
+        _ => None,
+    }
+}
+
+/// Sort a list snapshot into a new list value.
+///
+/// `sort` needs a total order, so it cannot reuse `Value::cmp_val`, whose
+/// `None` cases (an unordered `NaN`, or two values of different ordering
+/// classes) have no consistent placement: folding them to `Equal` makes the
+/// comparator intransitive, which misorders the result and, past the small-sort
+/// threshold, aborts the runtime with `E4999`. Because a `sort_by` closure
+/// cannot fail, the incomparable case is rejected up front — `E3001`, per
+/// `LANGUAGE_SPEC.md` §12 — and the sort itself is then infallible.
+fn sorted(elems: Vec<Value>, span: Span) -> Result<Value> {
+    let mut class: Option<u8> = None;
+    let mut first = "";
+    for v in &elems {
+        let vc = sort_class(v).ok_or_else(|| {
+            err(
+                codes::TYPE_MISMATCH,
+                format!("cannot order values of type {}", v.type_name()),
+                span,
+            )
+        })?;
+        match class {
+            None => {
+                class = Some(vc);
+                first = v.type_name();
+            }
+            Some(seen) if seen == vc => {}
+            Some(_) => {
+                return Err(err(
+                    codes::TYPE_MISMATCH,
+                    format!("cannot compare {first} with {}", v.type_name()),
+                    span,
+                ));
+            }
+        }
+    }
+    let mut out = elems;
+    out.sort_by(|a, b| a.sort_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    Ok(Value::list(out))
+}
+
 /// Method dispatch for strings, lists, and maps.
 pub fn method(
     it: &mut Interp,
@@ -650,11 +688,7 @@ fn list_method(
             let needle = arg(&args, 0, "contains", span)?;
             Ok(Value::Bool(l.borrow().iter().any(|v| v.equals(needle))))
         }
-        "sort" => {
-            let mut out = l.borrow().clone();
-            out.sort_by(|a, b| a.cmp_val(b).unwrap_or(std::cmp::Ordering::Equal));
-            Ok(Value::list(out))
-        }
+        "sort" => sorted(l.borrow().clone(), span),
         "reverse" => {
             let mut out = l.borrow().clone();
             out.reverse();

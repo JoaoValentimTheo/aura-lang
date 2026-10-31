@@ -564,6 +564,42 @@ impl Value {
         }
     }
 
+    /// The ordering that `sort` uses.
+    ///
+    /// [`Value::sort_cmp`] differs from [`Value::cmp_val`] in exactly the
+    /// places where `cmp_val` is *partial*, because `sort` needs a total
+    /// order — a comparator that answers `Equal` for one pair and a strict
+    /// order for the others is intransitive, and the sort then either
+    /// misorders the list or aborts the runtime:
+    ///
+    /// * `NaN` sorts after every other number instead of being unordered;
+    ///   two `NaN`s compare equal.
+    /// * A mixed `int`/`float` pair is compared **exactly** rather than
+    ///   through the rounding promotion of `LANGUAGE_SPEC.md` §10.4, so
+    ///   distinct integers above the float's exact-integer range keep their
+    ///   order. `sort` is therefore deliberately finer than `==` at that
+    ///   boundary.
+    ///
+    /// `-0.0` compares equal to `0.0`, exactly as `==` does, so a stable sort
+    /// preserves their source order.
+    ///
+    /// `None` means the pair is not orderable at all: the values are of
+    /// different ordering classes, or one of them is a list, array, tuple,
+    /// set, map, struct, enum, range, or function. `sort` reports that as
+    /// `E3001` before sorting (`LANGUAGE_SPEC.md` §12).
+    #[must_use]
+    pub fn sort_cmp(&self, other: &Value) -> Option<std::cmp::Ordering> {
+        match (self, other) {
+            (Value::Int(a), Value::Int(b)) => Some(a.cmp(b)),
+            (Value::Str(a), Value::Str(b)) => Some(a.cmp(b)),
+            (Value::Bool(a), Value::Bool(b)) => Some(a.cmp(b)),
+            (Value::Float(a), Value::Float(b)) => Some(float_sort_cmp(*a, *b)),
+            (Value::Int(a), Value::Float(b)) => Some(int_float_cmp(*a, *b)),
+            (Value::Float(a), Value::Int(b)) => Some(int_float_cmp(*b, *a).reverse()),
+            _ => None,
+        }
+    }
+
     /// The display form (used by `print` and `to_string`).
     #[must_use]
     pub fn display(&self) -> String {
@@ -797,5 +833,53 @@ pub fn format_float(f: f64) -> String {
         format!("{f:.1}")
     } else {
         format!("{f}")
+    }
+}
+
+/// Total order over floats for `sort`: `NaN` is greatest, `-0.0 == 0.0`.
+fn float_sort_cmp(a: f64, b: f64) -> std::cmp::Ordering {
+    if a.is_nan() || b.is_nan() {
+        return match (a.is_nan(), b.is_nan()) {
+            (true, false) => std::cmp::Ordering::Greater,
+            (false, true) => std::cmp::Ordering::Less,
+            _ => std::cmp::Ordering::Equal,
+        };
+    }
+    if a == b {
+        // `0.0 == -0.0`, and §10.3 says they are equal, so a stable sort keeps
+        // their source order rather than imposing `total_cmp`'s `-0.0` first.
+        return std::cmp::Ordering::Equal;
+    }
+    a.total_cmp(&b)
+}
+
+/// Exact order between an integer and a float, without `as f64` rounding.
+///
+/// §10.4 promotes the integer for *arithmetic*, but rounding a `float` operand
+/// down to the nearest representable double makes the comparison intransitive
+/// above `2^53`, where distinct integers share one double. Comparing against
+/// the float's truncation instead keeps every integer distinct.
+fn int_float_cmp(i: i64, f: f64) -> std::cmp::Ordering {
+    if f.is_nan() {
+        // NaN sorts after every ordered value, matching `float_sort_cmp`.
+        return std::cmp::Ordering::Less;
+    }
+    // Outside `i64`'s range the float alone decides: `f` is at least `2^63`,
+    // or is below `i64::MIN`, or is an infinity.
+    if f >= 9_223_372_036_854_775_808.0 {
+        return std::cmp::Ordering::Less;
+    }
+    if f < -9_223_372_036_854_775_808.0 {
+        return std::cmp::Ordering::Greater;
+    }
+    // `f` is now finite and within `i64`'s range, so its truncation converts
+    // exactly and the integer comparison settles everything but a fractional
+    // remainder.
+    let trunc = f.trunc();
+    let whole = trunc as i64;
+    match i.cmp(&whole) {
+        std::cmp::Ordering::Equal if f > trunc => std::cmp::Ordering::Less,
+        std::cmp::Ordering::Equal if f < trunc => std::cmp::Ordering::Greater,
+        ord => ord,
     }
 }

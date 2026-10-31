@@ -1566,3 +1566,159 @@ fn audit5_budget_exhausting_render_has_a_pinned_size() {
 // The cost contract for this defect is asserted by allocation volume rather
 // than wall clock, because an absolute millisecond bound is not portable across
 // the CI runner matrix. See `tests/render_cost.rs`.
+
+// ---------------------------------------------------------------------------
+//
+// AUDIT-7: `sort` folded every incomparable pair to `Equal`
+// (`cmp_val(..).unwrap_or(Equal)`). That comparator is intransitive, so three
+// distinct defects followed from one root cause:
+//
+//   * a list containing `NaN` misordered deterministically, because `NaN` is
+//     unordered against every number and so compared `Equal` to all of them;
+//   * past the small-sort threshold the intransitivity tripped the standard
+//     library's total-order assertion and aborted the runtime with `E4999` —
+//     reachable from three unrelated shapes (a `NaN`, a union-typed list, and
+//     a mixed `int`/`float` list above `2^53`);
+//   * two values of *different ordering classes* also compared `Equal`
+//     instead of raising the `E3001` that `LANGUAGE_SPEC.md` §12 requires for
+//     any incomparable operand pair.
+//
+// The fix gives `Value` a `sort_cmp` whose `None` means only "incomparable",
+// with `NaN` ordered last and mixed numeric pairs compared exactly rather than
+// through §10.4's rounding promotion. `sort` now rejects incomparable lists
+// with `E3001` before sorting, so its own comparator is infallible.
+//
+// These tests pin the corrected contract. The `out` helper aborts the test on
+// a runtime error, so every `out(...)` below is also an assertion that the
+// sort did not raise or abort.
+// ---------------------------------------------------------------------------
+
+/// AUDIT-7: `NaN` is unordered against every number, so the old comparator
+/// treated it as equal to all of them and left it wherever the sort happened
+/// to strand it. It now orders last, and among themselves `NaN`s keep their
+/// source order because the sort is stable.
+#[test]
+fn audit7_sort_orders_nan_last() {
+    let src = "fn main() { let nn = to_float(\"nan\")\n print(sort([3.0, 1.0, nn, 2.0]))\n print(sort([1.0, nn, 3.0, 2.0]))\n print(sort([nn, 3.0, 1.0, 2.0])) }";
+    assert_eq!(
+        out(src),
+        "[1.0, 2.0, 3.0, nan]\n[1.0, 2.0, 3.0, nan]\n[1.0, 2.0, 3.0, nan]\n"
+    );
+}
+
+/// AUDIT-7: the previous defect aborted the whole interpreter with `E4999`
+/// once the intransitivity reached the standard library's total-order check,
+/// which requires more than twenty elements. This is the minimised reproducer.
+#[test]
+fn audit7_sort_does_not_abort_on_a_nan_list() {
+    let src = "fn main() { let nn = to_float(\"nan\")\n let xs = [92.0, 3.0, 40.0, nn, 14.0, 51.0, nn, 25.0, 62.0, 36.0, 73.0, nn, 47.0, 84.0, nn, 58.0, 95.0, nn, 69.0, 6.0, nn]\n print(sort(xs)) }";
+    assert_eq!(
+        out(src),
+        "[3.0, 6.0, 14.0, 25.0, 36.0, 40.0, 47.0, 51.0, 58.0, 62.0, 69.0, 73.0, 84.0, 92.0, 95.0, nan, nan, nan, nan, nan, nan]\n"
+    );
+}
+
+/// AUDIT-7: a union-typed list is legal to *construct*, and the checker cannot
+/// reject `sort` on one — `Ty::orderable_with` reports "undecidable" for a
+/// union — so this shape reached the defective comparator too, and aborted
+/// with the same `E4999`. It must now be the `E3001` that §12 mandates for any
+/// incomparable operand pair.
+#[test]
+fn audit7_sort_rejects_a_union_typed_list() {
+    let src = "fn main() { let xs: [int | string] = [92, \"a\", 3, 40, \"b\", 14, 51, \"c\", 25, 62, 36, 73, \"d\", 47, 84, \"e\", 58, 95, \"f\", 69, 6, \"g\"]\n print(sort(xs)) }";
+    assert_eq!(fail(src), codes::TYPE_MISMATCH);
+}
+
+/// AUDIT-7: two ordering classes never shared a total order, so folding them
+/// to `Equal` silently returned the list unsorted. §12 makes that `E3001`.
+#[test]
+fn audit7_sort_rejects_mixed_ordering_classes() {
+    assert_eq!(
+        fail("fn main() { print(sort([5, 1, \"a\", 3, 2])) }"),
+        codes::TYPE_MISMATCH
+    );
+    assert_eq!(
+        fail("fn main() { print(sort([1, true, 2])) }"),
+        codes::TYPE_MISMATCH
+    );
+    // §12 defines no order for aggregates either, so the diagnostic must not
+    // depend on the elements happening to be comparable with each other.
+    assert_eq!(
+        fail("fn main() { let xs = [[1], [2]]\n print(sort(xs)) }"),
+        codes::TYPE_MISMATCH
+    );
+}
+
+/// AUDIT-7: §10.4 promotes an `int` to `float` for arithmetic, and that
+/// promotion rounds above `2^53`. Using the rounded value to *order* two
+/// numbers is intransitive — many distinct integers collapse onto one double —
+/// which aborted the runtime even though neither a `NaN` nor a type mismatch
+/// was present. `sort` compares the pair exactly instead, so it is deliberately
+/// finer than `==` at that boundary.
+#[test]
+fn audit7_sort_compares_mixed_numerics_exactly() {
+    let src = "fn main() { print(sort([9007199254740993, 9007199254740992.0, 9007199254740992])) }";
+    assert_eq!(
+        out(src),
+        "[9007199254740992.0, 9007199254740992, 9007199254740993]\n"
+    );
+}
+
+/// AUDIT-7: the twenty-one element list that reproduced the abort with no
+/// `NaN` and no type mismatch. Seeded so the shape is fixed.
+#[test]
+fn audit7_sort_does_not_abort_on_rounded_mixed_numerics() {
+    let src = "fn main() { let xs = [9007199254740992.0, 9007199254740992.0, 9007199254740993, 9007199254740992, 9007199254740996.0, 9007199254740996.0, 9007199254740994.0, 9007199254740993, 9007199254740989, 9007199254740992, 9007199254740994.0, 9007199254740994.0, 9007199254740992.0, 9007199254740992.0, 9007199254740993, 9007199254740991, 9007199254740995, 9007199254740992.0, 9007199254740992.0, 9007199254740994.0, 9007199254740992]\n print(sort(xs)) }";
+    let rendered = out(src);
+    // The exact interleaving of equal-valued ints and floats is the stable
+    // sort's business; what must hold is that the printed order never
+    // decreases when the numbers are read back.
+    let nums: Vec<f64> = rendered
+        .trim()
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .split(", ")
+        .map(|s| s.parse::<f64>().expect("renders a number"))
+        .collect();
+    assert_eq!(nums.len(), 21);
+    for pair in nums.windows(2) {
+        assert!(
+            pair[0] <= pair[1],
+            "sort left {} before {}",
+            pair[0],
+            pair[1]
+        );
+    }
+}
+
+/// AUDIT-7: the behaviours the fix must not disturb. `±inf` already ordered
+/// correctly, `-0.0` compares equal to `0.0` per §10.3 so a stable sort keeps
+/// their source order, and the ordinary numeric cases are unchanged.
+#[test]
+fn audit7_sort_preserves_the_existing_orderings() {
+    let src = "fn main() { print(sort([1.0, 2.0, to_float(\"inf\"), 3.0]))\n print(sort([to_float(\"-inf\"), 1, 0.0]))\n print(sort([0.0, to_float(\"-0.0\")]))\n print(sort([to_float(\"-0.0\"), 0.0]))\n print(sort([3, 1, 2]))\n print(sort([3.0, 1.0, 2.0])) }";
+    assert_eq!(
+        out(src),
+        concat!(
+            "[1.0, 2.0, 3.0, inf]\n",
+            "[-inf, 0.0, 1]\n",
+            "[0.0, -0.0]\n",
+            "[-0.0, 0.0]\n",
+            "[1, 2, 3]\n",
+            "[1.0, 2.0, 3.0]\n",
+        )
+    );
+}
+
+/// AUDIT-7: `sort` is exposed twice — a free function and a list method — from
+/// two separate call sites that carried the same defective line. The method
+/// form must enforce the same contract.
+#[test]
+fn audit7_sort_method_matches_the_free_function() {
+    let src = "fn main() { let mut v = [3, 1, 2]\n print(v.sort())\n let nn = to_float(\"nan\")\n let mut f = [2.0, nn, 1.0]\n print(f.sort()) }";
+    assert_eq!(out(src), "[1, 2, 3]\n[1.0, 2.0, nan]\n");
+    assert_eq!(
+        fail("fn main() { let mut v = [2, \"a\", 1]\n print(v.sort()) }"),
+        codes::TYPE_MISMATCH
+    );
+}

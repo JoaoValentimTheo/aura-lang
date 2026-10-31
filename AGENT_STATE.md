@@ -2,10 +2,11 @@
 
 ## Directive 003 — stabilization and hardening campaign (current)
 
-- Active branch: `rewrite/v3-rust`, remote HEAD **`cff9d4a5`** — the merge of
-  **PR #28** (CORE FIRST: three defects in transitive `pub use` re-export
-  resolution, fixed and regression-tested).
-  **Twenty-seven PRs are merged** this campaign:
+- Active branch: `rewrite/v3-rust`, remote HEAD **`a089fd45`** — the merge of
+  **PR #32** (CORE FIRST: f-string exponent case and non-finite rendering).
+  Local branch `fix/sort-total-order` carries the next CORE FIRST fix (the `sort`
+  total order), validated and awaiting its PR.
+  **Thirty-two PRs are merged** this campaign:
   #2 `f96536b6` (Directive 002 preflight),
   #3 `07845932` (rustls advisories), #4 `a562bacf` (batches 1–5),
   #5 `eaa3b9ed` (TD-23 + default-branch flip), #6 `4a20fa84` (post-merge
@@ -30,7 +31,12 @@
   #25 `69cd4dba` (state sync for #24 and the CORE FIRST probe results),
   #26 `b843dc85` (CORE FIRST: return-type tail validation, three defects),
   #27 `a0423769` (state sync for #26), #28 `cff9d4a5` (CORE FIRST: transitive
-  `pub use` re-export chains resolve in every source order).
+  `pub use` re-export chains resolve in every source order),
+  #29 `805b2d2c` (state sync for #28 and the semantics probe round),
+  #30 `519f3122` (CORE FIRST: method type parameters validated and scoped),
+  #31 `e61a81f6` (CORE FIRST: method type-parameter bounds reach the body),
+  #32 `a089fd45` (CORE FIRST: f-string exponent case and non-finite
+  rendering).
   The
   `/private/tmp/aura-directive-002-release-preflight` worktree and the
   `repair/directive-002-release-preflight` branch are **historical**.
@@ -227,6 +233,87 @@ that "a re-export chain resolves transitively and terminates deterministically"
   diagnostic for a *cyclic* `pub use` chain, or does it warrant a dedicated code?
   It terminates deterministically, so it satisfies the letter of §27 today.
 - Branch `fix/pub-use-reexport-resolution`, PR #28, not yet merged.
+
+## CORE FIRST — `sort` total order — branch `fix/sort-total-order` (PR pending)
+
+`sort` was built on `Value::cmp_val(..).unwrap_or(Equal)`
+(`src/stdlib/mod.rs`, two identical call sites: the `sort` builtin and the
+`list.sort` method). `cmp_val` returns `None` for **two** distinct reasons, and
+folding both to `Equal` makes the comparator **intransitive**. One root cause,
+five symptoms:
+
+- **A — deterministic misordering.** `sort([3.0, 1.0, nan, 2.0])` returned
+  `[1.0, 3.0, nan, 2.0]`; other arrangements returned other wrong orders. A
+  `NaN` compares `Equal` to every number, so its final position is whatever the
+  sort happens to do.
+- **B — P1 abort, `NaN`.** At 21 elements the same input aborts the whole
+  interpreter: `E4999`, `smallsort.rs:854`, "user-provided comparison function
+  does not correctly implement a total order".
+- **C — P1 abort, union-typed list.** An `[int | string]` list is legal to
+  construct and the checker structurally cannot reject `sort` on one
+  (`Ty::orderable_with`, `src/types.rs:545–571`, reports "undecidable" for
+  `Ty::Union`; `src/check/mod.rs:4067–4073` performs no orderability check on
+  `sort`). A 22-element list aborted identically; smaller ones silently
+  misordered.
+- **D — P1 abort, lossy mixed numerics.** `cmp_val` orders `int` against
+  `float` through `as f64`, i.e. §10.4's rounding promotion. Above `2^53`
+  distinct integers collapse onto one `double`, so ordering is intransitive with
+  **no `NaN` and no type mismatch anywhere**. 21 elements aborted.
+- **E — spec violation.** Two values of different ordering classes returned
+  `Equal` instead of the `E3001` that §12 (1576–1578) mandates for any
+  incomparable operand pair.
+
+**The spec was itself part of the defect.** Lines 1588–1590 read "`sort`,
+`min`, and `max` ... treat an unordered pair as equal and preserve source order
+(a stable fallback)". That is satisfiable for the *pairwise* `min`/`max` (both
+correct, not touched) but **cannot** be satisfied for a *global* sort. Lines
+1592–1593 cited `tests/regressions.rs::f05_*` as evidence, and
+`f05_orderability_is_checked_once` only asserts the *static* claim — no test
+covered the runtime sentence at all.
+
+**The fix.** `Value::sort_cmp` (`src/run/value.rs`) is a total order whose
+`None` means only "incomparable", plus `float_sort_cmp` and `int_float_cmp`
+helpers. `sorted()` (`src/stdlib/mod.rs`) validates the ordering class up front
+and raises `E3001`, so the `sort_by` closure itself is infallible. Both call
+sites route through it. Four decisions, each recorded in the corrected spec:
+
+1. `NaN` sorts after every ordered number; two `NaN`s compare equal and a stable
+   sort keeps their source order.
+2. Mixed `int`/`float` compare **exactly**, not through the rounding promotion,
+   so `sort` is deliberately **finer than `==`** above `2^53`. Comparison
+   operators are unchanged and remain internally consistent but lossy there
+   (`9007199254740993 == 9007199254740992.0` is `true`); the spec now states this
+   divergence explicitly rather than leaving it implied.
+3. `-0.0` and `0.0` compare equal (§10.3), so a stable sort preserves their
+   source order instead of imposing `total_cmp`'s `-0.0` first.
+4. Elements outside every ordering class, and elements from different classes,
+   are `E3001` — always at runtime, since the checker cannot decide it.
+
+**Tests.** Eight `audit7_*` tests in `tests/regressions.rs` (appended after
+1568). **Seven fail against `a089fd45`** — including all three `E4999` aborts
+reproducing at `smallsort.rs:854` — and all eight pass after the fix; the
+eighth (`audit7_sort_preserves_the_existing_orderings`) is the guard and passes
+both ways, which is why it is in the same file.
+
+**Spec corrected in the same PR:** 1588–1590 split into the pairwise rule
+(unchanged for `min`/`max`) and five new `sort` rules; 1592–1593 evidence
+line repointed to `sort_cmp`/`sorted`/`audit7_*`; the builtin table row 2997
+(`stable; unordered ⇒ source order` → `stable total order; NaN last;
+E3001 if not orderable`); `website/content/reference-stdlib.md:34` noted.
+
+**Independent second trigger, same branch, both fixed:** nothing — all five
+symptoms trace to the single comparator. `min`/`max` were re-probed and are
+conformant (`min(1, "a")` returns `1`, per rows 2992–2993); `min`/`max`
+raising `E3001` would be a **spec change**, out of scope here.
+
+**Probes closed as NOT defects:** Unicode `len`/indexing (character-based);
+range indexing (unsupported, `E3001`); `sum` overflow (`E4013`); ±infinity
+sorting; negative-zero sort order; the `2^53` comparison operators (internally
+consistent, merely lossy).
+
+— Full validation floor green locally: fmt, clippy `-D warnings`, 66 test
+binaries all-features, `no-default-features`, MSRV 1.83.0, nightly fuzz check,
+playground node suite, playground build `--check`, website build and tests.
 
 ## CORE FIRST — return-type tail validation — merged, `b843dc85` (PR #26)
 
@@ -1138,13 +1225,15 @@ feature-gating of the typed-decode path.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `a0423769` (PR #27
-merged, twenty-seven PRs merged this campaign); Aura 0.3.1 (Keystone) is published
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `a089fd45` (PR #32
+merged, thirty-two PRs merged this campaign); Aura 0.3.1 (Keystone) is published
 and `v0.3.1` = `b09cbef2`. Batches 1–5, B6/B7/B14, TD-23, TD-24, TD-27,
 Directive 004, TD-13, the resolver type-parameter leak, the set key-method
-element typing and return-type tail validation are **merged and closed**.
+element typing, return-type tail validation, `pub use` re-export resolution, the
+f-string exponent case and the `sort` total order are **merged and closed**.
 Directive 003-R §4's blockers are closed.
-**Exact next action:** PR #28 is merged (`cff9d4a5`, CI 21/21).
+**Exact next action:** branch `fix/sort-total-order` is validated and awaiting
+its PR + remote CI. Once merged, begin the next CORE FIRST work item.
 Begin the next CORE FIRST work item — a real, reproduced defect in `src/`,
 `tests/`, or `fuzz/`, shipped as one PR carrying a reproducible case, a
 regression test that fails before the fix, the fix, and a passing test.

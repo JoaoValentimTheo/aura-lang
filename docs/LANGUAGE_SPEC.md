@@ -1585,12 +1585,36 @@ operand types are non-orderable.
 **Normative rule.** Ordering is **not** defined for lists, maps, structs,
 enums, or ranges; there is no lexicographic order.
 
-**Normative rule.** `sort`, `min`, and `max` do not raise an error for
-unordered values; they treat an unordered pair as equal and preserve source
-order (a stable fallback).
+**Normative rule.** `min` and `max` compare pairwise and do not raise an error
+for an unordered pair; such a pair compares equal, so source order decides
+between the two.
 
-*Evidence:* `Value::comparable_with`, `Value::cmp_val` (`src/run/value.rs`);
-`Ty::orderable_with` (`src/types.rs`); `tests/regressions.rs::f05_*`.
+**Normative rule.** `sort` returns a permutation of its input ordered by a
+**total order**, which is defined only over a single ordering class: the
+numeric class (`int` and `float` together, per the pairs above), `string`, or
+`bool`. An element outside every ordering class — a list, map, struct, enum,
+range, `none`, function, tuple, array, or set — and any two elements drawn from
+different ordering classes make the whole call a type error: `E3001`, always at
+runtime.
+
+**Normative rule.** Within the numeric class, `sort` places `NaN` after every
+ordered number, and two `NaN` elements compare equal. This is the total order
+`sort` needs, and it is distinct from the `false` that §12's ordering operators
+yield for a `NaN` operand.
+
+**Normative rule.** `sort` compares a mixed `int`/`float` pair **exactly**,
+without the rounding promotion of §10.4. Consequently `sort` may order two
+numbers that `==` reports equal: above `2^53` several distinct integers round to
+one `float`, and ordering by the rounded value would not be transitive.
+`sort` is therefore deliberately finer than `==` at that boundary.
+
+**Normative rule.** `sort` is stable. `-0.0` and `0.0` compare equal, so a list
+containing both keeps their source order rather than imposing an order on them.
+
+*Evidence:* `Value::comparable_with`, `Value::cmp_val`, `Value::sort_cmp`
+(`src/run/value.rs`); `Ty::orderable_with` (`src/types.rs`);
+`crate::stdlib::sorted` (`src/stdlib/mod.rs`);
+`tests/regressions.rs::audit7_*`.
 
 ---
 
@@ -2970,7 +2994,7 @@ argument classes are normative. Return types marked `dynamic` are
 | `push` | 2 | list, any | `none` | mutates the list |
 | `keys` | 1 | map | `[K]` | ascending order |
 | `values` | 1 | map | `[T]` | ascending key order |
-| `sort` | 1 | list | `[T]` | stable; unordered ⇒ source order |
+| `sort` | 1 | list | `[T]` | stable total order; `NaN` last; `E3001` if not orderable |
 | `reverse` | 1 | string/list | same | reversed copy |
 | `map` | 2 | list, fn | `[T]` | applies fn to each element |
 | `filter` | 2 | list, fn | `[T]` | keeps elements whose predicate is truthy |
