@@ -1,12 +1,45 @@
 # Current Engineering Handoff
 
-## Current task — CORE FIRST: a statically empty `range` is not statically empty — merged `00aeb188` (PR #38)
+## CAMPAIGN 003 CLOSED — Directive 005 controlled closure (`COMPLETE`, `GO`)
+
+**Status:** the stabilization campaign is **closed**. Report:
+[`CAMPAIGN_003_CLOSURE.md`](./CAMPAIGN_003_CLOSURE.md).
+
+- Branch `rewrite/v3-rust` at **`8cc9ed32`** = `origin/rewrite/v3-rust`; worktree
+  clean; crate and published stable version both **`0.3.1`** (Keystone).
+- Six-area bounded audit: **six `PASS`, zero P0/P1**. Validation floor fully
+  executed and green (1477 passed / 0 failed / 14 ignored across 66 suites;
+  `fmt`; `clippy -D warnings`; MSRV 1.83; Miri 132/0; no-default-features
+  matrix; `artifact-smoke` 12/0; all five fuzz targets clean with an empty
+  `fuzz/artifacts`; Playground and all seven website suites; frozen runtimes
+  8/8 `sha=OK bytes=OK`). Remote CI on `8cc9ed32`: 21/21 jobs green
+  (run `41217451481`), website deploy `41217451457` green.
+- **Zero** corrective PRs were opened under Directive 005 (budget 0/6). The one
+  corrective candidate raised (sibling module contamination) was **falsified**
+  against `docs/FILESYSTEM_MODULES_DESIGN.md` — eager structural discovery is
+  the frozen intended contract. Do not re-open it.
+- Verdict **`GO`** covers release-candidate *preparation* only. Promoting a
+  release candidate to stable, publishing a runtime, or moving a tag remain
+  human-gated and were not performed.
+- Deferred P2/P3 items (TD-01, TD-03, TD-04, TD-07, TD-09, TD-10, TD-11, TD-13,
+  TD-17, TD-19, TD-22, TD-24) and residual risks (R-15 unbounded allocation
+  growth, R-10 frozen artifacts stale-by-policy, R-12 compatibility note,
+  R-07/R-08/R-14) are recorded in the report. **None was implemented.**
+
+**Exact next action: none.** Directive 005 forbids starting a new campaign or
+continuing to hunt for low-priority defects. The next step is a human decision
+about release-candidate preparation. Do not open a corrective PR, do not begin
+language features, do not touch frozen artifacts, and do not publish — unless a
+fresh human directive explicitly authorizes it.
+
+## Closed task — CORE FIRST: a statically empty `range` is not statically empty — merged `00aeb188` (PR #38)
 
 **Status:** merged as `00aeb188`; twenty-one remote checks green,
 `mergeStateStatus=CLEAN`. Post-merge diff `29736de7..00aeb188` contains exactly
 the five intended files (`src/check/mod.rs`, `tests/keystone_types.rs`,
 `CHANGELOG.md`, this handoff, `AGENT_STATE.md`), and the working tree is clean.
-Nothing open; the next CORE FIRST finding is not yet selected.
+Nothing open; the next CORE FIRST finding is not yet selected — and Directive
+005 closed the campaign before one was chosen.
 
 ### The defect
 
