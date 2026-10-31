@@ -1,16 +1,21 @@
 # Current Engineering Handoff
 
-## Current local task — CORE FIRST: resolver type-parameter leak
+## Current task — CORE FIRST: resolver type-parameter leak — merged
 
-`rewrite/v3-rust` is the **default branch** and HEAD is **`2fe944fb`** (the
-merge of PR #21). Twenty-one PRs are merged this campaign: #2, #3, #4, #5, #6, #7,
+**Merged as PR #22 (`92f5cf18`), CI 21/21 green on round 1.** No red gate, no
+retry, no gate weakened. `mergeStateStatus` was `CLEAN` and `reviewDecision`
+empty, so no external human approval was required or simulated.
+
+`rewrite/v3-rust` is the **default branch** and HEAD is **`92f5cf18`** (the
+merge of PR #22). Twenty-two PRs are merged this campaign: #2, #3, #4, #5, #6, #7,
 #8, #9 (B14), #10 (PR template), #11 (TD-24 cost guard), #12 (CHANGELOG
 `[Unreleased]` + TD-25), #13 (website suite gate + TD-26), #14 (TD-27 Playwright
 gate), #15 (state sync), #16 (B7 project-header contract + HTTP transport docs +
 `test:abi`), #17 (validation orchestrator self-tests in CI), #18 (state sync for
 #15–#17), #19 (browser consent scoped to the mutation class), #20 (Directive
 004: the seven agents), #21 (CORE FIRST: REPL session state incremental, TD-13
-closed, session APIs feature-gated).
+closed, session APIs feature-gated), #22 (CORE FIRST: resolver type-parameter
+frame popped on the error path).
 The Directive 003-R authorization recorded in
 `AGENTS.md` permits push, PR creation and merge, workflow administration, and
 default-branch changes; force-push, history removal, tag moves, frozen-WASM
@@ -114,6 +119,9 @@ fails on the pre-fix tree at the `E3002` assertion.
 
 ### Validation executed on this tree
 
+Executed locally on `2d7f6356` before the merge; remote CI then re-ran the same
+surfaces.
+
 - `cargo test --locked --test repl` → 54 passed, 0 failed (53 before the new test)
 - `cargo test --locked --all-targets --all-features` → 66 suites pass, 0 failed
 - `cargo test --locked --all-targets --no-default-features --features cli,repl,json,regex,time` → 66 suites pass, 0 failed
@@ -121,12 +129,13 @@ fails on the pre-fix tree at the `E3002` assertion.
 - `cargo fmt --all -- --check` → clean
 - `RUSTFLAGS="-D warnings" cargo check --locked --lib --no-default-features --features cli` → clean
 - the `/tmp/v1` reproducer and its controls, each in its own fresh directory → correct `E2018` everywhere, no `E3002`
+- remote CI on the PR → **21/21 pass**, round 1
 
 ### Resume point
 
-After this PR merges, HEAD moves off `2fe944fb`. **Exact next action:** continue
-CORE FIRST with the next reproduced defect — the `Stmt::Let` partial-mutation
-leak test, then lexer/parser ambiguities, precedence and error recovery; checker
+HEAD is `92f5cf18`. **Exact next action:** continue CORE FIRST with the next
+reproduced defect — the `Stmt::Let` partial-mutation leak test, then
+lexer/parser ambiguities, precedence and error recovery; checker
 scopes, generics and mutability; evaluator control flow, closures and resource
 limits; collection bounds; module cycles; runtime panic and Host/Python/WASM
 capability boundaries. One PR per finding, each carrying a reproducible case, a
