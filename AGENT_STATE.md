@@ -1,5 +1,51 @@
 # Aura Agent State
 
+## Directive 006 — release readiness assessed (`INCOMPLETE`, `NO-GO` to distribute)
+
+- **Campaign 003 stays closed.** Directive 006 did **not** reopen it and did
+  **not** find a new source-tree defect. It assessed release readiness only.
+- Report:
+  [`docs/engineering/RELEASE_CANDIDATE_READINESS.md`](docs/engineering/RELEASE_CANDIDATE_READINESS.md),
+  delivered by **PR #40**. Exactly **one** documentation PR, as budgeted.
+  No production code, test, workflow, or frozen artifact was modified.
+- Reference identity at assessment time: **`3347ff6c`**, worktree clean,
+  local == `origin/rewrite/v3-rust`. 38 merged PRs, 0 open.
+- **The finding that gates release:** the Playground's two selectable WebAssembly
+  runtimes are **stale relative to the source tree, semantically**. Running the
+  18 verbatim regression programs already present in `tests/regressions.rs`
+  against each substrate gives `0.3.1` **4/18 PASS, 11 WRONG, 3 TRAP**,
+  `0.3.2-dev.8` **4/18 / 11 / 3**, native HEAD **18/18**. Both shipped
+  artifacts **accept four type-soundness violations** that native HEAD rejects
+  (`set.add`/`set.has`/`set.remove` wrong element type → `E3001`; tail
+  expression contradicting the declared return type → `E3005`), and one
+  diagnostic diverged (`E3001` → `E4031`). `0.3.2-dev.8` fixes **nothing**
+  relative to `0.3.1` despite carrying ABI 2.
+- Root cause proven: **`31346b53`** is the last commit touching
+  `playground/runtime/` **and** the sole commit that created
+  `playground/runtimes/0.3.2-dev.8/`. Zero commits have touched
+  `playground/runtimes/` since. **16 `src/` commits and 79 total commits are
+  unshipped.** `playground/build.mjs` forbids overwriting an existing identity,
+  so refreshing the artifacts requires a **new dev identity** — a human
+  authorization this directive did not grant.
+- Not a source-tree regression: the local matrix at `3347ff6c` is green (1477
+  tests, 1361 no-default-features, `fmt`, `clippy -D warnings`, MSRV 1.83,
+  Playground, website) and remote CI is **23/23** (CI run `41225313680` 21/21,
+  Pages run `41225313675` 2/2).
+- PR inventory corrected: the closure report's "37 corrective" is **wrong**.
+  By real changed files it is **16** core `src/`, **2** Playground, **5** tests,
+  **3** CI, **1** dependency, **2** agent config, **9** docs = 38. The closure
+  report's *separate* "37 orphaned dev-runtime directories" figure is **correct**
+  (45 dirs − 8 available) and was left untouched.
+- Verdict: **`NO-GO` for distributing the existing artifacts**;
+  **`HUMAN DECISION REQUIRED`** to build a corrected candidate. Six decisions
+  are enumerated in §10 of the report. **Nothing was tagged, published, or
+  promoted**, and the publication checklist in §11 is recorded as not executed.
+
+**Do not act on this without a human decision.** Do not rebuild the runtime,
+bump the identity, correct `CHANGELOG.md:12-16`, add the staleness CI gate, or
+open a follow-up PR on the strength of this assessment alone. The next step is
+human authorization, not engineering initiative.
+
 ## Directive 005 — Campaign 003 closed (`COMPLETE`, verdict `GO`)
 
 - **Campaign 003 is closed.** The closure report is
