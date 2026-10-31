@@ -397,8 +397,16 @@ sign  = "+" (always) | "-" (only negative) | " " (leading space for non-negative
 type  = "d" | "b" | "o" | "x" | "X" | "f" | "F" | "e" | "E" | "%"
 ```
 
-* A leading `0` before the width digits is the zero-pad flag: it sets fill `0`
-  and right alignment (`f"{n:06d}"` → `000042`).
+* A leading `0` before the width digits is the zero-pad flag. Without an
+  explicit `fill`+`align` pair it sets the fill to `0` and right alignment, and
+  for numeric values it pads **after** the sign rather than before it, so
+  `f"{-42:06d}"` → `-00042` and `f"{42:06d}"` → `000042`. An explicit
+  `fill`+`align` pair wins outright and the flag is ignored, so
+  `f"{-42:*>06d}"` → `***-42`. A bare alignment written without a fill keeps
+  the `0` fill and the plain (not sign-aware) padding it implies, so
+  `f"{-42:>06d}"` → `000-42` and `f"{-42:<06d}"` → `-42000`. The flag is a
+  width concern, not a numeric one: a non-numeric value is filled with `0` as
+  usual, so `f"{true:06}"` → `00true`.
 * `width` is a minimum field width; shorter text is padded with `fill` (a
   space by default) according to `align`. Numbers default to right alignment,
   everything else to left.

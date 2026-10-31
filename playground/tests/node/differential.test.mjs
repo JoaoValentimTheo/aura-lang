@@ -377,6 +377,7 @@ const cases = [
   ['fstring precision', 'fn main() { print(f"{3.14159:.2f}") }'],
   ['fstring width align', "fn main() { print(f\"[{42:>6}]\\n[{'hi':<6}]\\n[{'hi':^6}]\") }"],
   ['fstring zero pad', 'fn main() { print(f"{42:06d}") }'],
+  ['fstring zero pad negative', 'fn main() { print(f"{-42:06d}") }'],
   ['fstring sign', 'fn main() { print(f"{5:+}") }'],
   ['fstring hex bin', 'fn main() { print(f"{255:x} {10:b} {10:o}") }'],
   ['fstring percent exp', 'fn main() { print(f"{0.5:.1%} {1234.5:.2e}") }'],

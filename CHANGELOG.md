@@ -67,6 +67,16 @@ Playground but are not releases.
   snapshot of the 2026-09-30 state, not a current claim.
 
 ### Fixed
+- **Zero-padded numbers put the zeros outside the sign.** `f"{-42:06d}"`
+  rendered `000-42` instead of `-00042`, and the same sign-ordering error
+  affected every float presentation (`f"{-0.5:010.3f}"` → `0000-0.500`). The
+  parser recorded the `0` flag only as a fill character, so the formatter
+  applied generic fill padding after inserting the sign. `FormatSpec` now
+  carries an explicit `zero_pad` bit and the formatter pads between the sign
+  and the digits. Two coupled bugs went with it: an explicit fill was silently
+  overwritten by the flag (`f"{-42:*>06d}"` → `000-42` instead of `***-42`),
+  and the spec sentence describing the flag was wrong. Bare alignments and
+  non-numeric values keep their previous output.
 - **`sort` aborted the interpreter on lists it could not order.** The comparator
   folded every incomparable pair to "equal", which is intransitive: a list
   containing `NaN`, a union-typed list, and a list mixing `int` and `float`

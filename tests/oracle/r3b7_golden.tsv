@@ -57,6 +57,12 @@ r3b7-value/spec_width_right		ok	0		-	0	0	0	0	string	"[     7]"
 r3b7-value/spec_width_center		ok	0		-	0	0	0	0	string	"[  7   ]"
 r3b7-value/spec_fill_align		ok	0		-	0	0	0	0	string	"[*****7]"
 r3b7-value/spec_zero_pad		ok	0		-	0	0	0	0	string	"000042"
+r3b7-value/spec_zero_pad_negative		ok	0		-	0	0	0	0	string	"-00042"
+r3b7-value/spec_zero_pad_negative_float		ok	0		-	0	0	0	0	string	"-0003.50"
+r3b7-value/spec_zero_pad_sign_space		ok	0		-	0	0	0	0	string	" 00042"
+r3b7-value/spec_zero_pad_infinity		ok	0		-	0	0	0	0	string	"-0000inf"
+r3b7-value/spec_zero_pad_explicit_fill_wins		ok	0		-	0	0	0	0	string	"***-42"
+r3b7-value/spec_zero_pad_bare_align_left		ok	0		-	0	0	0	0	string	"-42000"
 r3b7-value/spec_string_width		ok	0		-	0	0	0	0	string	"[   ab]"
 r3b7-value/spec_type_mismatch_bool		runtime	3001	format type `d` does not apply to bool	<r3b7>	8	9	1	9	-	-
 r3b7-value/spec_type_mismatch_float_dec		runtime	3001	format type `d` does not apply to float	<r3b7>	7	8	1	8	-	-

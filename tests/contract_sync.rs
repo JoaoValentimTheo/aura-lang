@@ -246,8 +246,13 @@ fn fstring_format_mini_language() {
     assert_eq!(ok("fn main() { print(f\"[{'hi':<6}]\") }"), "[hi    ]\n");
     assert_eq!(ok("fn main() { print(f\"[{'hi':^6}]\") }"), "[  hi  ]\n");
     assert_eq!(ok("fn main() { print(f\"[{'hi':*>7}]\") }"), "[*****hi]\n");
-    // Zero padding.
+    // Zero padding. The zeros go after the sign, so a negative number keeps
+    // its sign in front of the field.
     assert_eq!(ok("fn main() { print(f\"{42:06d}\") }"), "000042\n");
+    assert_eq!(ok("fn main() { print(f\"{-42:06d}\") }"), "-00042\n");
+    assert_eq!(ok("fn main() { print(f\"{-3.5:08.2f}\") }"), "-0003.50\n");
+    // An explicit fill suppresses the zero flag.
+    assert_eq!(ok("fn main() { print(f\"{-42:*>06d}\") }"), "***-42\n");
     // Sign.
     assert_eq!(ok("fn main() { print(f\"{5:+}\") }"), "+5\n");
     // Presentation types.

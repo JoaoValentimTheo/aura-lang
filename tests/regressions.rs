@@ -1722,3 +1722,71 @@ fn audit7_sort_method_matches_the_free_function() {
         codes::TYPE_MISMATCH
     );
 }
+
+/// AUDIT-8: the zero-pad flag must pad *after* the sign. Before the fix the
+/// generic fill path ran after sign insertion, so the zeros landed outside the
+/// sign and `f"{-42:06d}"` produced `000-42` where Python produces `-00042`.
+#[test]
+fn audit8_zero_pad_places_the_sign_before_the_zeros() {
+    let src = "fn main() { print(f\"{-42:06d}\")\n print(f\"{-42:06}\")\n print(f\"{-42:+06d}\")\n print(f\"{42: 06d}\") }";
+    assert_eq!(out(src), "-00042\n-00042\n-00042\n 00042\n");
+}
+
+/// AUDIT-8: the same sign-ordering rule governs float presentations, where the
+/// padding sits between the sign and the integral part. Aura's exponent form is
+/// `e0` rather than Python's `e+00`, so `-3.50e0` is seven characters and only
+/// one zero is needed to reach width eight.
+#[test]
+fn audit8_zero_pad_is_sign_aware_for_floats() {
+    let src = "fn main() { print(f\"{-3.5:08.2f}\")\n print(f\"{-0.5:010.3f}\")\n print(f\"{-0.25:09.2%}\")\n print(f\"{-3.5:08.2e}\")\n print(f\"{-3.5:010.2e}\") }";
+    assert_eq!(
+        out(src),
+        "-0003.50\n-00000.500\n-0025.00%\n-03.50e0\n-0003.50e0\n"
+    );
+}
+
+/// AUDIT-8: an infinity literal overflows at parse time and reaches the same
+/// float path, so a negative infinity must zero-pad its sign too.
+#[test]
+fn audit8_zero_pad_handles_infinities() {
+    let src = "fn main() { print(f\"{1e400:08.2f}\")\n print(f\"{-1e400:08.2f}\") }";
+    assert_eq!(out(src), "00000inf\n-0000inf\n");
+}
+
+/// AUDIT-8: an explicit fill must suppress the zero flag instead of being
+/// overwritten by it. The parser previously discarded `*` and forced a `0`
+/// fill, so `f"{-42:*>06d}"` rendered `000-42` instead of `***-42`.
+#[test]
+fn audit8_explicit_fill_suppresses_the_zero_flag() {
+    let src = "fn main() { print(f\"{-42:*>06d}\")\n print(f\"{-42:*<06d}\") }";
+    assert_eq!(out(src), "***-42\n-42***\n");
+}
+
+/// AUDIT-8: a bare alignment keeps the plain `0` fill and therefore keeps the
+/// pre-fix, non-sign-aware rendering. These are the cases the fix must not
+/// disturb, because they already agreed with Python.
+#[test]
+fn audit8_bare_alignment_keeps_the_plain_zero_fill() {
+    let src = "fn main() { print(f\"{-42:0>6d}\")\n print(f\"{-42:<06d}\")\n print(f\"{-42:>06d}\")\n print(f\"{-42:^06d}\")\n print(f\"{-42:_>6d}\") }";
+    assert_eq!(out(src), "000-42\n-42000\n000-42\n0-4200\n___-42\n");
+}
+
+/// AUDIT-8: the ordinary width path is untouched — right alignment for
+/// numbers, no padding once the value fills the field, and the positive
+/// zero-pad case that already worked.
+#[test]
+fn audit8_zero_pad_leaves_the_plain_width_path_alone() {
+    let src =
+        "fn main() { print(f\"{42:06d}\")\n print(f\"{-42:6d}\")\n print(f\"{-123456:04d}\") }";
+    assert_eq!(out(src), "000042\n   -42\n-123456\n");
+}
+
+/// AUDIT-8: the zero flag is a width-fill concern only. It has never been
+/// restricted to numbers, so non-numeric values keep the plain `0` fill and
+/// this documented divergence from Python (whose `bool` is an `int`) is
+/// preserved deliberately.
+#[test]
+fn audit8_zero_pad_still_fills_non_numeric_values() {
+    let src = "fn main() { print(f\"{true:06}\")\n print(f\"{[1, 2]:08}\") }";
+    assert_eq!(out(src), "00true\n00[1, 2]\n");
+}

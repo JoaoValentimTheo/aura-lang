@@ -1,10 +1,125 @@
 # Current Engineering Handoff
 
-## Current task — CORE FIRST: `sort` is not a total order (one root cause, five symptoms)
+## Current task — CORE FIRST: f-string zero padding lands outside the sign
 
-**Status:** code, regression tests, spec correction and the full local validation
-floor are complete on branch `fix/sort-total-order` (from `a089fd45`). Awaiting
-commit, push, PR and remote CI.
+**Status:** code, seven regression tests, spec correction, CHANGELOG, contract
+test, oracle generators, golden and a playground differential case are complete
+on branch `fix/fstring-zero-pad-sign` (from `da8d6273`). The full local
+validation floor is green. Awaiting commit, push, PR and remote CI.
+
+### The defect
+
+The `0` flag was stored only as a fill character (`out.fill = Some('0')`). No
+bit distinguished "the user wrote `0` before the width" from "the user wrote an
+explicit fill", and `format_value` inserted the sign (step 3) **before**
+applying generic fill padding (step 4). The zeros therefore landed outside the
+sign. Four coupled symptoms, one root cause each:
+
+| # | Input | Before | After (Python) |
+|---|---|---|---|
+| A | `f"{-42:06d}"` | `000-42` | `-00042` |
+| B | `f"{-3.5:08.2f}"` / `f"{-0.5:010.3f}"` / `f"{-0.25:09.2%}"` | `000-3.50` / `0000-0.500` / `00-25.00%` | `-0003.50` / `-00000.500` / `-0025.00%` |
+| C | `f"{-42:*>06d}"` | `000-42` — the `*` fill is silently overwritten | `***-42` |
+| D | spec line 400 | described the defective rule and gave no sign rule | rewritten |
+
+Symptom B also reaches ±infinity: `1e400` overflows to `inf` at parse time, so
+`f"{-1e400:08.2f}"` must render `-0000inf`.
+
+### The fix — three code sites
+
+1. `src/ast/mod.rs` — `FormatSpec` gains `pub zero_pad: bool` between `sign` and
+   `width`. Source-compatible: the only other construction site
+   (`src/run/iterative.rs:5617`) uses `..FormatSpec::default()`.
+2. `src/parse/mod.rs` — `parse_format_spec` sets `zero_pad` **only** when the
+   flag is bare (`out.fill.is_none()`). The parser still sets
+   `fill = Some('0')` and `align = Right` unconditionally so the pre-existing
+   non-numeric fill and every bare-align rendering stay bit-identical.
+3. `src/run/mod.rs` — `format_value` step 4 branches on `spec.zero_pad && numeric`,
+   splits the sign off by byte, and pads zeros between sign and digits.
+   Everything else falls through the old path untouched.
+
+`format_value` has **one** implementation (`src/run/mod.rs:2849`) shared by the
+tree-walker and the iterative evaluator, so the fix needed no duplication.
+
+### CPython's actual rule, established empirically
+
+The flag is honoured **only** when no explicit `fill`+`align` pair precedes it.
+A bare alignment does *not* suppress it:
+
+```
+'>06d'  -> '000-42'   '<06d'  -> '-42000'   '^06d'  -> '0-4200'
+'*>06d' -> '***-42'   '*<06d' -> '-42***'   '0>6d'  -> '000-42'
+'06d'   -> '-00042'   '+06d'   -> '-00042'   '0=6d'  -> '-00042'
+```
+
+`=` alignment is `E1006` in Aura — a pre-existing, documented divergence, left
+alone.
+
+### Tests
+
+Seven `audit8_*` tests appended to `tests/regressions.rs`. **Four fail against
+`da8d6273`**, proven by stashing `src/` and re-running; all seven pass after the
+fix. The other three are guards that pass both ways:
+
+| Test | Pre-fix |
+|---|---|
+| `audit8_zero_pad_places_the_sign_before_the_zeros` | FAILS |
+| `audit8_zero_pad_is_sign_aware_for_floats` | FAILS |
+| `audit8_zero_pad_handles_infinities` | FAILS |
+| `audit8_explicit_fill_suppresses_the_zero_flag` | FAILS |
+| `audit8_bare_alignment_keeps_the_plain_zero_fill` | passes (guard) |
+| `audit8_zero_pad_leaves_the_plain_width_path_alone` | passes (guard) |
+| `audit8_zero_pad_still_fills_non_numeric_values` | passes (guard) |
+
+Six `fstring_value` oracle generators in `tests/oracle/r3b.rs` and six
+regenerated rows in `tests/oracle/r3b7_golden.tsv`; three new assertions in
+`tests/contract_sync.rs`; one playground differential case.
+
+### Judgement calls surfaced rather than made silently
+
+- **`f"{true:06}"` renders `00true`** and `f"{[1, 2]:08}"` renders `00[1, 2]`.
+  Aura's zero flag was never restricted to numbers, and Python cannot arbitrate
+  because its `bool` *is* an `int` (`format(True, '06')` is `'000001'`). This is
+  a deliberate Aura choice, now written into the spec and locked by a test.
+- **`f"{-255:08x}"` → `ffffffffffffffff01` is *not* fixed.** It is the
+  `as u64` cast of the digits, and **no spec sentence governs negative integers
+  in non-decimal presentation**. Unspecified surface, not a confirmed defect;
+  it needs a specification decision first.
+- **`e`-presentation prints `e0`, not `e+00`** (`f"{-3.5:08.2e}"` → `-03.50e0` —
+  one zero, because the text is seven characters). Already normatively tested
+  at `tests/contract_sync.rs:257,269,272`; unchanged.
+
+### Validation actually executed
+
+```
+cargo fmt --all -- --check                                          FMT OK
+cargo clippy --locked --all-targets --all-features -- -D warnings   clean
+cargo test --locked --all-targets --all-features                    66 binaries, 0 failed
+cargo test --locked --all-targets --no-default-features \
+  --features cli,repl,json,regex,time                               1352 passed, 0 failed
+cargo +1.83.0 check --locked --all-features                         ok
+cargo +nightly check --manifest-path fuzz/Cargo.toml --all-targets  ok
+node playground/tests/node/run-all.mjs                              all suites pass
+node playground/build.mjs --check                                   manifest matches 9 versions
+node website/build.mjs                                              46 pages
+node website/tests/run-all.mjs                                      pass
+```
+
+Not run locally: Miri, fuzz smoke, browser Playwright — all CI-only.
+
+### Next exact action
+
+Commit on `fix/fstring-zero-pad-sign`, push, open the PR against
+`rewrite/v3-rust` using `.github/pull_request_template.md` verbatim, poll
+`gh pr checks` to 21/21 with `mergeStateStatus=CLEAN`, then
+`gh pr merge <n> --merge --delete-branch`.
+
+---
+
+## Previous task — CORE FIRST: `sort` is not a total order (one root cause, five symptoms) — merged `da8d6273` (PR #33)
+
+**Status:** merged. Twenty-one remote checks green, `mergeStateStatus=CLEAN`.
+Post-merge diff `a089fd45..da8d6273` contains exactly the eight intended files.
 
 ### The defect
 

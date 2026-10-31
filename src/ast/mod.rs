@@ -486,6 +486,9 @@ pub struct FormatSpec {
     pub align: Option<Align>,
     /// Sign for numbers: `+` (always), `-` (only negatives), or ` ` (space).
     pub sign: Option<Sign>,
+    /// The `0` flag was written, and no explicit fill was: pad with zeros
+    /// *after* the sign, so `f"{-42:06d}"` is `-00042` rather than `000-42`.
+    pub zero_pad: bool,
     /// Minimum field width.
     pub width: Option<usize>,
     /// Precision: digits after the decimal point.

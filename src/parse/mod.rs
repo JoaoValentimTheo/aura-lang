@@ -3588,11 +3588,18 @@ fn parse_format_spec(spec: &str, base: usize) -> Result<FormatSpec> {
             _ => {}
         }
     }
-    // Width. A leading `0` before the digits is the zero-padding flag: it
-    // sets fill `0` and (for numbers) right alignment, as in Python's `06d`.
+    // Width. A leading `0` before the digits is the zero-padding flag.
+    // An explicit fill wins outright (`*<06d` is `-42***`, not `-42000`).
+    // Without one the flag sets the `0` fill and right alignment, keeping
+    // any alignment the user wrote (`>06d` stays `000-42`). Only the bare
+    // flag is additionally sign-aware for numbers, making `06d` render
+    // `-42` as `-00042`.
     if chars.get(i) == Some(&'0') && chars.get(i + 1).is_some_and(char::is_ascii_digit) {
-        out.fill = Some('0');
-        out.align.get_or_insert(Align::Right);
+        if out.fill.is_none() {
+            out.zero_pad = out.align.is_none();
+            out.fill = Some('0');
+            out.align.get_or_insert(Align::Right);
+        }
         i += 1;
     }
     let (w, ni) = take_digits(&chars, i);
