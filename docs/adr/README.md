@@ -18,6 +18,7 @@ produces a decision package rather than an improvised answer.
 | [0002](0002-module-member-builtin-names.md) | Module members vs. builtin-name reservation | Accepted |
 | [0003](0003-supported-cpython-versions.md) | Supported CPython versions | Accepted |
 | [0004](0004-typeexpr-nesting-policy.md) | TypeExpr nesting policy | Accepted |
+| [0006](0006-http-header-value-encoding.md) | HTTP header value encoding | Accepted |
 
 ## Adding an ADR
 
@@ -34,3 +35,5 @@ produces a decision package rather than an improvised answer.
 - [ADR-0004](0004-typeexpr-nesting-policy.md) — type-expression nesting policy.
 - [ADR-0005](0005-keystone-collection-model.md) — Keystone collection model
   (List, Array, Tuple, Set, Map).
+- [ADR-0006](0006-http-header-value-encoding.md) — HTTP header value encoding
+  is ISO-8859-1 in both directions.

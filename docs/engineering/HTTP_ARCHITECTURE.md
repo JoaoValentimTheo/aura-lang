@@ -143,7 +143,7 @@ with the identical response bytes.
 
 ## 8. Native foundations repaired (0.3.2 development)
 
-Four verified defects in the native path were reproduced and fixed in this
+Five verified defects in the native path were reproduced and fixed in this
 campaign. The public response shape change is **additive only**: no existing
 key changed meaning, so no compatibility decision is required.
 
@@ -172,6 +172,27 @@ key changed meaning, so no compatibility decision is required.
   (`E4020`), dispatched only after the check, with no request sent.
   `DELETE` with a body uses `ureq`'s documented `force_send_body` escape
   hatch; `POST`/`PUT`/`PATCH` always send (an empty body when none is given).
+
+- **Header values survive in both directions.** Response values outside ASCII
+  were erased — `to_str()` rejects bytes ≥ 0x80 and `unwrap_or("")` turned the
+  rejection into `""` — and the same erased string fed `header_lines`, so
+  echoing a response back into a request put `x-latin: ` on the wire with the
+  value gone. Outgoing values carried the opposite defect: they were UTF-8
+  encoded, so `café` sent `0xC3 0xA9` where the browser host sends `0xE9`.
+  Both directions now match the browser, adopted as the reference host:
+  response values decode as ISO-8859-1 (lossless, which is why no
+  `header_bytes` key is needed alongside `body_bytes`), request values encode
+  as ISO-8859-1, and a value above `U+00FF` is `E4020` rather than a silent
+  UTF-8 send. The browser already refused that case with `TypeError`, which
+  `worker.js` has always surfaced as `E4020`; the native path now agrees
+  instead of diverging. The `U+00FF` rule is enforced twice on purpose — in
+  `build_request`, which is gated on `http-api` and therefore also runs in
+  browser builds that never compile `src/host.rs`, and again in
+  `latin1_octets`, so a foreign `HttpRequest` cannot smuggle UTF-8 onto the
+  wire. Three tests pin it (`non_ascii_response_header_value_is_preserved`,
+  `outgoing_non_ascii_header_value_uses_latin1_octets`,
+  `header_value_above_latin1_is_reported_not_sent`); all three fail on the old
+  code. The contract is `docs/adr/0006-http-header-value-encoding.md`.
 
 The browser substrate still denies HTTP with `E5002`: browser HTTP requires the
 cross-boundary parking driver described in

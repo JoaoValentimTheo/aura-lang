@@ -124,6 +124,13 @@ impl CapturingServer {
     fn request_text(&self) -> String {
         String::from_utf8_lossy(&self.captured.lock().unwrap()).into_owned()
     }
+
+    /// The raw request octets. `request_text` is a lossy UTF-8 view, so it
+    /// cannot distinguish the latin-1 octet `0xE9` from the UTF-8 sequence
+    /// `0xC3 0xA9`; an encoding assertion must look at the bytes.
+    fn request_bytes(&self) -> Vec<u8> {
+        self.captured.lock().unwrap().clone()
+    }
 }
 
 impl Drop for CapturingServer {
@@ -198,6 +205,11 @@ impl Host for NoNetworkHost {
 const REDIRECT_RESPONSE: &[u8] = b"HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/elsewhere\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
 
 const OK_RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nX-Test: yes\r\nContent-Length: 26\r\nConnection: close\r\n\r\n{\"name\": \"bob\", \"age\": 30}";
+
+/// A response whose `x-latin` value carries the octet `0xE9`. That octet is
+/// legal `obs-text` (RFC 9110 §5.5) but is not valid UTF-8, which is exactly
+/// the case the pre-fix native host erased to the empty string (ADR-0006).
+const LATIN1_HEADER_RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\nx-latin: caf\xE9\r\nx-ascii: plain\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
 
 #[test]
 fn request_returns_status_headers_and_body() {
@@ -434,6 +446,74 @@ fn get_with_a_body_is_reported_not_silently_dropped() {
     assert_eq!(code, codes::IO);
     assert!(
         server.request_text().is_empty(),
+        "no request must be dispatched"
+    );
+}
+
+#[test]
+fn non_ascii_response_header_value_is_preserved() {
+    // Defect (verified before the fix): every response value was converted with
+    // `HeaderValue::to_str().unwrap_or("")`. `to_str` fails whenever an octet is
+    // `obs-text` (outside visible ASCII or tab), so `x-latin: caf\xE9` arrived
+    // as the empty string — silent data loss on a value RFC 9110 §5.5 explicitly
+    // permits. The browser host has always decoded such values as ISO-8859-1;
+    // ADR-0006 makes that the contract for both hosts.
+    let server = TestServer::start(LATIN1_HEADER_RESPONSE);
+    let src = format!(
+        "fn main() {{ let r = http_get(\"{}\")\n print(r[\"headers\"][\"x-latin\"])\n print(len(r[\"headers\"][\"x-latin\"]))\n print(r[\"headers\"][\"x-ascii\"])\n for line in r[\"header_lines\"] {{\n  if line[0] == \"x-latin\" {{ print(line[1]) }}\n }} }}",
+        server.url("/latin")
+    );
+    let out = run(&src).expect("request");
+    // Four characters — `c`, `a`, `f`, and U+00E9 — not zero and not U+FFFD.
+    // `header_lines` carries the identical value; only the shape differs.
+    assert_eq!(out, "café\n4\nplain\ncafé\n");
+}
+
+#[test]
+fn outgoing_non_ascii_header_value_uses_latin1_octets() {
+    // Defect (verified before the fix): the value was handed to `ureq` as a
+    // `String`, so its UTF-8 octets went on the wire (`0xC3 0xA9`). HTTP header
+    // values are ISO-8859-1 (ADR-0006) and the browser host has always sent the
+    // single octet `0xE9`. Assert on the raw bytes: `request_text` is a lossy
+    // UTF-8 view and cannot tell the two encodings apart.
+    let server = CapturingServer::start(OK_RESPONSE);
+    let src = format!(
+        "fn main() {{\n let opts = {{\"headers\": [[\"X-Aura-Latin\", \"café\"]]}}\n let r = http_request(\"GET\", \"{}\", opts)\n print(r[\"status\"])\n}}",
+        server.url("/latin")
+    );
+    run(&src).expect("request");
+    let req = server.request_bytes();
+    let lower = req.to_ascii_lowercase();
+    let want = b"x-aura-latin: caf\xE9".to_vec();
+    assert!(
+        lower.windows(want.len()).any(|w| w == want),
+        "expected the ISO-8859-1 octet 0xE9 on the wire, got:\n{}",
+        String::from_utf8_lossy(&req)
+    );
+    assert!(
+        !lower.windows(2).any(|w| w == b"\xc3\xa9"),
+        "the value must not be sent as the UTF-8 sequence 0xC3 0xA9:\n{}",
+        String::from_utf8_lossy(&req)
+    );
+}
+
+#[test]
+fn header_value_above_latin1_is_reported_not_sent() {
+    // A code point above U+00FF has no ISO-8859-1 representation. The browser
+    // host cannot encode it at all (`TypeError: ... greater than 255`, which
+    // `worker.js` surfaces as E4020), so the native host reports the same error
+    // instead of silently sending UTF-8 octets no browser would ever send. This
+    // is the parity fix: before ADR-0006 the native side accepted the value and
+    // put non-latin-1 bytes on the wire.
+    let server = CapturingServer::start(OK_RESPONSE);
+    let src = format!(
+        "fn main() {{\n let opts = {{\"headers\": [[\"X-Aura-Cjk\", \"日本語\"]]}}\n let r = http_request(\"GET\", \"{}\", opts)\n print(r[\"status\"])\n}}",
+        server.url("/cjk")
+    );
+    let code = run(&src).expect_err("a non-latin-1 header value must fail");
+    assert_eq!(code, codes::IO);
+    assert!(
+        server.request_bytes().is_empty(),
         "no request must be dispatched"
     );
 }
