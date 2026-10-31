@@ -2885,23 +2885,19 @@ impl Interp {
                     format!("{:x}", *i as u64)
                 }
             }
-            (Some(FormatType::Fixed), Value::Float(f)) => {
-                format!("{:.*}", spec.precision.unwrap_or(6), f)
+            (Some(FormatType::Fixed), Value::Float(f)) => float_fixed(*f, spec.precision),
+            (Some(FormatType::Fixed), Value::Int(i)) => float_fixed(*i as f64, spec.precision),
+            (Some(FormatType::Exp { upper }), Value::Float(f)) => {
+                float_exp(*f, spec.precision, upper)
             }
-            (Some(FormatType::Fixed), Value::Int(i)) => {
-                format!("{:.*}", spec.precision.unwrap_or(6), *i as f64)
-            }
-            (Some(FormatType::Exp), Value::Float(f)) => {
-                format!("{:.*e}", spec.precision.unwrap_or(6), f)
-            }
-            (Some(FormatType::Exp), Value::Int(i)) => {
-                format!("{:.*e}", spec.precision.unwrap_or(6), *i as f64)
+            (Some(FormatType::Exp { upper }), Value::Int(i)) => {
+                float_exp(*i as f64, spec.precision, upper)
             }
             (Some(FormatType::Percent), Value::Float(f)) => {
-                format!("{:.*}%", spec.precision.unwrap_or(6), f * 100.0)
+                format!("{}%", float_fixed(f * 100.0, spec.precision))
             }
             (Some(FormatType::Percent), Value::Int(i)) => {
-                format!("{:.*}%", spec.precision.unwrap_or(6), *i as f64 * 100.0)
+                format!("{}%", float_fixed(*i as f64 * 100.0, spec.precision))
             }
             (Some(ty), other) => {
                 return Err(self.error(
@@ -3040,6 +3036,46 @@ impl Interp {
     }
 }
 
+/// `f`-style fixed-point rendering.
+///
+/// Non-finite values bypass the requested precision: `format_float` owns their
+/// canonical spelling (§10.7), and Rust would otherwise emit `NaN`.
+fn float_fixed(f: f64, precision: Option<usize>) -> String {
+    if f.is_nan() {
+        return value::format_float(f);
+    }
+    format!("{:.*}", precision.unwrap_or(6), f)
+}
+
+/// `e` / `E`-style scientific rendering; `upper` selects the exponent case.
+fn float_exp(f: f64, precision: Option<usize>, upper: bool) -> String {
+    if f.is_nan() {
+        return value::format_float(f);
+    }
+    let precision = precision.unwrap_or(6);
+    if upper {
+        format!("{f:.precision$E}")
+    } else {
+        format!("{f:.precision$e}")
+    }
+}
+
+/// The source spelling of a format type, for diagnostics.
+fn format_type_name(t: crate::ast::FormatType) -> &'static str {
+    use crate::ast::FormatType;
+    match t {
+        FormatType::Dec => "d",
+        FormatType::Binary => "b",
+        FormatType::Octal => "o",
+        FormatType::Hex { upper: false } => "x",
+        FormatType::Hex { upper: true } => "X",
+        FormatType::Fixed => "f",
+        FormatType::Exp { upper: false } => "e",
+        FormatType::Exp { upper: true } => "E",
+        FormatType::Percent => "%",
+    }
+}
+
 /// Bind evaluated argument values to a user function's parameters.
 ///
 /// `args` and `vals` are both in **source order**; `params` is the callee's
@@ -3052,21 +3088,6 @@ impl Interp {
 /// (§15.7), so the mapping is total here; any residual problem (for example a
 /// named argument reaching a call the checker could not resolve) is reported
 /// as a runtime `E3001`, preserving runtime validation as the final layer.
-/// The source spelling of a format type, for diagnostics.
-fn format_type_name(t: crate::ast::FormatType) -> &'static str {
-    use crate::ast::FormatType;
-    match t {
-        FormatType::Dec => "d",
-        FormatType::Binary => "b",
-        FormatType::Octal => "o",
-        FormatType::Hex { upper: false } => "x",
-        FormatType::Hex { upper: true } => "X",
-        FormatType::Fixed => "f",
-        FormatType::Exp => "e",
-        FormatType::Percent => "%",
-    }
-}
-
 fn bind_arguments(
     args: &[Arg],
     vals: &[Value],

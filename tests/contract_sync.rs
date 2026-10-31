@@ -262,6 +262,47 @@ fn fstring_format_mini_language() {
     );
 }
 
+/// `e` and `E` are distinct presentation types: `E` uppercases the exponent
+/// marker, exactly as `X` uppercases hexadecimal digits.
+#[test]
+fn fstring_exp_type_keeps_its_case() {
+    assert_eq!(ok("fn main() { print(f\"{1234.5:.2e}\") }"), "1.23e3\n");
+    assert_eq!(ok("fn main() { print(f\"{1234.5:.2E}\") }"), "1.23E3\n");
+    assert_eq!(ok("fn main() { print(f\"{5:E}\") }"), "5.000000E0\n");
+    assert_eq!(ok("fn main() { print(f\"{5:e}\") }"), "5.000000e0\n");
+}
+
+/// A non-finite float keeps the canonical `format_float` spelling under every
+/// presentation type, so an implementation detail (`NaN`) never reaches the
+/// program's output (spec §10.7).
+#[test]
+fn fstring_non_finite_keeps_the_canonical_spelling() {
+    let src = concat!(
+        "fn main() {\n",
+        "  let n = to_float(\"nan\")\n",
+        "  print(f\"{n}\")\n",
+        "  print(f\"{n:F}\")\n",
+        "  print(f\"{n:e}\")\n",
+        "  print(f\"{n:E}\")\n",
+        "  print(f\"{n:.2f}\")\n",
+        "  print(f\"[{n:>6}]\")\n",
+        "  print(f\"{n:%}\")\n",
+        "}\n",
+    );
+    assert_eq!(ok(src), "nan\nnan\nnan\nnan\nnan\n[   nan]\nnan%\n");
+    // Infinities were already canonical; pin them so the fix cannot trade one
+    // spelling for another.
+    let inf = concat!(
+        "fn main() {\n",
+        "  let p = to_float(\"inf\")\n",
+        "  let m = to_float(\"-inf\")\n",
+        "  print(f\"{p:f} {p:E} {p:%}\")\n",
+        "  print(f\"{m:f} {m:e} {m:%}\")\n",
+        "}\n",
+    );
+    assert_eq!(ok(inf), "inf inf inf%\n-inf -inf -inf%\n");
+}
+
 /// A format type that does not apply to the value is a type error, and an
 /// unknown format type is a parse error.
 #[test]
