@@ -67,6 +67,15 @@ Playground but are not releases.
   snapshot of the 2026-09-30 state, not a current claim.
 
 ### Fixed
+- **`sort` aborted the interpreter on lists it could not order.** The comparator
+  folded every incomparable pair to "equal", which is intransitive: a list
+  containing `NaN`, a union-typed list, and a list mixing `int` and `float`
+  above `2^53` each either misordered or, past the small-sort threshold, killed
+  the run with `E4999`. `sort` now uses a total order — `NaN` last, mixed
+  numerics compared exactly rather than through §10.4's rounding promotion —
+  and rejects lists it genuinely cannot order with `E3001`, which is what §12
+  already required. The normative text was part of the defect and is corrected
+  in the same change.
 - **Hosted sessions could not resume.** A resumable `aura_session_*` session
   treated a completed step as a completed program, so a `main` that was only
   reached after an earlier step was never executed; two routing defects in the

@@ -31,7 +31,7 @@ mutate, so this is one rule rather than a per-function special case.
 | `push` | `push(list, v)` | `none` |
 | `keys` | `keys(map)` | `[K]` (the map's key type) |
 | `values` | `values(map)` | `[V]` (the map's value type) |
-| `sort` | `sort(list)` | sorted list |
+| `sort` | `sort(list)` | sorted list (total order; `E3001` if not orderable) |
 | `reverse` | `reverse(string\|list)` | reversed |
 | `map` | `map(list, f)` | `[T]` |
 | `filter` | `filter(list, f)` | `[T]` |

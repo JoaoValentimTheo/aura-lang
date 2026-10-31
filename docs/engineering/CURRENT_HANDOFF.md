@@ -1,6 +1,110 @@
 # Current Engineering Handoff
 
-## Current task — CORE FIRST probe round: semantics sweep (no defect found)
+## Current task — CORE FIRST: `sort` is not a total order (one root cause, five symptoms)
+
+**Status:** code, regression tests, spec correction and the full local validation
+floor are complete on branch `fix/sort-total-order` (from `a089fd45`). Awaiting
+commit, push, PR and remote CI.
+
+### The defect
+
+`sort` was implemented as `cmp_val(..).unwrap_or(Equal)` in **two** places
+(`src/stdlib/mod.rs` — the `sort` builtin and the `list.sort` method, identical
+lines). `cmp_val` returns `None` for two different reasons, and mapping both to
+`Equal` produces an **intransitive comparator**:
+
+1. `NaN` — `partial_cmp` yields `None`;
+2. operands of different ordering classes — `comparable_with` yields `false`.
+
+The intransitivity surfaces five ways, three of them P1 aborts:
+
+| # | Input | Before | Severity |
+|---|---|---|---|
+| A | `sort([3.0, 1.0, nan, 2.0])` | `[1.0, 3.0, nan, 2.0]` — `NaN`'s position is arbitrary | deterministic misordering |
+| B | 21-element `NaN` list | `E4999` abort, `smallsort.rs:854` | P1 |
+| C | 22-element `[int \| string]` list | `E4999` identical; small lists silently misorder | P1 |
+| D | 21 elements mixing `int`/`float` around `2^53` | `E4999`, **no `NaN`, no type mismatch** | P1 |
+| E | `[5, 1, "a", 3, 2]` | `Equal` for incomparable pairs; §12 requires `E3001` | spec violation |
+
+Symptom D is the one that would have survived a `NaN`-only patch: `cmp_val`
+orders `int` against `float` through `as f64` (§10.4's rounding promotion),
+so above `2^53` distinct integers collapse onto one `double` and the order is
+intransitive with nothing unordered in sight.
+
+**The checker cannot prevent this.** `Ty::orderable_with` (`src/types.rs:545–571`)
+returns `None` — "undecidable" — for `Ty::Union`, and
+`src/check/mod.rs:4067–4073` performs no orderability check on `sort` at all.
+An `[int | string]` list is legal to construct, so the panic is reachable from a
+valid program; runtime handling is mandatory.
+
+### Why this is a spec correction, not just a code fix
+
+Spec 1588–1590 literally read "`sort`, `min`, and `max` … treat an unordered
+pair as equal and preserve source order (a stable fallback)". That sentence is
+satisfiable for the *pairwise* `min`/`max` — both are correct and were not
+touched — but it **cannot** be satisfied by a *global* sort: a stable sort over
+a non-total order does not terminate in a defined permutation. The normative
+text was part of the defect. Lines 1592–1593 cited
+`tests/regressions.rs::f05_*` as evidence, but `f05_orderability_is_checked_once`
+only asserts the *static* orderability claim — nothing covered the runtime
+sentence.
+
+### The fix
+
+- `Value::sort_cmp` (`src/run/value.rs`) — a total order where `None` means
+  only "incomparable"; plus `float_sort_cmp` and `int_float_cmp` helpers.
+- `sort_class` + `sorted` (`src/stdlib/mod.rs`) — validate the ordering class
+  up front and raise `E3001`, so the `sort_by` closure is infallible.
+- Both call sites rewired; the two defective `cmp_val` lines are gone.
+
+Four decisions, each written into the corrected spec:
+
+1. `NaN` sorts after every ordered number; two `NaN`s compare equal and the sort
+   stays stable.
+2. Mixed `int`/`float` compare **exactly**, not through the rounding promotion,
+   so `sort` is deliberately **finer than `==`** above `2^53`. The comparison
+   operators are unchanged and remain internally consistent but lossy there
+   (`9007199254740993 == 9007199254740992.0` is `true`); the spec now states the
+   divergence explicitly instead of leaving it implied.
+3. `-0.0` and `0.0` compare equal (§10.3), so stability preserves their source
+   order rather than imposing `total_cmp`'s `-0.0` first.
+4. Elements outside every ordering class, and pairs from different classes, are
+   `E3001` — always at runtime.
+
+### Tests
+
+Eight `audit7_*` tests in `tests/regressions.rs` (appended after 1568).
+**Seven fail against `a089fd45`**, including all three `E4999` aborts reproducing
+verbatim at `smallsort.rs:854`; all eight pass after the fix. The eighth,
+`audit7_sort_preserves_the_existing_orderings`, is the guard — it passes both
+before and after, which is exactly why it belongs in the same suite.
+
+### Validation
+
+Full local floor green: `cargo fmt --all -- --check`,
+`cargo clippy --locked --all-targets --all-features -- -D warnings`,
+`cargo test --locked --all-targets --all-features` (66 binaries),
+`--no-default-features --features cli,repl,json,regex,time`,
+`cargo +1.83.0 check --locked --all-features`,
+`cargo +nightly check --manifest-path fuzz/Cargo.toml --all-targets`,
+`node playground/tests/node/run-all.mjs`, `node playground/build.mjs --check`,
+`node website/build.mjs`, `node website/tests/run-all.mjs`.
+Not run locally: Miri, fuzz smoke, browser Playwright — all remote-only.
+
+### Probes closed as NOT defects this round
+
+Unicode `len`/indexing (character-based and consistent); range indexing
+(unsupported, `E3001`); `sum` overflow (`E4013`); ±infinity sorting;
+negative-zero sort order; `min`/`max` with incomparable types (returns a value
+per rows 2992–2993 — making them raise would be a spec *change*);
+the `2^53` comparison operators (internally consistent, merely lossy); the
+diagnostic wording (the backticked `` `int` `` form comes from the checker layer,
+while `src/run/mod.rs:2739–2756` uses bare `type_name()` — `sorted()`
+already matches the runtime idiom).
+
+---
+
+## Previous task — CORE FIRST probe round: semantics sweep (no defect found)
 
 **Status:** complete, no confirmed defect. No code change is pending from this
 round. The next work item is a *new* reproduced defect.
