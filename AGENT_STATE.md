@@ -1370,21 +1370,31 @@ feature-gating of the typed-decode path.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `fb3e8dee` (PR #37
-merged, thirty-seven PRs merged this campaign); Aura 0.3.1 (Keystone) is published
-and `v0.3.1` = `b09cbef2`. Batches 1–5, B6/B7/B14, TD-23, TD-24, TD-27,
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `29736de7`
+(post-#37 state sync; PR #37 itself is `fb3e8dee`), thirty-seven PRs merged this
+campaign; Aura 0.3.1 (Keystone) is published and `v0.3.1` = `b09cbef2`.
+Batches 1–5, B6/B7/B14, TD-23, TD-24, TD-27,
 Directive 004, TD-13, the resolver type-parameter leak, the set key-method
 element typing, return-type tail validation, `pub use` re-export resolution, the
 f-string exponent case, the `sort` total order, the f-string zero-pad sign
 placement, generic-bound method resolution, JSON decode depth parity and HTTP
 header-value encoding are **merged and closed**.
 Directive 003-R §4's blockers are closed.
-**Exact next action:** the working tree is clean on `rewrite/v3-rust` at
-`fb3e8dee`. Branch the next CORE FIRST work item — a real, reproduced defect in
-`src/`, `tests/`, or `fuzz/`, shipped as one PR carrying a reproducible case, a
-regression test that fails before the fix, the fix, and a passing test. Prefer
-the unexplored `src/native_source.rs:373` lead: `entry_name.to_str()` may
-silently skip project source files whose filenames are not valid UTF-8.
+
+**In flight (uncommitted):** the statically-empty-`range` reachability fix —
+`src/check/mod.rs` plus a regression test in `tests/keystone_types.rs`. Eight
+range shapes wrongly reported `E3006`; the spec (four statements, see the
+handoff) already required the correct behaviour, so this is a conformance
+defect with no spec edit. Locally validated: `keystone_types` 49/49,
+`scripts/validate.py` 200 pass / 0 fail, all-features and no-default-features
+`--all-targets` 66 suites green each, fmt and clippy `-D warnings` clean, MSRV
+`+1.83.0 check`, nightly fuzz check, playground build `--check` + node tests,
+website build + tests. Soundness re-proved at runtime: none of the eight
+claimed-empty shapes runs its body, and the ascending counterparts still do.
+
+**Exact next action:** commit those two files, push a branch, open the PR with
+the template, and merge once the twenty-one remote checks are green.
+
 Highest-value unfinished leads already recorded here: (a) lexer/parser
 ambiguities, precedence, adversarial input and error recovery,
 (b) checker scopes, generics, mutability, (c) evaluator control flow, closures,

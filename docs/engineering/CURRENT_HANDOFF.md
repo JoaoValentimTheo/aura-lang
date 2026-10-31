@@ -1,22 +1,65 @@
 # Current Engineering Handoff
 
-## Current task — CORE FIRST: no finding selected yet
+## Current task — CORE FIRST: a statically empty `range` is not statically empty
 
-**Status:** the working tree is clean on `rewrite/v3-rust` at `fb3e8dee`. The
-previous task merged, and the next defect has not been chosen.
+**Status:** reproduced, fixed, and validated locally on `rewrite/v3-rust` at
+`29736de7`; not yet committed or pushed. Two files change: `src/check/mod.rs`
+and `tests/keystone_types.rs`.
+
+### The defect
+
+`statically_empty_iterable` in `src/check/mod.rs` decides whether a `for` body
+can ever run. It recognized the empty literal shapes (`[]`, `{:}`, `set{}`) and
+an `Expr::Range` whose two bounds were `Lit::Int` values **equal** to each
+other — and nothing else. A twelve-case probe measured the consequence:
+
+| shape | before | after |
+|---|---|---|
+| `range(0, 0)` | `E3006` ✗ | accepted |
+| `range(3, 3)` | `E3006` ✗ | accepted |
+| `range(n, n)` | `E3006` ✗ | accepted |
+| `range(5, 2)` | `E3006` ✗ | accepted |
+| `range(0)` | `E3006` ✗ | accepted |
+| `range(-5)` | `E3006` ✗ | accepted |
+| `5..2` | `E3006` ✗ | accepted |
+| `1..-1` | `E3006` ✗ | accepted |
+| `0..0` | accepted ✓ | accepted |
+| `range(0, 1)` | `E3006` ✓ | `E3006` |
+| `range(1)` | `E3006` ✓ | `E3006` |
+| `0..1` | `E3006` ✓ | `E3006` |
+
+Eight false positives, four correct. Each false positive rejects a sound
+`-> never` function: the body of `for _x in range(n, n) { return }` cannot run,
+so the function cannot return, and the trailing `throw` diverges.
+
+### Why this is a defect and not a specification choice
+
+The spec states the correct behaviour in four places, and the code contradicted
+all four: §22.1 requires the literal and builtin spellings to be "statically
+equivalent as well as dynamically equal" (line ~2802); §22.1 says "an empty or
+descending range (`b <= a`) is empty" (~2809); §22.1 defines `range(n)` as
+`range(0, n)` (~2784); §5.2 names `range(n, n)` explicitly as a statically
+empty iterable whose `for` body is unreachable (~1054). No spec edit
+accompanies this fix — the spec was the evidence.
+
+### The fix
+
+`range_bound` classifies a bound as either an exact `Lit(i64)` (with a unary
+minus folded, since the parser only pre-folds `-9223372036854775808`) or a
+`Name`, and `range_bounds_are_empty` answers `end <= start` for two literals
+and "the same name on both sides" for two names. A name pair is sound because
+assignments are statements: two reads of one binding inside one argument list
+observe the same value. Everything else — a call, a field, an index, two
+different names — may ascend and stays non-empty. `builtin_range_args` accepts
+only a bare `Name("range")` callee with no type arguments and no named
+arguments, then treats `range(end)` as `range(0, end)`. `range` is a reserved
+name (`E1009`), so no name resolution is needed. `statically_empty_iterable` is
+a free function, so the `expr_inner` frame hazard (REG-1) is untouched.
 
 ### Next exact action
 
-Probe `src/` for a defect that can be reproduced from a committed test before
-being described. The recorded lead is `src/native_source.rs:373`, where
-`children` skips a directory entry whose filename is not valid UTF-8
-(`entry_name.to_str()` ... `else { continue }`). Establish first whether any
-reachable module name can correspond to such an entry — if none can, that lead
-is conformant and must be recorded as probed rather than fixed. If it is
-conformant, move to the next unprobed surface (module cycles, `E2019`/`E2020`
-reachability, or evaluator resource limits) and repeat the same sequence: a
-reproducible case, a regression test that fails before the fix, the fix, a
-passing test.
+Commit both files, push a branch, open the PR with the template, and merge
+after the twenty-one remote checks are green.
 
 ---
 
