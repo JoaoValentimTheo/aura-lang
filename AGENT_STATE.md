@@ -1,6 +1,15 @@
 # Aura Agent State
 
-## Directive 008 — NEBULA 0.3.2 campaign (`G00`, `IN_PROGRESS`)
+## Directive 008 — NEBULA 0.3.2 campaign (`G00`, `PASS`)
+
+**G00 closed.** PR **#43** (`docs/nebula-campaign-g00`, head `ab9d5ae1`)
+merged into `rewrite/v3-rust` as **`7bd1d6fb`** at 2026-10-31T22:35:22Z, with
+**21/21** remote checks green. The merged diff is 4 files / +653 / −8, all
+documentation plus one preflight-script line; `src/`, `playground/runtime/`,
+`Cargo.toml`, `Cargo.lock` and `playground/runtimes/` are **byte-identical** to
+the baseline. `manifest.json` sha256 `cbe7ad91…23b837` on both sides;
+`manifest.current` still `"0.3.1"`; `Cargo.toml` still `0.3.1`; zero tags at
+head; zero `0.3.2` tags local or remote.
 
 **Reconciled baseline.** Branch `rewrite/v3-rust`; local `HEAD` `c4f76907` ==
 `origin/rewrite/v3-rust`; tree clean at campaign start; zero open pull
@@ -1590,16 +1599,15 @@ feature-gating of the typed-decode path.
 
 ## Exact Next Action
 
-**Directive 008 — NEBULA: send the G00 documentation PR, obtain green remote
-CI, and merge. Then G01.**
+**Directive 008 — NEBULA: execute G01 (the approved dependency and contract
+table).**
 
-Wave `G00` is `IN_PROGRESS`. The published artifacts are
-`docs/engineering/NEBULA_CAMPAIGN.md` (campaign plan) plus the
-`scripts/agent-state.sh` writer-extraction fix, on branch
-`docs/nebula-campaign-g00`. G00 closes when remote CI is green and the PR is
-integrated; nothing else may start until then.
+Wave `G00` is `PASS`: PR #43 merged as `7bd1d6fb` with 21/21 checks green, and
+`docs/engineering/NEBULA_CAMPAIGN.md` plus the `scripts/agent-state.sh`
+writer-extraction fix are on `rewrite/v3-rust`. G01 is authorised and is the
+only wave authorised; G02…G19 remain `NOT_STARTED`.
 
-On G00 `PASS`, the next exact action is **G01**: publish the approved
+The next exact action is **G01**: publish the approved
 dependency table (including a per-driver ADR skeleton and audit status for each
 proposed database crate), roles and ownership, the ID'd backlog already listed
 in `NEBULA_CAMPAIGN.md` §5, risks, and evidence criteria. `GATE G01` forbids
@@ -1672,6 +1680,6 @@ above — the sharded runner alone will not catch feature-gated dead code.
 
 ## Writer
 
-NONE (single-writer discipline; the Directive 008 NEBULA session held exclusive
-worktree ownership while publishing the G00 baseline and releases it when the
-G00 documentation PR is integrated).
+NONE (single-writer discipline; the Directive 008 NEBULA session released
+exclusive worktree ownership when the G00 documentation PR #43 was integrated
+as `7bd1d6fb`).

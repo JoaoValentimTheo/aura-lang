@@ -1,59 +1,106 @@
 # Current Engineering Handoff
 
-## Directive 008 — NEBULA 0.3.2 campaign (`G00`, `IN_PROGRESS`)
+## Directive 008 — NEBULA 0.3.2 campaign (`G01`, authorised)
 
-Active task: publish the **G00 documentation baseline** for Directive 008 and
-integrate it. No implementation is authorized yet.
+Active task: **G01**, the approved dependency and contract table. `G00` is
+closed. No implementation is authorized before `G02` accepts the P0 RFC set.
 
 ```
-WAVE: G00
+WAVE: G01
 STATUS: IN_PROGRESS
-HEAD: c4f769077c769483963a0f2b51a789b00472e4cf (base; + this PR's commits)
-PRs: docs/nebula-campaign-g00 — documentation PR (this one); 0 open PRs at start
-CHECKS: local focused validation only; no remote run reported yet
+HEAD: 7bd1d6fb47a807878aafecd0ed3ca3dd5444b0fd (merge of PR #43)
+PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb; 0 open PRs
+CHECKS: PR #43 remote CI 21/21 pass; post-merge push CI on 7bd1d6fb dispatched
 TESTS_REALMENTE_EXECUTADOS: see "Commands actually executed" below
-PROVAS: baseline reconciliation, artifact re-hash, provenance absence,
-        language-surface probes, P3 preflight before/after
-RISCOS: R-01 try-as-expression ambiguity (gates G03); R-03 net-new DB
-        dependency surface; R-04 no authorized DB credentials; R-06 py is not
-        a sandbox
-DECISÕES: none taken. No approval is implied anywhere; the three documents
-        Directive 008 names as inputs are absent and must be reconstructed.
-PRÓXIMA ONDA AUTORIZADA: none. G01 starts only after G00 merges with green CI.
+PROVAS: baseline reconciled; merged diff is 4 docs/script files only;
+        src/, playground/runtime/, Cargo.toml, Cargo.lock, playground/runtimes/
+        byte-identical to c4f76907; manifest.json sha256 unchanged;
+        manifest.current 0.3.1; Cargo.toml 0.3.1; 0 tags at head; 0 0.3.2 tags
+RISCOS: R-01 try-as-expression ambiguity (gates G03 and every Result API);
+        R-02 @ needs a token class that does not exist; R-03 net-new DB
+        dependency surface; R-04 no authorized DB credentials; R-06 py is a
+        full CPython process, not a sandbox
+DECISÕES: none. No approval is implied anywhere; the three documents Directive
+        008 names as inputs are absent and must be reconstructed with explicit
+        provenance notes.
+PRÓXIMA ONDA AUTORIZADA: G01 only. G02 starts only after G01 PASS.
 ```
+
+### G00 closure evidence
+
+- **Merged.** PR **#43**, branch `docs/nebula-campaign-g00`, head `ab9d5ae1`,
+  merged into `rewrite/v3-rust` as **`7bd1d6fb`** at 2026-10-31T22:35:22Z
+  (merge commit, matching the convention of PR #41 `ba8204ac` and PR #42
+  `c4f76907`; branch deleted after merge).
+- **Remote CI green on the PR:** **21/21** checks `pass`, 0 failing, 0 pending.
+- **Diff is documentation only:** 4 files, +653/−8 —
+  `docs/engineering/NEBULA_CAMPAIGN.md` (new, 509 lines), `AGENT_STATE.md`,
+  `docs/engineering/CURRENT_HANDOFF.md`, `scripts/agent-state.sh`.
+- **Frozen artifacts untouched.** `playground/runtimes/` diff is 0 lines and
+  the trees are blob-identical (47 tracked entries each side);
+  `manifest.json` sha256 `cbe7ad91…23b837` on both commits.
+- **No source change.** `git diff c4f76907 7bd1d6fb -- src/ playground/runtime/
+  Cargo.toml Cargo.lock` is empty.
+- **No release action.** `manifest.current` still `"0.3.1"`, `Cargo.toml` still
+  `0.3.1`, zero tags point at head, zero `0.3.2` tags exist locally or
+  remotely. Nothing was published or promoted.
 
 ### What changed
 
 - Added `docs/engineering/NEBULA_CAMPAIGN.md` — campaign plan: verified
   baseline, P0/P1/P2 scope, G00–G19 wave table with verbatim gates, six-state
-  vocabulary, ID'd backlog `NBL-001`…`NBL-190`, risks `R-01`…`R-09`, evidence
-  criteria, SQLGuard controls `SG-01`…`SG-08`, delegation roles, blocking
-  policy, checkpoint format, and the mandatory STOP.
+  vocabulary, ID'd backlog (34 sparse identifiers spanning `NBL-001`…`NBL-190`),
+  risks `R-01`…`R-09`, evidence criteria, SQLGuard controls `SG-01`…`SG-08`,
+  delegation roles, blocking policy, checkpoint format, and the mandatory STOP.
 - Fixed `scripts/agent-state.sh` `## Writer` extraction (P3). It required an
   exact line, so `NONE (single-writer discipline; …)` was reported as
   `WRITER=UNKNOWN`. Now matches the leading token: `WRITER=UNKNOWN` →
-  `WRITER=NONE`. Policy unchanged. `CURRENT_TRACK`/`CURRENT_PHASE`/`AUDIT3`
-  remain brittle by choice — out of the trivial-fix scope.
+  `WRITER=NONE`. Verified against five value shapes; the new logic is a strict
+  superset of the old. Policy unchanged. `CURRENT_TRACK`/`CURRENT_PHASE`/
+  `AUDIT3` remain brittle by choice — out of the trivial-fix scope.
+
+### Two claims that failed re-verification and were corrected
+
+1. A §0 provenance sentence asserting `docs/engineering/` contains no
+   `*NEBULA*` file was true at the baseline and made false by the document
+   itself. It now states the fact at `c4f76907` and distinguishes this plan
+   from the three absent inputs.
+2. `NBL-001`…`NBL-190` read as a dense range. There are **34** distinct
+   identifiers spanning that gap; §5 now says so explicitly.
 
 ### Commands actually executed
 
 ```text
-git fetch --prune && git status --short
-gh pr list --state open                  # []
-bash scripts/agent-state.sh              # WRITER=UNKNOWN, then WRITER=NONE
-node -e '<hash every manifest artifact>' # 8 verified, 0 bad, 0 missing
-find playground/runtimes -name '*.wasm' -type f | wc -l        # 46
-git ls-files playground/runtimes | wc -l                       # 47
-git status --short playground/runtimes                         # empty
+git fetch --prune && git status --short        # clean, 0 open PRs at start
+bash scripts/agent-state.sh                    # WRITER=UNKNOWN -> WRITER=NONE
+node -e '<hash every manifest artifact>'       # 8 verified, 0 bad, 0 missing
+git ls-files playground/runtimes | wc -l       # 47 (manifest.json + 46 .wasm)
+git status --short playground/runtimes         # empty
+git diff --stat c4f76907 ab9d5ae1              # 4 files, +653/-8
+git diff c4f76907 ab9d5ae1 -- playground/runtimes/   # 0 lines
+gh pr checks 43                                # 21 pass, 0 fail, 0 pending
+gh pr merge 43 --merge --delete-branch         # merged as 7bd1d6fb
 aura check / aura run probes in fresh dirs, each verified with od -c
 ```
 
+### Environment constraint carried forward
+
+The repository's custom `Aura *` agents (`Aura Adversarial Reviewer`,
+`Aura Artifact Verifier`, and by extension the rest) **cannot be launched** in
+this environment: they are pinned to
+`customendpoint/Robin/deepseek-ai/deepseek-v4.1-flash-1017`, which is not
+available. Per `AGENTS.md` the review protocol degrades cleanly, so the
+adversarial and artifact-integrity reviews for G00 were executed directly by
+the lead and the degradation is stated rather than faked. Future sessions
+should not retry the delegation blindly.
+
 ### Next exact action
 
-Send the G00 documentation PR, wait for green remote CI, and merge. Then start
-G01: dependency table with per-driver ADR skeleton and audit status, roles and
-ownership, ID'd backlog, risks, evidence criteria. `GATE G01` forbids any new
-code before the critical contracts exist.
+Execute **G01**: publish the approved dependency table — per-driver ADR
+skeleton and `cargo audit` status for each proposed database crate — plus roles
+and ownership, the identified backlog, risks, and evidence criteria.
+`GATE G01` forbids any new code before the critical contracts exist, so no
+source file may be touched during G01.
 
 ## Directive 007 — runtime distribution parity (`0.3.2-dev.9`, `PASS`)
 

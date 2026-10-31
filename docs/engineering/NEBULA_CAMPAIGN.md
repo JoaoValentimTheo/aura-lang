@@ -1,10 +1,12 @@
 # Directive 008 — NEBULA 0.3.2 Campaign
 
-Status: **G00 IN_PROGRESS** — baseline and prerequisite inventory published;
-no implementation authorized yet.
+Status: **G00 PASS** — baseline and prerequisite inventory merged as
+`7bd1d6fb` (PR #43, 21/21 checks green). **G01 is the only authorized wave**;
+no implementation is authorized before G02.
 
 Baseline: `c4f769077c769483963a0f2b51a789b00472e4cf` on `rewrite/v3-rust`
-(local == `origin/rewrite/v3-rust`, tree clean at campaign start).
+(local == `origin/rewrite/v3-rust`, tree clean at campaign start). G00 landed
+on top of it as `7bd1d6fb`.
 
 Published `0.3.1` Keystone and every frozen runtime under
 `playground/runtimes/` are immutable. `0.3.2` is **not** released, not
@@ -278,8 +280,9 @@ Current wave status:
 
 | Wave | Status |
 |---|---|
-| G00 | `IN_PROGRESS` |
-| G01–G19 | `NOT_STARTED` |
+| G00 | `PASS` — PR #43, merge `7bd1d6fb`, 21/21 checks |
+| G01 | `IN_PROGRESS` — dependency and contract table |
+| G02–G19 | `NOT_STARTED` |
 
 A `PASS` requires observed evidence. An environment that was not executed is
 reported as not executed, never as `PASS`. `UNVERIFIED` on any mandatory
