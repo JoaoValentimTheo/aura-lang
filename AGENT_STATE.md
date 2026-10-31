@@ -2,9 +2,10 @@
 
 ## Directive 003 — stabilization and hardening campaign (current)
 
-- Active branch: `rewrite/v3-rust`, remote HEAD **`38f5fed5`** — the merge of
-  **PR #20** (Directive 004: Kilo → GitHub Copilot agent migration). **Twenty
-  PRs are merged** this campaign: #2 `f96536b6` (Directive 002 preflight),
+- Active branch: `rewrite/v3-rust`, remote HEAD **`2fe944fb`** — the merge of
+  **PR #21** (CORE FIRST: the REPL session state is incremental, and the session
+  APIs are feature-gated). **Twenty-one PRs are merged** this campaign:
+  #2 `f96536b6` (Directive 002 preflight),
   #3 `07845932` (rustls advisories), #4 `a562bacf` (batches 1–5),
   #5 `eaa3b9ed` (TD-23 + default-branch flip), #6 `4a20fa84` (post-merge
   records), #7 `22e73cce` (B6/B7 divergences + website link),
@@ -20,7 +21,9 @@
   #18 `6cb8c601` (state sync for PRs #15–#17 and the Directive 003-R §4
   blockers), #19 `47232a79` (browser network consent scoped to the mutation
   class; `npm run test:site` rebuilds a stale site instead of testing old
-  code), #20 `38f5fed5` (Directive 004: the seven agents). The
+  code), #20 `38f5fed5` (Directive 004: the seven agents), #21 `2fe944fb`
+  (CORE FIRST: REPL session state incremental, TD-13 closed, session APIs
+  feature-gated). The
   `/private/tmp/aura-directive-002-release-preflight` worktree and the
   `repair/directive-002-release-preflight` branch are **historical**.
 - **The default branch is `rewrite/v3-rust`** (TD-23): flipped from `master`,
@@ -132,12 +135,61 @@
 - Scope: infrastructure recovery. CORE FIRST work resumes after this migration
   lands.
 
-## CORE FIRST — REPL session linearization (TD-13) — current
+## CORE FIRST — resolver type-parameter leak — current
+
+`Resolver::rewrite_item` and `Resolver::rewrite_member` pushed a generic-parameter
+frame before rewriting a declaration and popped it with a plain statement at the
+end of the arm. Every arm performs fallible work in between (`rewrite_params`,
+`rewrite_type`, `rewrite_block`, `rewrite_field`, `rewrite_variant`,
+`rewrite_member`, `canonical_type`), so any `?` returned before the pop and left
+the frame — and its generic names — on `type_param_scope` for the rest of the
+session. `flatten` → `rewrite_type` → `is_type_param` then refused to
+canonicalize a real declared type whose name matched a leaked parameter, and the
+checker reported a bogus unknown type on an unrelated, valid line.
+
+- **Reproducer:** a declaration whose rewrite fails after the push (an `impl<Q>`
+  on a private struct → `E2018`), followed by a submission declaring a real type
+  also named `Q`. Pre-fix the second submission reported
+  ``E3002: unknown type `Q``` instead of the true private-field `E2018`.
+  Five controls (no `impl`; `impl` alone; non-colliding parameter name;
+  `struct`/`enum`/`alias`/`trait` failing bodies with the same name) were correct
+  before and after, which pins the cause to the leaked frame.
+- **Fix:** module-level RAII guard `TypeParamFrame<'a>` holding `&'a Resolver`
+  and popping on `Drop`, bound as `let _frame = TypeParamFrame::new(self);` at
+  all seven push sites. The guard borrows immutably, which is enough because
+  `type_param_scope` is a `RefCell` borrowed only inside `push`/`pop`/
+  `is_type_param`, so no borrow is held across the rewritten work.
+- **Deliberately not the fix:** a blanket `type_param_scope.clear()` in
+  `reset_transient`. That masks a per-declaration invariant violation behind a
+  per-submission reset; the guard repairs the invariant.
+- **Guard:** `tests/repl.rs::
+  a_failed_generic_declaration_does_not_leak_its_type_parameters` — asserts the
+  `E2018` is present, `E3002` is absent, and the private-field diagnostic is the
+  one reported. Fails pre-fix at the `E3002` assertion.
+- **The checker's identical shape is NOT a bug and must not be "fixed".**
+  `Checker::check` (1067–1074) is strictly fail-fast (`self.item(item)?` inside
+  the loop), there is no multi-diagnostic collection anywhere in the crate, the
+  three catch-like sites each `return Err(e)` right after popping, and
+  `Checker::reset_transient` clears `current_type_params` (1046–1047) which the
+  REPL calls before every submission (`src/repl.rs:341-342`, `455-456`). The
+  observable asymmetry comes from `Resolver::reset_transient` (367–373) not
+  clearing `type_param_scope`, not from a difference in the push/pop code. An
+  earlier session's "checker leak reproduced" was `/tmp` fixture pollution:
+  `compile_file_with_mode` scans the target file's directory for module sources,
+  so one stray `.aura` file makes every `aura check` there report *its* error.
+  **One fresh directory per probe file.**
+- **Pre-existing, unrelated:** `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
+  --lib` still reports 8 broken intra-doc links, all in `src/run/`. CI never runs
+  `cargo doc`.
+
+## CORE FIRST — REPL session linearization (TD-13) — merged, `2fe944fb` (PR #21)
 
 Directive 003-R ADENDO "CORE FIRST" makes the language core the campaign's top
 priority. The first CORE FIRST finding is the directive-authorized REPL
 O(N²) defect, reproduced, root-caused, fixed in three layers plus two follow-on
-narrowings, and pinned by five new/rewritten regression guards.
+narrowings, and pinned by five new/rewritten regression guards. **Merged as PR
+#21 (`2fe944fb`), CI 21/21 green on round 2** after one real feature-gating
+defect found by round 1 and fixed by `3a42deee`.
 
 - **Symptom (pre-fix, release, min-of-3, distinct names):** `let v{i} = {i}` at
   N=250/500/1000/2000/4000 cost 0.174/0.337/1.174/4.548/**18.299 s** (~4.0×
@@ -267,12 +319,18 @@ narrowings, and pinned by five new/rewritten regression guards.
   `json,regex,time`, `py`. Both oracles still identical (25/25, 6/6); full floor
   re-run green; playground fmt/clippy/tests, wasm build, `build.mjs --check` and
   `run-all.mjs` all clean.
+- **CI round 2 — 21/21 green.** `language contract`, `fuzz smoke`, `miri`,
+  `playground (wasm runtime)` and `website` all pass on `3a42deee`, confirming
+  the gating commit is the complete fix. Merged with `gh pr merge --merge` — no
+  force, no protection bypass; `mergeStateStatus` was `CLEAN` and
+  `reviewDecision` empty, so no external human approval was required or
+  simulated.
 
 ## Repository
 
 - Branch: `rewrite/v3-rust`
 - **Git reality (verify with `git rev-parse`, do not trust prose):**
-  `origin/rewrite/v3-rust` is at **`38f5fed5`**, the merge commit of PR #20.
+  `origin/rewrite/v3-rust` is at **`2fe944fb`**, the merge commit of PR #21.
   Tag **`v0.3.1` = `b09cbef2`**. Aura 0.3.1 (Keystone) is the current release
   (release = language = `0.3.1`, runtime `0.3.1` is the Playground default) and
   is **PUBLISHED**. The earlier `b221e6a9`/`v0.2.1` notes below are
@@ -869,23 +927,32 @@ feature-gating of the typed-decode path.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `38f5fed5` (PR #20
-merged, twenty PRs merged this campaign); Aura 0.3.1 (Keystone) is published
-and `v0.3.1` = `b09cbef2`. Batches 1–5, B6/B7/B14, TD-23, TD-24, TD-27 and
-Directive 004 are **merged and closed**. Directive 003-R §4's blockers are
-closed. The first CORE FIRST fix — REPL session linearization (TD-13) — is
-committed on `perf/repl-linear-session` (`404980e5`) and open as PR #21; its
-first CI round was red on a single feature-gating defect (see the CORE FIRST
-section), fixed and revalidated but not yet pushed.
-**Exact next action:** commit the `#[cfg(feature = "repl")]` fix, push, update
-PR #21's validation table with the no-`repl` results, confirm all 21 remote
-checks actually run and pass, merge, reconcile this file to the merge SHA, then
-continue the CORE FIRST campaign — real defects in `src/`, `tests/`, and
-`fuzz/`, one PR per finding, each carrying a reproducible case, a regression
-test that fails before the fix, the fix, and a passing test. Do not begin
-language features frozen for stabilization. B-1R8 (remove the recursive engine
-and the oracle switch) and any runtime publication remain separately
-human-gated.
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `2fe944fb` (PR #21
+merged, twenty-one PRs merged this campaign); Aura 0.3.1 (Keystone) is published
+and `v0.3.1` = `b09cbef2`. Batches 1–5, B6/B7/B14, TD-23, TD-24, TD-27,
+Directive 004 and TD-13 are **merged and closed**. Directive 003-R §4's blockers
+are closed.
+**Exact next action:** the second CORE FIRST fix — the resolver type-parameter
+leak — is complete on the working tree (`src/resolve.rs`, `tests/repl.rs`, this
+file, `docs/engineering/CURRENT_HANDOFF.md`), regression test failing before and
+passing after, full floor green. Publish it on `fix/resolver-type-param-leak` as
+a PR against `rewrite/v3-rust`, watch remote CI, and merge once green; then
+reconcile this file to the new merge SHA.
+After that, begin the next CORE FIRST work item — a real, reproduced defect in
+`src/`, `tests/`, or `fuzz/`, shipped as one PR carrying a reproducible case, a
+regression test that fails before the fix, the fix, and a passing test.
+Highest-value unfinished leads already recorded here: (a) the `Stmt::Let`
+second-order partial-mutation leak test, (b) lexer/parser ambiguities,
+precedence, adversarial input and error recovery, (c) checker scopes, generics,
+mutability, (d) evaluator control flow, closures, resource limits,
+(e) collections and bounds, (f) module cycles, (g) Host/Python/WASM capability
+and panic boundaries.
+Do not begin language features frozen for stabilization. B-1R8 (remove the
+recursive engine and the oracle switch) and any runtime publication remain
+separately human-gated.
+**Lesson already paid for:** `--all-features` validation structurally cannot see
+a `pub(crate)` item reachable only from a feature-gated module. Keep the
+no-`repl` lib check in the floor.
 **Validation (TD-22):** use the observable sharded `scripts/validate.py` (not a
 monolithic watch) for the Rust matrix, and include the no-`repl` lib check
 above — the sharded runner alone will not catch feature-gated dead code.

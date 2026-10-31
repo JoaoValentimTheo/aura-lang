@@ -584,6 +584,44 @@ fn method_overloads_persist_across_submissions() {
     assert!(out.contains('i') && out.contains('s'), "{out}");
 }
 
+// --------------------------------------------- failed-submission isolation
+
+/// A generic declaration whose resolution fails must not leak its type
+/// parameters into later submissions.
+///
+/// `resolve` pushes a type-parameter frame before rewriting a declaration and
+/// pops it after. When the rewrite fails — here the `impl` names a private
+/// struct, which is `E2018` — the early return used to skip the pop, leaving
+/// `Q` on the frame stack for the rest of the session. A later submission that
+/// declares its own `Q` would then see `is_type_param("Q")` answer `true`, so
+/// the type reference was never canonicalized and the checker reported a
+/// nonexistent `E3002` unknown type instead of the real private-field error.
+#[test]
+fn a_failed_generic_declaration_does_not_leak_its_type_parameters() {
+    let out = body(
+        "module m { pub struct Q { v: int }\n\
+         struct Priv { v: int } }\n\
+         impl<Q> m::Priv { fn get(self) -> int { return self.v } }\n\
+         use m::Q\n\
+         fn takes(x: Q) -> int { return x.v }\n\
+         :quit\n",
+    );
+    // The `impl` on a private struct is rejected ...
+    assert!(
+        out.contains("E2018"),
+        "expected E2018 for the private struct: {out}"
+    );
+    // ... and the leaked `Q` must not turn the next `Q` into a type parameter.
+    assert!(
+        !out.contains("E3002"),
+        "type parameter `Q` leaked out of the failed declaration: {out}"
+    );
+    assert!(
+        out.contains("field `v` of `m::Q` is private"),
+        "expected the private-field diagnostic instead: {out}"
+    );
+}
+
 // --------------------------------------------- multi-line completeness
 
 #[test]
