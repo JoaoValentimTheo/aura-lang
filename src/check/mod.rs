@@ -1563,6 +1563,7 @@ impl Checker {
                     // but they obey the same uniqueness and shadowing rules
                     // (`LANGUAGE_SPEC.md` §36.2).
                     self.check_type_params(mtype_params, *mspan)?;
+                    self.check_type_param_bounds(mtype_params)?;
                     self.push_type_params(mtype_params);
                     let mut param_tys: Vec<ParamSig> = Vec::with_capacity(params.len());
                     for p in params {
@@ -1735,6 +1736,7 @@ impl Checker {
                         // declaration (§36.5). Without this a method adding a
                         // parameter could never satisfy its own contract.
                         self.check_type_params(mtype_params, *mspan)?;
+                        self.check_type_param_bounds(mtype_params)?;
                         self.push_type_params(mtype_params);
                         for p in params {
                             let ty = match &p.ty {
@@ -1830,6 +1832,7 @@ impl Checker {
                     // signature (`impl<T> Box<T> { fn map<U>... }`), under the
                     // same uniqueness and shadowing rules (§36.2).
                     self.check_type_params(method_type_params, *mspan)?;
+                    self.check_type_param_bounds(method_type_params)?;
                     self.push_type_params(method_type_params);
                     let mut param_tys = Vec::with_capacity(params.len());
                     for p in params {
@@ -3649,6 +3652,7 @@ impl Checker {
                     // A method may add its own parameters on top of the impl's,
                     // under the same uniqueness and shadowing rules (§36.2).
                     self.check_type_params(method_type_params, *mspan)?;
+                    self.check_type_param_bounds(method_type_params)?;
                     self.push_type_params(method_type_params);
                     self.check_method_body(
                         target,
