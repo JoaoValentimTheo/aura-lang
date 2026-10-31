@@ -1,5 +1,60 @@
 # Current Engineering Handoff
 
+## Directive 008 — NEBULA 0.3.2 campaign (`G00`, `IN_PROGRESS`)
+
+Active task: publish the **G00 documentation baseline** for Directive 008 and
+integrate it. No implementation is authorized yet.
+
+```
+WAVE: G00
+STATUS: IN_PROGRESS
+HEAD: c4f769077c769483963a0f2b51a789b00472e4cf (base; + this PR's commits)
+PRs: docs/nebula-campaign-g00 — documentation PR (this one); 0 open PRs at start
+CHECKS: local focused validation only; no remote run reported yet
+TESTS_REALMENTE_EXECUTADOS: see "Commands actually executed" below
+PROVAS: baseline reconciliation, artifact re-hash, provenance absence,
+        language-surface probes, P3 preflight before/after
+RISCOS: R-01 try-as-expression ambiguity (gates G03); R-03 net-new DB
+        dependency surface; R-04 no authorized DB credentials; R-06 py is not
+        a sandbox
+DECISÕES: none taken. No approval is implied anywhere; the three documents
+        Directive 008 names as inputs are absent and must be reconstructed.
+PRÓXIMA ONDA AUTORIZADA: none. G01 starts only after G00 merges with green CI.
+```
+
+### What changed
+
+- Added `docs/engineering/NEBULA_CAMPAIGN.md` — campaign plan: verified
+  baseline, P0/P1/P2 scope, G00–G19 wave table with verbatim gates, six-state
+  vocabulary, ID'd backlog `NBL-001`…`NBL-190`, risks `R-01`…`R-09`, evidence
+  criteria, SQLGuard controls `SG-01`…`SG-08`, delegation roles, blocking
+  policy, checkpoint format, and the mandatory STOP.
+- Fixed `scripts/agent-state.sh` `## Writer` extraction (P3). It required an
+  exact line, so `NONE (single-writer discipline; …)` was reported as
+  `WRITER=UNKNOWN`. Now matches the leading token: `WRITER=UNKNOWN` →
+  `WRITER=NONE`. Policy unchanged. `CURRENT_TRACK`/`CURRENT_PHASE`/`AUDIT3`
+  remain brittle by choice — out of the trivial-fix scope.
+
+### Commands actually executed
+
+```text
+git fetch --prune && git status --short
+gh pr list --state open                  # []
+bash scripts/agent-state.sh              # WRITER=UNKNOWN, then WRITER=NONE
+node -e '<hash every manifest artifact>' # 8 verified, 0 bad, 0 missing
+find playground/runtimes -name '*.wasm' -type f | wc -l        # 46
+git ls-files playground/runtimes | wc -l                       # 47
+git status --short playground/runtimes                         # empty
+aura check / aura run probes in fresh dirs, each verified with od -c
+```
+
+### Next exact action
+
+Send the G00 documentation PR, wait for green remote CI, and merge. Then start
+G01: dependency table with per-driver ADR skeleton and audit status, roles and
+ownership, ID'd backlog, risks, evidence criteria. `GATE G01` forbids any new
+code before the critical contracts exist.
+
 ## Directive 007 — runtime distribution parity (`0.3.2-dev.9`, `PASS`)
 
 - **The distributed WASM carried its own, older semantics.** Freeze point
