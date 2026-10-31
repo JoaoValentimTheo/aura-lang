@@ -1150,6 +1150,8 @@ with the value's inferred type) in exactly these positions:
 * the initializer of an annotated local `let`;
 * the initializer of an annotated top-level constant;
 * a `return` expression, against the function's declared return type;
+* the implicit value of a function or method body, against the declared return
+  type, exactly as a `return` expression is (§15.2);
 * a struct field value at construction, against the field's declared type;
 * an enum payload value at construction, against the payload's declared type;
 * a plain reassignment `x = e` to an annotated binding (`+=` etc. are not
@@ -1780,6 +1782,18 @@ final value yields `none`.
 
 **Normative rule.** If a function has a declared return type, every `return`
 expression in its body MUST be compatible with that type (`E3005` otherwise).
+
+**Normative rule.** Since a body's value is its last statement (§15.1), the
+implicit value of the body of a function or method with a declared return type
+MUST also be compatible with that type (`E3005` otherwise). A body whose last
+statement is not a value expression — one ending in a declaration, a loop, or a
+`return` — has no implicit value and is not judged by this rule. Compatibility
+here is the same relation §6.4 defines, so an `Unknown` operand stays permissive
+(§2.3) and `-> never` keeps its own diagnostic (`E3006`).
+
+**Normative rule.** A `return` with no expression yields `none`. Under a
+declared return type that cannot accept `none` this is `E3005`; under `-> never`
+the body-divergence rule owns the diagnostic instead (`E3006`).
 
 ### 15.3 First-class functions
 
@@ -2584,7 +2598,8 @@ fn main() {
 **Normative rule (contexts).** Contextual Array realization applies at every
 typed expression boundary where an expected type exists: an annotated `let`,
 a directly resolved function argument, a `return` under a declared return type,
-a struct field value, and a nested bracket literal under an element type.
+the implicit value of a body under a declared return type (§15.2), a struct
+field value, and a nested bracket literal under an element type.
 
 **Normative rule (JSON).** Dynamic JSON arrays decode to List. Typed decoding
 with target `[T; N]` produces an Array; a JSON array whose length differs from

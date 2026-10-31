@@ -96,6 +96,89 @@ fn return_mismatch_is_rejected() {
     assert_eq!(check("fn f() -> int { return 1 }"), Ok(()));
 }
 
+/// A body's implicit value is the value of its last statement (§15.1), so it is
+/// checked against the declared return type exactly like a `return` expression
+/// (§15.2). Before this rule the tail position was unchecked, and a mismatched
+/// tail propagated into an `int`-typed context.
+#[test]
+fn tail_expression_mismatch_is_rejected() {
+    assert_eq!(
+        check("fn f() -> int { \"s\" }"),
+        Err(codes::RETURN_MISMATCH)
+    );
+    assert_eq!(check("fn f() -> string { 1 }"), Err(codes::RETURN_MISMATCH));
+    assert_eq!(check("fn f() -> int { true }"), Err(codes::RETURN_MISMATCH));
+    assert_eq!(
+        check("fn f() -> int { if true { 1 } else { \"s\" } }"),
+        Err(codes::RETURN_MISMATCH)
+    );
+    assert_eq!(
+        check("struct S { a: int }\nfn f() -> S { 42 }"),
+        Err(codes::RETURN_MISMATCH)
+    );
+    // The tail is a value expression, so a body-local binding resolves to its
+    // recorded type — the check must run while the body scope is still live.
+    assert_eq!(
+        check("fn f() -> int { let x: string = \"s\"\nx }"),
+        Err(codes::RETURN_MISMATCH)
+    );
+    assert_eq!(
+        check("fn f() -> int { let x = \"s\"\nx }"),
+        Err(codes::RETURN_MISMATCH)
+    );
+}
+
+/// The tail rule must not reject what the surrounding contracts accept.
+#[test]
+fn matching_tail_expression_is_accepted() {
+    assert_eq!(check("fn f() -> int { 1 }"), Ok(()));
+    // `print` reports no static type, so it stays at the `Unknown` boundary.
+    assert_eq!(check("fn f() -> int { print(\"x\") }"), Ok(()));
+    // A branch join of `never` collapses to `never`; nothing to check.
+    assert_eq!(
+        check("fn f() -> int { if true { return 1 } else { return 2 } }"),
+        Ok(())
+    );
+    // A body with no implicit value is not a value mismatch (see the note on
+    // `block_with`'s `expect` parameter).
+    assert_eq!(check("fn f() -> int { }"), Ok(()));
+    assert_eq!(check("fn f() -> int | none { }"), Ok(()));
+    assert_eq!(check("fn f() -> never { throw \"x\" }"), Ok(()));
+}
+
+/// A bracket literal in tail position is a contextual `Array` context (§21.2),
+/// so it realizes as `[T; N]` and its arity and element types are enforced.
+#[test]
+fn array_tail_literal_is_realized() {
+    assert_eq!(check("fn f() -> [int; 3] { [1, 2, 3] }"), Ok(()));
+    assert_eq!(
+        check("fn f() -> [int; 3] { [1, 2] }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+    assert_eq!(
+        check("fn f() -> [int; 2] { [1, \"s\"] }"),
+        Err(codes::TYPE_MISMATCH)
+    );
+}
+
+/// A bare `return` yields `none` (§15.2), so it is a mismatch under an
+/// annotation that cannot accept `none`.
+#[test]
+fn bare_return_under_an_annotation_is_rejected() {
+    assert_eq!(
+        check("fn f() -> int { return }"),
+        Err(codes::RETURN_MISMATCH)
+    );
+    assert_eq!(check("fn f() -> none { return }"), Ok(()));
+    assert_eq!(check("fn f() -> int | none { return }"), Ok(()));
+    assert_eq!(check("fn f() { return }"), Ok(()));
+    // `-> never` keeps its own diagnostic.
+    assert_eq!(
+        check("fn f() -> never { return }"),
+        Err(codes::NEVER_RETURNS)
+    );
+}
+
 #[test]
 fn unknown_type_is_rejected() {
     assert_eq!(

@@ -84,6 +84,32 @@ impl P {
 fn main() { print(1) }
 "#;
     assert_eq!(check(bad), Err(codes::RETURN_MISMATCH));
+    // The implicit tail value is checked too (§15.1), not only `return`.
+    let tail = r#"
+struct P { x: int }
+impl P {
+    fn get(self) -> int { "s" }
+}
+fn main() { print(1) }
+"#;
+    assert_eq!(check(tail), Err(codes::RETURN_MISMATCH));
+    // A bare `return` yields `none` (§15.2), so an `int` method rejects it.
+    let bare = r#"
+struct P { x: int }
+impl P {
+    fn get(self) -> int { return }
+}
+fn main() { print(1) }
+"#;
+    assert_eq!(check(bare), Err(codes::RETURN_MISMATCH));
+    let ok_tail = r#"
+struct P { x: int }
+impl P {
+    fn get(self) -> int { self.x }
+}
+fn main() { print(P { x: 7 }.get()) }
+"#;
+    assert_eq!(out(ok_tail), "7\n");
 }
 
 /// One method calls another method on `self`.

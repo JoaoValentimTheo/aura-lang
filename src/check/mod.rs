@@ -503,6 +503,13 @@ pub struct Checker {
     variant_payloads: HashMap<String, Vec<Ty>>,
     /// The declared return type of the function currently being checked.
     return_type: Option<Ty>,
+    /// The declared return type a function body's implicit tail value must
+    /// satisfy (§15.1, §15.2). A body scope is popped by `finish_scope`, so a
+    /// tail expression naming a body-local binding no longer resolves once
+    /// `block` returns; the expectation is therefore handed to the body's own
+    /// `block_with`, which checks it while the scope is still live. `None`
+    /// outside a function body.
+    tail_expect: Option<Ty>,
     /// Pending flow narrowing produced by a diverging `if` (Keystone
     /// optionality): a `name -> narrowed type` override that the enclosing
     /// block applies to the statements after the `if`, because the `then`
@@ -669,6 +676,7 @@ impl Checker {
             variants: HashMap::new(),
             variant_payloads: HashMap::new(),
             return_type: None,
+            tail_expect: None,
             pending_narrowing: None,
             break_owner: Vec::new(),
             loop_spans: Vec::new(),
@@ -1020,6 +1028,7 @@ impl Checker {
     pub(crate) fn reset_transient(&mut self) {
         self.has_main = false;
         self.return_type = None;
+        self.tail_expect = None;
         self.pending_narrowing = None;
         self.break_owner.clear();
         self.loop_spans.clear();
@@ -3471,6 +3480,12 @@ impl Checker {
                         self.underscore_params.push((p.name.clone(), p.span));
                     }
                 }
+                // `-> never` keeps its own diagnostic: a body that completes
+                // normally is E3006, whatever value it happens to yield.
+                self.tail_expect = match &self.return_type {
+                    Some(Ty::Never) | None => None,
+                    Some(rt) => Some(rt.clone()),
+                };
                 self.block(body)?;
                 // Keystone `never`: a function declared `-> never` promises no
                 // value can ever be returned, so a body that can complete
@@ -3689,6 +3704,10 @@ impl Checker {
             }
         }
         let saved_bound = std::mem::take(&mut self.body_bound_names);
+        self.tail_expect = match &self.return_type {
+            Some(Ty::Never) | None => None,
+            Some(rt) => Some(rt.clone()),
+        };
         let r = self.block(body);
         r?;
         // Keystone `never`: a function declared `-> never` promises no value
@@ -5621,6 +5640,9 @@ impl Checker {
     /// override lives in this block's scope, so it disappears at the end.
     fn block_with(&mut self, body: &[Stmt], narrow: Option<(String, Ty)>) -> Result<()> {
         self.push();
+        // Consumed here, not in the caller: the expectation applies to this
+        // block's own tail, so any nested block must not see it again.
+        let tail_expect = self.tail_expect.take();
         if let Some((name, ty)) = narrow {
             self.narrow(name, ty);
         }
@@ -5640,7 +5662,54 @@ impl Checker {
             self.pop();
             return Err(e);
         }
+        // The tail type is computed while this scope is still live, so a tail
+        // expression naming a body-local binding resolves to its recorded type.
+        if let Some(expected) = tail_expect {
+            match self.block_tail_mismatch(body, &expected) {
+                Ok(None) => {}
+                Ok(Some(diag)) => {
+                    self.pop();
+                    return Err(diag);
+                }
+                Err(e) => {
+                    self.pop();
+                    return Err(e);
+                }
+            }
+        }
         self.finish_scope()
+    }
+
+    /// A function body's implicit value is the value of its last statement
+    /// (§15.1), and it must satisfy the declared return type exactly as an
+    /// explicit `return` does (§15.2).
+    ///
+    /// Returns the diagnostic to raise, leaving the decision about where to
+    /// report it to the caller. A body whose tail is not a value expression
+    /// yields `none`, which is not a value mismatch — `return`/`throw` tails
+    /// are covered by the explicit `return` rule and by the `never` contract.
+    fn block_tail_mismatch(&self, body: &[Stmt], expected: &Ty) -> Result<Option<Diag>> {
+        let Some(Stmt::Expr(value, span)) = body.last() else {
+            return Ok(None);
+        };
+        // A bracket literal in tail position is a contextual `Array` context
+        // (§21.2), so it realizes as `[T; N]` here as it does for `return`.
+        if self.check_array_literal(value, expected, *span)? {
+            return Ok(None);
+        }
+        let actual = self.infer(value);
+        if matches!(actual, Ty::None | Ty::Never) || return_compatible(expected, &actual) {
+            return Ok(None);
+        }
+        Ok(Some(Diag::new(
+            codes::RETURN_MISMATCH,
+            format!(
+                "function returns `{}` but the value is `{}`",
+                expected.name(),
+                actual.name()
+            ),
+            *span,
+        )))
     }
 
     fn stmt(&mut self, s: &Stmt) -> Result<()> {
@@ -5956,23 +6025,34 @@ impl Checker {
             Stmt::Return(v, span) => {
                 if let Some(v) = v {
                     self.expr(v)?;
-                    if let Some(expected) = self.return_type.clone() {
-                        // A bracket literal returned under an `[T; N]` return
-                        // type realizes as an Array (§48).
-                        if !self.check_array_literal(v, &expected, *span)? {
-                            let actual = self.infer(v);
-                            if !return_compatible(&expected, &actual) {
-                                return Err(Diag::new(
-                                    codes::RETURN_MISMATCH,
-                                    format!(
-                                        "function returns `{}` but the value is `{}`",
-                                        expected.name(),
-                                        actual.name()
-                                    ),
-                                    *span,
-                                ));
-                            }
+                }
+                if let Some(expected) = self.return_type.clone() {
+                    let (actual, realized) = match v {
+                        Some(v) => {
+                            // A bracket literal returned under an `[T; N]` return
+                            // type realizes as an Array (§48).
+                            (
+                                self.infer(v),
+                                self.check_array_literal(v, &expected, *span)?,
+                            )
                         }
+                        // A bare `return` yields `none` (§15.2), so it is a
+                        // mismatch under an annotation that cannot accept it.
+                        // Under `-> never` the body rule owns the diagnostic
+                        // (E3006), so the absent value is not judged here.
+                        None if matches!(expected, Ty::Never) => (Ty::Never, false),
+                        None => (Ty::None, false),
+                    };
+                    if !realized && !return_compatible(&expected, &actual) {
+                        return Err(Diag::new(
+                            codes::RETURN_MISMATCH,
+                            format!(
+                                "function returns `{}` but the value is `{}`",
+                                expected.name(),
+                                actual.name()
+                            ),
+                            *span,
+                        ));
                     }
                 }
             }
