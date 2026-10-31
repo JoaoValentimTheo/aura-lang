@@ -26,8 +26,11 @@ Three documents the directive names as inputs do not exist in this workspace:
 | `NEBULA_SQLGUARD_CONTRACT.md` | **ABSENT** |
 | `Aura_0.3.2_Nebula_Inventario_Geral.md` | **ABSENT** |
 
-`docs/engineering/` contains no `*NEBULA*` file and no `*AQL*` file;
-`docs/rfcs/` contains only `README.md` and `0001-exception-catch-selection.md`.
+At the baseline commit `c4f76907`, `docs/engineering/` contained no `*NEBULA*`
+file and no `*AQL*` file anywhere in the tree, and `docs/rfcs/` contained only
+`README.md` and `0001-exception-catch-selection.md`. This document is the first
+`*NEBULA*` file to enter `docs/engineering/`, and it is the plan, not one of the
+three absent inputs.
 
 Consequence, per AGENTS hard-won rule 16 ("never state a command that you did
 not actually run") and the §0.4 provenance requirement: the G02 RFC set must be
@@ -287,7 +290,9 @@ SQLGuard requirement forces `NO-GO`.
 ## 5. Backlog identifiers
 
 Identifiers are stable for the campaign and must be cited in commits, PR
-bodies, and checkpoints.
+bodies, and checkpoints. Numbering is **sparse by design**: the third digit
+block reserves space inside a wave, so there are 34 identifiers here, not 190.
+`NBL-001`…`NBL-190` is the span, not the count.
 
 | ID | Wave | Item | Priority |
 |---|---|---|---|
