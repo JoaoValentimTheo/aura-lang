@@ -180,16 +180,98 @@ fn type_expr_depth_exceeds(t: &TypeExpr, limit: usize) -> bool {
     false
 }
 
+/// A range bound whose value is known well enough to compare statically.
+///
+/// A literal is known exactly. A plain name is not, but it is *stable*: a
+/// binding read cannot change value between two reads of the same name inside
+/// one argument list, because assignments are statements. Two occurrences of
+/// the same name therefore always denote equal values, which is what makes
+/// `range(n, n)` empty for every `n`. Any other shape could hide a call with a
+/// side effect, so it is not treated as stable.
+enum RangeBound<'a> {
+    /// An integer literal, with a unary minus folded.
+    Lit(i64),
+    /// A bare binding read.
+    Name(&'a str),
+}
+
+/// Classify a range bound, or `None` when its value is not statically
+/// comparable.
+///
+/// The parser folds `-9223372036854775808` straight to [`Lit::Int`], so a
+/// `Unary(Neg, ..)` around [`i64::MIN`] cannot come from source; `checked_neg`
+/// keeps the helper total anyway.
+fn range_bound(e: &Expr) -> Option<RangeBound<'_>> {
+    match e {
+        Expr::Lit(Lit::Int(n), _) => Some(RangeBound::Lit(*n)),
+        Expr::Unary(UnOp::Neg, inner, _) => range_bound(inner).and_then(|b| match b {
+            RangeBound::Lit(n) => n.checked_neg().map(RangeBound::Lit),
+            RangeBound::Name(_) => None,
+        }),
+        Expr::Name(n, _) => Some(RangeBound::Name(n)),
+        _ => None,
+    }
+}
+
+/// Whether a start/end pair makes a range empty.
+///
+/// A range is empty exactly when `end <= start` (§22.1). Two equal literals
+/// satisfy that, a descending literal pair satisfies it, and so does the same
+/// name on both sides — `end` and `start` are then the same value. Any other
+/// pairing may ascend, so it is conservatively non-empty.
+fn range_bounds_are_empty(start: Option<RangeBound<'_>>, end: Option<RangeBound<'_>>) -> bool {
+    match (start, end) {
+        (Some(RangeBound::Lit(x)), Some(RangeBound::Lit(y))) => y <= x,
+        (Some(RangeBound::Name(a)), Some(RangeBound::Name(b))) => a == b,
+        _ => false,
+    }
+}
+
+/// Whether a call is the builtin `range`, returning its positional arguments.
+///
+/// `range` is a reserved name (`E1009`), so a bare `Name("range")` callee is
+/// unambiguously the builtin; no name resolution is needed here. Anything
+/// else — a method, a field, a qualified path, explicit type arguments, or a
+/// named argument — is not a form this syntactic analysis recognizes.
+fn builtin_range_args<'a>(
+    callee: &Expr,
+    args: &'a [Arg],
+    ty_args: &[TypeExpr],
+) -> Option<&'a [Arg]> {
+    if !ty_args.is_empty() || args.iter().any(|a| a.name.is_some()) {
+        return None;
+    }
+    match callee {
+        Expr::Name(n, _) if n == "range" => Some(args),
+        _ => None,
+    }
+}
+
 /// Whether an iterable expression is statically empty, so a `for` body can
-/// never run. Only the literal empty list/map/range are recognized; any other
-/// expression may iterate (conservatively non-empty).
+/// never run.
+///
+/// The empty literal shapes (`[]`, `{:}`, `set{}`) are recognized, as are
+/// ranges whose emptiness follows from their bounds alone. A range is empty
+/// exactly when `end <= start` (§22.1), so equal bounds are empty, a
+/// descending pair is empty, and an ascending pair is not. The builtin
+/// `range(start, end)` denotes the same value as `start..end` and is treated
+/// identically, including its one-argument form `range(end)`, which is exactly
+/// `range(0, end)` and so is empty for any `end <= 0`.
+///
+/// Any expression whose bounds are not statically comparable — a call, a
+/// field, an index, two different names — may iterate and is conservatively
+/// non-empty.
 fn statically_empty_iterable(e: &Expr) -> bool {
     match e {
         Expr::List(items, _) | Expr::Tuple(items, _) => items.is_empty(),
         Expr::Set(items, _) => items.is_empty(),
         Expr::Map(entries, _) => entries.is_empty(),
-        Expr::Range(a, b, _) => match (a.as_ref(), b.as_ref()) {
-            (Expr::Lit(Lit::Int(x), _), Expr::Lit(Lit::Int(y), _)) => x == y,
+        Expr::Range(a, b, _) => range_bounds_are_empty(range_bound(a), range_bound(b)),
+        Expr::Call(callee, args, ty_args, _) => match builtin_range_args(callee, args, ty_args) {
+            Some([arg]) => {
+                range_bounds_are_empty(Some(RangeBound::Lit(0)), range_bound(&arg.value))
+            }
+            Some([a, b]) => range_bounds_are_empty(range_bound(&a.value), range_bound(&b.value)),
             _ => false,
         },
         _ => false,

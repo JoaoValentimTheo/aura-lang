@@ -67,6 +67,28 @@ Playground but are not releases.
   snapshot of the 2026-09-30 state, not a current claim.
 
 ### Fixed
+- **A statically empty `range` was not recognized, so sound `never` functions
+  were rejected.** Reachability analysis treated a `for` body as unreachable
+  for `[]`, `{:}`, `set{}`, and a `..` range with equal literal bounds, but not
+  for the builtin spelling `range(a, b)`, and the range check compared bounds
+  for *equality* rather than for `end <= start`. Eight shapes therefore
+  reported a spurious `E3006` on a body that can never run: `range(0, 0)`,
+  `range(3, 3)`, `range(n, n)`, `range(5, 2)`, `range(0)`, `range(-5)`, `5..2`,
+  and `1..-1`. The spec already stated the correct contract in three places —
+  §22.1 requires `a..b` and `range(a, b)` to be "statically equivalent as well
+  as dynamically equal", defines "an empty or descending range (`b <= a`) is
+  empty", and defines `range(n)` as `range(0, n)`; §5.2 names `range(n, n)`
+  explicitly as statically empty. So this was a conformance defect, not an
+  unspecified choice, and no spec change accompanies the fix. `range_bound`
+  now folds a unary minus (the parser only pre-folds `-9223372036854775808`),
+  so `1..-1` compares by value; two occurrences of the *same name* on both
+  sides are recognized as equal, because assignments are statements and a
+  binding cannot change value between two reads inside one argument list.
+  Everything else stays conservative: a call, a field, an index, or two
+  *different* names may ascend and remains non-empty, so `range(a, b)` over two
+  parameters and a range returned by a function still report `E3006`.
+  `a_statically_empty_range_builtin_has_no_reachable_return` fails on the old
+  code and passes on this one.
 - **HTTP header values were destroyed in one direction and mis-encoded in the
   other.** Response header values outside ASCII were erased: `to_str()` rejects
   bytes ≥ 0x80 and `unwrap_or("")` turned the rejection into an empty string, so

@@ -799,6 +799,63 @@ fn a_statically_empty_iterable_has_no_reachable_return() {
 }
 
 #[test]
+fn a_statically_empty_range_builtin_has_no_reachable_return() {
+    // `range(a, b)` is the builtin spelling of `a..b`, and §22.1 requires the
+    // two to be "statically equivalent as well as dynamically equal", so the
+    // reachability rule for a `for` body must agree on both spellings. It
+    // previously recognized only the literal form with equal bounds, so every
+    // builtin form, every descending form, and the one-argument form wrongly
+    // reported a reachable `return` (`E3006`).
+    for src in [
+        // Equal bounds are empty in either spelling.
+        "fn f() -> never {\n for _x in range(0, 0) { return }\n throw \"x\" }\nfn main() { print(\"ok\") }",
+        "fn f() -> never {\n for _x in range(3, 3) { return }\n throw \"x\" }\nfn main() { print(\"ok\") }",
+        // Emptiness does not require literal bounds: `b <= a` is empty for any
+        // values, so an equal pair of non-literal bounds is empty too.
+        "fn f(n: int) -> never {\n for _x in range(n, n) { return }\n throw \"x\" }\nfn main() { print(\"ok\") }",
+        // A descending range is empty (§22.1).
+        "fn f() -> never {\n for _x in range(5, 2) { return }\n throw \"x\" }\nfn main() { print(\"ok\") }",
+        "fn f() -> never {\n for _x in 5..2 { return }\n throw \"x\" }\nfn main() { print(\"ok\") }",
+        // A negative bound is permitted, and the comparison is on values, so
+        // `1..-1` descends.
+        "fn f() -> never {\n for _x in 1..-1 { return }\n throw \"x\" }\nfn main() { print(\"ok\") }",
+        // `range(n)` is exactly `range(0, n)` (§22.1), so it is empty for any
+        // `n <= 0`.
+        "fn f() -> never {\n for _x in range(0) { return }\n throw \"x\" }\nfn main() { print(\"ok\") }",
+        "fn f() -> never {\n for _x in range(-5) { return }\n throw \"x\" }\nfn main() { print(\"ok\") }",
+    ] {
+        assert_eq!(check(src), Ok(()), "should be accepted: {src}");
+    }
+    // An ascending range still makes the body reachable, in either spelling.
+    for src in [
+        "fn f() -> never {\n for _x in range(0, 1) { return }\n throw \"x\" }\nfn main() { print(\"ok\") }",
+        "fn f() -> never {\n for _x in range(1) { return }\n throw \"x\" }\nfn main() { print(\"ok\") }",
+        "fn f() -> never {\n for _x in range(-1, 0) { return }\n throw \"x\" }\nfn main() { print(\"ok\") }",
+        "fn f() -> never {\n for _x in 0..1 { return }\n throw \"x\" }\nfn main() { print(\"ok\") }",
+        "fn f() -> never {\n for _x in [1] { return }\n throw \"x\" }\nfn main() { print(\"ok\") }",
+    ] {
+        assert_eq!(
+            check(src),
+            Err(codes::NEVER_RETURNS),
+            "should be rejected: {src}"
+        );
+    }
+    // Neither spelling may be assumed empty when a bound is not statically
+    // known: a `range` call over parameters is only empty when the checker can
+    // prove it, which it cannot for one unknown bound.
+    assert_eq!(
+        check("fn f(a: int, b: int) -> never {\n for _x in range(a, b) { return }\n throw \"x\" }\nfn main() { print(\"ok\") }"),
+        Err(codes::NEVER_RETURNS)
+    );
+    // A range handed back by a function is not statically empty either, even
+    // when that function's body happens to build an empty one.
+    assert_eq!(
+        check("fn mk() { return 0..0 }\nfn f() -> never {\n for _x in mk() { return }\n throw \"x\" }\nfn main() { print(\"ok\") }"),
+        Err(codes::NEVER_RETURNS)
+    );
+}
+
+#[test]
 fn a_diverging_value_position_does_not_complete() {
     // Every eager sub-expression is evaluated, so a value position that cannot
     // yield (`let x = boom()`, an argument, an operand) means the statement
