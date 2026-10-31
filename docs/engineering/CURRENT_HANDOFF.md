@@ -1,6 +1,115 @@
 # Current Engineering Handoff
 
-## Current task — CORE FIRST: set key-method element typing — merged
+## Current task — CORE FIRST: return-type tail validation — merged
+
+**Merged as PR #26 (`b843dc85`), CI 21/21 green on round 1.** No red gate, no
+retry, no gate weakened. `mergeStateStatus` was `CLEAN` and `reviewDecision`
+empty, so no external human approval was required or simulated.
+
+### The finding — the tail position was never validated
+
+A body's implicit value is the value of its last statement (§15.1), and §6.4
+already normatively defined that value's *type*, but the checker never compared
+it with the declared return type. Three defects shared the root cause, plus one
+adjacent gap:
+
+```aura
+fn f() -> int { "s" }          // accepted; a release build printed `s` for
+                               // `let x: int = f()`
+fn f() -> int { return }       // accepted; the `return` arm only inspected Some(v)
+fn f() -> [int; 3] { [1, 2] }  // accepted; the tail never consulted
+                               // `check_array_literal`, so arity went unchecked
+```
+
+### The fix
+
+- A `tail_expect: Option<Ty>` field, set by both body checkers (the free
+  function and `check_method_body`) and taken at the top of `block_with`.
+- **A field is required, not a post-`block` call.** `finish_scope` pops the body
+  scope, so `fn f() -> int { let x = "s"\nx }` would resolve `x` to `Unknown`
+  and pass silently. The expectation is handed to the body's own `block_with`,
+  which judges the tail while the scope is still live. Taking it right after
+  `push()` also stops nested blocks from re-consuming an enclosing expectation,
+  and the mechanism needs no call-site change.
+- A new `block_tail_mismatch(&self, body, expected) -> Result<Option<Diag>>`
+  skips a non-value tail (a body ending in a declaration, loop, `return`, or
+  nothing), applies contextual Array realization in tail position (§21.2), and
+  reports `E3005` on a real mismatch. It is `&self` and returns the diagnostic,
+  so `block_with` stays the single place that decides scope teardown.
+- **`-> never` is excluded at the assignment site,** not inside the helper:
+  `fn bad() -> never { print("oops") }` must stay `E3006`, and a naive tail check
+  would emit `E3005` for `fn bad() -> never { "s" }` because `print` infers
+  `Unknown` and `return_compatible` accepts `Unknown`. A bare `return` under
+  `-> never` likewise keeps `E3006`, while `return 1` under `-> never` still
+  yields `E3005` as `never_is_the_bottom_type` requires.
+
+### Defect found in the diff before shipping
+
+The first version used `?` on `block_tail_mismatch`. That helper can propagate an
+`Err` from `check_array_literal` — arity and element-type failures return `Err`,
+not `Ok(false)` — so the `?` returned without calling `self.pop()` and leaked a
+scope frame on every rejected Array tail literal. The final code matches on the
+`Result` and pops in both non-`Ok(None)` arms. **The tail check runs after the
+statement loop's own error handling, so its failures must redo the pop
+explicitly.**
+
+### Contract judgement — stated, not silently resolved
+
+`AGENTS.md` says "Do not silently resolve a genuine specification choice." This
+is not one. §15.1 makes "a body's value is its last statement" normative, §6.4
+normatively defines the tail's value type, and §15.2 constrained only `return`.
+§6.2 enumerated six enforced positions and simply omitted the tail expression:
+a **documentation-completeness gap**, and the deviation produced unsound
+programs. `docs/LANGUAGE_SPEC.md` is updated in three coordinated places (§6.2
+bullet, two §15.2 normative rules, §21.2 contextual-Array list) so the contract
+and the checker agree.
+
+### Guards and evidence
+
+- `tests/checker.rs` — four tests: mismatch, accepted controls, Array
+  realization, bare `return` under an annotation.
+- `tests/methods.rs::method_return_typing` — three appended cases covering the
+  `check_method_body` half: a bad tail, a bare `return` under `-> int`, and a
+  positive `self.x` tail.
+- Red before the fix: `cargo test --locked --test checker` → `56 passed; 3
+  failed`, all three reporting `left: Ok(())`.
+- 47 behavioural probes against a rebuilt release binary, one fresh directory
+  each. Newly rejected: a mismatched tail and `{ true }`; `string` from `1`;
+  `if`/`else` joins (`int | string`); struct, tuple, method, and call-through
+  mismatches; a body-local binding in tail position (annotated and inferred); a
+  generic `-> T` with a concrete tail and with a concrete `return`; `fn main() ->
+  int`; `-> none` with a value; an aliased `Age`; `int | none` with a value; and
+  Array arity/element failures in tail position.
+- Still accepted: matching tails, `print(...)` tails (`Unknown` stays permissive
+  per §2.3), empty bodies, `-> int | none` with an empty body, `-> never` with
+  `throw`, `for`/`loop` tails, matching arrays/unions/tuples, and generic and
+  alias bodies that genuinely match.
+- Full local floor, each command with its result in the PR body: `fmt`,
+  `clippy -D warnings`, `test --all-targets --all-features`,
+  `test --no-default-features --features cli,repl,json,regex,time`,
+  `RUSTFLAGS="-D warnings" check --lib --no-default-features --features cli`,
+  `+1.83.0 check --all-features`, `+nightly` fuzz-target check, playground suite
+  and build check, website build and suite.
+- Remote CI on the PR → **21/21 pass**, round 1.
+
+### Resume point
+
+HEAD is `b843dc85`. **Exact next action:** continue CORE FIRST with the next
+reproduced defect — lexer/parser ambiguities, precedence and error recovery;
+checker scopes, generics and mutability; evaluator control flow, closures and
+resource limits; collection bounds; module cycles; runtime panic and
+Host/Python/WASM capability boundaries. One PR per finding, each carrying a
+reproducible case, a regression test that fails before the fix, the fix, and a
+passing test. Keep the no-`repl` lib check in the floor. Do not begin language
+features frozen for stabilization. B-1R8 and any runtime publication remain
+separately human-gated.
+
+**Open residual lead:** lambda-tail immunisation is proven by `Expr::Lambda`
+taking `return_type` via `mem::take`, not by a live probe — both probe attempts
+hit an unrelated `E2008` unused-parameter diagnostic first. A regression test
+using a used or `_`-prefixed parameter would close that gap.
+
+## Previous task — CORE FIRST: set key-method element typing — merged
 
 **Merged as PR #24 (`02c3c897`), CI 21/21 green on round 1.** No red gate, no
 retry, no gate weakened. `mergeStateStatus` was `CLEAN` and `reviewDecision`
@@ -124,8 +233,8 @@ separately human-gated.
 retry, no gate weakened. `mergeStateStatus` was `CLEAN` and `reviewDecision`
 empty, so no external human approval was required or simulated.
 
-`rewrite/v3-rust` is the **default branch** and HEAD is **`02c3c897`** (the
-merge of PR #24). Twenty-four PRs are merged this campaign: #2, #3, #4, #5, #6, #7,
+`rewrite/v3-rust` is the **default branch** and HEAD is **`b843dc85`** (the
+merge of PR #26). Twenty-five PRs are merged this campaign: #2, #3, #4, #5, #6, #7,
 #8, #9 (B14), #10 (PR template), #11 (TD-24 cost guard), #12 (CHANGELOG
 `[Unreleased]` + TD-25), #13 (website suite gate + TD-26), #14 (TD-27 Playwright
 gate), #15 (state sync), #16 (B7 project-header contract + HTTP transport docs +
