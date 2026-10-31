@@ -3622,7 +3622,8 @@ fn parse_format_spec(spec: &str, base: usize) -> Result<FormatSpec> {
             'x' => FormatType::Hex { upper: false },
             'X' => FormatType::Hex { upper: true },
             'f' | 'F' => FormatType::Fixed,
-            'e' | 'E' => FormatType::Exp,
+            'e' => FormatType::Exp { upper: false },
+            'E' => FormatType::Exp { upper: true },
             '%' => FormatType::Percent,
             _ => {
                 return Err(Diag::new(

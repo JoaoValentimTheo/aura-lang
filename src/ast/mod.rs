@@ -534,8 +534,11 @@ pub enum FormatType {
     },
     /// `f` / `F` — fixed-point float.
     Fixed,
-    /// `e` / `E` — scientific notation.
-    Exp,
+    /// `e` / `E` — scientific notation (case of the exponent marker).
+    Exp {
+        /// Uppercase exponent marker.
+        upper: bool,
+    },
     /// `%` — percentage.
     Percent,
 }
