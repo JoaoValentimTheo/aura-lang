@@ -22,6 +22,13 @@ const manifest = JSON.parse(
 // Deriving it (rather than hardcoding a dev identity) keeps this test correct
 // when the development runtime advances.
 const currentRuntime = manifest.current;
+// The newest development identity, derived the same way `run-all.mjs` derives
+// the distributable: from the runtime crate version. A hardcoded identity here
+// would quietly keep measuring the previous preview after a rebuild.
+const developmentRuntime = readFileSync(
+  join(__dirname, "..", "..", "runtime", "Cargo.toml"),
+  "utf8",
+).match(/^version\s*=\s*"([^"]+)"/m)?.[1];
 
 const { detect, skipExitCode } = await import(
   "../../../website/tests/playwright-deps.mjs"
@@ -711,7 +718,7 @@ async function runAndWait(page, timeout = 15000) {
   // release keeps its historical fatal E4020 (pinned below); the 0.3.2
   // development runtime completes with a bounded preview and an explicit
   // truncation note.
-  await page.selectOption("#version", "0.3.2-dev.8");
+  await page.selectOption("#version", developmentRuntime);
   await setSource(
     page,
     "fn main() {\n  for i in 0..600000 {\n    print(i)\n  }\n}",
@@ -754,7 +761,7 @@ async function runAndWait(page, timeout = 15000) {
 // --- 14. output preview resets between runs --------------------------------
 {
   const { page, errors } = await newPage();
-  await page.selectOption("#version", "0.3.2-dev.8");
+  await page.selectOption("#version", developmentRuntime);
   await setSource(page, "fn main() {\n  for i in 0..300000 {\n    print(i)\n  }\n}");
   await runAndWait(page, 60000);
   await setSource(page, 'fn main() { print("clean") }');

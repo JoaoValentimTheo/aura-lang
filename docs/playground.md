@@ -177,7 +177,7 @@ release artifact can never be regenerated or overwritten: the build refuses to
 write `runtimes/<version>/` when the bytes differ, and `--check` compares each
 pinned release against the artifact on disk independently of the manifest. The
 manifest currently lists nine entries — `0.0.1`, `0.0.2`, `0.0.2-dev.30`,
-`0.2.0-dev.1`, `0.2.0-dev.2`, `0.2.0`, `0.2.1`, `0.3.1`, and the `0.3.2-dev.8`
+`0.2.0-dev.1`, `0.2.0-dev.2`, `0.2.0`, `0.2.1`, `0.3.1`, and the `0.3.2-dev.9`
 preview.
 
 ### Development runtimes
@@ -204,7 +204,7 @@ selectable, and byte-identical. Advancing the runtime means bumping the runtime
 crate's version, never overwriting an existing artifact. The superseded
 `0.2.0-dev.1`/`0.2.0-dev.2` remain selectable historical development entries;
 the intermediate `0.2.1-dev.1`..`0.2.1-dev.5` builds are preserved on disk,
-unlisted. `0.3.2` has no release identity yet; its `0.3.2-dev.8` preview is a
+unlisted. `0.3.2` has no release identity yet; its `0.3.2-dev.9` preview is a
 development entry only, and `manifest.current` still points at `0.3.1`.
 
 ### 0.0.1 vs 0.0.2

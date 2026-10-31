@@ -1,4 +1,5 @@
-// Multi-file projects and HTTP, end to end (0.3.2-dev.8, Host ABI 2).
+// Multi-file projects and HTTP, end to end (0.3.2 development runtime, Host
+// ABI 2).
 //
 // B14: HTTP was reachable from a single source but not from a virtual
 // *project*, because a multi-file program only had the synchronous
@@ -57,14 +58,21 @@ await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const port = server.address().port;
 const base = `http://127.0.0.1:${port}`;
 
+// Default to the artifact the Playground actually selects, resolved from the
+// runtime crate version rather than pinned, so a new identity cannot silently
+// leave this suite measuring a superseded preview.
+const runtimeVersion = readFileSync(join(repo, "runtime/Cargo.toml"), "utf8").match(
+  /^version\s*=\s*"([^"]+)"/m,
+)?.[1];
 const wasmPath =
-  process.argv[2] || join(repo, "runtimes/0.3.2-dev.8/aura_playground_runtime.wasm");
-const label = process.argv[2] ? wasmPath : "0.3.2-dev.8";
+  process.argv[2] ||
+  join(repo, "runtimes", runtimeVersion, "aura_playground_runtime.wasm");
+const label = process.argv[2] || runtimeVersion;
 const rt = await AuraRuntime.fromBytes(readFileSync(wasmPath), label);
 
-check("dev.8 advertises sessions", rt.supportsSessions === true);
+check(`${label} advertises sessions`, rt.supportsSessions === true);
 check(
-  "dev.8 advertises project sessions",
+  `${label} advertises project sessions`,
   rt.supportsProjectSessions === true,
 );
 

@@ -135,6 +135,68 @@ try {
 }
 
 // ---------------------------------------------------------------------------
+// Build provenance (directive 007 §5)
+// ---------------------------------------------------------------------------
+//
+// A hash identifies an artifact but says nothing about which sources produced
+// it, so a stale publication is invisible to every other check here. The
+// fingerprint closes that gap: `build.mjs` records the digest of its build
+// inputs on the identity it just built.
+//
+// Equality with this tree is deliberately *not* asserted. Ordinary pull
+// requests change `src/` long before the next preview identity exists, and a
+// stale-by-one-commit artifact is not a defect — a stale *published* artifact
+// is. `node playground/build.mjs --check --require-source-match` owns that
+// stricter rule and runs at the distribution/release moment.
+
+const { computeSourceFingerprint } = await import(join(playground, "source-fingerprint.mjs"));
+const repoRoot = resolve(playground, "..");
+const runtimeCrateVersion = readFileSync(join(playground, "runtime/Cargo.toml"), "utf8").match(
+  /^version\s*=\s*"([^"]+)"/m,
+)?.[1];
+check(
+  "runtime crate version readable",
+  typeof runtimeCrateVersion === "string",
+  `${runtimeCrateVersion}`,
+);
+
+for (const entry of manifest.versions) {
+  if (!("source_fingerprint" in entry)) continue;
+  check(
+    `${entry.id} records a well-formed source fingerprint`,
+    /^[0-9a-f]{64}$/.test(entry.source_fingerprint),
+    `${entry.source_fingerprint}`,
+  );
+}
+
+// The identity this tree builds must record its provenance. Without this the
+// mechanism could be deleted and every other assertion would still pass.
+const builtHere = manifest.versions.find((v) => v.id === runtimeCrateVersion);
+check("the runtime crate identity is published", Boolean(builtHere && builtHere.available));
+check(
+  `the ${runtimeCrateVersion} identity records its build provenance`,
+  Boolean(builtHere && typeof builtHere.source_fingerprint === "string"),
+  "source_fingerprint missing; rebuild with: node playground/build.mjs",
+);
+
+// Published releases are historical records. Retro-fitting a fingerprint onto
+// one would claim it was rebuilt from today's sources, which is exactly the
+// silent replacement the immutability policy forbids.
+const published031 = manifest.versions.find((v) => v.id === "0.3.1");
+check(
+  "the frozen 0.3.1 release carries no retro-fitted provenance",
+  Boolean(published031) && !("source_fingerprint" in published031),
+);
+
+// The digest must be a pure function of its inputs. Two calls in one process
+// agreeing is the cheap half of that; cross-host bit-for-bit agreement is not
+// claimed anywhere and would need a separate reproducibility harness.
+check(
+  "the source fingerprint is stable across calls",
+  computeSourceFingerprint(repoRoot) === computeSourceFingerprint(repoRoot),
+);
+
+// ---------------------------------------------------------------------------
 // Codename / channel metadata (Keystone §34)
 // ---------------------------------------------------------------------------
 

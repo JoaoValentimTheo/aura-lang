@@ -80,7 +80,7 @@ is.
   position, removes general semicolon sequencing, and hardens the parser and
   runtime (see the [migration guide](/docs/migration-0-3-1/)).
 - The next line, **`0.3.2`**, is **in development as a preview**: it has a
-  development runtime artifact (`0.3.2-dev.8`, Host ABI 2) selectable in the
+  development runtime artifact (`0.3.2-dev.9`, Host ABI 2) selectable in the
   Playground, but **no release**, version bump, or date. The published `0.3.1`
   runtime is the default and is unchanged. The development runtime adds real
   browser HTTP behind an experimental per-origin permission model and a bounded

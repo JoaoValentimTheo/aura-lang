@@ -23,6 +23,22 @@ if (!current) {
 }
 const wasm = join(playground, "runtimes", current.artifact);
 
+// The runtime identity this tree builds. It is normally *not* `manifest.current`:
+// while a development line is open the published default stays on the last
+// release, and the artifact that follows the tree is the development one.
+const runtimeVersion = readFileSync(join(playground, "runtime/Cargo.toml"), "utf8")
+  .match(/^version\s*=\s*"([^"]+)"/m)?.[1];
+const distributable = manifest.versions.find(
+  (v) => v.id === runtimeVersion && v.available,
+);
+if (!distributable) {
+  console.error(
+    `manifest has no available artifact for runtime ${runtimeVersion}; run: node playground/build.mjs`,
+  );
+  process.exit(1);
+}
+const distributableWasm = join(playground, "runtimes", distributable.artifact);
+
 function run(name, args) {
   process.stdout.write(`\n=== ${name} ===\n`);
   execFileSync("node", args, { cwd: playground, stdio: "inherit" });
@@ -30,6 +46,12 @@ function run(name, args) {
 
 if (!existsSync(wasm)) {
   console.error(`missing runtime artifact ${wasm}; run: node playground/build.mjs`);
+  process.exit(1);
+}
+if (!existsSync(distributableWasm)) {
+  console.error(
+    `missing distributable artifact ${distributableWasm}; run: node playground/build.mjs`,
+  );
   process.exit(1);
 }
 
@@ -120,6 +142,18 @@ try {
   // failure stops the suite here with a non-zero status.
   run("differential", [join(here, "differential.test.mjs"), freshWasm, nativeBin]);
   run("syntax conformance", [join(here, "syntax.test.mjs"), freshWasm, nativeBin]);
+  // The *distributed* artifact, not `freshWasm`. Every gate above measures a
+  // throwaway build of the working tree; none of them can notice that the bytes
+  // the Playground actually serves were built from older sources. That is not
+  // hypothetical: 0.3.1 and 0.3.2-dev.8 both shipped 4/18 of the regression
+  // corpus while the tree passed 18/18. This suite runs the same corpus against
+  // the committed artifact, so a stale publication fails here instead.
+  run("distribution parity", [
+    join(here, "distribution-parity.test.mjs"),
+    distributableWasm,
+    nativeBin,
+    distributable.id,
+  ]);
   differentialRan = true;
 }
 
@@ -129,9 +163,10 @@ try {
 // boundary and the parity gate always measure the same artifact.
 run("b1 boundary", [join(here, "b1_boundary.test.mjs"), freshWasm]);
 // Host ABI 2 session + HTTP transport against a loopback server (0.3.2
-// development). Runs on the *committed* dev artifact, which is the one the
-// Playground selects; the fresh wasm is the same source and is covered by the
-// differential/syntax gates above.
+// development). Runs on the *committed* dev artifact — the one the Playground
+// selects. "Same source as the fresh wasm" is an assumption, not a verified
+// fact, so it is not relied on here: `distribution parity` above measures the
+// committed bytes directly and is what keeps them honest.
 run("session-http", [join(here, "session-http.test.mjs")]);
 // B14: HTTP from a virtual *project*. Same committed dev artifact, same resume
 // contract, but the effect is produced by a non-entry module.
