@@ -2,9 +2,10 @@
 
 ## Directive 003 — stabilization and hardening campaign (current)
 
-- Active branch: `rewrite/v3-rust`, remote HEAD **`02c3c897`** — the merge of
-  **PR #24** (CORE FIRST: the set key-method surface is now type-checked).
-  **Twenty-four PRs are merged** this campaign:
+- Active branch: `rewrite/v3-rust`, remote HEAD **`b843dc85`** — the merge of
+  **PR #26** (CORE FIRST: a body's implicit value is now validated against the
+  declared return type).
+  **Twenty-five PRs are merged** this campaign:
   #2 `f96536b6` (Directive 002 preflight),
   #3 `07845932` (rustls advisories), #4 `a562bacf` (batches 1–5),
   #5 `eaa3b9ed` (TD-23 + default-branch flip), #6 `4a20fa84` (post-merge
@@ -25,7 +26,9 @@
   (CORE FIRST: REPL session state incremental, TD-13 closed, session APIs
   feature-gated), #22 `92f5cf18` (CORE FIRST: resolver type-parameter frame
   popped on the error path), #23 `db9b511a` (state sync after #22), #24
-  `02c3c897` (CORE FIRST: Set `add`/`has`/`contains`/`remove` element typing).
+  `02c3c897` (CORE FIRST: Set `add`/`has`/`contains`/`remove` element typing),
+  #25 `69cd4dba` (state sync for #24 and the CORE FIRST probe results),
+  #26 `b843dc85` (CORE FIRST: return-type tail validation, three defects).
   The
   `/private/tmp/aura-directive-002-release-preflight` worktree and the
   `repair/directive-002-release-preflight` branch are **historical**.
@@ -137,6 +140,67 @@
   it.
 - Scope: infrastructure recovery. CORE FIRST work resumes after this migration
   lands.
+
+## CORE FIRST — return-type tail validation — merged, `b843dc85` (PR #26)
+
+A body's implicit value is the value of its last statement (§15.1), and §6.4
+already normatively defined that value's *type*. The checker never compared it
+with the declared return type. Three defects shared the root cause, plus one
+adjacent gap:
+
+- **D1 — mismatched tail accepted.** `fn f() -> int { "s" }` type-checked clean.
+  With `let x: int = f()` and `print(x)` a release build printed `s`, so the
+  unsoundness propagated into `int`-typed contexts.
+- **D2 — bare `return` accepted under an annotation.** `fn f() -> int { return }`
+  was accepted because the `Stmt::Return` arm only inspected `Some(v)`, so a
+  value-less `return` skipped the annotated check entirely.
+- **D3 — `[T; N]` tail literal never realized.** `fn f() -> [int; 3] { [1, 2] }`
+  was accepted; the tail position never consulted `check_array_literal`, so
+  arity and element types went unchecked there.
+
+- **Fix:** a `tail_expect: Option<Ty>` field, set by both body checkers and taken
+  at the top of `block_with`. A field is required, not a post-`block` call:
+  `finish_scope` pops the body scope, so `fn f() -> int { let x = "s"\nx }` would
+  resolve `x` to `Unknown` and pass silently. Taking it right after `push()` also
+  stops nested blocks re-consuming an enclosing expectation, and needs no
+  call-site change. A new `block_tail_mismatch(&self, body, expected)` skips a
+  non-value tail, applies contextual Array realization in tail position (§21.2),
+  and reports `E3005`.
+- **`-> never` is excluded at the assignment site.** `fn bad() -> never {
+  print("oops") }` must stay `E3006`; a naive tail check would emit `E3005`.
+  A bare `return` under `-> never` also keeps `E3006`, while `return 1` under
+  `-> never` still yields `E3005` as `never_is_the_bottom_type` requires.
+- **Contract judgement:** §6.2 enumerated six enforced positions and omitted the
+  tail while §6.4 already defined its value type — a **documentation-completeness
+  gap, not a genuine specification choice**. Spec updated in three coordinated
+  places (§6.2, §15.2, §21.2) rather than silently resolved.
+- **Defect found in the diff before shipping:** the first version used `?` on
+  `block_tail_mismatch`, which can propagate an `Err` from `check_array_literal`
+  (arity and element failures return `Err`, not `Ok(false)`) and so skipped
+  `self.pop()`, leaking a scope frame on every rejected Array tail literal. The
+  final code matches on the `Result` and pops on both non-`Ok(None)` arms. **The
+  tail check runs after the statement loop's error handling, so its own failures
+  must redo the pop explicitly.**
+- **Guards:** four tests in `tests/checker.rs` (mismatch, matching/accepted
+  controls, Array realization, bare `return`) and three appended cases in
+  `tests/methods.rs::method_return_typing` covering the `check_method_body` half.
+  Red before the fix: `cargo test --locked --test checker` → `56 passed; 3
+  failed`.
+- **Behavioural evidence:** 47 probes against a rebuilt release binary, one fresh
+  directory each. Newly rejected include a mismatched tail, a body-local binding
+  in tail position (annotated and inferred), `if`/`else` joins, struct, tuple,
+  method, call-through, generic `-> T`, aliased `Age`, `int | none`, and
+  `fn main() -> int`. Still accepted include matching tails, `print(...)` tails
+  (`Unknown` stays permissive per §2.3), empty bodies, `for`/`loop` tails, and
+  `-> never` with `throw` or an infinite `loop`.
+- **Merged as PR #26 (`b843dc85`), CI 21/21 green on round 1.** All twelve floor
+  entries were run and recorded in the PR body with their results;
+  `mergeStateStatus` was `CLEAN` and `reviewDecision` empty, so no external human
+  approval was required or simulated.
+- **Residual lead:** lambda-tail immunisation is proven by `Expr::Lambda` taking
+  `return_type` via `mem::take`, not by a live probe — both probe attempts hit an
+  unrelated `E2008` unused-parameter diagnostic first. A regression test using a
+  used or `_`-prefixed parameter would close that gap.
 
 ## CORE FIRST — set key-method element typing — merged, `02c3c897` (PR #24)
 
@@ -390,7 +454,7 @@ defect found by round 1 and fixed by `3a42deee`.
 
 - Branch: `rewrite/v3-rust`
 - **Git reality (verify with `git rev-parse`, do not trust prose):**
-  `origin/rewrite/v3-rust` is at **`02c3c897`**, the merge commit of PR #24.
+  `origin/rewrite/v3-rust` is at **`b843dc85`**, the merge commit of PR #26.
   Tag **`v0.3.1` = `b09cbef2`**. Aura 0.3.1 (Keystone) is the current release
   (release = language = `0.3.1`, runtime `0.3.1` is the Playground default) and
   is **PUBLISHED**. The earlier `b221e6a9`/`v0.2.1` notes below are
@@ -987,12 +1051,12 @@ feature-gating of the typed-decode path.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `02c3c897` (PR #24
-merged, twenty-four PRs merged this campaign); Aura 0.3.1 (Keystone) is published
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `b843dc85` (PR #26
+merged, twenty-five PRs merged this campaign); Aura 0.3.1 (Keystone) is published
 and `v0.3.1` = `b09cbef2`. Batches 1–5, B6/B7/B14, TD-23, TD-24, TD-27,
-Directive 004, TD-13, the resolver type-parameter leak and the set key-method
-element typing are **merged and closed**. Directive 003-R §4's blockers are
-closed.
+Directive 004, TD-13, the resolver type-parameter leak, the set key-method
+element typing and return-type tail validation are **merged and closed**.
+Directive 003-R §4's blockers are closed.
 **Exact next action:** begin the next CORE FIRST work item — a real, reproduced
 defect in `src/`, `tests/`, or `fuzz/`, shipped as one PR carrying a reproducible
 case, a regression test that fails before the fix, the fix, and a passing test.
