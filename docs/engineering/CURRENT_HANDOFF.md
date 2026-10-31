@@ -1,13 +1,131 @@
 # Current Engineering Handoff
 
-## Current task — CORE FIRST: resolver type-parameter leak — merged
+## Current task — CORE FIRST: set key-method element typing — merged
+
+**Merged as PR #24 (`02c3c897`), CI 21/21 green on round 1.** No red gate, no
+retry, no gate weakened. `mergeStateStatus` was `CLEAN` and `reviewDecision`
+empty, so no external human approval was required or simulated.
+
+### The finding — the whole set key-method surface was unchecked
+
+`TypeClass::Set` had **no element branch at all** in `Checker::check_method_call`.
+Every set key method was therefore accepted with an argument of any type, while
+the structurally identical map key methods were correctly rejected with `E3001`.
+`List.push` was checked correctly, so the asymmetry — not a missing feature —
+was the defect.
+
+```aura
+let mut s = set{1}
+s.add("x")      // accepted; ran to completion producing {1, "x"}
+s.has("x")      // accepted; silently returned false, no diagnostic
+s.remove(1.5)   // accepted; failed only at runtime
+```
+
+`E3001` appeared only later and downstream, where the user no longer sees the
+cause. Reproduced with an explicit `{int}` annotation, a declared return type,
+an `{int}` parameter, and a receiver returned from an `{int}`-returning
+function — all four accepted the foreign value.
+
+Root cause: `Set.add` (`src/stdlib/signatures.rs:1205`) and `Set.remove`
+(`:1214`) are registered with `params: vec![Param::ANY]` and
+`returns: Ty::Unknown`, and `has`/`contains` likewise. The coarse registry
+cannot express "the same type the receiver holds", so the checker has to.
+
+### The fix
+
+- `check_element_assignable` gained a `container: &str` noun so the diagnostic
+  can name list, array, or set. Its four pre-existing call sites pass
+  `"list"`/`"list"`/`"list"`/`"array"`; their messages are unchanged byte for
+  byte, verified by the pre-existing list/array tests still passing.
+- Two branches added in `check_method_call`, after the list-`push` branch and
+  before the generic parameter loop: `Set` + `add`, and `Set` +
+  `has`/`contains`/`remove`. Both reject a non-key-capable argument **first**,
+  so the diagnostic is correct even when the receiver's element type is
+  `Unknown`, then check agreement against the proven element type.
+- **`Ty::key_type_error()` was deliberately not reused.** It says "map key", so
+  reusing it for sets would make the message wrong for one of the two
+  containers. The new branches emit set-specific wording matching the message
+  the set-literal path already produces.
+
+### Guards
+
+`tests/collections.rs`:
+
+- `typed_set_mutation_obeys_the_element_type` — annotated, inferred and
+  declared-return receivers reject a foreign element; same-type and union
+  receivers still accept; `add(1.5)` and `add([1])` reject.
+- `typed_set_key_methods_obey_the_element_type` — `has`/`contains`/`remove`
+  reject both a foreign element type and a non-key-capable type across all
+  three methods; same-type queries still evaluate; an untyped `set{}` receiver
+  produces no false rejection.
+
+Both were written first and failed with `expected the program to be rejected:
+""`. `tests/keystone_collections.rs:182` (`{1, 2}.has(2)`) is the only
+pre-existing set-method assertion and still passes.
+
+### Documentation gap closed
+
+`docs/LANGUAGE_SPEC.md` had **no `set` method table at all** — the roster
+existed only in code. §24.1 now has one beside the string/list/map tables, and
+§21.4 states the check-time typing contract normatively.
+
+### Deliberately not treated as defects
+
+`list.contains`, `array.contains`, `tuple.contains` and `range.contains` also
+take `Param::ANY` and return `false` for a foreign argument. That is the
+documented contract (spec §24.1 "1 any") and it cannot corrupt state, so it was
+left alone. `reduce`'s `Param::ANY` accumulator *is* checked in practice,
+because overload resolution rejects a string initializer against the numeric
+`+` in the body.
+
+### Validation executed on this tree
+
+- `cargo test --locked --test collections` → 10 passed, 0 failed
+- `cargo test --locked --all-targets --all-features` → 66 suites ok, 0 failed
+- `cargo fmt --all -- --check` → clean
+- `cargo clippy --locked --all-targets --all-features -- -D warnings` → clean
+- `cargo test --locked --all-targets --no-default-features --features cli,repl,json,regex,time` → all ok
+- `RUSTFLAGS="-D warnings" cargo check --locked --lib --no-default-features --features cli` → clean
+- `cargo +1.83.0 check --locked --all-features` → clean
+- `node playground/tests/node/run-all.mjs` → complete; `node playground/build.mjs --check` → manifest matches 9 version(s)
+- `node website/tests/run-all.mjs` → complete
+- live reproducers with a rebuilt `target/release/aura`, each in its own fresh directory → the four new `E3001` messages, and the positive paths unchanged
+- remote CI on the PR → **21/21 pass**, round 1
+
+### Resume point
+
+HEAD is `02c3c897`. **Exact next action:** continue CORE FIRST with the next
+reproduced defect — lexer/parser ambiguities, precedence and error recovery;
+checker scopes, generics and mutability; evaluator control flow, closures and
+resource limits; collection bounds; module cycles; runtime panic and
+Host/Python/WASM capability boundaries. One PR per finding, each carrying a
+reproducible case, a regression test that fails before the fix, the fix, and a
+passing test. Keep the no-`repl` lib check in the floor. Do not begin language
+features frozen for stabilization. B-1R8 and any runtime publication remain
+separately human-gated.
+
+### Already probed and conformant — do not re-investigate
+
+- HOF arity and argument order: `reduce` is `(list, fn, init)`, not
+  `(list, init, fn)`.
+- `zip` truncates to the shorter input, as spec §24.1 states.
+- `map`, `filter`, `enumerate` behave as documented.
+- Closures capture by reference with per-call cells; a factory produces
+  independent counters.
+- `regex_*` rejects malformed patterns with `E3001` plus the parse error, and
+  matches in linear time on adversarial input (the `regex` crate does not
+  backtrack).
+- `contains` with a foreign argument on list/array/tuple/range returns `false`
+  as documented.
+
+## Previous task — CORE FIRST: resolver type-parameter leak — merged
 
 **Merged as PR #22 (`92f5cf18`), CI 21/21 green on round 1.** No red gate, no
 retry, no gate weakened. `mergeStateStatus` was `CLEAN` and `reviewDecision`
 empty, so no external human approval was required or simulated.
 
-`rewrite/v3-rust` is the **default branch** and HEAD is **`92f5cf18`** (the
-merge of PR #22). Twenty-two PRs are merged this campaign: #2, #3, #4, #5, #6, #7,
+`rewrite/v3-rust` is the **default branch** and HEAD is **`02c3c897`** (the
+merge of PR #24). Twenty-four PRs are merged this campaign: #2, #3, #4, #5, #6, #7,
 #8, #9 (B14), #10 (PR template), #11 (TD-24 cost guard), #12 (CHANGELOG
 `[Unreleased]` + TD-25), #13 (website suite gate + TD-26), #14 (TD-27 Playwright
 gate), #15 (state sync), #16 (B7 project-header contract + HTTP transport docs +
@@ -15,7 +133,8 @@ gate), #15 (state sync), #16 (B7 project-header contract + HTTP transport docs +
 #15–#17), #19 (browser consent scoped to the mutation class), #20 (Directive
 004: the seven agents), #21 (CORE FIRST: REPL session state incremental, TD-13
 closed, session APIs feature-gated), #22 (CORE FIRST: resolver type-parameter
-frame popped on the error path).
+frame popped on the error path), #23 (state sync), #24 (CORE FIRST: set
+key-method element typing).
 The Directive 003-R authorization recorded in
 `AGENTS.md` permits push, PR creation and merge, workflow administration, and
 default-branch changes; force-push, history removal, tag moves, frozen-WASM
