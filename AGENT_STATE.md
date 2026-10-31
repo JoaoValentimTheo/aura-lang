@@ -2,11 +2,11 @@
 
 ## Directive 003 — stabilization and hardening campaign (current)
 
-- Active branch: `rewrite/v3-rust`, remote HEAD **`1fa01db0`** — the merge of
-  **PR #34** (CORE FIRST: f-string zero-pad sign placement). The working tree
-  carries the next CORE FIRST fix (generic-bound method resolution) on branch
-  `fix/generic-bound-methods`, validated and awaiting its PR.
-  **Thirty-four PRs are merged** this campaign:
+- Active branch: `rewrite/v3-rust`, remote HEAD **`4aff6d5c`** — the merge of
+  **PR #35** (CORE FIRST: generic-bound method resolution). The working tree
+  carries the next CORE FIRST fix (JSON decode depth parity) on branch
+  `fix/json-decode-depth-parity`, validated and awaiting its PR.
+  **Thirty-five PRs are merged** this campaign:
   #2 `f96536b6` (Directive 002 preflight),
   #3 `07845932` (rustls advisories), #4 `a562bacf` (batches 1–5),
   #5 `eaa3b9ed` (TD-23 + default-branch flip), #6 `4a20fa84` (post-merge
@@ -37,7 +37,8 @@
   #31 `e61a81f6` (CORE FIRST: method type-parameter bounds reach the body),
   #32 `a089fd45` (CORE FIRST: f-string exponent case and non-finite
   rendering), #33 `da8d6273` (CORE FIRST: `sort` total order),
-  #34 `1fa01db0` (CORE FIRST: f-string zero-pad sign placement).
+  #34 `1fa01db0` (CORE FIRST: f-string zero-pad sign placement),
+  #35 `4aff6d5c` (CORE FIRST: generic-bound method resolution).
   The
   `/private/tmp/aura-directive-002-release-preflight` worktree and the
   `repair/directive-002-release-preflight` branch are **historical**.
@@ -316,7 +317,7 @@ consistent, merely lossy).
 binaries all-features, `no-default-features`, MSRV 1.83.0, nightly fuzz check,
 playground node suite, playground build `--check`, website build and tests.
 
-## CORE FIRST — generic-bound method resolution — branch `fix/generic-bound-methods` (PR pending)
+## CORE FIRST — generic-bound method resolution — merged, `4aff6d5c` (PR #35)
 
 `Expr::Method` on a receiver of type `Ty::Param` had no method table, so the
 checker fell through to a conservative fallback that asked only whether a
@@ -1368,15 +1369,16 @@ feature-gating of the typed-decode path.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `1fa01db0` (PR #34
-merged, thirty-four PRs merged this campaign); Aura 0.3.1 (Keystone) is published
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `4aff6d5c` (PR #35
+merged, thirty-five PRs merged this campaign); Aura 0.3.1 (Keystone) is published
 and `v0.3.1` = `b09cbef2`. Batches 1–5, B6/B7/B14, TD-23, TD-24, TD-27,
 Directive 004, TD-13, the resolver type-parameter leak, the set key-method
 element typing, return-type tail validation, `pub use` re-export resolution, the
-f-string exponent case, the `sort` total order and the f-string zero-pad sign
-placement are **merged and closed**. Directive 003-R §4's blockers are closed.
-**Exact next action:** branch `fix/generic-bound-methods` is validated and
-awaiting its PR (#35) + remote CI. Once merged, begin the next CORE FIRST work
+f-string exponent case, the `sort` total order, the f-string zero-pad sign
+placement and generic-bound method resolution are **merged and closed**.
+Directive 003-R §4's blockers are closed.
+**Exact next action:** branch `fix/json-decode-depth-parity` is validated and
+awaiting its PR (#36) + remote CI. Once merged, begin the next CORE FIRST work
 item — a real, reproduced defect in `src/`, `tests/`, or `fuzz/`, shipped as one
 PR carrying a reproducible case, a regression test that fails before the fix,
 the fix, and a passing test.

@@ -1,10 +1,128 @@
 # Current Engineering Handoff
 
-## Current task — CORE FIRST: method calls on a type parameter resolve by bounds, not name existence
+## Current task — CORE FIRST: JSON decode depth is asymmetric with encode, and reports the wrong error family
 
-**Status:** merged as `1fa01db0`; twenty-one remote checks green,
-`mergeStateStatus=CLEAN`. Post-merge diff `da8d6273..1fa01db0` contains exactly
-the twelve intended files.
+**Status:** implemented and validated locally on `fix/json-decode-depth-parity`;
+awaiting PR #36 and remote CI. Working tree is clean of the fix (all seven files
+committed on the branch).
+
+### The defect
+
+`json_encode` and `json_decode` disagreed about the same document. Round-tripping
+a 200-deep recursive value produced JSON that Aura then refused to read back:
+
+```
+struct Node { child: Node | none }
+fn build(n: int) -> Node {
+    if n == 0 { return Node { child: none } }
+    return Node { child: build(n - 1) }
+}
+fn main() {
+    let d = build(200)
+    let s = json_encode(d)
+    printf(len(s))          # 2014 bytes of legal JSON
+    printf(json_decode(s))  # E3001: recursion limit exceeded at line 1 column 1144
+}
+```
+
+Binary search pinned the wall: **depth ≤ 126 decoded, depth ≥ 127 did not**. Two
+independent root causes, both real:
+
+1. **Depth.** `to_json_depth` (`src/stdlib/ext.rs:61`) stops at
+   `MAX_VALUE_DEPTH` = 512 and writes `null`, so the encoder was *deliberately*
+   bounded at 512. The decoder used `serde_json::from_str`, whose `Deserializer`
+   carries `remaining_depth: 128` (`de.rs:63`) since serde has no stack-size
+   knowledge. Aura therefore emitted documents it could not parse. Worse, the
+   guard in `from_json_depth` was **dead code for deep documents** — serde
+   rejected them before the conversion ran, so the comment claiming *"serde_json's
+   parser already limits nesting before this point; the bound keeps the
+   conversion total"* named exactly the dependency the defect violated.
+2. **Error family.** `json_decode` reported malformed or over-deep documents as
+   `E3001` (`TYPE_MISMATCH`, a *checker* code) while `json_decode_as` and typed
+   decode reported `E4031` (`DECODE_MISMATCH`, *runtime*). Same document, two
+   codes. Spec §2.2 puts nesting/recursion in `E4xxx` and §30.1 reserves `E3xxx`
+   for type-level checks, so `E3001` was wrong on both counts.
+
+### The fix — one shared gate for all three decode entry points
+
+1. `Cargo.toml:16` — `serde_json` features gain `unbounded_depth`, because
+   `Deserializer::disable_recursion_limit` is gated on it.
+2. `src/stdlib/ext.rs` — new `fn parse_json(text: &str, span: Span)`:
+   - `max_nesting(bytes)` — allocation-free single pass over the bytes that
+     tracks string/escape state and returns the deepest `[`/`{` nesting. `O(len)`,
+     no recursion, cannot exhaust the stack on a hostile document.
+   - Rejects with `E4031` before the parser runs if that depth exceeds
+     `MAX_VALUE_DEPTH`.
+   - Then `Deserializer::from_str` → `disable_recursion_limit()` →
+     `Value::deserialize(&mut de)` → **`de.end()`**.
+   - Every failure becomes `decode_err` (`E4031`) with `malformed JSON: {e}`.
+3. `src/stdlib/ext.rs` — all three `serde_json::from_str` call sites
+   (`decode_typed`, `json_decode`, `json_decode_as`) now route through
+   `parse_json(...)?`. `json_decode`'s non-string argument keeps `err`
+   (`E3001` is correct for a genuine type error).
+4. `src/error.rs:431–437` — `DECODE_MISMATCH`'s doc comment widened to cover both
+   entry points, the nesting bound and the pre-scan.
+
+**Why `de.end()` is mandatory:** `serde_json::from_str` rejects trailing garbage;
+`Deserializer::from_str` + `Value::deserialize` does not. Probe `"1 2"` →
+`E4031: malformed JSON: trailing characters at line 1 column 3`, so the
+rejection `from_str` provided is preserved.
+
+**Why the pre-scan makes the escape hatch safe:** `disable_recursion_limit`
+removes serde's own guard *entirely*. `max_nesting` reinstates a bound that is
+cheap, strictly more permissive-correct than 128 (every document that parses has
+exactly the nesting the scan reports), and now equal to the encoder's. Aura
+executes on a dedicated 64 MiB stack (`src/lib.rs:103` `INTERP_STACK`), so 512
+levels of serde recursion (~64 KiB) is trivial. `serde_json::Value` has **no**
+`Drop` impl (`carefully_drop_nested_arrays` exists only in a doc example), so
+dropping a deep `Value` is an ordinary recursive drop bounded by the same 512.
+
+### The tests — three new, all proven to fail without the fix
+
+`tests/regressions.rs`, `BH1-07..09`, all `#[cfg(feature = "json")]`:
+
+| Test | Asserts |
+|---|---|
+| `bh1_07_deep_json_round_trip_is_lossless` | `build(200)` → decode → re-encode is **byte-identical** |
+| `bh1_08_decode_depth_bound_matches_encode` | depth 512 decodes; depth 513 is `E4031`; the encoder's `null` past the bound still decodes |
+| `bh1_09_decode_failures_share_the_runtime_code` | both entry points give `E4031` on malformed input; `"1 2"` rejected; a 100 000-deep hostile document is a clean `E4031` with no crash; `json_decode(42)` **still** `E3001` |
+
+With the three source files reverted (`git checkout -- src/stdlib/ext.rs Cargo.toml
+src/error.rs`), all three fail with the original symptom —
+`Diag { code: 3001, message: "recursion limit exceeded at line 1 column 1144" }`,
+`left: Err(3001) / right: Ok(())`, `left: 3001 / right: 4031`. Restored, all
+three pass, and the whole `bh1` family is 9/9.
+
+### Documentation and reachability
+
+- `docs/LANGUAGE_SPEC.md` §30.2 — the missing `E4031` row.
+- `docs/LANGUAGE_SPEC.md` §24 — new **"Normative rule (JSON decode depth)"**; the
+  typed-decode rule now says both entry points report mismatch as `E4031`.
+- `docs/LANGUAGE_SPEC.md` §31.6 — decode-depth normative rule; evidence line
+  repointed to include `parse_json`.
+- `docs/errors.md:74` — `E4031` retitled from "Typed JSON decode mismatch" to
+  "JSON decode mismatch" and widened.
+- `tests/grammar.rs` — a `DECODE_MISMATCH` entry in `error_samples()`, so §30.4's
+  "every §30.2 code is reachable" claim and
+  `every_documented_error_code_is_reachable` both still hold.
+
+Explicitly **not** swept into `E4031`: the non-string-key rule and the arity
+rule in §24. Those are genuine type errors and keep `E3001`.
+
+### Next exact action
+
+Commit on `fix/json-decode-depth-parity`, push, open PR #36 against
+`rewrite/v3-rust` using `.github/pull_request_template.md` verbatim, poll
+`gh pr checks` to 21/21 with `mergeStateStatus=CLEAN`, then
+`gh pr merge 36 --merge --delete-branch`.
+
+---
+
+## Previous task — CORE FIRST: method calls on a type parameter resolve by bounds, not name existence — merged `4aff6d5c` (PR #35)
+
+**Status:** merged as `4aff6d5c`; twenty-one remote checks green,
+`mergeStateStatus=CLEAN`. Post-merge diff `1fa01db0..4aff6d5c` contains exactly
+the five intended files.
 
 ### The defect
 
@@ -85,10 +203,7 @@ Not run locally: Miri, fuzz smoke, browser Playwright — all CI-only.
 
 ### Next exact action
 
-Commit on `fix/generic-bound-methods`, push, open PR #35 against
-`rewrite/v3-rust` using `.github/pull_request_template.md` verbatim, poll
-`gh pr checks` to 21/21 with `mergeStateStatus=CLEAN`, then
-`gh pr merge 35 --merge --delete-branch`.
+Merged. Next work item is recorded in the current task section above.
 
 ---
 

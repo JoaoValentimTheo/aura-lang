@@ -237,6 +237,13 @@ fn error_samples() -> Vec<(u16, String)> {
         codes::NESTING,
         format!("fn main() {{ print(1{}) }}", "+1".repeat(5000)),
     ));
+    // JSON decode mismatch is a runtime code; `json_decode` reaches it with a
+    // malformed document (LANGUAGE_SPEC.md §24, §30.2).
+    #[cfg(feature = "json")]
+    v.push((
+        codes::DECODE_MISMATCH,
+        "fn main() { let _v = json_decode(\"{not json\") }".to_string(),
+    ));
     v
 }
 

@@ -1363,6 +1363,90 @@ fn bh1_06_no_paren_member_on_known_enum_is_checked() {
 
 // ---------------------------------------------------------------------------
 //
+// BH1-07..09: JSON decode was bounded by serde_json's internal 128-level
+// recursion limit, while `json_encode` renders up to `MAX_VALUE_DEPTH` (512).
+// Aura therefore emitted documents it could not read back, and the failure
+// surfaced as `E3001` (a checker code) because the decode path used the
+// generic `err` helper. Decode now shares the encoder's bound, surfaces
+// `E4031`, and still rejects hostile deep documents without exhausting the
+// stack (`LANGUAGE_SPEC.md` §24, §31.6).
+// ---------------------------------------------------------------------------
+
+/// BH1-07: a value deeper than serde_json's 128-level default survives a full
+/// encode/decode round trip byte for byte.
+#[cfg(feature = "json")]
+#[test]
+fn bh1_07_deep_json_round_trip_is_lossless() {
+    let src = "struct Node { child: Node | none }
+fn build(n: int) -> Node {
+  if n == 0 { return Node { child: none } }
+  return Node { child: build(n - 1) }
+}
+fn main() {
+  let s = json_encode(build(200))
+  print(json_encode(json_decode(s)) == s)
+}";
+    assert_eq!(out(src), "true\n");
+}
+
+/// BH1-08: the decode bound matches the encoder's exactly. 512 levels decode
+/// and 513 is rejected as `E4031`; the encoder's `null` past the bound still
+/// produces a decodable document.
+#[cfg(feature = "json")]
+#[test]
+fn bh1_08_decode_depth_bound_matches_encode() {
+    let at = |n: usize| -> Result<(), u16> {
+        let doc = format!("{}{}", "[".repeat(n), "]".repeat(n));
+        run_source(
+            &format!("fn main() {{ let _v = json_decode(\"{doc}\") }}"),
+            "<test>",
+        )
+        .map(|_| ())
+        .map_err(|d| d.code)
+    };
+    assert_eq!(at(512), Ok(()));
+    assert_eq!(at(513), Err(codes::DECODE_MISMATCH));
+
+    // Encode emits `null` past the bound (§31.6), and that document decodes.
+    let src = "fn main() { print(json_decode(json_encode([[1]]))) }";
+    assert_eq!(out(src), "[[1]]\n");
+}
+
+/// BH1-09: every decode failure is `E4031` on both entry points, and a
+/// document far deeper than the bound is rejected by a pre-scan rather than by
+/// exhausting the stack.
+#[cfg(feature = "json")]
+#[test]
+fn bh1_09_decode_failures_share_the_runtime_code() {
+    assert_eq!(
+        fail("fn main() { let _v = json_decode(\"{not json\") }"),
+        codes::DECODE_MISMATCH
+    );
+    assert_eq!(
+        fail("struct U { n: string }\nfn main() { let _u = json_decode_as(\"{not json\", U) }"),
+        codes::DECODE_MISMATCH
+    );
+    // Trailing garbage is still rejected, so `de.end()` did not get dropped
+    // along with serde_json's own `from_str` convenience wrapper.
+    assert_eq!(
+        fail("fn main() { let _v = json_decode(\"1 2\") }"),
+        codes::DECODE_MISMATCH
+    );
+    // A hostile 100k-deep document is a clean diagnostic, not a crash.
+    let doc = format!("{}{}", "[".repeat(100_000), "]".repeat(100_000));
+    assert_eq!(
+        fail(&format!("fn main() {{ let _v = json_decode(\"{doc}\") }}")),
+        codes::DECODE_MISMATCH
+    );
+    // A genuine type error is untouched: `E3001` is correct there.
+    assert_eq!(
+        fail("fn main() { let _v = json_decode(42) }"),
+        codes::TYPE_MISMATCH
+    );
+}
+
+// ---------------------------------------------------------------------------
+//
 // AUDIT-GEN-01: an f-string format precision above `u16::MAX` used to reach
 // Rust's `format!` and panic ("Formatting argument out of range") on native,
 // which became `E4999` (INTERNAL), and trap (`unreachable`) on WebAssembly.

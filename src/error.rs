@@ -427,11 +427,11 @@ pub mod codes {
     pub const NO_MATCH: u16 = 4029;
     /// `return` appeared in a position where it cannot produce a value.
     pub const RETURN_POSITION: u16 = 4030;
-    /// A typed JSON decode (`json_decode_as`) found a document that does not
-    /// match the declared Aura type: malformed JSON, a missing required field,
-    /// a wrong field or element type, or a nested mismatch (Keystone §22).
-    /// A data-shape failure, distinct from network, Host, internal, and
-    /// user-exception failures.
+    /// A JSON decode (`json_decode` or `json_decode_as`) could not turn the
+    /// document into an Aura value: malformed JSON, nesting beyond the value
+    /// depth bound, a missing required field, a wrong field or element type,
+    /// or a nested mismatch (Keystone §22). A data-shape failure, distinct
+    /// from network, Host, internal, and user-exception failures.
     pub const DECODE_MISMATCH: u16 = 4031;
     /// An internal invariant of the runtime was violated. This indicates a
     /// bug in Aura itself, never a user mistake.

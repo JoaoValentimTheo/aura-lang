@@ -67,6 +67,27 @@ Playground but are not releases.
   snapshot of the 2026-09-30 state, not a current claim.
 
 ### Fixed
+- **JSON decode could not read back what JSON encode produced.** The encoder was
+  deliberately bounded at 512 levels of value nesting and wrote `null` past it,
+  but the decoder went through `serde_json::from_str`, whose deserializer caps
+  nesting at 128. A 200-deep recursive `struct Node { child: Node | none }`
+  round-tripped to a 2014-byte document that `json_decode` then rejected with
+  `E3001: recursion limit exceeded`. The `from_json_depth` guard was dead code
+  for deep documents because serde rejected them first. Decoding now runs one
+  shared `parse_json` gate for all three entry points: a single-pass,
+  allocation-free `max_nesting` pre-scan rejects documents deeper than
+  `MAX_VALUE_DEPTH` before the parser runs, then `Deserializer` with
+  `disable_recursion_limit` parses and `de.end()` preserves the trailing-content
+  rejection that `from_str` provided. Documents up to 512 levels now round-trip
+  byte-identically, and a 100 000-deep hostile document is a clean diagnostic
+  rather than a stack overflow. A second, coupled defect went with it:
+  `json_decode` reported malformed or over-deep input as `E3001`
+  (`TYPE_MISMATCH`, a checker code) while `json_decode_as` and typed decode used
+  `E4031` (`DECODE_MISMATCH`, runtime) for the same document. All three now
+  report `E4031`; a genuinely ill-typed argument such as `json_decode(42)` still
+  reports `E3001`. `E4031` was missing from `LANGUAGE_SPEC.md` §30.2 and from
+  `error_samples()`, which `§30.4`'s reachability claim depends on; both are now
+  present.
 - **Method calls on a type parameter were resolved by name existence, not by
   bounds.** A generic body with `T: Show` could not call `x.show()` unless some
   struct somewhere in the program happened to declare a method named `show`:

@@ -13,6 +13,7 @@ pub mod json {
     type AuraResult<T> = crate::error::Result<T>;
     use crate::run::value::Value;
     use crate::run::Interp;
+    use serde::Deserialize;
     use std::cell::RefCell;
     use std::collections::BTreeMap;
     use std::rc::Rc;
@@ -150,9 +151,88 @@ pub mod json {
         from_json_depth(j, 0)
     }
 
+    /// Parse a JSON document, bounded in nesting by [`MAX_VALUE_DEPTH`].
+    ///
+    /// This is the single entry point for every decode path, and it is what
+    /// makes `json_decode` symmetric with `json_encode`: the encoder renders
+    /// at most `MAX_VALUE_DEPTH` levels, so the decoder must accept at least
+    /// that many, or Aura would emit documents it cannot read back.
+    ///
+    /// Two bounds are needed, because they guard different stacks:
+    ///
+    /// 1. A cheap textual pre-scan over the raw bytes rejects any document
+    ///    nested deeper than `MAX_VALUE_DEPTH` *before* the deserializer
+    ///    recurses. serde_json's own limit is 128 (below the encoder's), and
+    ///    its `disable_recursion_limit` escape hatch — required to accept 512
+    ///    levels — removes the guard entirely, so this scan replaces it.
+    /// 2. `from_json_depth` then bounds the *conversion*, which is where Aura
+    ///    values are built.
+    ///
+    /// Trailing garbage is rejected by re-parsing to the end of input.
+    ///
+    /// The depth walk is bounded by construction: every stacked byte is an
+    /// opening delimiter paid for by an input byte, and the input is already
+    /// resident in memory, so the scan cannot exhaust the stack.
+    fn parse_json(text: &str, span: Span) -> AuraResult<serde_json::Value> {
+        if max_nesting(text.as_bytes()) > crate::run::value::MAX_VALUE_DEPTH {
+            return Err(decode_err(
+                format!(
+                    "JSON nesting exceeds the {}-level value bound",
+                    crate::run::value::MAX_VALUE_DEPTH
+                ),
+                span,
+            ));
+        }
+        let mut de = serde_json::Deserializer::from_str(text);
+        de.disable_recursion_limit();
+        let value = serde_json::Value::deserialize(&mut de)
+            .map_err(|e| decode_err(format!("malformed JSON: {e}"), span))?;
+        de.end()
+            .map_err(|e| decode_err(format!("malformed JSON: {e}"), span))?;
+        Ok(value)
+    }
+
+    /// Maximum `[` / `{` nesting depth of a JSON document, ignoring any
+    /// brackets that are part of a string. Allocation-free and `O(len)`.
+    ///
+    /// The scan is deliberately *syntactic*: it counts delimiters without
+    /// validating the document. Every document that parses has a nesting
+    /// depth equal to what this reports, so the only documents it can reject
+    /// are ones the parser would reject too — and it rejects them before the
+    /// parser reaches unbounded recursion.
+    fn max_nesting(bytes: &[u8]) -> usize {
+        let (mut depth, mut max) = (0usize, 0usize);
+        let mut in_string = false;
+        let mut escaped = false;
+        for &b in bytes {
+            if in_string {
+                if escaped {
+                    escaped = false;
+                } else if b == b'\\' {
+                    escaped = true;
+                } else if b == b'"' {
+                    in_string = false;
+                }
+                continue;
+            }
+            match b {
+                b'"' => in_string = true,
+                b'[' | b'{' => {
+                    depth += 1;
+                    max = max.max(depth);
+                }
+                b']' | b'}' => depth = depth.saturating_sub(1),
+                _ => {}
+            }
+        }
+        max
+    }
+
     /// Decode JSON, bounded in depth so a hostile deeply nested document
-    /// cannot overflow the native stack. serde_json's parser already limits
-    /// nesting before this point; the bound keeps the conversion total.
+    /// cannot overflow the native stack. The parser has already bounded
+    /// nesting by [`crate::run::value::MAX_VALUE_DEPTH`] (see [`parse_json`]);
+    /// this second bound keeps the conversion total for the typed path, which
+    /// walks a declared type as well as the document.
     fn from_json_depth(j: &serde_json::Value, depth: usize) -> Value {
         if depth >= crate::run::value::MAX_VALUE_DEPTH {
             return Value::None;
@@ -475,8 +555,7 @@ pub mod json {
         ty: &crate::ast::TypeExpr,
         span: Span,
     ) -> AuraResult<Value> {
-        let j: serde_json::Value = serde_json::from_str(text)
-            .map_err(|e| Diag::new(codes::DECODE_MISMATCH, format!("malformed JSON: {e}"), span))?;
+        let j: serde_json::Value = parse_json(text, span)?;
         decode_as(it, &j, ty, &ty.name(), span)
     }
 
@@ -499,8 +578,7 @@ pub mod json {
             let Some(Value::Str(s)) = args.first() else {
                 return Err(err("json_decode expects a string", span));
             };
-            let j: serde_json::Value =
-                serde_json::from_str(s).map_err(|e| err(e.to_string(), span))?;
+            let j: serde_json::Value = parse_json(s, span)?;
             Ok(from_json(&j))
         });
         // Typed decode: `json_decode_as(text, "TypeName")`. The type is named
@@ -512,9 +590,7 @@ pub mod json {
             else {
                 return Err(err("json_decode_as expects (text, type_name)", span));
             };
-            let j: serde_json::Value = serde_json::from_str(s).map_err(|e| {
-                Diag::new(codes::DECODE_MISMATCH, format!("malformed JSON: {e}"), span)
-            })?;
+            let j: serde_json::Value = parse_json(s, span)?;
             // The type is supplied as its source spelling. It is parsed with
             // the compiler's own type grammar (`[User]`, `{string: int}`,
             // `User | none`), so this path grows no second type language.
