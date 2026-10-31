@@ -2,9 +2,9 @@
 
 ## Directive 003 — stabilization and hardening campaign (current)
 
-- Active branch: `rewrite/v3-rust`, remote HEAD **`2fe944fb`** — the merge of
-  **PR #21** (CORE FIRST: the REPL session state is incremental, and the session
-  APIs are feature-gated). **Twenty-one PRs are merged** this campaign:
+- Active branch: `rewrite/v3-rust`, remote HEAD **`92f5cf18`** — the merge of
+  **PR #22** (CORE FIRST: the resolver's type-parameter frame is now popped on
+  the error path). **Twenty-two PRs are merged** this campaign:
   #2 `f96536b6` (Directive 002 preflight),
   #3 `07845932` (rustls advisories), #4 `a562bacf` (batches 1–5),
   #5 `eaa3b9ed` (TD-23 + default-branch flip), #6 `4a20fa84` (post-merge
@@ -23,7 +23,8 @@
   class; `npm run test:site` rebuilds a stale site instead of testing old
   code), #20 `38f5fed5` (Directive 004: the seven agents), #21 `2fe944fb`
   (CORE FIRST: REPL session state incremental, TD-13 closed, session APIs
-  feature-gated). The
+  feature-gated), #22 `92f5cf18` (CORE FIRST: resolver type-parameter frame
+  popped on the error path). The
   `/private/tmp/aura-directive-002-release-preflight` worktree and the
   `repair/directive-002-release-preflight` branch are **historical**.
 - **The default branch is `rewrite/v3-rust`** (TD-23): flipped from `master`,
@@ -135,7 +136,7 @@
 - Scope: infrastructure recovery. CORE FIRST work resumes after this migration
   lands.
 
-## CORE FIRST — resolver type-parameter leak — current
+## CORE FIRST — resolver type-parameter leak — merged, `92f5cf18` (PR #22)
 
 `Resolver::rewrite_item` and `Resolver::rewrite_member` pushed a generic-parameter
 frame before rewriting a declaration and popped it with a plain statement at the
@@ -181,6 +182,11 @@ checker reported a bogus unknown type on an unrelated, valid line.
 - **Pre-existing, unrelated:** `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
   --lib` still reports 8 broken intra-doc links, all in `src/run/`. CI never runs
   `cargo doc`.
+- **Merged as PR #22 (`92f5cf18`), CI 21/21 green on round 1.** `language
+  contract`, `fuzz smoke`, `miri`, `playground (wasm runtime)` and `website` all
+  passed on the first push — no red gate, no retry, no gate weakened.
+  `mergeStateStatus` was `CLEAN` and `reviewDecision` empty, so no external human
+  approval was required or simulated.
 
 ## CORE FIRST — REPL session linearization (TD-13) — merged, `2fe944fb` (PR #21)
 
@@ -330,7 +336,7 @@ defect found by round 1 and fixed by `3a42deee`.
 
 - Branch: `rewrite/v3-rust`
 - **Git reality (verify with `git rev-parse`, do not trust prose):**
-  `origin/rewrite/v3-rust` is at **`2fe944fb`**, the merge commit of PR #21.
+  `origin/rewrite/v3-rust` is at **`92f5cf18`**, the merge commit of PR #22.
   Tag **`v0.3.1` = `b09cbef2`**. Aura 0.3.1 (Keystone) is the current release
   (release = language = `0.3.1`, runtime `0.3.1` is the Playground default) and
   is **PUBLISHED**. The earlier `b221e6a9`/`v0.2.1` notes below are
@@ -927,20 +933,14 @@ feature-gating of the typed-decode path.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `2fe944fb` (PR #21
-merged, twenty-one PRs merged this campaign); Aura 0.3.1 (Keystone) is published
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `92f5cf18` (PR #22
+merged, twenty-two PRs merged this campaign); Aura 0.3.1 (Keystone) is published
 and `v0.3.1` = `b09cbef2`. Batches 1–5, B6/B7/B14, TD-23, TD-24, TD-27,
-Directive 004 and TD-13 are **merged and closed**. Directive 003-R §4's blockers
-are closed.
-**Exact next action:** the second CORE FIRST fix — the resolver type-parameter
-leak — is complete on the working tree (`src/resolve.rs`, `tests/repl.rs`, this
-file, `docs/engineering/CURRENT_HANDOFF.md`), regression test failing before and
-passing after, full floor green. Publish it on `fix/resolver-type-param-leak` as
-a PR against `rewrite/v3-rust`, watch remote CI, and merge once green; then
-reconcile this file to the new merge SHA.
-After that, begin the next CORE FIRST work item — a real, reproduced defect in
-`src/`, `tests/`, or `fuzz/`, shipped as one PR carrying a reproducible case, a
-regression test that fails before the fix, the fix, and a passing test.
+Directive 004, TD-13 and the resolver type-parameter leak are **merged and
+closed**. Directive 003-R §4's blockers are closed.
+**Exact next action:** begin the next CORE FIRST work item — a real, reproduced
+defect in `src/`, `tests/`, or `fuzz/`, shipped as one PR carrying a reproducible
+case, a regression test that fails before the fix, the fix, and a passing test.
 Highest-value unfinished leads already recorded here: (a) the `Stmt::Let`
 second-order partial-mutation leak test, (b) lexer/parser ambiguities,
 precedence, adversarial input and error recovery, (c) checker scopes, generics,
