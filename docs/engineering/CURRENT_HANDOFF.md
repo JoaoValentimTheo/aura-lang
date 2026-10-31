@@ -1,5 +1,44 @@
 # Current Engineering Handoff
 
+## Directive 006 — release readiness assessed (`INCOMPLETE`, `NO-GO` to distribute)
+
+**Status:** assessment delivered; **no code changed**. Report:
+[`RELEASE_CANDIDATE_READINESS.md`](./RELEASE_CANDIDATE_READINESS.md), shipped by
+**PR #40** — one documentation PR, the full Directive 006 budget.
+
+- Reference identity **`3347ff6c`**; worktree clean; local == remote; 38 merged
+  PRs; stable `0.3.1`; preview `0.3.2-dev.8`; tags unchanged.
+- **Material finding:** the two selectable Playground WASM runtimes are stale
+  **semantically**. The 18 verbatim regressions in `tests/regressions.rs` score
+  `0.3.1` **4/18 PASS / 11 WRONG / 3 TRAP**, `0.3.2-dev.8` **4/18 / 11 / 3**,
+  native HEAD **18/18**. Both artifacts **accept four type-soundness
+  violations** native HEAD rejects (`E3001` ×3 for wrong `set` element types,
+  `E3005` for a return-type mismatch), and one diagnostic diverged
+  (`E3001` → `E4031`). `0.3.2-dev.8` fixes nothing vs `0.3.1` despite ABI 2.
+- Freeze point **`31346b53`** is the last commit touching `playground/runtime/`
+  and the only commit that created `runtimes/0.3.2-dev.8/`; nothing under
+  `playground/runtimes/` has changed since. **16 `src/` and 79 total commits are
+  unshipped.** `build.mjs` forbids overwriting an identity ⇒ a corrected
+  candidate needs a **new dev identity**, which requires human authorization.
+- This is **not** a source-tree regression and does **not** contradict Directive
+  005: the local matrix at `3347ff6c` is green and remote CI is 23/23 (CI run
+  `41225313680` 21/21, Pages `41225313675` 2/2). Directive 005's scope never
+  covered distributed artifacts.
+- Frozen-artifact integrity re-verified independently: **8/8** available
+  artifacts match `manifest.json` sha256 and byte length exactly. Their *bytes*
+  are intact; what is stale is their *provenance relative to source*.
+- Rebuild determinism was shown on this host only (4 identical builds,
+  `5499a73384…`, 2 010 781 B). That is **not** a cross-host reproducibility
+  claim; the manifest/source hash difference is source drift.
+- Verdict **`NO-GO` to distribute the existing artifacts**, `HUMAN DECISION
+  REQUIRED` to build a corrected candidate. Six pending decisions in §10 of the
+  report; **nothing** tagged, published, or promoted.
+
+**Exact next action: none — this is a human decision point.** Do not rebuild the
+runtime, bump `playground/runtime/Cargo.toml`, correct `CHANGELOG.md:12-16`, add
+the staleness CI gate, or open any follow-up PR without a fresh human directive.
+Each of those is enumerated as a separate authorization in the report.
+
 ## CAMPAIGN 003 CLOSED — Directive 005 controlled closure (`COMPLETE`, `GO`)
 
 **Status:** the stabilization campaign is **closed**. Report:
