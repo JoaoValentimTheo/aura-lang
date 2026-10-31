@@ -1,7 +1,7 @@
 // Browser HTTP end to end (0.3.2 development, Host ABI 2).
 //
 // This is the real acceptance gate for browser HTTP: a real Chromium, the real
-// Playground page and Worker, the real 0.3.2-dev.8 wasm artifact, and a local
+// Playground page and Worker, the real development wasm artifact, and a local
 // CORS-enabled server. The Aura program calls `http_get`/`http_request`; the
 // runtime parks; the Worker performs a real `fetch`; the page's consent UI is
 // answered; the response resumes the same program.
@@ -20,6 +20,13 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, "../../..");
+// Select the artifact the Playground actually serves for the development line,
+// derived from the runtime crate version: a hardcoded identity silently kept
+// this acceptance gate on a superseded preview after a rebuild.
+const developmentRuntime = readFileSync(
+  join(repo, "playground/runtime/Cargo.toml"),
+  "utf8",
+).match(/^version\s*=\s*"([^"]+)"/m)?.[1];
 // Build the site if it is missing so this suite runs in CI (which does not
 // build the website before the playground job).
 const { ensureSite } = await import("./ensure-site.mjs");
@@ -90,12 +97,12 @@ function check(name, cond, detail) {
 
 const base = `http://127.0.0.1:${sitePort}${basePath}`;
 
-/** Load the Playground, select dev.4, set source, answer a permission prompt. */
+/** Load the Playground, select the development runtime, set source, answer a permission prompt. */
 async function newPage() {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   await page.goto(`${base}playground/`, { waitUntil: "load" });
   await page.waitForFunction(() => document.querySelectorAll("#version option").length > 0);
-  await page.selectOption("#version", "0.3.2-dev.8");
+  await page.selectOption("#version", developmentRuntime);
   return page;
 }
 

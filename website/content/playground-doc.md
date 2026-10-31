@@ -48,7 +48,7 @@ and arguments. Filesystem, clock, and sleep are **unavailable** and report
 The published `0.3.1` runtime predates the HTTP builtin surface, so
 `http_get`/`http_request` are not registered there and a call is a compile-time
 `E2003` (undefined name) — no request is possible. The development runtime
-(`0.3.2-dev.8`, Host ABI 2) adds them through an **experimental permission
+(`0.3.2-dev.9`, Host ABI 2) adds them through an **experimental permission
 model**:
 
 * Network is **off by default**. Each request asks the page to authorize a

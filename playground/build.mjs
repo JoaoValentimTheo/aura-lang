@@ -13,13 +13,19 @@
 // *different* hash, the script refuses to overwrite it (exit 1). An
 // already-published version identity can never be silently replaced. Pass
 // `--check` to verify the manifest matches the artifacts on disk without
-// building (used by tests and CI).
+// building (used by tests and CI). Add `--require-source-match` to also
+// require that the artifact of the current crate version was produced from
+// exactly the sources in this tree; that stricter form belongs to the
+// pre-release / distribution gate, because ordinary pull requests touch `src/`
+// long before the next preview identity exists.
 
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, copyFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { computeSourceFingerprint } from "./source-fingerprint.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..");
@@ -28,6 +34,12 @@ const runtimesDir = join(here, "runtimes");
 const manifestPath = join(runtimesDir, "manifest.json");
 const args = new Set(process.argv.slice(2));
 const checkOnly = args.has("--check");
+// Provenance is a *distribution* property, not an edit-time one. Verifying that
+// the recorded build inputs still match the tree is only meaningful at the
+// moment an identity is built or approved for distribution; doing it on every
+// check would fail any pull request that touches `src/` before a new preview
+// exists, which is a normal and supported state.
+const requireSourceMatch = args.has("--require-source-match");
 
 const PLAYGROUND_API_VERSION = 1;
 
@@ -250,6 +262,12 @@ function readReleaseVersion() {
 const runtimeVersion = readCrateVersion(runtimeDir);
 const languageVersion = readLanguageVersion();
 const releaseVersion = readReleaseVersion();
+// Digest of the sources, manifests, lockfiles and toolchain file that produce
+// the artifact. It answers "does this artifact come from the tree that claims
+// to have produced it?", which the artifact's own SHA-256 cannot. Computed for
+// the version currently in the crate, never for frozen historical entries:
+// those keep the semantics of the moment they were published.
+const sourceFingerprint = computeSourceFingerprint(repoRoot);
 const artifactName = "aura_playground_runtime.wasm";
 const wasmPath = join(
   runtimeDir,
@@ -265,6 +283,18 @@ if (checkOnly) {
     process.exit(1);
   }
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  // Identities whose artifact bytes are pinned in this file. Their provenance
+  // *is* the pinned identity: they were published before the build-input
+  // fingerprint existed, and re-deriving one from today's tree would demand
+  // that historical artifacts match present sources, which they must not.
+  const PINNED_IDENTITIES = [
+    FROZEN_0_0_1,
+    FROZEN_0_0_2,
+    FROZEN_0_2_0,
+    FROZEN_0_2_1,
+    FROZEN_0_3_1,
+  ];
+  let sawRuntimeIdentity = false;
   {
     for (const entry of manifest.versions) {
       if (!entry.available) continue;
@@ -287,18 +317,42 @@ if (checkOnly) {
         );
         process.exit(1);
       }
+      // The entry describing the identity this tree would build must record a
+      // build-input fingerprint. Its presence is edit-time invariant: an
+      // identity that claims to supersede a fingerprint-less one must carry
+      // provenance, or the distribution cannot be audited later.
+      if (
+        entry.id === runtimeVersion &&
+        !PINNED_IDENTITIES.some((pinned) => pinned.id === entry.id)
+      ) {
+        sawRuntimeIdentity = true;
+        if (!entry.source_fingerprint) {
+          console.error(
+            `build --check: ${entry.id} has no source_fingerprint; rebuild to record one`,
+          );
+          process.exit(1);
+        }
+        // Equality with the tree is required only when approving a
+        // distribution (`--require-source-match`, used by the pre-release
+        // gate). Otherwise the sources may legitimately have moved on since
+        // the preview was built and the next preview does not exist yet.
+        if (requireSourceMatch && entry.source_fingerprint !== sourceFingerprint) {
+          console.error(
+            `build --check: source fingerprint mismatch for ${entry.id}\n` +
+              `  manifest ${entry.source_fingerprint}\n` +
+              `  tree     ${sourceFingerprint}\n` +
+              `The distributed runtime does not correspond to these sources. ` +
+              `Bump the runtime crate version and rebuild.`,
+          );
+          process.exit(1);
+        }
+      }
       // A release-channel artifact is frozen: its identity is pinned in source
       // and must match the manifest exactly. A drift here means someone edited
       // a historical artifact or the pinned identity, and the build refuses to
       // proceed.
       if (entry.channel === "release") {
-        const pinned = [
-          FROZEN_0_0_1,
-          FROZEN_0_0_2,
-          FROZEN_0_2_0,
-          FROZEN_0_2_1,
-          FROZEN_0_3_1,
-        ].find((f) => f.id === entry.id);
+        const pinned = PINNED_IDENTITIES.find((f) => f.id === entry.id);
         if (pinned && entry.available) {
           if (pinned.sha256 !== entry.sha256 || pinned.bytes !== entry.bytes) {
             console.error(
@@ -310,10 +364,22 @@ if (checkOnly) {
       }
     }
   }
+  // `--require-source-match` is the distribution gate, so an absent entry for
+  // the current crate version is a failure, not a reason to pass quietly. The
+  // loop above only inspects entries that exist; without this, a manifest that
+  // simply omits the identity under release would satisfy the provenance check
+  // by never running it.
+  if (requireSourceMatch && !sawRuntimeIdentity) {
+    console.error(
+      `build --check: no available manifest entry for the current runtime version ` +
+        `${runtimeVersion}; cannot verify distribution provenance. ` +
+        `Run without --check to build it.`,
+    );
+    process.exit(1);
+  }
   // Every frozen release artifact must still be present, byte-for-byte, even
   // if something removed it from the manifest.
-  for (const frozen of [FROZEN_0_0_2, FROZEN_0_2_0, FROZEN_0_2_1, FROZEN_0_3_1]) {
-    const p = join(runtimesDir, frozen.artifact);
+  for (const frozen of [FROZEN_0_0_2, FROZEN_0_2_0, FROZEN_0_2_1, FROZEN_0_3_1]) {    const p = join(runtimesDir, frozen.artifact);
     if (!existsSync(p)) {
       console.error(`build --check: frozen release artifact missing: ${frozen.artifact}`);
       process.exit(1);
@@ -451,6 +517,11 @@ const manifest = {
       artifact: `${runtimeVersion}/${artifactName}`,
       sha256: hash,
       bytes: wasm.byteLength,
+      // Provenance of the artifact bytes above: the digest of the exact
+      // sources, manifests, lockfiles and toolchain file used for this build.
+      // `sha256` proves the file on disk is the file that was recorded;
+      // `source_fingerprint` proves the recorded file came from these inputs.
+      source_fingerprint: sourceFingerprint,
     },
   ],
 };

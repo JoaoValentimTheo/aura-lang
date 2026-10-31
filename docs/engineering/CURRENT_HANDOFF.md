@@ -1,5 +1,62 @@
 # Current Engineering Handoff
 
+## Directive 007 — runtime distribution parity (`0.3.2-dev.9`, `PASS`)
+
+- **The distributed WASM carried its own, older semantics.** Freeze point
+  `31346b53` last touched `playground/runtime/`; sixteen `src/` corrections
+  landed after it with no matching artifact. On the 18 verbatim regressions in
+  `tests/regressions.rs`, `0.3.1` and `0.3.2-dev.8` each scored **4/18** (11
+  wrong, 3 traps) while native `HEAD` scored 18/18. Both stale artifacts also
+  **accepted four type-soundness violations** the current checker rejects.
+- **New immutable identity `0.3.2-dev.9`:** 2 010 781 B, ABI 2,
+  sha256 `8de654f0acc894595975ac1ec89c9e239a4ef89904ed3a9dd65a8af2589112b5`,
+  source fingerprint
+  `0e252f8f40a6c04592864fa9755e4d0c3983ed5ab2a7b4eac4163ee48df5652b`.
+  A genuine clean rebuild (`target/wasm32-unknown-unknown` **and** the runtime
+  directory removed) is byte-identical. That is **host-scoped**, not a
+  cross-host reproducibility proof. `cargo clean -p` removes 0 files here and
+  is not a valid clean-rebuild proof (no root `[workspace]`).
+- **Parity proven on the bytes that ship, not on `target/`:** `dev.9` **18/18**
+  with 0 wrong and 0 traps; 20 supplementary cases **20/20**, agreeing with
+  native 20/20 (dev.8 managed 12/20).
+- **Protection is four-layered.** `playground/source-fingerprint.mjs` hashes the
+  34 build inputs (both Cargo manifest/lock pairs, `rust-toolchain.toml`, 29
+  `.rs` files) self-reference-free. `build.mjs` records it as
+  `source_fingerprint`; `--check` enforces **presence**, while
+  `--check --require-source-match` enforces **equality** and runs on **tag
+  builds only** in `release.yml`. An ordinary PR touching `src/` must stay
+  green, so equality there would be wrong. `distribution-parity.test.mjs`
+  (**39/39** on dev.9, 17/39 on dev.8 and `0.3.1`) is wired into `run-all.mjs`.
+  Five suites that hardcoded `dev.8` now **derive** the identity from
+  `playground/runtime/Cargo.toml`.
+- **Silent-pass hole found and closed:** the provenance loop only inspects
+  entries that exist, so a manifest *omitting* the current identity passed
+  `--require-source-match` vacuously. `sawRuntimeIdentity` now fails it.
+  Mutation-verified: entry removed → plain exit 0, strict exit 1.
+- **Not a silent substitution.** `31346b53` itself replaced the `dev.7`
+  manifest entry with `dev.8` while leaving the `dev.7` directory on disk; this
+  follows that convention. `0.3.1` and `0.3.2-dev.8` bytes are untouched and
+  still loadable; they are simply no longer the line's advertised preview.
+- **Manifest unchanged in the ways that matter:** `current` is still `0.3.1`,
+  `PROMOTE_DEV_TO_DEFAULT` is still `false`. No tag, no publication, no frozen
+  artifact overwritten, no language-semantics change.
+- **Pre-existing flake, not a regression:**
+  `tests/bench.rs::module_graph_scales_subquadratically` failed once against
+  its `3.2x` ceiling. This work changes no Rust file, and **base `85b42fa5`
+  itself fails the same guard on 2 of 3 full-suite runs** (on a *different*
+  case, `lex(long_string)`, at 4.22x and 3.24x). The ratio guard is
+  load-sensitive. It was **not** weakened.
+- **Full validation green:** fmt, clippy `-D warnings`, all-features and
+  no-default-features suites, MSRV `1.83.0`, fuzz `check`, bounded fuzz
+  (parser 429 338 runs, checker 256 777, runtime 729 — no crashes),
+  `run-all.mjs` all suites, website build + suite, both `--check` modes, 9/9
+  artifacts hash+size verified.
+- Report:
+  [`docs/engineering/RUNTIME_DISTRIBUTION_PARITY.md`](docs/engineering/RUNTIME_DISTRIBUTION_PARITY.md).
+- **Next action:** nothing pending. Directive 008 is **not** authorized. Any
+  tag, stable publication, or promotion of `dev.9` to `current` requires a
+  separate explicit human decision.
+
 ## Directive 006 — release readiness assessed (`INCOMPLETE`, `NO-GO` to distribute)
 
 **Status:** assessment delivered; **no code changed**. Report:

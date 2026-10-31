@@ -108,17 +108,18 @@
       "bytes": 1951520
     },
     {
-      "id": "0.3.2-dev.8",
+      "id": "0.3.2-dev.9",
       "release_version": "0.3.2",
       "language_version": "0.3.1",
-      "runtime_version": "0.3.2-dev.8",
+      "runtime_version": "0.3.2-dev.9",
       "host_abi_version": 2,
       "available": true,
       "channel": "development",
       "codename": "Keystone",
-      "artifact": "0.3.2-dev.8/aura_playground_runtime.wasm",
-      "sha256": "81d07339916f75f5a599c66e567466aa1c564b5da19f64ccd21addca70cf74c9",
-      "bytes": 1998770
+      "artifact": "0.3.2-dev.9/aura_playground_runtime.wasm",
+      "sha256": "8de654f0acc894595975ac1ec89c9e239a4ef89904ed3a9dd65a8af2589112b5",
+      "bytes": 2010781,
+      "source_fingerprint": "0e252f8f40a6c04592864fa9755e4d0c3983ed5ab2a7b4eac4163ee48df5652b"
     }
   ]
 }

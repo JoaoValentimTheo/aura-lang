@@ -1,4 +1,4 @@
-// Browser-host session + HTTP transport, end to end (0.3.2-dev.8).
+// Browser-host session + HTTP transport, end to end (0.3.2-dev.9).
 //
 // This drives the *real* ABI 2 session protocol that the Worker uses, in Node:
 // start a session, get a pending HTTP effect, perform a real request against a
@@ -52,11 +52,17 @@ await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const port = server.address().port;
 const base = `http://127.0.0.1:${port}`;
 
-const wasm = readFileSync(join(repo, "runtimes/0.3.2-dev.8/aura_playground_runtime.wasm"));
-const rt = await AuraRuntime.fromBytes(wasm, "0.3.2-dev.8");
+// Load the artifact the Playground actually selects, resolved from the runtime
+// crate version rather than pinned: a literal version here silently kept these
+// tests measuring a superseded preview after a new identity was built.
+const runtimeVersion = readFileSync(join(repo, "runtime/Cargo.toml"), "utf8").match(
+  /^version\s*=\s*"([^"]+)"/m,
+)?.[1];
+const wasm = readFileSync(join(repo, "runtimes", runtimeVersion, "aura_playground_runtime.wasm"));
+const rt = await AuraRuntime.fromBytes(wasm, runtimeVersion);
 
-check("dev.2 advertises sessions", rt.supportsSessions === true);
-check("dev.2 ABI is 2", rt.abiVersion === 2, String(rt.abiVersion));
+check(`${runtimeVersion} advertises sessions`, rt.supportsSessions === true);
+check(`${runtimeVersion} ABI is 2`, rt.abiVersion === 2, String(rt.abiVersion));
 
 /** Drive a session, performing each HTTP effect via Node fetch. */
 async function runWithHttp(source, { grant = true } = {}) {
@@ -192,9 +198,9 @@ async function runWithHttp(source, { grant = true } = {}) {
 }
 
 
-// Session inputs and main-less fallback parity (F1/F6, 0.3.2-dev.8): the
-// session path must be observationally identical to the synchronous path for
-// args, stdin, and a `main`-less source.
+// Session inputs and main-less fallback parity (F1/F6, 0.3.2 development
+// runtime): the session path must be observationally identical to the
+// synchronous path for args, stdin, and a `main`-less source.
 {
   const src = 'fn main() { print(args())\n print(read_line()) }';
   const viaRun = rt.run(src, { args: ["a"], stdin: "hi\n" });

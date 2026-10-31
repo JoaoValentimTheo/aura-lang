@@ -14,6 +14,51 @@ only as numbered `0.3.2-dev.N` preview runtimes, which are selectable in the
 Playground but are not releases.
 
 ### Added
+
+#### Runtime distribution parity — `0.3.2-dev.9`
+
+- **The distributed WebAssembly runtime caught up with the source tree.** The
+  Playground's selectable artifacts had frozen at `0.3.2-dev.8` (commit
+  `31346b53`), sixteen `src/` corrections behind `HEAD`. Directive 006 measured
+  the consequence on the 18 `sort`/f-string regressions already present in
+  `tests/regressions.rs`: `0.3.1` and `0.3.2-dev.8` each resolved **4/18**
+  correctly, answered eleven wrongly, and **trapped** on three; native `HEAD`
+  scored 18/18. The shipped bytes also **accepted four type-soundness
+  violations** the current checker rejects. `0.3.2-dev.9` is a new immutable
+  identity built from current sources; it scores **18/18** with zero wrong
+  results and zero traps, and `0.3.1` and `0.3.2-dev.8` keep their bytes.
+  `manifest.current` is untouched: `0.3.1` is the release, `dev.9` is a preview.
+- **An artifact's provenance is now a checked property, not an assumption.**
+  `playground/source-fingerprint.mjs` hashes the 34 build inputs (both
+  `Cargo.toml`/`Cargo.lock` pairs, `rust-toolchain.toml`, and every `.rs` file
+  under `src/` and `playground/runtime/src/`), and `playground/build.mjs`
+  records the result as `source_fingerprint` on the current identity only.
+  Historical identities are never retro-fitted; frozen artifacts are not
+  re-hashed against the moving tree, because a frozen runtime is supposed to
+  preserve its own era's semantics, not `HEAD`'s.
+- **The gate is dual-mode on purpose.** `build --check` always requires a
+  current identity to carry a fingerprint, but compares it only under
+  `--require-source-match`. That stricter form runs on **tag builds** in
+  `release.yml` and nowhere else: ordinary pull requests touch `src/` long
+  before the next preview identity exists, and failing them for that would be
+  demanding provenance from an artifact that is not being distributed. Tag
+  builds are where the distribution is approved.
+- **`playground/tests/node/distribution-parity.test.mjs` measures the artifact
+  that ships**, not a freshly compiled `target/` binary. Thirty-nine behavioural
+  cases run against the committed bytes of whichever identity is current, and
+  the suite asserts the runtime's own reported version, so pointing it at the
+  wrong file fails rather than passing quietly. It scores 39/39 on `dev.9`,
+  17/39 on `dev.8`, and 17/39 on `0.3.1`.
+- **Identity pins were replaced by derivation.** Five Node/Playwright suites
+  hardcoded `0.3.2-dev.8` in paths, labels, and `#version` selections, which is
+  why the staleness went unnoticed. They now derive the development identity
+  from `playground/runtime/Cargo.toml`, so the next build cannot leave a suite
+  silently measuring a superseded preview. A stale `dev.2` label in
+  `session-http.test.mjs` was a symptom of the same practice and is gone.
+- **"Same source as the fresh build" was an assumption, and it was false.**
+  `run-all.mjs` justified running the HTTP suites against the committed
+  artifact on that belief. It is now stated as a claim the parity suite is
+  responsible for keeping true.
 - **Multi-module programs in hosted sessions (B14).** `aura_session_start_project`
   extends Host ABI 2 — there is no ABI 3 — so a hosted session can run a
   multi-file program through the existing session, consent, and suspension

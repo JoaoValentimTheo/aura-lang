@@ -58,7 +58,35 @@ name = "aura-playground-runtime"
 # still runs single-source sessions, and callers feature-detect the new export
 # rather than compare ABI numbers. Language semantics are unchanged, so
 # `language_version` stays `0.3.1`.
-version = "0.3.2-dev.8"
+#
+# `0.3.2-dev.9` is still an ABI-2 host-policy development runtime with no
+# language-contract change: `language_version` stays `0.3.1`, every ABI-2
+# export keeps its meaning, and no `src/` semantics move. It exists because
+# `0.3.2-dev.8` was frozen before sixteen `src/` corrections landed, so its
+# bytes enforce a checker contract the current sources no longer implement.
+# Directive 006 measured the gap: `0.3.2-dev.8` resolved only 4 of 18
+# documented `sort`/f-string regressions correctly, trapped on three, and
+# accepted four type-soundness violations that the current checker rejects.
+# Rebuilding in place would silently replace a distributed artifact, so the
+# fixes ship as a new identity. `dev.9` therefore carries, relative to `dev.8`:
+#   - `sort` as a total order, rejecting incomparable lists, instead of an
+#     ordering that could disagree with itself;
+#   - f-string exponent case, non-finite rendering, sign/zero-padding order,
+#     and `:g`-free formatting parity with native;
+#   - symmetric JSON decode with `E4031` for malformed input;
+#   - implicit-return bodies validated against their declared return type
+#     (`E3005`);
+#   - `Set` element types enforced on `add`/`has`/`contains`/`remove`
+#     (`E3001`);
+#   - method type parameters validated, scoped, and resolved through bounds;
+#   - transitive `pub use` re-export chains resolved regardless of source
+#     order, with the type-parameter frame popped on the error path;
+#   - every statically empty `range` treated as empty;
+#   - HTTP header values encoded as ISO-8859-1 in both directions;
+#   - REPL session state made incremental and gated on the `repl` feature.
+# `0.3.2-dev.8` and every earlier artifact keep their bytes and stay
+# selectable; `manifest.current` remains `0.3.1`.
+version = "0.3.2-dev.9"
 edition = "2021"
 rust-version = "1.83"
 description = "The Aura Playground WebAssembly execution wrapper: a minimal, zero-import C ABI over the real aura runtime."
