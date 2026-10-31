@@ -1137,6 +1137,12 @@ pub fn fstring_supported_cases() -> Vec<Case> {
         fstring_value("spec_width_center", "f\"[{7:^6}]\"\n"),
         fstring_value("spec_fill_align", "f\"[{7:*>6}]\"\n"),
         fstring_value("spec_zero_pad", "f\"{42:06d}\"\n"),
+        fstring_value("spec_zero_pad_negative", "f\"{-42:06d}\"\n"),
+        fstring_value("spec_zero_pad_negative_float", "f\"{-3.5:08.2f}\"\n"),
+        fstring_value("spec_zero_pad_sign_space", "f\"{42: 06d}\"\n"),
+        fstring_value("spec_zero_pad_infinity", "f\"{-1e400:08.2f}\"\n"),
+        fstring_value("spec_zero_pad_explicit_fill_wins", "f\"{-42:*>06d}\"\n"),
+        fstring_value("spec_zero_pad_bare_align_left", "f\"{-42:<06d}\"\n"),
         fstring_value("spec_string_width", "f\"[{'ab':>5}]\"\n"),
         // ----- format specification: type applied to an incompatible value -
         fstring_value("spec_type_mismatch_bool", "f\"{true:d}\"\n"),

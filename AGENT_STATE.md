@@ -2,11 +2,11 @@
 
 ## Directive 003 — stabilization and hardening campaign (current)
 
-- Active branch: `rewrite/v3-rust`, remote HEAD **`a089fd45`** — the merge of
-  **PR #32** (CORE FIRST: f-string exponent case and non-finite rendering).
-  Local branch `fix/sort-total-order` carries the next CORE FIRST fix (the `sort`
-  total order), validated and awaiting its PR.
-  **Thirty-two PRs are merged** this campaign:
+- Active branch: `rewrite/v3-rust`, remote HEAD **`da8d6273`** — the merge of
+  **PR #33** (CORE FIRST: `sort` total order). Local branch
+  `fix/fstring-zero-pad-sign` carries the next CORE FIRST fix (the f-string
+  zero-pad sign placement), validated and awaiting its PR.
+  **Thirty-three PRs are merged** this campaign:
   #2 `f96536b6` (Directive 002 preflight),
   #3 `07845932` (rustls advisories), #4 `a562bacf` (batches 1–5),
   #5 `eaa3b9ed` (TD-23 + default-branch flip), #6 `4a20fa84` (post-merge
@@ -36,7 +36,7 @@
   #30 `519f3122` (CORE FIRST: method type parameters validated and scoped),
   #31 `e61a81f6` (CORE FIRST: method type-parameter bounds reach the body),
   #32 `a089fd45` (CORE FIRST: f-string exponent case and non-finite
-  rendering).
+  rendering), #33 `da8d6273` (CORE FIRST: `sort` total order).
   The
   `/private/tmp/aura-directive-002-release-preflight` worktree and the
   `repair/directive-002-release-preflight` branch are **historical**.
@@ -234,7 +234,7 @@ that "a re-export chain resolves transitively and terminates deterministically"
   It terminates deterministically, so it satisfies the letter of §27 today.
 - Branch `fix/pub-use-reexport-resolution`, PR #28, not yet merged.
 
-## CORE FIRST — `sort` total order — branch `fix/sort-total-order` (PR pending)
+## CORE FIRST — `sort` total order — merged, `da8d6273` (PR #33)
 
 `sort` was built on `Value::cmp_val(..).unwrap_or(Equal)`
 (`src/stdlib/mod.rs`, two identical call sites: the `sort` builtin and the
@@ -310,6 +310,79 @@ raising `E3001` would be a **spec change**, out of scope here.
 range indexing (unsupported, `E3001`); `sum` overflow (`E4013`); ±infinity
 sorting; negative-zero sort order; the `2^53` comparison operators (internally
 consistent, merely lossy).
+
+— Full validation floor green locally: fmt, clippy `-D warnings`, 66 test
+binaries all-features, `no-default-features`, MSRV 1.83.0, nightly fuzz check,
+playground node suite, playground build `--check`, website build and tests.
+
+## CORE FIRST — f-string zero-pad sign placement — branch `fix/fstring-zero-pad-sign` (PR pending)
+
+The `0` flag was recorded only as a fill character, with no bit distinguishing
+"the user wrote `0` before the width" from "the user wrote an explicit fill".
+`format_value` (`src/run/mod.rs`) inserted the sign (step 3) and then applied
+generic fill padding (step 4), so the zeros landed **outside** the sign. One
+root cause, four coupled symptoms:
+
+- **A — negative numbers, the headline.** `f"{-42:06d}"` rendered `000-42`
+  where Python renders `-00042`.
+- **B — every float presentation.** `f"{-3.5:08.2f}"` → `000-3.50`;
+  `f"{-0.5:010.3f}"` → `0000-0.500`; `f"{-0.25:09.2%}"` → `00-25.00%`. Also
+  reaches ±infinity, because `1e400` overflows to `inf` at parse time:
+  `f"{-1e400:08.2f}"` → `-0000inf` after the fix, `00000inf` was already right.
+- **C — explicit fill silently overwritten.** `parse_format_spec`
+  (`src/parse/mod.rs`) consumed `*<`, then the zero-flag block did an
+  unconditional `out.fill = Some('0')`, discarding the `*`. `f"{-42:*>06d}"`
+  rendered `000-42` where Python renders `***-42`.
+- **D — the spec sentence itself.** `docs/LANGUAGE_SPEC.md:400` said only "it
+  sets fill `0` and right alignment", which described the defective behaviour
+  and gave no rule for the sign.
+
+**Three code changes.** `FormatSpec` gains `zero_pad: bool`
+(`src/ast/mod.rs`), set by `parse_format_spec` **only** when the flag is bare
+(`fill.is_none()`), because an explicit fill must win outright. The parser still
+sets `fill = Some('0')` and `align = Right` unconditionally so the pre-existing
+non-numeric fill and the bare-align renderings are bit-identical. `format_value`
+gained a branch on `spec.zero_pad && numeric` that splits the sign off and pads
+zeros between sign and digits; everything else falls through the old path
+untouched.
+
+**CPython's rule, empirically established** — the flag is honoured *only* when
+no explicit `fill`+`align` pair precedes it; a bare alignment does *not*
+suppress it:
+
+```
+'>06d'  -> '000-42'   '<06d'  -> '-42000'   '^06d'  -> '0-4200'
+'*>06d' -> '***-42'   '*<06d' -> '-42***'   '0>6d'  -> '000-42'
+'06d'   -> '-00042'   '+06d'   -> '-00042'   '0=6d'  -> '-00042'
+```
+
+Aura accepts no `=` alignment (`E1006`) — a pre-existing, documented divergence
+left alone here.
+
+**Seven `audit8_*` tests** in `tests/regressions.rs`. **Four fail against
+`da8d6273`** — proven by `git stash push -- src/` then re-running — and all
+seven pass after the fix; the other three
+(`audit8_bare_alignment_keeps_the_plain_zero_fill`,
+`audit8_zero_pad_leaves_the_plain_width_path_alone`,
+`audit8_zero_pad_still_fills_non_numeric_values`) are guards that pass both
+ways, which is why they share the file.
+
+**Specified, not silently changed:** Aura's zero flag has never been restricted
+to numbers, so `f"{true:06}"` renders `00true` and `f"{[1, 2]:08}"` renders
+`00[1, 2]`. Python cannot arbitrate this — its `bool` *is* an `int` and
+`format(True, '06')` is `'000001'`. Aura's behaviour is a deliberate language
+choice, now written into the spec and locked by a test rather than left
+accidental.
+
+**Not a defect, left alone:** `f"{-255:08x}"` → `ffffffffffffffff01` is the
+`as u64` cast of the digits. **No spec sentence governs negative integers in
+non-decimal presentation**, so this is an unspecified surface, not a confirmed
+defect. It needs a specification decision before any change.
+
+**Residual, unchanged:** `e`-presentation prints `e0` not Python's `e+00`
+(`f"{-3.5:08.2e}"` → `-03.50e0`, one zero, because the text is seven
+characters). Already normatively tested at `tests/contract_sync.rs:257,269,272`;
+not touched.
 
 — Full validation floor green locally: fmt, clippy `-D warnings`, 66 test
 binaries all-features, `no-default-features`, MSRV 1.83.0, nightly fuzz check,
@@ -1225,15 +1298,15 @@ feature-gating of the typed-decode path.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `a089fd45` (PR #32
-merged, thirty-two PRs merged this campaign); Aura 0.3.1 (Keystone) is published
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `da8d6273` (PR #33
+merged, thirty-three PRs merged this campaign); Aura 0.3.1 (Keystone) is published
 and `v0.3.1` = `b09cbef2`. Batches 1–5, B6/B7/B14, TD-23, TD-24, TD-27,
 Directive 004, TD-13, the resolver type-parameter leak, the set key-method
 element typing, return-type tail validation, `pub use` re-export resolution, the
 f-string exponent case and the `sort` total order are **merged and closed**.
 Directive 003-R §4's blockers are closed.
-**Exact next action:** branch `fix/sort-total-order` is validated and awaiting
-its PR + remote CI. Once merged, begin the next CORE FIRST work item.
+**Exact next action:** branch `fix/fstring-zero-pad-sign` is validated and
+awaiting its PR + remote CI. Once merged, begin the next CORE FIRST work item.
 Begin the next CORE FIRST work item — a real, reproduced defect in `src/`,
 `tests/`, or `fuzz/`, shipped as one PR carrying a reproducible case, a
 regression test that fails before the fix, the fix, and a passing test.

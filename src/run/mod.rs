@@ -2930,20 +2930,32 @@ impl Interp {
             if len < width {
                 let pad = width - len;
                 let numeric = matches!(v, Value::Int(_) | Value::Float(_));
-                let align = spec
-                    .align
-                    .unwrap_or(if numeric { Align::Right } else { Align::Left });
-                let fill = spec.fill.unwrap_or(' ');
-                let (left, right) = match align {
-                    Align::Left => (0, pad),
-                    Align::Right => (pad, 0),
-                    Align::Center => (pad / 2, pad - pad / 2),
-                };
-                let mut padded = String::with_capacity(width);
-                padded.extend(std::iter::repeat_n(fill, left));
-                padded.push_str(&text);
-                padded.extend(std::iter::repeat_n(fill, right));
-                text = padded;
+                if spec.zero_pad && numeric {
+                    // The `0` flag pads *after* the sign, so `-42` in a
+                    // width of 6 is `-00042` and not `000-42`.
+                    let sign_len =
+                        usize::from(matches!(text.as_bytes().first(), Some(b'-' | b'+' | b' ')));
+                    let mut padded = String::with_capacity(width);
+                    padded.push_str(&text[..sign_len]);
+                    padded.extend(std::iter::repeat_n('0', pad));
+                    padded.push_str(&text[sign_len..]);
+                    text = padded;
+                } else {
+                    let align =
+                        spec.align
+                            .unwrap_or(if numeric { Align::Right } else { Align::Left });
+                    let fill = spec.fill.unwrap_or(' ');
+                    let (left, right) = match align {
+                        Align::Left => (0, pad),
+                        Align::Right => (pad, 0),
+                        Align::Center => (pad / 2, pad - pad / 2),
+                    };
+                    let mut padded = String::with_capacity(width);
+                    padded.extend(std::iter::repeat_n(fill, left));
+                    padded.push_str(&text);
+                    padded.extend(std::iter::repeat_n(fill, right));
+                    text = padded;
+                }
             }
         }
         Ok(text)
