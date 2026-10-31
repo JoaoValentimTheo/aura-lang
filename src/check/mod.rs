@@ -1559,6 +1559,10 @@ impl Checker {
                             *mspan,
                         ));
                     }
+                    // A method may add its own parameters on top of the trait's,
+                    // but they obey the same uniqueness and shadowing rules
+                    // (`LANGUAGE_SPEC.md` §36.2).
+                    self.check_type_params(mtype_params, *mspan)?;
                     self.push_type_params(mtype_params);
                     let mut param_tys: Vec<ParamSig> = Vec::with_capacity(params.len());
                     for p in params {
@@ -1695,6 +1699,7 @@ impl Checker {
                             ret,
                             ret_span,
                             span: mspan,
+                            type_params: mtype_params,
                             ..
                         } = m_item
                         else {
@@ -1725,6 +1730,12 @@ impl Checker {
                             ));
                         }
                         let mut param_tys = Vec::with_capacity(params.len());
+                        // The implementing method's own parameters are in
+                        // scope for its signature, exactly as in the trait
+                        // declaration (§36.5). Without this a method adding a
+                        // parameter could never satisfy its own contract.
+                        self.check_type_params(mtype_params, *mspan)?;
+                        self.push_type_params(mtype_params);
                         for p in params {
                             let ty = match &p.ty {
                                 Some(pty) => Some(self.annotation(pty, p.span)?),
@@ -1739,6 +1750,7 @@ impl Checker {
                             Some(rt) => Some(self.annotation(rt, ret_span.unwrap_or_default())?),
                             None => None,
                         };
+                        self.pop_type_params();
                         let actual = FnSig {
                             ret: ret_ty,
                             params: param_tys,
@@ -1815,7 +1827,9 @@ impl Checker {
                         ));
                     }
                     // A method's own type parameters extend the impl's for its
-                    // signature (`impl<T> Box<T> { fn map<U>... }`).
+                    // signature (`impl<T> Box<T> { fn map<U>... }`), under the
+                    // same uniqueness and shadowing rules (§36.2).
+                    self.check_type_params(method_type_params, *mspan)?;
                     self.push_type_params(method_type_params);
                     let mut param_tys = Vec::with_capacity(params.len());
                     for p in params {
@@ -3626,12 +3640,15 @@ impl Checker {
                         ret,
                         ret_span,
                         body,
+                        span: mspan,
                         ..
                     } = m_item
                     else {
                         continue;
                     };
-                    // A method may add its own parameters on top of the impl's.
+                    // A method may add its own parameters on top of the impl's,
+                    // under the same uniqueness and shadowing rules (§36.2).
+                    self.check_type_params(method_type_params, *mspan)?;
                     self.push_type_params(method_type_params);
                     self.check_method_body(
                         target,
