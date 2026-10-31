@@ -225,6 +225,123 @@ fn duplicate_type_parameter_is_rejected() {
     );
 }
 
+/// A method's type parameters obey the same rules as a declaration's: they
+/// may not shadow the `impl`'s parameter (`LANGUAGE_SPEC.md` §36.2). Only a
+/// *distinct* name is the documented "a method may add its own parameters"
+/// case (§36.5). The body is never called, so this is pure acceptance: a
+/// silent pass here would let the inner `T` capture the outer one at
+/// instantiation.
+#[test]
+fn method_type_parameter_cannot_shadow_impl_parameter() {
+    assert_eq!(
+        code("struct Box<T> { v: T }\nimpl<T> Box<T> { fn get<T>(self, x: T) -> T { return x } }\nfn main() { }"),
+        codes::REDECLARED
+    );
+}
+
+/// The same rule for a trait's method, whose parameters were equally
+/// unvalidated.
+#[test]
+fn method_type_parameter_cannot_shadow_trait_parameter() {
+    assert_eq!(
+        code("trait C<T> { fn f<T>(self, x: T) -> T }\nfn main() { }"),
+        codes::REDECLARED
+    );
+}
+
+/// A shadowing method parameter is rejected even when the shadow would be
+/// observable as a type error at the call site: the declaration itself is
+/// invalid, so the diagnostic is `E2007` and not `E3001`.
+#[test]
+fn shadowing_method_parameter_is_rejected_before_instantiation() {
+    assert_eq!(
+        code("struct Box<T> { v: T }\ntrait C { fn f<T>(self, x: T) -> T }\nimpl<T> C for Box<T> { fn f<T>(self, x: T) -> T { return x } }\nfn main() { let b = Box { v: 1 }\n print(b.f(\"s\")) }"),
+        codes::REDECLARED
+    );
+}
+
+/// A method may not declare the same parameter twice in its own list, which
+/// was the other unvalidated arm of the same rule.
+#[test]
+fn duplicate_method_type_parameter_is_rejected() {
+    assert_eq!(
+        code("struct Box<T> { v: T }\nimpl<T> Box<T> { fn f<U, U>(self, _x: int) -> int { return 1 } }\nfn main() { }"),
+        codes::REDECLARED
+    );
+}
+
+/// A trait method declaration reaches the same duplicate rule, so the arm is
+/// not specific to `impl` methods.
+#[test]
+fn duplicate_trait_method_type_parameter_is_rejected() {
+    assert_eq!(
+        code("trait C { fn f<U, U>(self, x: int) -> int }\nfn main() { }"),
+        codes::REDECLARED
+    );
+}
+
+/// Positive control for the rule above: a method adding a parameter under a
+/// *distinct* name stays legal, and the parameter is usable in the signature
+/// and body (§36.5).
+#[test]
+fn method_may_add_distinct_type_parameter() {
+    assert_eq!(
+        ok("struct Box<T> { v: T }\nimpl<T> Box<T> { fn pair<U>(self, x: U) -> U { return x } }\nfn main() { let b = Box { v: 1 }\n print(b.pair(\"s\"))\n print(b.pair(2)) }"),
+        "s\n2\n"
+    );
+}
+
+/// Positive control: a *trait declaration's* method may add a distinct
+/// parameter, and the trait's own parameter still binds alongside it.
+#[test]
+fn trait_declaration_method_may_add_distinct_type_parameter() {
+    assert_eq!(
+        ok("trait C<T> { fn f<U>(self, x: U) -> U }\nstruct S { v: int }\nimpl C<int> for S { fn f<U>(self, x: U) -> U { return x } }\nfn main() { print(S { v: 1 }.f(2)) }"),
+        "2\n"
+    );
+}
+
+/// A `trait` *implementation's* method may add a parameter as well, and it
+/// must be genuinely generic: the same method is instantiated at two distinct
+/// types. The conformance check resolves the method signature separately from
+/// the body, so both paths must see the method's parameters.
+#[test]
+fn trait_impl_method_may_add_distinct_type_parameter() {
+    assert_eq!(
+        ok("trait C { fn f<U>(self, x: U) -> U }\nstruct S { v: int }\nimpl C for S { fn f<U>(self, x: U) -> U { return x } }\nfn main() { print(S { v: 1 }.f(2))\n print(S { v: 1 }.f(\"s\")) }"),
+        "2\ns\n"
+    );
+}
+
+/// The same, on a generic trait implemented generically, so the method's
+/// parameter and the `impl`'s parameter are both live.
+#[test]
+fn generic_trait_impl_method_may_add_distinct_type_parameter() {
+    assert_eq!(
+        ok("trait C<T> { fn f<U>(self, x: U) -> U }\nstruct Box<T> { v: T }\nimpl<T> C<T> for Box<T> { fn f<U>(self, x: U) -> U { return x } }\nfn main() { print(Box { v: 1 }.f(\"s\")) }"),
+        "s\n"
+    );
+}
+
+/// A trait implementation's method is subject to the shadowing rule too: it
+/// may not reuse the `impl`'s parameter name.
+#[test]
+fn trait_impl_method_type_parameter_cannot_shadow_impl_parameter() {
+    assert_eq!(
+        code("trait C { fn f(self) -> int }\nstruct S<T> { v: T }\nimpl<T> C for S<T> { fn f<T>(self) -> int { return 1 } }\nfn main() { }"),
+        codes::REDECLARED
+    );
+}
+
+/// ...nor may it declare its own parameter twice.
+#[test]
+fn duplicate_trait_impl_method_type_parameter_is_rejected() {
+    assert_eq!(
+        code("trait C { fn f(self) -> int }\nstruct S { v: int }\nimpl C for S { fn f<U, U>(self) -> int { return 1 } }\nfn main() { }"),
+        codes::REDECLARED
+    );
+}
+
 // ----------------------------------------------------- existing programs
 
 /// A generic enum's variant payload is parameterised too.
