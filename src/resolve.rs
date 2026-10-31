@@ -681,14 +681,63 @@ impl Resolver {
     /// so that an inner module can still name a binding its parent imported.
     /// That order has one consequence: `use facade::g` where `facade` re-exports
     /// `g` names an item that only exists once `facade`'s own imports have run.
-    /// Such an import is deferred and retried after this module's children, by
-    /// which point every descendant's `pub use` is registered (§27: a re-export
-    /// chain resolves transitively). Deferring is safe because every unknown-name
-    /// failure is raised before the import mutates any scope, so a deferred
-    /// import leaves no partial binding behind, and it is pushed to
-    /// `applied_imports` exactly once.
+    /// Such an import is deferred and retried until no deferred import can be
+    /// applied any more, by which point every `pub use` is registered (§27: a
+    /// re-export chain resolves transitively).
+    ///
+    /// Deferral is *not* per module, because the dependency can cross sibling
+    /// modules in either source order: `m0` re-exporting `m1::f` while `m1`
+    /// re-exports `m2::f` is only resolvable once `m1`'s own import has run,
+    /// which a module-local single retry cannot wait for when `m0` is declared
+    /// first. Deferrals therefore bubble up to this one driver.
+    ///
+    /// Deferring is safe because every unknown-name failure is raised before
+    /// the import mutates any scope, so a deferred import leaves no partial
+    /// binding behind, and a successful import is pushed to `applied_imports`
+    /// exactly once.
     fn apply_imports(&mut self, items: &[Item], prefix: &[String]) -> Result<()> {
-        let mut deferred: Vec<&Item> = Vec::new();
+        let mut pending: Vec<(&Item, Vec<String>)> = Vec::new();
+        self.apply_imports_pass(items, prefix, &mut pending)?;
+        // Each round must settle at least one pending import for progress to be
+        // real, so `pending.len() + 1` rounds bound the whole fixpoint: a
+        // genuinely unknown name survives them all and still reports `E2019`.
+        for _ in 0..pending.len().saturating_add(1) {
+            if pending.is_empty() {
+                break;
+            }
+            let mut still: Vec<(&Item, Vec<String>)> = Vec::new();
+            let mut progressed = false;
+            for (item, owner) in pending {
+                // Provenance has to be restored first: a child module visited
+                // earlier left `active_source` pointing at its own items.
+                self.activate_item(item);
+                match self.apply_use_item(item, &owner) {
+                    Ok(()) => progressed = true,
+                    Err(diag) if diag.code == codes::UNKNOWN_MODULE => still.push((item, owner)),
+                    Err(diag) => return Err(diag),
+                }
+            }
+            pending = still;
+            if !progressed {
+                break;
+            }
+        }
+        if let Some((item, owner)) = pending.first() {
+            self.activate_item(item);
+            return self.apply_use_item(item, owner);
+        }
+        Ok(())
+    }
+
+    /// One declaration-order sweep of Pass B: apply each module's imports and
+    /// descend into its children, collecting the imports that named a name no
+    /// `pub use` has registered yet.
+    fn apply_imports_pass<'a>(
+        &mut self,
+        items: &'a [Item],
+        prefix: &[String],
+        deferred: &mut Vec<(&'a Item, Vec<String>)>,
+    ) -> Result<()> {
         for item in items {
             self.activate_item(item);
             match item {
@@ -697,7 +746,7 @@ impl Resolver {
                         if diag.code != codes::UNKNOWN_MODULE {
                             return Err(diag);
                         }
-                        deferred.push(item);
+                        deferred.push((item, prefix.to_vec()));
                     }
                 }
                 Item::Module {
@@ -705,16 +754,10 @@ impl Resolver {
                 } => {
                     let mut child = prefix.to_vec();
                     child.push(name.clone());
-                    self.apply_imports(inner, &child)?;
+                    self.apply_imports_pass(inner, &child, deferred)?;
                 }
                 _ => {}
             }
-        }
-        for item in deferred {
-            // Provenance has to be restored first: a child module visited above
-            // left `active_source` pointing at its own items.
-            self.activate_item(item);
-            self.apply_use_item(item, prefix)?;
         }
         Ok(())
     }
@@ -1113,10 +1156,16 @@ impl Resolver {
             let last = i == rest.len() - 1;
             if last {
                 let canonical = join(&base, seg);
+                // A `pub use` in `base` binds `canonical` like a declaration
+                // does, but only `reexports` records the hop when the target was
+                // not yet declared when the alias was applied. Following both
+                // here is what lets a chain resolve transitively instead of
+                // depending on the order the modules happen to be written in.
                 if self.items.contains_key(&canonical)
+                    || self.reexports.contains_key(&canonical)
                     || self.module_paths.contains(&canonical_path(&base, seg))
                 {
-                    return Ok(canonical);
+                    return Ok(self.follow_reexport(&canonical));
                 }
                 return Err(Diag::new(
                     codes::UNKNOWN_MODULE,

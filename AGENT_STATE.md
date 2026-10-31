@@ -2,10 +2,10 @@
 
 ## Directive 003 — stabilization and hardening campaign (current)
 
-- Active branch: `rewrite/v3-rust`, remote HEAD **`b843dc85`** — the merge of
-  **PR #26** (CORE FIRST: a body's implicit value is now validated against the
-  declared return type).
-  **Twenty-five PRs are merged** this campaign:
+- Active branch: `rewrite/v3-rust`, remote HEAD **`a0423769`** — the merge of
+  **PR #27** (state sync recording PR #26, CORE FIRST: a body's implicit value
+  is now validated against the declared return type).
+  **Twenty-six PRs are merged** this campaign:
   #2 `f96536b6` (Directive 002 preflight),
   #3 `07845932` (rustls advisories), #4 `a562bacf` (batches 1–5),
   #5 `eaa3b9ed` (TD-23 + default-branch flip), #6 `4a20fa84` (post-merge
@@ -28,7 +28,8 @@
   popped on the error path), #23 `db9b511a` (state sync after #22), #24
   `02c3c897` (CORE FIRST: Set `add`/`has`/`contains`/`remove` element typing),
   #25 `69cd4dba` (state sync for #24 and the CORE FIRST probe results),
-  #26 `b843dc85` (CORE FIRST: return-type tail validation, three defects).
+  #26 `b843dc85` (CORE FIRST: return-type tail validation, three defects),
+  #27 `a0423769` (state sync for #26).
   The
   `/private/tmp/aura-directive-002-release-preflight` worktree and the
   `repair/directive-002-release-preflight` branch are **historical**.
@@ -143,8 +144,8 @@
 
 ## CORE FIRST — `pub use` re-export resolution — fixed, unpublished
 
-Two independent defects in `src/resolve.rs`, both violating the §27 clause that
-"a re-export chain resolves transitively and terminates deterministically"
+**Three** independent defects in `src/resolve.rs`, all violating the §27 clause
+that "a re-export chain resolves transitively and terminates deterministically"
 (`docs/LANGUAGE_SPEC.md` 3311–3318). The expression/`::`-path resolver
 (`lookup_qualified`) already followed the chain; the `use`-import path did not.
 
@@ -159,24 +160,72 @@ Two independent defects in `src/resolve.rs`, both violating the §27 clause that
   parent's items. A root `use facade::g` therefore ran before `facade`'s
   `pub use inner::g` was registered and failed `E2019`. This contradicted
   `collect_module`'s own doc comment (552–559).
-- **Fix shape:** a per-level `deferred: Vec<&Item>` — an `E2019` failure is
-  deferred and retried once after that level's children, with `activate_item`
-  re-run so provenance stays correct. Safe because every `UNKNOWN_MODULE` raise
-  site is strictly pre-mutation. No new `Resolver` field, so `reset_transient`
-  and the REPL path are untouched.
 - **Adjacent defect fixed:** the `pub use` visibility check ran *after* the scope
   insert and the `applied_imports` push, so a rejected public re-export left a
   binding behind. Hoisted above the first mutation, making `apply_use`
   fail-atomically for every rejection.
+- **Defect C (found while validating A and B — the first two fixes were
+  incomplete):** a `pub use` chain across *sibling* modules still failed whenever
+  the re-exporting module was declared before the module it re-exports. Two
+  causes, both required:
+  1. `resolve_use_path_inner`'s multi-segment navigation never consulted
+     `self.reexports` on the final segment, so it could not see a `pub use` hop
+     recorded for a target that was not yet declared. The single-segment branch
+     already did consult it; the asymmetry was the bug. It now checks
+     `items` **or** `reexports` and returns `follow_reexport(&canonical)` from
+     either. `apply_use` only mirrors a `pub use` into `items` when the canonical
+     is *already* present, so it cannot bootstrap a chain whose tail is not yet
+     declared — which is why consulting `reexports` is necessary rather than
+     merely tidy.
+  2. Defect B's per-level single retry provably could not converge: the
+     dependency crosses sibling modules in *either* source order, so a
+     module-local retry waits for a module that has already finished. Deferrals
+     now bubble to one driver at the top of `apply_imports`, which iterates a
+     **bounded fixpoint**: each round must settle at least one pending import for
+     progress to be real, so `pending.len() + 1` rounds bound the search, and a
+     genuinely unknown name survives them all and still reports `E2019`.
+- Reproducer for C (declaration order only differs): with `use m0::f` at the
+  root, `module m0 { pub use m1::f }`, `module m1 { pub use m2::f }`,
+  `module m2 { pub fn f() -> int { return 5 } }` — before, `E2019: \`f\` is not
+  declared in module \`m1\``; the diagnostic naming the *middle* hop is what
+  showed navigation stopped one link short. The same program with the modules
+  reversed printed `5`. Both now print `5`.
+- **Deferring is safe** because all five `UNKNOWN_MODULE` raise sites are strictly
+  *pre-mutation* (`apply_use` 773–782 and `resolve_use_path_inner`
+  1050/1102/1121/1128), so a deferred import leaves no partial binding, cannot
+  double-push `applied_imports`, and cannot insert into
+  `type_scope`/`value_scope`/`variant_scope`.
+- `activate_item` is re-called before **every** attempt: `resolve_sourced` wraps a
+  `collect_module` failure with `attach_source`, which reads `self.active_source`.
+  Recursing into a child leaves it pointing at the child's last item, so without
+  re-activation a retried root error would be attributed to the child's file and
+  break `module_graph::resolver_error_in_child_keeps_child_provenance`.
+- No new `Resolver` field, so `reset_transient` and the REPL path are untouched.
 - Regression coverage: `use_through_a_re_exporting_module_binds_the_real_target`,
-  `use_through_a_re_export_keeps_the_private_target_rejected` (`tests/modules.rs`),
-  `use_through_an_external_re_export_resolves_regardless_of_source_order`
+  `use_through_a_re_export_keeps_the_private_target_rejected` and
+  `a_transitive_re_export_chain_resolves_in_every_source_order` (`tests/modules.rs`
+  — both sibling-chain orders, an 8-hop chain, a mixed chain, a cycle, a missing
+  name, a private tail),
+  `use_through_an_external_re_export_resolves_regardless_of_source_order` and
+  `a_transitive_re_export_across_sibling_sources_resolves_in_every_order`
   (`tests/module_graph.rs`, both registration orders — this is what pins B
-  separately from A). Ten CLI probes in fresh directories confirmed the fix and
-  every adjacent contract (`E2007`, `E1009`, `E2018`, `E2019`, module aliases).
-- Full validation floor green including MSRV, nightly fuzz, playground and
-  website. **No spec change** — the code was wrong, not the normative text.
-- Branch `fix/pub-use-reexport-resolution`, not yet published.
+  separately from A, and the second one pins C across provider sources). **Both
+  new tests were verified to fail against the pre-fix `src/resolve.rs`** via a
+  stash round-trip, and pass after.
+- Thirteen CLI probes in fresh directories confirmed the fix and every adjacent
+  contract: `t_rev`/`t_fwd`/`s_rev`/`s_fwd`/`s_nest` (all `5`, `5`, `5`, `5`, `6`),
+  `r3` 8-hop (`77`), `diamond` (`9`), `mixed` (`7`/`8`), `r1` cycle (`E2019`,
+  terminates deterministically), `r2` self re-export (`E2007`), `modpath`
+  final segment is a private module (`E2018`), `private_tail` (`E2018`),
+  `missing` (`E2019`).
+- Full validation floor green: fmt, clippy `-D warnings`, all targets/features,
+  `no-default-features`, MSRV 1.83.0, nightly fuzz check, playground node suite,
+  playground build `--check`, website build and tests. **No spec change** — the
+  code was wrong, not the normative text.
+- Open question (needs a spec reading before any change): is `E2019` the intended
+  diagnostic for a *cyclic* `pub use` chain, or does it warrant a dedicated code?
+  It terminates deterministically, so it satisfies the letter of §27 today.
+- Branch `fix/pub-use-reexport-resolution`, PR #28, not yet merged.
 
 ## CORE FIRST — return-type tail validation — merged, `b843dc85` (PR #26)
 
@@ -1094,8 +1143,9 @@ and `v0.3.1` = `b09cbef2`. Batches 1–5, B6/B7/B14, TD-23, TD-24, TD-27,
 Directive 004, TD-13, the resolver type-parameter leak, the set key-method
 element typing and return-type tail validation are **merged and closed**.
 Directive 003-R §4's blockers are closed.
-**Exact next action:** publish `fix/pub-use-reexport-resolution` (the `pub use`
-re-export resolution fix above) as one PR, then begin the next CORE FIRST work
+**Exact next action:** merge PR #28 (`fix/pub-use-reexport-resolution`, the
+`pub use` re-export resolution fix above) once remote CI is green, then begin the
+next CORE FIRST work
 item — a real, reproduced defect in `src/`, `tests/`, or `fuzz/`, shipped as one
 PR carrying a reproducible case, a regression test that fails before the fix, the
 fix, and a passing test.

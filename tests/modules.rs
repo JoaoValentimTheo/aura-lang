@@ -515,6 +515,70 @@ fn use_through_a_re_export_keeps_the_private_target_rejected() {
 }
 
 #[test]
+fn a_transitive_re_export_chain_resolves_in_every_source_order() {
+    // A `pub use` chain that spans *sibling* modules depends on imports that a
+    // single declaration-order sweep has not applied yet. The chain must
+    // resolve from the whole program's state, not from how far the sweep has
+    // got, so both orders below have to reach the same declaration (§27).
+    let chain = |order: &[&str]| {
+        let bodies = [
+            ("m2", "module m2 { pub fn f() -> int { return 5 } }"),
+            ("m1", "module m1 { pub use m2::f }"),
+            ("m0", "module m0 { pub use m1::f }"),
+        ];
+        let mut src = String::from("use m0::f\n");
+        for want in order {
+            let body = bodies
+                .iter()
+                .find(|(name, _)| name == want)
+                .map(|(_, body)| *body)
+                .expect("every order names a declared module");
+            src.push_str(body);
+            src.push('\n');
+        }
+        src.push_str("fn main() { print(f()) }");
+        src
+    };
+    // Terminal module declared first, then the re-exporters: the original
+    // declaration order still has to work.
+    assert_eq!(ok(&chain(&["m2", "m1", "m0"])), "5\n");
+    // Terminal module declared last, which is the order a single sweep cannot
+    // resolve: each re-export names a module the sweep has not visited.
+    assert_eq!(ok(&chain(&["m0", "m1", "m2"])), "5\n");
+
+    // The same must hold for a chain deep enough that one retry round cannot
+    // settle it, and for a chain whose middle hop also declares its own item.
+    let mut deep = String::from("use h0::f\n");
+    for i in 0..8 {
+        use std::fmt::Write as _;
+        let _ = writeln!(deep, "module h{i} {{ pub use h{}::f }}", i + 1);
+    }
+    deep.push_str("module h8 { pub fn f() -> int { return 77 } }\nfn main() { print(f()) }");
+    assert_eq!(ok(&deep), "77\n");
+
+    assert_eq!(
+        ok("use m0::f\nuse m0::g\nmodule m0 { pub use m1::f\n pub use m1::g }\nmodule m1 { pub use m2::f\n pub fn g() -> int { return 8 } }\nmodule m2 { pub fn f() -> int { return 7 } }\nfn main() { print(f())\n print(g()) }"),
+        "7\n8\n"
+    );
+
+    // An unresolvable cycle still terminates with a diagnostic instead of
+    // looping, and a name that no hop declares is still `E2019`.
+    assert_eq!(
+        code("use a::f\nmodule a { pub use b::f }\nmodule b { pub use a::f }\nfn main() { print(f()) }"),
+        codes::UNKNOWN_MODULE
+    );
+    assert_eq!(
+        code("use m0::nope\nmodule m0 { pub use m1::f }\nmodule m1 { pub fn f() -> int { return 1 } }\nfn main() { print(f()) }"),
+        codes::UNKNOWN_MODULE
+    );
+    // Deferral must not launder a private declaration either.
+    assert_eq!(
+        code("use m0::f\nmodule m0 { pub use m1::f }\nmodule m1 { fn f() -> int { return 1 } }\nfn main() { print(f()) }"),
+        codes::PRIVATE_ACCESS
+    );
+}
+
+#[test]
 fn module_alias_binds_a_lexical_path() {
     assert_eq!(
         ok("module a { pub fn f() -> int { return 6 } }\nuse a as m\nfn main() { print(m::f()) }"),
