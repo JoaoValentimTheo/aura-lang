@@ -113,6 +113,82 @@ fn typed_list_mutation_obeys_the_element_type() {
     );
 }
 
+// ---------------------------------------------- typed set mutation
+
+#[test]
+fn typed_set_mutation_obeys_the_element_type() {
+    // `set.add` is the set analogue of `list.push`; both must honour the
+    // receiver's proven element type (LANGUAGE_SPEC §21.4, §21.6).
+    assert_eq!(
+        code("fn main() { let mut s: {int} = set{1}\n s.add(\"x\") }"),
+        codes::TYPE_MISMATCH
+    );
+    // The element type is available without an explicit annotation too.
+    assert_eq!(
+        code("fn main() { let mut s = set{1}\n s.add(\"x\") }"),
+        codes::TYPE_MISMATCH
+    );
+    // A declared return type does not launder the violation.
+    assert_eq!(
+        code(
+            "fn mk() -> {int} { let mut s = set{1}\n s.add(\"x\")\n s }\nfn main() { print(mk()) }"
+        ),
+        codes::TYPE_MISMATCH
+    );
+    // A set whose element type is genuinely a union accepts either member.
+    assert_eq!(
+        ok("fn main() { let mut s = set{1}\n s.add(2)\n print(s) }"),
+        "{1, 2}\n"
+    );
+    assert_eq!(
+        ok("fn main() { let mut s: {int} = set{}\n s.add(7)\n print(s) }"),
+        "{7}\n"
+    );
+    // A non-key-capable value is rejected before the element type is consulted.
+    assert_eq!(
+        code("fn main() { let mut s: {int} = set{}\n s.add(1.5) }"),
+        codes::TYPE_MISMATCH
+    );
+    assert_eq!(
+        code("fn main() { let mut s: {int} = set{}\n s.add([1]) }"),
+        codes::TYPE_MISMATCH
+    );
+}
+
+#[test]
+fn typed_set_key_methods_obey_the_element_type() {
+    // `has`/`contains`/`remove` take a value of the receiver's element type,
+    // exactly as the map key methods do (§21.4, §24.1).
+    for method in ["has", "contains", "remove"] {
+        assert_eq!(
+            code(&format!(
+                "fn main() {{ let mut s: {{int}} = set{{1}}\n s.{method}(\"x\") }}"
+            )),
+            codes::TYPE_MISMATCH,
+            "`{method}` accepted a `string` on a `{{int}}` set"
+        );
+        assert_eq!(
+            code(&format!(
+                "fn main() {{ let mut s: {{int}} = set{{1}}\n s.{method}(1.5) }}"
+            )),
+            codes::TYPE_MISMATCH,
+            "`{method}` accepted a non-key-capable value"
+        );
+        // Same-type queries still work.
+        assert_eq!(
+            ok(&format!(
+                "fn main() {{ let mut s: {{int}} = set{{1}}\n print(s.{method}(1)) }}"
+            )),
+            "true\n"
+        );
+    }
+    // An untyped receiver cannot be checked, and must not be rejected.
+    assert_eq!(
+        ok("fn main() { let mut s = set{}\n s.add(1)\n print(s.has(1)) }"),
+        "true\n"
+    );
+}
+
 // ------------------------------------------------ get/remove honesty
 
 #[test]

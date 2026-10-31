@@ -2616,6 +2616,14 @@ element must satisfy the target type; a duplicate JSON element is `E4031`
 rather than being silently collapsed, because strict external validation must
 not discard data.
 
+**Normative rule (method typing).** `add` accepts only a value assignable to the
+receiver's proven element type, and it mutates the receiver so it requires a
+mutable binding. `has`, `contains`, and `remove` accept only a value of that same
+element type. Mirroring the map key methods (§24.1), a receiver whose element
+type is statically known rejects a provably different argument with `E3001`
+instead of deferring the mismatch to runtime, and an argument that is not
+key-capable is `E3001` even when the receiver's element type is unknown.
+
 ### 21.5 Map
 
 **Normative rule.** `{k: v}` and `{:}` are Maps, unchanged from prior versions:
@@ -2905,6 +2913,22 @@ own key and value types (both `Unknown` when the receiver's type is not
 statically known).
 
 **range**: `len` (0 args) → `int`.
+
+**set** (`TypeClass::Set`):
+
+| Method | Args | Returns |
+|---|---|---|
+| `len` | 0 | `int` |
+| `has` | 1 element | `bool` |
+| `contains` | 1 element | `bool` |
+| `add` | 1 element | `none` |
+| `remove` | 1 element | `bool` |
+
+"element" means a value of the receiver's element type; the type is `Unknown`
+when the receiver's type is not statically known. Set elements must be
+`string`, `int`, or `bool` (§21.4), so an argument that is not a key-capable
+value is rejected at check time. `add` mutates the receiver and therefore
+requires a mutable binding (§20).
 
 *Evidence:* `methods()` (`src/stdlib/signatures.rs`); `method`,
 `string_method`, `list_method`, `map_method` (`src/stdlib/mod.rs`).
