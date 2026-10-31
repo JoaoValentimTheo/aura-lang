@@ -176,6 +176,75 @@ fn bounds_are_checked_at_the_call_site() {
     );
 }
 
+/// A bound alone grants its trait's methods: the body compiles whether or not
+/// any struct in the program implements the trait, and whether or not the
+/// generic function is ever instantiated.
+///
+/// Regression: method resolution on a bare type parameter used to be decided by
+/// *name existence anywhere in the program*, so a bound-granted call was
+/// rejected with `E2003` whenever no struct happened to declare a method of
+/// that name.
+#[test]
+fn a_bound_grants_its_methods_without_any_implementation() {
+    assert_eq!(
+        ok("trait Show { fn show(self) -> string }\nfn render<T: Show>(x: T) -> string { return x.show() }\nfn main() { print(\"done\") }"),
+        "done\n"
+    );
+    // Every method of the bound is granted, not just the first.
+    assert_eq!(
+        ok("trait Shape { fn area(self) -> float\n fn perim(self) -> float }\nfn total<T: Shape>(x: T) -> float { return x.area() + x.perim() }\nfn main() { print(\"done\") }"),
+        "done\n"
+    );
+}
+
+/// A method that exists on some unrelated struct is not a static target for an
+/// unconstrained type parameter.
+///
+/// Regression: the same name-existence rule made this *unsound* program pass
+/// the checker, deferring the failure to a runtime `no method` panic.
+#[test]
+fn an_unconstrained_parameter_cannot_call_an_unrelated_struct_method() {
+    assert_eq!(
+        code("struct A { v: int }\nimpl A { fn show(self) -> string { return \"A\" } }\nfn render<T>(x: T) -> string { return x.show() }\nfn main() { print(render(A { v: 1 })) }"),
+        codes::UNDEFINED
+    );
+}
+
+/// A parameter whose bounds do not declare the method is still rejected — a
+/// bound grants exactly its own methods, no more.
+#[test]
+fn a_bound_does_not_grant_methods_outside_it() {
+    assert_eq!(
+        code("trait Show { fn show(self) -> string }\nfn render<T: Show>(x: T) -> string { return x.hide() }\nfn main() { print(\"done\") }"),
+        codes::UNDEFINED
+    );
+}
+
+/// Built-in methods remain callable on an unconstrained parameter: they are
+/// resolved by the runtime value, and a type parameter has no static method
+/// class, so the checker cannot decide them and must not reject them.
+#[test]
+fn builtin_methods_stay_callable_on_a_type_parameter() {
+    assert_eq!(
+        ok("fn f<T>(x: T) -> int { return x.len() }\nfn main() { print(f([1, 2, 3])) }"),
+        "3\n"
+    );
+    assert_eq!(
+        ok("fn f<T>(x: T) -> [int] { return x.map((y) -> y + 1) }\nfn main() { print(f([1, 2])) }"),
+        "[2, 3]\n"
+    );
+}
+
+/// A bound in scope on an enclosing impl propagates to a field's type
+/// parameter, so `self.v.show()` resolves through the impl's own bound.
+#[test]
+fn an_impl_bound_propagates_to_its_field_parameter() {
+    assert_eq!(
+        ok("trait Show { fn show(self) -> string }\nstruct Box<T> { v: T }\nimpl<T: Show> Box<T> { fn render(self) -> string { return self.v.show() } }\nstruct A { v: int }\nimpl Show for A { fn show(self) -> string { return \"A\" } }\nfn main() { print(Box { v: A { v: 1 } }.render()) }"),
+        "A\n"
+    );
+}
+
 /// An unknown bound is rejected when it is declared.
 #[test]
 fn unknown_bound_is_rejected() {

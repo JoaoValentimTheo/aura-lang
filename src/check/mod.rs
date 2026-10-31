@@ -4506,6 +4506,105 @@ impl Checker {
         set.iter().any(|s| !self.method_visible(s))
     }
 
+    /// Resolve a method call whose receiver is a bare type parameter.
+    ///
+    /// A type parameter has no nominal method table, so a **bound** is the only
+    /// authority that can grant the call: `T: Trait` is precisely what gives a
+    /// generic body the right to invoke `Trait`'s methods on a `T`-typed value
+    /// (`LANGUAGE_SPEC.md` §36.4, `docs/GENERICS.md` §5). A method that merely
+    /// exists on some unrelated struct is *not* a static target for `T`.
+    ///
+    /// Built-in methods (`len`, `map`, `trim`, …) remain permitted: they are
+    /// resolved by the runtime value, and a type parameter has no static method
+    /// class, so the checker cannot decide them and must not reject them.
+    fn check_param_method_call(
+        &mut self,
+        site: MethodSite<'_>,
+        pname: &str,
+        name: &str,
+        r: &Expr,
+        args: &[Arg],
+        span: Span,
+    ) -> Result<()> {
+        let bounds = self.bounds_of_param(pname);
+        let mut granted: Vec<FnSig> = Vec::new();
+        for bound in &bounds {
+            let Some(table) = self.traits.get(bound) else {
+                continue;
+            };
+            for (mname, sig) in table {
+                if mname == name {
+                    granted.push(sig.clone());
+                }
+            }
+        }
+
+        if granted.is_empty() {
+            if !crate::stdlib::signatures::method_exists_anywhere(name) {
+                let message = if bounds.is_empty() {
+                    format!(
+                        "no method `{name}` on type parameter `{pname}`: it declares no trait bound, and a bound is what grants a method call on `{pname}`"
+                    )
+                } else {
+                    format!(
+                        "no method `{name}` on type parameter `{pname}`: its bounds ({}) do not declare it",
+                        bounds.join(", ")
+                    )
+                };
+                return Err(Diag::new(codes::UNDEFINED, message, span));
+            }
+            // A built-in: `Ty::Param` has no static method class, so the
+            // decision is deferred to the runtime value.
+            self.reject_named_args(name, args, span)?;
+            self.check_method_call(r, name, args, span)?;
+            self.clear_all_closure_narrowing();
+            return Ok(());
+        }
+
+        self.reject_named_args(name, args, span)?;
+        let Some(i) = self.resolve_visible_method_sig(&granted, args) else {
+            if self.method_exists_but_private(&granted) {
+                return Err(Diag::new(
+                    codes::PRIVATE_ACCESS,
+                    format!(
+                        "method `{name}` granted by the bounds of `{pname}` is private; it is not visible from this module"
+                    ),
+                    span,
+                ));
+            }
+            return Err(self.no_method_overload_diag(pname, name, &granted, args, span));
+        };
+        let visible: Vec<FnSig> = granted
+            .iter()
+            .filter(|s| self.method_visible(s))
+            .cloned()
+            .collect();
+        let sig = visible[i].clone();
+        // Same rule as the nominal arm: a parameter that is not provably a
+        // non-callable may hold a callable, so captured narrowing is discarded.
+        if sig.params.iter().any(|p| {
+            !matches!(
+                p.ty,
+                Some(
+                    Ty::Int
+                        | Ty::Float
+                        | Ty::Bool
+                        | Ty::String
+                        | Ty::List(_)
+                        | Ty::Map(_, _)
+                        | Ty::None
+                )
+            )
+        }) {
+            self.clear_all_closure_narrowing();
+        }
+        self.check_struct_method_args(pname, name, &sig, site, args, span)?;
+        if sig.mut_receiver {
+            self.require_mutable_place(r, "mutate")?;
+        }
+        Ok(())
+    }
+
     fn resolve_method_sig(&self, set: &[FnSig], args: &[Arg]) -> Option<usize> {
         let actual: Vec<Ty> = args.iter().map(|a| self.infer(&a.value)).collect();
         let candidates: Vec<crate::types::OverloadParams> = set
@@ -6570,6 +6669,18 @@ impl Checker {
                     if first.is_some_and(|s| s.mut_receiver) {
                         self.require_mutable_place(r, "mutate")?;
                     }
+                } else if let Ty::Param(pname) = &recv {
+                    self.check_param_method_call(
+                        MethodSite {
+                            recv: &recv,
+                            ty_args,
+                        },
+                        pname,
+                        name,
+                        r,
+                        args,
+                        *span,
+                    )?;
                 } else if !crate::stdlib::signatures::method_exists_anywhere(name)
                     && !self.user_method_exists_anywhere(name)
                 {

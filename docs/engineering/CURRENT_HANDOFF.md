@@ -1,11 +1,102 @@
 # Current Engineering Handoff
 
-## Current task — CORE FIRST: f-string zero padding lands outside the sign
+## Current task — CORE FIRST: method calls on a type parameter resolve by bounds, not name existence
 
-**Status:** code, seven regression tests, spec correction, CHANGELOG, contract
-test, oracle generators, golden and a playground differential case are complete
-on branch `fix/fstring-zero-pad-sign` (from `da8d6273`). The full local
-validation floor is green. Awaiting commit, push, PR and remote CI.
+**Status:** merged as `1fa01db0`; twenty-one remote checks green,
+`mergeStateStatus=CLEAN`. Post-merge diff `da8d6273..1fa01db0` contains exactly
+the twelve intended files.
+
+### The defect
+
+`Expr::Method` on a receiver of type `Ty::Param` had no method table, so
+`src/check/mod.rs` fell through to a conservative fallback that asked only
+whether a method *named* `name` existed on **any** type in the program. Trait
+bounds were never consulted. Two coupled sub-bugs:
+
+| # | Shape | Before | Contract |
+|---|---|---|---|
+| A | `trait Show { fn show(self) -> string }` + `fn render<T: Show>(x: T) { return x.show() }`, **no impl anywhere** | `E2003 no method 'show' on any type` | §36.4 / `GENERICS.md` §5: a bound *grants* the call |
+| B | `fn render<T>(x: T)` (no bound) calling `x.show()`, with an unrelated `struct A` declaring an inherent `show` | accepted; failure deferred to a runtime `no method` error | a bound is required, so this must be `E2003` |
+
+Declaration order was irrelevant (`impl` before or after the generic `fn` both
+worked), and a bounded generic that is never instantiated was rejected too — the
+discriminator was pure name existence. A third candidate, `x.to_string()` on a
+bare `T`, was **dismissed**: `to_string` and `equals` are free functions, not
+methods, so `E2003` is correct there.
+
+### The fix — one new helper, one four-line call site
+
+1. `src/check/mod.rs` — new `fn check_param_method_call(&mut self, site:
+   MethodSite<'_>, pname, name, r, args, span)` just before `resolve_method_sig`.
+   It collects the `FnSig`s the parameter's bounds grant for `name`; on an empty
+   set it keeps the pre-existing built-in path and emits a precise `E2003`
+   naming the parameter; on a non-empty set it runs the normal visible-signature
+   resolution, overload diagnostics, `check_struct_method_args`, and `mut self`
+   mutability enforcement.
+2. `src/check/mod.rs` — a compact `Ty::Param` arm between the `Ty::Union` arm
+   and the untouched conservative fallback. The fallback and its `on any type`
+   wording are byte-identical for every non-parameter receiver, which is why the
+   single golden row that pins that wording (`tests/oracle/r3c1_golden.tsv:110`,
+   receiver `[1]`, a `Ty::List`) still passes.
+
+### REG-1 — a real regression found and fixed in the same change
+
+The first version inlined the arm body into `expr_inner`. That grew its
+debug-build stack frame enough that
+`tests/repl.rs:230 repl_nesting_boundary_is_a_diagnostic_not_a_crash` aborted
+with `signal: 6 (SIGABRT)` on the 256-deep nested-list case before the `E1015`
+nesting diagnostic could fire. Baseline was clean (54/54 without the fix), so
+the regression was genuinely introduced. Extracting the body into the helper
+restored the frame: `cargo test --locked --test repl` → 54 passed, 0 failed.
+Clippy's `too_many_arguments` (8/7, fatal under `-D warnings`) was resolved by
+bundling `recv` and `ty_args` into the existing `MethodSite<'a>` struct.
+
+### The tests — five new, two proven to fail without the fix
+
+`tests/generics.rs` (46 tests total, all pass):
+`a_bound_grants_its_methods_without_any_implementation` (one- and two-method
+traits), `an_unconstrained_parameter_cannot_call_an_unrelated_struct_method`,
+`a_bound_does_not_grant_methods_outside_it`,
+`builtin_methods_stay_callable_on_a_type_parameter`,
+`an_impl_bound_propagates_to_its_field_parameter`.
+With `git stash push -- src/check/mod.rs`, two of them fail with the exact old
+behaviour (`Diag { code: 2003, message: "no method \`show\` on any type" }` and
+`expected the program to be rejected: "A\n"`). The pre-existing
+`bounds_are_checked_at_the_call_site` passed only because it bundled an
+`impl Show for A` with the generic call, registering a global `show`.
+
+### Validation actually executed
+
+```
+cargo fmt --all -- --check                                          FMT OK
+cargo clippy --locked --all-targets --all-features -- -D warnings   clean
+cargo test --locked --all-targets --all-features                    66 binaries, 0 failed
+cargo test --locked --all-targets --no-default-features \
+  --features cli,repl,json,regex,time                               66 binaries, 0 failed
+cargo +1.83.0 check --locked --all-features                         ok
+cargo +nightly check --manifest-path fuzz/Cargo.toml --all-targets  ok
+node playground/tests/node/run-all.mjs                              all suites pass
+node playground/build.mjs --check                                   manifest matches 9 versions
+node website/build.mjs                                              46 pages
+node website/tests/run-all.mjs                                      pass
+```
+
+Not run locally: Miri, fuzz smoke, browser Playwright — all CI-only.
+
+### Next exact action
+
+Commit on `fix/generic-bound-methods`, push, open PR #35 against
+`rewrite/v3-rust` using `.github/pull_request_template.md` verbatim, poll
+`gh pr checks` to 21/21 with `mergeStateStatus=CLEAN`, then
+`gh pr merge 35 --merge --delete-branch`.
+
+---
+
+## Previous task — CORE FIRST: f-string zero padding lands outside the sign — merged `1fa01db0` (PR #34)
+
+**Status:** merged. Twenty-one remote checks green,
+`mergeStateStatus=CLEAN`. Post-merge diff `da8d6273..1fa01db0` contains exactly
+the twelve intended files.
 
 ### The defect
 
@@ -104,15 +195,6 @@ node playground/build.mjs --check                                   manifest mat
 node website/build.mjs                                              46 pages
 node website/tests/run-all.mjs                                      pass
 ```
-
-Not run locally: Miri, fuzz smoke, browser Playwright — all CI-only.
-
-### Next exact action
-
-Commit on `fix/fstring-zero-pad-sign`, push, open the PR against
-`rewrite/v3-rust` using `.github/pull_request_template.md` verbatim, poll
-`gh pr checks` to 21/21 with `mergeStateStatus=CLEAN`, then
-`gh pr merge <n> --merge --delete-branch`.
 
 ---
 

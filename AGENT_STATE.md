@@ -2,11 +2,11 @@
 
 ## Directive 003 — stabilization and hardening campaign (current)
 
-- Active branch: `rewrite/v3-rust`, remote HEAD **`da8d6273`** — the merge of
-  **PR #33** (CORE FIRST: `sort` total order). Local branch
-  `fix/fstring-zero-pad-sign` carries the next CORE FIRST fix (the f-string
-  zero-pad sign placement), validated and awaiting its PR.
-  **Thirty-three PRs are merged** this campaign:
+- Active branch: `rewrite/v3-rust`, remote HEAD **`1fa01db0`** — the merge of
+  **PR #34** (CORE FIRST: f-string zero-pad sign placement). The working tree
+  carries the next CORE FIRST fix (generic-bound method resolution) on branch
+  `fix/generic-bound-methods`, validated and awaiting its PR.
+  **Thirty-four PRs are merged** this campaign:
   #2 `f96536b6` (Directive 002 preflight),
   #3 `07845932` (rustls advisories), #4 `a562bacf` (batches 1–5),
   #5 `eaa3b9ed` (TD-23 + default-branch flip), #6 `4a20fa84` (post-merge
@@ -36,7 +36,8 @@
   #30 `519f3122` (CORE FIRST: method type parameters validated and scoped),
   #31 `e61a81f6` (CORE FIRST: method type-parameter bounds reach the body),
   #32 `a089fd45` (CORE FIRST: f-string exponent case and non-finite
-  rendering), #33 `da8d6273` (CORE FIRST: `sort` total order).
+  rendering), #33 `da8d6273` (CORE FIRST: `sort` total order),
+  #34 `1fa01db0` (CORE FIRST: f-string zero-pad sign placement).
   The
   `/private/tmp/aura-directive-002-release-preflight` worktree and the
   `repair/directive-002-release-preflight` branch are **historical**.
@@ -315,7 +316,76 @@ consistent, merely lossy).
 binaries all-features, `no-default-features`, MSRV 1.83.0, nightly fuzz check,
 playground node suite, playground build `--check`, website build and tests.
 
-## CORE FIRST — f-string zero-pad sign placement — branch `fix/fstring-zero-pad-sign` (PR pending)
+## CORE FIRST — generic-bound method resolution — branch `fix/generic-bound-methods` (PR pending)
+
+`Expr::Method` on a receiver of type `Ty::Param` had no method table, so the
+checker fell through to a conservative fallback that asked only whether a
+method *named* `name` existed on **any** type in the program. Bounds were never
+consulted. A ~210-program probe campaign confirmed two coupled sub-bugs and
+dismissed a third:
+
+- **A — bound-granted calls rejected.** With
+  `trait Show { fn show(self) -> string }` and
+  `fn render<T: Show>(x: T) -> string { return x.show() }`, calling
+  `render(...)` against **no** `impl Show` anywhere was `E2003`
+  (`no method 'show' on any type`) even though the bound is exactly what
+  grants the call. A two-method bound (`Shape { area, perim }`) behaved the
+  same. Declaration order was irrelevant, and a bounded generic that is never
+  instantiated was rejected too — the discriminator was pure name existence.
+- **B — unconstrained-parameter call accepted.** `fn render<T>(x: T)` with no
+  bound at all calling `x.show()` compiled whenever an unrelated
+  `struct A` declared an *inherent* `show`. Soundness held only because every
+  instantiation was still caught at the call site (`E2003 int has no method
+  'show'`), so this was a static-precision hole, not a memory-safety hole.
+- **C — dismissed.** `x.to_string()` / `x.equals(x)` on a bare `T` are `E2003`,
+  but that is correct: `to_string` and `equals` are free functions, not
+  methods (`to_string(42)` works, `(42).to_string()` does not). Genuine
+  built-in methods on a `Ty::Param` already worked — `x.len()` → `3`,
+  `x.map((y) -> y + 1)` → `[2, 3]`, `x.contains(1)` → `true`, `x.trim()` —
+  and must keep working.
+
+**One root cause, one fix.** A new `check_param_method_call` helper collects the
+`FnSig`s a parameter's bounds grant for the requested name. When the bound set
+yields nothing it keeps the old built-in path and emits a precise `E2003`
+naming the parameter and noting that a bound is what grants the call; when it
+yields candidates it runs the normal visible-signature resolution, overload
+diagnostics, `check_struct_method_args`, and `mut self` mutability
+enforcement. The conservative fallback and its `on any type` wording are
+untouched for every non-parameter receiver.
+
+**REG-1 — a real regression, found and fixed.** Inlining the arm body grew
+`expr_inner`'s debug-build stack frame enough that
+`tests/repl.rs:230 repl_nesting_boundary_is_a_diagnostic_not_a_crash` aborted
+with `signal: 6 (SIGABRT)` on the 256-deep nested-list case before `E1015`
+could fire. Baseline was clean (54/54 without the fix). Extracting the body
+into a separate helper restored the frame; `cargo test --locked --test repl`
+returns to 54 passed. **Any future growth of `expr_inner`'s arms should go into
+a helper for this reason.** Clippy's `too_many_arguments` (8/7, fatal under
+`-D warnings`) was resolved by bundling `recv` + `ty_args` into the existing
+`MethodSite<'a>` struct.
+
+**Five tests in `tests/generics.rs`** (46 total, all pass): a bound grants its
+methods without any implementation (one-method and two-method traits), an
+unconstrained parameter cannot call an unrelated struct method, a bound does not
+grant methods outside it, built-in methods stay callable on a type parameter,
+and an `impl<T: Show> Box<T>` bound propagates to its field. **Two of them fail
+against `1fa01db0`** — proven by `git stash push -- src/check/mod.rs` then
+re-running: `expected the program to run: Diag { code: 2003, message: "no
+method `show` on any type" ... }` and `expected the program to be rejected:
+"A\n"`. The pre-existing `bounds_are_checked_at_the_call_site` passed only
+because it bundled an `impl Show for A` with the generic call, registering a
+global `show`.
+
+**Golden oracle unaffected.** Exactly one oracle row pins the old wording
+(`tests/oracle/r3c1_golden.tsv:110`, ``no method `no_such_method` on any
+type``); its receiver is `[1]`, a `Ty::List`, so it still reaches the untouched
+fallback — verified by the green oracle run.
+
+— Full validation floor green locally: fmt, clippy `-D warnings`, 66 test
+binaries all-features, `no-default-features`, MSRV 1.83.0, nightly fuzz check,
+playground node suite, playground build `--check`, website build and tests.
+
+## CORE FIRST — f-string zero-pad sign placement — merged, `1fa01db0` (PR #34)
 
 The `0` flag was recorded only as a fill character, with no bit distinguishing
 "the user wrote `0` before the width" from "the user wrote an explicit fill".
@@ -1298,18 +1368,18 @@ feature-gating of the typed-decode path.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `da8d6273` (PR #33
-merged, thirty-three PRs merged this campaign); Aura 0.3.1 (Keystone) is published
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `1fa01db0` (PR #34
+merged, thirty-four PRs merged this campaign); Aura 0.3.1 (Keystone) is published
 and `v0.3.1` = `b09cbef2`. Batches 1–5, B6/B7/B14, TD-23, TD-24, TD-27,
 Directive 004, TD-13, the resolver type-parameter leak, the set key-method
 element typing, return-type tail validation, `pub use` re-export resolution, the
-f-string exponent case and the `sort` total order are **merged and closed**.
-Directive 003-R §4's blockers are closed.
-**Exact next action:** branch `fix/fstring-zero-pad-sign` is validated and
-awaiting its PR + remote CI. Once merged, begin the next CORE FIRST work item.
-Begin the next CORE FIRST work item — a real, reproduced defect in `src/`,
-`tests/`, or `fuzz/`, shipped as one PR carrying a reproducible case, a
-regression test that fails before the fix, the fix, and a passing test.
+f-string exponent case, the `sort` total order and the f-string zero-pad sign
+placement are **merged and closed**. Directive 003-R §4's blockers are closed.
+**Exact next action:** branch `fix/generic-bound-methods` is validated and
+awaiting its PR (#35) + remote CI. Once merged, begin the next CORE FIRST work
+item — a real, reproduced defect in `src/`, `tests/`, or `fuzz/`, shipped as one
+PR carrying a reproducible case, a regression test that fails before the fix,
+the fix, and a passing test.
 Highest-value unfinished leads already recorded here: (a) lexer/parser
 ambiguities, precedence, adversarial input and error recovery,
 (b) checker scopes, generics, mutability, (c) evaluator control flow, closures,

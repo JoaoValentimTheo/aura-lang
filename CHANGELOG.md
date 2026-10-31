@@ -67,6 +67,22 @@ Playground but are not releases.
   snapshot of the 2026-09-30 state, not a current claim.
 
 ### Fixed
+- **Method calls on a type parameter were resolved by name existence, not by
+  bounds.** A generic body with `T: Show` could not call `x.show()` unless some
+  struct somewhere in the program happened to declare a method named `show`:
+  the checker had no method table for a bare `T` and fell back to asking
+  whether the name existed on *any* type. Both directions were wrong. Legal
+  bound-granted calls were rejected with `E2003`, and an unconstrained
+  `fn render<T>(x: T) { x.show() }` was *accepted* whenever an unrelated struct
+  had an inherent `show`, deferring the failure to a runtime `no method`
+  error. Resolution now consults the parameter's bounds first
+  (`LANGUAGE_SPEC.md` §36.4, `docs/GENERICS.md` §5: *"a bound is a static
+  contract: it grants the body the right to call the trait's methods on a
+  value of type `T`"*), runs the same overload and visibility resolution the
+  nominal arm uses, enforces `mut self`, and reports a parameter-specific
+  `E2003` when no bound grants the name. Built-in methods (`len`, `map`,
+  `trim`, …) stay callable on a parameter, because they resolve against the
+  runtime value and a type parameter has no static method class.
 - **Zero-padded numbers put the zeros outside the sign.** `f"{-42:06d}"`
   rendered `000-42` instead of `-00042`, and the same sign-ordering error
   affected every float presentation (`f"{-0.5:010.3f}"` → `0000-0.500`). The
