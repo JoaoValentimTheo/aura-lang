@@ -20,11 +20,11 @@ Verdict for release-candidate preparation: **`GO`**.
 |---|---|
 | Branch | `rewrite/v3-rust` |
 | Final commit | `86e2b5bad9f4ee92085d162d3a613242dcfb0296` (merge of PR #39) |
-| Pre-report audit commit | `8cc9ed32caff89ea7265113bffd19c8085a99bd4` |
-| Subject | `Merge pull request #39 from JoaoValentimTheo/docs/campaign-003-closure` (the final commit is the PR #39 merge; the audit commit `8cc9ed32` was `docs: record PR #38 merge and re-arm the CORE FIRST lead list`) |
-| Remote | `origin/rewrite/v3-rust` at the same commit (verified with `git fetch origin` + `git rev-parse`) |
-| Worktree | clean (`git status --short` empty) |
-| Post-report reconciliation | A Markdown-only commit follows directly on `rewrite/v3-rust`, updating the three state documents to name `86e2b5ba` instead of the audit commit. It changes no code, test, workflow, version or frozen artifact, and it is recorded in `AGENT_STATE.md` rather than by amending this table. |
+| Subject | `Merge pull request #39 from JoaoValentimTheo/docs/campaign-003-closure` |
+| Audit commit | `8cc9ed32caff89ea7265113bffd19c8085a99bd4` — `docs: record PR #38 merge and re-arm the CORE FIRST lead list`, the tip when the audit was performed |
+| Remote | `origin/rewrite/v3-rust` contained `86e2b5ba` at closure time, and has since advanced only through the Markdown-only tail below (verified with `git fetch origin` + `git rev-parse`) |
+| Worktree | clean (`git status --short` empty) at each of `8cc9ed32`, `86e2b5ba` and the reconciliation tail |
+| Post-report tail | One or more Markdown-only state-document reconciliation commits, the first being `1a0c8ff5f6891ee6938e27f8708ce0d742c909d3` (single parent `86e2b5ba`). They update the three state docs to name `86e2b5ba` in place of the audit commit and change no code, test, workflow, version or frozen artifact. `1a0c8ff5` remote CI: 21/21 green (run `41224466418`), website deploy `41224466426` green. |
 | Crate version | `0.3.1` ([Cargo.toml](../../Cargo.toml)) |
 | Playground current runtime | `0.3.1` "Keystone" ([manifest.json](../../playground/runtimes/manifest.json)) |
 

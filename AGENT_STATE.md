@@ -4,10 +4,12 @@
 
 - **Campaign 003 is closed.** The closure report is
   [`docs/engineering/CAMPAIGN_003_CLOSURE.md`](docs/engineering/CAMPAIGN_003_CLOSURE.md).
-- Active branch `rewrite/v3-rust` at **`86e2b5ba`** (= `origin/rewrite/v3-rust`),
-  the merge of **PR #39** (this closure report). The audit itself was performed
-  at `8cc9ed32`, the documentation commit that followed the `#38` merge
-  `00aeb188`.
+- Active branch `rewrite/v3-rust`, with **`86e2b5ba`** as the campaign's final
+  merge = `origin/rewrite/v3-rust` at closure time — the merge of **PR #39**
+  (this closure report). The audit itself was performed at `8cc9ed32`, the
+  documentation commit that followed the `#38` merge `00aeb188`. Any commits
+  after `86e2b5ba` are Markdown-only state-document reconciliation and carry no
+  code change.
 - Six-area bounded audit result: **six `PASS`, zero P0/P1**. No corrective PR
   was opened under Directive 005 (budget 0/6). The single corrective-candidate
   finding (sibling module contamination) was **falsified** against
