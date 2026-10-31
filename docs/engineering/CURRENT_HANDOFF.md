@@ -1,26 +1,149 @@
 # Current Engineering Handoff
 
-## Current local task — CORE FIRST: REPL session linearization (TD-13)
+## Current local task — CORE FIRST: resolver type-parameter leak
 
-`rewrite/v3-rust` is the **default branch** and HEAD is **`38f5fed5`** (the
-merge of PR #20). Twenty PRs are merged this campaign: #2, #3, #4, #5, #6, #7,
+`rewrite/v3-rust` is the **default branch** and HEAD is **`2fe944fb`** (the
+merge of PR #21). Twenty-one PRs are merged this campaign: #2, #3, #4, #5, #6, #7,
 #8, #9 (B14), #10 (PR template), #11 (TD-24 cost guard), #12 (CHANGELOG
 `[Unreleased]` + TD-25), #13 (website suite gate + TD-26), #14 (TD-27 Playwright
 gate), #15 (state sync), #16 (B7 project-header contract + HTTP transport docs +
 `test:abi`), #17 (validation orchestrator self-tests in CI), #18 (state sync for
 #15–#17), #19 (browser consent scoped to the mutation class), #20 (Directive
-004: the seven agents).
+004: the seven agents), #21 (CORE FIRST: REPL session state incremental, TD-13
+closed, session APIs feature-gated).
 The Directive 003-R authorization recorded in
 `AGENTS.md` permits push, PR creation and merge, workflow administration, and
 default-branch changes; force-push, history removal, tag moves, frozen-WASM
 replacement, gate weakening, and unapproved stable releases remain forbidden.
 Never report a gate as green unless it actually executed.
 
+### The finding — a rejected declaration poisons the session
+
+`Resolver::rewrite_item` and `Resolver::rewrite_member` push a generic-parameter
+frame before rewriting a declaration's body and pop it afterwards, with the pop
+written as a plain statement at the end of the arm. Every arm has fallible work
+between the two: `?` on `rewrite_params`, `rewrite_type`, `rewrite_block`,
+`rewrite_field`, `rewrite_variant`, `rewrite_member`, `canonical_type`. When one
+of those returns `Err`, the `?` leaves the function before the `pop` runs, so the
+frame — and every generic name in it — stays on `type_param_scope` for the rest
+of the session.
+
+That stack is load-bearing for path canonicalization. `flatten` calls
+`rewrite_type`, which asks `is_type_param(name)` first; a `true` answer means
+"compile-time placeholder, do not canonicalize". A leaked name therefore stops a
+real, declared type from being canonicalized, and the reference reaches the
+checker as a bare unknown type. The user sees an unknown-type error on a line
+that is perfectly valid, and the diagnostic for the *actual* mistake is the only
+correct one in the output.
+
+Reproducer (`/tmp/v1/min1.txt`, one line per submission; the `impl` targets a
+private struct so its rewrite fails with `E2018` after `Q` was pushed):
+
+```aura
+module m { pub struct Q { v: int }
+struct Priv { v: int } }
+impl<Q> m::Priv { fn get(self) -> int { return self.v } }
+use m::Q
+fn takes(x: Q) -> int { return x.v }
+:quit
+```
+
+Before the fix the final submission reported `E3002: unknown type `Q``; after it,
+the correct `E2018: field `v` of `m::Q` is private; it cannot be read from this
+module`. Five controls (no `impl`; `impl` alone; `impl` with a non-colliding
+parameter name; a `struct`/`enum`/`alias`/`trait` with a failing body and the
+same colliding name) all produced the correct diagnostic both before and after,
+which is what pins the cause to the leaked frame rather than to the generic
+syntax in general.
+
+### The fix
+
+An RAII guard, `TypeParamFrame<'a>`, holds `&'a Resolver` and pops on `Drop`; each
+of the seven push sites binds `let _frame = TypeParamFrame::new(self);`
+immediately after `push_type_params`. The pop is then unconditional, including on
+the error path, and `let _` keeps the binding alive to end of scope without
+triggering `unused_variables`.
+
+The guard borrows the resolver immutably, which is sufficient because
+`type_param_scope` is a `RefCell`: `push`, `pop` and `is_type_param` take `&self`
+and borrow only for the duration of the call, so no `RefCell` borrow is held
+across the rewritten work.
+
+Deliberately **not** the fix: clearing `type_param_scope` in `reset_transient`.
+That is what the checker does for its own stack, and it hides a per-declaration
+invariant violation behind a per-submission reset — the stack would still be
+wrong for the remainder of the submission that leaked it, and any future caller
+that resolves more than one declaration per reset would inherit the bug. The
+guard fixes the invariant instead of masking it.
+
+### The checker's identical shape — verified safe, do not re-litigate
+
+`src/check/mod.rs` has the same unguarded push/pop pattern at nine sites
+(`hoist` struct/enum/alias/fn, trait and impl registration, the body-phase `fn`
+and its nested block). It is **not** a bug and is **not** touched here, for three
+independent reasons:
+
+1. `Checker::check` (1067–1074) is strictly fail-fast: `for … { self.item(item)?; }`
+   returns on the first `Err`, so a leak can never be observed by a later item in
+   the same file.
+2. There is no multi-diagnostic mode anywhere in the crate — no `Vec<Diag>`, no
+   `errors.push`, no `collect_diagnostics` in `src/check/mod.rs`, `src/lib.rs` or
+   `src/main.rs`. The three catch sites that look like they continue
+   (`block_with` 5565–5581, the `for` loop 5961–5968, `try` 5986–5990) each
+   `return Err(e)` immediately after popping.
+3. `Checker::reset_transient` clears `current_type_params` (1046–1047) and the
+   REPL calls it before every submission (`src/repl.rs:341-342`, `455-456`), so
+   the stack is empty when each diagnostic is produced.
+
+`Resolver::reset_transient` (367–373) clears only `applied_imports`,
+`item_sources`, `active_source` and `resolved_sources` — that asymmetry, not a
+difference in the push/pop code, is why the resolver leak is observable and the
+checker one is not. An earlier session concluded the checker leaked too; that was
+reproduced in a directory already holding a stray `.aura` fixture and was wrong.
+Note the fixture hazard: `compile_file_with_mode` discovers module sources by
+scanning the target file's directory, so one stray `.aura` file makes every
+`aura check` in that directory report *its* error regardless of the path given.
+One fresh directory per probe file.
+
+### Guards
+
+`tests/repl.rs::a_failed_generic_declaration_does_not_leak_its_type_parameters`
+pins the behaviour: it asserts the `E2018` for the private struct is present, that
+`E3002` is absent, and that the private-field diagnostic is the one reported. It
+fails on the pre-fix tree at the `E3002` assertion.
+
+### Validation executed on this tree
+
+- `cargo test --locked --test repl` → 54 passed, 0 failed (53 before the new test)
+- `cargo test --locked --all-targets --all-features` → 66 suites pass, 0 failed
+- `cargo test --locked --all-targets --no-default-features --features cli,repl,json,regex,time` → 66 suites pass, 0 failed
+- `cargo clippy --locked --all-targets --all-features -- -D warnings` → clean
+- `cargo fmt --all -- --check` → clean
+- `RUSTFLAGS="-D warnings" cargo check --locked --lib --no-default-features --features cli` → clean
+- the `/tmp/v1` reproducer and its controls, each in its own fresh directory → correct `E2018` everywhere, no `E3002`
+
+### Resume point
+
+After this PR merges, HEAD moves off `2fe944fb`. **Exact next action:** continue
+CORE FIRST with the next reproduced defect — the `Stmt::Let` partial-mutation
+leak test, then lexer/parser ambiguities, precedence and error recovery; checker
+scopes, generics and mutability; evaluator control flow, closures and resource
+limits; collection bounds; module cycles; runtime panic and Host/Python/WASM
+capability boundaries. One PR per finding, each carrying a reproducible case, a
+regression test that fails before the fix, the fix, and a passing test. Keep the
+no-`repl` lib check in the floor. Do not begin language features frozen for
+stabilization. B-1R8 and any runtime publication remain separately human-gated.
+
+## Previous task — CORE FIRST: REPL session linearization (TD-13) — merged
+
+Historical record of PR #21. HEAD was `2fe944fb` at the time.
+
 ### The finding
 
 The ADENDO "CORE FIRST" made the directive-authorized REPL O(N²) defect the
 first core priority. It was reproduced, quantified, localized, fixed, and
-pinned. Branch `perf/repl-linear-session` off `38f5fed5`.
+pinned. Branch `perf/repl-linear-session` off `38f5fed5`, merged as **PR #21
+(`2fe944fb`), CI 21/21 green**.
 
 **Symptom.** Release profile, min-of-3, distinct declarations: the `let` path at
 N=250/500/1000/2000/4000 cost 0.174/0.337/1.174/4.548/**18.299 s**; the `fn`
@@ -203,26 +326,23 @@ none of those files are touched here, but do not mistake them for a new failure.
 
 ### Resume point
 
-The `#[cfg(feature = "repl")]` fix is applied and fully validated locally on
-`perf/repl-linear-session` and is ready to commit on top of `404980e5`.
-**Exact next action:** commit `src/check/mod.rs` and `src/resolve.rs`, push,
-update PR #21's validation table with the no-`repl` results, confirm all 21 remote
-checks actually run and pass, merge, then reconcile `AGENT_STATE.md` and this file
-to the merge SHA. After that, continue CORE FIRST with the next confirmed defect —
-the `Stmt::Let` partial-mutation leak test is the smallest open item, followed by
-lexer/parser ambiguities and error recovery, checker scopes/generics/mutability,
-evaluator control flow and resource limits, collection bounds, module cycles, and
-runtime panic boundaries. One PR per finding. Do not begin language features
-frozen for stabilization. B-1R8 and any runtime publication remain separately
-human-gated.
+PR #21 is **merged** (`2fe944fb`, CI 21/21 green on round 2). The
+`#[cfg(feature = "repl")]` gating commit is `3a42deee`; the performance work is
+`404980e5`. Both state documents are reconciled to the merge SHA and the writer
+is released (`NONE`).
+
+**Exact next action:** continue CORE FIRST with the next reproduced defect. The
+smallest open item is the `Stmt::Let` partial-mutation leak test; then
+lexer/parser ambiguities, precedence and error recovery; checker scopes, generics
+and mutability; evaluator control flow, closures and resource limits; collection
+bounds; module cycles; runtime panic and Host/Python/WASM capability boundaries.
+One PR per finding, each carrying a reproducible case, a regression test that
+fails before the fix, the fix, and a passing test. Keep the no-`repl` lib check
+in the floor. Do not begin language features frozen for stabilization. B-1R8 and
+any runtime publication remain separately human-gated.
 
 ### Deliberate non-fixes
 
-- `type_param_scope` can leak a frame when the `Item::Impl` arm returns early
-  through one of four `?` operators between push and pop. Harmless with a
-  per-submission resolver, latent with a persisted one. It is **not** cleared in
-  `reset_transient`; no oracle case diverges. Decide deliberately before touching
-  it.
 - The O(Σ set²) → O(Σ set) keyed duplicate-scan rewrite is deferred: `Ty` derives
   `Eq` but not `Hash`, so a key must be `(usize, Vec<Option<Ty>>)` compared with
   `Eq`.

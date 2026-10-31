@@ -317,6 +317,33 @@ pub struct Resolver {
     resolved_sources: Vec<SourceId>,
 }
 
+/// Pops the frame `Resolver::push_type_params` pushed when it goes out of scope.
+///
+/// A declaration is pushed before its contents are rewritten and popped
+/// afterwards. Rewriting is fallible, so an explicit `pop` at the end of the
+/// block is skipped by any `?` — leaving the frame on the stack, and with it
+/// every generic name the rejected declaration introduced. Because
+/// `Resolver::is_type_param` consults that stack while flattening later
+/// submissions, a leaked name stops a user type from being canonicalized and
+/// turns into a bogus unknown-type error in an unrelated line. Dropping the
+/// frame is unconditional and keeps the stack balanced on the error path too.
+struct TypeParamFrame<'a> {
+    resolver: &'a Resolver,
+}
+
+impl<'a> TypeParamFrame<'a> {
+    /// Take ownership of the frame `push_type_params` just pushed.
+    fn new(resolver: &'a Resolver) -> TypeParamFrame<'a> {
+        TypeParamFrame { resolver }
+    }
+}
+
+impl Drop for TypeParamFrame<'_> {
+    fn drop(&mut self) {
+        self.resolver.pop_type_params();
+    }
+}
+
 impl Resolver {
     /// A resolver holding no session state, ready for standalone resolution.
     fn new() -> Resolver {
@@ -1112,6 +1139,7 @@ impl Resolver {
                 span,
             } => {
                 self.push_type_params(type_params, prefix)?;
+                let _frame = TypeParamFrame::new(self);
                 let mut locals = Locals::default();
                 let params = self.rewrite_params(params, &mut locals, prefix)?;
                 let ret = ret
@@ -1119,7 +1147,6 @@ impl Resolver {
                     .map(|t| self.rewrite_type(t, prefix, ret_span.unwrap_or(*span)))
                     .transpose()?;
                 let body = self.rewrite_block(body, &mut locals, prefix)?;
-                self.pop_type_params();
                 Item::Fn {
                     name: join(prefix, name),
                     type_params: type_params.clone(),
@@ -1162,11 +1189,11 @@ impl Resolver {
                 span,
             } => {
                 self.push_type_params(type_params, prefix)?;
+                let _frame = TypeParamFrame::new(self);
                 let fields = fields
                     .iter()
                     .map(|f| self.rewrite_field(f, prefix))
                     .collect::<Result<Vec<_>>>()?;
-                self.pop_type_params();
                 Item::Struct {
                     name: join(prefix, name),
                     type_params: type_params.clone(),
@@ -1183,11 +1210,11 @@ impl Resolver {
                 span,
             } => {
                 self.push_type_params(type_params, prefix)?;
+                let _frame = TypeParamFrame::new(self);
                 let variants = variants
                     .iter()
                     .map(|v| self.rewrite_variant(v, prefix))
                     .collect::<Result<Vec<_>>>()?;
-                self.pop_type_params();
                 Item::Enum {
                     name: join(prefix, name),
                     type_params: type_params.clone(),
@@ -1204,8 +1231,8 @@ impl Resolver {
                 span,
             } => {
                 self.push_type_params(type_params, prefix)?;
+                let _frame = TypeParamFrame::new(self);
                 let target = self.rewrite_type(target, prefix, *span)?;
-                self.pop_type_params();
                 Item::Alias {
                     name: join(prefix, name),
                     type_params: type_params.clone(),
@@ -1223,11 +1250,11 @@ impl Resolver {
                 ..
             } => {
                 self.push_type_params(type_params, prefix)?;
+                let _frame = TypeParamFrame::new(self);
                 let methods = methods
                     .iter()
                     .map(|m| self.rewrite_member(m, prefix))
                     .collect::<Result<Vec<_>>>()?;
-                self.pop_type_params();
                 Item::Trait {
                     name: join(prefix, name),
                     type_params: type_params.clone(),
@@ -1248,6 +1275,7 @@ impl Resolver {
                 ..
             } => {
                 self.push_type_params(type_params, prefix)?;
+                let _frame = TypeParamFrame::new(self);
                 let target = self.canonical_type(target, prefix, *span)?;
                 let target_args = target_args
                     .iter()
@@ -1265,7 +1293,6 @@ impl Resolver {
                     .iter()
                     .map(|m| self.rewrite_member(m, prefix))
                     .collect::<Result<Vec<_>>>()?;
-                self.pop_type_params();
                 Item::Impl {
                     target,
                     target_args,
@@ -1302,6 +1329,7 @@ impl Resolver {
             return self.rewrite_item(item, prefix);
         };
         self.push_type_params(type_params, prefix)?;
+        let _frame = TypeParamFrame::new(self);
         let mut locals = Locals::default();
         let params = self.rewrite_params(params, &mut locals, prefix)?;
         let ret = ret
@@ -1309,7 +1337,6 @@ impl Resolver {
             .map(|t| self.rewrite_type(t, prefix, ret_span.unwrap_or(*span)))
             .transpose()?;
         let body = self.rewrite_block(body, &mut locals, prefix)?;
-        self.pop_type_params();
         Ok(Item::Fn {
             name: name.clone(),
             type_params: type_params.clone(),
