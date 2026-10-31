@@ -4161,17 +4161,22 @@ impl Checker {
         Ok(())
     }
 
-    /// Validate a builtin call against its shared signature.
     /// The message for a value that cannot be stored in a container whose
-    /// element type the checker can name. Used by list `push` and indexed
-    /// assignment so a provable mismatch is rejected rather than hidden by the
-    /// coarse registry.
-    fn check_element_assignable(&self, expected: &Ty, actual: &Ty, span: Span) -> Result<()> {
+    /// element type the checker can name. Used by list `push`, set `add`, and
+    /// indexed assignment so a provable mismatch is rejected rather than hidden
+    /// by the coarse registry.
+    fn check_element_assignable(
+        &self,
+        container: &str,
+        expected: &Ty,
+        actual: &Ty,
+        span: Span,
+    ) -> Result<()> {
         if !matches!(actual, Ty::Unknown) && !expected.compatible_with(actual) {
             return Err(Diag::new(
                 codes::TYPE_MISMATCH,
                 format!(
-                    "list has element type `{}` but the value is `{}`",
+                    "{container} has element type `{}` but the value is `{}`",
                     expected.name(),
                     actual.name()
                 ),
@@ -4181,6 +4186,7 @@ impl Checker {
         Ok(())
     }
 
+    /// Validate a builtin call against its shared signature.
     fn check_builtin_call(
         &mut self,
         sig: &crate::stdlib::signatures::Signature,
@@ -4195,7 +4201,7 @@ impl Checker {
         if sig.name == "push" {
             if let (Some(list), Some(value)) = (args.first(), args.get(1)) {
                 if let Ty::List(elem) = self.infer(&list.value) {
-                    self.check_element_assignable(&elem, &self.infer(&value.value), span)?;
+                    self.check_element_assignable("list", &elem, &self.infer(&value.value), span)?;
                 }
             }
         }
@@ -4738,7 +4744,63 @@ impl Checker {
         // checked here.
         if class == crate::stdlib::signatures::TypeClass::List && name == "push" {
             if let (Ty::List(elem), Some(arg)) = (self.infer(recv), args.first()) {
-                self.check_element_assignable(&elem, &self.infer(&arg.value), span)?;
+                self.check_element_assignable("list", &elem, &self.infer(&arg.value), span)?;
+            }
+        }
+        // `set.add(v)` mirrors `list.push(v)`: a `{T}` receiver accepts only
+        // `T`, and the argument must itself be usable as a set element (§21.4).
+        if class == crate::stdlib::signatures::TypeClass::Set && name == "add" {
+            if let Some(arg) = args.first() {
+                let actual = self.infer(&arg.value);
+                if !matches!(actual, Ty::Unknown) && !actual.is_key_capable() {
+                    return Err(Diag::new(
+                        codes::TYPE_MISMATCH,
+                        format!(
+                            "type `{}` cannot be a set element; set elements must be \
+                             `string`, `int`, or `bool`",
+                            actual.name()
+                        ),
+                        span,
+                    ));
+                }
+                if let Ty::Set(elem) = self.infer(recv) {
+                    self.check_element_assignable("set", &elem, &actual, span)?;
+                }
+            }
+        }
+        // `has`/`contains`/`remove` take a value of the receiver's element type,
+        // exactly as the map key methods take a value of the map's key type.
+        if class == crate::stdlib::signatures::TypeClass::Set
+            && matches!(name, "has" | "contains" | "remove")
+        {
+            if let Some(arg) = args.first() {
+                let actual = self.infer(&arg.value);
+                if !matches!(actual, Ty::Unknown) {
+                    if !actual.is_key_capable() {
+                        return Err(Diag::new(
+                            codes::TYPE_MISMATCH,
+                            format!(
+                                "type `{}` cannot be a set element; set elements must be \
+                                 `string`, `int`, or `bool`",
+                                actual.name()
+                            ),
+                            span,
+                        ));
+                    }
+                    if let Ty::Set(elem) = self.infer(recv) {
+                        if !elem.compatible_with(&actual) {
+                            return Err(Diag::new(
+                                codes::TYPE_MISMATCH,
+                                format!(
+                                    "set has element type `{}` but `{name}` received `{}`",
+                                    elem.name(),
+                                    actual.name()
+                                ),
+                                span,
+                            ));
+                        }
+                    }
+                }
             }
         }
         for (i, param) in sig.params.iter().enumerate() {
@@ -5800,12 +5862,22 @@ impl Checker {
                             // Indexed assignment on a statically known list obeys
                             // the element contract. An `int` index is the only
                             // valid list index.
-                            self.check_element_assignable(&elem, &self.infer(value), *span)?;
+                            self.check_element_assignable(
+                                "list",
+                                &elem,
+                                &self.infer(value),
+                                *span,
+                            )?;
                         } else if let Ty::Array(elem, _) = self.infer(base) {
                             // Indexed assignment on a statically known array
                             // obeys the element contract; the length is fixed so
                             // only the element type is checked (§20, §64).
-                            self.check_element_assignable(&elem, &self.infer(value), *span)?;
+                            self.check_element_assignable(
+                                "array",
+                                &elem,
+                                &self.infer(value),
+                                *span,
+                            )?;
                         } else if let Ty::Tuple(_) = self.infer(base) {
                             // A tuple is immutable.
                             return Err(Diag::new(
