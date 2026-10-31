@@ -1,9 +1,30 @@
 # Current Engineering Handoff
 
-## Current task — CORE FIRST: native HTTP header values are erased in one direction and UTF-8 encoded in the other
+## Current task — CORE FIRST: no finding selected yet
 
-**Status:** implemented and validated locally on
-`fix/http-header-value-erasure`; awaiting PR #37 and remote CI.
+**Status:** the working tree is clean on `rewrite/v3-rust` at `fb3e8dee`. The
+previous task merged, and the next defect has not been chosen.
+
+### Next exact action
+
+Probe `src/` for a defect that can be reproduced from a committed test before
+being described. The recorded lead is `src/native_source.rs:373`, where
+`children` skips a directory entry whose filename is not valid UTF-8
+(`entry_name.to_str()` ... `else { continue }`). Establish first whether any
+reachable module name can correspond to such an entry — if none can, that lead
+is conformant and must be recorded as probed rather than fixed. If it is
+conformant, move to the next unprobed surface (module cycles, `E2019`/`E2020`
+reachability, or evaluator resource limits) and repeat the same sequence: a
+reproducible case, a regression test that fails before the fix, the fix, a
+passing test.
+
+---
+
+## Previous task — CORE FIRST: native HTTP header values are erased in one direction and UTF-8 encoded in the other — merged `fb3e8dee` (PR #37)
+
+**Status:** merged as `fb3e8dee`; twenty-one remote checks green,
+`mergeStateStatus=CLEAN`. Post-merge diff `4cbf6afb..fb3e8dee` contains exactly
+the twelve intended files.
 
 ### The defect
 
@@ -104,10 +125,8 @@ portable. `CHANGELOG.md` states this under `[Unreleased] / Fixed`.
 
 ### Next exact action
 
-Commit on `fix/http-header-value-erasure`, push, open PR #37 against
-`rewrite/v3-rust` using `.github/pull_request_template.md` verbatim, poll
-`gh pr checks` to 21/21 with `mergeStateStatus=CLEAN`, then
-`gh pr merge 37 --merge --delete-branch`.
+Done. Committed `21f1b539`, pushed, opened PR #37, obtained 21/21 green checks
+and merged with `gh pr merge 37 --merge --delete-branch`.
 
 ---
 

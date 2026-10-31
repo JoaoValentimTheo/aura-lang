@@ -2,11 +2,10 @@
 
 ## Directive 003 — stabilization and hardening campaign (current)
 
-- Active branch: `rewrite/v3-rust`, remote HEAD **`4cbf6afb`** — the merge of
-  **PR #36** (CORE FIRST: JSON decode depth parity). The working tree carries
-  the next CORE FIRST fix (HTTP header-value encoding) on branch
-  `fix/http-header-value-erasure`, validated and awaiting its PR.
-  **Thirty-six PRs are merged** this campaign:
+- Active branch: `rewrite/v3-rust`, remote HEAD **`fb3e8dee`** — the merge of
+  **PR #37** (CORE FIRST: HTTP header-value encoding). The working tree is
+  clean; the next CORE FIRST finding is not yet selected.
+  **Thirty-seven PRs are merged** this campaign:
   #2 `f96536b6` (Directive 002 preflight),
   #3 `07845932` (rustls advisories), #4 `a562bacf` (batches 1–5),
   #5 `eaa3b9ed` (TD-23 + default-branch flip), #6 `4a20fa84` (post-merge
@@ -39,7 +38,8 @@
   rendering), #33 `da8d6273` (CORE FIRST: `sort` total order),
   #34 `1fa01db0` (CORE FIRST: f-string zero-pad sign placement),
   #35 `4aff6d5c` (CORE FIRST: generic-bound method resolution),
-  #36 `4cbf6afb` (CORE FIRST: JSON decode depth parity).
+  #36 `4cbf6afb` (CORE FIRST: JSON decode depth parity),
+  #37 `fb3e8dee` (CORE FIRST: HTTP header-value encoding in both directions).
   The
   `/private/tmp/aura-directive-002-release-preflight` worktree and the
   `repair/directive-002-release-preflight` branch are **historical**.
@@ -1370,24 +1370,21 @@ feature-gating of the typed-decode path.
 
 ## Exact Next Action
 
-See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `4cbf6afb` (PR #36
-merged, thirty-six PRs merged this campaign); Aura 0.3.1 (Keystone) is published
+See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `fb3e8dee` (PR #37
+merged, thirty-seven PRs merged this campaign); Aura 0.3.1 (Keystone) is published
 and `v0.3.1` = `b09cbef2`. Batches 1–5, B6/B7/B14, TD-23, TD-24, TD-27,
 Directive 004, TD-13, the resolver type-parameter leak, the set key-method
 element typing, return-type tail validation, `pub use` re-export resolution, the
 f-string exponent case, the `sort` total order, the f-string zero-pad sign
-placement, generic-bound method resolution and JSON decode depth parity are
-**merged and closed**.
+placement, generic-bound method resolution, JSON decode depth parity and HTTP
+header-value encoding are **merged and closed**.
 Directive 003-R §4's blockers are closed.
-**Exact next action:** branch `fix/http-header-value-erasure` is validated and
-awaiting its PR (#37) + remote CI. It closes the native/browser header-value
-divergence under `docs/adr/0006-http-header-value-encoding.md`: response values
-decode as ISO-8859-1 instead of being erased to `""`, request values encode as
-ISO-8859-1 instead of UTF-8, and a value above `U+00FF` is `E4020` — the code
-the browser already used. Once merged, begin the next CORE FIRST work item — a
-real, reproduced defect in `src/`, `tests/`, or `fuzz/`, shipped as one PR
-carrying a reproducible case, a regression test that fails before the fix, the
-fix, and a passing test.
+**Exact next action:** the working tree is clean on `rewrite/v3-rust` at
+`fb3e8dee`. Branch the next CORE FIRST work item — a real, reproduced defect in
+`src/`, `tests/`, or `fuzz/`, shipped as one PR carrying a reproducible case, a
+regression test that fails before the fix, the fix, and a passing test. Prefer
+the unexplored `src/native_source.rs:373` lead: `entry_name.to_str()` may
+silently skip project source files whose filenames are not valid UTF-8.
 Highest-value unfinished leads already recorded here: (a) lexer/parser
 ambiguities, precedence, adversarial input and error recovery,
 (b) checker scopes, generics, mutability, (c) evaluator control flow, closures,
