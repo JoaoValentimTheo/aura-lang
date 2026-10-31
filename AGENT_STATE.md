@@ -1,10 +1,18 @@
 # Aura Agent State
 
-## Directive 008 — NEBULA 0.3.2 campaign (`G00`, `PASS`)
+## Directive 008 — NEBULA 0.3.2 campaign (`G01`, `PASS`)
+
+**G01 closed.** The dependency table, roles/ownership map, ID'd backlog, risk
+register, and evidence criteria are delivered in
+`docs/engineering/NEBULA_CAMPAIGN.md`, together with one blocking finding
+recorded as §1.5.1 and escalated as a human decision in §10.1.
 
 **G00 closed.** PR **#43** (`docs/nebula-campaign-g00`, head `ab9d5ae1`)
 merged into `rewrite/v3-rust` as **`7bd1d6fb`** at 2026-10-31T22:35:22Z, with
-**21/21** remote checks green. The merged diff is 4 files / +653 / −8, all
+**21/21** remote checks green. Its closure commit landed as PR **#44** →
+**`390f763c`** at 2026-10-31T22:47:07Z, also **21/21** green. Post-merge runs
+on `7bd1d6fb`: CI `41248873353` `completed / success`; Pages `41248873720`
+`completed / success`. The merged G00 diff is 4 files / +653 / −8, all
 documentation plus one preflight-script line; `src/`, `playground/runtime/`,
 `Cargo.toml`, `Cargo.lock` and `playground/runtimes/` are **byte-identical** to
 the baseline. `manifest.json` sha256 `cbe7ad91…23b837` on both sides;
@@ -17,6 +25,26 @@ requests. Directive 007 dev.9 evidence is intact (PR #41 → `ba8204ac`, CI run
 `41240576369` 21/21 green, Pages `41240576317` succeeded; PR #42 →
 `c4f76907`).
 
+**G01 blocking finding — DB drivers versus MSRV 1.83.** Every candidate
+database driver was compiled, not merely looked up, against a probe crate with
+`rust-version = "1.83"`. The result is that **only `rusqlite 0.37.0` builds on
+1.83**; `rusqlite 0.40.2`+, `tokio-postgres`, `sqlx`, `mysql_async`, `mongodb`,
+and `libsql` all fail with exit 101. Two causes are irreparable by version
+pinning: `digest` requires `block-buffer = "^0.12"` and `icu_normalizer` /
+`icu_properties` require `icu_provider = "^2.4.0"`, and every release in both
+required ranges is edition 2024 / MSRV ≥ 1.85. `mongodb 3.5.2` is the sharpest
+case: it honestly declares `rust-version = "1.83"` and is edition 2021, and
+still cannot build, because its transitive graph is not held to the same
+contract. Full evidence in `docs/engineering/NEBULA_CAMPAIGN.md` §1.5.1.
+
+**This is an open human decision, not a resolved question** (§10.1 of the
+campaign document). The three lawful outcomes are SQLite-only with documented
+`NO_GO` for the other three backends; an authorised MSRV bump; or
+feature-gating the drivers and formally amending the §18.2 `--all-features`
+floor. No option was chosen by the agent because raising the MSRV and weakening
+a published validation command are both on the §2.5 human-approval list. G07
+onward is gated on that choice.
+
 **Frozen artifacts unaltered.** `playground/runtimes/` holds 47 tracked files:
 `manifest.json` plus 46 `.wasm`. Only 8 of the 46 are registered in
 `manifest.json` (the other 38 are retained historical development builds).
@@ -27,10 +55,11 @@ All 8 registered artifacts re-hashed: 8 verified, 0 mismatched, 0 missing.
 **§0.4 provenance.** The three documents Directive 008 cites as inputs —
 `AQL_Nebula_RFC_Draft.md`, `NEBULA_SQLGUARD_CONTRACT.md`,
 `Aura_0.3.2_Nebula_Inventario_Geral.md` — **do not exist** in this repository.
-`docs/engineering/` has no `*NEBULA*` or `*AQL*` file; `docs/rfcs/` holds only
-`README.md` and `0001-exception-catch-selection.md`. The G02 RFC set must
-therefore be reconstructed from the directive text plus repository evidence,
-each RFC carrying an explicit provenance note, with no approval implied.
+`docs/engineering/` had no `*NEBULA*` or `*AQL*` file at baseline (it now holds
+this campaign document); `docs/rfcs/` holds only `README.md` and
+`0001-exception-catch-selection.md`. The G02 RFC set must therefore be
+reconstructed from the directive text plus repository evidence, each RFC
+carrying an explicit provenance note, with no approval implied.
 
 **P3 preflight fix.** `scripts/agent-state.sh` reported `WRITER=UNKNOWN` on a
 clean tree because its `## Writer` extraction required an exact line and
@@ -1599,19 +1628,32 @@ feature-gating of the typed-decode path.
 
 ## Exact Next Action
 
-**Directive 008 — NEBULA: execute G01 (the approved dependency and contract
-table).**
+**Directive 008 — NEBULA: G01 is complete; G02 is the next authorised wave,
+and one human decision is outstanding.**
 
-Wave `G00` is `PASS`: PR #43 merged as `7bd1d6fb` with 21/21 checks green, and
-`docs/engineering/NEBULA_CAMPAIGN.md` plus the `scripts/agent-state.sh`
-writer-extraction fix are on `rewrite/v3-rust`. G01 is authorised and is the
-only wave authorised; G02…G19 remain `NOT_STARTED`.
+Wave `G00` is `PASS`: PR #43 merged as `7bd1d6fb` (21/21 green) and its closure
+landed as PR #44 → `390f763c` (21/21 green). Wave `G01` is `PASS`: the
+dependency table, roles/ownership map, ID'd backlog, risk register, and evidence
+criteria are in `docs/engineering/NEBULA_CAMPAIGN.md`, and the mandatory G01
+finding is recorded at §1.5.1 with its decision package at §10.1. `GATE G01`
+forbids any new code before the critical contracts exist; no code was added.
 
-The next exact action is **G01**: publish the approved
-dependency table (including a per-driver ADR skeleton and audit status for each
-proposed database crate), roles and ownership, the ID'd backlog already listed
-in `NEBULA_CAMPAIGN.md` §5, risks, and evidence criteria. `GATE G01` forbids
-any new code before the critical contracts exist.
+**Outstanding human decision (§10.1, blocking G07 onward).** Every candidate
+database driver except `rusqlite 0.37.0` was *compiled* against Rust 1.83 and
+failed, because `block-buffer ^0.12` and `icu_provider ^2.4.0` are hard
+requirements whose entire usable ranges are edition 2024 / MSRV ≥ 1.85. The
+three lawful outcomes — SQLite-only with documented `NO_GO`, an authorised MSRV
+bump, or feature-gated drivers with a formally amended §18.2 floor — were
+**not** chosen by the agent, because two of them require human approval under
+§2.5.
+
+**Next exact action:** execute **G02** — reconstruct the P0 RFC set
+(NBL-010…NBL-022) under `docs/rfcs/`, using
+`docs/rfcs/0001-exception-catch-selection.md` as the structural template and
+the §2.2 section list as the required shape. Each RFC must carry an explicit
+provenance note recording that its nominal source document was absent and that
+no approval is implied. G02 is documentation-only and is **not** blocked by the
+§10.1 MSRV decision, which first bites at G07.
 
 **Campaign 003 remains closed** under Directive 005. Release-candidate
 preparation and stable promotion are still human decisions, and Directive 008
@@ -1632,10 +1674,11 @@ header-value encoding and statically empty `range` reachability are **merged and
 closed**.
 Directive 003-R §4's blockers are closed.
 
-**Exact next action:** none. The working tree is clean on `rewrite/v3-rust` at
-`86e2b5ba`. Directive 005 closed the campaign; the former instruction to branch
-the next CORE FIRST work item is **withdrawn** — do not open a new corrective PR
-or start a new campaign without a fresh human directive.
+**Exact next action:** execute G02 (P0 RFC reconstruction). The superseded
+instruction "Exact next action: none" that followed Directive 005's campaign
+closure no longer applies: Directive 008 reopened authorized work under the
+standing 003-R authorization. Do not open a corrective PR outside the Directive
+008 wave order, and do not tag, publish, or promote `0.3.2`.
 
 Highest-value leads recorded for a *future authorized* campaign (not a mandate):
 (a) lexer/parser ambiguities, precedence, adversarial input and error recovery,
