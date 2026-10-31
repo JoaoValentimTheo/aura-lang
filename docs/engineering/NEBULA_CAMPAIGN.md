@@ -1,12 +1,20 @@
 # Directive 008 — NEBULA 0.3.2 Campaign
 
-Status: **G00 PASS** — baseline and prerequisite inventory merged as
-`7bd1d6fb` (PR #43, 21/21 checks green). **G01 is the only authorized wave**;
-no implementation is authorized before G02.
+Status: **G00 PASS**, **G01 PASS** — baseline and prerequisite inventory merged
+as `7bd1d6fb` (PR #43, 21/21 checks green); closure and G01 authorisation
+merged as `390f763c` (PR #44, 21/21 checks green). **G02 is the only authorized
+wave**; no implementation is authorized before G02.
+
+G01 is complete and carries one unresolved item: the §1.5.1 MSRV-versus-drivers
+conflict, escalated as a human decision in §10.1. G01 is marked `PASS` because
+the gate asks for an approved dependency table, roles, backlog, risks, and
+evidence criteria — all delivered — and because a disclosed blocking finding
+with a decision package is the required G01 output, not a failure of it. The
+decision in §10.1 still gates G07 onward.
 
 Baseline: `c4f769077c769483963a0f2b51a789b00472e4cf` on `rewrite/v3-rust`
 (local == `origin/rewrite/v3-rust`, tree clean at campaign start). G00 landed
-on top of it as `7bd1d6fb`.
+on top of it as `7bd1d6fb`; G00 closure landed as `390f763c`.
 
 Published `0.3.1` Keystone and every frozen runtime under
 `playground/runtimes/` are immutable. `0.3.2` is **not** released, not
@@ -140,6 +148,68 @@ Default features are `cli`, `repl`, `json`, `regex`, `time`, `py`.
 
 Every database, async, and pooling dependency required by G07–G16 is **net-new
 supply-chain surface** and must pass `cargo audit` review as part of its wave.
+
+### 1.5.1 G01 dependency study — every candidate driver conflicts with MSRV 1.83
+
+This subsection is the empirical core of G01. Each row is a reproduced command,
+not a documentation lookup. Probe crates declared `rust-version = "1.83"`,
+resolved a lockfile with Cargo 1.98.1, then compiled with `cargo +1.83.0
+check --locked` in a fresh directory.
+
+| Driver | Version probed | Declared MSRV | `cargo +1.83.0` result | Blocking package |
+|---|---|---|---|---|
+| rusqlite | 0.37.0 (`bundled`) | not declared | **PASS** (exit 0) | none |
+| rusqlite | 0.40.2 | 1.85 | FAIL (exit 101) | `hashlink 0.12.2` |
+| rusqlite | 0.41.1 (latest) | 1.89.0, edition 2024 | FAIL | `hashlink 0.12.2` |
+| tokio-postgres | 0.7.13 | 1.81 (declared) | FAIL (exit 101) | `block-buffer 0.12.1` |
+| tokio-postgres | 0.7.18 (latest) | 1.85, edition 2024 | FAIL | `block-buffer 0.12.1` |
+| sqlx | 0.7.4 | not declared | FAIL (exit 101) | `icu_provider 2.4.0` |
+| sqlx | 0.9.0 (latest) | 1.94.0 | FAIL | `zeroize 1.9.1` |
+| mysql_async | 0.31.3 | not declared | FAIL (exit 101) | `getrandom 0.4.3` |
+| mysql_async | 0.37.1 (latest) | not declared | FAIL | undeclared transitive |
+| mongodb | 3.5.2 | **1.83 (declared and correct)** | FAIL (exit 101) | `getrandom 0.4.3` |
+| mongodb | 3.9.1 (latest) | 1.88 | FAIL | `getrandom 0.4.3` |
+| libsql | 0.9.24 | not declared | FAIL (exit 101) | undeclared transitive |
+| libsql | 0.10.0 (latest) | not declared | FAIL | undeclared transitive |
+
+**The failure is not a version-selection mistake.** It is caused by hard
+version requirements inside the dependency graph that cannot be satisfied by
+any combination compatible with Rust 1.83:
+
+- `digest` requires `block-buffer = "^0.12"`. Every release in the
+  `0.12` line is edition 2024 / MSRV 1.85. The last usable release,
+  `block-buffer 0.10.4`, is outside the allowed range, so
+  `cargo update -p block-buffer --precise 0.10.4` fails with
+  `failed to select a version for the requirement block-buffer = "^0.12"`.
+- `icu_normalizer` and `icu_properties` require `icu_provider = "^2.4.0"`.
+  `icu_provider 2.4.0` and `2.3.0` are edition 2024 / MSRV 1.88; `2.2.0` needs
+  1.86. Only `2.1.0` (1.83) and `2.0.0` (1.82) would work, and both are below
+  the required range.
+- `uuid` requires `getrandom 0.4`. Every `getrandom 0.4.x` release is edition
+  2024 / MSRV 1.85. The workable `0.3.x` line is below the required range.
+
+**Ordinary resume measures do not converge.** Pinning each blocker in turn
+reveals another. On a minimal `sqlx 0.7.4` graph (188 packages, 5 of them
+edition 2024), pinning `idna_adapter 1.2.1`, `zeroize 1.8.2`, and
+`tempfile 3.20.0` successively exposed `icu_provider`, which is unsatisfiable.
+Attempting the same rescue for `mongodb 3.5.2` produced a graph that resolved
+but compiled with **1638 errors**, because the pinned transitive versions are
+mutually inconsistent with the macro crate's expectations.
+
+**The final and most important observation.** `mongodb 3.5.2` declares
+`rust-version = "1.83"` and is edition 2021 — the declaration is *correct* and
+still the build fails, because MSRV declarations are not enforced across the
+transitive graph. This is precisely why `AGENTS.md` rule 12 ("an untested
+environment assumption is where a newly wired gate fails first") and the rule
+that `rust_version: null` means *undeclared, not compatible* both matter here.
+
+**Consequence for the campaign.** Adding any of these drivers either
+regresses the mandated §18.2 floor (`cargo +1.83.0 check --locked
+--all-features`, which is green today — reproduced after `touch src/lib.rs`,
+exit 0) or requires the driver to be excluded from `--all-features` by
+feature-gating, which formally amends the published validation floor. Per
+§20.3 this is an MSRV-class impediment and must be recorded and escalated, not
+worked around. The available outcomes are enumerated in §10.1 below.
 
 ### 1.6 Preflight defect corrected (P3)
 
@@ -281,8 +351,9 @@ Current wave status:
 | Wave | Status |
 |---|---|
 | G00 | `PASS` — PR #43, merge `7bd1d6fb`, 21/21 checks |
-| G01 | `IN_PROGRESS` — dependency and contract table |
-| G02–G19 | `NOT_STARTED` |
+| G01 | `PASS` — dependency table and MSRV blocker disclosed (§1.5.1, §10.1) |
+| G02 | `NOT_STARTED` — authorized once this G01 record is merged |
+| G03–G19 | `NOT_STARTED` |
 
 A `PASS` requires observed evidence. An environment that was not executed is
 reported as not executed, never as `PASS`. `UNVERIFIED` on any mandatory
@@ -302,6 +373,7 @@ block reserves space inside a wave, so there are 34 identifiers here, not 190.
 | NBL-001 | G00 | Campaign document, baseline, prerequisite inventory | P0 |
 | NBL-002 | G00 | Preflight `agent-state.sh` writer extraction defect | P3 |
 | NBL-003 | G01 | Dependency table and ownership map | P0 |
+| NBL-004 | G01 | MSRV 1.83 versus driver dependencies — blocker and decision package (§1.5.1, §10.1) | P0 |
 | NBL-010 | G02 | RFC: `Result` and recoverable error semantics | P0 |
 | NBL-011 | G02 | RFC: `try` as expression without ambiguity | P0 |
 | NBL-012 | G02 | RFC: inference and error propagation rules | P0 |
@@ -343,6 +415,7 @@ block reserves space inside a wave, so there are 34 identifiers here, not 190.
 | R-01 | `try`-as-expression cannot coexist unambiguously with the catch-mandatory `try_stmt` | Blocks G03 and therefore every `Result`-returning API | Suspend that specific form and request a decision; never insert a heuristic parser |
 | R-02 | `@` metadata requires a token class that does not exist | G08 syntax may need a lexer change with compatibility cost | Decide in the G02 RFC with positive and negative grammar tests before implementing |
 | R-03 | No database, async, or pooling dependency exists | G07–G16 are all net-new supply-chain surface | Per-driver ADR; `cargo audit`; human approval when a chain fails |
+| R-03a | **Every candidate driver breaks the mandated Rust 1.83 floor** (§1.5.1). `block-buffer ^0.12` and `icu_provider ^2.4.0` are hard requirements whose entire usable ranges are edition 2024 / MSRV ≥ 1.85 | G07 onward is unreachable without a human decision; the §18.2 `--all-features` floor cannot stay intact for any driver except `rusqlite 0.37.0` | Escalated as §10.1; no driver is adopted and no floor is amended until a human chooses |
 | R-04 | No authorized database credentials are available | G10–G16 cannot claim real integration | Report unexecuted environments honestly; a cell is never `PASS` by compilation alone |
 | R-05 | Four backends have genuinely different semantics | False equivalence would be a correctness and security defect | Declare `capability-not-supported` explicitly; never silently diverge |
 | R-06 | `py` runs a full CPython process with full authority | In-process CPython cannot be SQLGuard-certified | State the boundary; `production-enforce` must refuse known bypass |
@@ -456,10 +529,32 @@ finding before acting on it, because reviewer consensus is not evidence.
 | DX / AIS | Provenance, diagnostics, Agent-Native surface |
 | Release | Hashes, CI, frozen-artifact verification |
 
-The repository's custom Aura agents are used: `Aura Orchestrator`,
-`Aura Scout`, `Aura Spec Auditor`, `Aura Deep Auditor`,
+The repository's custom Aura agents are the preferred reviewers:
+`Aura Orchestrator`, `Aura Scout`, `Aura Spec Auditor`, `Aura Deep Auditor`,
 `Aura Adversarial Reviewer`, `Aura Artifact Verifier`, `Aura Implementer`.
 No agent may approve its own code as sole reviewer.
+
+### 9.1 Environment constraint — custom Aura agents unavailable
+
+As of G00 and reconfirmed during G01, every `Aura *` custom agent fails to
+launch with:
+
+```
+Model 'customendpoint/Robin/deepseek-ai/deepseek-v4.1-flash-1017' is not available.
+```
+
+Each custom agent is pinned to that endpoint, and the model is not present in
+the available set. Passing an explicit `model` override is also rejected for
+these agent types in practice.
+
+This is recorded rather than worked around. Per the degradation rule in
+`AGENTS.md` ("if parallel subagents are unavailable, run fresh sequential
+review sessions instead — the protocol degrades cleanly and must not be
+faked"), the lead performs the reviewer duties directly: reproducing every
+claim, re-running each command, and adversarially re-reading its own published
+text. Every checkpoint states plainly which reviews were executed by the lead
+because the agents could not run. A review is never reported as delegated when
+it was not.
 
 ---
 
@@ -471,6 +566,42 @@ semantic discrepancy, an isolation risk, OOP or parser breakage, a Native/WASM
 regression, or a failing security test. Replacing a problem with a `TODO` and
 marking the wave `PASS` is forbidden. A genuine specification choice produces a
 decision package rather than a silent resolution.
+
+### 10.1 Open decision — MSRV 1.83 versus the required database drivers
+
+Recorded by G01 and **not resolved by the agent**, because raising the MSRV is
+on the human-approval list in §2.5. The evidence is in §1.5.1. Only one
+candidate driver compiles on Rust 1.83 at all, and only when pinned to an older
+release.
+
+The three legitimate outcomes:
+
+1. **SQLite-only with documented NO-GO for the rest.** Accept `rusqlite 0.37.0`
+   (proven green on 1.83) as the sole P0 driver. Postgres, MySQL, and MongoDB
+   become documented `NO_GO` outcomes in the G18 matrix rather than silent
+   omissions. This preserves the MSRV contract and the §18.2 floor exactly as
+   published. Cost: P0 "four drivers with an honest matrix" becomes "one driver
+   plus three grounded NO-GOs", which requires an explicit scope change since
+   the directive lists the four drivers as P0.
+2. **Authorised MSRV bump.** Raise `rust-version` to at least 1.94 (the floor
+   imposed by `sqlx 0.9.0`, the highest of the candidates) and update the
+   `msrv` CI job, `Cargo.toml`, and every document that states 1.83. This
+   unblocks the entire driver set at the cost of dropping Rust 1.83 users.
+   This is explicitly a human decision and cannot be taken by the agent.
+3. **Feature-gated drivers and an amended floor.** Keep `rust-version = "1.83"`
+   for the default build, declare each driver under a non-default feature, and
+   amend the §18.2 floor so `--all-features` is replaced by a named feature
+   set. This was proven to work mechanically: with the optional dependency
+   disabled the same project compiles on 1.83 with exit 0, and with the feature
+   enabled it fails with exit 101. Cost: `--all-features` can no longer mean
+   "everything builds", which weakens a validation command that is a published
+   contract, so it needs the same authorisation as option 2.
+
+`libsql` is excluded from all three options: it fails on 1.83 in every version
+probed and cannot serve as the SQLite driver.
+
+No option is selected here. G01 records the finding; the choice belongs to a
+human, per §2.5 and §20.3.
 
 ---
 

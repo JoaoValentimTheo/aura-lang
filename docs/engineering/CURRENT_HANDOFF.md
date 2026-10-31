@@ -1,29 +1,41 @@
 # Current Engineering Handoff
 
-## Directive 008 — NEBULA 0.3.2 campaign (`G01`, authorised)
+## Directive 008 — NEBULA 0.3.2 campaign (`G02`, authorised)
 
-Active task: **G01**, the approved dependency and contract table. `G00` is
-closed. No implementation is authorized before `G02` accepts the P0 RFC set.
+Active task: **G02**, the P0 RFC reconstruction. `G00` and `G01` are closed.
+No implementation is authorized before `G02` accepts the P0 RFC set.
 
 ```
-WAVE: G01
-STATUS: IN_PROGRESS
-HEAD: 7bd1d6fb47a807878aafecd0ed3ca3dd5444b0fd (merge of PR #43)
-PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb; 0 open PRs
-CHECKS: PR #43 remote CI 21/21 pass; post-merge push CI on 7bd1d6fb dispatched
+WAVE: G01 -> PASS; G02 authorized next
+STATUS: G01 PASS (one human decision outstanding, see DECISÕES)
+HEAD: 390f763c35ef159f6f684a59c8911d6b8c859290 (merge of PR #44)
+PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb;
+     #44 MERGED (G00 closure + G01 authorisation, head 5cf4f8d9) -> 390f763c;
+     0 open PRs
+CHECKS: PR #43 21/21 pass; PR #44 21/21 pass;
+        post-merge CI 41248873353 on 7bd1d6fb = completed/success;
+        Pages 41248873720 = completed/success
 TESTS_REALMENTE_EXECUTADOS: see "Commands actually executed" below
-PROVAS: baseline reconciled; merged diff is 4 docs/script files only;
+PROVAS: baseline reconciled; G00+G01 diffs are docs/script files only;
         src/, playground/runtime/, Cargo.toml, Cargo.lock, playground/runtimes/
         byte-identical to c4f76907; manifest.json sha256 unchanged;
-        manifest.current 0.3.1; Cargo.toml 0.3.1; 0 tags at head; 0 0.3.2 tags
+        manifest.current 0.3.1; Cargo.toml 0.3.1; 0 tags at head; 0 0.3.2 tags;
+        repo floor cargo +1.83.0 check --locked --all-features = exit 0
 RISCOS: R-01 try-as-expression ambiguity (gates G03 and every Result API);
         R-02 @ needs a token class that does not exist; R-03 net-new DB
-        dependency surface; R-04 no authorized DB credentials; R-06 py is a
-        full CPython process, not a sandbox
-DECISÕES: none. No approval is implied anywhere; the three documents Directive
-        008 names as inputs are absent and must be reconstructed with explicit
-        provenance notes.
-PRÓXIMA ONDA AUTORIZADA: G01 only. G02 starts only after G01 PASS.
+        dependency surface; R-03a EVERY candidate DB driver breaks MSRV 1.83
+        except rusqlite 0.37.0 (proven by build, campaign doc 1.5.1);
+        R-04 no authorized DB credentials; R-06 py is a full CPython process,
+        not a sandbox
+DECISÕES: NONE TAKEN. Campaign doc 10.1 records an open HUMAN decision: MSRV
+        1.83 versus the required DB drivers. Three lawful outcomes (SQLite-only
+        with documented NO_GO / authorised MSRV bump / feature-gated drivers
+        with an amended 18.2 floor); the agent chose none, because two require
+        approval under 2.5. G07 onward is gated on this. No approval is implied
+        anywhere; the three documents Directive 008 names as inputs are absent
+        and must be reconstructed with explicit provenance notes.
+PRÓXIMA ONDA AUTORIZADA: G02 only. G02 is documentation-only and is NOT blocked
+        by the 10.1 MSRV decision, which first bites at G07.
 ```
 
 ### G00 closure evidence
@@ -44,6 +56,67 @@ PRÓXIMA ONDA AUTORIZADA: G01 only. G02 starts only after G01 PASS.
 - **No release action.** `manifest.current` still `"0.3.1"`, `Cargo.toml` still
   `0.3.1`, zero tags point at head, zero `0.3.2` tags exist locally or
   remotely. Nothing was published or promoted.
+
+### G01 closure evidence — dependency study and the MSRV blocker
+
+**What G01 delivered.** The dependency table, the roles/ownership map (campaign
+doc §9), the ID'd backlog (§5, now with `NBL-004`), the risk register (§6, now
+with `R-03a`), and the evidence criteria (§7). G01 added **no code**; `GATE G01`
+forbids it before the critical contracts exist, and the only file touched is
+documentation.
+
+**The finding.** Every candidate database driver was *compiled* — not looked up
+— in a throwaway crate declaring `rust-version = "1.83"`, with a lockfile
+resolved by Cargo 1.98.1 and then `cargo +1.83.0 check --locked`:
+
+| Driver | Version probed | Declared MSRV | Result on 1.83 | First blocker |
+|---|---|---|---|---|
+| rusqlite | 0.37.0 `bundled` | not declared | **PASS** (0) | — |
+| rusqlite | 0.40.2 | 1.85 | FAIL (101) | `hashlink 0.12.2` |
+| tokio-postgres | 0.7.13 | 1.81 declared | FAIL (101) | `block-buffer 0.12.1` |
+| sqlx | 0.7.4 | not declared | FAIL (101) | `icu_provider 2.4.0` |
+| mysql_async | 0.31.3 | not declared | FAIL (101) | `getrandom 0.4.3` |
+| mongodb | 3.5.2 | **1.83 declared and correct** | FAIL (101) | `getrandom 0.4.3` |
+| libsql | 0.9.24 | not declared | FAIL (101) | transitive |
+
+**Why pinning does not rescue it.** Two hard requirements cannot be satisfied
+by any 1.83-compatible release: `digest` requires `block-buffer = "^0.12"`, and
+every release in that line is edition 2024 / MSRV 1.85 (the last usable,
+`0.10.4`, is outside the range and `cargo update --precise` refuses it);
+`icu_normalizer` and `icu_properties` require `icu_provider = "^2.4.0"`, where
+`2.4.0`/`2.3.0` are edition 2024 / 1.88 and only `2.1.0`/`2.0.0` are ≤1.83 and
+thus out of range. Pinning each blocker in turn on a minimal `sqlx 0.7.4` graph
+(188 packages, 5 edition-2024) merely surfaced the next one, ending at
+`icu_provider`, which is unsatisfiable. The same attempt on `mongodb 3.5.2`
+produced a graph that resolved yet compiled with **1638 errors**.
+
+**The sharpest datum.** `mongodb 3.5.2` declares `rust-version = "1.83"` and is
+edition 2021 — an honest declaration — and still cannot build, because MSRV
+declarations are not enforced across the transitive graph. This is `AGENTS.md`
+rule 12 in practice: an untested environment assumption is where a newly wired
+gate fails first.
+
+**Gate mechanics that decide the options** (all reproduced): an optional driver
+dependency that is *disabled* compiles on 1.83 with exit 0; the *same* project
+with the feature enabled fails with exit 101. A Cargo-1.98 lockfile containing
+edition-2024 packages plus `--locked --no-default-features` gives exit 0, while
+`--locked --all-features` gives exit 101. This is why feature-gating is
+mechanically viable — and also why it cannot be adopted silently, since it
+changes what the published `--all-features` floor means.
+
+**Baseline confirmed green.** `touch src/lib.rs && cargo +1.83.0 check --locked
+--all-features` → `Checking aura-lang v0.3.1 … Finished`, exit 0. Real
+recompilation, not a cache hit.
+
+**Escalated, not resolved.** Campaign doc §10.1 records the three lawful
+outcomes and states that the agent selected none, because raising the MSRV and
+weakening a published validation command are both on the §2.5 human-approval
+list. `libsql` is excluded from every option: it fails on 1.83 at all versions
+probed.
+
+**Not run locally.** `cargo audit` is not installed on this machine, so no local
+audit claim is made; the CI `audit` job (`continue-on-error: true`) covers the
+three lockfiles and both npm trees. Reported as not run, not as passing.
 
 ### What changed
 
@@ -80,8 +153,35 @@ git diff --stat c4f76907 ab9d5ae1              # 4 files, +653/-8
 git diff c4f76907 ab9d5ae1 -- playground/runtimes/   # 0 lines
 gh pr checks 43                                # 21 pass, 0 fail, 0 pending
 gh pr merge 43 --merge --delete-branch         # merged as 7bd1d6fb
+gh pr checks 44                                # 21 pass, 0 fail, 0 pending
+gh pr merge 44 --merge --delete-branch         # merged as 390f763c
+gh run view 41248873353                        # completed / success
+gh run view 41248873720                        # completed / success (Pages)
+git diff --name-status 7bd1d6fb 390f763c       # docs only
 aura check / aura run probes in fresh dirs, each verified with od -c
 ```
+
+G01 dependency study — every result below is a real compile, not a lookup:
+
+```text
+touch src/lib.rs && cargo +1.83.0 check --locked --all-features
+    -> Checking aura-lang v0.3.1, Finished               exit 0
+/tmp/msrv_rusq   rusqlite 0.37.0 bundled, cargo +1.83.0 check --locked
+    -> Checking rusqlite v0.37.0, Finished               exit 0
+/tmp/msrv_pg     tokio-postgres 0.7.13, default-features=false
+    -> block-buffer-0.12.1/Cargo.toml: edition2024 required   exit 101
+/tmp/msrv_count  sqlx 0.7.4 (188 pkgs, 5 edition-2024)
+    -> edition2024 required; first blocker getrandom-0.4.3    exit 101
+cargo update -p idna_adapter --precise 1.2.1   # applied
+cargo update -p hashbrown --precise 0.15.5     # error: ambiguous
+cargo update -p icu_provider --precise 2.0.0   # error: requires ^2.4.0
+/tmp/msrv_mongo2 mongodb 3.5.2 pinned graph    # 1638 compile errors
+/tmp/msrv_probe  optional dep disabled         # exit 0
+/tmp/msrv_probe  same project, feature enabled # exit 101
+```
+
+`cargo audit` was **not run locally** — it is not installed. No local audit
+claim is made.
 
 ### Environment constraint carried forward
 
@@ -90,17 +190,21 @@ The repository's custom `Aura *` agents (`Aura Adversarial Reviewer`,
 this environment: they are pinned to
 `customendpoint/Robin/deepseek-ai/deepseek-v4.1-flash-1017`, which is not
 available. Per `AGENTS.md` the review protocol degrades cleanly, so the
-adversarial and artifact-integrity reviews for G00 were executed directly by
-the lead and the degradation is stated rather than faked. Future sessions
-should not retry the delegation blindly.
+adversarial and artifact-integrity reviews for G00 and G01 were executed
+directly by the lead and the degradation is stated rather than faked. Future
+sessions should not retry the delegation blindly.
 
 ### Next exact action
 
-Execute **G01**: publish the approved dependency table — per-driver ADR
-skeleton and `cargo audit` status for each proposed database crate — plus roles
-and ownership, the identified backlog, risks, and evidence criteria.
-`GATE G01` forbids any new code before the critical contracts exist, so no
-source file may be touched during G01.
+Execute **G02**: reconstruct the P0 RFC set (`NBL-010`…`NBL-022`) under
+`docs/rfcs/`, using `docs/rfcs/0001-exception-catch-selection.md` as the
+structural template and campaign doc §2.2 as the required section list. Each
+RFC carries an explicit provenance note stating that its nominal source
+document was absent and that no approval is implied.
+
+G02 is documentation-only and is **not** blocked by the §10.1 MSRV decision,
+which first bites at G07. G02 must not add source code; `GATE G02` requires the
+P0 RFCs to be accepted first.
 
 ## Directive 007 — runtime distribution parity (`0.3.2-dev.9`, `PASS`)
 
