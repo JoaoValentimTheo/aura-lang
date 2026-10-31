@@ -230,6 +230,43 @@ narrowings, and pinned by five new/rewritten regression guards.
   resolver, latent with a persisted one. It is **not** cleared in
   `reset_transient`; no oracle case diverges. The O(Σ set²) → O(Σ set) keyed
   duplicate scan is also deferred (`Ty` has `Eq` but not `Hash`).
+- **CI round 1 — 5 failed / 16 passed, one real defect.** Every failure was the
+  same thing: `Checker::session`, `Checker::reset_transient`, `Resolver::session`
+  and `Resolver::reset_transient` are `pub(crate)` and reachable only from
+  `src/repl.rs`, which `src/lib.rs:30` gates with `#[cfg(feature = "repl")]`.
+  In any build without `repl` they are dead code, and CI's `RUSTFLAGS: -D
+  warnings` turns that into a build error. Failing jobs: `language contract`,
+  `fuzz smoke`, `miri`, `playground (wasm runtime)` ("Lint the runtime crate"),
+  and `website` (its `playground/tests/node/run-all.mjs` step) — all compile the
+  lib without `repl`.
+- **Why the local floor missed it — permanent lesson.** Every command in it
+  enabled `repl`: `--all-features` does, and so did the "CI feature set"
+  `cli,repl,json,regex,time`. **A `pub(crate)` helper reachable only from a
+  feature-gated module is dead code in every other feature set, and
+  `--all-features` validation cannot see it.** The floor now includes
+  `RUSTFLAGS="-D warnings" cargo check --locked --lib --no-default-features
+  --features cli`, with `--lib` rather than `--all-targets` because
+  `tests/cli.rs` uses `serde_json` unconditionally (795, 916) and fails with 24
+  `E0433` under `--all-targets` in that configuration. That breakage is
+  **pre-existing** (`git show --name-only 404980e5` does not list
+  `tests/cli.rs`) and CI never builds the combination.
+- **The fix, and why the alternatives were rejected.** `#[cfg(feature =
+  "repl")]` on all four methods. Making them `pub` widens the public API to
+  silence a lint; `#[allow(dead_code)]` weakens a warning to buy green. Both are
+  forbidden by the PR template and Directive 003-R. One consequence: the
+  intra-doc link ``[`Checker::reset_transient`]`` inside `Checker::session`
+  became a plain code span, since a feature-gated link target would otherwise
+  fail `rustdoc::broken-intra-doc-links` under `-D warnings`.
+  `RUSTDOCFLAGS="-D warnings" cargo doc --lib` still reports **8 pre-existing**
+  broken links, all in `src/run/` (untouched here; CI never runs `cargo doc`).
+- **Verification of the fix.** Reproduced the dead-code error on unmodified
+  `HEAD` (stash/restore) and cleared it in the same configuration, plus negative
+  controls on the fuzz workspace and the playground runtime clippy — the three
+  distinct job classes. Six no-`repl` lib feature sets clean under `-D
+  warnings`: `cli`, `cli,json,regex,time`, `http-api`, `cli,evaluator-oracle`,
+  `json,regex,time`, `py`. Both oracles still identical (25/25, 6/6); full floor
+  re-run green; playground fmt/clippy/tests, wasm build, `build.mjs --check` and
+  `run-all.mjs` all clean.
 
 ## Repository
 
@@ -836,16 +873,22 @@ See `docs/engineering/CURRENT_HANDOFF.md`. In short: HEAD is `38f5fed5` (PR #20
 merged, twenty PRs merged this campaign); Aura 0.3.1 (Keystone) is published
 and `v0.3.1` = `b09cbef2`. Batches 1–5, B6/B7/B14, TD-23, TD-24, TD-27 and
 Directive 004 are **merged and closed**. Directive 003-R §4's blockers are
-closed. The first CORE FIRST fix — REPL session linearization (TD-13) — is on
-`perf/repl-linear-session` and awaiting its PR.
-**Exact next action:** open and land the REPL linearization PR, then continue
-the CORE FIRST campaign — real defects in `src/`, `tests/`, and `fuzz/`, one PR
-per finding, each carrying a reproducible case, a regression test that fails
-before the fix, the fix, and a passing test. Do not begin language features
-frozen for stabilization. B-1R8 (remove the recursive engine and the oracle
-switch) and any runtime publication remain separately human-gated.
+closed. The first CORE FIRST fix — REPL session linearization (TD-13) — is
+committed on `perf/repl-linear-session` (`404980e5`) and open as PR #21; its
+first CI round was red on a single feature-gating defect (see the CORE FIRST
+section), fixed and revalidated but not yet pushed.
+**Exact next action:** commit the `#[cfg(feature = "repl")]` fix, push, update
+PR #21's validation table with the no-`repl` results, confirm all 21 remote
+checks actually run and pass, merge, reconcile this file to the merge SHA, then
+continue the CORE FIRST campaign — real defects in `src/`, `tests/`, and
+`fuzz/`, one PR per finding, each carrying a reproducible case, a regression
+test that fails before the fix, the fix, and a passing test. Do not begin
+language features frozen for stabilization. B-1R8 (remove the recursive engine
+and the oracle switch) and any runtime publication remain separately
+human-gated.
 **Validation (TD-22):** use the observable sharded `scripts/validate.py` (not a
-monolithic watch) for the Rust matrix.
+monolithic watch) for the Rust matrix, and include the no-`repl` lib check
+above — the sharded runner alone will not catch feature-gated dead code.
 
 ## Writer
 

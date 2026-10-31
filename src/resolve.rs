@@ -343,6 +343,10 @@ impl Resolver {
     /// A resolver for a REPL session, carried across submissions so each one
     /// costs only the work its own input needs rather than rebuilding the whole
     /// session's resolution state.
+    ///
+    /// Gated on `repl`: the session lifecycle it exists for lives in
+    /// [`crate::repl`], so in a build without that feature nothing can call it.
+    #[cfg(feature = "repl")]
     pub(crate) fn session() -> Resolver {
         Resolver::new()
     }
@@ -357,6 +361,10 @@ impl Resolver {
     /// must never be re-applied (`use` records a binding, and applying it twice
     /// would report a spurious clash), and the source-provenance tables only
     /// describe the item pointers of the submission being resolved.
+    ///
+    /// Gated on `repl` alongside [`Resolver::session`]; without that feature
+    /// there is no session to reset.
+    #[cfg(feature = "repl")]
     pub(crate) fn reset_transient(&mut self) {
         self.applied_imports.clear();
         self.item_sources.clear();

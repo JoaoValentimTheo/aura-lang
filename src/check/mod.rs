@@ -762,9 +762,13 @@ impl Checker {
     /// Build a bare checker for a REPL session.
     ///
     /// Session state accumulates in place through
-    /// [`Checker::extend_declarations`] and [`Checker::reset_transient`], so a
+    /// [`Checker::extend_declarations`] and `Checker::reset_transient`, so a
     /// session does not rebuild every table from the whole declaration list on
     /// each submission.
+    ///
+    /// Gated on `repl`: the session lifecycle it exists for lives in
+    /// [`crate::repl`], so in a build without that feature nothing can call it.
+    #[cfg(feature = "repl")]
     pub(crate) fn session() -> Checker {
         Checker::new()
     }
@@ -1009,6 +1013,10 @@ impl Checker {
     /// describes the submission currently being checked is rebuilt from scratch
     /// by a fresh checker, so it is reset here rather than leaked into the next
     /// submission.
+    ///
+    /// Gated on `repl` alongside [`Checker::session`]; without that feature
+    /// there is no session to reset.
+    #[cfg(feature = "repl")]
     pub(crate) fn reset_transient(&mut self) {
         self.has_main = false;
         self.return_type = None;

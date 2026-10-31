@@ -139,21 +139,76 @@ refactor. `SessionState` groups `decls`/`checker`/`applied`/`resolver` so
 
 - `cargo fmt --all -- --check` → clean
 - `cargo clippy --locked --all-targets --all-features -- -D warnings` → clean
-- `cargo test --locked --all-targets --all-features` → all suites pass, 0 failed
+- `cargo test --locked --all-targets --all-features` → 66 suites pass, 0 failed
 - `cargo test --locked --all-targets --no-default-features --features cli,repl,json,regex,time` → 66 suites pass, 0 failed
 - `cargo test --locked --test repl --test repl_cost --test bench --features repl` → 53 / 3 / 15 passed, 2 ignored
 - `cargo +1.83.0 check --locked --all-features` → clean
+- `RUSTFLAGS="-D warnings" cargo check --locked --lib --no-default-features --features cli` → clean (plus `cli,json,regex,time`, `http-api`, `cli,evaluator-oracle`, `json,regex,time`, `py`: all clean)
+- `cargo +nightly check --manifest-path fuzz/Cargo.toml --all-targets` → clean
+- `cargo clippy --manifest-path playground/runtime/Cargo.toml --all-targets -- -D warnings` → clean
+- `cargo build --manifest-path playground/runtime/Cargo.toml --release --target wasm32-unknown-unknown` → clean
+- `node playground/tests/node/run-all.mjs` → all suites 0 failed
+- `RUSTDOCFLAGS="-D warnings" cargo test --doc` → 0 tests, clean (both feature sets)
 - both oracles → 25/25 and 6/6 identical against `/tmp/p_before.json` and `/tmp/sn_before2.json`
 
-Not run locally: miri (deferred to remote CI, which ran it green on PR #20),
-nightly fuzz, browser suites — none touch this change.
+Not run locally: miri (deferred to remote CI, which runs it green), browser
+suites. Neither touches this change.
+
+### Full validation floor — permanent lesson from PR #21
+
+The first push of this branch was **5-failed / 16-passed** on remote CI, and every
+failure reduced to one real defect in the change: `Checker::session`,
+`Checker::reset_transient`, `Resolver::session` and `Resolver::reset_transient`
+are `pub(crate)` and reachable only from `src/repl.rs`, which `src/lib.rs:30`
+gates with `#[cfg(feature = "repl")]`. In any build **without** `repl` they are
+dead code, and CI's `RUSTFLAGS: -D warnings` makes that a hard build error.
+
+**Why the local floor missed it:** every command in it enabled `repl` —
+`--all-features` does, and so did the "CI feature set"
+`cli,repl,json,regex,time`. Nothing in the matrix ever built the library without
+that feature. Jobs that do, and therefore caught it: `miri`
+(`--lib --no-default-features --features cli`), `language contract`
+(`cargo run --no-default-features --features cli -- version`), `fuzz smoke`,
+`playground (wasm runtime)`'s "Lint the runtime crate", and the `website` job's
+`playground/tests/node/run-all.mjs` step.
+
+**The rule:** a `pub(crate)` helper reachable only from a feature-gated module is
+dead code in every other feature set, and `--all-features` validation cannot see
+it. The floor now includes
+
+```
+RUSTFLAGS="-D warnings" cargo check --locked --lib --no-default-features --features cli
+```
+
+Use `--lib`, **not** `--all-targets`: `tests/cli.rs` uses `serde_json`
+unconditionally (lines 795 and 916) and fails with 24 `E0433` errors under
+`--all-targets --no-default-features --features cli`. That breakage is
+**pre-existing** — verified with `git show --name-only 404980e5`, which does not
+list `tests/cli.rs` — and CI never builds that combination. Recorded as a known
+gap, not a regression of this PR.
+
+The alternative fixes were rejected deliberately: making the four methods `pub`
+widens the public API to silence a lint, and `#[allow(dead_code)]` weakens a
+warning to buy green. Both are forbidden by the PR template and Directive 003-R.
+Gating with `#[cfg(feature = "repl")]` is the honest statement of the fact that
+these methods only exist for the session lifecycle. One consequence: the
+intra-doc link `[`Checker::reset_transient`]` inside `Checker::session` had to
+become a plain code span, because a link target that is feature-gated away would
+otherwise fail `rustdoc::broken-intra-doc-links` under `-D warnings`.
+
+Also worth knowing: `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --lib` reports
+**8 pre-existing** broken intra-doc links, all in `src/run/` (`RunSession`,
+`session_impl::Session`, private `Interp` methods). CI never runs `cargo doc`, and
+none of those files are touched here, but do not mistake them for a new failure.
 
 ### Resume point
 
-The fix is uncommitted on `perf/repl-linear-session`. **Exact next action:** commit
-the five modified files plus `tests/repl_cost.rs`, push, open the PR against
-`rewrite/v3-rust` with the measurement tables and the oracle/guard evidence, wait
-for remote CI, merge, then continue CORE FIRST with the next confirmed defect —
+The `#[cfg(feature = "repl")]` fix is applied and fully validated locally on
+`perf/repl-linear-session` and is ready to commit on top of `404980e5`.
+**Exact next action:** commit `src/check/mod.rs` and `src/resolve.rs`, push,
+update PR #21's validation table with the no-`repl` results, confirm all 21 remote
+checks actually run and pass, merge, then reconcile `AGENT_STATE.md` and this file
+to the merge SHA. After that, continue CORE FIRST with the next confirmed defect —
 the `Stmt::Let` partial-mutation leak test is the smallest open item, followed by
 lexer/parser ambiguities and error recovery, checker scopes/generics/mutability,
 evaluator control flow and resource limits, collection bounds, module cycles, and
