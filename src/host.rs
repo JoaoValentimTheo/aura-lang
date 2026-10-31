@@ -115,7 +115,9 @@ pub struct HttpRequest {
     pub method: String,
     /// The absolute URL.
     pub url: String,
-    /// Request headers, in the order supplied.
+    /// Request headers, in the order supplied. Each value is encoded as
+    /// ISO-8859-1 octets on the wire (ADR-0006); a value whose code points all
+    /// fit in `0..=0xFF` therefore round-trips unchanged.
     pub headers: Vec<(String, String)>,
     /// Request body, when the method carries one.
     pub body: Option<String>,
@@ -130,6 +132,11 @@ pub struct HttpResponse {
     pub status: u16,
     /// Response headers, in the order received, preserving every occurrence
     /// (so repeated headers such as `Set-Cookie` are never silently merged).
+    ///
+    /// Values are decoded as ISO-8859-1 (one octet, one code point), which is
+    /// exactly reversible, so a value is never dropped or emptied even when its
+    /// octets are not valid UTF-8 (ADR-0006). This matches the browser host,
+    /// whose `Headers` interface decodes the same way.
     pub headers: Vec<(String, String)>,
     /// The exact response body bytes. Binary-safe: the bytes are never
     /// lossily replaced.
@@ -492,6 +499,53 @@ pub mod http {
     use super::{HostError, HostResult, HttpRequest, HttpResponse, MAX_HTTP_BODY_BYTES};
     use std::io::Read;
 
+    /// Decode a header value's octets as ISO-8859-1 (ADR-0006).
+    ///
+    /// `HeaderValue::to_str` fails whenever any octet is `obs-text` (outside
+    /// visible ASCII or tab), and treating that failure as "empty" would
+    /// silently destroy a value the grammar explicitly permits. One octet is
+    /// one code point, so the raw byte view is both authoritative and lossless.
+    fn latin1_text(value: &ureq::http::HeaderValue) -> String {
+        value.as_bytes().iter().map(|&b| char::from(b)).collect()
+    }
+
+    /// Encode a header value as ISO-8859-1 octets for the wire (ADR-0006).
+    ///
+    /// `build_request` rejects a code point above `U+00FF` before a request
+    /// reaches a host; this is the same rule applied at the transport boundary,
+    /// so a foreign `HttpRequest` cannot smuggle a UTF-8 value onto the wire and
+    /// silently disagree with what the browser host would do.
+    fn latin1_octets(name: &str, value: &str) -> HostResult<ureq::http::HeaderValue> {
+        let mut octets = Vec::with_capacity(value.len());
+        for c in value.chars() {
+            match u8::try_from(u32::from(c)) {
+                Ok(b) => octets.push(b),
+                Err(_) => {
+                    return Err(HostError::io(format!(
+                        "header `{name}` contains a character outside ISO-8859-1; \
+                         encode the value before sending it"
+                    )));
+                }
+            }
+        }
+        ureq::http::HeaderValue::from_bytes(&octets)
+            .map_err(|_| HostError::io(format!("header `{name}` is not a valid HTTP header value")))
+    }
+
+    /// Apply the caller's headers to any builder typestate.
+    ///
+    /// `ureq`'s builders take headers one at a time and append (never replace),
+    /// so a repeated name keeps the exact order the program supplied.
+    fn apply_headers<B>(
+        mut req: ureq::RequestBuilder<B>,
+        headers: &[(String, String)],
+    ) -> HostResult<ureq::RequestBuilder<B>> {
+        for (name, value) in headers {
+            req = req.header(name.as_str(), latin1_octets(name, value)?);
+        }
+        Ok(req)
+    }
+
     /// Perform one request with a bounded body and a hard timeout.
     ///
     /// A non-2xx response is an ordinary response (the program inspects
@@ -520,38 +574,33 @@ pub mod http {
         }
         let body = request.body.as_deref();
 
-        // Apply the caller's headers to every builder. `ureq`'s typed builders
-        // take headers one at a time; a repeated name is appended in order, so
-        // the wire request carries exactly what the program passed.
-        let apply = |mut req: ureq::RequestBuilder<ureq::typestate::WithoutBody>| {
-            for (name, value) in &request.headers {
-                req = req.header(name, value);
-            }
-            req
-        };
-        let apply_body = |mut req: ureq::RequestBuilder<ureq::typestate::WithBody>| {
-            for (name, value) in &request.headers {
-                req = req.header(name, value);
-            }
-            req
-        };
-
         // A body-carrying method sends its body (or an empty one when the
         // program passed none); the others are bodyless builders sent with
-        // `call`.
+        // `call`. Header application is shared so the two typestates cannot
+        // diverge in encoding.
         let response = match (method.as_str(), body) {
-            ("GET", _) => apply(agent.get(&request.url)).call(),
-            ("HEAD", _) => apply(agent.head(&request.url)).call(),
+            ("GET", _) => apply_headers(agent.get(&request.url), &request.headers)?.call(),
+            ("HEAD", _) => apply_headers(agent.head(&request.url), &request.headers)?.call(),
             // DELETE is method-body-noncompliant per spec; `force_send_body`
             // is ureq's documented escape hatch when the program supplies one.
-            ("DELETE", Some(b)) => apply_body(agent.delete(&request.url).force_send_body()).send(b),
-            ("DELETE", None) => apply(agent.delete(&request.url)).call(),
-            ("POST", Some(b)) => apply_body(agent.post(&request.url)).send(b),
-            ("POST", None) => apply_body(agent.post(&request.url)).send_empty(),
-            ("PUT", Some(b)) => apply_body(agent.put(&request.url)).send(b),
-            ("PUT", None) => apply_body(agent.put(&request.url)).send_empty(),
-            ("PATCH", Some(b)) => apply_body(agent.patch(&request.url)).send(b),
-            ("PATCH", None) => apply_body(agent.patch(&request.url)).send_empty(),
+            ("DELETE", Some(b)) => apply_headers(
+                agent.delete(&request.url).force_send_body(),
+                &request.headers,
+            )?
+            .send(b),
+            ("DELETE", None) => apply_headers(agent.delete(&request.url), &request.headers)?.call(),
+            ("POST", Some(b)) => apply_headers(agent.post(&request.url), &request.headers)?.send(b),
+            ("POST", None) => {
+                apply_headers(agent.post(&request.url), &request.headers)?.send_empty()
+            }
+            ("PUT", Some(b)) => apply_headers(agent.put(&request.url), &request.headers)?.send(b),
+            ("PUT", None) => apply_headers(agent.put(&request.url), &request.headers)?.send_empty(),
+            ("PATCH", Some(b)) => {
+                apply_headers(agent.patch(&request.url), &request.headers)?.send(b)
+            }
+            ("PATCH", None) => {
+                apply_headers(agent.patch(&request.url), &request.headers)?.send_empty()
+            }
             (other, _) => {
                 return Err(HostError::io(format!("unsupported HTTP method `{other}`")));
             }
@@ -561,12 +610,7 @@ pub mod http {
         let headers: Vec<(String, String)> = response
             .headers()
             .iter()
-            .map(|(name, value)| {
-                (
-                    name.as_str().to_string(),
-                    value.to_str().unwrap_or("").to_string(),
-                )
-            })
+            .map(|(name, value)| (name.as_str().to_string(), latin1_text(value)))
             .collect();
         // A body is decoded as UTF-8 only after the whole (bounded) byte
         // sequence is read: decoding per read chunk would split a multi-byte

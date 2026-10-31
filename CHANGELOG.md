@@ -67,6 +67,29 @@ Playground but are not releases.
   snapshot of the 2026-09-30 state, not a current claim.
 
 ### Fixed
+- **HTTP header values were destroyed in one direction and mis-encoded in the
+  other.** Response header values outside ASCII were erased: `to_str()` rejects
+  bytes ≥ 0x80 and `unwrap_or("")` turned the rejection into an empty string, so
+  a server sending `x-latin: caf\xE9` reached Aura as `""`. The same
+  `to_str()` also drove `header_lines`, so re-emitting the response into a new
+  request produced `x-latin: ` on the wire — the value was gone end to end.
+  Outgoing values had the opposite defect: they were encoded as UTF-8, so
+  `café` went out as `0xC3 0xA9` where the browser host sends the ISO-8859-1
+  byte `0xE9`. Both directions now follow the browser, which is the reference
+  host: response values decode as ISO-8859-1 (lossless, so no `header_bytes`
+  key is needed, unlike `body`), and request values encode as ISO-8859-1 with a
+  value above `U+00FF` reported as `E4020` instead of being silently sent as
+  UTF-8. That rejection is parity rather than a new restriction — the browser
+  already threw `TypeError` for it, which `worker.js` has always surfaced as
+  `E4020`. This is a **wire-octet compatibility change**: a native program that
+  sends non-ASCII request header values will now emit different bytes than
+  before, and one that sends values above `U+00FF` will now fail where it
+  previously succeeded by accident. Both are recorded in
+  `docs/adr/0006-http-header-value-encoding.md`, which is the governing
+  contract. `non_ascii_response_header_value_is_preserved`,
+  `outgoing_non_ascii_header_value_uses_latin1_octets`, and
+  `header_value_above_latin1_is_reported_not_sent` fail on the old code and
+  pass on this one.
 - **JSON decode could not read back what JSON encode produced.** The encoder was
   deliberately bounded at 512 levels of value nesting and wrote `null` past it,
   but the decoder went through `serde_json::from_str`, whose deserializer caps

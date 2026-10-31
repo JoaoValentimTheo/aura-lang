@@ -1,10 +1,123 @@
 # Current Engineering Handoff
 
-## Current task — CORE FIRST: JSON decode depth is asymmetric with encode, and reports the wrong error family
+## Current task — CORE FIRST: native HTTP header values are erased in one direction and UTF-8 encoded in the other
 
-**Status:** implemented and validated locally on `fix/json-decode-depth-parity`;
-awaiting PR #36 and remote CI. Working tree is clean of the fix (all seven files
-committed on the branch).
+**Status:** implemented and validated locally on
+`fix/http-header-value-erasure`; awaiting PR #37 and remote CI.
+
+### The defect
+
+The two HTTP hosts disagreed about what a header value is. `fetch` treats a
+header value as a byte string and widens it to ISO-8859-1; the native `ureq`
+path treated it as UTF-8 text. Four measurements on a loopback server
+established this, and each one is a distinct symptom of the same root cause:
+
+| # | Probe | Browser host | Native host (before) |
+|---|---|---|---|
+| A | response `x-latin: caf\xE9` | `[99,97,102,233]` = `café` | `""` — the value is gone |
+| B | request value `café` | octet `0xE9` | `0xC3 0xA9` (UTF-8) |
+| C | request value `\u4e16` | `TypeError` → `E4020` | silently sends `0xE4 0xB8 0x96` |
+| D | response re-sent as a request header | `x-latin: caf\xE9` | `x-latin: ` — empty on the wire |
+
+Two independent root causes, both in `src/host.rs`:
+
+1. **Response direction: erasure.** The response map built each value with
+   `value.to_str().unwrap_or("")`. `HeaderValue::to_str` returns `Err` for any
+   byte with the high bit set, so a legal `obs-text` value (RFC 9110 §5.5
+   permits `%x80-FF`) became the empty string — not an error, not a lossy
+   replacement, just silence. The same erased string fed `header_lines`, which
+   is why symptom D round-trips the corruption end to end.
+2. **Request direction: wrong encoding.** Values were handed to `ureq` as
+   `&str`, which sends them UTF-8 encoded. The reference host sends the
+   ISO-8859-1 octet, so the same Aura program put different bytes on the wire
+   depending on which host ran it.
+
+Symptom C is the one that decides the contract: the browser **already** refuses
+a code point above `U+00FF`, and `playground/web/worker.js:174-199` has always
+surfaced that `TypeError` as `E4020`. Native success in that case was therefore
+not a capability but a divergence.
+
+### The fix — ISO-8859-1 in both directions, browser as the reference host
+
+`docs/adr/0006-http-header-value-encoding.md` is the governing contract; this
+section records the implementation.
+
+1. `src/host.rs` — three helpers above `perform`:
+   - `latin1_text(&[u8]) -> String` — octet to code point, one-to-one. This is
+     a lossless widening, so **no `header_bytes` key is needed**: unlike `body`,
+     whose text view is bounded by UTF-8 validity, the text view here is exact.
+     `String::from_utf8_lossy` is the wrong tool — it yields `U+FFFD` where the
+     correct answer is `U+00E9`.
+   - `latin1_octets(&str) -> Result<Vec<u8>, char>` — the inverse; `Err` carries
+     the first code point above `U+00FF`.
+   - `apply_headers<B>(builder, headers) -> Result<_, _>` — encodes and applies
+     once, replacing the two closures (`apply`/`apply_body`) that each arm used
+     to duplicate.
+2. `src/host.rs` — all twelve match arms in `perform` call `apply_headers(...)?`
+   instead of building a request inline, and the response map uses
+   `latin1_text(value.as_bytes())` instead of `to_str().unwrap_or("")`.
+3. `src/stdlib/ext.rs` — `build_request` range-checks every header value and
+   returns `E4020` naming the header and the code point (`U+XXXX`), placed
+   after the method/body check and before `HttpRequest` is constructed, so no
+   request is dispatched.
+
+**Why the bound is enforced twice on purpose.** `build_request` is documented as
+"Shared by the synchronous and resumable paths so validation never diverges",
+and `src/stdlib/ext.rs` is gated on `http-api` while the provider in
+`src/host.rs` is gated on `http`. The check in `build_request` therefore also
+runs in browser/WASM builds that never compile the native provider, and
+`latin1_octets` independently stops a foreign `HttpRequest` from smuggling
+UTF-8 onto the native wire.
+
+### The tests — three new, all proven to fail without the fix
+
+`tests/http.rs`, all `#[cfg(feature = "http")]` via the file-level gate:
+
+| Test | Asserts | Pre-fix symptom |
+|---|---|---|
+| `non_ascii_response_header_value_is_preserved` | `caf\xE9` arrives as the four-character string `café`, and `header_lines` carries the identical value | got `"\n0\nplain\n\n"` |
+| `outgoing_non_ascii_header_value_uses_latin1_octets` | the raw request bytes contain `0xE9`, not `0xC3 0xA9` | wire carried UTF-8 `café` |
+| `header_value_above_latin1_is_reported_not_sent` | `E4020` and no bytes on the wire | returned `"200\n"` |
+
+`CapturingServer::request_bytes()` was added because the existing
+`request_text()` is lossy UTF-8 and therefore *cannot* distinguish `0xE9` from
+`0xC3 0xA9` — the two encodings decode to the same `String` through it.
+
+### Compatibility
+
+This is a **wire-octet change**, recorded rather than assumed. A native program
+that sends non-ASCII request header values now emits ISO-8859-1 where it
+previously emitted UTF-8; one that sends a value above `U+00FF` now gets
+`E4020` where it previously succeeded by accident. Both directions move toward
+the browser, which is the reference host, and the second case was never
+portable. `CHANGELOG.md` states this under `[Unreleased] / Fixed`.
+
+### Files that do not change, and why
+
+- `playground/web/worker.js:308-310` — the browser already decodes response
+  values as ISO-8859-1, so the runtime receives `café` and needs nothing.
+- `playground/runtime/src/lib.rs:1473-1512` — `headers`/`header_lines` projection
+  is encoding-agnostic; it reads `as_str()` off an already-decoded string.
+- `playground/web/worker.js:174-199` — already reports `E4020` for an
+  out-of-range request value. The native fix adopts that code rather than
+  inventing one.
+
+### Next exact action
+
+Commit on `fix/http-header-value-erasure`, push, open PR #37 against
+`rewrite/v3-rust` using `.github/pull_request_template.md` verbatim, poll
+`gh pr checks` to 21/21 with `mergeStateStatus=CLEAN`, then
+`gh pr merge 37 --merge --delete-branch`.
+
+---
+
+## Previous task — CORE FIRST: JSON decode depth is asymmetric with encode, and reports the wrong error family — merged `4cbf6afb` (PR #36)
+
+**Status:** merged as `4cbf6afb`; twenty-one remote checks green,
+`mergeStateStatus=CLEAN`. Post-merge diff `4aff6d5c..4cbf6afb` contains exactly
+the eight intended files.
+
+### The defect
 
 ### The defect
 
@@ -111,10 +224,7 @@ rule in §24. Those are genuine type errors and keep `E3001`.
 
 ### Next exact action
 
-Commit on `fix/json-decode-depth-parity`, push, open PR #36 against
-`rewrite/v3-rust` using `.github/pull_request_template.md` verbatim, poll
-`gh pr checks` to 21/21 with `mergeStateStatus=CLEAN`, then
-`gh pr merge 36 --merge --delete-branch`.
+Merged. Next work item is recorded in the current task section above.
 
 ---
 

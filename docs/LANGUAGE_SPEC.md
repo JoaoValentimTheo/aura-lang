@@ -3172,11 +3172,37 @@ boundary in `src/host.rs`.
 * `header_lines` is the flat, ordered list of `[name, value]` pairs preserving
   duplicates and the original casing, for a consumer that needs the exact wire
   shape. It is always present when HTTP is available.
+* `headers` and `header_lines` carry the **identical** decoded value for the
+  same header; they differ only in shape (a lowercased-name map versus a flat
+  ordered list), never in value encoding.
 Redirects are never followed. `http_get`/`http_request` report the redirect
 itself rather than the redirect target, so on a host that can observe it,
 `status` is the `3xx` the origin sent; the browser host cannot observe it and is
 covered by item 1 below. No redirect chain is traversed and no `Location` target
 is requested.
+
+**Normative rule (HTTP header value encoding).** A header field value is a byte
+sequence, not text: RFC 9110 §5.5 permits `obs-text` (octets `%x80-FF`) in a
+value. Aura therefore treats every header value as **ISO-8859-1 in both
+directions on every host** — each octet `0x00-0xFF` corresponds to the code
+point of the same numeric value, which is a lossless, exactly reversible
+widening. See `docs/adr/0006-http-header-value-encoding.md`.
+
+* **Received values are decoded, never dropped.** A value's octets are decoded
+  one-to-one into the corresponding code points. A value that is not valid
+  UTF-8 is not an error and is not elided: a response header carrying the
+  octets `caf\xE9` yields the four-character string `café`. No value is ever
+  reported as empty because of its encoding, and there is no separate
+  `header_bytes` key — unlike `body`, whose text view is genuinely constrained
+  by UTF-8 validity, this view is already exact.
+* **Sent values are encoded, and bounded.** Each code point of a value is
+  emitted as the single octet of the same numeric value. A code point above
+  `U+00FF` has no ISO-8859-1 representation and is reported as `E4020` with a
+  message naming the offending header and code point, before any request is
+  dispatched. A program that must transport other bytes encodes them (base64,
+  percent encoding) as the wire format requires. Sending them unencoded is not
+  a fallback: no host can do it, and a silent UTF-8 substitution would make the
+  transmitted value differ from the one the program supplied.
 
 **Normative rule (HTTP capability is a host property).** HTTP is available only
 when the host provides it. On a host without it, every HTTP builtin is `E5002`
@@ -3225,15 +3251,17 @@ fabricating data the platform withholds:
 
 *Evidence:* `src/stdlib/ext.rs` (`response_value`, the authoritative response
 map); `src/host.rs` (the `Host` trait boundary, `NativeHost` with
-`max_redirects(0)`, `BrowserHost`); `playground/web/worker.js` (`redirect:
-"manual"`, the opaque-redirect branch, and the `response.headers.forEach`
-combination point); `playground/runtime/src/lib.rs`
-(`SuspendHost::http_request`, `json_to_response_value` resume application);
-native contract in `tests/http.rs`; browser contract in
-`playground/tests/node/http-security.test.mjs` and
-`playground/tests/node/session-http.test.mjs`; multi-module HTTP contract in
+`max_redirects(0)`, `BrowserHost`, `latin1_text`, `latin1_octets`,
+`apply_headers`); `playground/web/worker.js` (`redirect: "manual"`, the
+opaque-redirect branch, the `response.headers.forEach` combination point, and
+the request-`Headers` construction that reports `E4020` for an out-of-range
+value); `playground/runtime/src/lib.rs` (`SuspendHost::http_request`,
+`json_to_response_value` resume application); native contract in
+`tests/http.rs`; browser contract in `playground/tests/node/http-security.test.mjs`
+and `playground/tests/node/session-http.test.mjs`; multi-module HTTP contract in
 `playground/tests/node/project-http.test.mjs`; host documentation in
-`website/content/playground-doc.md`.
+`website/content/playground-doc.md`; header value encoding decision in
+`docs/adr/0006-http-header-value-encoding.md`.
 
 ---
 

@@ -732,6 +732,24 @@ pub mod http {
                 span,
             ));
         }
+        // Header values are ISO-8859-1 on the wire (ADR-0006). A code point
+        // above `U+00FF` has no representation there, so it is reported rather
+        // than silently transmitted as UTF-8: the browser host cannot encode
+        // it at all and raises the same `E4020`, and only an explicit error
+        // keeps the two hosts from disagreeing about the value that was sent.
+        for (name, value) in headers {
+            if let Some(bad) = value.chars().find(|c| u32::from(*c) > 0xFF) {
+                return Err(err(
+                    codes::IO,
+                    format!(
+                        "header `{name}` contains `{bad}` (U+{:04X}), which is outside \
+                         ISO-8859-1; encode the value before sending it",
+                        u32::from(bad)
+                    ),
+                    span,
+                ));
+            }
+        }
         Ok(HttpRequest {
             method,
             url: url.to_string(),
