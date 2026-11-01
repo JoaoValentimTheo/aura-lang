@@ -2,6 +2,17 @@
 
 ## Directive 008 — NEBULA 0.3.2 campaign (`G02`, `IN_PROGRESS`)
 
+**G02 tag-scope correction integrated.** PR **#48**
+(`docs/nebula-tag-scope-correction`, head `ed0f7b86`) merged into
+`rewrite/v3-rust` as **`73a35d9b`** at 2026-11-01T00:55:43Z, with **21/21**
+remote checks green. The merged diff is 4 files / +372 / −90, all
+documentation; `src/`, `playground/runtime/`, `playground/runtimes/`,
+`Cargo.toml`, `Cargo.lock` are **byte-identical** to `fe0e7312`,
+`manifest.json` sha256 still `cbe7ad91…23b837`, `manifest.current` still
+`"0.3.1"`, `Cargo.toml` still `0.3.1`, and no `0.3.2` tag exists. It
+corrects RFC 0002, the campaign document and both state docs after the
+enum-tag-scope premise was falsified.
+
 **G02 partially delivered and integrated.** PR **#46** (`docs/nebula-g02-rfcs`,
 head `66d90635`) merged into `rewrite/v3-rust` as **`6cc96bf5`** at
 2026-11-01T00:27:28Z, with **21/21** remote checks green. The merged diff is 5
@@ -132,7 +143,8 @@ tags with the module path (`src/resolve.rs:1452-1455`), so sibling modules may
 each declare `Ok`; the diagnostic itself reports the prefixed tag (`M::Ok`).
 `E2013`'s message text (`src/check/mod.rs:1378`, "unique across the program")
 repeats the losing clause. Corrected in RFC 0002 (§1.2, §1.1.1, §2.1, §2.1.1),
-campaign §1.7.1/§1.7.1a/§10.2/`R-10`, and merged as PR #47 → `fe0e7312`.
+campaign §1.7.1/§1.7.1a/§10.2/`R-10`, recorded by PR #47 → `fe0e7312`, and
+integrated as PR #48 → `73a35d9b`.
 
 This was **not an original discovery**: `docs/engineering/EXCEPTION_SYNTAX_DECISION_PACKAGE.md:192`
 (verification pass 2026-10-06) already recorded the per-module behaviour with
@@ -1732,9 +1744,10 @@ bump, or feature-gated drivers with a formally amended §18.2 floor — were
 §2.5.
 
 **G02 progress.** RFCs 0002 and 0003 are authored, probe-verified, merged as PR
-#46 → `6cc96bf5`, recorded in PR #47 → `fe0e7312`, and escalate their open
-decisions (`NBL-010`, `NBL-011`). RFC 0002 was **corrected after merge** at
-`fe0e7312`: its tag-scope premise had been falsified (`LANGUAGE_SPEC.md`
+#46 → `6cc96bf5`, recorded in PR #47 → `fe0e7312` and integrated as PR #48 →
+`73a35d9b`, and escalate their open
+decisions (`NBL-010`, `NBL-011`). RFC 0002 was **corrected after merge**:
+its tag-scope premise had been falsified (`LANGUAGE_SPEC.md`
 contradicts itself; the compiler is per-module), so §1.2, §1.1.1, §2.1, §2.1.1
 and §5 were rewritten and the escalation split into `D1a` scope / `D1b` message
 / `D1c` placement. The
