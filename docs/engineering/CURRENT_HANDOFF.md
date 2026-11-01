@@ -8,16 +8,18 @@ No implementation is authorized before `G02` accepts the P0 RFC set.
 ```
 WAVE: G02 -> IN_PROGRESS (2 of 12 P0 RFCs authored, three decisions outstanding)
 STATUS: G02 IN_PROGRESS (three human decisions outstanding, see DECISÕES)
-HEAD: 73a35d9b7ef988a1d0ddbaa0f34df0b74f7f12bd (merge of PR #48)
+HEAD: 85de59451065bcafc085a1b1d40db1fee7d74634 (merge of PR #49)
 PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb;
      #44 MERGED (G00 closure + G01 authorisation, head 5cf4f8d9) -> 390f763c;
      #45 MERGED (G01 dependency record, head 1ce88863) -> 6f075882;
      #46 MERGED (G02 RFCs 0002+0003, head 66d90635) -> 6cc96bf5;
      #47 MERGED (G02 RFC record, head f35b9b90) -> fe0e7312;
      #48 MERGED (tag-scope correction, head ed0f7b86) -> 73a35d9b;
+     #49 MERGED (tag-scope record, head 02599d17) -> 85de5945;
      0 open PRs
 CHECKS: PR #43 21/21 pass; PR #44 21/21 pass; PR #45 21/21 pass;
         PR #46 21/21 pass; PR #47 21/21 pass; PR #48 21/21 pass;
+        PR #49 21/21 pass;
         post-merge CI 41248873353 on 7bd1d6fb = completed/success;
         Pages 41248873720 = completed/success;
         post-merge CI 41251300785 on 6f075882 = completed/success;
@@ -25,8 +27,10 @@ CHECKS: PR #43 21/21 pass; PR #44 21/21 pass; PR #45 21/21 pass;
         post-merge Pages 41257608935 on fe0e7312 = completed/success;
         post-merge CI 41257609033 on fe0e7312 = completed/success on rerun
         attempt 2 (attempt 1 failed one job, see NOTE-RERUN);
-        post-merge CI 41258890857 on 73a35d9b = queued at record time;
-        post-merge Pages 41258890831 on 73a35d9b = queued at record time
+        post-merge CI 41258890857 on 73a35d9b = completed/success;
+        post-merge Pages 41258890831 on 73a35d9b = completed/success;
+        post-merge CI 41260213738 on 85de5945 = completed/success;
+        post-merge Pages 41260213844 on 85de5945 = completed/success
 TESTS_REALMENTE_EXECUTADOS: see "Commands actually executed" below
 PROVAS: baseline reconciled; G00+G01+G01-record diffs are docs/script files
         only; src/, playground/runtime/, Cargo.toml, Cargo.lock,
@@ -406,7 +410,8 @@ document was absent and that no approval is implied.
 
 `NBL-010` (RFC 0002) and `NBL-011` (RFC 0003) are authored. RFC 0002 was
 corrected after its tag-scope premise was falsified, recorded at `fe0e7312`
-and integrated as `73a35d9b` (PR #48); the campaign
+and integrated as `73a35d9b` (PR #48); the correction itself was recorded and
+integrated as `85de5945` (PR #49). The campaign
 now escalates `D1a` (which of the two contradictory spec clauses governs
 `E2013`), `D1b` (`E2013`'s message text) and `D1c` (placement). Answer `D1a`
 before `D1c`. Still unauthored:

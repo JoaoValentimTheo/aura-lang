@@ -2,6 +2,16 @@
 
 ## Directive 008 — NEBULA 0.3.2 campaign (`G02`, `IN_PROGRESS`)
 
+**G02 PR #49 record integrated.** PR **#49**
+(`docs/nebula-g02-tag-scope-record`, head `02599d17`) merged into
+`rewrite/v3-rust` as **`85de5945`** at 2026-11-01T01:14:00Z, with **21/21**
+remote checks green. The merged diff is 3 files / +42 / −10, all
+documentation; `src/`, `playground/runtime/`, `playground/runtimes/`,
+`Cargo.toml`, `Cargo.lock` are **byte-identical** to `73a35d9b`,
+`manifest.json` sha256 still `cbe7ad91…23b837`, `manifest.current` still
+`"0.3.1"`, `Cargo.toml` still `0.3.1`, and no `0.3.2` tag exists. It records
+the PR #48 integration in the three state documents.
+
 **G02 tag-scope correction integrated.** PR **#48**
 (`docs/nebula-tag-scope-correction`, head `ed0f7b86`) merged into
 `rewrite/v3-rust` as **`73a35d9b`** at 2026-11-01T00:55:43Z, with **21/21**
@@ -1744,8 +1754,8 @@ bump, or feature-gated drivers with a formally amended §18.2 floor — were
 §2.5.
 
 **G02 progress.** RFCs 0002 and 0003 are authored, probe-verified, merged as PR
-#46 → `6cc96bf5`, recorded in PR #47 → `fe0e7312` and integrated as PR #48 →
-`73a35d9b`, and escalate their open
+#46 → `6cc96bf5`, recorded in PR #47 → `fe0e7312` and PR #49 → `85de5945`,
+and integrated as PR #48 → `73a35d9b`, and escalate their open
 decisions (`NBL-010`, `NBL-011`). RFC 0002 was **corrected after merge**:
 its tag-scope premise had been falsified (`LANGUAGE_SPEC.md`
 contradicts itself; the compiler is per-module), so §1.2, §1.1.1, §2.1, §2.1.1
