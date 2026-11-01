@@ -19,6 +19,7 @@ Accepted RFCs are recorded here as `NNNN-short-title.md`.
 | [0003](./0003-try-as-value-expression.md) | `try` as a Value Expression | Proposed — D1, D2 escalated |
 | [0004](./0004-diagnostics-contract.md) | The Diagnostics Contract | Proposed — D3 + open item 13 escalated |
 | [0005](./0005-inference-and-error-propagation.md) | Inference and Error-Propagation Rules | Proposed — D1 escalated |
+| [0006](./0006-ais-agent-native-capabilities.md) | The AIS Agent-Native Capability Set | Proposed — D1, D2, D3 escalated |
 
 “Proposed” means the RFC is authored and reviewed but is **not** authorized for
 implementation. Each lists its open questions under `## 7. Open items`, and no

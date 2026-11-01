@@ -25,8 +25,81 @@ generic-independent holes found underneath it and deliberately left out
 RFC: it records the proposal, and `GATE G02` still forbids coding the surface
 until §10.5 is resolved by a human.
 
-At record time local `HEAD` is **`87cea70e`** and the working tree carries this
-record batch only. No source file changed: `src/check/mod.rs` is byte-identical
+**RFC 0006 is authored, post-audited, and not yet merged.**
+`docs/rfcs/0006-ais-agent-native-capabilities.md` (`NBL-014`) — 1110 lines,
+23 tables, 20 fences, zero inconsistent rows. §3 is `Grammar delta — None`
+(the language spec mentions AIS exactly once, at `LANGUAGE_SPEC.md:2578`, and
+ends at `## 36. Generics` `:4009`). It documents **eighteen defects (A–R)** in
+the AIS/0.1 protocol and its MCP projection, every one reproduced from live
+probes rather than read off the source, and escalates **three** decisions
+(`D1` `:716`, `D2` `:753`, `D3` `:791`). The load-bearing findings:
+
+- **`A`/`I` — `Symbol.range` spans only the declaration's leading keyword.**
+  On a ten-declaration fixture the reported extents total **39 bytes** against a
+  true **249** — a **6.4×** aggregate understatement. Mechanically the parser
+  captures the span **before** consuming the keyword (`src/parse/mod.rs:528-530`
+  `fn span` returns the *current token's* span; the recurring
+  `let span = self.span(); self.bump();` shape appears at **12** of **29**
+  capture sites) and `symbol_of_item` (`src/ais.rs:447-511`) copies it verbatim
+  at `:490-501`. **`pub` struct fields report `pub` and `mut` parameters report
+  `mut`**, from `:1365`/`:1426` capturing before `eat(&Tok::Mut)`/`eat(&Tok::Pub)`.
+  `line`/`column` are correct — `resolve_symbol` (`src/ais.rs:603-617`)
+  overwrites them — so only the extent is wrong and nothing notices.
+- **`L` — `Slice.diagnostics` is promised twice and populated nowhere.**
+  `src/ais.rs:848-853` and `:868` both promise diagnostics; all three
+  construction sites pass `Vec::new()` (`:893`, `:935`, `:992`). `src/mcp.rs:330-345`
+  already passes the whole `Document`, so the information is in scope and simply
+  dropped. A slice over a failing program is shape-identical to a slice over a
+  clean one. Zero tests reference it.
+- **`M`/`N`/`O` — the AIS path never runs the resolver.** `aura check` is
+  `compile_file_with_mode` → provider → `resolve_sourced` → checker;
+  `aura ais` is `parse` → `ais_snapshot_of` → `checked_document`, which calls
+  only `Checker::module_narrowings`. Staged matrix, one program per directory:
+  `use Std::Math` → `check=1 E2019` / **`ais=0`, diagnostics absent**; private
+  access `M::secret()` → `check=1 E2018` / **`ais=1 ['E2003']`**; reserved
+  namespace `Aura` → `check=1 E2023` / **`ais=1 ['E2003']`**. So `E2019` is
+  dropped and two others carry the **wrong code**. Six resolver-only codes exist
+  (`E2019`, `E2020`, `E2021`, `E2022`, `E2023`, `E4020`).
+- **`E` — `tests/ais_differential.mjs` is orphaned from CI.** Its own docstring
+  at `:21-22` says "This runs in CI with no model." A repo-wide grep for any
+  invocation returns **zero** hits and no `package.json` exists. Run by hand it
+  passes (`EXIT=0`, four families, `raw=91 tok` vs `ais=2422 tok`,
+  `Fact carriers: raw=4, ais=12`) and its last line is
+  `EXTERNAL DIFFERENTIAL: NOT EXECUTED`. This is a live rule-7/rule-8 defect.
+- **`B`/`D` — the advertised surface is smaller than the real one.** The CLI
+  dispatches only `slice`/`delta`/`snapshot` (`src/main.rs:404-409`); every other
+  word falls through to `cmd_ais_snapshot` and exits 1. MCP `tools/list` returns
+  **7** while `aura://schema` returns **6** (`OMITTED ['aura_capabilities']`),
+  and `schema.delivery` lists **3** of 7 operations — both from one hardcoded
+  literal at `src/mcp.rs:265-266`. `MCP.md:50-58` is correct for all seven, so
+  `aura://schema` is the outlier.
+- **`H`/`F` — the symbol projection over-advertises.** `Variant`, `Field` and
+  `TypeParameter` are constructed **nowhere** (12 `SymbolKind::` occurrences =
+  8 production arms + 4 test assertions), yet `AIS.md:99-101` documents all
+  eleven as live. `const B = 2` projects `type_name`, `families` and
+  `value_kind` all `None`, because `src/ais.rs:590` projects from `ann`, not from
+  the inferred type.
+- **`C` — capability bits cannot be false.** `Capabilities::default()` at
+  exactly three sites (`src/main.rs:429`, `src/ais.rs:987`, `src/mcp.rs:297`)
+  with **zero** field assignments, so `flow`/`completion` are always `true` and
+  yet `flow` carries `narrowings[]` — directly against the "Honest
+  advertisement" comment at `src/ais.rs:64-71` and `AIS.md:53-55`. A parse-error
+  path still advertises flow.
+
+A validated repair for `D1`'s widen-the-extent option exists (parser-side end
+span plus the projection) and is mutation-proved in both directions with the
+suite at `1477 passed / 0 failed` and clippy at 0. It is **not committed**:
+`GATE G02` forbids coding the surface before the RFC is accepted. `src/ais.rs`
+and `src/mcp.rs` are byte-identical to baseline.
+
+Two defects in my own first draft were caught before commit and fixed: a
+**fabricated `E3009`** (not a declared code in `src/error.rs`; removed rather
+than replaced) and a `RESOLVER-ONLY CODES: 5` figure (the machine census says
+**six**).
+
+At record time local `HEAD` is **`422c7a9e`** (the merge of PR #54, the PR #53
+record batch) and equals `origin/rewrite/v3-rust`. The working tree carries the
+RFC 0006 batch only. No source file changed: `src/check/mod.rs` is byte-identical
 to baseline (`sha256 1232b687…aa738f532`, `git hash-object 03207d9293…`),
 `manifest.json` sha256 is still `cbe7ad91…23b837`, `manifest.current` is still
 `"0.3.1"`, and no `0.3.2` tag exists.
@@ -1849,8 +1922,9 @@ feature-gating of the typed-decode path.
 ## Exact Next Action
 
 **Directive 008 — NEBULA: G00 and G01 are complete and integrated; G02 is
-`IN_PROGRESS` with four of thirteen P0 RFCs merged, and six human decisions
-outstanding.**
+`IN_PROGRESS` with four of thirteen P0 RFCs merged, a fifth authored and
+unmerged (RFC 0006), and seven human decisions outstanding across six decision
+packages.**
 
 Wave `G00` is `PASS`: PR #43 merged as `7bd1d6fb` (21/21 green) and its closure
 landed as PR #44 → `390f763c` (21/21 green). Wave `G01` is `PASS` and
@@ -1886,16 +1960,20 @@ item 13 (non-ASCII module directories skipped silently) as §10.4. RFC 0005
 deliberately excludes the two generic-independent holes it surfaced — `R-14`
 unchecked indexing and `R-15` unchecked equality, the latter a silent wrong
 answer. Merge records the proposal only; §10.5 `D1` is still unanswered and gate
-G02 still forbids coding the repair. The
-P0 set is not yet complete: `NBL-014` (AIS capability set), `NBL-015`
+G02 still forbids coding the repair. **RFC 0006** (`NBL-014`, the AIS agent-native
+capability set) is authored and **held unmerged** in the working tree: eighteen
+defects `A`–`R`, three decisions `D1`–`D3`, §3 `Grammar delta — None`, and a
+mutation-proved `range`-extent repair withheld under gate G02. The
+P0 set is not yet complete: `NBL-015`
 (`Aura.toml` / `aura init` / `std::os`), `NBL-016` (Host database capability),
 `NBL-017` (`entity struct` and metadata), `NBL-018` (CRUD and transactions),
 `NBL-019` (AQL/0.1), `NBL-020` (Repository in traits), `NBL-021` (SQLGuard/0.1
 SG-01…SG-08), `NBL-022` (driver contract), and `NBL-030` (prelude/`Result`
-placement, blocked by §10.2) remain unauthored. Nine of the thirteen G02 P0 RFCs
+placement, blocked by §10.2) remain unauthored. Eight of the thirteen G02 P0 RFCs
 are still unwritten.
 
-**Six human decisions are outstanding, and each blocks a downstream wave:**
+**Seven human decisions are outstanding across six decision packages, and each
+blocks a downstream wave:**
 §10.1 MSRV versus database drivers (blocks G07 onward); §10.2 `Result` versus
 enum-tag **scope** — a genuine spec contradiction (`D1a`) that must be answered
 before the placement choice (`D1c`), plus `D1b`, the `E2013` message text
@@ -1904,57 +1982,31 @@ before the placement choice (`D1c`), plus `D1b`, the `E2013` message text
 item 13 non-ASCII module discovery (blocks G18's snapshot work, and the
 format-injection repair `R-12`); §10.5 `D1`, authorizing the two-part
 generic-instantiation repair (blocks `NBL-012` and every later surface whose
-types assume a checked generic return).
+types assume a checked generic return); and §10.6 `D1`/`D2`/`D3`, the AIS
+protocol surface — extent contract, `Slice.diagnostics`, and the resolver gap
+(blocks `NBL-014` and every agent-facing integration in G18 onward).
 
-**Next exact action:** continue **G02** by authoring `NBL-014` (the AIS
-capability set) as `docs/rfcs/0006-*.md`, using
-`docs/rfcs/0003-try-as-value-expression.md` as the structural template and
-`docs/rfcs/README.md` as the format contract, then add its row to the
-`## Index` table. The research for it is complete and has already produced
-five defects that the RFC must carry, in severity order:
+**Next exact action:** commit the RFC 0006 batch, open its pull request, and
+merge it once remote CI is green. The batch is **four files**:
+`docs/rfcs/0006-ais-agent-native-capabilities.md` (new, 1110 lines / 23 tables /
+20 fences), the RFC index row in `docs/rfcs/README.md`, the campaign annotations
+(header paragraph, §4 G02 row, `NBL-014` backlog row, `R-16`, `### §10.6`), and
+this state document plus `docs/engineering/CURRENT_HANDOFF.md`. The RFC itself is
+finished and citation-audited: five citation errors were found and corrected
+(`:498`→`:497`, `:396-400`→`:395-400`, `:500`→`:503`, `:396-540`→`:395-527`,
+`:1427`/`:1430`→`:1426`/`:1427`), a fabricated `E3009` was removed, and every
+remaining `E####` was checked against `src/error.rs`. `cargo fmt --all -- --check`
+and `cargo test --locked --all-targets --all-features` (`1477 passed / 0 failed`,
+66 suites) are already green on this tree; the remaining eight floor gates must be
+run before the PR body claims them.
 
-1. **`Symbol.range` spans only the declaration keyword.** `aura ais` reports
-   `helper` at bytes `133..135`, which is exactly `fn`; the declaration runs to
-   `165`. Proven for all six item kinds (`fn`→2, `struct`→6, `enum`→4,
-   `trait`→5, `type`→4, `const`→5) and invariant under name length (1/10/17).
-   Root cause: every item parser does `let span = self.span(); self.bump();`
-   (`src/parse/mod.rs:1108-1109`, `:1415-1416`, `:1454`, `:1508`, `:1525`,
-   `:1574`), so the span is the keyword token. Nested ranges are **correct** —
-   `Field`/`Parameter` ranges are exact names (`x`→1, `yy`→2, `qqq`→3) — so the
-   defect is confined to the top-level `Symbol.range`, and it makes the only
-   locator in `Slice`/`Snapshot` useless for finding the declaration.
-2. **AIS CLI exposes 3 of 7 operations.** `src/main.rs:405-408` dispatches only
-   `slice`/`delta`/`snapshot`; every other word silently falls through to
-   `cmd_ais_snapshot`, so `aura ais bogus f.aura` snapshots a file named `bogus`.
-   `symbol`, `diagnostics`, `revision` and `capabilities` are MCP-only.
-3. **Capability bits are structurally unreachable and over-advertised.**
-   `Capabilities::default()` is the only constructor (3 sites, no field
-   assignment anywhere), so `flow`/`completion` can never be `true`; and a file
-   with an unlexable `$` still advertises `types: true` with `symbols: []`.
-4. **`aura://schema` omits `aura_capabilities`** (`tools/list` = 7,
-   `schema.tools` = 6) **and `delivery` lists 3 of 7 operations** — both from one
-   literal at `src/mcp.rs:265-266`, in a blind spot of
-   `tests/ais_properties.rs`, which never compares the two.
-5. **`tests/ais_differential.mjs` is orphaned from CI** while asserting at `:22`
-   "This runs in CI with no model". It is a rule-7/rule-8 defect: present in the
-   tree, never executed by any runner.
-
-Before authoring, re-read `src/ais.rs` (`AIS_VERSION = "0.1"` at `:40`,
-`Capabilities::default()` at `:64-79`) and RFC 0004 §1.5, which already records
-that `aura ais` cannot see filesystem modules at all (`src/main.rs:434` and
-`:440`, `src/mcp.rs:291-292`) and that locationless diagnostics are silently
-dropped by AIS (exit 0). Also decide whether the five findings above become one
-RFC with a single decision set or several, and either re-measure the prior-art
-byte figures (529 / 5 893 / 3 221) against the current binary or label them
-non-reproducible in the provenance note — the fixture was never committed
-(`git log --all -S sqrt_approx` is empty), though the *property* does reproduce
-(454-byte fixture → snapshot 5 496 / slice 3 223, slice 7.10× the source and
-smaller than the snapshot). After that, author the remaining P0 RFCs
-(`NBL-015`…`NBL-022`) under
+After that, author the remaining P0 RFCs (`NBL-015`…`NBL-022`) under
 `docs/rfcs/`, carrying the same explicit provenance note that the nominal
 source document was absent and no approval is implied. **Do not code** any
-surface those RFCs describe — this includes wiring the orphaned harness into
-CI — and do not resolve §10.1, §10.2, §10.3, §10.4, or §10.5.
+surface those RFCs describe — this includes wiring the orphaned
+`tests/ais_differential.mjs` into CI, and repairing the `range` extent, and
+`Slice.diagnostics` — and do not resolve §10.1, §10.2, §10.3, §10.4, §10.5, or
+§10.6.
 G02 is documentation-only and is **not** blocked by the §10.1 MSRV decision,
 which first bites at G07.
 
