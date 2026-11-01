@@ -2,7 +2,12 @@
 
 ## Directive 008 — NEBULA 0.3.2 campaign (`G02`, `IN_PROGRESS`)
 
-**PR #57 integrated; RFC 0007 merged.** PR **#57** (`docs/nebula-g02-rfc0007`,
+**PR #58 integrated; the PR #57 record and the `G06` errata are merged.**
+PR **#58** (`docs/nebula-pr57-record`, head `e865ead3`) merged into
+`rewrite/v3-rust` as
+**`8e6107a9b4c49fe4404add5c7db81a4b59ca159c`** at 2026-11-01T11:23:37Z —
+4 files / +202 / −85, all documentation. It records the RFC 0007 batch:
+before it, PR **#57** (`docs/nebula-g02-rfc0007`,
 head `90bcdbfe`) merged into `rewrite/v3-rust` as
 **`6f5bca983fda1924b6ca1f0b7a1017159d360609`** at 2026-11-01T10:29:41Z —
 5 files / +707 / −45, all documentation: the new
@@ -154,10 +159,11 @@ table count is 3), and a **stale creation-time size** (422 lines → 439 lines,
 `UNKNOWN_MODULE: u16 = 2019` (`src/error.rs:374`) via `format!(\"E{:04}: …\")`
 (`:103`, `:109`) — unlike RFC 0006's `E3009`, which was genuinely fabricated.
 
-At record time local `HEAD` is **`6f5bca98`** (the merge of PR #57, the RFC 0007
-batch) and equals `origin/rewrite/v3-rust`. The working tree carries this record
-batch only. No source file changed: `src/check/mod.rs` is byte-identical
-to baseline (`sha256 1232b687…aa738f532`, `git hash-object 03207d9293…`),
+At record time local `HEAD` is **`8e6107a9`** (the merge of PR #58, the PR #57
+record batch) and equals `origin/rewrite/v3-rust`. The working tree carries this
+record-of-the-record batch only. No source file changed:
+`src/check/mod.rs` is byte-identical to baseline
+(`sha256 1232b687…aa738f532`, `git hash-object 03207d9293…`),
 `manifest.json` sha256 is still `cbe7ad91…23b837`, `manifest.current` is still
 `"0.3.1"`, and no `0.3.2` tag exists.
 
@@ -1980,10 +1986,10 @@ feature-gating of the typed-decode path.
 ## Exact Next Action
 
 **Directive 008 — NEBULA: G00 and G01 are complete and integrated; G02 is
-`IN_PROGRESS` with six of thirteen P0 RFCs authored and merged — RFCs
-0002–0007 all merged, RFC 0007 as PR #57 → `6f5bca98` — and fifteen outstanding
-decision items across seven decision packages
-(§10.1–§10.7: 1 + 3 + 2 + 2 + 1 + 3 + 3).**
+`IN_PROGRESS` with seven of thirteen P0 RFCs authored and merged — RFCs
+0002–0007 all merged, RFC 0007 as PR #57 → `6f5bca98` and recorded as PR #58
+→ `8e6107a9` — and fifteen outstanding decision items across seven decision
+packages (§10.1–§10.7: 1 + 3 + 2 + 2 + 1 + 3 + 3).**
 
 Wave `G00` is `PASS`: PR #43 merged as `7bd1d6fb` (21/21 green) and its closure
 landed as PR #44 → `390f763c` (21/21 green). Wave `G01` is `PASS` and
@@ -2024,7 +2030,8 @@ capability set) is merged as PR #55 → `d03d2718` (21/21): eighteen
 defects `A`–`R`, three decisions `D1`–`D3`, §3 `Grammar delta — None`, and a
 mutation-proved `range`-extent repair withheld under gate G02. The
 P0 set is not yet complete: `NBL-015` is now RFC 0007, authored and merged as
-PR #57 → `6f5bca98` (§10.7 escalates `D1`/`D2`/`D3`; see below), and `NBL-016`
+PR #57 → `6f5bca98` (§10.7 escalates `D1`/`D2`/`D3`; see below), recorded as
+PR #58 → `8e6107a9`, and `NBL-016`
 (Host database capability),
 `NBL-017` (`entity struct` and metadata), `NBL-018` (CRUD and transactions),
 `NBL-019` (AQL/0.1), `NBL-020` (Repository in traits), `NBL-021` (SQLGuard/0.1

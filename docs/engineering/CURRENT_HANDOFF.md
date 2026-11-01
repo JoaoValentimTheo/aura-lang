@@ -6,11 +6,11 @@ Active task: **G02**, the P0 RFC reconstruction. `G00` and `G01` are closed.
 No implementation is authorized before `G02` accepts the P0 RFC set.
 
 ```
-WAVE: G02 -> IN_PROGRESS (6 of 13 P0 RFCs authored, all 6 merged — RFC 0007
+WAVE: G02 -> IN_PROGRESS (7 of 13 P0 RFCs authored, all 7 merged — RFC 0007
       merged as PR #57; fifteen outstanding decision items across seven
       packages)
 STATUS: G02 IN_PROGRESS (fifteen decision items outstanding, see DECISOES)
-HEAD: 6f5bca983fda1924b6ca1f0b7a1017159d360609 (merge of PR #57)
+HEAD: 8e6107a9b4c49fe4404add5c7db81a4b59ca159c (merge of PR #58)
 PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb;
      #44 MERGED (G00 closure + G01 authorisation, head 5cf4f8d9) -> 390f763c;
      #45 MERGED (G01 dependency record, head 1ce88863) -> 6f075882;
@@ -26,12 +26,14 @@ PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb;
      #55 MERGED (RFC 0006, head d4f38101) -> d03d2718;
      #56 MERGED (PR #55 record, head 8e362edc) -> 4406c873;
      #57 MERGED (RFC 0007, head 90bcdbfe) -> 6f5bca98;
+     #58 MERGED (PR #57 record + G06 errata, head e865ead3) -> 8e6107a9;
      0 open PRs
 CHECKS: PR #43 21/21 pass; PR #44 21/21 pass; PR #45 21/21 pass;
         PR #46 21/21 pass; PR #47 21/21 pass; PR #48 21/21 pass;
         PR #49 21/21 pass; PR #50 21/21 pass; PR #51 21/21 pass;
         PR #52 21/21 pass; PR #53 21/21 pass; PR #54 21/21 pass;
         PR #55 21/21 pass; PR #56 21/21 pass; PR #57 21/21 pass;
+        PR #58 21/21 pass;
         post-merge CI 41248873353 on 7bd1d6fb = completed/success;
         Pages 41248873720 = completed/success;
         post-merge CI 41251300785 on 6f075882 = completed/success;
@@ -58,7 +60,9 @@ CHECKS: PR #43 21/21 pass; PR #44 21/21 pass; PR #45 21/21 pass;
         post-merge CI 41293011896 on 4406c873 = completed/success (21/21);
         post-merge Pages 41293011910 on 4406c873 = completed/success (2/2);
         post-merge CI 41297723580 on 6f5bca98 = completed/success (21/21);
-        post-merge Pages 41297723527 on 6f5bca98 = completed/success (2/2)
+        post-merge Pages 41297723527 on 6f5bca98 = completed/success (2/2);
+        post-merge CI 41301686829 on 8e6107a9 = completed/success (21/21);
+        post-merge Pages 41301686892 on 8e6107a9 = completed/success (2/2)
 TESTS_REALMENTE_EXECUTADOS: see "Commands actually executed" below
 PROVAS: baseline reconciled; G00+G01+G01-record diffs are docs/script files
         only; src/, playground/runtime/, Cargo.toml, Cargo.lock,
@@ -489,6 +493,19 @@ the commit range `6cc96bf5..fe0e7312` touches **no** file under `website/`
 `completed`/`success`, confirming pre-existence without any code change.
 Do not "fix" a future recurrence without re-proving it this way first.
 
+**NOTE-FLAKE-2 — the same class recurred, and was again proved a flake.** The
+local validation floor for the PR #58 record batch first returned `WEBT=1`:
+`website/tests/browser.test.mjs` timed out waiting for `#run`
+(`page.click: Timeout 30000ms exceeded ... navigation to finish`), reported at
+`browser.test.mjs:530:13` inside the call from `:638:28`. Every other website
+suite was green in that same run (`ais-doc: 89`, `Aurea: 39`,
+`playground-parity: 93`, `aurea-browser: 31`, `nav-fit: 380`). Isolated re-run
+of `node website/tests/browser.test.mjs` gave `Browser: 404 passed, 0 failed`;
+a full `node website/tests/run-all.mjs` re-run then returned exit 0 with
+`Browser: 404 passed, 0 failed` and `Website suite complete.` This is a
+navigation-timing flake of the same family as `NOTE-RERUN` above, in a
+docs-only batch that touches no file under `website/`.
+
 ### RFC 0004 evidence — the diagnostics contract (`NBL-013`)
 
 **Merged as PR #51 → `2df1c322`.** `docs/rfcs/0004-diagnostics-contract.md`,
@@ -910,10 +927,12 @@ are byte-identical to baseline.
 ### RFC 0007 evidence — project structure, `aura init`, and the `os` capability (`NBL-015`)
 
 `docs/rfcs/0007-project-structure-init-and-os.md` is **merged as PR #57** →
-`6f5bca983fda1924b6ca1f0b7a1017159d360609` — 439 lines **as merged**, 3 tables
-(28 rows), zero fences, no inconsistent rows, `## 3. Grammar delta` = **None**.
-Merging records the proposal only; §10.7 `D1`/`D2`/`D3` are unanswered and
-gate G02 still forbids coding any surface described.
+`6f5bca983fda1924b6ca1f0b7a1017159d360609`, and that merge is recorded as
+PR #58 → `8e6107a9b4c49fe4404add5c7db81a4b59ca159c` — 439 lines
+**as merged**, 3 tables (28 rows), zero fences, no inconsistent rows,
+`## 3. Grammar delta` = **None**. Merging records the proposal only;
+§10.7 `D1`/`D2`/`D3` are unanswered and gate G02 still forbids coding any
+surface described.
 
 **The central finding is that `G06` is largely greenfield.** Three of its five
 clauses are green *by absence* rather than by construction, a fourth is green on
@@ -970,9 +989,9 @@ Author `NBL-016` (Host database capability and the protected profile) as
 RFC 0007 is merged as PR #57 → `6f5bca983fda1924b6ca1f0b7a1017159d360609`
 (2026-11-01T10:29:41Z, 21/21 green) at
 `docs/rfcs/0007-project-structure-init-and-os.md`, its index row is in place,
-and
-§10.7 `D1`/`D2`/`D3` are escalated. This record batch carries RFC 0007's merge
-into the three state documents and touches no source file.
+and §10.7 `D1`/`D2`/`D3` are escalated. The record batch that carried RFC
+0007's merge into the three state documents is itself merged as PR #58 →
+`8e6107a9`, and touched no source file.
 
 **Wave position.** `NBL-010` (RFC 0002), `NBL-011` (RFC 0003), `NBL-013`
 (RFC 0004), `NBL-012` (RFC 0005) and `NBL-014` (RFC 0006) are authored **and
@@ -984,8 +1003,8 @@ AQL/0.1; `NBL-020` Repository in traits; `NBL-021` SQLGuard/0.1 SG-01…SG-08;
 RFCs still to author, plus `NBL-030` (prelude `Result` placement), which is
 blocked by §10.2 and must not be authored as if the decision were taken.
 `NBL-015` is RFC 0007 (`docs/rfcs/0007-project-structure-init-and-os.md`,
-439 lines as merged, 3 tables), merged as PR #57; its three decisions are
-escalated at §10.7 and remain unanswered.
+439 lines as merged, 3 tables), merged as PR #57 and recorded as PR #58; its
+three decisions are escalated at §10.7 and remain unanswered.
 
 **Fifteen outstanding decision items across seven decision packages:** §10.1
 MSRV dependency direction — **1** item, unlabelled; §10.2 (`D1a` which
