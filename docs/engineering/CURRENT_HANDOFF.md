@@ -6,18 +6,20 @@ Active task: **G02**, the P0 RFC reconstruction. `G00` and `G01` are closed.
 No implementation is authorized before `G02` accepts the P0 RFC set.
 
 ```
-WAVE: G01 -> PASS (merged); G02 authorized next
+WAVE: G02 -> IN_PROGRESS (2 of 12 P0 RFCs authored, three decisions outstanding)
 STATUS: G02 IN_PROGRESS (three human decisions outstanding, see DECISÕES)
-HEAD: 6f075882953f2a1ba9db7f9c596a46f5d77c0754 (merge of PR #45)
+HEAD: 6cc96bf5c0794a51972f3fd90c77b8d2456bdbc8 (merge of PR #46)
 PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb;
      #44 MERGED (G00 closure + G01 authorisation, head 5cf4f8d9) -> 390f763c;
      #45 MERGED (G01 dependency record, head 1ce88863) -> 6f075882;
+     #46 MERGED (G02 RFCs 0002+0003, head 66d90635) -> 6cc96bf5;
      0 open PRs
 CHECKS: PR #43 21/21 pass; PR #44 21/21 pass; PR #45 21/21 pass;
+        PR #46 21/21 pass;
         post-merge CI 41248873353 on 7bd1d6fb = completed/success;
         Pages 41248873720 = completed/success;
-        post-merge CI 41251300785 on 6f075882 = dispatched;
-        Pages 41251300794 on 6f075882 = dispatched
+        post-merge CI 41251300785 on 6f075882 = completed/success;
+        Pages 41251300794 on 6f075882 = completed/success
 TESTS_REALMENTE_EXECUTADOS: see "Commands actually executed" below
 PROVAS: baseline reconciled; G00+G01+G01-record diffs are docs/script files
         only; src/, playground/runtime/, Cargo.toml, Cargo.lock,
@@ -237,9 +239,17 @@ sessions should not retry the delegation blindly.
 
 ### G02 evidence — two P0 RFCs authored, three decisions escalated
 
+**Integrated.** PR **#46** (`docs/nebula-g02-rfcs`, head `66d90635`) merged into
+`rewrite/v3-rust` as **`6cc96bf5`** at 2026-11-01T00:27:28Z, with **21/21**
+remote checks green. The merged diff is 5 files / +1274 / −55, all
+documentation; `src/`, `playground/runtime/`, `playground/runtimes/`,
+`Cargo.toml` and `Cargo.lock` are **byte-identical** to `6f075882`,
+`manifest.json` sha256 still `cbe7ad91…23b837`, `manifest.current` still
+`"0.3.1"`, `Cargo.toml` still `0.3.1`, and no `0.3.2` tag exists.
+
 **Files.** `docs/rfcs/0002-result-and-recoverable-errors.md` (305 lines) and
-`docs/rfcs/0003-try-as-value-expression.md` (486 lines). Both untracked when
-this was written; neither is accepted, and neither adds source code.
+`docs/rfcs/0003-try-as-value-expression.md` (486 lines). Neither is accepted,
+and neither adds source code.
 
 **RFC 0002 — `Result<T,E>`.** The decisive finding is that the directive's §2.4
 vocabulary (`Result<T,E>` with `Ok(T)`/`Err(E)`) needs **no grammar change**:

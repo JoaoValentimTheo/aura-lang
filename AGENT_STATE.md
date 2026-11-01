@@ -2,6 +2,15 @@
 
 ## Directive 008 — NEBULA 0.3.2 campaign (`G02`, `IN_PROGRESS`)
 
+**G02 partially delivered and integrated.** PR **#46** (`docs/nebula-g02-rfcs`,
+head `66d90635`) merged into `rewrite/v3-rust` as **`6cc96bf5`** at
+2026-11-01T00:27:28Z, with **21/21** remote checks green. The merged diff is 5
+files / +1274 / −55, all documentation; `src/`, `playground/runtime/`,
+`playground/runtimes/`, `Cargo.toml`, `Cargo.lock` and `fuzz/` are
+**byte-identical** to `6f075882`, `manifest.json` sha256 still `cbe7ad91…23b837`,
+`manifest.current` still `"0.3.1"`, `Cargo.toml` still `0.3.1`, and no `0.3.2`
+tag exists.
+
 **G01 closed and integrated.** PR **#45** (`docs/nebula-g01-dependencies`,
 head `1ce88863`) merged into `rewrite/v3-rust` as **`6f075882`**, with
 **21/21** remote checks green. Post-merge runs on `6f075882`: CI
@@ -106,11 +115,12 @@ The spec-sanctioned exemption is **not** part of the defect:
 loop, or a `return` has no implicit value and is not judged, so
 `fn f() -> int { print(1) }` and `fn f() -> int { }` being accepted is correct.
 
-**G02 RFCs authored.** `docs/rfcs/0002-result-and-recoverable-errors.md` (305
-lines) and `docs/rfcs/0003-try-as-value-expression.md` (486 lines). Both carry
-§0 provenance notes, and both escalate a human decision rather than resolving
-it: RFC 0002 §2.1 (`D1`, tag scope) and RFC 0003 §2.1–§2.2 (`D1` grammar, `D2`
-the checker repair). Neither is accepted; no surface is coded.
+**G02 RFCs authored and integrated.** `docs/rfcs/0002-result-and-recoverable-errors.md`
+(305 lines) and `docs/rfcs/0003-try-as-value-expression.md` (486 lines), both
+merged as PR #46 → `6cc96bf5`. Both carry §0 provenance notes, and both escalate
+a human decision rather than resolving it: RFC 0002 §2.1 (`D1`, tag scope) and
+RFC 0003 §2.1–§2.2 (`D1` grammar, `D2` the checker repair). Neither is accepted;
+no surface is coded.
 
 **P3 preflight fix.** `scripts/agent-state.sh` reported `WRITER=UNKNOWN` on a
 clean tree because its `## Writer` extraction required an exact line and
@@ -1683,8 +1693,9 @@ feature-gating of the typed-decode path.
 
 ## Exact Next Action
 
-**Directive 008 — NEBULA: G01 is complete and integrated; G02 is the next
-authorised wave, and one human decision is outstanding.**
+**Directive 008 — NEBULA: G00 and G01 are complete and integrated; G02 is
+`IN_PROGRESS` with two of twelve P0 RFCs authored and three human decisions
+outstanding.**
 
 Wave `G00` is `PASS`: PR #43 merged as `7bd1d6fb` (21/21 green) and its closure
 landed as PR #44 → `390f763c` (21/21 green). Wave `G01` is `PASS` and
@@ -1703,15 +1714,15 @@ bump, or feature-gated drivers with a formally amended §18.2 floor — were
 **not** chosen by the agent, because two of them require human approval under
 §2.5.
 
-**G02 progress.** RFCs 0002 and 0003 are authored, probe-verified, and
-escalate their open decisions (`NBL-010`, `NBL-011`). The P0 set is not yet
-complete: `NBL-012` (inference and error propagation), `NBL-013` (diagnostics
-contract), `NBL-014` (AIS capability set), `NBL-015` (`Aura.toml` / `aura init`
-/ `std::os`), `NBL-016` (Host database capability), `NBL-017` (`entity struct`
-and metadata), `NBL-018` (CRUD and transactions), `NBL-019` (AQL/0.1),
-`NBL-020` (Repository in traits), `NBL-021` (SQLGuard/0.1 SG-01…SG-08),
-`NBL-022` (driver contract), and `NBL-030` (prelude/`Result` placement, blocked
-by §10.2) remain unauthored.
+**G02 progress.** RFCs 0002 and 0003 are authored, probe-verified, merged as PR
+#46 → `6cc96bf5`, and escalate their open decisions (`NBL-010`, `NBL-011`). The
+P0 set is not yet complete: `NBL-012` (inference and error propagation),
+`NBL-013` (diagnostics contract), `NBL-014` (AIS capability set), `NBL-015`
+(`Aura.toml` / `aura init` / `std::os`), `NBL-016` (Host database capability),
+`NBL-017` (`entity struct` and metadata), `NBL-018` (CRUD and transactions),
+`NBL-019` (AQL/0.1), `NBL-020` (Repository in traits), `NBL-021` (SQLGuard/0.1
+SG-01…SG-08), `NBL-022` (driver contract), and `NBL-030` (prelude/`Result`
+placement, blocked by §10.2) remain unauthored.
 
 **Three human decisions are outstanding, and each blocks a downstream wave:**
 §10.1 MSRV versus database drivers (blocks G07 onward); §10.2 `Result` versus

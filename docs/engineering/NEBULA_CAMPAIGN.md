@@ -13,13 +13,14 @@ evidence criteria — all delivered — and because a disclosed blocking finding
 with a decision package is the required G01 output, not a failure of it. The
 decision in §10.1 still gates G07 onward.
 
-G02 (`IN_PROGRESS`) has authored RFC 0002 and, while validating it, produced a
-second blocking language finding: global enum-tag uniqueness (`E2013`) makes a
-prelude or builtin `Result<T,E>` with unqualified `Ok`/`Err` unviable
-(§1.7.1, risk `R-10`). It is escalated as a human decision in §10.2 and blocks
-`NBL-030` plus every downstream `Result` API. Like §10.1, it is a decision
-package, not a gate failure — but it also means the P0 RFC set cannot be frozen
-until it is answered.
+G02 (`IN_PROGRESS`) has authored RFC 0002 and RFC 0003 and merged both as
+`6cc96bf5` (PR #46, 21/21 checks green), unchanged in substance. While
+validating RFC 0002 it produced a second blocking language finding: global
+enum-tag uniqueness (`E2013`) makes a prelude or builtin `Result<T,E>` with
+unqualified `Ok`/`Err` unviable (§1.7.1, risk `R-10`). It is escalated as a
+human decision in §10.2 and blocks `NBL-030` plus every downstream `Result` API.
+Like §10.1, it is a decision package, not a gate failure — but it also means the
+P0 RFC set cannot be frozen until it is answered.
 
 While validating RFC 0002's evidence, G02 also uncovered a **pre-existing
 checker soundness defect** independent of any new syntax: a `try` statement in
@@ -479,7 +480,7 @@ Current wave status:
 |---|---|
 | G00 | `PASS` — PR #43, merge `7bd1d6fb`, 21/21 checks |
 | G01 | `PASS` — PR #45, merge `6f075882`, 21/21 checks; dependency table and MSRV blocker disclosed (§1.5.1, §10.1) |
-| G02 | `IN_PROGRESS` — RFC 0002 (`Result`) and RFC 0003 (`try` as expression) authored and probe-verified. Two blocking language findings are escalated: `R-10`/`E2013` vs. `Result` (§10.2) and `R-11`/tail-`try` typing plus the grammar question (§10.3). Remaining P0 RFCs under authoring |
+| G02 | `IN_PROGRESS` — RFC 0002 (`Result`) and RFC 0003 (`try` as expression) authored, probe-verified and merged as PR #46 → `6cc96bf5` (21/21 checks). Two blocking language findings are escalated: `R-10`/`E2013` vs. `Result` (§10.2) and `R-11`/tail-`try` typing plus the grammar question (§10.3). The remaining ten P0 RFCs are under authoring |
 | G03–G19 | `NOT_STARTED` |
 
 A `PASS` requires observed evidence. An environment that was not executed is
