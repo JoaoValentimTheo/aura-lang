@@ -2,20 +2,47 @@
 
 ## Directive 008 — NEBULA 0.3.2 campaign (`G02`, `IN_PROGRESS`)
 
-**G02 PR #50 record integrated; RFC 0004 authored.** PR **#50**
+**G02 PR #51 integrated; RFC 0004 merged.** PR **#51**
+(`docs/nebula-g02-rfc0004`, head `5c34592d`) merged into `rewrite/v3-rust` as
+**`2df1c32298b57bc64343c3701ca8bd2a53705230`** at 2026-11-01T02:37:05Z, with
+**21/21** remote checks green; post-merge runs `41265951706` (CI) and
+`41265951679` (Pages) both reached `completed/success` on `2df1c322`. The
+merged diff is 6 files / +1019 / −40, all documentation: the new
+`docs/rfcs/0004-diagnostics-contract.md`, the `docs/rfcs/README.md` index, the
+campaign §10.4 / `R-12` annotations, five escaped-pipe fixes in this campaign's
+own docs, and the state refresh.
+
+At record time local `HEAD` is **`2df1c322`** and the working tree carries this
+documentation batch only (three state documents, uncommitted). No source file
+changed: `src/check/mod.rs` is byte-identical to baseline
+(`sha256 1232b687…aa738f532`), `manifest.json` sha256 is still
+`cbe7ad91…23b837`, `manifest.current` is still `"0.3.1"`, and no `0.3.2` tag
+exists.
+
+**`NBL-012` lead finding — generic-instantiation unsoundness (unfixed by
+design).** While researching the next P0 RFC, a checker soundness defect was
+found and fully characterised: `fn id<T>(x: T) -> T` called as
+`let b: string = id(1)` is **accepted by `aura check` (exit 0)**, while
+`aura run` on the same program fails with ``E2003: int has no method `len` ``.
+The control — the identical program with a non-generic
+`fn id(x: int) -> int` — is correctly rejected with `E3001`, so the gap is
+generic-specific. Root cause: `instantiate_return_ty`
+(`src/check/mod.rs:4497-4534`) discards the substitution returned by
+`infer_substitution` at `:4530` (`let _ = …`), so `ret.erase_params(&sigma)`
+runs unbound and every `Ty::Param` falls through to `Ty::Unknown`
+(`src/types.rs:244`), which `Ty::compatible_with` accepts against any
+annotation. A four-line candidate fix was **engineered and mutation-proved**
+(the binding capture is load-bearing; both a guard-only and a
+capture-but-ignore variant leave the bug present) and then **reverted to
+baseline**, because `GATE G02` forbids coding a surface before its RFC is
+accepted. It is carried as evidence in `NBL-012`, not as a commit.
+
+**G02 PR #50 record integrated.** PR **#50**
 (`docs/nebula-pr49-record`) merged into `rewrite/v3-rust` as
 **`fc49c5ee44023b4c13e55d3384f69ef1ff8fcadc`** at 2026-11-01T01:36:37Z, with
 **21/21** remote checks green; post-merge runs `41261797535` (CI) and
 `41261797527` (Pages) both `completed/success`. The merged diff is 3 files,
 all documentation.
-
-Local `HEAD` is **`fc49c5ee`**. Working tree carries one new untracked artifact:
-`docs/rfcs/0004-diagnostics-contract.md` (`NBL-013`), **693 lines / 15 tables /
-4 fences**, audited end to end against the live binary but **not yet
-committed**. No source file has changed: `src/check/mod.rs` is still byte-
-identical to baseline (`sha256 1232b687…aa738f532`), `manifest.json` sha256 is
-still `cbe7ad91…23b837`, `manifest.current` is still `"0.3.1"`, and no `0.3.2`
-tag exists.
 
 **G02 PR #49 record integrated.** PR **#49**
 (`docs/nebula-g02-tag-scope-record`, head `02599d17`) merged into
@@ -1785,7 +1812,7 @@ feature-gating of the typed-decode path.
 ## Exact Next Action
 
 **Directive 008 — NEBULA: G00 and G01 are complete and integrated; G02 is
-`IN_PROGRESS` with two of twelve P0 RFCs authored and three human decisions
+`IN_PROGRESS` with three of thirteen P0 RFCs merged and five human decisions
 outstanding.**
 
 Wave `G00` is `PASS`: PR #43 merged as `7bd1d6fb` (21/21 green) and its closure
@@ -1812,18 +1839,18 @@ decisions (`NBL-010`, `NBL-011`). RFC 0002 was **corrected after merge**:
 its tag-scope premise had been falsified (`LANGUAGE_SPEC.md`
 contradicts itself; the compiler is per-module), so §1.2, §1.1.1, §2.1, §2.1.1
 and §5 were rewritten and the escalation split into `D1a` scope / `D1b` message
-/ `D1c` placement. RFC 0004 (`NBL-013`, diagnostics contract) is authored on
-disk, audited, and **not yet committed**; it escalates `D3` (character versus
-visual columns) and open item 13 (non-ASCII module directories skipped silently)
-as §10.4. The
+/ `D1c` placement. RFC 0004 (`NBL-013`, diagnostics contract) is authored,
+audited end to end against the live binary, and **merged as PR #51 →
+`2df1c322`**; it escalates `D3` (character versus visual columns) and open
+item 13 (non-ASCII module directories skipped silently) as §10.4. The
 P0 set is not yet complete: `NBL-012` (inference and error propagation),
 `NBL-014` (AIS capability set), `NBL-015`
 (`Aura.toml` / `aura init` / `std::os`), `NBL-016` (Host database capability),
 `NBL-017` (`entity struct` and metadata), `NBL-018` (CRUD and transactions),
 `NBL-019` (AQL/0.1), `NBL-020` (Repository in traits), `NBL-021` (SQLGuard/0.1
 SG-01…SG-08), `NBL-022` (driver contract), and `NBL-030` (prelude/`Result`
-placement, blocked by §10.2) remain unauthored. Nine of the twelve P0 RFCs are
-still unwritten.
+placement, blocked by §10.2) remain unauthored. Ten of the thirteen G02 P0 RFCs
+are still unwritten.
 
 **Five human decisions are outstanding, and each blocks a downstream wave:**
 §10.1 MSRV versus database drivers (blocks G07 onward); §10.2 `Result` versus
@@ -1834,18 +1861,26 @@ before the placement choice (`D1c`), plus `D1b`, the `E2013` message text
 item 13 non-ASCII module discovery (blocks G18's snapshot work, and the
 format-injection repair `R-12`).
 
-**Next exact action:** commit the RFC 0004 batch — the RFC itself, the
-`docs/rfcs/README.md` index, the campaign §10.4 / `R-12` / header annotations,
-the five escaped-pipe fixes in this campaign's own docs, and this state refresh
-— then run the validation floor, open the PR, reach 21/21, and merge. After
-that, continue **G02** by authoring the remaining P0 RFCs
-(`NBL-012`, `NBL-014`…`NBL-022`) under `docs/rfcs/`, using
-`docs/rfcs/0001-exception-catch-selection.md` as the structural template and
-the §2.2 section list as the required shape, and carrying the same explicit
-provenance note that the nominal source document was absent and no approval is
-implied. **Do not code** any surface those RFCs describe, and do not resolve
-§10.1, §10.2, §10.3, or §10.4. G02 is documentation-only and is **not** blocked
-by the §10.1 MSRV decision, which first bites at G07.
+**Next exact action:** continue **G02** by authoring `NBL-012` as
+`docs/rfcs/0005-inference-and-error-propagation.md`, using
+`docs/rfcs/0003-try-as-value-expression.md` as the structural template and
+`docs/rfcs/README.md` as the format contract, then add its row to the
+`## Index` table. It must lead with the generic-instantiation unsoundness
+(`instantiate_return_ty` discarding `infer_substitution` at
+`src/check/mod.rs:4530`; `check` exit 0 versus `run` `E2003`; the non-generic
+control correctly rejected), carry the `src/types.rs:244` `erase_params` →
+`Unknown` fallthrough, the mutation-verified fix candidate, and the full
+regression matrix. It must also carry the inference facts established by probe:
+`[int | string]` literal inference, whole-literal checking under an expected
+type (§21.6 — internally consistent and correctly implemented, so **no**
+spec contradiction is claimed), `{}` being an empty block rather than an empty
+map literal, and `Ty::compatible_with`'s no-coercion and union-direction rules.
+After that, author the remaining P0 RFCs (`NBL-014`…`NBL-022`) under
+`docs/rfcs/`, carrying the same explicit provenance note that the nominal
+source document was absent and no approval is implied. **Do not code** any
+surface those RFCs describe, and do not resolve §10.1, §10.2, §10.3, or §10.4.
+G02 is documentation-only and is **not** blocked by the §10.1 MSRV decision,
+which first bites at G07.
 
 **Known documentation hygiene debt, deliberately not absorbed here.** A
 repo-wide census found **26 Markdown table rows with an unescaped `|` inside a
