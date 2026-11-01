@@ -6,8 +6,9 @@ Active task: **G02**, the P0 RFC reconstruction. `G00` and `G01` are closed.
 No implementation is authorized before `G02` accepts the P0 RFC set.
 
 ```
-WAVE: G02 -> IN_PROGRESS (3 of 13 P0 RFCs merged, five decisions outstanding)
-STATUS: G02 IN_PROGRESS (five human decisions outstanding, see DECISOES)
+WAVE: G02 -> IN_PROGRESS (3 of 13 P0 RFCs merged, RFC 0005 authored but unmerged,
+       six decisions outstanding)
+STATUS: G02 IN_PROGRESS (six human decisions outstanding, see DECISOES)
 HEAD: 2df1c32298b57bc64343c3701ca8bd2a53705230 (merge of PR #51)
 PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb;
      #44 MERGED (G00 closure + G01 authorisation, head 5cf4f8d9) -> 390f763c;
@@ -272,7 +273,7 @@ sessions should not retry the delegation blindly.
   records the open human decision with three lawful outcomes and states that
   **none was chosen**. §9.1 records the custom-agent outage.
 
-### G02 evidence — three P0 RFCs merged, five decisions escalated
+### G02 evidence — RFC 0002 and RFC 0003 (the PR #46 batch)
 
 **Integrated.** PR **#46** (`docs/nebula-g02-rfcs`, head `66d90635`) merged into
 `rewrite/v3-rust` as **`6cc96bf5`** at 2026-11-01T00:27:28Z, with **21/21**
@@ -545,10 +546,11 @@ as `queued` / `in_progress`. Both have since reached `completed/success` on
 `2df1c322`, and the `CHECKS:` block above records that verified terminal value
 rather than the earlier non-terminal reading.
 
-### The fourth G02 finding — generic instantiation is never propagated (`NBL-012`)
+### The fourth G02 finding — generic instantiation is never propagated (`NBL-012`, RFC 0005)
 
-Discovered while starting `NBL-012` and **not fixed**: gate G02 forbids coding
-a surface before its RFC is accepted, and this one is not even authored yet.
+Discovered while starting `NBL-012` and **not fixed**: gate G02 forbids coding a
+surface before its RFC is accepted. It is now written up as
+`docs/rfcs/0005-inference-and-error-propagation.md` (authored, **not merged**).
 
 **Symptom.** `fn id<T>(x: T) -> T { return x }` with
 `let a = id(1)` and `let b: string = a` is accepted by `aura check`
@@ -560,7 +562,8 @@ the same two lines — is correctly rejected with
 
 **It is end-to-end unsound, not merely a typing curiosity.** The accepted
 program, run under `aura run` with `b.len()` added, fails at
-**exit 1** with ``main.aura:4:10: error[E2003]: int has no method `len` ``. So
+**exit 1** with ``main.aura:5:10: error[E2003]: int has no method `len` ``
+(the `print(b.len())` line is line 5 of the five-line program). So
 `check` accepts what `run` rejects.
 
 **Root cause.** `instantiate_return_ty` (`src/check/mod.rs:4497-4534`) builds a
@@ -576,19 +579,40 @@ annotation. The machinery below is correct and merely unwired:
 `:3462-3487` does capture the substitution but uses it only for
 `satisfies_bounds`, never for the result type.
 
-**The candidate fix was engineered, proven, and reverted.** Capturing the
-returned substitution and passing it to `erase_params` (4 insertions, 1
-deletion at `:4527`, saved as `/tmp/nb12_fix.patch`) repairs all five positive
-probes — `id(1)` into `string`, the direct `let b: string = id(1)` form,
-`pair<T>(x: T) -> [T]` into `[string]`, explicit `id<int>(1)`, and the
-assignment-indirection form — while leaving `id("hi")` and unannotated
-`print(id(1))` at exit 0.
+**There is a second, independent part.** Repairing only that leaves methods
+unsound. `Expr::Method` inference (`:4101-4115`) passes an `args` slice that
+**excludes the receiver**, so an `impl<T>` parameter occurring only in the
+receiver is never bound:
+`struct Pair<A> { first: A }` with `impl<A> Pair<A> { fn get(self) -> A }`
+still types `p.get()` as `Unknown`, and `let s: string = p.get()` is accepted at
+exit 0. The correct binding already exists in the codebase —
+`check_struct_method_args` (`:4882`, binding at `:4907-4931`) seeds
+`explicit_substitution`, then binds impl parameters from
+`Self::ty_args_of(recv)` + `recv.nominal_head()` +
+`self.type_type_params.get(&recv_head)`, and indexes `sig.params[1..]` because
+`sig.params[0]` **is** the receiver (documented at `:4892`). A third variant that
+naively treated the receiver as `params[0]` left a dead helper and did **not**
+fix `p.get()`.
+
+**The two-part candidate fix was engineered, proven, and reverted.**
++53/−2 in one file, saved as `/tmp/nb12_fix_v4.patch`. Across a 25-probe matrix
+it repairs every generic shape — `id(1)` into `string`, the direct
+`let b: string = id(1)` form, `pair<T>(x: T) -> [T]` into `[string]`,
+`id<int>(1)`, the assignment-indirection form, method returns from a generic
+receiver, and own-parameter methods — while leaving `id("hi")`, unannotated
+`print(id(1))`, `m_get_ok`, `m_own_ok` and every already-correct rejection at
+their baseline verdicts. Two probes published in an earlier draft were
+**falsified on re-run** and are corrected in the RFC: `m_own_ok` is `0|0`, not
+`1|1`; and the original `cmp` row measured an unrelated hole, because Aura does
+not type-check `==` at all — it was replaced with an ordered-comparison probe,
+which *is* checked and gives the same `0 → 1`.
 
 **Mutation proof, in both directions.** Mutation A (guard the `None` case but do
 not capture the binding) leaves the bug present; mutation B (capture into a new
-binding but keep passing the old `sigma` to `erase_params`) leaves the bug
-present. Both compile and both re-introduce the unsoundness, so the binding
-capture is the load-bearing part rather than the guard.
+binding but keep passing the old `sigma` to `erase_params`) leaves it present;
+mutation C (drop the receiver-binding block) leaves `p.get()` accepted. All three
+compile and all three re-introduce the unsoundness, so each part is independently
+load-bearing.
 
 **Neutrality.** The fix leaves the whole corpus byte-identical: 125 tracked
 `.aura` files, `108` exit 0 and `17` exit 1 before **and** after, with
@@ -596,74 +620,148 @@ capture is the load-bearing part rather than the guard.
 suite is `1477 passed / 0 failed` and clippy is clean with the fix applied.
 
 **Reverted.** `git checkout -- src/check/mod.rs` returns `git diff` to empty
-and `HEAD` to `5c34592d`; the worktree is byte-identical to baseline. This is
-the second time in this campaign that a fully validated repair has been withheld
-for G02 — the first was the three-part tail-`try` fix — and it is the required
-behaviour, not an oversight.
+and `src/check/mod.rs` to `sha256 1232b687…aa738f532`
+(`git hash-object 03207d9293…`), byte-identical to baseline. This is the second
+time in this campaign that a fully validated repair has been withheld for G02 —
+the first was the three-part tail-`try` fix — and it is the required behaviour,
+not an oversight.
+
+**Two further holes surfaced underneath, both excluded from the RFC.** Neither
+is a residual: both reproduce with no generic call anywhere in the program.
+**`R-14` — indexing is never type-checked.** `let a = 5` then `a["k"]` is
+`check` exit 0 / `run` exit 1 (``E3001: cannot index int with string``); same for
+`bool` and `float`. Three separate `Expr::Index` arms exist (`:2655-2657`,
+`:2847-2849`, and the statement-mode arm at `:6868-6880` that *does* check
+`contains_none()`), so the hole is inference-specific. **`R-15` — equality is
+never type-checked and never fails at run time.** `print(1 == "s")` is exit 0
+under **both** `check` and `run` and prints `false`; `print(1 != "s")` prints
+`true`. Ordered comparison *is* checked (`1 < "s"` → ``E3001: cannot compare int
+with string``), so the hole is specific to `==`/`!=`. `R-15` is a **silent wrong
+answer**, strictly worse than `R-14`, and is arguably the highest-severity open
+defect in the ledger; it is deferred only because it is a different subsystem,
+and it is recorded as `R-15` rather than folded into `D1`.
+
+### RFC 0005 evidence — inference and error propagation (`NBL-012`)
+
+`docs/rfcs/0005-inference-and-error-propagation.md` is **authored and not
+merged**. 691 lines, 6 tables, 20 fences, backtick parity even. §0 carries five
+recorded self-corrections; §3 is `Grammar delta — None`.
+
+**The defect is two independent parts, both in `src/check/mod.rs`.**
+
+- **Part 1 — `instantiate_return_ty` (`:4497-4532`).** At `:4530` it runs
+  `let _ = self.infer_substitution(&pseudo, &actual, &sigma);` and **discards**
+  the returned substitution, then calls `ret.erase_params(&sigma)` with an
+  unbound `sigma`. Every `Ty::Param` reaches `unwrap_or(Ty::Unknown)`
+  (`src/types.rs:244-261`, `Param` arm `:246`). `Ty::compatible_with`
+  (`:342-419`) accepts `Unknown` against any annotation, so every generic call
+  types as `Unknown` and satisfies any annotation, silently.
+- **Part 2 — `Expr::Method` inference (`:4101-4115`).** The `args` slice
+  excludes the receiver, so an `impl<T>` parameter occurring only in the
+  receiver is never bound. `struct Pair<A> { first: A }` +
+  `impl<A> Pair<A> { fn get(self) -> A }` leaves `p.get()` as `Unknown`.
+
+Part 2 was found only by building a **true baseline binary** and re-running the
+matrix against it; the first comparison was invalid because both sides were the
+same executable (rule 3 applies to differential harnesses too).
+
+**End-to-end unsoundness.** `fn id<T>(x: T) -> T { return x }` with
+`let a = id(1)` and `let b: string = a` is `check` exit **0**; adding `b.len()`
+and running the same program gives ``main.aura:5:10: error[E2003]: int has no
+method `len` `` at exit **1**. The non-generic control is `E3001` at check time,
+so the gap is generic-specific.
+
+**Probe matrix and mutation proof.** §6.1 tabulates **21** rows against two
+saved binaries — `/tmp/aura_base_nb12` (sha256 `966462ad…eb89` = `966462ad66f9d3f4e60b071a629506264d52f12be8a126123127a1acfc08eb89`)
+and `/tmp/aura_fix_nb12_v4` (`fb230ce5…8aae` = `fb230ce5c5dfb8546df06df604bfc88952b2d1e78a3a4dad091f572a26888aae`).
+Three independent mutations each leave the unsoundness present: **A** guards the
+`None` case without capturing; **B** captures into a new binding but still
+passes the old `sigma` to `erase_params`; **C** drops the receiver-binding
+block. All three compile; all three re-introduce the defect, so every part is
+load-bearing rather than defensive.
+
+**Neutrality and revert.** Patch v4 is `1 file changed, 53 insertions(+),
+2 deletions(-)` (`/tmp/nb12_fix_v4.patch`). Suite `1477 passed / 0 failed`;
+clippy clean; the **125**-tracked-file corpus is byte-identical in both output
+and status (`108` rc 0 / `17` rc 1 on both sides), recorded as
+`IDENTICAL_OUTPUT_AND_STATUS`. It was then **reverted** under gate G02:
+`git diff` is empty and `src/check/mod.rs` is back to
+`sha256 1232b687…aa738f532` (`git hash-object 03207d9293…`).
+
+**Two further holes, both generic-independent, both explicitly out of scope.**
+They are *not* residuals — each reproduces with no generic call in the program,
+and each is recorded as its own ledger risk rather than folded into `D1`.
+
+- **`R-14` — indexing is never type-checked.** `let a = 5` then `a["k"]` is
+  `check` exit 0 / `run` exit 1 (``E3001: cannot index int with string``);
+  likewise for `bool` and `float`. `let xs = [1]` then `xs[0]` still works.
+  Three separate `Expr::Index` arms exist (`:2655-2657`, `:2847-2849`, and the
+  statement-mode arm `:6868-6880` which *does* consult `contains_none()`), so
+  the hole is in inference, not in the operator.
+- **`R-15` — equality is never type-checked and never fails at run time.**
+  `print(1 == "s")` is exit **0** under `check` *and* under `run`, and prints
+  `false`; `print(1 != "s")` prints `true`; `let c: bool = 1 == "s"` is also
+  accepted. Ordered comparison **is** checked — `1 < "s"` gives
+  ``E3001: cannot compare int with string`` on both paths — so the hole is
+  specific to `==`/`!=`. This is a **silent wrong answer** and therefore
+  strictly worse than `R-14`; it remains open.
+
+**One decision, and there is no second one.** `§10.5 D1` asks only whether to
+authorize the two-part repair. It is a decision rather than a bug fix because
+`LANGUAGE_SPEC.md` §36.3 (`:4048-4059`) makes `Unknown` the *specified* result
+for an unbound parameter in a value position, and because the repair is strictly
+**more rejecting** than today. §2.4 of the RFC records the spec-sanctioned
+residual that survives the repair — `fn make<T>() -> T { throw "x" }` bound to
+`let s: string` stays accepted at `0|0` and fails only at run time with
+``E4026: uncaught value: x`` — and closes with **"There is no D2."**
 
 ### Next exact action
 
-Author `NBL-012` as `docs/rfcs/0005-inference-and-error-propagation.md`, using
-`docs/rfcs/0003-try-as-value-expression.md` as the structural template and
-`docs/rfcs/README.md` as the format contract, then add its row to the
+Author `NBL-014` (the AIS capability set) as `docs/rfcs/0006-*.md`, using
+`docs/rfcs/0005-inference-and-error-propagation.md` as the structural template
+and `docs/rfcs/README.md` as the format contract, then add its row to the
 `## Index` table in `docs/rfcs/README.md`.
 
-It must **lead** with the generic-instantiation unsoundness measured in this
-batch. `fn id<T>(x: T) -> T` called as `let b: string = id(1)` is accepted by
-`aura check` (exit 0) while `aura run` on the same program fails with
-``E2003: int has no method `len` ``; the identical non-generic program is
-correctly rejected with `E3001`, so the gap is generic-specific. Root cause:
-`instantiate_return_ty` (`src/check/mod.rs:4497-4534`) discards the
-substitution returned by `infer_substitution` at `:4530`, so
-`ret.erase_params(&sigma)` runs unbound and every `Ty::Param` falls through to
-`Ty::Unknown` (`src/types.rs:244`), which `Ty::compatible_with` accepts against
-any annotation. A four-line candidate fix
-(`let sigma = match self.infer_substitution(...) { Some(bound) => bound, None =>
-return ret.erase_params(&sigma) };` then `ret.erase_params(&sigma)`) was
-**engineered, mutation-proved and reverted**. Mutation A (guard without
-capture) and mutation B (capture then ignore) both leave the bug present, so
-the binding capture is load-bearing. Corpus: 125 files, 108 exit 0 / 17 exit 1,
-`diff` against baseline **identical**. Suite: 1477 passed / 0 failed, clippy
-clean.
+It must start from the facts RFC 0004 already established, because they overlap:
+`AIS_VERSION = "0.1"` at `src/ais.rs:40`; `Capabilities::default()` at
+`src/ais.rs:64-72`; `Severity::Error.as_str()` hardcoded at `src/ais.rs:142`;
+`aura ais` cannot see filesystem modules at all (`src/main.rs:434` + `:440`,
+`src/mcp.rs:291-292`); and AIS **silently drops locationless diagnostics**,
+returning exit 0. RFC 0004 §1.5 carries the measured evidence for those.
 
-It must also carry the inference facts established by probe: `[int | string]`
-literal inference; whole-literal checking under an expected type (§21.6 —
-internally consistent and correctly implemented, so **no** spec contradiction
-is claimed); `{}` being an empty block rather than an empty map literal; and
-`Ty::compatible_with`'s no-coercion and union-direction rules. Each RFC carries
-an explicit provenance note stating that its nominal source document was absent
-and that no approval is implied.
+Every RFC carries an explicit provenance note stating that its nominal source
+document was absent and that no approval is implied. Each RFC also carries a
+decision block; a decision is escalated, never resolved.
 
-After that, reconstruct the remaining P0 RFC set (`NBL-014`…`NBL-022`) under
-`docs/rfcs/` on the same model.
+After `NBL-014`, reconstruct `NBL-015`…`NBL-022` on the same model.
 
-`NBL-010` (RFC 0002), `NBL-011` (RFC 0003) and `NBL-013` (RFC 0004) are
-authored and merged; `NBL-012` (RFC 0005) is next. RFC 0002 was
-corrected after its tag-scope premise was falsified, recorded at `fe0e7312`
-and integrated as `73a35d9b` (PR #48); the correction itself was recorded and
-integrated as `85de5945` (PR #49), and that record as `fc49c5ee` (PR #50). The
-campaign
-now escalates `D1a` (which of the two contradictory spec clauses governs
-`E2013`), `D1b` (`E2013`'s message text) and `D1c` (placement). Answer `D1a`
-before `D1c`. Still unauthored:
-`NBL-012` inference and error propagation; `NBL-014` AIS capability set;
-`NBL-015` `Aura.toml` / `aura
-init` / `std::os`; `NBL-016` Host database capability and protected profile;
-`NBL-017` `entity struct` and metadata; `NBL-018` CRUD and transactions;
-`NBL-019` AQL/0.1; `NBL-020` Repository in traits; `NBL-021` SQLGuard/0.1
-SG-01…SG-08; `NBL-022` SQL and Mongo driver contract. `NBL-030` (prelude
-`Result` placement) is blocked by §10.2 and must not be authored as if the
-decision were taken.
+**Wave position.** `NBL-010` (RFC 0002), `NBL-011` (RFC 0003) and `NBL-013`
+(RFC 0004) are authored **and merged**. `NBL-012` (RFC 0005) is authored and
+**not merged**. Still unauthored: `NBL-014` AIS capability set; `NBL-015`
+`Aura.toml` / `aura init` / `std::os`; `NBL-016` Host database capability and
+protected profile; `NBL-017` `entity struct` and metadata; `NBL-018` CRUD and
+transactions; `NBL-019` AQL/0.1; `NBL-020` Repository in traits; `NBL-021`
+SQLGuard/0.1 SG-01…SG-08; `NBL-022` SQL and Mongo driver contract. That is
+**nine** of the thirteen P0 RFCs still to author, plus `NBL-030` (prelude
+`Result` placement), which is blocked by §10.2 and must not be authored as if
+the decision were taken.
+
+**Six human decisions are outstanding:** §10.1 MSRV dependency direction;
+§10.2 (`D1a` which contradictory spec clause governs `E2013`, `D1b` its message
+text, `D1c` placement — answer `D1a` before `D1c`); §10.3 (`D1` authorize the
+three-part tail-`try` repair, `D2` whether to require exhaustiveness); §10.4
+(`D3` plus open item 13); and §10.5 (`D1` authorize the two-part
+generic-instantiation repair).
 
 **Do not code any surface these RFCs describe, and do not resolve §10.1, §10.2,
-§10.3, or §10.4.** G02 is documentation-only and is **not** blocked by the
-§10.1 MSRV decision, which first bites at G07. `GATE G02` requires the P0 RFCs
-to be accepted first.
+§10.3, §10.4, or §10.5.** G02 is documentation-only and is **not** blocked by
+the §10.1 MSRV decision, which first bites at G07. `GATE G02` requires the P0
+RFCs to be accepted first.
 
 **Known Markdown hygiene debt, deliberately not absorbed here.** A repo-wide
 census found **26 table rows carrying an unescaped `|` inside a code span,
 across 10 files**; GFM splits them mid-expression so they render visibly wrong.
-This batch fixed the **5** in its own surface. The remaining **21** live in
+This campaign fixed the **5** in its own surface. The remaining **21** live in
 `docs/LANGUAGE_SPEC.md` (5), `docs/grammar.md` (5),
 `website/content/reference-grammar.md` (5), `docs/archive/CONFORMANCE_PHASE1.md`
 (2), `docs/OOP.md` (1), `docs/archive/LANGUAGE_SPEC_CONFORMANCE_REPORT.md` (1),

@@ -55,6 +55,16 @@ reachable) and §30.3 (`E4999` must not be reachable) plus a stale citation in
 `D3` (character versus visual columns) and open item 13 (non-ASCII module
 directories are skipped silently) are escalated in §10.4.
 
+G02 has also authored **RFC 0005 — Inference and Error-Propagation Rules**
+(`docs/rfcs/0005-inference-and-error-propagation.md`, `NBL-012`), **authored but
+not yet merged**. It documents a fourth blocking finding — generic instantiation
+is never propagated to the call site, in two independent parts (§1.7.3, risk
+`R-13`) — plus two unrelated, generic-independent holes found while probing it:
+indexing is never type-checked (`R-14`) and, more seriously, **equality is never
+type-checked and does not fail at run time**, so `1 == "s"` prints `false`
+(`R-15`). The validated two-part repair is withheld under gate G02. `D1` is
+escalated in §10.5.
+
 Baseline: `c4f769077c769483963a0f2b51a789b00472e4cf` on `rewrite/v3-rust`
 (local == `origin/rewrite/v3-rust`, tree clean at campaign start). G00 landed
 on top of it as `7bd1d6fb`; G00 closure landed as `390f763c`.
@@ -493,6 +503,36 @@ baseline (`git diff` empty) because gate G02 forbids coding the surface before
 the RFC is accepted. Recorded as risk `R-13`; the evidence bundle belongs to
 `NBL-012` → RFC 0005.
 
+**A second, independent defect was found underneath this one**, and it is why
+the repair is a *two*-part patch rather than a one-liner. `Expr::Method` inference
+(`src/check/mod.rs:4101-4115`) calls `instantiate_return_ty` with an `args` slice
+that **excludes the receiver**, so an `impl<T>` parameter that occurs only in the
+receiver type can never be bound from a call. Repairing D1a alone leaves
+`impl<A> Pair<A> { fn get(self) -> A }` returning `Unknown`. The second part
+binds impl parameters from the receiver the same way the already-correct
+`check_struct_method_args` (`:4882`, binding logic `:4907-4931`) does. Each part
+is independently load-bearing: a mutation that removes the receiver binding
+leaves `p.get()` accepted.
+
+**Two further holes surfaced while probing this defect and are _not_ part of
+it.** Both reproduce with no generic call in the program at all, so neither is a
+residual of the repair:
+
+* **Indexing is never type-checked.** `let a = 5; a["k"]` is `check` exit 0 and
+  `run` exit 1 (`E3001: cannot index int with string`). Registered as risk
+  `R-14`.
+* **Equality is never type-checked — and it does not even fail at run time.**
+  `print(1 == "s")` is exit 0 under both `check` and `run` and prints `false`;
+  `1 != "s"` prints `true`. Ordered comparison *is* checked (`1 < "s"` is
+  `E3001`), so the hole is specific to `==`/`!=`. This is a silent-wrong-answer
+  defect and is arguably more urgent than either generic defect. Registered as
+  risk `R-15`.
+
+Both are recorded in RFC 0005 §7.2 and are deliberately **not** bundled into this
+RFC: they live in different code (`Expr::Index` inference; equality checking,
+which does not appear to exist) and bundling them would make one authorization
+decide three unrelated behaviours.
+
 ### 1.8 Test and CI topology
 
 `.github/workflows/ci.yml` jobs: `fmt`, `clippy`, `test`, `cpython-interop`,
@@ -593,7 +633,7 @@ Current wave status:
 |---|---|
 | G00 | `PASS` — PR #43, merge `7bd1d6fb`, 21/21 checks |
 | G01 | `PASS` — PR #45, merge `6f075882`, 21/21 checks; dependency table and MSRV blocker disclosed (§1.5.1, §10.1) |
-| G02 | `IN_PROGRESS` — RFC 0002 (`Result`) and RFC 0003 (`try` as expression) authored, probe-verified and merged as PR #46 → `6cc96bf5`; RFC 0002 tag-scope premise corrected via PR #47 → `fe0e7312` and PR #48 → `73a35d9b` (both 21/21), and recorded as PR #49 → `85de5945` (21/21); that record itself recorded as PR #50 → `fc49c5ee` (21/21). RFC 0004 (diagnostics contract) plus the RFC index merged as PR #51 → `2df1c322` (21/21). A fourth finding — generic instantiation is never propagated to the call site, so `check` accepts programs `run` rejects — is characterised and carried as evidence for `NBL-012`. Three blocking language findings are escalated: `R-10`/`E2013` vs. `Result` (§10.2), `R-11`/tail-`try` typing plus the grammar question (§10.3), and `R-12`/diagnostic format injection (§10.4). Ten of the thirteen G02 P0 RFCs remain unauthored (`NBL-012`, `NBL-014`…`NBL-022`) |
+| G02 | `IN_PROGRESS` — RFC 0002 (`Result`) and RFC 0003 (`try` as expression) authored, probe-verified and merged as PR #46 → `6cc96bf5`; RFC 0002 tag-scope premise corrected via PR #47 → `fe0e7312` and PR #48 → `73a35d9b` (both 21/21), and recorded as PR #49 → `85de5945` (21/21); that record itself recorded as PR #50 → `fc49c5ee` (21/21). RFC 0004 (diagnostics contract) plus the RFC index merged as PR #51 → `2df1c322` (21/21). A fourth finding — generic instantiation is never propagated to the call site, so `check` accepts programs `run` rejects — is characterised and carried as evidence for `NBL-012`. Four blocking language findings are escalated: `R-10`/`E2013` vs. `Result` (§10.2), `R-11`/tail-`try` typing plus the grammar question (§10.3), `R-12`/diagnostic format injection (§10.4), and `R-13`/generic instantiation plus the two generic-independent holes `R-14`/indexing and `R-15`/equality (§10.5). RFC 0005 is authored and **not yet merged**. Nine of the thirteen G02 P0 RFCs remain unauthored (`NBL-014`…`NBL-022`) |
 | G03–G19 | `NOT_STARTED` |
 
 A `PASS` requires observed evidence. An environment that was not executed is
@@ -606,7 +646,7 @@ SQLGuard requirement forces `NO-GO`.
 
 Identifiers are stable for the campaign and must be cited in commits, PR
 bodies, and checkpoints. Numbering is **sparse by design**: the third digit
-block reserves space inside a wave, so there are 34 identifiers here, not 190.
+block reserves space inside a wave, so there are 35 identifiers here, not 190.
 `NBL-001`…`NBL-190` is the span, not the count.
 
 | ID | Wave | Item | Priority |
@@ -617,7 +657,7 @@ block reserves space inside a wave, so there are 34 identifiers here, not 190.
 | NBL-004 | G01 | MSRV 1.83 versus driver dependencies — blocker and decision package (§1.5.1, §10.1) | P0 |
 | NBL-010 | G02 | RFC: `Result` and recoverable error semantics — **RFC 0002 authored; blocked by §10.2 D1** | P0 |
 | NBL-011 | G02 | RFC: `try` as expression without ambiguity — **RFC 0003 authored; blocked by §10.3 D1** | P0 |
-| NBL-012 | G02 | RFC: inference and error propagation rules — **finding: generic instantiation is never propagated to the call site; `check` accepts what `run` rejects** | P0 |
+| NBL-012 | G02 | RFC: inference and error propagation rules — **RFC 0005 authored; finding: generic instantiation is never propagated to the call site in two independent parts; `check` accepts what `run` rejects. Blocked on §10.5 D1. Probing it also surfaced two generic-independent holes: unchecked indexing (`R-14`) and unchecked equality (`R-15`)** | P0 |
 | NBL-013 | G02 | RFC: diagnostics contract and `aura explain` — **RFC 0004 merged (PR #51 → `2df1c322`); blocked by §10.4 D3 and §10.4 item 13** | P0 |
 | NBL-014 | G02 | RFC: AIS Agent-Native 0.2 capability set | P0 |
 | NBL-015 | G02 | RFC: `Aura.toml`, `aura init`, `std::os` | P0 |
@@ -666,7 +706,9 @@ block reserves space inside a wave, so there are 34 identifiers here, not 190.
 | R-10 | **Contradictory tag-scope rules (`E2013`) make a prelude or builtin `Result<T,E>` with `Ok`/`Err` unviable** (§1.7.1a). `LANGUAGE_SPEC.md:2407`/`:3281` say tags are unique programme-wide; `:3399`/`:1556`/`:3897` say per module; the compiler implements per module by prefixing tags with the module path. A root-scope `Result` claims both spellings for the root scope only — a module-scoped `Ok` still coexists (exit 0), a root-scope one fails (exit 1) even if `Result` is never constructed. A module-scoped `Result` avoids that but its tags are unreachable unqualified (`E3002`), and braced variant import is a parse error (`E1006`). `E2013`'s message text asserts the losing (global) rule | Blocks `NBL-030` and therefore G03, plus every downstream `Result`-returning API in G07–G17. The directive's §2.4 vocabulary (`Ok(T)`/`Err(E)` unqualified) cannot be satisfied without a choice | Escalated as §10.2 (D1a scope, D1b message, D1c placement) with three lawful outcomes; no option is selected by an agent. §3.2's "quando viável" is the lawful exit, but exercising it is a human decision |
 | R-11 | **`try` in tail position is statically `none` while dynamically value-producing** (§1.7.2), and `none` bypasses the implicit-return check that `return none` fails | End-to-end unsoundness: a function annotated `-> string` can return `5` and the caller's `let s: string` is accepted. Blocks any G03+ surface whose types assume a checked return | Escalated as §10.3; the validated three-part repair is withheld, not committed, and `src/check/mod.rs` is byte-identical to baseline |
 | R-12 | **The diagnostic renderer performs no sanitisation, so a legal source file can forge diagnostic lines** (§1.2 of RFC 0004). `render_diagnostic` (`src/diagnostic.rs:125-166`) interpolates the unescaped `Value::display` of an uncaught throw and the raw file name into a single-line format. Four vectors are reproduced: a raw ESC byte in source, the ordinary `\n` escape, a newline nested inside a list value, and a file name containing a newline. All survive `--color never` and `NO_COLOR=1` | A user-visible trust failure in every consumer of the shared projection, including AIS and the Playground, which render the same facts by three different code paths. It is not a memory-safety issue and not an execution escape; it is unauthenticated output | Escalated as §10.4. The repair must be a **diagnostic-side** sanitiser: `print` legitimately emits raw newlines (`src/stdlib/mod.rs:101`), so changing `Value::display` globally would break `std::print`. `tests/oracle/mod.rs:440` duplicates the message format independently, so a single-site fix silently drifts |
-| R-13 | **Generic instantiation is never propagated to the call site** (§1.7.3). `instantiate_return_ty` (`src/check/mod.rs:4497-4534`) discards the substitution returned by `infer_substitution` at **`:4530`** and calls `ret.erase_params` with an unbound `sigma`, so every `Ty::Param` falls through to `Unknown` (`src/types.rs:244`). `Ty::compatible_with` accepts `Unknown` against any annotation | `check` accepts what `run` rejects: `fn id<T>(x: T) -> T` called as `id(1)` binds to a `string` annotation at exit 0, then fails at runtime with `E2003`. Every generic call in the language is affected, and the unsoundness extends to nested returns (`[T]`). Blocks `NBL-012` and any G03+ surface whose types assume a checked generic return | Escalated as RFC 0005 (`NBL-012`). A four-line repair is validated — five positive probes repaired, two negative probes unchanged, two mutations each re-introducing the bug, `1477` tests and clippy green, all **125** tracked `.aura` files byte-identical in output and status — and is **withheld, not committed**; `src/check/mod.rs` is byte-identical to baseline until the RFC is accepted |
+| R-13 | **Generic instantiation is never propagated to the call site** (§1.7.3). Two parts. (a) `instantiate_return_ty` (`src/check/mod.rs:4497-4534`) discards the substitution returned by `infer_substitution` at **`:4530`** and calls `ret.erase_params` with an unbound `sigma`, so every `Ty::Param` falls through to `Unknown` (`src/types.rs:244`). (b) `Expr::Method` inference (`:4101-4115`) passes an `args` slice that excludes the receiver, so an `impl<T>` parameter occurring only in the receiver can never be bound | `check` accepts what `run` rejects: `fn id<T>(x: T) -> T` called as `id(1)` binds to a `string` annotation at exit 0, then fails at runtime with `E2003`. Every generic free-function *and* method call is affected, and the unsoundness extends to nested returns (`[T]`) | Escalated as RFC 0005 (`NBL-012`). A two-part repair (+53/−2) is validated — 20 probe rows, each mutation independently re-introducing the bug, `1477` tests and clippy green, all **125** tracked `.aura` files byte-identical in output and status — and is **withheld, not committed**; `src/check/mod.rs` is byte-identical to baseline until the RFC is accepted |
+| R-14 | **Subscript inference never type-checks the operand** (§1.7.3). `Expr::Index` inference does not consult the operand type; the statement-mode arm at `:6868-6880` does check `contains_none()`, so the hole is inference-specific | `let a = 5` then `a["k"]` is `check` exit 0 / `run` exit 1 (`E3001: cannot index int with string`). Same for `bool` and `float`; reproduces with **no** generic call in the program | Out of scope for RFC 0005 (§7.2). Needs its own finding; deferred, not bundled |
+| R-15 | **Equality is never type-checked and does not fail at run time** (§1.7.3). `==`/`!=` accept operands of any two types and evaluate to a boolean. Ordered comparison *is* checked, so the hole is specific to equality | `print(1 == "s")` is exit 0 under `check` **and** `run` and prints `false`; `print(1 != "s")` prints `true`. A **silent wrong answer**, not a loud runtime failure — strictly worse than `R-14` | Out of scope for RFC 0005 (§7.2). Arguably the highest-severity open defect in this ledger; deferred only because it is a different subsystem, and called out as such rather than folded into D1 |
 
 ## 7. Evidence criteria
 
@@ -1001,6 +1043,46 @@ amendment (§28.3 lists five commands; `src/main.rs:26` cites a `§47/§48` that
 not exist — the spec ends at `## 36`). The format-injection repair (`R-12`) is
 withheld because gate G02 forbids changing the affected surface before
 acceptance; the concrete fix sites are enumerated in RFC 0004 §6.2.
+
+---
+
+### §10.5 — RFC 0005: inference and error propagation (`NBL-012`)
+
+RFC 0005 was authored from a defect found while opening `NBL-012`. It carries
+one decision (**D1**), a 21-row probe matrix re-executed end-to-end against two
+saved, sha-pinned binaries, a mutation table, and ten required regression tests.
+**Grammar delta: none.** It is authored but **not yet merged**; gate G02 forbids
+coding the surface first, so the validated patch is held as a file, not a commit.
+
+**D1 — authorize the two-part checker repair.** `instantiate_return_ty`
+discards the substitution it computes, so every `Ty::Param` in a generic return
+erases to `Unknown`, which `Ty::compatible_with` accepts against any annotation.
+Repairing that alone is insufficient: `Expr::Method` never binds `impl<T>`
+parameters from the receiver either. Both parts are independently load-bearing —
+each was mutation-proved by removal. The patch is **+53/−2** in one file,
+`src/check/mod.rs`, currently byte-identical to baseline.
+
+**Why D1 is a decision rather than a bug fix.** The spec permits the current
+behaviour in exactly one place — §36.3 (`:4048-4059`) says an *unbound* parameter
+in a value position is `Unknown` — and the repair only changes programs where a
+parameter **is** bound by the call. So the repair is spec-consistent. But it is
+strictly more rejecting: any program that relied on `Unknown` satisfying an
+annotation starts failing. That is a real compatibility break for downstream
+users, and it is the human's call, not an agent's.
+
+**Blast radius.** Blocks `NBL-012` and every later surface whose types assume a
+checked generic return. The full corpus is output-neutral (**125** files,
+byte-identical, `108`/`17` status split unchanged), and the suite stays
+`1477 passed / 0 failed` with clippy at 0, so the risk of the patch *itself* is
+low; the open question is policy, not engineering.
+
+**Two unrelated holes were surfaced and deliberately excluded.** §7.2 of the RFC
+records them; the ledger carries them as `R-14` (indexing) and `R-15` (equality).
+Neither reproduces any differently with generics removed, so neither is a
+residual of D1. `R-15` in particular is a **silent wrong answer** — `1 == "s"`
+evaluates to `false` with no diagnostic under either `check` or `run` — which
+makes it plausibly more urgent than D1, and it is called out here rather than
+quietly deferred.
 
 ## 11. Wave checkpoint format
 

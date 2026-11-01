@@ -15,9 +15,10 @@ Accepted RFCs are recorded here as `NNNN-short-title.md`.
 | RFC | Title | Status |
 |---|---|---|
 | [0001](./0001-exception-catch-selection.md) | Exception Catch Selection | Accepted (Keystone, 2026-10-06) |
-| [0002](./0002-result-and-recoverable-errors.md) | `Result` and Recoverable Error Semantics | Proposed — D1 escalated |
+| [0002](./0002-result-and-recoverable-errors.md) | `Result` and Recoverable Error Semantics | Proposed — D1 escalated (D1a/D1b/D1c) |
 | [0003](./0003-try-as-value-expression.md) | `try` as a Value Expression | Proposed — D1, D2 escalated |
-| [0004](./0004-diagnostics-contract.md) | The Diagnostics Contract | Proposed — D2, D3 escalated |
+| [0004](./0004-diagnostics-contract.md) | The Diagnostics Contract | Proposed — D3 + open item 13 escalated |
+| [0005](./0005-inference-and-error-propagation.md) | Inference and Error-Propagation Rules | Proposed — D1 escalated |
 
 “Proposed” means the RFC is authored and reviewed but is **not** authorized for
 implementation. Each lists its open questions under `## 7. Open items`, and no
