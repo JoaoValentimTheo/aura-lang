@@ -25,7 +25,7 @@ generic-independent holes found underneath it and deliberately left out
 RFC: it records the proposal, and `GATE G02` still forbids coding the surface
 until §10.5 is resolved by a human.
 
-**RFC 0006 is authored, post-audited, and not yet merged.**
+**RFC 0006 is authored, post-audited, and merged as PR #55 → `d03d2718`.**
 `docs/rfcs/0006-ais-agent-native-capabilities.md` (`NBL-014`) — 1110 lines,
 23 tables, 20 fences, zero inconsistent rows. §3 is `Grammar delta — None`
 (the language spec mentions AIS exactly once, at `LANGUAGE_SPEC.md:2578`, and
@@ -97,9 +97,9 @@ Two defects in my own first draft were caught before commit and fixed: a
 than replaced) and a `RESOLVER-ONLY CODES: 5` figure (the machine census says
 **six**).
 
-At record time local `HEAD` is **`422c7a9e`** (the merge of PR #54, the PR #53
-record batch) and equals `origin/rewrite/v3-rust`. The working tree carries the
-RFC 0006 batch only. No source file changed: `src/check/mod.rs` is byte-identical
+At record time local `HEAD` is **`d03d2718`** (the merge of PR #55, the RFC 0006
+batch) and equals `origin/rewrite/v3-rust`. The working tree carries this record
+batch only. No source file changed: `src/check/mod.rs` is byte-identical
 to baseline (`sha256 1232b687…aa738f532`, `git hash-object 03207d9293…`),
 `manifest.json` sha256 is still `cbe7ad91…23b837`, `manifest.current` is still
 `"0.3.1"`, and no `0.3.2` tag exists.
@@ -381,7 +381,7 @@ audit. `py` is a full CPython process, not a sandbox.
 **Campaign plan published:** `docs/engineering/NEBULA_CAMPAIGN.md` — baseline,
 scope, P0/P1/P2 classification, G00–G19 wave table with verbatim gates, status
 vocabulary, ID'd backlog (`NBL-001`…`NBL-190`, sparse — 35 distinct IDs),
-risks `R-01`…`R-15`, decision packages §10.1–§10.5, evidence criteria,
+risks `R-01`…`R-16`, decision packages §10.1–§10.6, evidence criteria,
 architecture constraints, delegation, blocking policy, checkpoint format, and
 the mandatory STOP.
 
@@ -1922,9 +1922,9 @@ feature-gating of the typed-decode path.
 ## Exact Next Action
 
 **Directive 008 — NEBULA: G00 and G01 are complete and integrated; G02 is
-`IN_PROGRESS` with four of thirteen P0 RFCs merged, a fifth authored and
-unmerged (RFC 0006), and seven human decisions outstanding across six decision
-packages.**
+`IN_PROGRESS` with five of thirteen P0 RFCs merged — the fifth, RFC 0006,
+merged as a proposal — and twelve outstanding decision items across six
+decision packages (§10.1–§10.6: 1 + 3 + 2 + 2 + 1 + 3).**
 
 Wave `G00` is `PASS`: PR #43 merged as `7bd1d6fb` (21/21 green) and its closure
 landed as PR #44 → `390f763c` (21/21 green). Wave `G01` is `PASS` and
@@ -1961,7 +1961,7 @@ deliberately excludes the two generic-independent holes it surfaced — `R-14`
 unchecked indexing and `R-15` unchecked equality, the latter a silent wrong
 answer. Merge records the proposal only; §10.5 `D1` is still unanswered and gate
 G02 still forbids coding the repair. **RFC 0006** (`NBL-014`, the AIS agent-native
-capability set) is authored and **held unmerged** in the working tree: eighteen
+capability set) is merged as PR #55 → `d03d2718` (21/21): eighteen
 defects `A`–`R`, three decisions `D1`–`D3`, §3 `Grammar delta — None`, and a
 mutation-proved `range`-extent repair withheld under gate G02. The
 P0 set is not yet complete: `NBL-015`
@@ -1972,37 +1972,42 @@ SG-01…SG-08), `NBL-022` (driver contract), and `NBL-030` (prelude/`Result`
 placement, blocked by §10.2) remain unauthored. Eight of the thirteen G02 P0 RFCs
 are still unwritten.
 
-**Seven human decisions are outstanding across six decision packages, and each
-blocks a downstream wave:**
-§10.1 MSRV versus database drivers (blocks G07 onward); §10.2 `Result` versus
-enum-tag **scope** — a genuine spec contradiction (`D1a`) that must be answered
-before the placement choice (`D1c`), plus `D1b`, the `E2013` message text
-(blocks `NBL-030`, G03, and every `Result` API in G07–G17); §10.3 `try` as an expression and the tail-`try` checker repair
-(blocks `NBL-011`, `NBL-031`, and G03); §10.4 `D3` visual columns and its open
-item 13 non-ASCII module discovery (blocks G18's snapshot work, and the
-format-injection repair `R-12`); §10.5 `D1`, authorizing the two-part
-generic-instantiation repair (blocks `NBL-012` and every later surface whose
-types assume a checked generic return); and §10.6 `D1`/`D2`/`D3`, the AIS
-protocol surface — extent contract, `Slice.diagnostics`, and the resolver gap
-(blocks `NBL-014` and every agent-facing integration in G18 onward).
+**Twelve outstanding decision items across six decision packages, and each
+blocks a downstream wave** — six packages, because a package can carry more than
+one question (the earlier "seven decisions" figure was incremental drift and
+matched neither convention; the census below is exhaustive and derived from the
+`D`-labels actually present in §10.1–§10.6):
+§10.1 MSRV versus database drivers — **1** item, unlabelled (blocks G07
+onward); §10.2 `Result` versus enum-tag **scope** — a genuine spec contradiction
+(`D1a`) that must be answered before the placement choice (`D1c`), plus `D1b`,
+the `E2013` message text — **3** items (blocks `NBL-030`, G03, and every `Result`
+API in G07–G17); §10.3 `try` as an expression and the tail-`try` checker
+repair — **2** items (blocks `NBL-011`, `NBL-031`, and G03); §10.4 `D3` visual
+columns and its open item 13 non-ASCII module discovery — **2** items (blocks
+G18's snapshot work, and the format-injection repair `R-12`); §10.5 `D1`,
+authorizing the two-part generic-instantiation repair — **1** item (blocks
+`NBL-012` and every later surface whose types assume a checked generic return);
+and §10.6 `D1`/`D2`/`D3`, the AIS protocol surface — extent contract,
+`Slice.diagnostics`, and the resolver gap — **3** items (blocks `NBL-014` and
+every agent-facing integration in G18 onward).
 
-**Next exact action:** commit the RFC 0006 batch, open its pull request, and
-merge it once remote CI is green. The batch is **four files**:
-`docs/rfcs/0006-ais-agent-native-capabilities.md` (new, 1110 lines / 23 tables /
-20 fences), the RFC index row in `docs/rfcs/README.md`, the campaign annotations
-(header paragraph, §4 G02 row, `NBL-014` backlog row, `R-16`, `### §10.6`), and
-this state document plus `docs/engineering/CURRENT_HANDOFF.md`. The RFC itself is
-finished and citation-audited: five citation errors were found and corrected
-(`:498`→`:497`, `:396-400`→`:395-400`, `:500`→`:503`, `:396-540`→`:395-527`,
-`:1427`/`:1430`→`:1426`/`:1427`), a fabricated `E3009` was removed, and every
-remaining `E####` was checked against `src/error.rs`. `cargo fmt --all -- --check`
-and `cargo test --locked --all-targets --all-features` (`1477 passed / 0 failed`,
-66 suites) are already green on this tree; the remaining eight floor gates must be
-run before the PR body claims them.
+**Next exact action:** author `NBL-015` as RFC 0007, escalating any decision it
+uncovers in a `### §10.7` block. Five of the thirteen G02 P0 RFCs are merged
+(RFC 0002, 0003, 0004, 0005, and 0006 — the last as a proposal awaiting its
+outstanding decision items), and eight remain unauthored (`NBL-015`…`NBL-022`).
+Each RFC is authored under the same explicit provenance note — the nominal source
+documents (`AQL_Nebula_RFC_Draft.md`, `NEBULA_SQLGUARD_CONTRACT.md`,
+`Aura_0.3.2_Nebula_Inventario_Geral.md`) never existed in this repository, so no
+approval is implied by anything reconstructed from it.
+
+The RFC 0006 batch is closed: authored, citation-audited (five citation errors
+found and corrected, a fabricated `E3009` removed, every remaining `E####`
+checked against `src/error.rs`), merged via PR #55 → `d03d2718` with 21/21 checks
+green, and recorded here. Post-merge CI run `41286373383` and Pages run
+`41286373385` are the closure evidence for that merge.
 
 After that, author the remaining P0 RFCs (`NBL-015`…`NBL-022`) under
-`docs/rfcs/`, carrying the same explicit provenance note that the nominal
-source document was absent and no approval is implied. **Do not code** any
+`docs/rfcs/`, carrying the same explicit provenance note. **Do not code** any
 surface those RFCs describe — this includes wiring the orphaned
 `tests/ais_differential.mjs` into CI, and repairing the `range` extent, and
 `Slice.diagnostics` — and do not resolve §10.1, §10.2, §10.3, §10.4, §10.5, or

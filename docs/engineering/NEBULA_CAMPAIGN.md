@@ -67,8 +67,10 @@ type-checked and does not fail at run time**, so `1 == "s"` prints `false`
 escalated in §10.5.
 
 G02 has now authored **RFC 0006 — The AIS Agent-Native Capability Set**
-(`docs/rfcs/0006-ais-agent-native-capabilities.md`, `NBL-014`), **Proposed and
-not accepted**. It is the largest finding set in the campaign: **eighteen
+(`docs/rfcs/0006-ais-agent-native-capabilities.md`, `NBL-014`), **merged as PR
+#55 → `d03d2718`** (21/21 checks green). Merge records the proposal; §10.6
+`D1`/`D2`/`D3` remain unanswered and gate G02 still forbids coding the surface.
+It is the largest finding set in the campaign: **eighteen
 defects (A–R)** in the AIS/0.1 protocol and its MCP projection, every one
 reproduced from live probes rather than read off the source. The load-bearing
 ones: `Symbol.range` spans only the declaration's leading keyword and
@@ -652,7 +654,7 @@ Current wave status:
 |---|---|
 | G00 | `PASS` — PR #43, merge `7bd1d6fb`, 21/21 checks |
 | G01 | `PASS` — PR #45, merge `6f075882`, 21/21 checks; dependency table and MSRV blocker disclosed (§1.5.1, §10.1) |
-| G02 | `IN_PROGRESS` — RFC 0002 (`Result`) and RFC 0003 (`try` as expression) authored, probe-verified and merged as PR #46 → `6cc96bf5`; RFC 0002 tag-scope premise corrected via PR #47 → `fe0e7312` and PR #48 → `73a35d9b` (both 21/21), and recorded as PR #49 → `85de5945` (21/21); that record itself recorded as PR #50 → `fc49c5ee` (21/21). RFC 0004 (diagnostics contract) plus the RFC index merged as PR #51 → `2df1c322` (21/21). A fourth finding — generic instantiation is never propagated to the call site, so `check` accepts programs `run` rejects — is characterised and carried as evidence for `NBL-012`. Five blocking language findings are escalated: `R-10`/`E2013` vs. `Result` (§10.2), `R-11`/tail-`try` typing plus the grammar question (§10.3), `R-12`/diagnostic format injection (§10.4), `R-13`/generic instantiation plus the two generic-independent holes `R-14`/indexing and `R-15`/equality (§10.5), and `R-16`/the AIS protocol surface (§10.6). RFC 0005 (inference and error propagation) is merged as PR #53 → `87cea70e`. RFC 0006 (AIS agent-native capabilities, `NBL-014`) is authored and **Proposed, not accepted**; its three decisions are escalated in §10.6. Eight of the thirteen G02 P0 RFCs remain unauthored (`NBL-015`…`NBL-022`) |
+| G02 | `IN_PROGRESS` — RFC 0002 (`Result`) and RFC 0003 (`try` as expression) authored, probe-verified and merged as PR #46 → `6cc96bf5`; RFC 0002 tag-scope premise corrected via PR #47 → `fe0e7312` and PR #48 → `73a35d9b` (both 21/21), and recorded as PR #49 → `85de5945` (21/21); that record itself recorded as PR #50 → `fc49c5ee` (21/21). RFC 0004 (diagnostics contract) plus the RFC index merged as PR #51 → `2df1c322` (21/21). A fourth finding — generic instantiation is never propagated to the call site, so `check` accepts programs `run` rejects — is characterised and carried as evidence for `NBL-012`. Five blocking language findings are escalated: `R-10`/`E2013` vs. `Result` (§10.2), `R-11`/tail-`try` typing plus the grammar question (§10.3), `R-12`/diagnostic format injection (§10.4), `R-13`/generic instantiation plus the two generic-independent holes `R-14`/indexing and `R-15`/equality (§10.5), and `R-16`/the AIS protocol surface (§10.6). RFC 0005 (inference and error propagation) is merged as PR #53 → `87cea70e` and recorded as PR #54 → `422c7a9e`. RFC 0006 (AIS agent-native capabilities, `NBL-014`) is merged as PR #55 → `d03d2718` (21/21); the merge records the proposal only — its three decisions remain escalated in §10.6 and no protocol surface is coded. Eight of the thirteen G02 P0 RFCs remain unauthored (`NBL-015`…`NBL-022`) |
 | G03–G19 | `NOT_STARTED` |
 
 A `PASS` requires observed evidence. An environment that was not executed is
@@ -678,7 +680,7 @@ block reserves space inside a wave, so there are 35 identifiers here, not 190.
 | NBL-011 | G02 | RFC: `try` as expression without ambiguity — **RFC 0003 authored; blocked by §10.3 D1** | P0 |
 | NBL-012 | G02 | RFC: inference and error propagation rules — **RFC 0005 authored; finding: generic instantiation is never propagated to the call site in two independent parts; `check` accepts what `run` rejects. Blocked on §10.5 D1. Probing it also surfaced two generic-independent holes: unchecked indexing (`R-14`) and unchecked equality (`R-15`)** | P0 |
 | NBL-013 | G02 | RFC: diagnostics contract and `aura explain` — **RFC 0004 merged (PR #51 → `2df1c322`); blocked by §10.4 D3 and §10.4 item 13** | P0 |
-| NBL-014 | G02 | RFC: AIS Agent-Native 0.2 capability set — **authored as RFC 0006, Proposed, blocked by §10.6 D1/D2/D3** | P0 |
+| NBL-014 | G02 | RFC: AIS Agent-Native 0.2 capability set — **authored as RFC 0006, merged via PR #55 → `d03d2718`, still Proposed; blocked by §10.6 D1/D2/D3** | P0 |
 | NBL-015 | G02 | RFC: `Aura.toml`, `aura init`, `std::os` | P0 |
 | NBL-016 | G02 | RFC: Host database capability and protected profile | P0 |
 | NBL-017 | G02 | RFC: `entity struct`, metadata, relations, cardinality | P0 |
@@ -728,7 +730,7 @@ block reserves space inside a wave, so there are 35 identifiers here, not 190.
 | R-13 | **Generic instantiation is never propagated to the call site** (§1.7.3). Two parts. (a) `instantiate_return_ty` (`src/check/mod.rs:4497-4534`) discards the substitution returned by `infer_substitution` at **`:4530`** and calls `ret.erase_params` with an unbound `sigma`, so every `Ty::Param` falls through to `Unknown` (`src/types.rs:244`). (b) `Expr::Method` inference (`:4101-4115`) passes an `args` slice that excludes the receiver, so an `impl<T>` parameter occurring only in the receiver can never be bound | `check` accepts what `run` rejects: `fn id<T>(x: T) -> T` called as `id(1)` binds to a `string` annotation at exit 0, then fails at runtime with `E2003`. Every generic free-function *and* method call is affected, and the unsoundness extends to nested returns (`[T]`) | Escalated as RFC 0005 (`NBL-012`). A two-part repair (+53/−2) is validated — 20 probe rows, each mutation independently re-introducing the bug, `1477` tests and clippy green, all **125** tracked `.aura` files byte-identical in output and status — and is **withheld, not committed**; `src/check/mod.rs` is byte-identical to baseline until the RFC is accepted |
 | R-14 | **Subscript inference never type-checks the operand** (§1.7.3). `Expr::Index` inference does not consult the operand type; the statement-mode arm at `:6868-6880` does check `contains_none()`, so the hole is inference-specific | `let a = 5` then `a["k"]` is `check` exit 0 / `run` exit 1 (`E3001: cannot index int with string`). Same for `bool` and `float`; reproduces with **no** generic call in the program | Out of scope for RFC 0005 (§7.2). Needs its own finding; deferred, not bundled |
 | R-15 | **Equality is never type-checked and does not fail at run time** (§1.7.3). `==`/`!=` accept operands of any two types and evaluate to a boolean. Ordered comparison *is* checked, so the hole is specific to equality | `print(1 == "s")` is exit 0 under `check` **and** `run` and prints `false`; `print(1 != "s")` prints `true`. A **silent wrong answer**, not a loud runtime failure — strictly worse than `R-14` | Out of scope for RFC 0005 (§7.2). Arguably the highest-severity open defect in this ledger; deferred only because it is a different subsystem, and called out as such rather than folded into D1 |
-| R-16 | **The AIS/0.1 protocol over-promises on eighteen distinct points** (§1.1–§1.14 of RFC 0006, findings A–R). Load-bearing: (a) `Symbol.range` carries only the leading keyword's span — 6.4× aggregate understatement, with `pub` fields and `mut` params affected too (`A`, `I`); (b) three of eleven `SymbolKind` variants are unconstructible while `AIS.md:99-101` documents all eleven (and `Variant`/`Field`/`TypeParameter` can never appear as a `kind`), which breaks the minor-version promise at `AIS.md:53-55` twice (`H`, `F`); (c) `Slice.diagnostics` is promised at `src/ais.rs:848-853` and `:868` and populated nowhere — all three construction sites pass `Vec::new()` — so a slice over a failing program is indistinguishable from a clean one (`L`); (d) the AIS document path never runs the resolver, so `E2019` is dropped at exit 0 while `E2018` and `E2023` survive carrying the wrong code `E2003` (`M`, `N`, `O`); (e) the CLI exposes 3 of 7 operations and `aura://schema` advertises 6 of 7 tools and 3 of 7 delivery operations, both from one hardcoded literal (`B`, `D`); (f) `tests/ais_differential.mjs` asserts in its own docstring that it "runs in CI" while nothing invokes it (`E`) | Any agent trusting AIS as its semantic authority is misled about location, capability, slice completeness, and program validity — and the wrongness is invisible, because every defect is a passing exit code. `L` and `M` compound: a rejected program yields a clean, diagnostics-free document. `E` means the one harness built to detect this class has never run in CI, which is the rule-7/rule-8 failure this campaign exists to catch | Escalated as RFC 0006 (`NBL-014`) with three decisions in §10.6. The `range` extent repair is validated by mutation and **withheld, not committed**; `src/ais.rs` and `src/mcp.rs` are byte-identical to baseline |
+| R-16 | **The AIS/0.1 protocol over-promises on eighteen distinct points** (§1.1–§1.14 of RFC 0006, findings A–R). Load-bearing: (a) `Symbol.range` carries only the leading keyword's span — 6.4× aggregate understatement, with `pub` fields and `mut` params affected too (`A`, `I`); (b) three of eleven `SymbolKind` variants are unconstructible while `AIS.md:99-101` documents all eleven (and `Variant`/`Field`/`TypeParameter` can never appear as a `kind`), which breaks the minor-version promise at `AIS.md:53-55` twice (`H`, `F`); (c) `Slice.diagnostics` is promised at `src/ais.rs:848-853` and `:868` and populated nowhere — all three construction sites pass `Vec::new()` — so a slice over a failing program is indistinguishable from a clean one (`L`); (d) the AIS document path never runs the resolver, so `E2019` is dropped at exit 0 while `E2018` and `E2023` survive carrying the wrong code `E2003` (`M`, `N`, `O`); (e) the CLI exposes 3 of 7 operations and `aura://schema` advertises 6 of 7 tools and 3 of 7 delivery operations, both from one hardcoded literal (`B`, `D`); (f) `tests/ais_differential.mjs` asserts in its own docstring that it "runs in CI" while nothing invokes it (`E`) | Any agent trusting AIS as its semantic authority is misled about location, capability, slice completeness, and program validity — and the wrongness is invisible, because every defect is a passing exit code. `L` and `M` compound: a rejected program yields a clean, diagnostics-free document. `E` means the one harness built to detect this class has never run in CI, which is the rule-7/rule-8 failure this campaign exists to catch | Escalated as RFC 0006 (`NBL-014`, merged via PR #55 → `d03d2718`) with three decisions still open in §10.6. The `range` extent repair is validated by mutation and **withheld, not committed**; `src/ais.rs` and `src/mcp.rs` are byte-identical to baseline |
 
 ## 7. Evidence criteria
 
@@ -881,6 +883,26 @@ semantic discrepancy, an isolation risk, OOP or parser breakage, a Native/WASM
 regression, or a failing security test. Replacing a problem with a `TODO` and
 marking the wave `PASS` is forbidden. A genuine specification choice produces a
 decision package rather than a silent resolution.
+
+**Census — twelve outstanding decision items across six decision packages.**
+Each package is a `### §10.N` block and a package may carry more than one
+question, so package count and item count differ:
+
+| Package | Lettered labels | Unlabelled | Items |
+|---|---|---|---|
+| §10.1 | — | 1 | 1 |
+| §10.2 | `D1a`, `D1b`, `D1c` | — | 3 |
+| §10.3 | `D1`, `D2` | — | 2 |
+| §10.4 | `D3` | 1 | 2 |
+| §10.5 | `D1` | — | 1 |
+| §10.6 | `D1`, `D2`, `D3` | — | 3 |
+| **Total** | **10** | **2** | **12** |
+
+The figure "seven human decisions" that appeared in earlier state documents was
+incremental drift: it matched neither the ten lettered labels nor the twelve
+escalated items. It is retired here. Twelve is not a target; the census is
+derived mechanically from the `D`-labels actually present, and it must be
+recomputed the same way whenever a `§10.N` block is added.
 
 ### 10.1 Open decision — MSRV 1.83 versus the required database drivers
 
@@ -1108,7 +1130,9 @@ quietly deferred.
 ### §10.6 — RFC 0006: the AIS agent-native capability set (`NBL-014`)
 
 Promotes **`R-16`**. Recorded from `docs/rfcs/0006-ais-agent-native-capabilities.md`,
-which is **Proposed and not accepted**. Eighteen defects were reproduced, labelled
+which is **Proposed and not accepted**. The RFC itself is merged as PR #55 →
+`d03d2718`; merging a proposal records the evidence and the questions, it does
+not answer them. Eighteen defects were reproduced, labelled
 `A`–`R`; each was re-verified in ten independent probe sweeps, each sweep in a
 fresh temporary directory, and none is read off the source alone. The RFC is
 therefore evidence, not a proposal to be trusted on inspection.
