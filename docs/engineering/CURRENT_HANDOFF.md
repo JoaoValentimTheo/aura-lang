@@ -8,21 +8,25 @@ No implementation is authorized before `G02` accepts the P0 RFC set.
 ```
 WAVE: G02 -> IN_PROGRESS (2 of 12 P0 RFCs authored, three decisions outstanding)
 STATUS: G02 IN_PROGRESS (three human decisions outstanding, see DECISÕES)
-HEAD: fe0e731286b272f8a77a89f3c5c8753357c23504 (merge of PR #47)
+HEAD: 73a35d9b7ef988a1d0ddbaa0f34df0b74f7f12bd (merge of PR #48)
 PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb;
      #44 MERGED (G00 closure + G01 authorisation, head 5cf4f8d9) -> 390f763c;
      #45 MERGED (G01 dependency record, head 1ce88863) -> 6f075882;
      #46 MERGED (G02 RFCs 0002+0003, head 66d90635) -> 6cc96bf5;
      #47 MERGED (G02 RFC record, head f35b9b90) -> fe0e7312;
+     #48 MERGED (tag-scope correction, head ed0f7b86) -> 73a35d9b;
      0 open PRs
 CHECKS: PR #43 21/21 pass; PR #44 21/21 pass; PR #45 21/21 pass;
-        PR #46 21/21 pass; PR #47 21/21 pass;
+        PR #46 21/21 pass; PR #47 21/21 pass; PR #48 21/21 pass;
         post-merge CI 41248873353 on 7bd1d6fb = completed/success;
         Pages 41248873720 = completed/success;
         post-merge CI 41251300785 on 6f075882 = completed/success;
         Pages 41251300794 on 6f075882 = completed/success;
         post-merge Pages 41257608935 on fe0e7312 = completed/success;
-        post-merge CI 41257609033 on fe0e7312 = in_progress at record time
+        post-merge CI 41257609033 on fe0e7312 = completed/success on rerun
+        attempt 2 (attempt 1 failed one job, see NOTE-RERUN);
+        post-merge CI 41258890857 on 73a35d9b = queued at record time;
+        post-merge Pages 41258890831 on 73a35d9b = queued at record time
 TESTS_REALMENTE_EXECUTADOS: see "Commands actually executed" below
 PROVAS: baseline reconciled; G00+G01+G01-record diffs are docs/script files
         only; src/, playground/runtime/, Cargo.toml, Cargo.lock,
@@ -380,6 +384,18 @@ files" defect was investigated and **falsified**:
 malformed reachable child a parser failure. Every probe in this wave therefore
 uses one `.aura` file per directory. Recorded as a rule in campaign doc §7.
 
+**NOTE-RERUN — a confirmed CI flake, not a regression.** The post-merge CI run
+`41257609033` on `fe0e7312` failed **exactly one** of 21 jobs: `website (static
+build + examples + links)`, in `website/tests/browser.test.mjs:627`
+(`browserContext.waitForEvent: Timeout 30000ms exceeded while waiting for event
+"page"`). That assertion opens a popup via a modifier click and races a 30 s
+Playwright timeout; it is a timing flake. It cannot have been content-induced:
+the commit range `6cc96bf5..fe0e7312` touches **no** file under `website/`
+(0 lines), and the same job passed on PR #47 and on the push run for `6cc96bf5`.
+`gh run rerun 41257609033 --failed` reached attempt 2 =
+`completed`/`success`, confirming pre-existence without any code change.
+Do not "fix" a future recurrence without re-proving it this way first.
+
 ### Next exact action
 
 Continue **G02**: reconstruct the remaining P0 RFC set (`NBL-012`…`NBL-022`)
@@ -389,7 +405,8 @@ RFC carries an explicit provenance note stating that its nominal source
 document was absent and that no approval is implied.
 
 `NBL-010` (RFC 0002) and `NBL-011` (RFC 0003) are authored. RFC 0002 was
-corrected at `fe0e7312` after its tag-scope premise was falsified: the campaign
+corrected after its tag-scope premise was falsified, recorded at `fe0e7312`
+and integrated as `73a35d9b` (PR #48); the campaign
 now escalates `D1a` (which of the two contradictory spec clauses governs
 `E2013`), `D1b` (`E2013`'s message text) and `D1c` (placement). Answer `D1a`
 before `D1c`. Still unauthored:

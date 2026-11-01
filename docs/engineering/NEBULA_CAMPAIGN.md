@@ -14,7 +14,9 @@ with a decision package is the required G01 output, not a failure of it. The
 decision in §10.1 still gates G07 onward.
 
 G02 (`IN_PROGRESS`) has authored RFC 0002 and RFC 0003 and merged both as
-`6cc96bf5` (PR #46, 21/21 checks green), unchanged in substance. While
+`6cc96bf5` (PR #46, 21/21 checks green). RFC 0002 was then corrected — its
+original tag-scope premise was falsified — recorded as `fe0e7312` (PR #47)
+and integrated as `73a35d9b` (PR #48, 21/21 checks green). While
 validating RFC 0002 it produced a second blocking language finding: the tag
 scope that governs `E2013` **makes a prelude or builtin `Result<T,E>` with
 unqualified `Ok`/`Err` unviable as things stand** — and, on re-verification,
@@ -542,7 +544,7 @@ Current wave status:
 |---|---|
 | G00 | `PASS` — PR #43, merge `7bd1d6fb`, 21/21 checks |
 | G01 | `PASS` — PR #45, merge `6f075882`, 21/21 checks; dependency table and MSRV blocker disclosed (§1.5.1, §10.1) |
-| G02 | `IN_PROGRESS` — RFC 0002 (`Result`) and RFC 0003 (`try` as expression) authored, probe-verified and merged as PR #46 → `6cc96bf5` (21/21 checks). Two blocking language findings are escalated: `R-10`/`E2013` vs. `Result` (§10.2) and `R-11`/tail-`try` typing plus the grammar question (§10.3). The remaining ten P0 RFCs are under authoring |
+| G02 | `IN_PROGRESS` — RFC 0002 (`Result`) and RFC 0003 (`try` as expression) authored, probe-verified and merged as PR #46 → `6cc96bf5`; RFC 0002 tag-scope premise corrected via PR #47 → `fe0e7312` and PR #48 → `73a35d9b` (both 21/21). Two blocking language findings are escalated: `R-10`/`E2013` vs. `Result` (§10.2) and `R-11`/tail-`try` typing plus the grammar question (§10.3). The remaining ten P0 RFCs are under authoring |
 | G03–G19 | `NOT_STARTED` |
 
 A `PASS` requires observed evidence. An environment that was not executed is
