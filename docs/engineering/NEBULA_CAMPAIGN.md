@@ -86,6 +86,23 @@ while nothing invokes it (`E`). Three decisions `D1`–`D3` are escalated in
 §10.6. No production source was modified; the extent repair was validated by
 mutation and reverted under gate G02.
 
+G02 has now authored **RFC 0007 — Project Structure, `aura init`, and the `os`
+Capability** (`docs/rfcs/0007-project-structure-init-and-os.md`, `NBL-015`).
+Its finding is unusual in this campaign: **`G06` is almost entirely greenfield.**
+Four of its five acceptance clauses hold *because the feature is absent* — there
+is no environment access to deny, no config to protect, no `init` to make
+non-destructive. `grep -n 'name: "env"' src/stdlib/signatures.rs` returns
+nothing; `aura init` exits 2; `grep -rn 'Aura\.toml' --include=*.rs` returns 0
+hits. Two clauses are therefore **vacuously green**, and every design that adds
+the surface is a net loss of a property the project currently holds
+unconditionally. The backlog's own spelling is unsound: there is no `Std`
+namespace — `use Std::Math` and `use std::os` both fail with `E2019`, and
+`grep -rn '"Std"' src/` is empty, because the standard library is a flat prelude
+of **91** builtin functions rather than a module namespace. `D1` (what
+`Aura.toml` may contain), `D2` (whether an `os` surface exists at all), and `D3`
+(what `init` writes and how it refuses) are escalated in §10.7. `D1` is the root
+decision: `D2` and `D3` are blocked on it.
+
 Baseline: `c4f769077c769483963a0f2b51a789b00472e4cf` on `rewrite/v3-rust`
 (local == `origin/rewrite/v3-rust`, tree clean at campaign start). G00 landed
 on top of it as `7bd1d6fb`; G00 closure landed as `390f763c`.
@@ -654,7 +671,7 @@ Current wave status:
 |---|---|
 | G00 | `PASS` — PR #43, merge `7bd1d6fb`, 21/21 checks |
 | G01 | `PASS` — PR #45, merge `6f075882`, 21/21 checks; dependency table and MSRV blocker disclosed (§1.5.1, §10.1) |
-| G02 | `IN_PROGRESS` — RFC 0002 (`Result`) and RFC 0003 (`try` as expression) authored, probe-verified and merged as PR #46 → `6cc96bf5`; RFC 0002 tag-scope premise corrected via PR #47 → `fe0e7312` and PR #48 → `73a35d9b` (both 21/21), and recorded as PR #49 → `85de5945` (21/21); that record itself recorded as PR #50 → `fc49c5ee` (21/21). RFC 0004 (diagnostics contract) plus the RFC index merged as PR #51 → `2df1c322` (21/21). A fourth finding — generic instantiation is never propagated to the call site, so `check` accepts programs `run` rejects — is characterised and carried as evidence for `NBL-012`. Five blocking language findings are escalated: `R-10`/`E2013` vs. `Result` (§10.2), `R-11`/tail-`try` typing plus the grammar question (§10.3), `R-12`/diagnostic format injection (§10.4), `R-13`/generic instantiation plus the two generic-independent holes `R-14`/indexing and `R-15`/equality (§10.5), and `R-16`/the AIS protocol surface (§10.6). RFC 0005 (inference and error propagation) is merged as PR #53 → `87cea70e` and recorded as PR #54 → `422c7a9e`. RFC 0006 (AIS agent-native capabilities, `NBL-014`) is merged as PR #55 → `d03d2718` (21/21); the merge records the proposal only — its three decisions remain escalated in §10.6 and no protocol surface is coded. Eight of the thirteen G02 P0 RFCs remain unauthored (`NBL-015`…`NBL-022`) |
+| G02 | `IN_PROGRESS` — RFC 0002 (`Result`) and RFC 0003 (`try` as expression) authored, probe-verified and merged as PR #46 → `6cc96bf5`; RFC 0002 tag-scope premise corrected via PR #47 → `fe0e7312` and PR #48 → `73a35d9b` (both 21/21), and recorded as PR #49 → `85de5945` (21/21); that record itself recorded as PR #50 → `fc49c5ee` (21/21). RFC 0004 (diagnostics contract) plus the RFC index merged as PR #51 → `2df1c322` (21/21). A fourth finding — generic instantiation is never propagated to the call site, so `check` accepts programs `run` rejects — is characterised and carried as evidence for `NBL-012`. Five blocking language findings are escalated: `R-10`/`E2013` vs. `Result` (§10.2), `R-11`/tail-`try` typing plus the grammar question (§10.3), `R-12`/diagnostic format injection (§10.4), `R-13`/generic instantiation plus the two generic-independent holes `R-14`/indexing and `R-15`/equality (§10.5), and `R-16`/the AIS protocol surface (§10.6). RFC 0005 (inference and error propagation) is merged as PR #53 → `87cea70e` and recorded as PR #54 → `422c7a9e`. RFC 0006 (AIS agent-native capabilities, `NBL-014`) is merged as PR #55 → `d03d2718` (21/21); the merge records the proposal only — its three decisions remain escalated in §10.6 and no protocol surface is coded. RFC 0007 (project structure, `aura init`, the `os` capability, `NBL-015`) is authored and probe-verified; §10.7 `D1`/`D2`/`D3` are escalated and no command or configuration surface is coded. Seven of the thirteen G02 P0 RFCs remain unauthored (`NBL-016`…`NBL-022`) |
 | G03–G19 | `NOT_STARTED` |
 
 A `PASS` requires observed evidence. An environment that was not executed is
@@ -681,7 +698,7 @@ block reserves space inside a wave, so there are 35 identifiers here, not 190.
 | NBL-012 | G02 | RFC: inference and error propagation rules — **RFC 0005 authored; finding: generic instantiation is never propagated to the call site in two independent parts; `check` accepts what `run` rejects. Blocked on §10.5 D1. Probing it also surfaced two generic-independent holes: unchecked indexing (`R-14`) and unchecked equality (`R-15`)** | P0 |
 | NBL-013 | G02 | RFC: diagnostics contract and `aura explain` — **RFC 0004 merged (PR #51 → `2df1c322`); blocked by §10.4 D3 and §10.4 item 13** | P0 |
 | NBL-014 | G02 | RFC: AIS Agent-Native 0.2 capability set — **authored as RFC 0006, merged via PR #55 → `d03d2718`, still Proposed; blocked by §10.6 D1/D2/D3** | P0 |
-| NBL-015 | G02 | RFC: `Aura.toml`, `aura init`, `std::os` | P0 |
+| NBL-015 | G02 | RFC: `Aura.toml`, `aura init`, `std::os` — **authored as RFC 0007**; `std::os` shown unresolvable, `G06` shown largely vacuous | P0 |
 | NBL-016 | G02 | RFC: Host database capability and protected profile | P0 |
 | NBL-017 | G02 | RFC: `entity struct`, metadata, relations, cardinality | P0 |
 | NBL-018 | G02 | RFC: CRUD surface and transactions | P0 |
@@ -731,6 +748,7 @@ block reserves space inside a wave, so there are 35 identifiers here, not 190.
 | R-14 | **Subscript inference never type-checks the operand** (§1.7.3). `Expr::Index` inference does not consult the operand type; the statement-mode arm at `:6868-6880` does check `contains_none()`, so the hole is inference-specific | `let a = 5` then `a["k"]` is `check` exit 0 / `run` exit 1 (`E3001: cannot index int with string`). Same for `bool` and `float`; reproduces with **no** generic call in the program | Out of scope for RFC 0005 (§7.2). Needs its own finding; deferred, not bundled |
 | R-15 | **Equality is never type-checked and does not fail at run time** (§1.7.3). `==`/`!=` accept operands of any two types and evaluate to a boolean. Ordered comparison *is* checked, so the hole is specific to equality | `print(1 == "s")` is exit 0 under `check` **and** `run` and prints `false`; `print(1 != "s")` prints `true`. A **silent wrong answer**, not a loud runtime failure — strictly worse than `R-14` | Out of scope for RFC 0005 (§7.2). Arguably the highest-severity open defect in this ledger; deferred only because it is a different subsystem, and called out as such rather than folded into D1 |
 | R-16 | **The AIS/0.1 protocol over-promises on eighteen distinct points** (§1.1–§1.14 of RFC 0006, findings A–R). Load-bearing: (a) `Symbol.range` carries only the leading keyword's span — 6.4× aggregate understatement, with `pub` fields and `mut` params affected too (`A`, `I`); (b) three of eleven `SymbolKind` variants are unconstructible while `AIS.md:99-101` documents all eleven (and `Variant`/`Field`/`TypeParameter` can never appear as a `kind`), which breaks the minor-version promise at `AIS.md:53-55` twice (`H`, `F`); (c) `Slice.diagnostics` is promised at `src/ais.rs:848-853` and `:868` and populated nowhere — all three construction sites pass `Vec::new()` — so a slice over a failing program is indistinguishable from a clean one (`L`); (d) the AIS document path never runs the resolver, so `E2019` is dropped at exit 0 while `E2018` and `E2023` survive carrying the wrong code `E2003` (`M`, `N`, `O`); (e) the CLI exposes 3 of 7 operations and `aura://schema` advertises 6 of 7 tools and 3 of 7 delivery operations, both from one hardcoded literal (`B`, `D`); (f) `tests/ais_differential.mjs` asserts in its own docstring that it "runs in CI" while nothing invokes it (`E`) | Any agent trusting AIS as its semantic authority is misled about location, capability, slice completeness, and program validity — and the wrongness is invisible, because every defect is a passing exit code. `L` and `M` compound: a rejected program yields a clean, diagnostics-free document. `E` means the one harness built to detect this class has never run in CI, which is the rule-7/rule-8 failure this campaign exists to catch | Escalated as RFC 0006 (`NBL-014`, merged via PR #55 → `d03d2718`) with three decisions still open in §10.6. The `range` extent repair is validated by mutation and **withheld, not committed**; `src/ais.rs` and `src/mcp.rs` are byte-identical to baseline |
+| R-17 | **An `os`/environment surface would remove a security property the project currently holds unconditionally** (§10.7 `D2`). `G06`'s "Host can deny env" and "no secrets in output" are **vacuously** green today: `grep 'name: "env"' src/stdlib/signatures.rs` returns nothing and `docs/security/TRUST_BOUNDARIES.md:30` confines environment variables to the `py` feature, which `:38` records as verified-absent in CI. Any Aura-visible `env` makes both clauses live obligations across four output surfaces — diagnostics, AIS documents, MCP responses, and the Playground — and RFC 0006 §1.13 proved the AIS path runs a reduced pipeline, so a value that reaches a diagnostic message can reach that pipeline too | 4 of the 5 `G06` clauses are green only because the surface does not exist; introducing it can only narrow the guarantee | Do not choose `D2` by default; if `D2` is anything but "nothing", treat secret redaction as a new contract with its own RFC, and never let `env` reach a diagnostic message |
 
 ## 7. Evidence criteria
 
@@ -884,7 +902,7 @@ regression, or a failing security test. Replacing a problem with a `TODO` and
 marking the wave `PASS` is forbidden. A genuine specification choice produces a
 decision package rather than a silent resolution.
 
-**Census — twelve outstanding decision items across six decision packages.**
+**Census — fifteen outstanding decision items across seven decision packages.**
 Each package is a `### §10.N` block and a package may carry more than one
 question, so package count and item count differ:
 
@@ -896,13 +914,25 @@ question, so package count and item count differ:
 | §10.4 | `D3` | 1 | 2 |
 | §10.5 | `D1` | — | 1 |
 | §10.6 | `D1`, `D2`, `D3` | — | 3 |
-| **Total** | **10** | **2** | **12** |
+| §10.7 | `D1`, `D2`, `D3` | — | 3 |
+| **Total** | **13** | **2** | **15** |
 
 The figure "seven human decisions" that appeared in earlier state documents was
-incremental drift: it matched neither the ten lettered labels nor the twelve
-escalated items. It is retired here. Twelve is not a target; the census is
+incremental drift. At the time it was first written the tree carried ten
+lettered labels and two unlabelled items, twelve in all, and it matched neither
+figure; with §10.7 added the census is thirteen lettered plus two, fifteen in
+all. It is retired here. Fifteen is not a target; the census is
 derived mechanically from the `D`-labels actually present, and it must be
 recomputed the same way whenever a `§10.N` block is added.
+
+The counting rule is fixed so that it is reproducible rather than recalled: a
+package's items are the **distinct `D<n>` tokens** appearing anywhere in its
+block (so `D1a`, `D1b`, `D1c` are three), plus one where the package carries a
+decision with no `D`-label at all (`§10.1`), plus one per **`Open item <N>`**
+heading (`§10.4`). Applying that rule to the six packages that predate §10.7
+reproduces the previously published `1, 3, 2, 2, 1, 3` = 12 exactly, which is
+the evidence that the rule is the one the table has always encoded rather than a
+new definition fitted to the new section.
 
 ### 10.1 Open decision — MSRV 1.83 versus the required database drivers
 
@@ -1215,6 +1245,92 @@ cited a `RESOLVER-ONLY CODES: 5` figure. The machine census over `src/error.rs`
 identifies **six** resolver-only codes — `E2019`, `E2020`, `E2021`, `E2022`,
 `E2023`, `E4020` — and the RFC was corrected before commit. A second defect, a
 fabricated `E3009`, was removed entirely rather than replaced.
+
+### §10.7 — RFC 0007: project structure, `init`, and the `os` capability (`NBL-015`)
+
+**The gate this package answers to.** `G06` reads: *deterministic reversible
+loading, module compatibility, Host can deny env, no secrets in output, cross-OS
+tests where relevant*. The RFC treats each clause as a requirement, not as a
+description of completed work.
+
+**Why this package is different.** Every other G02 package found defects in an
+existing surface. This one finds that **the surface does not exist**, and that
+its absence is what satisfies the gate. `G06`'s five clauses, measured:
+
+| Clause | State | Why |
+|---|---|---|
+| deterministic reversible loading | **green** | discovery is extension- and shape-filtered; `Aura.toml` at the source root is inert (probed `RC=0`) |
+| module compatibility | **green** | no configuration surface exists, so none can break it |
+| Host can deny env | **vacuously green** | no environment access exists to deny |
+| no secrets in output | **green** | nothing prints environment or configuration |
+| cross-OS tests where relevant | **absent** | no project/config surface exists to test |
+
+Three of the five are therefore green *by absence*. That is the finding, and it
+inverts the usual risk: the work is not repair, it is the cautious introduction
+of a surface that can only **remove** guarantees.
+
+**The unsound spelling.** The backlog says `std::os`. Probed:
+
+| Program | Verdict |
+|---|---|
+| `use std::os` | `RC=1`, ``error[E2019]: unknown module `std` in `use` `` |
+| `use Std::os` | `RC=1`, ``error[E2019]: unknown module `Std` in `use` `` |
+| `use Std::Math` | `RC=1`, ``error[E2019]: unknown module `Std` in `use` `` |
+
+The third row is decisive, because `Std::Math` is the spelling this campaign's
+own earlier probes used and it does not resolve either. `grep -rn '"Std"' src/`
+is **empty**. `src/stdlib/mod.rs:20` `builtin_names()` derives the entire
+standard library from `signatures::builtins()` — a **flat prelude of 91
+functions**, not a module namespace. `std::os` is not a module that has yet to
+be written; it names an architecture Aura does not have.
+
+**D1 — what `Aura.toml` may contain.** Option A: a marker file, read by
+nothing. Option B: project metadata (name, version, authors), read by tooling and
+never by the compiler. Option C: compiler-affecting configuration (source root,
+features, lint levels). The RFC recommends A or B and holds that C requires its
+own RFC, because C is the only option that can falsify the "module compatibility"
+clause that is currently green by absence.
+
+**D2 — whether an `os` surface exists, and in what form.** Option A: nothing;
+`G06` stays vacuously satisfied. Option B: Host-only — the Host ABI can supply
+values, but no Aura program can read the environment. Option C: prelude
+functions (`env(name) -> string?`), consistent with the flat prelude. Option D: a
+real module namespace — rejected *on evidence*, since the namespace machinery
+does not exist. Both C and D **remove** a property the project holds
+unconditionally today (`TRUST_BOUNDARIES.md:30` confines environment variables to
+the `py` feature). If C is chosen, `G06`'s "no secrets in output" stops being
+vacuous and becomes a four-surface obligation: diagnostics, AIS documents, MCP
+responses, and the Playground. RFC 0006 §1.13 established that `aura ais` runs a
+reduced pipeline; an `env` value that can reach a diagnostic message can reach
+that pipeline too.
+
+**D3 — what `aura init` writes, and how it refuses.** `init` is the first
+command that would **write to disk**: `grep -rn 'create_dir' src/` returns no
+matches. Four sub-questions are bundled — which files (`Aura.toml` alone, or
+also a `main.aura` skeleton that must check cleanly under eager discovery,
+`:399`), what happens when the target exists, what an unwritable directory
+reports (a diagnostic naming the path, never a panic), and whether the contract
+test runs on the whole CI matrix. The RFC recommends refuse-if-exists and
+`Aura.toml` only, consistent with this repository's standing preference for
+preserving existing work over convenience.
+
+**Dependency between the decisions.** `D2` (C) is incoherent without `D1`: a
+denial policy needs somewhere to be declared. `D3` is under-specified without
+`D1`: `init` cannot write a file whose contents are undecided. **`D1` is the
+root decision.** If `D2` resolves to A, `D1` shrinks toward a marker file and
+`D3` to writing one file.
+
+**What is withheld.** Nothing was written to production source for this package —
+no repair was possible, because there is nothing broken. The single codebase
+observation worth carrying forward is that `COMMANDS` is duplicated
+(`src/main.rs:28` with 7 entries, `:39` with 5), so `init` must be added to both
+or the two builds will disagree about their own help text.
+
+**Corrections to the record.** Two self-caught errors in the RFC's own drafting
+are recorded in its §0: a fabricated cross-reference to "RFC 0006 §1.5" (the
+`Std::Math` evidence is §1.13), and the observation that `E2019` is not a
+literal in `src/error.rs` but `UNKNOWN_MODULE: u16 = 2019` rendered through
+`format!("E{:04}: ...")`. Both are cited correctly in the merged text.
 
 ## 11. Wave checkpoint format
 

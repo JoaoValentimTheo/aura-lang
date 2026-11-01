@@ -1922,9 +1922,9 @@ feature-gating of the typed-decode path.
 ## Exact Next Action
 
 **Directive 008 — NEBULA: G00 and G01 are complete and integrated; G02 is
-`IN_PROGRESS` with five of thirteen P0 RFCs merged — the fifth, RFC 0006,
-merged as a proposal — and twelve outstanding decision items across six
-decision packages (§10.1–§10.6: 1 + 3 + 2 + 2 + 1 + 3).**
+`IN_PROGRESS` with six of thirteen P0 RFCs authored — RFCs 0002–0006 merged,
+RFC 0007 authored and pending merge — and fifteen outstanding decision items
+across seven decision packages (§10.1–§10.7: 1 + 3 + 2 + 2 + 1 + 3 + 3).**
 
 Wave `G00` is `PASS`: PR #43 merged as `7bd1d6fb` (21/21 green) and its closure
 landed as PR #44 → `390f763c` (21/21 green). Wave `G01` is `PASS` and
@@ -1964,19 +1964,21 @@ G02 still forbids coding the repair. **RFC 0006** (`NBL-014`, the AIS agent-nati
 capability set) is merged as PR #55 → `d03d2718` (21/21): eighteen
 defects `A`–`R`, three decisions `D1`–`D3`, §3 `Grammar delta — None`, and a
 mutation-proved `range`-extent repair withheld under gate G02. The
-P0 set is not yet complete: `NBL-015`
-(`Aura.toml` / `aura init` / `std::os`), `NBL-016` (Host database capability),
+P0 set is not yet complete: `NBL-015` is now RFC 0007, authored but not yet
+merged (§10.7 escalates `D1`/`D2`/`D3`; see below), and `NBL-016` (Host database
+capability),
 `NBL-017` (`entity struct` and metadata), `NBL-018` (CRUD and transactions),
 `NBL-019` (AQL/0.1), `NBL-020` (Repository in traits), `NBL-021` (SQLGuard/0.1
 SG-01…SG-08), `NBL-022` (driver contract), and `NBL-030` (prelude/`Result`
-placement, blocked by §10.2) remain unauthored. Eight of the thirteen G02 P0 RFCs
+placement, blocked by §10.2) remain unauthored. Seven of the thirteen G02 P0 RFCs
 are still unwritten.
 
-**Twelve outstanding decision items across six decision packages, and each
-blocks a downstream wave** — six packages, because a package can carry more than
-one question (the earlier "seven decisions" figure was incremental drift and
-matched neither convention; the census below is exhaustive and derived from the
-`D`-labels actually present in §10.1–§10.6):
+**Fifteen outstanding decision items across seven decision packages, and each
+blocks a downstream wave** — seven packages, because a package can carry more
+than one question (the earlier "seven decisions" figure was incremental drift
+and is retired; the census below is exhaustive and derived from the `D`-labels
+actually present in §10.1–§10.7, and was validated by re-deriving the
+pre-§10.7 totals `1 + 3 + 2 + 2 + 1 + 3` = 12 before it was trusted):
 §10.1 MSRV versus database drivers — **1** item, unlabelled (blocks G07
 onward); §10.2 `Result` versus enum-tag **scope** — a genuine spec contradiction
 (`D1a`) that must be answered before the placement choice (`D1c`), plus `D1b`,
@@ -1989,12 +1991,17 @@ authorizing the two-part generic-instantiation repair — **1** item (blocks
 `NBL-012` and every later surface whose types assume a checked generic return);
 and §10.6 `D1`/`D2`/`D3`, the AIS protocol surface — extent contract,
 `Slice.diagnostics`, and the resolver gap — **3** items (blocks `NBL-014` and
-every agent-facing integration in G18 onward).
+every agent-facing integration in G18 onward); and §10.7 `D1`/`D2`/`D3`, the
+project-structure and `os` capability surface — what `Aura.toml` may contain,
+whether an `os` surface exists at all, and what `aura init` writes — **3**
+items (blocks `NBL-015` and every cross-OS or environment-dependent contract;
+`D1` is the root decision because `D2` and `D3` are both downstream of it).
 
-**Next exact action:** author `NBL-015` as RFC 0007, escalating any decision it
-uncovers in a `### §10.7` block. Five of the thirteen G02 P0 RFCs are merged
-(RFC 0002, 0003, 0004, 0005, and 0006 — the last as a proposal awaiting its
-outstanding decision items), and eight remain unauthored (`NBL-015`…`NBL-022`).
+**Next exact action:** author `NBL-016` (Host database capability) as RFC 0008,
+escalating any decision it uncovers in a `### §10.8` block. Six of the thirteen
+G02 P0 RFCs are authored (RFC 0002, 0003, 0004, 0005, and 0006 merged, plus
+RFC 0007 authored and probe-verified), and seven remain unauthored
+(`NBL-016`…`NBL-022`).
 Each RFC is authored under the same explicit provenance note — the nominal source
 documents (`AQL_Nebula_RFC_Draft.md`, `NEBULA_SQLGUARD_CONTRACT.md`,
 `Aura_0.3.2_Nebula_Inventario_Geral.md`) never existed in this repository, so no
@@ -2006,7 +2013,43 @@ checked against `src/error.rs`), merged via PR #55 → `d03d2718` with 21/21 che
 green, and recorded here. Post-merge CI run `41286373383` and Pages run
 `41286373385` are the closure evidence for that merge.
 
-After that, author the remaining P0 RFCs (`NBL-015`…`NBL-022`) under
+**RFC 0007** (`NBL-015`, project structure, `aura init`, and the `os`
+capability) is authored at
+`docs/rfcs/0007-project-structure-init-and-os.md` (439 lines, 3 tables, 28 table rows, zero
+fences) and is **not yet merged**. It records that `G06` is largely vacuous:
+
+| `G06` clause | Status |
+|---|---|
+| deterministic, reversible loading | **green** — discovery is extension- and shape-filtered (§1.2) |
+| module compatibility | **green** — nothing is read, so nothing can be made incompatible (§1.3) |
+| Host can deny environment access | **vacuously green** — there is no environment surface to deny (§1.6) |
+| no secrets in output | **vacuously green** — same reason (§1.6) |
+| cross-OS tests where relevant | **unevaluable** until `D3` resolves (open item 5) |
+
+The backlog's `std::os` spelling is **unsound**: there is no `Std` module at all.
+`use std::os`, `use Std::os`, and `use Std::Math` each fail with `E2019: unknown
+module`, `grep -rn '"Std"' src/` is empty, and the stdlib is a flat prelude of
+**91** builtin functions injected by name through `builtin_names()`
+(`src/stdlib/mod.rs:20`), not a module namespace. `args()` already exists
+(`src/stdlib/signatures.rs:533-539`) and covers the common `os` need without any
+environment access. `D2`'s fourth option (a real module namespace) is rejected on
+that evidence.
+
+`D1` is the **root decision** — `D2` and `D3` are both downstream of what
+`Aura.toml` is allowed to mean. Nothing was coded: `grep -rn 'create_dir' src/
+playground/runtime/src/` is empty, so `aura init` would be the compiler's first
+write path, and it does not exist today (`aura init` exits 2 with an unknown
+command diagnostic). `COMMANDS` is duplicated in `src/main.rs:28-36` (7 entries) and
+`:39-45` (5 entries under `not(feature = "json")`), so any future `init` must be
+added to **both**.
+
+The batch also carries **six** provenance corrections, including two of my own:
+a fabricated cross-reference to "RFC 0006 §1.5" (Finding D) that actually lives
+at **§1.13**, and a claim that `Aura.toml` had four repository mentions when the
+count became twenty-seven once my own RFC existed — §1.3 now names the files and
+pins an at-baseline frame instead of printing a self-falsifying total.
+
+After that, author the remaining P0 RFCs (`NBL-016`…`NBL-022`) under
 `docs/rfcs/`, carrying the same explicit provenance note. **Do not code** any
 surface those RFCs describe — this includes wiring the orphaned
 `tests/ais_differential.mjs` into CI, and repairing the `range` extent, and
