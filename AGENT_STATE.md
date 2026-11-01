@@ -116,11 +116,28 @@ loop, or a `return` has no implicit value and is not judged, so
 `fn f() -> int { print(1) }` and `fn f() -> int { }` being accepted is correct.
 
 **G02 RFCs authored and integrated.** `docs/rfcs/0002-result-and-recoverable-errors.md`
-(305 lines) and `docs/rfcs/0003-try-as-value-expression.md` (486 lines), both
+(426 lines) and `docs/rfcs/0003-try-as-value-expression.md` (486 lines), both
 merged as PR #46 → `6cc96bf5`. Both carry §0 provenance notes, and both escalate
-a human decision rather than resolving it: RFC 0002 §2.1 (`D1`, tag scope) and
-RFC 0003 §2.1–§2.2 (`D1` grammar, `D2` the checker repair). Neither is accepted;
-no surface is coded.
+a human decision rather than resolving it: RFC 0002 §2.1 (`D1a` tag scope, `D1b`
+`E2013` message, `D1c` placement) and RFC 0003 §2.1–§2.2 (`D1` grammar, `D2` the
+checker repair). Neither is accepted; no surface is coded.
+
+**G02 correction — the tag-scope premise was wrong.** RFC 0002 initially
+recorded variant tags as unique *programme-wide* and built its cost analysis on
+that. Re-verification showed **`LANGUAGE_SPEC.md` contradicts itself**:
+`:2407` (§18.1) and `:3281` (§26) say programme-wide, while `:3399` (§27,
+`CONF-RESOLVE-6`), `:1556` (§12) and `:3897` (§33.14, a *Frozen Design
+Decision*) say per module. The compiler implements **per module** and prefixes
+tags with the module path (`src/resolve.rs:1452-1455`), so sibling modules may
+each declare `Ok`; the diagnostic itself reports the prefixed tag (`M::Ok`).
+`E2013`'s message text (`src/check/mod.rs:1378`, "unique across the program")
+repeats the losing clause. Corrected in RFC 0002 (§1.2, §1.1.1, §2.1, §2.1.1),
+campaign §1.7.1/§1.7.1a/§10.2/`R-10`, and merged as PR #47 → `fe0e7312`.
+
+This was **not an original discovery**: `docs/engineering/EXCEPTION_SYNTAX_DECISION_PACKAGE.md:192`
+(verification pass 2026-10-06) already recorded the per-module behaviour with
+bidirectional execution evidence. What was new is that the two normative clauses
+were never reconciled and the diagnostic still asserts the wrong one.
 
 **P3 preflight fix.** `scripts/agent-state.sh` reported `WRITER=UNKNOWN` on a
 clean tree because its `## Writer` extraction required an exact line and
@@ -1715,7 +1732,12 @@ bump, or feature-gated drivers with a formally amended §18.2 floor — were
 §2.5.
 
 **G02 progress.** RFCs 0002 and 0003 are authored, probe-verified, merged as PR
-#46 → `6cc96bf5`, and escalate their open decisions (`NBL-010`, `NBL-011`). The
+#46 → `6cc96bf5`, recorded in PR #47 → `fe0e7312`, and escalate their open
+decisions (`NBL-010`, `NBL-011`). RFC 0002 was **corrected after merge** at
+`fe0e7312`: its tag-scope premise had been falsified (`LANGUAGE_SPEC.md`
+contradicts itself; the compiler is per-module), so §1.2, §1.1.1, §2.1, §2.1.1
+and §5 were rewritten and the escalation split into `D1a` scope / `D1b` message
+/ `D1c` placement. The
 P0 set is not yet complete: `NBL-012` (inference and error propagation),
 `NBL-013` (diagnostics contract), `NBL-014` (AIS capability set), `NBL-015`
 (`Aura.toml` / `aura init` / `std::os`), `NBL-016` (Host database capability),
@@ -1726,8 +1748,9 @@ placement, blocked by §10.2) remain unauthored.
 
 **Three human decisions are outstanding, and each blocks a downstream wave:**
 §10.1 MSRV versus database drivers (blocks G07 onward); §10.2 `Result` versus
-global enum-tag uniqueness (blocks `NBL-030`, G03, and every `Result` API in
-G07–G17); §10.3 `try` as an expression and the tail-`try` checker repair
+enum-tag **scope** — a genuine spec contradiction (`D1a`) that must be answered
+before the placement choice (`D1c`), plus `D1b`, the `E2013` message text
+(blocks `NBL-030`, G03, and every `Result` API in G07–G17); §10.3 `try` as an expression and the tail-`try` checker repair
 (blocks `NBL-011`, `NBL-031`, and G03).
 
 **Next exact action:** continue **G02** by authoring the remaining P0 RFCs
