@@ -64,27 +64,44 @@ the uncertainty:
    `format!("E{:04}: {}", ...)` (`:103`, `:109`). The code is real; its spelling
    is derived. Cited as `E2019` throughout because that is what the compiler
    prints.
+7. **Errata, applied after merge (PR #57).** §1.1 mis-counted `G06`. It said
+   four
+   of five clauses were satisfied by absence and that two were vacuously green;
+   the correct decomposition is **one on evidence** (deterministic reversible
+   loading), **three by absence** (module compatibility, `Host can deny env`,
+   `no secrets in output`), and **one unevaluable** (cross-OS tests) — four hold
+   today, not two. The table's `Evidence` column was also shifted by one row:
+   `Host can deny env` cited §1.5 (the `std::os` naming section) instead of
+   §1.6, `no secrets in output` cited §1.6 alone instead of §1.6 and §1.9, and
+   cross-OS tests cited §1.7 (`args()`) instead of §1.8. The preamble sentence
+   said "four of them constrain work … two of the five already hold today",
+   contradicting the paragraph four lines below it, which is how it survived
+   review. All three sites are corrected in place and recorded here rather than
+   silently rewritten.
 
 ## 1. Motivation
 
 ### 1.1 What `G06` asks for, and which parts already hold
 
-`G06` names five acceptance properties. Four of them constrain work this RFC
-proposes; two of the five already hold today and must not regress. The state of
-each, established by reading the code and running the compiler:
+`G06` names five acceptance properties. Four of the five hold today and must not
+regress; the fifth is unevaluable until `D3` resolves. Three of the four hold
+only because the surface is absent, and all four constrain the work this RFC
+proposes. The state of each, established by reading the code and running the
+compiler:
 
 | `G06` clause | State today | Evidence |
 |---|---|---|
-| deterministic reversible loading | **Holds** | §1.2 |
-| module compatibility | **Holds**; no config surface exists to break it | §1.3 |
-| Host can deny env | **Vacuously holds** — no environment access exists | §1.5 |
-| no secrets in output | **Holds** — nothing prints environment or config | §1.6 |
-| cross-OS tests where relevant | **Absent** — no project/config surface exists to test | §1.7 |
+| deterministic reversible loading | **Holds on evidence** | §1.2 |
+| module compatibility | **Holds by absence** — no config surface exists to break it | §1.3 |
+| Host can deny env | **Holds by absence** — no environment access exists | §1.6 |
+| no secrets in output | **Holds by absence** — nothing prints environment or config | §1.6, §1.9 |
+| cross-OS tests where relevant | **Unevaluable** — no project/config surface exists to test | §1.8 |
 
 This is the central finding of the RFC and the reason it is short: **`G06` is
-almost entirely greenfield.** Four of its five clauses are satisfied by the
-absence of the feature. The work is therefore not repair but the cautious
-introduction of a surface that could *break* three clauses that hold today.
+almost entirely greenfield.** Three of its five clauses are satisfied by the
+absence of the feature; a fourth, deterministic reversible loading, is satisfied
+by evidence (§1.2). The work is therefore not repair but the cautious
+introduction of a surface that could *break* four clauses that hold today.
 
 ### 1.2 Finding — discovery is eagerly structural and extension-filtered
 

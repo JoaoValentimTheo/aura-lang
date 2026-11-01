@@ -2,15 +2,21 @@
 
 ## Directive 008 — NEBULA 0.3.2 campaign (`G02`, `IN_PROGRESS`)
 
-**PR #53 integrated; RFC 0005 merged.** PR **#53** (`docs/nebula-g02-rfc0005`,
-head `c4ad338f`) merged into `rewrite/v3-rust` as
-**`87cea70e10ac06211b25b57230dcd8d929234be2`** at 2026-11-01T04:44:40Z —
-5 files / +1028 / −120, all documentation: the new
-`docs/rfcs/0005-inference-and-error-propagation.md`, the RFC index, the campaign
-`R-13`/`R-14`/`R-15` + §10.5 annotations, and the two state documents. Post-merge
-runs `41274260409` (CI, **21/21** jobs `success`) and `41274260387` (Pages) both
-reached `completed/success`. Earlier in the same wave, PR **#52**
-(`docs/nebula-pr51-record`, head `2de7b86f`) merged as
+**PR #57 integrated; RFC 0007 merged.** PR **#57** (`docs/nebula-g02-rfc0007`,
+head `90bcdbfe`) merged into `rewrite/v3-rust` as
+**`6f5bca983fda1924b6ca1f0b7a1017159d360609`** at 2026-11-01T10:29:41Z —
+5 files / +707 / −45, all documentation: the new
+`docs/rfcs/0007-project-structure-init-and-os.md`, the RFC index, the campaign
+`R-17` + §10.7 annotations, and the two state documents. Post-merge runs
+`41297723580` (CI, **21/21** jobs `success`) and `41297723527` (Pages, 2/2) both
+reached `completed/success`. Earlier in the same wave, PR **#56**
+(`docs/nebula-pr55-record`, head `8e362edc`) merged as
+**`4406c873a46c47aaff85a0315ddce87a769af1ac`**, PR **#55**
+(`docs/nebula-g02-rfc0006`, head `d4f38101`) as
+**`d03d271892285d3953577f9e497396d2fe98454f`** at 2026-11-01T07:50:20Z, PR
+**#53** (`docs/nebula-g02-rfc0005`, head `c4ad338f`) as
+**`87cea70e10ac06211b25b57230dcd8d929234be2`** at 2026-11-01T04:44:40Z, PR
+**#52** (`docs/nebula-pr51-record`, head `2de7b86f`) as
 **`3832a4b9e1497eddb4f37cbb872f9aee1c3e309a`** at 2026-11-01T03:31:56Z, and PR
 **#51** (`docs/nebula-g02-rfc0004`, head `5c34592d`) as
 **`2df1c32298b57bc64343c3701ca8bd2a53705230`** at 2026-11-01T02:37:05Z.
@@ -97,7 +103,58 @@ Two defects in my own first draft were caught before commit and fixed: a
 than replaced) and a `RESOLVER-ONLY CODES: 5` figure (the machine census says
 **six**).
 
-At record time local `HEAD` is **`d03d2718`** (the merge of PR #55, the RFC 0006
+**RFC 0007 is authored, post-audited, and merged as PR #57 → `6f5bca98`.**
+`docs/rfcs/0007-project-structure-init-and-os.md` (`NBL-015`) — **as merged**
+439 lines / 21 824 chars (the post-merge errata in correction 7 make it longer
+now; measured once below), 3 tables (28 table rows), zero fences, zero
+inconsistent rows.
+§3 is `Grammar delta — None`. It escalates **three** decisions, `D1`/`D2`/`D3`
+at §10.7, and `D1` is the **root**: `D2` (`os`/environment) and `D3`
+(`aura init`) are both downstream of it. The load-bearing findings:
+
+- **There is no `Std` module.** `use std::os`, `use Std::os` and `use Std::Math`
+  all return `E2019: unknown module`; `grep -rn '"Std"' src/` is **empty**.
+  The stdlib is a **flat prelude of 91 builtins** injected by name from
+  `builtin_names()` (`src/stdlib/mod.rs:20`;
+  `grep -c 'name: "' src/stdlib/signatures.rs` → **91**). The backlog's
+  `std::os` spelling is therefore a fiction, and the
+  RFC names the evidence rather than repeating the spelling.
+- **Aura programs have no environment access.** No `env`, `getenv` or `var`
+  builtin exists; all **seven** `std::env` hits in `src/` are Rust-side
+  (`host.rs:422` a comment, `native_source.rs:43`, `main.rs:151`, `main.rs:259`,
+  `diagnostic.rs:50` a doc comment, `mcp.rs:59`, `mcp.rs:66`).
+  `TRUST_BOUNDARIES.md:30` confines environment variables to the `py` feature,
+  which `:38` records as verified-absent in CI.
+  `args()` already exposes argv (`src/stdlib/signatures.rs:533-539`).
+- **The compiler never creates a directory.** `grep -rn 'create_dir' src/
+  playground/runtime/src/` is **empty**; `aura init` exits 2 as an unknown
+  command. `aura init` would be the first write path in the toolchain.
+- **`Aura.toml` at the source root is harmless.** A directory holding
+  `main.aura` + `Aura.toml` checks with **`RC=0`**, because discovery is
+  extension- and shape-filtered by `is_aura_module_name`
+  (`src/module_graph.rs:948-957`).
+- **`G06` is largely greenfield.** Of its five clauses, one is green on evidence
+  (deterministic/reversible loading), three are green only because the surface
+  that could violate them does not exist ("module compatibility", "Host can deny
+  env", "no secrets in output"), and one ("cross-OS tests where relevant") is
+  **unevaluable** until `D3` resolves. `R-17` records that introducing an
+  `os`/env surface would therefore *narrow* an unconditional guarantee across
+  four output surfaces,
+  including the reduced AIS pipeline RFC 0006 §1.13 proved exists.
+
+Four defects in my own RFC 0007 work were caught before merge: a **fabricated
+cross-reference** (`RFC 0006 §1.5` is Finding D; the resolver evidence is
+`§1.13`), a **self-falsifying repo-wide count** (`Aura.toml` returned 27 hits
+only because the new RFC itself mentions it 23 times — the baseline figure of
+four across `AGENT_STATE.md`, `NEBULA_CAMPAIGN.md` and `CURRENT_HANDOFF.md` is
+the true one), a **"28 tables" figure that was really 28 table rows** (the
+table count is 3), and a **stale creation-time size** (422 lines → 439 lines,
+20 803 → 21 824 chars). The `E2019` citation is correct even though
+`grep 'E2019' src/error.rs` returns nothing, because codes are rendered from
+`UNKNOWN_MODULE: u16 = 2019` (`src/error.rs:374`) via `format!(\"E{:04}: …\")`
+(`:103`, `:109`) — unlike RFC 0006's `E3009`, which was genuinely fabricated.
+
+At record time local `HEAD` is **`6f5bca98`** (the merge of PR #57, the RFC 0007
 batch) and equals `origin/rewrite/v3-rust`. The working tree carries this record
 batch only. No source file changed: `src/check/mod.rs` is byte-identical
 to baseline (`sha256 1232b687…aa738f532`, `git hash-object 03207d9293…`),
@@ -381,7 +438,8 @@ audit. `py` is a full CPython process, not a sandbox.
 **Campaign plan published:** `docs/engineering/NEBULA_CAMPAIGN.md` — baseline,
 scope, P0/P1/P2 classification, G00–G19 wave table with verbatim gates, status
 vocabulary, ID'd backlog (`NBL-001`…`NBL-190`, sparse — 35 distinct IDs),
-risks `R-01`…`R-16`, decision packages §10.1–§10.6, evidence criteria,
+risks `R-01`…`R-17` (incl. `R-03a`), decision packages §10.1–§10.7, evidence
+criteria,
 architecture constraints, delegation, blocking policy, checkpoint format, and
 the mandatory STOP.
 
@@ -1922,9 +1980,10 @@ feature-gating of the typed-decode path.
 ## Exact Next Action
 
 **Directive 008 — NEBULA: G00 and G01 are complete and integrated; G02 is
-`IN_PROGRESS` with six of thirteen P0 RFCs authored — RFCs 0002–0006 merged,
-RFC 0007 authored and pending merge — and fifteen outstanding decision items
-across seven decision packages (§10.1–§10.7: 1 + 3 + 2 + 2 + 1 + 3 + 3).**
+`IN_PROGRESS` with six of thirteen P0 RFCs authored and merged — RFCs
+0002–0007 all merged, RFC 0007 as PR #57 → `6f5bca98` — and fifteen outstanding
+decision items across seven decision packages
+(§10.1–§10.7: 1 + 3 + 2 + 2 + 1 + 3 + 3).**
 
 Wave `G00` is `PASS`: PR #43 merged as `7bd1d6fb` (21/21 green) and its closure
 landed as PR #44 → `390f763c` (21/21 green). Wave `G01` is `PASS` and
@@ -1964,9 +2023,9 @@ G02 still forbids coding the repair. **RFC 0006** (`NBL-014`, the AIS agent-nati
 capability set) is merged as PR #55 → `d03d2718` (21/21): eighteen
 defects `A`–`R`, three decisions `D1`–`D3`, §3 `Grammar delta — None`, and a
 mutation-proved `range`-extent repair withheld under gate G02. The
-P0 set is not yet complete: `NBL-015` is now RFC 0007, authored but not yet
-merged (§10.7 escalates `D1`/`D2`/`D3`; see below), and `NBL-016` (Host database
-capability),
+P0 set is not yet complete: `NBL-015` is now RFC 0007, authored and merged as
+PR #57 → `6f5bca98` (§10.7 escalates `D1`/`D2`/`D3`; see below), and `NBL-016`
+(Host database capability),
 `NBL-017` (`entity struct` and metadata), `NBL-018` (CRUD and transactions),
 `NBL-019` (AQL/0.1), `NBL-020` (Repository in traits), `NBL-021` (SQLGuard/0.1
 SG-01…SG-08), `NBL-022` (driver contract), and `NBL-030` (prelude/`Result`
@@ -1999,9 +2058,8 @@ items (blocks `NBL-015` and every cross-OS or environment-dependent contract;
 
 **Next exact action:** author `NBL-016` (Host database capability) as RFC 0008,
 escalating any decision it uncovers in a `### §10.8` block. Six of the thirteen
-G02 P0 RFCs are authored (RFC 0002, 0003, 0004, 0005, and 0006 merged, plus
-RFC 0007 authored and probe-verified), and seven remain unauthored
-(`NBL-016`…`NBL-022`).
+G02 P0 RFCs are authored **and all six merged** (RFC 0002, 0003, 0004, 0005,
+0006, and 0007), and seven remain unauthored (`NBL-016`…`NBL-022`).
 Each RFC is authored under the same explicit provenance note — the nominal source
 documents (`AQL_Nebula_RFC_Draft.md`, `NEBULA_SQLGUARD_CONTRACT.md`,
 `Aura_0.3.2_Nebula_Inventario_Geral.md`) never existed in this repository, so no
@@ -2015,15 +2073,18 @@ green, and recorded here. Post-merge CI run `41286373383` and Pages run
 
 **RFC 0007** (`NBL-015`, project structure, `aura init`, and the `os`
 capability) is authored at
-`docs/rfcs/0007-project-structure-init-and-os.md` (439 lines, 3 tables, 28 table rows, zero
-fences) and is **not yet merged**. It records that `G06` is largely vacuous:
+`docs/rfcs/0007-project-structure-init-and-os.md` (439 lines as merged, 3
+tables, 28 rows, zero fences) and is **merged as PR #57** →
+`6f5bca983fda1924b6ca1f0b7a1017159d360609`
+(2026-11-01T10:29:41Z, 21/21 green). It records that `G06` is largely
+greenfield:
 
 | `G06` clause | Status |
 |---|---|
-| deterministic, reversible loading | **green** — discovery is extension- and shape-filtered (§1.2) |
-| module compatibility | **green** — nothing is read, so nothing can be made incompatible (§1.3) |
-| Host can deny environment access | **vacuously green** — there is no environment surface to deny (§1.6) |
-| no secrets in output | **vacuously green** — same reason (§1.6) |
+| deterministic, reversible loading | **green (on evidence)** — discovery is extension- and shape-filtered (§1.2) |
+| module compatibility | **green (by absence)** — nothing is read, so nothing can be made incompatible (§1.3) |
+| Host can deny environment access | **green (by absence)** — there is no environment surface to deny (§1.6) |
+| no secrets in output | **green (by absence)** — nothing prints environment or configuration (§1.6, §1.9) |
 | cross-OS tests where relevant | **unevaluable** until `D3` resolves (open item 5) |
 
 The backlog's `std::os` spelling is **unsound**: there is no `Std` module at all.

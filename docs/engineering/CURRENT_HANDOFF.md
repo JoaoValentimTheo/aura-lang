@@ -6,10 +6,11 @@ Active task: **G02**, the P0 RFC reconstruction. `G00` and `G01` are closed.
 No implementation is authorized before `G02` accepts the P0 RFC set.
 
 ```
-WAVE: G02 -> IN_PROGRESS (6 of 13 P0 RFCs authored: 5 merged, RFC 0007
-      authored; fifteen outstanding decision items across seven packages)
+WAVE: G02 -> IN_PROGRESS (6 of 13 P0 RFCs authored, all 6 merged — RFC 0007
+      merged as PR #57; fifteen outstanding decision items across seven
+      packages)
 STATUS: G02 IN_PROGRESS (fifteen decision items outstanding, see DECISOES)
-HEAD: d03d271892285d3953577f9e497396d2fe98454f (merge of PR #55)
+HEAD: 6f5bca983fda1924b6ca1f0b7a1017159d360609 (merge of PR #57)
 PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb;
      #44 MERGED (G00 closure + G01 authorisation, head 5cf4f8d9) -> 390f763c;
      #45 MERGED (G01 dependency record, head 1ce88863) -> 6f075882;
@@ -23,12 +24,14 @@ PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb;
      #53 MERGED (RFC 0005, head c4ad338f) -> 87cea70e;
      #54 MERGED (PR #53 record, head 70757c3b) -> 422c7a9e;
      #55 MERGED (RFC 0006, head d4f38101) -> d03d2718;
+     #56 MERGED (PR #55 record, head 8e362edc) -> 4406c873;
+     #57 MERGED (RFC 0007, head 90bcdbfe) -> 6f5bca98;
      0 open PRs
 CHECKS: PR #43 21/21 pass; PR #44 21/21 pass; PR #45 21/21 pass;
         PR #46 21/21 pass; PR #47 21/21 pass; PR #48 21/21 pass;
         PR #49 21/21 pass; PR #50 21/21 pass; PR #51 21/21 pass;
         PR #52 21/21 pass; PR #53 21/21 pass; PR #54 21/21 pass;
-        PR #55 21/21 pass;
+        PR #55 21/21 pass; PR #56 21/21 pass; PR #57 21/21 pass;
         post-merge CI 41248873353 on 7bd1d6fb = completed/success;
         Pages 41248873720 = completed/success;
         post-merge CI 41251300785 on 6f075882 = completed/success;
@@ -51,7 +54,11 @@ CHECKS: PR #43 21/21 pass; PR #44 21/21 pass; PR #45 21/21 pass;
         post-merge CI 41276131621 on 422c7a9e = completed/success (21/21);
         post-merge Pages 41276131720 on 422c7a9e = completed/success (2/2);
         post-merge CI 41286373383 on d03d2718 = completed/success (21/21);
-        post-merge Pages 41286373385 on d03d2718 = completed/success (2/2)
+        post-merge Pages 41286373385 on d03d2718 = completed/success (2/2);
+        post-merge CI 41293011896 on 4406c873 = completed/success (21/21);
+        post-merge Pages 41293011910 on 4406c873 = completed/success (2/2);
+        post-merge CI 41297723580 on 6f5bca98 = completed/success (21/21);
+        post-merge Pages 41297723527 on 6f5bca98 = completed/success (2/2)
 TESTS_REALMENTE_EXECUTADOS: see "Commands actually executed" below
 PROVAS: baseline reconciled; G00+G01+G01-record diffs are docs/script files
         only; src/, playground/runtime/, Cargo.toml, Cargo.lock,
@@ -91,7 +98,15 @@ RISCOS: R-01 try-as-expression ambiguity (gates G03 and every Result API);
         dropped at exit 0 while E2018 and E2023 survive mis-coded as E2003,
         tests/ais_differential.mjs asserts it runs in CI while nothing invokes
         it, the CLI exposes 3 of 7 operations, and aura://schema advertises 6 of
-        7 tools and 3 of 7 delivery operations from one hardcoded literal
+        7 tools and 3 of 7 delivery operations from one hardcoded literal;
+        R-17 an os/environment surface would remove a security property the
+        project holds unconditionally today - G06's "Host can deny env" and "no
+        secrets in output" are green only by absence because no env surface
+        exists (grep 'name: "env"' src/stdlib/signatures.rs is empty;
+        TRUST_BOUNDARIES.md:30 confines env to py, which :38 records as
+        verified-absent in CI), so introducing one makes both clauses live
+        obligations across four output surfaces, including the reduced AIS
+        pipeline RFC 0006 1.13 proved exists
 DECISOES: NONE TAKEN. Fifteen open decision items across seven decision packages,
         all recorded as decision packages in the campaign document, none
         resolved by the agent.
@@ -130,6 +145,17 @@ DECISOES: NONE TAKEN. Fifteen open decision items across seven decision packages
         E2018+E2023 mis-coding and leave E2019 dropped). Today E2019 is dropped
         at exit 0 while E2018 and E2023 survive carrying the wrong code E2003.
         Blocks NBL-014 and every agent-facing integration from G18 onward.
+        10.7 RFC 0007 project structure and the os capability, three decisions
+        with D1 as the root: D1 what Aura.toml may contain (a) no file at all /
+        (b) a narrow manifest limited to name and entry / (c) a full manifest
+        with build and dependency sections; D2 whether an os surface exists at
+        all (a) nothing, keep args() alone / (b) a pure os namespace with no
+        env / (c) an explicit env capability the Host can deny / (d) a real
+        module namespace - rejected on evidence, there is no Std module); D3
+        what aura init writes (a) nothing, do not add the command / (b) a single
+        entry file / (c) entry file plus manifest plus a directory). Blocks
+        NBL-015 and every cross-OS or environment-dependent contract; D2 and D3
+        are both downstream of D1.
         No approval is implied anywhere; the three documents Directive 008 names
         as inputs are absent and must be reconstructed with explicit provenance
         notes.
@@ -883,21 +909,22 @@ are byte-identical to baseline.
 
 ### RFC 0007 evidence — project structure, `aura init`, and the `os` capability (`NBL-015`)
 
-`docs/rfcs/0007-project-structure-init-and-os.md` is **authored and
-probe-verified, not yet merged** — 439 lines, 3 tables (28 rows), zero fences, no
-inconsistent rows, `## 3. Grammar delta` = **None**. Merging would record the
-proposal only; §10.7 `D1`/`D2`/`D3` are unanswered and gate G02 still forbids
-coding any surface described.
+`docs/rfcs/0007-project-structure-init-and-os.md` is **merged as PR #57** →
+`6f5bca983fda1924b6ca1f0b7a1017159d360609` — 439 lines **as merged**, 3 tables
+(28 rows), zero fences, no inconsistent rows, `## 3. Grammar delta` = **None**.
+Merging records the proposal only; §10.7 `D1`/`D2`/`D3` are unanswered and
+gate G02 still forbids coding any surface described.
 
-**The central finding is that `G06` is largely vacuous.** Three of its five
-clauses are green *by absence* rather than by construction:
+**The central finding is that `G06` is largely greenfield.** Three of its five
+clauses are green *by absence* rather than by construction, a fourth is green on
+evidence, and the fifth is unevaluable:
 
 | `G06` clause | Status | Basis |
 |---|---|---|
-| deterministic, reversible loading | **green** | discovery is extension- and shape-filtered (`module_graph.rs:948-957`) |
-| module compatibility | **green** | nothing reads `Aura.toml`, so nothing can be made incompatible |
-| Host can deny environment access | **vacuously green** | no environment surface exists to deny |
-| no secrets in output | **vacuously green** | same reason |
+| deterministic, reversible loading | **green (on evidence)** | discovery is extension- and shape-filtered (`module_graph.rs:948-957`) |
+| module compatibility | **green (by absence)** | nothing reads `Aura.toml`, so nothing can be made incompatible |
+| Host can deny environment access | **green (by absence)** | no environment surface exists to deny |
+| no secrets in output | **green (by absence)** | nothing prints environment or configuration |
 | cross-OS tests where relevant | **unevaluable** | blocked on `D3` (open item 5) |
 
 **The backlog spelling `std::os` is unsound.** There is no `Std` module at all:
@@ -939,24 +966,26 @@ through `format!("E{:04}: ...")` (`:103`, `:109`).
 
 Author `NBL-016` (Host database capability and the protected profile) as
 `docs/rfcs/0008-*.md`, escalating whatever decision it uncovers in a
-`### §10.8` block in the campaign document. The RFC 0007 batch is **open**: RFC
-0007 is authored and probe-verified at
-`docs/rfcs/0007-project-structure-init-and-os.md`, its index row is added, and
-§10.7 `D1`/`D2`/`D3` are escalated. This record batch carries RFC 0007 into the
-three state documents and touches no source file.
+`### §10.8` block in the campaign document. The RFC 0007 batch is **closed**:
+RFC 0007 is merged as PR #57 → `6f5bca983fda1924b6ca1f0b7a1017159d360609`
+(2026-11-01T10:29:41Z, 21/21 green) at
+`docs/rfcs/0007-project-structure-init-and-os.md`, its index row is in place,
+and
+§10.7 `D1`/`D2`/`D3` are escalated. This record batch carries RFC 0007's merge
+into the three state documents and touches no source file.
 
 **Wave position.** `NBL-010` (RFC 0002), `NBL-011` (RFC 0003), `NBL-013`
 (RFC 0004), `NBL-012` (RFC 0005) and `NBL-014` (RFC 0006) are authored **and
-merged**; `NBL-015` (RFC 0007) is authored and **pending merge**. Still
+merged**; `NBL-015` (RFC 0007) is authored **and merged** (PR #57). Still
 unauthored: `NBL-016` Host database capability and protected profile; `NBL-017`
 `entity struct` and metadata; `NBL-018` CRUD and transactions; `NBL-019`
 AQL/0.1; `NBL-020` Repository in traits; `NBL-021` SQLGuard/0.1 SG-01…SG-08;
 `NBL-022` SQL and Mongo driver contract. That is **seven** of the thirteen P0
 RFCs still to author, plus `NBL-030` (prelude `Result` placement), which is
 blocked by §10.2 and must not be authored as if the decision were taken.
-`NBL-015` is now RFC 0007 (`docs/rfcs/0007-project-structure-init-and-os.md`,
-439 lines, 3 tables), authored and probe-verified but not yet merged; its three decisions
-are escalated at §10.7.
+`NBL-015` is RFC 0007 (`docs/rfcs/0007-project-structure-init-and-os.md`,
+439 lines as merged, 3 tables), merged as PR #57; its three decisions are
+escalated at §10.7 and remain unanswered.
 
 **Fifteen outstanding decision items across seven decision packages:** §10.1
 MSRV dependency direction — **1** item, unlabelled; §10.2 (`D1a` which
