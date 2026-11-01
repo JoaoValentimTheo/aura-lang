@@ -2,22 +2,32 @@
 
 ## Directive 008 — NEBULA 0.3.2 campaign (`G02`, `IN_PROGRESS`)
 
-**G02 PR #51 integrated; RFC 0004 merged.** PR **#51**
-(`docs/nebula-g02-rfc0004`, head `5c34592d`) merged into `rewrite/v3-rust` as
-**`2df1c32298b57bc64343c3701ca8bd2a53705230`** at 2026-11-01T02:37:05Z, with
-**21/21** remote checks green; post-merge runs `41265951706` (CI) and
-`41265951679` (Pages) both reached `completed/success` on `2df1c322`. The
-merged diff is 6 files / +1019 / −40, all documentation: the new
+**RFC 0005 authored; PR #52 integrated.** The record of PR #51 was itself
+integrated: PR **#52** (`docs/nebula-pr51-record`, head `2de7b86f`) merged into
+`rewrite/v3-rust` as **`3832a4b9e1497eddb4f37cbb872f9aee1c3e309a`** at
+2026-11-01T03:31:56Z, with **21/21** remote checks green; post-merge runs
+`41269557515` (CI) and `41269557557` (Pages) both reached `completed/success`.
+Earlier in the same wave, PR **#51** (`docs/nebula-g02-rfc0004`, head
+`5c34592d`) merged as **`2df1c32298b57bc64343c3701ca8bd2a53705230`** at
+2026-11-01T02:37:05Z — 6 files / +1019 / −40, all documentation: the new
 `docs/rfcs/0004-diagnostics-contract.md`, the `docs/rfcs/README.md` index, the
 campaign §10.4 / `R-12` annotations, five escaped-pipe fixes in this campaign's
 own docs, and the state refresh.
 
-At record time local `HEAD` is **`2df1c322`** and the working tree carries this
-documentation batch only (three state documents, uncommitted). No source file
-changed: `src/check/mod.rs` is byte-identical to baseline
-(`sha256 1232b687…aa738f532`), `manifest.json` sha256 is still
-`cbe7ad91…23b837`, `manifest.current` is still `"0.3.1"`, and no `0.3.2` tag
-exists.
+**`NBL-012` is now authored as `docs/rfcs/0005-inference-and-error-propagation.md`
+and is _not_ merged.** 691 lines, 6 tables, 20 fences, backtick parity even;
+§3 is `Grammar delta — None`; §0 carries five recorded self-corrections. It
+documents the **two-part** generic-instantiation unsoundness (`R-13`), the two
+generic-independent holes found underneath it and deliberately left out
+(`R-14` indexing, `R-15` equality), and escalates exactly **one** decision,
+§10.5 `D1`. §2.4 closes with **"There is no D2."**
+
+At record time local `HEAD` is **`3832a4b9`** and the working tree carries this
+documentation batch only (RFC 0005 plus four state/ledger documents,
+uncommitted). No source file changed: `src/check/mod.rs` is byte-identical to
+baseline (`sha256 1232b687…aa738f532`, `git hash-object 03207d9293…`),
+`manifest.json` sha256 is still `cbe7ad91…23b837`, `manifest.current` is still
+`"0.3.1"`, and no `0.3.2` tag exists.
 
 **`NBL-012` lead finding — generic-instantiation unsoundness (unfixed by
 design).** While researching the next P0 RFC, a checker soundness defect was
@@ -31,11 +41,36 @@ generic-specific. Root cause: `instantiate_return_ty`
 `infer_substitution` at `:4530` (`let _ = …`), so `ret.erase_params(&sigma)`
 runs unbound and every `Ty::Param` falls through to `Ty::Unknown`
 (`src/types.rs:244`), which `Ty::compatible_with` accepts against any
-annotation. A four-line candidate fix was **engineered and mutation-proved**
-(the binding capture is load-bearing; both a guard-only and a
-capture-but-ignore variant leave the bug present) and then **reverted to
-baseline**, because `GATE G02` forbids coding a surface before its RFC is
-accepted. It is carried as evidence in `NBL-012`, not as a commit.
+annotation.
+
+**A second, independent part was found underneath it.** Even with that fixed,
+`Expr::Method` inference (`:4101-4115`) passes an `args` slice that excludes the
+receiver, so an `impl<T>` parameter occurring only in the receiver can never be
+bound. `impl<A> Pair<A> { fn get(self) -> A }` still yields `Unknown`. The
+correct binding already exists in the tree — `check_struct_method_args`
+(`:4882`, binding `:4907-4931`) binds impl parameters from `Self::ty_args_of(recv)`
++ `recv.nominal_head()` + `self.type_type_params`, and indexes `sig.params[1..]`
+because `sig.params[0]` **is** the receiver (documented at `:4892`) — so the
+repair is a mirror, not new machinery. The two-part fix (**+53/−2**, one file)
+was engineered and mutation-proved in three directions: mutation A (guard
+without capturing), mutation B (capture then ignore) and mutation C (drop the
+receiver binding) each independently re-introduce the unsoundness. It was then
+**reverted to baseline**, because `GATE G02` forbids coding a surface before its
+RFC is accepted. It is carried as evidence in `NBL-012` → **RFC 0005**, not as a
+commit; the patch survives at `/tmp/nb12_fix_v4.patch` together with the two
+saved binaries (`/tmp/aura_base_nb12` sha256 `966462ad…eb89` and
+`/tmp/aura_fix_nb12_v4` sha256 `fb230ce5…8aae`) that the 21-row probe matrix in
+RFC 0005 §6.1 was measured against.
+
+**Two further holes were surfaced while probing it and are _not_ part of it.**
+Both reproduce with generics removed entirely, so neither is a residual:
+**`R-14` — indexing is never type-checked** (`let a = 5; a["k"]` is `check`
+exit 0, `run` exit 1), and **`R-15` — equality is never type-checked and does
+not fail at run time** (`print(1 == "s")` is exit 0 under both `check` and
+`run` and prints `false`; `1 < "s"` *is* rejected with `E3001`, so the hole is
+specific to `==`/`!=`). `R-15` is a silent wrong answer and is arguably more
+urgent than either generic defect; it is deferred only because it is a different
+subsystem, and it is recorded rather than folded into D1.
 
 **G02 PR #50 record integrated.** PR **#50**
 (`docs/nebula-pr49-record`) merged into `rewrite/v3-rust` as
@@ -271,7 +306,7 @@ audit. `py` is a full CPython process, not a sandbox.
 **Campaign plan published:** `docs/engineering/NEBULA_CAMPAIGN.md` — baseline,
 scope, P0/P1/P2 classification, G00–G19 wave table with verbatim gates, status
 vocabulary, ID'd backlog (`NBL-001`…`NBL-190`, sparse — 35 distinct IDs),
-risks `R-01`…`R-12`, decision packages §10.1–§10.4, evidence criteria,
+risks `R-01`…`R-15`, decision packages §10.1–§10.5, evidence criteria,
 architecture constraints, delegation, blocking policy, checkpoint format, and
 the mandatory STOP.
 
@@ -1812,8 +1847,8 @@ feature-gating of the typed-decode path.
 ## Exact Next Action
 
 **Directive 008 — NEBULA: G00 and G01 are complete and integrated; G02 is
-`IN_PROGRESS` with three of thirteen P0 RFCs merged and five human decisions
-outstanding.**
+`IN_PROGRESS` with three of thirteen P0 RFCs merged, one authored (RFC 0005),
+and six human decisions outstanding.**
 
 Wave `G00` is `PASS`: PR #43 merged as `7bd1d6fb` (21/21 green) and its closure
 landed as PR #44 → `390f763c` (21/21 green). Wave `G01` is `PASS` and
@@ -1842,43 +1877,45 @@ and §5 were rewritten and the escalation split into `D1a` scope / `D1b` message
 / `D1c` placement. RFC 0004 (`NBL-013`, diagnostics contract) is authored,
 audited end to end against the live binary, and **merged as PR #51 →
 `2df1c322`**; it escalates `D3` (character versus visual columns) and open
-item 13 (non-ASCII module directories skipped silently) as §10.4. The
-P0 set is not yet complete: `NBL-012` (inference and error propagation),
-`NBL-014` (AIS capability set), `NBL-015`
+item 13 (non-ASCII module directories skipped silently) as §10.4. RFC 0005
+(`NBL-012`, inference and error propagation) is **authored but not yet merged**:
+it documents the two-part generic-instantiation unsoundness (`R-13`) with a
+mutation-proved `+53/−2` repair withheld under gate G02, and it deliberately
+excludes the two generic-independent holes it surfaced — `R-14` unchecked
+indexing and `R-15` unchecked equality, the latter a silent wrong answer. The
+P0 set is not yet complete: `NBL-014` (AIS capability set), `NBL-015`
 (`Aura.toml` / `aura init` / `std::os`), `NBL-016` (Host database capability),
 `NBL-017` (`entity struct` and metadata), `NBL-018` (CRUD and transactions),
 `NBL-019` (AQL/0.1), `NBL-020` (Repository in traits), `NBL-021` (SQLGuard/0.1
 SG-01…SG-08), `NBL-022` (driver contract), and `NBL-030` (prelude/`Result`
-placement, blocked by §10.2) remain unauthored. Ten of the thirteen G02 P0 RFCs
+placement, blocked by §10.2) remain unauthored. Nine of the thirteen G02 P0 RFCs
 are still unwritten.
 
-**Five human decisions are outstanding, and each blocks a downstream wave:**
+**Six human decisions are outstanding, and each blocks a downstream wave:**
 §10.1 MSRV versus database drivers (blocks G07 onward); §10.2 `Result` versus
 enum-tag **scope** — a genuine spec contradiction (`D1a`) that must be answered
 before the placement choice (`D1c`), plus `D1b`, the `E2013` message text
 (blocks `NBL-030`, G03, and every `Result` API in G07–G17); §10.3 `try` as an expression and the tail-`try` checker repair
 (blocks `NBL-011`, `NBL-031`, and G03); §10.4 `D3` visual columns and its open
 item 13 non-ASCII module discovery (blocks G18's snapshot work, and the
-format-injection repair `R-12`).
+format-injection repair `R-12`); §10.5 `D1`, authorizing the two-part
+generic-instantiation repair (blocks `NBL-012` and every later surface whose
+types assume a checked generic return).
 
-**Next exact action:** continue **G02** by authoring `NBL-012` as
-`docs/rfcs/0005-inference-and-error-propagation.md`, using
+**Next exact action:** continue **G02** by authoring `NBL-014` (the AIS
+capability set) as `docs/rfcs/0006-*.md`, using
 `docs/rfcs/0003-try-as-value-expression.md` as the structural template and
 `docs/rfcs/README.md` as the format contract, then add its row to the
-`## Index` table. It must lead with the generic-instantiation unsoundness
-(`instantiate_return_ty` discarding `infer_substitution` at
-`src/check/mod.rs:4530`; `check` exit 0 versus `run` `E2003`; the non-generic
-control correctly rejected), carry the `src/types.rs:244` `erase_params` →
-`Unknown` fallthrough, the mutation-verified fix candidate, and the full
-regression matrix. It must also carry the inference facts established by probe:
-`[int | string]` literal inference, whole-literal checking under an expected
-type (§21.6 — internally consistent and correctly implemented, so **no**
-spec contradiction is claimed), `{}` being an empty block rather than an empty
-map literal, and `Ty::compatible_with`'s no-coercion and union-direction rules.
-After that, author the remaining P0 RFCs (`NBL-014`…`NBL-022`) under
+`## Index` table. Before authoring, re-read `src/ais.rs` (`AIS_VERSION = "0.1"` at
+`:40`, `Capabilities::default()` at `:64-72`) and RFC 0004 §1.5, which already
+records that `aura ais` cannot see filesystem modules at all (`src/main.rs:434`
+and `:440`, `src/mcp.rs:291-292`) and that locationless diagnostics are silently
+dropped by AIS (exit 0). After that, author the remaining P0 RFCs
+(`NBL-015`…`NBL-022`) under
 `docs/rfcs/`, carrying the same explicit provenance note that the nominal
 source document was absent and no approval is implied. **Do not code** any
-surface those RFCs describe, and do not resolve §10.1, §10.2, §10.3, or §10.4.
+surface those RFCs describe, and do not resolve §10.1, §10.2, §10.3, §10.4, or
+§10.5.
 G02 is documentation-only and is **not** blocked by the §10.1 MSRV decision,
 which first bites at G07.
 
