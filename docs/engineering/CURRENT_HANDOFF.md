@@ -6,10 +6,9 @@ Active task: **G02**, the P0 RFC reconstruction. `G00` and `G01` are closed.
 No implementation is authorized before `G02` accepts the P0 RFC set.
 
 ```
-WAVE: G02 -> IN_PROGRESS (3 of 13 P0 RFCs merged, RFC 0005 authored but unmerged,
-       six decisions outstanding)
+WAVE: G02 -> IN_PROGRESS (4 of 13 P0 RFCs merged, six decisions outstanding)
 STATUS: G02 IN_PROGRESS (six human decisions outstanding, see DECISOES)
-HEAD: 2df1c32298b57bc64343c3701ca8bd2a53705230 (merge of PR #51)
+HEAD: 87cea70e10ac06211b25b57230dcd8d929234be2 (merge of PR #53)
 PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb;
      #44 MERGED (G00 closure + G01 authorisation, head 5cf4f8d9) -> 390f763c;
      #45 MERGED (G01 dependency record, head 1ce88863) -> 6f075882;
@@ -19,10 +18,13 @@ PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb;
      #49 MERGED (tag-scope record, head 02599d17) -> 85de5945;
      #50 MERGED (PR #49 record, head ab4931ac) -> fc49c5ee;
      #51 MERGED (RFC 0004 + RFC index, head 5c34592d) -> 2df1c322;
+     #52 MERGED (PR #51 record, head 2de7b86f) -> 3832a4b9;
+     #53 MERGED (RFC 0005, head c4ad338f) -> 87cea70e;
      0 open PRs
 CHECKS: PR #43 21/21 pass; PR #44 21/21 pass; PR #45 21/21 pass;
         PR #46 21/21 pass; PR #47 21/21 pass; PR #48 21/21 pass;
         PR #49 21/21 pass; PR #50 21/21 pass; PR #51 21/21 pass;
+        PR #52 21/21 pass; PR #53 21/21 pass;
         post-merge CI 41248873353 on 7bd1d6fb = completed/success;
         Pages 41248873720 = completed/success;
         post-merge CI 41251300785 on 6f075882 = completed/success;
@@ -37,7 +39,11 @@ CHECKS: PR #43 21/21 pass; PR #44 21/21 pass; PR #45 21/21 pass;
         post-merge CI 41261797535 on fc49c5ee = completed/success;
         post-merge Pages 41261797527 on fc49c5ee = completed/success;
         post-merge CI 41265951706 on 2df1c322 = completed/success;
-        post-merge Pages 41265951679 on 2df1c322 = completed/success
+        post-merge Pages 41265951679 on 2df1c322 = completed/success;
+        post-merge CI 41269557515 on 3832a4b9 = completed/success;
+        post-merge Pages 41269557557 on 3832a4b9 = completed/success;
+        post-merge CI 41274260409 on 87cea70e = completed/success (21/21);
+        post-merge Pages 41274260387 on 87cea70e = completed/success
 TESTS_REALMENTE_EXECUTADOS: see "Commands actually executed" below
 PROVAS: baseline reconciled; G00+G01+G01-record diffs are docs/script files
         only; src/, playground/runtime/, Cargo.toml, Cargo.lock,
@@ -550,7 +556,9 @@ rather than the earlier non-terminal reading.
 
 Discovered while starting `NBL-012` and **not fixed**: gate G02 forbids coding a
 surface before its RFC is accepted. It is now written up as
-`docs/rfcs/0005-inference-and-error-propagation.md` (authored, **not merged**).
+`docs/rfcs/0005-inference-and-error-propagation.md` (authored, **merged as PR
+#53 → `87cea70e`; merge records the proposal only — §10.5 `D1` is unanswered
+and the repair is still withheld**).
 
 **Symptom.** `fn id<T>(x: T) -> T { return x }` with
 `let a = id(1)` and `let b: string = a` is accepted by `aura check`
@@ -643,9 +651,12 @@ and it is recorded as `R-15` rather than folded into `D1`.
 
 ### RFC 0005 evidence — inference and error propagation (`NBL-012`)
 
-`docs/rfcs/0005-inference-and-error-propagation.md` is **authored and not
-merged**. 691 lines, 6 tables, 20 fences, backtick parity even. §0 carries five
-recorded self-corrections; §3 is `Grammar delta — None`.
+`docs/rfcs/0005-inference-and-error-propagation.md` is **authored and merged as
+PR #53 → `87cea70e`** (head `c4ad338f`, 5 files, +1028/−120). 691 lines, 6
+tables, 20 fences, backtick parity even. §0 carries five
+recorded self-corrections; §3 is `Grammar delta — None`. **Merge is not
+acceptance**: §10.5 `D1` is unanswered and gate G02 still forbids coding the
+repair.
 
 **The defect is two independent parts, both in `src/check/mod.rs`.**
 
@@ -722,9 +733,93 @@ Author `NBL-014` (the AIS capability set) as `docs/rfcs/0006-*.md`, using
 and `docs/rfcs/README.md` as the format contract, then add its row to the
 `## Index` table in `docs/rfcs/README.md`.
 
-It must start from the facts RFC 0004 already established, because they overlap:
+**The research is complete.** Five defects are already reproduced against the
+live binary and must all appear in the RFC, in this severity order.
+
+**1. `Symbol.range` spans only the declaration keyword.** This is the headline.
+`aura ais slice k.aura helper` reports `6:1..6:3`, and bytes `133..135` of the
+source are exactly `fn` while the declaration runs to byte `165`. Verified for
+all six item kinds — `function`→2, `struct`→6, `enum`→4, `trait`→5,
+`type_alias`→4, `constant`→5 — and invariant under name length (probed at 1, 10
+and 17). Root cause is upstream of AIS: every item parser captures the span
+**before** consuming the keyword with `let span = self.span(); self.bump();`
+(`src/parse/mod.rs` — `fn_item` `:1108-1109`, `struct_item` `:1415-1416`,
+`trait_item` `:1227`, `enum_item` `:1453`, `alias_item` `:1507`, `const_item`
+`:1573`), and `symbol_of_item` (`src/ais.rs:447-511`, range built `:490-501`)
+copies it unexamined. **The decisive evidence is the asymmetry:** nested ranges
+are already correct — `Field.range` and `Parameter.range` are exact name spans
+(`x`→1, `yy`→2, `p`→1, `qqq`→3) — so the intended contract is evidently "span
+the name" and only the top-level projection violates it. `line`/`column` are
+correct (`Point 1:1 offset 0`, … `main 7:1`); **only the extent is wrong**. This
+matters because `Slice` (`src/ais.rs:855-874`) carries **no source text** —
+`ais_version`, `revision`, `target`, `symbol`, `dependencies`, `diagnostics`,
+`omitted` — so `range` is the only locator, and `slice`'s own doc comment
+(`:848-853`) calls it "the minimal sufficient context for a task".
+`AIS.md:96-101` says only that `range` "carries both human coordinates (`line`,
+`column`) and the byte `offset`" and **never says what it spans** — that gap is
+the decision to escalate. `moved` detection is unaffected, because
+`same_declaration` (`src/ais.rs:720-746`) deliberately scrubs ranges at
+`:723-742` before comparing. `tests/ais_properties.rs` mentions `range` **zero**
+times, so the defect is untested and unenshrined. Newlines are illegal inside a
+declaration head (`E1006`), so declarations are single-line and the correct
+extent is well defined.
+
+**2. The AIS CLI exposes 3 of 7 operations.** `src/main.rs:405-408` dispatches
+only `slice`, `delta` and `snapshot`; **every other word silently falls through
+to `cmd_ais_snapshot(&tail)`**, so `aura ais bogus f.aura` snapshots a file
+named `bogus` instead of reporting an error. `aura ais symbol`,
+`aura ais diagnostics` and `aura ais revision` all fail with
+`aura: cannot read <op>: No such file or directory`. The help text at
+`src/main.rs:63-70` names only `[snapshot|slice|delta]`. So the CLI surface is
+3 while MCP exposes 7.
+
+**3. Capability bits are structurally unreachable and over-advertised.**
+`Capabilities::default()` (`src/ais.rs:64-79`) is the only constructor — three
+call sites (`src/ais.rs:987`, `src/main.rs:429`, `src/mcp.rs:297`), no field
+assignment anywhere, no struct literal outside `Default` — so `flow` and
+`completion` can never be `true`. And a file containing an unlexable `$` still
+advertises `types: true`, `symbols: true`, `diagnostics: true` while
+`symbols` is `[]`. Note for honesty: `capabilities.flow=false` **with** a
+non-empty `narrowings[]` is *intentional* and praised at
+`docs/engineering/AIS_AGENT_NATIVE_RFC.md:49-52` — do not report that pair as a
+contradiction.
+
+**4. `aura://schema` disagrees with `tools/list`, and `delivery` is short.**
+`tools/list` returns **7** tools; `resources/read` of `aura://schema` returns
+**6**, omitting `aura_capabilities`. `schema.delivery` lists only
+`["snapshot","slice","delta"]` of the 7 operations. Both come from the same
+hardcoded literal at `src/mcp.rs:265-266`, and `docs/engineering/MCP.md:50-58`
+documents all seven, so the omission is an inconsistency rather than a design.
+`tests/ais_properties.rs` **never compares `tools/list` to `aura://schema`** —
+that is the blind spot that let it survive.
+
+**5. `tests/ais_differential.mjs` is orphaned from CI.** Its docstring at `:22`
+asserts "This runs in CI with no model", but no workflow, script, `package.json`
+(there is none), Makefile, justfile or Taskfile invokes it. Running it by hand
+gives exit 0 with four task families and
+`EXTERNAL DIFFERENTIAL: NOT EXECUTED (no evaluator configured)`. This is a
+rule-7/rule-8 defect: a suite present in the tree is not a suite that executes.
+Report it as a finding; **wiring it up is a code change and is forbidden before
+acceptance.**
+
+Two further items are worth carrying but are lower severity: `const` never gets
+`type_name` (`Item::Alias` sets it at `src/ais.rs:576`, the `Item::Const` arm at
+`:577` is `_ => {}`, and only `value_ty` at `:590` fires, so an unannotated
+`const` gets nothing), and `AIS.md:101` drifts from the probe by claiming `kind`
+covers `variant`/`field`/`type_parameter`, which appear only as nested arrays.
+The prior-art byte figures (529 / 5 893 / 3 221) are **not reproducible** — the
+fixture was never committed (`git log --all -S sqrt_approx` is empty) — so
+either re-measure them against the current binary or label them non-reproducible
+in the provenance note. The *property* does reproduce: a 454-byte fixture yields
+snapshot 5 496 / slice 3 223, i.e. slice is 7.10× the source and smaller than
+the snapshot.
+
+Still to decide before writing: whether these findings become one RFC with one
+decision set or several.
+
+It must also start from the facts RFC 0004 already established, because they overlap:
 `AIS_VERSION = "0.1"` at `src/ais.rs:40`; `Capabilities::default()` at
-`src/ais.rs:64-72`; `Severity::Error.as_str()` hardcoded at `src/ais.rs:142`;
+`src/ais.rs:64-79`; `Severity::Error.as_str()` hardcoded at `src/ais.rs:142`;
 `aura ais` cannot see filesystem modules at all (`src/main.rs:434` + `:440`,
 `src/mcp.rs:291-292`); and AIS **silently drops locationless diagnostics**,
 returning exit 0. RFC 0004 §1.5 carries the measured evidence for those.
@@ -735,9 +830,9 @@ decision block; a decision is escalated, never resolved.
 
 After `NBL-014`, reconstruct `NBL-015`…`NBL-022` on the same model.
 
-**Wave position.** `NBL-010` (RFC 0002), `NBL-011` (RFC 0003) and `NBL-013`
-(RFC 0004) are authored **and merged**. `NBL-012` (RFC 0005) is authored and
-**not merged**. Still unauthored: `NBL-014` AIS capability set; `NBL-015`
+**Wave position.** `NBL-010` (RFC 0002), `NBL-011` (RFC 0003), `NBL-013`
+(RFC 0004) and `NBL-012` (RFC 0005) are authored **and merged**. Still
+unauthored: `NBL-014` AIS capability set; `NBL-015`
 `Aura.toml` / `aura init` / `std::os`; `NBL-016` Host database capability and
 protected profile; `NBL-017` `entity struct` and metadata; `NBL-018` CRUD and
 transactions; `NBL-019` AQL/0.1; `NBL-020` Repository in traits; `NBL-021`
