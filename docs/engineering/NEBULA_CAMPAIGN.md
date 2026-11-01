@@ -2,8 +2,9 @@
 
 Status: **G00 PASS**, **G01 PASS** — baseline and prerequisite inventory merged
 as `7bd1d6fb` (PR #43, 21/21 checks green); closure and G01 authorisation
-merged as `390f763c` (PR #44, 21/21 checks green). **G02 is the only authorized
-wave**; no implementation is authorized before G02.
+merged as `390f763c` (PR #44, 21/21 checks green); the G01 dependency record
+merged as `6f075882` (PR #45, 21/21 checks green). **G02 is the only
+authorized wave**; no implementation is authorized before G02.
 
 G01 is complete and carries one unresolved item: the §1.5.1 MSRV-versus-drivers
 conflict, escalated as a human decision in §10.1. G01 is marked `PASS` because
@@ -11,6 +12,26 @@ the gate asks for an approved dependency table, roles, backlog, risks, and
 evidence criteria — all delivered — and because a disclosed blocking finding
 with a decision package is the required G01 output, not a failure of it. The
 decision in §10.1 still gates G07 onward.
+
+G02 (`IN_PROGRESS`) has authored RFC 0002 and, while validating it, produced a
+second blocking language finding: global enum-tag uniqueness (`E2013`) makes a
+prelude or builtin `Result<T,E>` with unqualified `Ok`/`Err` unviable
+(§1.7.1, risk `R-10`). It is escalated as a human decision in §10.2 and blocks
+`NBL-030` plus every downstream `Result` API. Like §10.1, it is a decision
+package, not a gate failure — but it also means the P0 RFC set cannot be frozen
+until it is answered.
+
+While validating RFC 0002's evidence, G02 also uncovered a **pre-existing
+checker soundness defect** independent of any new syntax: a `try` statement in
+tail position already produces a value at run time, but the checker types it as
+`none`, and `none` bypasses the implicit-return check that `return none` fails
+(§1.7.2, risk `R-11`). A three-part repair was validated end to end — 1477/1477
+tests, clippy clean, zero status changes across all 125 tracked `.aura` files,
+and every part proven necessary by reverse mutation — and then **withheld**,
+because gate G02 forbids coding the affected surface before RFC acceptance.
+`src/check/mod.rs` is byte-identical to baseline. The finding and the two
+grammar alternatives are escalated in §10.3 and recorded in
+`docs/rfcs/0003-try-as-value-expression.md`.
 
 Baseline: `c4f769077c769483963a0f2b51a789b00472e4cf` on `rewrite/v3-rust`
 (local == `origin/rewrite/v3-rust`, tree clean at campaign start). G00 landed
@@ -252,6 +273,112 @@ These results define the G03 starting point: `Result` can very likely be an
 ordinary generic enum rather than new machinery, while `try`-as-expression must
 widen an existing statement-only form without creating ambiguity.
 
+#### 1.7.1 Enum tag scope — the decisive G02 finding
+
+`docs/LANGUAGE_SPEC.md:2407` states that a variant tag "MUST be unique **across
+the whole program**" (`E2013`), and `:3281` repeats it. This is spec-level, not
+advisory: `grep -rn` over `docs/adr/` finds no decision governing it.
+
+Probes, each in a directory containing exactly one `.aura` file:
+
+| Probe | Source | Result |
+|---|---|---|
+| Duplicate tag | `enum A { Ok(int) }` + `enum B { Ok(string) }` | `E2013: variant 'Ok' is already declared by enum 'A'`; exit 1 |
+| Qualified does not escape | same, with `A::Ok(1)` / `B::Bad(2)` bodies | still `E2013`; uniqueness is on the tag name, not the path |
+| Module escapes | `module M { pub enum Thing { Ok(int) } }` + top-level `Result{Ok,Err}` | exit 0 — a module-scoped tag coexists |
+| Imported tag is not unqualified | `use Std::Result` then `Ok(7)` | `E3002: 'Ok' is not a declared struct or enum variant`; exit 1 |
+| Braced import unsupported | `use Std::Result::{Ok, Err}` | `E1006: expected module path segment, found '{'`; exit 1 |
+| Qualified construction works | `Std::Ok(7)`, `Std::Result::Ok(7)`, `Result::Ok(7)` after `use` | all exit 0, print `7` |
+| `Ok`/`Err` not reserved | `LANGUAGE_SPEC.md:191` reserved list | absent from it; usable as tags |
+| `Err` is constructible | `enum Result<T,E> { Ok(T), Err(E) }` + match | exit 0, prints `7` |
+| In-tree corpus unaffected | `grep '\bOk\b\|\bErr\b' --include=*.aura` over 125 files | 0 matches — the `Ok`/`Err` hits in `tests/` are Rust, not Aura |
+
+**Consequence.** A prelude-level or builtin `Result<T,E>` with `Ok`/`Err`
+cannot be introduced without one of three choices, none of which the agent may
+make. This is recorded as risk `R-10` and escalated in §10.2. Directive 008
+§3.2's phrase "apoiado no modelo de `enum`/generics existente **quando viável**"
+supplies the lawful exit, but the exit is a decision, not an implementation
+detail.
+
+Two further corrections came from the same probe series, and both falsify
+plausible assumptions that must not be rebuilt:
+
+- **Discarding any expression is legal today.** `1 + 2`, a call returning
+  `int`, and a string literal used as bare statements all compile and run
+  (exit 0). A rule that rejects discarding `Result` specifically is therefore a
+  targeted special case, not an extension of a general rule.
+- **There is no Aura prelude and no builtin type registry.** `grep -rn prelude`
+  over `src/` and `docs/LANGUAGE_SPEC.md` returns exactly one hit,
+  `pyo3::prelude` (`src/bridge/mod.rs:51`). `src/stdlib/mod.rs:20` derives
+  `builtin_names()` from `signatures::builtins()`, and
+  `src/stdlib/signatures.rs` models **callables only**
+  (`Accepts`/`TypeClass`/`Returns`). `grep -rn 'builtin_type\|prelude_enum\|inject_enum' src/`
+  returns nothing, and no `std/` directory exists.
+
+### 1.7.2 `try` in tail position — a three-part checker defect
+
+`attempt`/`try`-as-expression is a G02 RFC topic (RFC 0003). Investigating it
+exposed a **soundness defect that exists independently of any new syntax**: a
+`try` statement in tail position already produces a value at run time, but the
+checker types it as `none`.
+
+The evaluator is deliberate: `src/run/mod.rs:1264` runs the body with
+`exec_block(body, env, true)` and returns the block's last value on normal
+completion, while `finally` only replaces a pending outcome that is not
+`Ctl::Val(_)` (`LANGUAGE_SPEC.md:1760–1762`). So `fn f() -> int { try { 41 }
+catch _ { 99 } }` prints `41` and `fn f() -> int { try { throw "x" } catch _ {
+99 } }` prints `99` — both check clean.
+
+The checker disagrees. `block_value_ty` (`src/check/mod.rs:2357`) maps a
+`Stmt::Try` tail to `Ty::None`, making `try` the **only** construct that is
+statically `none` while dynamically value-producing. Probes are one `.aura`
+file per directory; `check`/`run` exit codes shown.
+
+| Probe | Program | `check` | `run` |
+|---|---|---|---|
+| control | `fn f() -> int { if true { "a" } else { 1 } }` | 1 (`E3005 int \| string`) | — |
+| control | `fn f() -> int { match true { true -> "a"  _ -> 1 } }` | 1 (`E3005 int \| string`) | — |
+| control | `fn f() -> int { { "a" } }` | 1 (`E3005`) | — |
+| token | `fn f() -> int { try { "a" } catch _ { 1 } }` | **0** | 0 (`a`) |
+| token | `fn f() -> [int] { try { 5 } catch _ { 6 } }` | **0** | 0 (`5`) |
+| token | `fn f() -> Opt<int> { try { 5 } catch _ { 6 } }` | **0** | 0 (`5`) |
+| unsound | `fn f() -> string { try { 5 } catch _ { 6 } }` then `let s: string = f()` | **0** | 0 (`5`) |
+| oracle | `fn f() -> int { return none }` | 1 (`E3005`) | — |
+| hole | `fn f() -> int { none }` | **0** | 0 (`none`) |
+| hole | `fn f() -> [int] { none }` | **0** | 0 (`none`) |
+| hole | `fn f() -> Opt<int> { none }` | **0** | 0 (`none`) |
+
+That last block is a separate, deeper defect: the same value under the same
+annotation is rejected when written `return none` and accepted when written
+`none`, because `block_tail_mismatch` (`src/check/mod.rs:5893`) short-circuits
+on `Ty::None` **before** consulting `return_compatible` — the very relation
+that already implements the spec's rule. `LANGUAGE_SPEC.md:1018–1026` states
+that `none` does **not** bypass a structured expectation (`-> [T]`,
+`-> Opt<T>`), and `:1819–1826` states the implicit body value "MUST also be
+compatible with that type (`E3005` otherwise)".
+
+A third gap sits between them: `block_tail_mismatch` opens with a
+`let Some(Stmt::Expr(..)) = body.last() else { return Ok(None) }`, so a
+**direct** `try` tail never reaches the comparison at all, even after the other
+two are repaired.
+
+**The repair is three coupled parts and was validated, then withheld.** It was
+applied, rebuilt, and measured in every partial configuration; each part is
+independently necessary (removing any one reintroduces a false negative or a
+false positive), `cargo test --locked --all-targets --all-features` stays
+`1477 passed / 0 failed`, `cargo clippy … -D warnings` exits 0, and a sweep of
+all **125** tracked `.aura` files shows **17 non-zero before and 17 after —
+zero status changes**. The source was then restored byte-for-byte to baseline
+(sha256 `1232b6874dd2e9c4f556085b4f3b240c120e6dedf77baace9a8e5d6aa738f532`,
+`git diff` empty) because gate G02 forbids coding the affected surface before
+the RFC is accepted. Details, including the reverse-mutation matrix, are in
+`docs/rfcs/0003-try-as-value-expression.md` §6.
+
+**One spec-sanctioned exemption must survive any repair.** `LANGUAGE_SPEC.md:1819–1826`
+says a body ending in a declaration, a loop, or a `return` has no implicit
+value and is not judged. `fn f() -> int { print(1) }` and `fn f() -> int { }`
+being accepted is therefore **correct**, not part of the defect.
+
 ### 1.8 Test and CI topology
 
 `.github/workflows/ci.yml` jobs: `fmt`, `clippy`, `test`, `cpython-interop`,
@@ -351,8 +478,8 @@ Current wave status:
 | Wave | Status |
 |---|---|
 | G00 | `PASS` — PR #43, merge `7bd1d6fb`, 21/21 checks |
-| G01 | `PASS` — dependency table and MSRV blocker disclosed (§1.5.1, §10.1) |
-| G02 | `NOT_STARTED` — authorized once this G01 record is merged |
+| G01 | `PASS` — PR #45, merge `6f075882`, 21/21 checks; dependency table and MSRV blocker disclosed (§1.5.1, §10.1) |
+| G02 | `IN_PROGRESS` — RFC 0002 (`Result`) and RFC 0003 (`try` as expression) authored and probe-verified. Two blocking language findings are escalated: `R-10`/`E2013` vs. `Result` (§10.2) and `R-11`/tail-`try` typing plus the grammar question (§10.3). Remaining P0 RFCs under authoring |
 | G03–G19 | `NOT_STARTED` |
 
 A `PASS` requires observed evidence. An environment that was not executed is
@@ -374,8 +501,8 @@ block reserves space inside a wave, so there are 34 identifiers here, not 190.
 | NBL-002 | G00 | Preflight `agent-state.sh` writer extraction defect | P3 |
 | NBL-003 | G01 | Dependency table and ownership map | P0 |
 | NBL-004 | G01 | MSRV 1.83 versus driver dependencies — blocker and decision package (§1.5.1, §10.1) | P0 |
-| NBL-010 | G02 | RFC: `Result` and recoverable error semantics | P0 |
-| NBL-011 | G02 | RFC: `try` as expression without ambiguity | P0 |
+| NBL-010 | G02 | RFC: `Result` and recoverable error semantics — **RFC 0002 authored; blocked by §10.2 D1** | P0 |
+| NBL-011 | G02 | RFC: `try` as expression without ambiguity — **RFC 0003 authored; blocked by §10.3 D1** | P0 |
 | NBL-012 | G02 | RFC: inference and error propagation rules | P0 |
 | NBL-013 | G02 | RFC: diagnostics contract and `aura explain` | P0 |
 | NBL-014 | G02 | RFC: AIS Agent-Native 0.2 capability set | P0 |
@@ -387,8 +514,8 @@ block reserves space inside a wave, so there are 34 identifiers here, not 190.
 | NBL-020 | G02 | RFC: Repository in traits | P0 |
 | NBL-021 | G02 | RFC: SQLGuard/0.1 control set SG-01…SG-08 | P0 |
 | NBL-022 | G02 | RFC: SQL and Mongo driver contract | P0 |
-| NBL-030 | G03 | `Result<T,E>` as a library/builtin generic enum | P0 |
-| NBL-031 | G03 | `try` expression parsing and checking | P0 |
+| NBL-030 | G03 | `Result<T,E>` as a library/builtin generic enum — **blocked by §10.2** | P0 |
+| NBL-031 | G03 | `try` expression parsing and checking — **blocked by §10.3 D1 and D2** | P0 |
 | NBL-040 | G04 | Rich diagnostic projection and renderer | P0 |
 | NBL-050 | G05 | AIS/0.2 additive capabilities | P0 |
 | NBL-060 | G06 | Project/config loading and Host env denial | P0 |
@@ -422,6 +549,8 @@ block reserves space inside a wave, so there are 34 identifiers here, not 190.
 | R-07 | Green CI proves only the wired subset | A passing badge could hide unwired suites | Enumerate invoked test files per job at G18 |
 | R-08 | Campaign breadth could encourage splitting into giant PRs | Unreviewable changes | Short-lived branches, one coherent surface per PR, auditable bodies |
 | R-09 | Partial P1 delivery could be overstated as stable | Misleading release notes | P1 absent full proof ⇒ `DEFERRED_WITH_APPROVAL`; changelog never marks experimental work stable |
+| R-10 | **Global enum-tag uniqueness (`E2013`) makes a prelude or builtin `Result<T,E>` with `Ok`/`Err` unviable** (§1.7.1). Tags are unique programme-wide (`LANGUAGE_SPEC.md:2407`, `:3281`), so a top-level `Result` permanently claims both spellings for every user enum in the compilation unit. A module-scoped `Result` avoids that but its tags are unreachable unqualified (`E3002`), and braced variant import is a parse error (`E1006`) | Blocks `NBL-030` and therefore G03, plus every downstream `Result`-returning API in G07–G17. The directive's §2.4 vocabulary (`Ok(T)`/`Err(E)` unqualified) cannot be satisfied without a choice | Escalated as §10.2 with three lawful outcomes; no option is selected by an agent. §3.2's "quando viável" is the lawful exit, but exercising it is a human decision |
+| R-11 | **`try` in tail position is statically `none` while dynamically value-producing** (§1.7.2), and `none` bypasses the implicit-return check that `return none` fails | End-to-end unsoundness: a function annotated `-> string` can return `5` and the caller's `let s: string` is accepted. Blocks any G03+ surface whose types assume a checked return | Escalated as §10.3; the validated three-part repair is withheld, not committed, and `src/check/mod.rs` is byte-identical to baseline |
 
 ---
 
@@ -435,6 +564,16 @@ A wave may be marked `PASS` only with all of:
 4. the diff reviewed by an agent that did not author it;
 5. remote CI green for the integrated commit, or an explicit statement that CI
    did not run.
+
+**Probe isolation is mandatory.** `aura check` and `aura run` eagerly discover
+and compile every eligible `.aura` file in the entry file's directory
+(`docs/FILESYSTEM_MODULES_DESIGN.md:399`, matrix row `:774`; source root is the
+entry file's parent, `:211`). A malformed sibling therefore produces
+diagnostics attributed to a file the probe did not intend to test. Every probe
+runs in a directory freshly created for it and containing **exactly one**
+`.aura` file, and a probe directory is never reused. An earlier apparent
+"multi-file diagnostics defect" was investigated and falsified this way: the
+behaviour is a frozen, intended contract, not a defect.
 
 Validation floor for milestone closure, as listed in `AGENTS.md`:
 
@@ -603,7 +742,74 @@ probed and cannot serve as the SQLite driver.
 No option is selected here. G01 records the finding; the choice belongs to a
 human, per §2.5 and §20.3.
 
+### 10.2 Open decision — `Result` versus global enum-tag uniqueness
+
+Recorded by G02 and **not resolved by the agent**. Tags are unique
+programme-wide (`LANGUAGE_SPEC.md:2407`, `:3281`, `E2013`), so the campaign's
+mandated vocabulary — `Result<T,E>` with unqualified `Ok(T)`/`Err(E)`
+(§2.4) — cannot be delivered as a prelude or builtin type without one of the
+following. The evidence is in §1.7.1; the RFC is
+`docs/rfcs/0002-result-and-recoverable-errors.md`, whose decision D1 records
+this same escalation.
+
+The three legitimate outcomes:
+
+1. **Top-level `Result`, reserving `Ok` and `Err` programme-wide.** Callers
+   write `Ok(7)` / `Err(e)` exactly as §2.4 requires. Cost: `Ok` and `Err`
+   become unusable as variant tags in any user enum in the same compilation
+   unit (`E2013`), and the failure depends on whether unrelated code mentions
+   `Result` — a DX hazard and an effective reserved-word change. It is
+   *prospectively* breaking: no `.aura` file in the repository declares either
+   tag today (0 of 125 files), so nothing in-tree breaks. Because it reserves
+   two spellings programme-wide, it needs §2.5 approval and an ADR.
+2. **Module-scoped `Result`, qualified construction.** `module Std { pub enum
+   Result<T,E> { Ok(T), Err(E) } }` — proven to coexist with a user `Ok`
+   (exit 0). Callers write `Std::Result::Ok(7)`, or `Result::Ok(7)` after
+   `use Std::Result`. Cost: unqualified `Ok(7)` is `E3002`, directly
+   contradicting §2.4's notation, and selective variant import
+   (`use Std::Result::{Ok, Err}`) is a parse error today (`E1006`), so the
+   qualifier cannot be removed without a second grammar feature.
+3. **Amend global tag uniqueness itself.** Permit duplicate tags across enums,
+   disambiguated by the enum or module path. This is the option that best
+   matches how mainstream languages behave, and it removes R-10 at the root.
+   Cost: it is a normative spec change to §18 with its own ADR, migration
+   analysis, and compatibility review; it also changes the meaning of `E2013`.
+
+Directive 008 §3.2 says `Result` must rest on "o modelo de `enum`/generics
+existente **quando viável**". Options 1 and 2 are both viable today; the phrase
+supplies a lawful exit from either, but choosing between them — or choosing to
+amend the tag rule — is a language decision, not an implementation detail.
+`NBL-030` and every downstream `Result` API stay blocked until a human selects
+one.
+
 ---
+
+### 10.3 Open decision — `try` as a value expression, and the tail-`try` defect
+
+Directive 008 §3.3 requires `try` as an expression while also requiring that
+the existing `try { … } catch … finally …` statement form keep working, and it
+forbids resolving the conflict with a heuristic parser. Two decisions are
+therefore open; `docs/rfcs/0003-try-as-value-expression.md` is the full record.
+
+**Decision D1 — grammar.** Three lawful outcomes, none chosen:
+
+| # | Option | Cost | Risk |
+|---|---|---|---|
+| 1 | Add `try_expr` to the `atom` production (`docs/grammar.md:118–124`) | Grammar delta of two lines; `try` becomes legal in expression position | The statement and expression forms overlap. `return try { … }` already reports `E1006: expected a newline between statements, found 'try'`, so at least one position is provably ambiguous today. Resolving it is exactly the heuristic the brief forbids |
+| 2 | Do not touch the grammar; use a block (`let x = { try { 1 } catch _ { 2 } }`) | Zero grammar risk — blocks are already expressions and a tail `try` already yields a value | Brief §3.3 is satisfied semantically, not syntactically; one extra brace pair |
+| 3 | Defer expression-form `try` out of 0.3.2 | None now | Brief §3.3 not delivered |
+
+**Decision D2 — the checker repair.** The three-part repair of §1.7.2 is
+validated but not committed. It is a **behavioural change**: two probe programs
+that check cleanly today would report `E3005`, both correctly. Gate G02
+(`:372`) forbids coding the affected surface before the RFCs are accepted, so
+the change waits. `src/check/mod.rs` is at baseline.
+
+**Blast radius of the deferral.** `NBL-011`, `NBL-031` and D1 stay blocked;
+RFC 0002's `Result` work is unaffected because it needs no grammar change. G03
+and any downstream gateway that consumes an expression-form `try` stay blocked
+until D1 is resolved. Nothing in G04–G19 may assume a checked implicit return
+until D2 is authorized.
 
 ## 11. Wave checkpoint format
 

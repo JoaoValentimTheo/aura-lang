@@ -1,11 +1,20 @@
 # Aura Agent State
 
-## Directive 008 — NEBULA 0.3.2 campaign (`G01`, `PASS`)
+## Directive 008 — NEBULA 0.3.2 campaign (`G02`, `IN_PROGRESS`)
 
-**G01 closed.** The dependency table, roles/ownership map, ID'd backlog, risk
-register, and evidence criteria are delivered in
-`docs/engineering/NEBULA_CAMPAIGN.md`, together with one blocking finding
-recorded as §1.5.1 and escalated as a human decision in §10.1.
+**G01 closed and integrated.** PR **#45** (`docs/nebula-g01-dependencies`,
+head `1ce88863`) merged into `rewrite/v3-rust` as **`6f075882`**, with
+**21/21** remote checks green. Post-merge runs on `6f075882`: CI
+`41251300785`, Pages `41251300794`. The merged diff is 3 files / +333 / −55,
+all documentation; `src/`, `playground/runtime/`, `playground/runtimes/`,
+`Cargo.toml`, `Cargo.lock` and `fuzz/` are **byte-identical** to `390f763c`,
+`manifest.json` sha256 still `cbe7ad91…23b837`, `manifest.current` still
+`"0.3.1"`, `Cargo.toml` still `0.3.1`, and no `0.3.2` tag exists.
+
+**G01 delivered** the dependency table, roles/ownership map, ID'd backlog, risk
+register, and evidence criteria in `docs/engineering/NEBULA_CAMPAIGN.md`,
+together with one blocking finding recorded as §1.5.1 and escalated as a human
+decision in §10.1.
 
 **G00 closed.** PR **#43** (`docs/nebula-campaign-g00`, head `ab9d5ae1`)
 merged into `rewrite/v3-rust` as **`7bd1d6fb`** at 2026-10-31T22:35:22Z, with
@@ -61,6 +70,48 @@ this campaign document); `docs/rfcs/` holds only `README.md` and
 reconstructed from the directive text plus repository evidence, each RFC
 carrying an explicit provenance note, with no approval implied.
 
+**G02 second finding — `try` in tail position is unchecked (§1.7.2, `R-11`).**
+While validating RFC 0002's evidence, a **pre-existing checker soundness
+defect** surfaced that is independent of any new syntax. A `try` statement in
+tail position already produces a value at run time — `fn f() -> int { try { 41
+} catch _ { 99 } }` prints `41`, and the `throw` path prints `99`, both
+checking clean — because `src/run/mod.rs:1264` returns the block's last value
+and `finally` only replaces a pending outcome that is not `Ctl::Val(_)`
+(`LANGUAGE_SPEC.md:1760–1762`). The checker types the same tail as `none`
+(`block_value_ty`, `src/check/mod.rs:2357`), making `try` the only construct
+that is statically `none` while dynamically value-producing. Two further gaps
+sit on the same path: `block_tail_mismatch` (`:5893`) short-circuits on
+`Ty::None` **before** consulting `return_compatible`, so `fn f() -> int { none
+}` is accepted while `fn f() -> int { return none }` is `E3005`; and the same
+function opens with `let Some(Stmt::Expr(..)) = body.last() else { … }`, so a
+**direct** `try` tail never reaches the comparison at all. The end-to-end
+consequence is unsoundness: `fn f() -> string { try { 5 } catch _ { 6 } }` with
+`let s: string = f()` checks clean and prints `5`.
+
+A **three-part repair** was applied, rebuilt, and measured in every partial
+configuration. Each part is independently necessary — removing any one
+reintroduces a false negative or a false positive — with
+`cargo test --locked --all-targets --all-features` at `1477 passed / 0 failed`
+(identical to baseline), `cargo clippy --locked --all-targets --all-features --
+-D warnings` exit 0, and a sweep of all **125** tracked `.aura` files showing
+`17` non-zero before and `17` after: **zero status changes**. It was then
+**reverted byte-for-byte** to baseline (sha256
+`1232b6874dd2e9c4f556085b4f3b240c120e6dedf77baace9a8e5d6aa738f532`, `git diff
+--stat -- src/check/mod.rs` empty) because gate G02 forbids coding the affected
+surface before the RFC is accepted. Full matrix, including the reverse-mutation
+proof, in `docs/rfcs/0003-try-as-value-expression.md` §6.
+
+The spec-sanctioned exemption is **not** part of the defect:
+`LANGUAGE_SPEC.md:1819–1826` states that a body ending in a declaration, a
+loop, or a `return` has no implicit value and is not judged, so
+`fn f() -> int { print(1) }` and `fn f() -> int { }` being accepted is correct.
+
+**G02 RFCs authored.** `docs/rfcs/0002-result-and-recoverable-errors.md` (305
+lines) and `docs/rfcs/0003-try-as-value-expression.md` (486 lines). Both carry
+§0 provenance notes, and both escalate a human decision rather than resolving
+it: RFC 0002 §2.1 (`D1`, tag scope) and RFC 0003 §2.1–§2.2 (`D1` grammar, `D2`
+the checker repair). Neither is accepted; no surface is coded.
+
 **P3 preflight fix.** `scripts/agent-state.sh` reported `WRITER=UNKNOWN` on a
 clean tree because its `## Writer` extraction required an exact line and
 `AGENT_STATE.md` records `NONE (single-writer discipline; …)`. The extraction
@@ -91,14 +142,18 @@ audit. `py` is a full CPython process, not a sandbox.
 
 **Campaign plan published:** `docs/engineering/NEBULA_CAMPAIGN.md` — baseline,
 scope, P0/P1/P2 classification, G00–G19 wave table with verbatim gates, status
-vocabulary, ID'd backlog (NBL-001…NBL-190), risks R-01…R-09, evidence
-criteria, architecture constraints, delegation, blocking policy, checkpoint
-format, and the mandatory STOP.
+vocabulary, ID'd backlog (`NBL-001`…`NBL-190`, sparse — 35 distinct IDs),
+risks `R-01`…`R-11`, decision packages §10.1–§10.3, evidence criteria,
+architecture constraints, delegation, blocking policy, checkpoint format, and
+the mandatory STOP.
 
 **Blocking risk.** `try`-as-expression versus the catch-mandatory `try_stmt` is
-the top grammar ambiguity (R-01). It gates G03 and every `Result`-returning
-API. If it cannot be resolved unambiguously, §3.3 requires suspending that
-form and requesting a decision — never a heuristic parser.
+the top grammar ambiguity (R-01), now recorded with its two alternatives in
+§10.3 of the campaign document. It gates G03 and every `Result`-returning API.
+If it cannot be resolved unambiguously, §3.3 requires suspending that form and
+requesting a decision — never a heuristic parser. `R-11` (the tail-`try`
+checker defect, §1.7.2) compounds it: no G03+ surface may assume a checked
+implicit return until §10.3 `D2` is authorised.
 
 ## Directive 007 — runtime distribution parity (`0.3.2-dev.9`, `PASS`)
 
@@ -1628,15 +1683,16 @@ feature-gating of the typed-decode path.
 
 ## Exact Next Action
 
-**Directive 008 — NEBULA: G01 is complete; G02 is the next authorised wave,
-and one human decision is outstanding.**
+**Directive 008 — NEBULA: G01 is complete and integrated; G02 is the next
+authorised wave, and one human decision is outstanding.**
 
 Wave `G00` is `PASS`: PR #43 merged as `7bd1d6fb` (21/21 green) and its closure
-landed as PR #44 → `390f763c` (21/21 green). Wave `G01` is `PASS`: the
-dependency table, roles/ownership map, ID'd backlog, risk register, and evidence
-criteria are in `docs/engineering/NEBULA_CAMPAIGN.md`, and the mandatory G01
-finding is recorded at §1.5.1 with its decision package at §10.1. `GATE G01`
-forbids any new code before the critical contracts exist; no code was added.
+landed as PR #44 → `390f763c` (21/21 green). Wave `G01` is `PASS` and
+integrated: PR #45 merged as `6f075882` (21/21 green). The dependency table,
+roles/ownership map, ID'd backlog, risk register, and evidence criteria are in
+`docs/engineering/NEBULA_CAMPAIGN.md`, and the mandatory G01 finding is
+recorded at §1.5.1 with its decision package at §10.1. `GATE G01` forbids any
+new code before the critical contracts exist; no code was added.
 
 **Outstanding human decision (§10.1, blocking G07 onward).** Every candidate
 database driver except `rusqlite 0.37.0` was *compiled* against Rust 1.83 and
@@ -1647,12 +1703,29 @@ bump, or feature-gated drivers with a formally amended §18.2 floor — were
 **not** chosen by the agent, because two of them require human approval under
 §2.5.
 
-**Next exact action:** execute **G02** — reconstruct the P0 RFC set
-(NBL-010…NBL-022) under `docs/rfcs/`, using
+**G02 progress.** RFCs 0002 and 0003 are authored, probe-verified, and
+escalate their open decisions (`NBL-010`, `NBL-011`). The P0 set is not yet
+complete: `NBL-012` (inference and error propagation), `NBL-013` (diagnostics
+contract), `NBL-014` (AIS capability set), `NBL-015` (`Aura.toml` / `aura init`
+/ `std::os`), `NBL-016` (Host database capability), `NBL-017` (`entity struct`
+and metadata), `NBL-018` (CRUD and transactions), `NBL-019` (AQL/0.1),
+`NBL-020` (Repository in traits), `NBL-021` (SQLGuard/0.1 SG-01…SG-08),
+`NBL-022` (driver contract), and `NBL-030` (prelude/`Result` placement, blocked
+by §10.2) remain unauthored.
+
+**Three human decisions are outstanding, and each blocks a downstream wave:**
+§10.1 MSRV versus database drivers (blocks G07 onward); §10.2 `Result` versus
+global enum-tag uniqueness (blocks `NBL-030`, G03, and every `Result` API in
+G07–G17); §10.3 `try` as an expression and the tail-`try` checker repair
+(blocks `NBL-011`, `NBL-031`, and G03).
+
+**Next exact action:** continue **G02** by authoring the remaining P0 RFCs
+(`NBL-012`…`NBL-022`) under `docs/rfcs/`, using
 `docs/rfcs/0001-exception-catch-selection.md` as the structural template and
-the §2.2 section list as the required shape. Each RFC must carry an explicit
-provenance note recording that its nominal source document was absent and that
-no approval is implied. G02 is documentation-only and is **not** blocked by the
+the §2.2 section list as the required shape, and carrying the same explicit
+provenance note that the nominal source document was absent and no approval is
+implied. **Do not code** any surface those RFCs describe, and do not resolve
+§10.1, §10.2, or §10.3. G02 is documentation-only and is **not** blocked by the
 §10.1 MSRV decision, which first bites at G07.
 
 **Campaign 003 remains closed** under Directive 005. Release-candidate

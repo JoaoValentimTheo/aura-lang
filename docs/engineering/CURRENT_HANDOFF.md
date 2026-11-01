@@ -6,34 +6,54 @@ Active task: **G02**, the P0 RFC reconstruction. `G00` and `G01` are closed.
 No implementation is authorized before `G02` accepts the P0 RFC set.
 
 ```
-WAVE: G01 -> PASS; G02 authorized next
-STATUS: G01 PASS (one human decision outstanding, see DECISÕES)
-HEAD: 390f763c35ef159f6f684a59c8911d6b8c859290 (merge of PR #44)
+WAVE: G01 -> PASS (merged); G02 authorized next
+STATUS: G02 IN_PROGRESS (three human decisions outstanding, see DECISÕES)
+HEAD: 6f075882953f2a1ba9db7f9c596a46f5d77c0754 (merge of PR #45)
 PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb;
      #44 MERGED (G00 closure + G01 authorisation, head 5cf4f8d9) -> 390f763c;
+     #45 MERGED (G01 dependency record, head 1ce88863) -> 6f075882;
      0 open PRs
-CHECKS: PR #43 21/21 pass; PR #44 21/21 pass;
+CHECKS: PR #43 21/21 pass; PR #44 21/21 pass; PR #45 21/21 pass;
         post-merge CI 41248873353 on 7bd1d6fb = completed/success;
-        Pages 41248873720 = completed/success
+        Pages 41248873720 = completed/success;
+        post-merge CI 41251300785 on 6f075882 = dispatched;
+        Pages 41251300794 on 6f075882 = dispatched
 TESTS_REALMENTE_EXECUTADOS: see "Commands actually executed" below
-PROVAS: baseline reconciled; G00+G01 diffs are docs/script files only;
-        src/, playground/runtime/, Cargo.toml, Cargo.lock, playground/runtimes/
-        byte-identical to c4f76907; manifest.json sha256 unchanged;
-        manifest.current 0.3.1; Cargo.toml 0.3.1; 0 tags at head; 0 0.3.2 tags;
-        repo floor cargo +1.83.0 check --locked --all-features = exit 0
+PROVAS: baseline reconciled; G00+G01+G01-record diffs are docs/script files
+        only; src/, playground/runtime/, Cargo.toml, Cargo.lock,
+        playground/runtimes/ byte-identical to c4f76907; manifest.json sha256
+        unchanged; manifest.current 0.3.1; Cargo.toml 0.3.1; 0 tags at head;
+        0 0.3.2 tags; repo floor cargo +1.83.0 check --locked --all-features =
+        exit 0
 RISCOS: R-01 try-as-expression ambiguity (gates G03 and every Result API);
         R-02 @ needs a token class that does not exist; R-03 net-new DB
         dependency surface; R-03a EVERY candidate DB driver breaks MSRV 1.83
         except rusqlite 0.37.0 (proven by build, campaign doc 1.5.1);
         R-04 no authorized DB credentials; R-06 py is a full CPython process,
-        not a sandbox
-DECISÕES: NONE TAKEN. Campaign doc 10.1 records an open HUMAN decision: MSRV
-        1.83 versus the required DB drivers. Three lawful outcomes (SQLite-only
-        with documented NO_GO / authorised MSRV bump / feature-gated drivers
-        with an amended 18.2 floor); the agent chose none, because two require
-        approval under 2.5. G07 onward is gated on this. No approval is implied
-        anywhere; the three documents Directive 008 names as inputs are absent
-        and must be reconstructed with explicit provenance notes.
+        not a sandbox; R-10 E2013 blocks a prelude Result (campaign doc 1.7.1,
+        decision 10.2); R-11 try in tail position is statically none while
+        dynamically value-producing, and none bypasses the implicit-return check
+        that "return none" fails (campaign doc 1.7.2, decision 10.3); repair
+        validated (1477/1477 tests, clippy 0, 125-file corpus zero status
+        changes) and then REVERTED - src/check/mod.rs is byte-identical to
+        baseline, sha256 1232b687...8f532
+DECISÕES: NONE TAKEN. Three open HUMAN decisions, all recorded as decision
+        packages in the campaign document, none resolved by the agent.
+        10.1 MSRV 1.83 versus the required DB drivers: three lawful outcomes
+        (SQLite-only with documented NO_GO / authorised MSRV bump /
+        feature-gated drivers with an amended 18.2 floor); two require approval
+        under 2.5. G07 onward is gated on this.
+        10.2 Result<T,E> versus global enum-tag uniqueness E2013: three lawful
+        outcomes (top-level Result + programme-wide reservation of Ok/Err, which
+        needs an ADR; module-scoped qualified Std::Result::Ok; or amending the
+        global tag rule, which changes what E2013 means). Blocks NBL-030, G03
+        and every Result API in G07-G17.
+        10.3 try-as-expression (D1 grammar: add try_expr to atom / use a block /
+        defer) and D2, the validated three-part tail-try checker repair. Blocks
+        NBL-011, NBL-031 and G03.
+        No approval is implied anywhere; the three documents Directive 008 names
+        as inputs are absent and must be reconstructed with explicit provenance
+        notes.
 PRÓXIMA ONDA AUTORIZADA: G02 only. G02 is documentation-only and is NOT blocked
         by the 10.1 MSRV decision, which first bites at G07.
 ```
@@ -194,17 +214,146 @@ adversarial and artifact-integrity reviews for G00 and G01 were executed
 directly by the lead and the degradation is stated rather than faked. Future
 sessions should not retry the delegation blindly.
 
+### G01 integration evidence
+
+- **Merged.** PR **#45**, branch `docs/nebula-g01-dependencies`, head
+  `1ce88863`, merged into `rewrite/v3-rust` as **`6f075882`** with **21/21**
+  remote checks green. Base was `390f763c` (PR #44).
+- **Diff is documentation only.** `git diff --name-status 390f763c 6f075882`
+  reports exactly three files: `AGENT_STATE.md`,
+  `docs/engineering/CURRENT_HANDOFF.md`, `docs/engineering/NEBULA_CAMPAIGN.md`.
+  `git diff --stat 390f763c 6f075882 -- src/ playground/runtimes/
+  playground/runtime/ Cargo.toml Cargo.lock fuzz/` is **0 lines**.
+- **Protected identity unchanged.** `manifest.json` sha256 still
+  `cbe7ad9153ab47a362a899f8e533fa2d41d9e81131bcb9a702a1243c6c23b837`;
+  `manifest.current` still `"0.3.1"`; `Cargo.toml` still `version = "0.3.1"`;
+  47 tracked files under `playground/runtimes/`; 5 tags total and **0**
+  matching `0.3.2`.
+- **Content.** §1.5.1 records the per-driver build results, the two
+  irreparable semver constraints (`block-buffer ^0.12`, `icu_provider
+  ^2.4.0`), the edition-2024 census, and the non-convergence proof. §10.1
+  records the open human decision with three lawful outcomes and states that
+  **none was chosen**. §9.1 records the custom-agent outage.
+
+### G02 evidence — two P0 RFCs authored, three decisions escalated
+
+**Files.** `docs/rfcs/0002-result-and-recoverable-errors.md` (305 lines) and
+`docs/rfcs/0003-try-as-value-expression.md` (486 lines). Both untracked when
+this was written; neither is accepted, and neither adds source code.
+
+**RFC 0002 — `Result<T,E>`.** The decisive finding is that the directive's §2.4
+vocabulary (`Result<T,E>` with `Ok(T)`/`Err(E)`) needs **no grammar change**:
+generic enums already work. `enum Res<T, E> { Ok(T), Bad(E) }` + `Res::Ok(7)` +
+match prints `7`; `Err` works as a tag; `Result` in a struct field,
+`[R<int, string>]` inside a list, and `-> R<int, string>` return positions all
+work; `R::Ok(1, 2)` is `E3001: variant 'Ok' expects 1 value(s), got 2`. Grammar
+delta is **None**.
+
+Three claims in the first draft were falsified by probe and retracted:
+`Result` **is** usable as a user type name (there is no builtin type registry —
+`grep -rn 'builtin_type\|prelude_enum\|inject_enum' src/` returns nothing and
+no `std/` directory exists); matching is **not** exhaustive
+(`LANGUAGE_SPEC.md:2471–2472`: "no exhaustiveness requirement … if no arm
+matches, the result is `E4029` at runtime"); and enum tags are **not** scoped to
+their enum (`LANGUAGE_SPEC.md:2407`, `:3281`).
+
+The blocker is `R-10`: `enum A { Ok(int) }` alongside `enum B { Ok(string) }`
+is `E2013` — "variant names must be unique across the program" — so a top-level
+`Result` permanently claims `Ok` and `Err` for every user enum in the
+compilation unit. Modules escape the rule (`module M { pub enum Thing { Ok(int) } }`
+next to a top-level `Result` is exit 0), but a `use`-imported module enum does
+**not** bring its tags into unqualified scope (`E3002`), and braced variant
+import (`use Std::Result::{Ok, Err}`) is a parse error (`E1006`). Qualified
+construction works: `Std::Ok(7)`, `Std::Result::Ok(7)`, and `Result::Ok(7)`
+after `use Std::Result` all print `7`. No ADR governs the tag rule.
+
+**RFC 0003 — `try` as a value expression.** Two independent results.
+
+*Grammar (D1).* `try` is statement-only: `docs/grammar.md:75-77` puts
+`try_stmt` in the statement alternation, `:100` is `expr = pipe`, and `:118-124`
+lists `block`, `if_expr`, `match_expr` in `atom` but **not** `try`. Probes:
+`let x = try {…} catch e {…}`, `print(try …)`, and `if (try …) == 1` all report
+`E1006: expected an expression, found 'try'`; `return try {…}` reports a
+**different** error, `E1006: expected a newline between statements, found
+'try'`, because in `return` position `try` parses as a *statement*. That
+divergence is the ambiguity the brief forbids resolving heuristically. Blocks
+are already expressions (`let a = { 1 }` prints `1`), so a zero-grammar-change
+route exists.
+
+*Pre-existing checker defect (D2), `R-11`.* A tail `try` already yields a value
+at run time — `fn f() -> int { try { 41 } catch _ { 99 } }` prints `41` and the
+`throw` variant prints `99` — and `src/run/mod.rs:1264` shows it is deliberate
+(`Ok(flow) => Ok(flow)`; `finally` replaces only a non-`Ctl::Val` outcome).
+The checker disagrees on three counts: `block_value_ty`
+(`src/check/mod.rs:2357`) types a `Stmt::Try` tail as `Ty::None`, making `try`
+the only construct statically `none` but dynamically value-producing;
+`block_tail_mismatch` (`:5893`) short-circuits on `Ty::None` **before** calling
+`return_compatible`, so `fn f() -> int { none }` is accepted while
+`fn f() -> int { return none }` is `E3005`; and the same function's
+`let Some(Stmt::Expr(..)) = body.last() else { … }` means a **direct** `try`
+tail is never compared at all.
+
+The consequence is end-to-end unsoundness: `fn f() -> string { try { 5 } catch
+_ { 6 } }` with `let s: string = f()` checks clean and prints `5`.
+
+**Repair validated, then withheld.** Three coupled parts (a `Stmt::Try` arm in
+`block_value_ty`, removal of `Ty::None` from the short-circuit, and a
+`Stmt::Try` arm in `block_tail_mismatch`). Every partial configuration was
+built and measured, and each part is independently necessary. Under the full
+repair: `q1`–`q6` become `E3005` with diagnostics **byte-identical** to the
+explicit-`return` oracle; `r1`/`r3` (the generic constructor idiom and
+`-> none { none }`) are unregressed; `r2`/`r6` are repaired; the `s1`/`s4`/`s5`
+false positives are gone; `m1`/`h4`/`i1`/`p3`/`j6` are rejected at the function
+boundary; `c4`, `d2`, `d3`, `d5`, `d6`, `e1`, `e3`, `e4`, `e5`, `e6`, `e8`,
+`g5`, `g6` all still pass. Two intended flips: `i2` reports `none | int`
+(accurate) and `j5` (`-> none` returning `5`) reports `E3005`, consistent with
+the long-standing `r4`. `p2` turned out to be a latent false negative
+(`-> [int]` returning the integer `5`), not a working program.
+
+Gates under the full repair: `cargo test --locked --all-targets --all-features`
+gives **1477 passed, 0 failed**; `cargo clippy --locked --all-targets
+--all-features -- -D warnings` gives **exit 0**; a sweep of all **125** tracked
+`.aura` files gives **17 non-zero before and 17 after — zero status changes**.
+The source was then restored to baseline: sha256
+`1232b6874dd2e9c4f556085b4f3b240c120e6dedf77baace9a8e5d6aa738f532`, and
+`git diff --stat -- src/check/mod.rs` is empty. `GATE G02` forbids coding the
+affected surface before acceptance, so the repair is evidence, not a commit.
+
+**Spec-sanctioned exemption — not part of the defect.**
+`LANGUAGE_SPEC.md:1819–1826` states that a body ending in a declaration, a
+loop, or a `return` has no implicit value and is not judged.
+`fn f() -> int { print(1) }` and `fn f() -> int { }` being accepted is
+therefore correct and must survive any future repair.
+
+**Probe methodology correction.** An apparent "`aura check` parses sibling
+files" defect was investigated and **falsified**:
+`docs/FILESYSTEM_MODULES_DESIGN.md` is a frozen contract whose `:399` decides
+"eager structural discovery" and whose `:774` matrix row makes an unused
+malformed reachable child a parser failure. Every probe in this wave therefore
+uses one `.aura` file per directory. Recorded as a rule in campaign doc §7.
+
 ### Next exact action
 
-Execute **G02**: reconstruct the P0 RFC set (`NBL-010`…`NBL-022`) under
-`docs/rfcs/`, using `docs/rfcs/0001-exception-catch-selection.md` as the
+Continue **G02**: reconstruct the remaining P0 RFC set (`NBL-012`…`NBL-022`)
+under `docs/rfcs/`, using `docs/rfcs/0001-exception-catch-selection.md` as the
 structural template and campaign doc §2.2 as the required section list. Each
 RFC carries an explicit provenance note stating that its nominal source
 document was absent and that no approval is implied.
 
-G02 is documentation-only and is **not** blocked by the §10.1 MSRV decision,
-which first bites at G07. G02 must not add source code; `GATE G02` requires the
-P0 RFCs to be accepted first.
+`NBL-010` (RFC 0002) and `NBL-011` (RFC 0003) are authored. Still unauthored:
+`NBL-012` inference and error propagation; `NBL-013` diagnostics contract and
+`aura explain`; `NBL-014` AIS capability set; `NBL-015` `Aura.toml` / `aura
+init` / `std::os`; `NBL-016` Host database capability and protected profile;
+`NBL-017` `entity struct` and metadata; `NBL-018` CRUD and transactions;
+`NBL-019` AQL/0.1; `NBL-020` Repository in traits; `NBL-021` SQLGuard/0.1
+SG-01…SG-08; `NBL-022` SQL and Mongo driver contract. `NBL-030` (prelude
+`Result` placement) is blocked by §10.2 and must not be authored as if the
+decision were taken.
+
+**Do not code any surface these RFCs describe, and do not resolve §10.1, §10.2,
+or §10.3.** G02 is documentation-only and is **not** blocked by the §10.1 MSRV
+decision, which first bites at G07. `GATE G02` requires the P0 RFCs to be
+accepted first.
 
 ## Directive 007 — runtime distribution parity (`0.3.2-dev.9`, `PASS`)
 
