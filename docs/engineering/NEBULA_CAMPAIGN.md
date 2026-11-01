@@ -17,7 +17,8 @@ G02 (`IN_PROGRESS`) has authored RFC 0002 and RFC 0003 and merged both as
 `6cc96bf5` (PR #46, 21/21 checks green). RFC 0002 was then corrected — its
 original tag-scope premise was falsified — recorded as `fe0e7312` (PR #47)
 and integrated as `73a35d9b` (PR #48, 21/21 checks green), then recorded as
-`85de5945` (PR #49, 21/21 checks green). While
+`85de5945` (PR #49, 21/21 checks green), and that record itself recorded as
+`fc49c5ee` (PR #50, 21/21 checks green). While
 validating RFC 0002 it produced a second blocking language finding: the tag
 scope that governs `E2013` **makes a prelude or builtin `Result<T,E>` with
 unqualified `Ok`/`Err` unviable as things stand** — and, on re-verification,
@@ -40,6 +41,17 @@ because gate G02 forbids coding the affected surface before RFC acceptance.
 `src/check/mod.rs` is byte-identical to baseline. The finding and the two
 grammar alternatives are escalated in §10.3 and recorded in
 `docs/rfcs/0003-try-as-value-expression.md`.
+
+G02 has since authored **RFC 0004 — The Diagnostics Contract**
+(`docs/rfcs/0004-diagnostics-contract.md`, `NBL-013`), which is written and
+independently re-verified but **not yet merged**. It documents a third blocking
+finding: the shared diagnostic renderer performs **no sanitisation**, so a
+perfectly legal source file can forge diagnostic lines (§1.2, risk `R-12`),
+and it records a spec-internal contradiction between §30.4 (every code
+reachable) and §30.3 (`E4999` must not be reachable) plus a stale citation in
+`src/main.rs:26` to a `§47/§48` that the specification does not contain. Its
+`D3` (character versus visual columns) and open item 13 (non-ASCII module
+directories are skipped silently) are escalated in §10.4.
 
 Baseline: `c4f769077c769483963a0f2b51a789b00472e4cf` on `rewrite/v3-rust`
 (local == `origin/rewrite/v3-rust`, tree clean at campaign start). G00 landed
@@ -545,7 +557,7 @@ Current wave status:
 |---|---|
 | G00 | `PASS` — PR #43, merge `7bd1d6fb`, 21/21 checks |
 | G01 | `PASS` — PR #45, merge `6f075882`, 21/21 checks; dependency table and MSRV blocker disclosed (§1.5.1, §10.1) |
-| G02 | `IN_PROGRESS` — RFC 0002 (`Result`) and RFC 0003 (`try` as expression) authored, probe-verified and merged as PR #46 → `6cc96bf5`; RFC 0002 tag-scope premise corrected via PR #47 → `fe0e7312` and PR #48 → `73a35d9b` (both 21/21), and recorded as PR #49 → `85de5945` (21/21). Two blocking language findings are escalated: `R-10`/`E2013` vs. `Result` (§10.2) and `R-11`/tail-`try` typing plus the grammar question (§10.3). The remaining ten P0 RFCs are under authoring |
+| G02 | `IN_PROGRESS` — RFC 0002 (`Result`) and RFC 0003 (`try` as expression) authored, probe-verified and merged as PR #46 → `6cc96bf5`; RFC 0002 tag-scope premise corrected via PR #47 → `fe0e7312` and PR #48 → `73a35d9b` (both 21/21), and recorded as PR #49 → `85de5945` (21/21); that record itself recorded as PR #50 → `fc49c5ee` (21/21). RFC 0004 (diagnostics contract) is authored and independently re-verified but **not yet merged**. Three blocking language findings are escalated: `R-10`/`E2013` vs. `Result` (§10.2), `R-11`/tail-`try` typing plus the grammar question (§10.3), and `R-12`/diagnostic format injection (§10.4). The remaining nine P0 RFCs are under authoring |
 | G03–G19 | `NOT_STARTED` |
 
 A `PASS` requires observed evidence. An environment that was not executed is
@@ -570,7 +582,7 @@ block reserves space inside a wave, so there are 34 identifiers here, not 190.
 | NBL-010 | G02 | RFC: `Result` and recoverable error semantics — **RFC 0002 authored; blocked by §10.2 D1** | P0 |
 | NBL-011 | G02 | RFC: `try` as expression without ambiguity — **RFC 0003 authored; blocked by §10.3 D1** | P0 |
 | NBL-012 | G02 | RFC: inference and error propagation rules | P0 |
-| NBL-013 | G02 | RFC: diagnostics contract and `aura explain` | P0 |
+| NBL-013 | G02 | RFC: diagnostics contract and `aura explain` — **RFC 0004 authored; blocked by §10.4 D3 and §10.4 item 13** | P0 |
 | NBL-014 | G02 | RFC: AIS Agent-Native 0.2 capability set | P0 |
 | NBL-015 | G02 | RFC: `Aura.toml`, `aura init`, `std::os` | P0 |
 | NBL-016 | G02 | RFC: Host database capability and protected profile | P0 |
@@ -617,6 +629,7 @@ block reserves space inside a wave, so there are 34 identifiers here, not 190.
 | R-09 | Partial P1 delivery could be overstated as stable | Misleading release notes | P1 absent full proof ⇒ `DEFERRED_WITH_APPROVAL`; changelog never marks experimental work stable |
 | R-10 | **Contradictory tag-scope rules (`E2013`) make a prelude or builtin `Result<T,E>` with `Ok`/`Err` unviable** (§1.7.1a). `LANGUAGE_SPEC.md:2407`/`:3281` say tags are unique programme-wide; `:3399`/`:1556`/`:3897` say per module; the compiler implements per module by prefixing tags with the module path. A root-scope `Result` claims both spellings for the root scope only — a module-scoped `Ok` still coexists (exit 0), a root-scope one fails (exit 1) even if `Result` is never constructed. A module-scoped `Result` avoids that but its tags are unreachable unqualified (`E3002`), and braced variant import is a parse error (`E1006`). `E2013`'s message text asserts the losing (global) rule | Blocks `NBL-030` and therefore G03, plus every downstream `Result`-returning API in G07–G17. The directive's §2.4 vocabulary (`Ok(T)`/`Err(E)` unqualified) cannot be satisfied without a choice | Escalated as §10.2 (D1a scope, D1b message, D1c placement) with three lawful outcomes; no option is selected by an agent. §3.2's "quando viável" is the lawful exit, but exercising it is a human decision |
 | R-11 | **`try` in tail position is statically `none` while dynamically value-producing** (§1.7.2), and `none` bypasses the implicit-return check that `return none` fails | End-to-end unsoundness: a function annotated `-> string` can return `5` and the caller's `let s: string` is accepted. Blocks any G03+ surface whose types assume a checked return | Escalated as §10.3; the validated three-part repair is withheld, not committed, and `src/check/mod.rs` is byte-identical to baseline |
+| R-12 | **The diagnostic renderer performs no sanitisation, so a legal source file can forge diagnostic lines** (§1.2 of RFC 0004). `render_diagnostic` (`src/diagnostic.rs:125-166`) interpolates the unescaped `Value::display` of an uncaught throw and the raw file name into a single-line format. Four vectors are reproduced: a raw ESC byte in source, the ordinary `\n` escape, a newline nested inside a list value, and a file name containing a newline. All survive `--color never` and `NO_COLOR=1` | A user-visible trust failure in every consumer of the shared projection, including AIS and the Playground, which render the same facts by three different code paths. It is not a memory-safety issue and not an execution escape; it is unauthenticated output | Escalated as §10.4. The repair must be a **diagnostic-side** sanitiser: `print` legitimately emits raw newlines (`src/stdlib/mod.rs:101`), so changing `Value::display` globally would break `std::print`. `tests/oracle/mod.rs:440` duplicates the message format independently, so a single-site fix silently drifts |
 
 ---
 
@@ -904,6 +917,54 @@ RFC 0002's `Result` work is unaffected because it needs no grammar change. G03
 and any downstream gateway that consumes an expression-form `try` stay blocked
 until D1 is resolved. Nothing in G04–G19 may assume a checked implicit return
 until D2 is authorized.
+
+---
+
+### §10.4 — RFC 0004: the diagnostics contract (`NBL-013`)
+
+RFC 0004 is authored and independently re-verified against the live binary. It
+carries a five-point contract (§2), a 23-row evidence table (§6.1), a nine-row
+mutation table (§6.2) and twenty required regression tests (§6.4). It changes no
+grammar. Two items require a human decision.
+
+**Decision D3 — columns are counts of characters, not visual width.**
+`line_col` (`src/error.rs:203-229`) counts Unicode scalar values, which is
+exactly what `LANGUAGE_SPEC.md:177` mandates. It is conformant, not defective.
+But on a terminal the pointer under a diagnostic can land in the wrong place:
+re-measured against a stated display-width model (East-Asian `W`/`F` = 2,
+combining = 0, tab stops of 4), the printed column diverges from the visual one
+by `0 / −3 / 0 / −1 / −2 / +1` for ascii, tab, CRLF, emoji, CJK and a
+decomposed combining sequence. The **delta is stable; the absolute column is
+not** — it depends on the source line's shape, so RFC 0004 publishes the delta
+and pins the shape it measured.
+
+The cost is real: visual columns would require every consumer to agree on a
+width table, and `E1001`-style messages quote the source byte. The three lawful
+outcomes are:
+
+| Option | Meaning | Cost | Risk |
+|---|---|---|---|
+| 1 | Keep character columns (status quo); document the divergence | None now | Terminals stay misaligned for wide characters; the spec already permits it |
+| 2 | Add visual columns as a *presentation-only* field, keeping the semantic column authoritative | Medium — one width table shared by four consumers | Two column numbers in one report; AIS and the Playground must be updated together or they drift |
+| 3 | Change `line_col` itself to visual width | High | Breaks `LANGUAGE_SPEC.md:177`; needs a spec amendment and a migration note |
+
+**Open item 13 — non-ASCII module directories are silently skipped.** A tree
+`©/c.aura` with an owner `©.aura` is not discovered at all: `aura check` exits
+`0` with no output, whereas the same tree under `mm/` reports
+`mm/c.aura:1:21: error[E1001]`. This is **specified** behaviour —
+`docs/FILESYSTEM_MODULES_DESIGN.md:594` requires logical module identifiers to
+be byte-exact ASCII — so it is *not* a defect. The gap is that the frozen
+outcome matrix at `:774` has no row for it and no user-facing page says it, so a
+user sees a silent success. This is a documentation-gap decision, not a code
+decision, and it is escalated rather than resolved.
+
+**Blast radius.** Nothing in this RFC blocks G03. It does gate G18's snapshot
+and `aura explain` work, because §6.4's twenty tests and §6.2's mutation rows
+are the enforcement mechanism, and `aura explain` additionally needs a spec
+amendment (§28.3 lists five commands; `src/main.rs:26` cites a `§47/§48` that do
+not exist — the spec ends at `## 36`). The format-injection repair (`R-12`) is
+withheld because gate G02 forbids changing the affected surface before
+acceptance; the concrete fix sites are enumerated in RFC 0004 §6.2.
 
 ## 11. Wave checkpoint format
 
