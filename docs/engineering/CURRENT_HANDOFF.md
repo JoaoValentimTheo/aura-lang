@@ -6,9 +6,9 @@ Active task: **G02**, the P0 RFC reconstruction. `G00` and `G01` are closed.
 No implementation is authorized before `G02` accepts the P0 RFC set.
 
 ```
-WAVE: G02 -> IN_PROGRESS (3 of 12 P0 RFCs authored, five decisions outstanding)
+WAVE: G02 -> IN_PROGRESS (3 of 13 P0 RFCs merged, five decisions outstanding)
 STATUS: G02 IN_PROGRESS (five human decisions outstanding, see DECISOES)
-HEAD: fc49c5ee44023b4c13e55d3384f69ef1ff8fcadc (merge of PR #50)
+HEAD: 2df1c32298b57bc64343c3701ca8bd2a53705230 (merge of PR #51)
 PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb;
      #44 MERGED (G00 closure + G01 authorisation, head 5cf4f8d9) -> 390f763c;
      #45 MERGED (G01 dependency record, head 1ce88863) -> 6f075882;
@@ -17,10 +17,11 @@ PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb;
      #48 MERGED (tag-scope correction, head ed0f7b86) -> 73a35d9b;
      #49 MERGED (tag-scope record, head 02599d17) -> 85de5945;
      #50 MERGED (PR #49 record, head ab4931ac) -> fc49c5ee;
+     #51 MERGED (RFC 0004 + RFC index, head 5c34592d) -> 2df1c322;
      0 open PRs
 CHECKS: PR #43 21/21 pass; PR #44 21/21 pass; PR #45 21/21 pass;
         PR #46 21/21 pass; PR #47 21/21 pass; PR #48 21/21 pass;
-        PR #49 21/21 pass; PR #50 21/21 pass;
+        PR #49 21/21 pass; PR #50 21/21 pass; PR #51 21/21 pass;
         post-merge CI 41248873353 on 7bd1d6fb = completed/success;
         Pages 41248873720 = completed/success;
         post-merge CI 41251300785 on 6f075882 = completed/success;
@@ -33,7 +34,9 @@ CHECKS: PR #43 21/21 pass; PR #44 21/21 pass; PR #45 21/21 pass;
         post-merge CI 41260213738 on 85de5945 = completed/success;
         post-merge Pages 41260213844 on 85de5945 = completed/success;
         post-merge CI 41261797535 on fc49c5ee = completed/success;
-        post-merge Pages 41261797527 on fc49c5ee = completed/success
+        post-merge Pages 41261797527 on fc49c5ee = completed/success;
+        post-merge CI 41265951706 on 2df1c322 = completed/success;
+        post-merge Pages 41265951679 on 2df1c322 = completed/success
 TESTS_REALMENTE_EXECUTADOS: see "Commands actually executed" below
 PROVAS: baseline reconciled; G00+G01+G01-record diffs are docs/script files
         only; src/, playground/runtime/, Cargo.toml, Cargo.lock,
@@ -269,7 +272,7 @@ sessions should not retry the delegation blindly.
   records the open human decision with three lawful outcomes and states that
   **none was chosen**. §9.1 records the custom-agent outage.
 
-### G02 evidence — two P0 RFCs authored, three decisions escalated
+### G02 evidence — three P0 RFCs merged, five decisions escalated
 
 **Integrated.** PR **#46** (`docs/nebula-g02-rfcs`, head `66d90635`) merged into
 `rewrite/v3-rust` as **`6cc96bf5`** at 2026-11-01T00:27:28Z, with **21/21**
@@ -420,7 +423,7 @@ Do not "fix" a future recurrence without re-proving it this way first.
 
 ### RFC 0004 evidence — the diagnostics contract (`NBL-013`)
 
-**Authored, not yet committed.** `docs/rfcs/0004-diagnostics-contract.md`,
+**Merged as PR #51 → `2df1c322`.** `docs/rfcs/0004-diagnostics-contract.md`,
 641 lines at first write and 693 after the verification sweep, 15 tables,
 4 fences, every table balanced. It adds no grammar and no code. It carries a
 five-point contract (§2), a 23-row evidence table (§6.1), a nine-row mutation
@@ -522,23 +525,120 @@ in RFC 0003. The other **21** are in `docs/LANGUAGE_SPEC.md` (5),
 `docs/engineering/DX_AIX.md` — outside this batch's surface, disclosed, not
 silently absorbed.
 
+### PR #51 integration evidence — RFC 0004 merged
+
+PR **#51** (`docs/nebula-g02-rfc0004`, head `5c34592d`) merged into
+`rewrite/v3-rust` as **`2df1c322`** at 2026-11-01T02:37:05Z with **21/21**
+remote checks green. The merged diff is 6 files / +1019 / −40: RFC 0004 (692
+new lines), the `docs/rfcs/README.md` index (13), the campaign document (67),
+`AGENT_STATE.md` (96), this file (189), and two escaped-pipe characters in RFC
+0003. `src/`, `playground/runtime/`, `playground/runtimes/`, `Cargo.toml` and
+`Cargo.lock` are **byte-identical** to `fc49c5ee`;
+`src/check/mod.rs` hashes to `03207d9293…` and `src/` to
+`1232b6874dd2e9c4…738f532`; `manifest.json` sha256 is still
+`cbe7ad91…23b837` with `current 0.3.1 / api 1 / 9 versions`; no tag sits at
+head and no `0.3.2` tag exists.
+
+Post-merge runs `41265951706` (CI) and `41265951679` (Pages) were both still
+non-terminal when this batch was first drafted, so they were initially recorded
+as `queued` / `in_progress`. Both have since reached `completed/success` on
+`2df1c322`, and the `CHECKS:` block above records that verified terminal value
+rather than the earlier non-terminal reading.
+
+### The fourth G02 finding — generic instantiation is never propagated (`NBL-012`)
+
+Discovered while starting `NBL-012` and **not fixed**: gate G02 forbids coding
+a surface before its RFC is accepted, and this one is not even authored yet.
+
+**Symptom.** `fn id<T>(x: T) -> T { return x }` with
+`let a = id(1)` and `let b: string = a` is accepted by `aura check`
+(**exit 0**). The identical non-generic program — `fn id(x: int) -> int` with
+the same two lines — is correctly rejected with
+``error[E3001]: `b` is annotated as `string` but its value is `int` ``
+(**exit 1**). The gap is therefore **generic-specific**, not a general
+`let`-inference gap.
+
+**It is end-to-end unsound, not merely a typing curiosity.** The accepted
+program, run under `aura run` with `b.len()` added, fails at
+**exit 1** with ``main.aura:4:10: error[E2003]: int has no method `len` ``. So
+`check` accepts what `run` rejects.
+
+**Root cause.** `instantiate_return_ty` (`src/check/mod.rs:4497-4534`) builds a
+substitution, then at **`:4530`** executes
+`let _ = self.infer_substitution(&pseudo, &actual, &sigma);` — the returned
+substitution is **discarded**. It then calls `ret.erase_params(&sigma)` with the
+still-unbound `sigma`, so every `Ty::Param(n)` falls through to
+`unwrap_or(Ty::Unknown)` at `src/types.rs:244`. Every generic call therefore
+types as `Unknown`, and `Ty::compatible_with` accepts `Unknown` against any
+annotation. The machinery below is correct and merely unwired:
+`infer_substitution` (`:3172-3189`) returns `Option<HashMap<String, Ty>>`, and
+`unify_into` (`:3191+`) binds correctly; the separate bounds-check path at
+`:3462-3487` does capture the substitution but uses it only for
+`satisfies_bounds`, never for the result type.
+
+**The candidate fix was engineered, proven, and reverted.** Capturing the
+returned substitution and passing it to `erase_params` (4 insertions, 1
+deletion at `:4527`, saved as `/tmp/nb12_fix.patch`) repairs all five positive
+probes — `id(1)` into `string`, the direct `let b: string = id(1)` form,
+`pair<T>(x: T) -> [T]` into `[string]`, explicit `id<int>(1)`, and the
+assignment-indirection form — while leaving `id("hi")` and unannotated
+`print(id(1))` at exit 0.
+
+**Mutation proof, in both directions.** Mutation A (guard the `None` case but do
+not capture the binding) leaves the bug present; mutation B (capture into a new
+binding but keep passing the old `sigma` to `erase_params`) leaves the bug
+present. Both compile and both re-introduce the unsoundness, so the binding
+capture is the load-bearing part rather than the guard.
+
+**Neutrality.** The fix leaves the whole corpus byte-identical: 125 tracked
+`.aura` files, `108` exit 0 and `17` exit 1 before **and** after, with
+`diff` of the normalised output reporting `IDENTICAL_OUTPUT_AND_STATUS`. The
+suite is `1477 passed / 0 failed` and clippy is clean with the fix applied.
+
+**Reverted.** `git checkout -- src/check/mod.rs` returns `git diff` to empty
+and `HEAD` to `5c34592d`; the worktree is byte-identical to baseline. This is
+the second time in this campaign that a fully validated repair has been withheld
+for G02 — the first was the three-part tail-`try` fix — and it is the required
+behaviour, not an oversight.
+
 ### Next exact action
 
-Ship the **RFC 0004 batch**: commit `docs/rfcs/0004-diagnostics-contract.md`
-(new), the `docs/rfcs/README.md` index, the campaign §10.4 / `R-12` / header
-annotations, the five escaped-pipe fixes in this campaign's own docs
-(`CURRENT_HANDOFF.md` four rows, RFC 0003 one row), and this state refresh;
-then run the validation floor, open the PR, reach 21/21, and merge.
+Author `NBL-012` as `docs/rfcs/0005-inference-and-error-propagation.md`, using
+`docs/rfcs/0003-try-as-value-expression.md` as the structural template and
+`docs/rfcs/README.md` as the format contract, then add its row to the
+`## Index` table in `docs/rfcs/README.md`.
 
-After that, continue **G02**: reconstruct the remaining P0 RFC set
-(`NBL-012`, `NBL-014`…`NBL-022`) under `docs/rfcs/`, using
-`docs/rfcs/0001-exception-catch-selection.md` as the structural template and
-campaign doc §2.2 as the required section list. Each RFC carries an explicit
-provenance note stating that its nominal source document was absent and that no
-approval is implied.
+It must **lead** with the generic-instantiation unsoundness measured in this
+batch. `fn id<T>(x: T) -> T` called as `let b: string = id(1)` is accepted by
+`aura check` (exit 0) while `aura run` on the same program fails with
+``E2003: int has no method `len` ``; the identical non-generic program is
+correctly rejected with `E3001`, so the gap is generic-specific. Root cause:
+`instantiate_return_ty` (`src/check/mod.rs:4497-4534`) discards the
+substitution returned by `infer_substitution` at `:4530`, so
+`ret.erase_params(&sigma)` runs unbound and every `Ty::Param` falls through to
+`Ty::Unknown` (`src/types.rs:244`), which `Ty::compatible_with` accepts against
+any annotation. A four-line candidate fix
+(`let sigma = match self.infer_substitution(...) { Some(bound) => bound, None =>
+return ret.erase_params(&sigma) };` then `ret.erase_params(&sigma)`) was
+**engineered, mutation-proved and reverted**. Mutation A (guard without
+capture) and mutation B (capture then ignore) both leave the bug present, so
+the binding capture is load-bearing. Corpus: 125 files, 108 exit 0 / 17 exit 1,
+`diff` against baseline **identical**. Suite: 1477 passed / 0 failed, clippy
+clean.
+
+It must also carry the inference facts established by probe: `[int | string]`
+literal inference; whole-literal checking under an expected type (§21.6 —
+internally consistent and correctly implemented, so **no** spec contradiction
+is claimed); `{}` being an empty block rather than an empty map literal; and
+`Ty::compatible_with`'s no-coercion and union-direction rules. Each RFC carries
+an explicit provenance note stating that its nominal source document was absent
+and that no approval is implied.
+
+After that, reconstruct the remaining P0 RFC set (`NBL-014`…`NBL-022`) under
+`docs/rfcs/` on the same model.
 
 `NBL-010` (RFC 0002), `NBL-011` (RFC 0003) and `NBL-013` (RFC 0004) are
-authored. RFC 0002 was
+authored and merged; `NBL-012` (RFC 0005) is next. RFC 0002 was
 corrected after its tag-scope premise was falsified, recorded at `fe0e7312`
 and integrated as `73a35d9b` (PR #48); the correction itself was recorded and
 integrated as `85de5945` (PR #49), and that record as `fc49c5ee` (PR #50). The
