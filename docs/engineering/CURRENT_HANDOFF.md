@@ -6,9 +6,10 @@ Active task: **G02**, the P0 RFC reconstruction. `G00` and `G01` are closed.
 No implementation is authorized before `G02` accepts the P0 RFC set.
 
 ```
-WAVE: G02 -> IN_PROGRESS (4 of 13 P0 RFCs merged, six decisions outstanding)
-STATUS: G02 IN_PROGRESS (six human decisions outstanding, see DECISOES)
-HEAD: 87cea70e10ac06211b25b57230dcd8d929234be2 (merge of PR #53)
+WAVE: G02 -> IN_PROGRESS (4 of 13 P0 RFCs merged, RFC 0006 authored, seven
+      decisions outstanding across six decision packages)
+STATUS: G02 IN_PROGRESS (seven human decisions outstanding, see DECISOES)
+HEAD: 422c7a9e048266f08f26eb428997de40b24c1238 (merge of PR #54)
 PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb;
      #44 MERGED (G00 closure + G01 authorisation, head 5cf4f8d9) -> 390f763c;
      #45 MERGED (G01 dependency record, head 1ce88863) -> 6f075882;
@@ -20,11 +21,12 @@ PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb;
      #51 MERGED (RFC 0004 + RFC index, head 5c34592d) -> 2df1c322;
      #52 MERGED (PR #51 record, head 2de7b86f) -> 3832a4b9;
      #53 MERGED (RFC 0005, head c4ad338f) -> 87cea70e;
+     #54 MERGED (PR #53 record, head 70757c3b) -> 422c7a9e;
      0 open PRs
 CHECKS: PR #43 21/21 pass; PR #44 21/21 pass; PR #45 21/21 pass;
         PR #46 21/21 pass; PR #47 21/21 pass; PR #48 21/21 pass;
         PR #49 21/21 pass; PR #50 21/21 pass; PR #51 21/21 pass;
-        PR #52 21/21 pass; PR #53 21/21 pass;
+        PR #52 21/21 pass; PR #53 21/21 pass; PR #54 21/21 pass;
         post-merge CI 41248873353 on 7bd1d6fb = completed/success;
         Pages 41248873720 = completed/success;
         post-merge CI 41251300785 on 6f075882 = completed/success;
@@ -43,7 +45,9 @@ CHECKS: PR #43 21/21 pass; PR #44 21/21 pass; PR #45 21/21 pass;
         post-merge CI 41269557515 on 3832a4b9 = completed/success;
         post-merge Pages 41269557557 on 3832a4b9 = completed/success;
         post-merge CI 41274260409 on 87cea70e = completed/success (21/21);
-        post-merge Pages 41274260387 on 87cea70e = completed/success
+        post-merge Pages 41274260387 on 87cea70e = completed/success;
+        post-merge CI 41276131621 on 422c7a9e = completed/success (21/21);
+        post-merge Pages 41276131720 on 422c7a9e = completed/success (2/2)
 TESTS_REALMENTE_EXECUTADOS: see "Commands actually executed" below
 PROVAS: baseline reconciled; G00+G01+G01-record diffs are docs/script files
         only; src/, playground/runtime/, Cargo.toml, Cargo.lock,
@@ -69,9 +73,24 @@ RISCOS: R-01 try-as-expression ambiguity (gates G03 and every Result API);
         --color never and NO_COLOR=1 (RFC 0004 1.2, decision 10.4). The repair
         must be diagnostic-side: print legitimately emits raw newlines
         (src/stdlib/mod.rs:101) and tests/oracle/mod.rs:440 duplicates the
-        message format
-DECISOES: NONE TAKEN. Five open HUMAN decisions, all recorded as decision
-        packages in the campaign document, none resolved by the agent.
+        message format; R-13 generic instantiation is never propagated to the
+        call site, so check accepts what run rejects (campaign doc 1.7.3,
+        decision 10.5); R-14 indexing is never type-checked; R-15 equality is
+        never type-checked AND does not fail at run time (print(1 == "s") is
+        exit 0 under both check and run and prints false - a silent wrong
+        answer, plausibly the most urgent open defect); R-16 the AIS/0.1
+        protocol over-promises on eighteen points, A through R (campaign doc
+        10.6, RFC 0006): Symbol.range carries only the leading keyword (39
+        reported bytes against 249 true bytes, 6.4x, and pub fields report pub
+        while mut params report mut), Slice.diagnostics is promised twice and
+        populated nowhere, the AIS path never runs the resolver so E2019 is
+        dropped at exit 0 while E2018 and E2023 survive mis-coded as E2003,
+        tests/ais_differential.mjs asserts it runs in CI while nothing invokes
+        it, the CLI exposes 3 of 7 operations, and aura://schema advertises 6 of
+        7 tools and 3 of 7 delivery operations from one hardcoded literal
+DECISOES: NONE TAKEN. Seven open HUMAN decisions across six decision packages,
+        all recorded as decision packages in the campaign document, none
+        resolved by the agent.
         10.1 MSRV 1.83 versus the required DB drivers: three lawful outcomes
         (SQLite-only with documented NO_GO / authorised MSRV bump /
         feature-gated drivers with an amended 18.2 floor); two require approval
@@ -95,6 +114,18 @@ DECISOES: NONE TAKEN. Five open HUMAN decisions, all recorded as decision
         reports mm/c.aura:1:21 E1001; specified at
         FILESYSTEM_MODULES_DESIGN.md:594, so a documentation gap, not a defect).
         Blocks G18 snapshot work and the R-12 format-injection repair.
+        10.6 RFC 0006 AIS protocol surface, three decisions: D1 the extent
+        contract (widen Symbol.range to the full declaration / document that it
+        covers the leading keyword only / add keyword_range and leave range
+        alone), D2 Slice.diagnostics (populate it, which the docs already
+        promise and which violates no minor-version field promise / delete the
+        field, which DOES violate AIS.md:53-55 and so needs a version bump /
+        keep it but document it as always empty), and D3 the resolver gap
+        (route AIS through resolve_sourced / document AIS as checker-stage only
+        with the six resolver-only codes declared out of scope / fix only the
+        E2018+E2023 mis-coding and leave E2019 dropped). Today E2019 is dropped
+        at exit 0 while E2018 and E2023 survive carrying the wrong code E2003.
+        Blocks NBL-014 and every agent-facing integration from G18 onward.
         No approval is implied anywhere; the three documents Directive 008 names
         as inputs are absent and must be reconstructed with explicit provenance
         notes.
@@ -726,132 +757,176 @@ residual that survives the repair — `fn make<T>() -> T { throw "x" }` bound to
 `let s: string` stays accepted at `0|0` and fails only at run time with
 ``E4026: uncaught value: x`` — and closes with **"There is no D2."**
 
+### RFC 0006 evidence — the AIS agent-native capability set (`NBL-014`)
+
+`docs/rfcs/0006-ais-agent-native-capabilities.md` is **authored and unmerged**;
+it awaits this batch's PR. **1110 lines, 23 tables, 20 fences**, backtick parity
+even, and `## 3. Grammar delta` is `None` (the specification ends at §36 and
+never governs AIS — `grep -n "AIS" docs/LANGUAGE_SPEC.md` yields one prose hit at
+`:2578`). §0 carries nine recorded self-corrections. **Merge is not acceptance**:
+§10.6 `D1`/`D2`/`D3` are unanswered and gate G02 still forbids coding any of the
+surfaces described.
+
+**Eighteen defects, `A`–`R`.** Each was reproduced against the live binary and
+re-verified in more than a dozen independent sweeps, every sweep in a fresh
+`/tmp/nb2*` directory with one `.aura` file per directory. Three carry most of
+the harm, and all three are invisible because each returns a **passing exit
+code**.
+
+- **`A` — `Symbol.range` spans only the leading keyword.** `symbol_of_item`
+  (`src/ais.rs:447-511`, range built `:490-501`) copies the item AST span
+  unexamined; every item parser captures it with `let span = self.span();
+  self.bump();` **before** consuming the keyword (`require_span` shape), and
+  `Parser::span` (`src/parse/mod.rs:528-530`) returns the *current token's* span
+  while `Span` (`src/error.rs:13-26`) carries no extent semantics. On the
+  authoritative 259-byte fixture the ten declarations report **39** bytes of
+  total extent against **249** true bytes — **6.4×** — with `fn helper` at
+  `2..4` against a true `141..182` (`20.5×`). `line`/`column` are correct, the
+  nested `Field.range`/`Parameter.range` are exact, and `same_declaration`
+  (`src/ais.rs:720-746`) scrubs ranges before comparing, so `moved` detection is
+  unaffected and nothing downstream notices. `tests/ais_properties.rs` mentions
+  `range` **zero** times — the defect is untested and unenshrined.
+- **`I` — `pub` fields and `mut` parameters carry the modifier as their range.**
+  `src/parse/mod.rs:1426` takes `fspan` before `:1427` eats `Pub`, and `:1365`
+  takes `span` before `:1370` eats `Mut`, so a `pub` field reports `pub` and a
+  `mut` parameter reports `mut`. This refines `A`: the projection is wrong at two
+  levels, not one. Top-level `pub` does **not** corrupt the range.
+- **`L` — `Slice.diagnostics` is promised twice and populated nowhere.** The
+  type doc (`src/ais.rs:848-853`) says a slice carries "the diagnostics that
+  mention it or its dependencies, bounded by `budget`"; the field doc (`:868`)
+  repeats it. All construction sites pass `Vec::new()` (`:893`, `:935`), while
+  `src/mcp.rs:330-345` holds the whole `Document` — diagnostics already in scope
+  — and discards them. A slice over a program that fails `aura check` is
+  shape-identical to a slice over a clean one, and `Delta` **does** populate
+  diagnostics, so the omission is not a design.
+- **`M`/`N`/`O` — the AIS document path never runs the resolver.** `aura check`
+  goes `compile_file_with_mode` → provider → `resolve_sourced` → checker
+  (`src/main.rs:363-393`); `aura ais` goes `parse` → `ais_snapshot_of` →
+  `checked_document` (`:421-443`), and `checked_document` (`src/ais.rs:1004-1020`)
+  calls only `Checker::module_narrowings`. The result is worse than a gap:
+  `E2019` (unknown module) is **dropped entirely at exit 0**, while `E2018`
+  (private access) and `E2023` (reserved namespace) survive **carrying the wrong
+  code**, `E2003`. Six programs in six directories reproduce this matrix exactly;
+  `E2007` and `E3002` are the two that survive correctly. The authoritative
+  fixture is itself an instance: `aura check` rejects it (`E2019` at `2:1`) while
+  `aura ais` accepts it at exit 0 with ten symbols.
+- **`E` — `tests/ais_differential.mjs` is orphaned from CI.** Its docstring at
+  `:21-22` asserts "This runs in CI with no model." A repo-wide grep for any
+  invocation returns **zero** hits — not `.github/`, not `scripts/`, not any
+  `package.json` (none exists). Executed by hand it passes: `EXIT=0`, four task
+  families, `raw=91 tok` against `ais=2422 tok`, `Fact carriers: raw=4, ais=12`,
+  and its own last line `EXTERNAL DIFFERENTIAL: NOT EXECUTED`. This is the exact
+  rule-7/rule-8 failure the campaign exists to catch: a suite present in the tree
+  that no runner owns.
+- **`D` — `aura://schema` disagrees with `tools/list`.** `tools/list` returns
+  **7** tools; the resource returns **6**, omitting `aura_capabilities`, and
+  `schema.delivery` lists 3 of 7 operations. Both are the same hardcoded literal
+  at `src/mcp.rs:265-266`, and `docs/engineering/MCP.md:50-58` documents all
+  seven, so the omission is an inconsistency, not a design. `tests/ais_properties.rs`
+  never compares the two surfaces — the blind spot that let it survive.
+- **`B` — the CLI exposes 3 of 7 operations.** `src/main.rs:404-409` dispatches
+  only `slice`, `delta`, `snapshot`; every other word falls through to
+  `cmd_ais_snapshot`, so `aura ais bogus f.aura` snapshots a file named `bogus`.
+  `symbol`, `diagnostics`, `revision`, `capabilities` and `bogus` all return
+  `rc=1`, `aura: cannot read <op>`.
+- **`C` — capability bits are structurally unreachable and over-advertised.**
+  `Capabilities::default()` (`src/ais.rs:64-80`) is the only constructor — three
+  call sites (`:987`, `src/main.rs:429`, `src/mcp.rs:297`), no field assignment in
+  the tree — so `flow` and `completion` can never be `true`. A file containing an
+  unlexable `$` still advertises `symbols`/`types`/`diagnostics` while `symbols`
+  is `[]`. The `impl Default` comment claims "Honest advertisement … a producer
+  must not claim a part of the model it does not actually carry", which `C`
+  directly contradicts. **Do not report `capabilities.flow=false` beside a
+  non-empty `narrowings[]` as a contradiction** — that pair is intentional and
+  praised at `docs/engineering/AIS_AGENT_NATIVE_RFC.md:49-52`.
+- **`F`/`H`/`J`/`K` and the remainder** — `const` never receives `type_name`
+  (`Item::Const` falls into `_ => {}` at `src/ais.rs:577`); `SymbolKind` has
+  three unreachable variants (`Variant`/`Field`/`TypeParameter`, 0 constructions)
+  while `AIS.md:99-101` documents them as live; `aura_symbol`'s schema advertises
+  `name` **and** `symbol` but requires only `symbol`, and 4 of the 5 tools that
+  accept `name` discard it. Full detail in RFC 0006 §1.
+
+**Range arithmetic, reproducible.** `/tmp/nb_range_extent.py` maps each reported
+offset to its line with `bisect.bisect_right(offs, a) - 1` and takes
+`len(lines[i])` as the true extent. Two earlier ad-hoc scripts produced `1233` /
+`31.6×` and `1223` / `31.4×`; both were arithmetic bugs in the script, not
+findings, and `39 / 249 / 6.4×` reproduces exactly. Recorded here because a
+ratio this large invites exactly that kind of error.
+
+**Decisions requested — three, none resolvable by an agent.** `§10.6` records
+the option sets. `D1` is the `range` contract (widen the extent / document the
+narrowing / add `keyword_range`); `D2` is `Slice.diagnostics` (populate / delete /
+keep-but-document-empty, where deletion violates the never-remove-a-field promise
+at `AIS.md:53-55` and needs a version bump); `D3` is the resolver gap (route AIS
+through `resolve_sourced` / document AIS as checker-stage only with six
+resolver-only codes declared out of scope / fix only the `E2018`+`E2023`
+mis-coding). `D3` Option A also changes `aura ais` exit codes for programs that
+pass today — a compatibility break that belongs to the human.
+
+**Two defects in my own first draft.** A cited `E3009` does not exist in
+`src/error.rs` and was removed rather than replaced, because no probe ever
+produced one; every remaining cited code was machine-cross-checked against the
+declaration table. A published `RESOLVER-ONLY CODES: 5` was wrong — the census
+identifies **six** (`E2019`, `E2020`, `E2021`, `E2022`, `E2023`, `E4020`) — and
+was corrected before commit.
+
+**What is withheld.** A validated `D1` Option A repair (parser-side end-span
+capture plus the projection) was proven by mutation in both directions with the
+suite at `1477 passed / 0 failed` and clippy at 0. It is **not committed**: gate
+G02 forbids coding the surface before acceptance. `src/ais.rs` and `src/mcp.rs`
+are byte-identical to baseline.
+
 ### Next exact action
 
-Author `NBL-014` (the AIS capability set) as `docs/rfcs/0006-*.md`, using
-`docs/rfcs/0005-inference-and-error-propagation.md` as the structural template
-and `docs/rfcs/README.md` as the format contract, then add its row to the
-`## Index` table in `docs/rfcs/README.md`.
+Commit this batch and open its PR. The tree carries **four** changes for
+`NBL-014`/RFC 0006 and nothing else: the new
+`docs/rfcs/0006-ais-agent-native-capabilities.md` (untracked), the new index row
+in `docs/rfcs/README.md`, and the RFC 0006 records in
+`docs/engineering/NEBULA_CAMPAIGN.md` (header paragraph, §4 G02 row, annotated
+`NBL-014` backlog row, `R-16` risk row, `### §10.6` decision block) and
+`AGENT_STATE.md`.
 
-**The research is complete.** Five defects are already reproduced against the
-live binary and must all appear in the RFC, in this severity order.
+**Already green on this tree:** `cargo fmt --all -- --check` → `0`;
+`cargo test --locked --all-targets --all-features` → `0`, **1477 passed / 0
+failed** across 66 suites. Eight floor gates remain and must run before the PR
+body claims them: clippy, the no-default-features test, `+1.83.0 check`, the
+nightly fuzz check, `node playground/tests/node/run-all.mjs`,
+`node playground/build.mjs --check`, `node website/build.mjs`, and
+`node website/tests/run-all.mjs`.
 
-**1. `Symbol.range` spans only the declaration keyword.** This is the headline.
-`aura ais slice k.aura helper` reports `6:1..6:3`, and bytes `133..135` of the
-source are exactly `fn` while the declaration runs to byte `165`. Verified for
-all six item kinds — `function`→2, `struct`→6, `enum`→4, `trait`→5,
-`type_alias`→4, `constant`→5 — and invariant under name length (probed at 1, 10
-and 17). Root cause is upstream of AIS: every item parser captures the span
-**before** consuming the keyword with `let span = self.span(); self.bump();`
-(`src/parse/mod.rs` — `fn_item` `:1108-1109`, `struct_item` `:1415-1416`,
-`trait_item` `:1227`, `enum_item` `:1453`, `alias_item` `:1507`, `const_item`
-`:1573`), and `symbol_of_item` (`src/ais.rs:447-511`, range built `:490-501`)
-copies it unexamined. **The decisive evidence is the asymmetry:** nested ranges
-are already correct — `Field.range` and `Parameter.range` are exact name spans
-(`x`→1, `yy`→2, `p`→1, `qqq`→3) — so the intended contract is evidently "span
-the name" and only the top-level projection violates it. `line`/`column` are
-correct (`Point 1:1 offset 0`, … `main 7:1`); **only the extent is wrong**. This
-matters because `Slice` (`src/ais.rs:855-874`) carries **no source text** —
-`ais_version`, `revision`, `target`, `symbol`, `dependencies`, `diagnostics`,
-`omitted` — so `range` is the only locator, and `slice`'s own doc comment
-(`:848-853`) calls it "the minimal sufficient context for a task".
-`AIS.md:96-101` says only that `range` "carries both human coordinates (`line`,
-`column`) and the byte `offset`" and **never says what it spans** — that gap is
-the decision to escalate. `moved` detection is unaffected, because
-`same_declaration` (`src/ais.rs:720-746`) deliberately scrubs ranges at
-`:723-742` before comparing. `tests/ais_properties.rs` mentions `range` **zero**
-times, so the defect is untested and unenshrined. Newlines are illegal inside a
-declaration head (`E1006`), so declarations are single-line and the correct
-extent is well defined.
-
-**2. The AIS CLI exposes 3 of 7 operations.** `src/main.rs:405-408` dispatches
-only `slice`, `delta` and `snapshot`; **every other word silently falls through
-to `cmd_ais_snapshot(&tail)`**, so `aura ais bogus f.aura` snapshots a file
-named `bogus` instead of reporting an error. `aura ais symbol`,
-`aura ais diagnostics` and `aura ais revision` all fail with
-`aura: cannot read <op>: No such file or directory`. The help text at
-`src/main.rs:63-70` names only `[snapshot|slice|delta]`. So the CLI surface is
-3 while MCP exposes 7.
-
-**3. Capability bits are structurally unreachable and over-advertised.**
-`Capabilities::default()` (`src/ais.rs:64-79`) is the only constructor — three
-call sites (`src/ais.rs:987`, `src/main.rs:429`, `src/mcp.rs:297`), no field
-assignment anywhere, no struct literal outside `Default` — so `flow` and
-`completion` can never be `true`. And a file containing an unlexable `$` still
-advertises `types: true`, `symbols: true`, `diagnostics: true` while
-`symbols` is `[]`. Note for honesty: `capabilities.flow=false` **with** a
-non-empty `narrowings[]` is *intentional* and praised at
-`docs/engineering/AIS_AGENT_NATIVE_RFC.md:49-52` — do not report that pair as a
-contradiction.
-
-**4. `aura://schema` disagrees with `tools/list`, and `delivery` is short.**
-`tools/list` returns **7** tools; `resources/read` of `aura://schema` returns
-**6**, omitting `aura_capabilities`. `schema.delivery` lists only
-`["snapshot","slice","delta"]` of the 7 operations. Both come from the same
-hardcoded literal at `src/mcp.rs:265-266`, and `docs/engineering/MCP.md:50-58`
-documents all seven, so the omission is an inconsistency rather than a design.
-`tests/ais_properties.rs` **never compares `tools/list` to `aura://schema`** —
-that is the blind spot that let it survive.
-
-**5. `tests/ais_differential.mjs` is orphaned from CI.** Its docstring at `:22`
-asserts "This runs in CI with no model", but no workflow, script, `package.json`
-(there is none), Makefile, justfile or Taskfile invokes it. Running it by hand
-gives exit 0 with four task families and
-`EXTERNAL DIFFERENTIAL: NOT EXECUTED (no evaluator configured)`. This is a
-rule-7/rule-8 defect: a suite present in the tree is not a suite that executes.
-Report it as a finding; **wiring it up is a code change and is forbidden before
-acceptance.**
-
-Two further items are worth carrying but are lower severity: `const` never gets
-`type_name` (`Item::Alias` sets it at `src/ais.rs:576`, the `Item::Const` arm at
-`:577` is `_ => {}`, and only `value_ty` at `:590` fires, so an unannotated
-`const` gets nothing), and `AIS.md:101` drifts from the probe by claiming `kind`
-covers `variant`/`field`/`type_parameter`, which appear only as nested arrays.
-The prior-art byte figures (529 / 5 893 / 3 221) are **not reproducible** — the
-fixture was never committed (`git log --all -S sqrt_approx` is empty) — so
-either re-measure them against the current binary or label them non-reproducible
-in the provenance note. The *property* does reproduce: a 454-byte fixture yields
-snapshot 5 496 / slice 3 223, i.e. slice is 7.10× the source and smaller than
-the snapshot.
-
-Still to decide before writing: whether these findings become one RFC with one
-decision set or several.
-
-It must also start from the facts RFC 0004 already established, because they overlap:
-`AIS_VERSION = "0.1"` at `src/ais.rs:40`; `Capabilities::default()` at
-`src/ais.rs:64-79`; `Severity::Error.as_str()` hardcoded at `src/ais.rs:142`;
-`aura ais` cannot see filesystem modules at all (`src/main.rs:434` + `:440`,
-`src/mcp.rs:291-292`); and AIS **silently drops locationless diagnostics**,
-returning exit 0. RFC 0004 §1.5 carries the measured evidence for those.
-
-Every RFC carries an explicit provenance note stating that its nominal source
-document was absent and that no approval is implied. Each RFC also carries a
-decision block; a decision is escalated, never resolved.
-
-After `NBL-014`, reconstruct `NBL-015`…`NBL-022` on the same model.
+**Citation audit is complete.** Every `src/*.rs:NNN` and
+`docs/engineering/*.md:NNN` reference in RFC 0006 was verified line-by-line
+against the source, and five were wrong and are fixed: `src/main.rs:498` → `:497`,
+`:396-400` → `:395-400`, `:396-540` → `:395-527`, `src/mcp.rs:500` → `:503`, and
+FINDING `I`'s `src/parse/mod.rs:1427`/`:1430` → `:1426`/`:1427`. Cited file line
+counts were re-measured: `src/ais.rs` 1440, `src/mcp.rs` 718, `src/main.rs` 612,
+`AIS.md` 198, `MCP.md` 120, `AIS_AGENT_NATIVE_RFC.md` 243.
 
 **Wave position.** `NBL-010` (RFC 0002), `NBL-011` (RFC 0003), `NBL-013`
-(RFC 0004) and `NBL-012` (RFC 0005) are authored **and merged**. Still
-unauthored: `NBL-014` AIS capability set; `NBL-015`
+(RFC 0004) and `NBL-012` (RFC 0005) are authored **and merged**. `NBL-014`
+(RFC 0006) is authored and awaiting this PR. Still unauthored: `NBL-015`
 `Aura.toml` / `aura init` / `std::os`; `NBL-016` Host database capability and
 protected profile; `NBL-017` `entity struct` and metadata; `NBL-018` CRUD and
 transactions; `NBL-019` AQL/0.1; `NBL-020` Repository in traits; `NBL-021`
 SQLGuard/0.1 SG-01…SG-08; `NBL-022` SQL and Mongo driver contract. That is
-**nine** of the thirteen P0 RFCs still to author, plus `NBL-030` (prelude
-`Result` placement), which is blocked by §10.2 and must not be authored as if
-the decision were taken.
+**eight** of the thirteen P0 RFCs still to author, plus `NBL-030` (prelude
+`Result` placement), which is blocked by §10.2 and must not be authored as if the
+decision were taken.
 
-**Six human decisions are outstanding:** §10.1 MSRV dependency direction;
-§10.2 (`D1a` which contradictory spec clause governs `E2013`, `D1b` its message
-text, `D1c` placement — answer `D1a` before `D1c`); §10.3 (`D1` authorize the
-three-part tail-`try` repair, `D2` whether to require exhaustiveness); §10.4
-(`D3` plus open item 13); and §10.5 (`D1` authorize the two-part
-generic-instantiation repair).
+**Seven human decisions are outstanding across six decision packages:** §10.1
+MSRV dependency direction; §10.2 (`D1a` which contradictory spec clause governs
+`E2013`, `D1b` its message text, `D1c` placement — answer `D1a` before `D1c`);
+§10.3 (`D1` authorize the three-part tail-`try` repair, `D2` whether to require
+exhaustiveness); §10.4 (`D3` plus open item 13); §10.5 (`D1` authorize the
+two-part generic-instantiation repair); and §10.6 (`D1` the `range` contract,
+`D2` `Slice.diagnostics`, `D3` the resolver gap).
 
-**Do not code any surface these RFCs describe, and do not resolve §10.1, §10.2,
-§10.3, §10.4, or §10.5.** G02 is documentation-only and is **not** blocked by
-the §10.1 MSRV decision, which first bites at G07. `GATE G02` requires the P0
-RFCs to be accepted first.
+**Do not code any surface these RFCs describe, and do not resolve §10.1 through
+§10.6.** Specifically: do not wire `tests/ais_differential.mjs` into CI, do not
+widen `Symbol.range`, do not populate `Slice.diagnostics`, do not route AIS
+through the resolver, and do not repair the `E2018`/`E2023` mis-coding. G02 is
+documentation-only and is **not** blocked by the §10.1 MSRV decision, which first
+bites at G07. `GATE G02` requires the P0 RFCs to be accepted first.
 
 **Known Markdown hygiene debt, deliberately not absorbed here.** A repo-wide
 census found **26 table rows carrying an unescaped `|` inside a code span,
