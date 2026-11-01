@@ -483,4 +483,4 @@ authorizes it.
 | 2 | **D2** — authorize the three-part checker repair of §2.2. | **Human** |
 | 3 | Add the seven regression tests of §6.4 once D2 is authorized. | Agent, post-authorization |
 | 4 | Document tail-position `try` value semantics in `LANGUAGE_SPEC.md` §14.5 — currently **undocumented** and **untested**, despite being deliberate in the evaluator. | Agent, post-D2 |
-| 5 | Record the `int | none` union in a diagnostic golden test, since `Ty::Union` ordering must stay stable. | Agent, post-D2 |
+| 5 | Record the `int \| none` union in a diagnostic golden test, since `Ty::Union` ordering must stay stable. | Agent, post-D2 |

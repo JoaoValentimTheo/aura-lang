@@ -2,6 +2,21 @@
 
 ## Directive 008 — NEBULA 0.3.2 campaign (`G02`, `IN_PROGRESS`)
 
+**G02 PR #50 record integrated; RFC 0004 authored.** PR **#50**
+(`docs/nebula-pr49-record`) merged into `rewrite/v3-rust` as
+**`fc49c5ee44023b4c13e55d3384f69ef1ff8fcadc`** at 2026-11-01T01:36:37Z, with
+**21/21** remote checks green; post-merge runs `41261797535` (CI) and
+`41261797527` (Pages) both `completed/success`. The merged diff is 3 files,
+all documentation.
+
+Local `HEAD` is **`fc49c5ee`**. Working tree carries one new untracked artifact:
+`docs/rfcs/0004-diagnostics-contract.md` (`NBL-013`), **693 lines / 15 tables /
+4 fences**, audited end to end against the live binary but **not yet
+committed**. No source file has changed: `src/check/mod.rs` is still byte-
+identical to baseline (`sha256 1232b687…aa738f532`), `manifest.json` sha256 is
+still `cbe7ad91…23b837`, `manifest.current` is still `"0.3.1"`, and no `0.3.2`
+tag exists.
+
 **G02 PR #49 record integrated.** PR **#49**
 (`docs/nebula-g02-tag-scope-record`, head `02599d17`) merged into
 `rewrite/v3-rust` as **`85de5945`** at 2026-11-01T01:14:00Z, with **21/21**
@@ -137,11 +152,48 @@ loop, or a `return` has no implicit value and is not judged, so
 `fn f() -> int { print(1) }` and `fn f() -> int { }` being accepted is correct.
 
 **G02 RFCs authored and integrated.** `docs/rfcs/0002-result-and-recoverable-errors.md`
-(426 lines) and `docs/rfcs/0003-try-as-value-expression.md` (486 lines), both
+(433 lines) and `docs/rfcs/0003-try-as-value-expression.md` (487 lines), both
 merged as PR #46 → `6cc96bf5`. Both carry §0 provenance notes, and both escalate
 a human decision rather than resolving it: RFC 0002 §2.1 (`D1a` tag scope, `D1b`
 `E2013` message, `D1c` placement) and RFC 0003 §2.1–§2.2 (`D1` grammar, `D2` the
 checker repair). Neither is accepted; no surface is coded.
+
+**RFC 0004 authored (diagnostics contract, `NBL-013`).**
+`docs/rfcs/0004-diagnostics-contract.md`, 693 lines, written to disk and audited
+end to end against the live binary but **not committed**. It carries a five-point
+contract, a 23-row evidence table, a nine-row mutation table and twenty required
+regression tests. Three results are worth recording here because they change how
+other waves must be planned:
+
+- **Format injection is real and needs one legal source file.** The shared
+  renderer interpolates the unescaped `Value::display` of an uncaught throw and
+  the raw file name into a single-line format, so `throw "a\nb"` forges a second
+  diagnostic line, a newline inside a list value does the same, a source byte of
+  raw ESC passes through verbatim, and a file name containing a newline forges a
+  complete pseudo-diagnostic. All four survive `--color never` and `NO_COLOR=1`.
+  The repair must be **diagnostic-side**: `print` legitimately emits raw newlines
+  (`src/stdlib/mod.rs:101`), so changing `Value::display` globally breaks it.
+  `tests/oracle/mod.rs:440` duplicates the message format, so a single-site fix
+  drifts. Escalated as §10.4 / `R-12`.
+- **`line_col` is conformant, not defective.** It counts Unicode scalar values,
+  exactly as `LANGUAGE_SPEC.md:177` mandates. On a terminal the pointer still
+  drifts for wide characters: against a stated display-width model the delta is
+  `0 / −3 / 0 / −1 / −2 / +1` for ascii, tab, CRLF, emoji, CJK and decomposed
+  combining, and the delta is stable while the absolute column is not. Escalated
+  as §10.4 `D3`.
+- **Two spec-honesty defects.** §30.4 says every §30.2 code is reachable, but six
+  are not, and §30.3 `:3612` says `E4999` MUST NOT be reachable — the two
+  sections contradict each other. Separately `src/main.rs:26` cites
+  `LANGUAGE_SPEC §47/§48`, and the specification ends at `## 36` (`:4009`). Also
+  falsified: §30.3's claim that every rejection carries a location — a dangling
+  symlink child yields `error[E2022]: …` with no `file:line:col:` prefix.
+
+The sweep that produced those results falsified three of RFC 0004's own published
+figures before commit (the NUL byte count 46 → **47**, the entire absolute column
+table, and the attribution of the `` `?` `` substitution — it is `src/lex/mod.rs:585-588`,
+not the module-name filter), and two of its probe designs (a program emitting no
+diagnostic cannot prove ANSI absence; the accessor is `args()`, not
+`std::args()`).
 
 **G02 correction — the tag-scope premise was wrong.** RFC 0002 initially
 recorded variant tags as unique *programme-wide* and built its cost analysis on
@@ -192,7 +244,7 @@ audit. `py` is a full CPython process, not a sandbox.
 **Campaign plan published:** `docs/engineering/NEBULA_CAMPAIGN.md` — baseline,
 scope, P0/P1/P2 classification, G00–G19 wave table with verbatim gates, status
 vocabulary, ID'd backlog (`NBL-001`…`NBL-190`, sparse — 35 distinct IDs),
-risks `R-01`…`R-11`, decision packages §10.1–§10.3, evidence criteria,
+risks `R-01`…`R-12`, decision packages §10.1–§10.4, evidence criteria,
 architecture constraints, delegation, blocking policy, checkpoint format, and
 the mandatory STOP.
 
@@ -1760,30 +1812,50 @@ decisions (`NBL-010`, `NBL-011`). RFC 0002 was **corrected after merge**:
 its tag-scope premise had been falsified (`LANGUAGE_SPEC.md`
 contradicts itself; the compiler is per-module), so §1.2, §1.1.1, §2.1, §2.1.1
 and §5 were rewritten and the escalation split into `D1a` scope / `D1b` message
-/ `D1c` placement. The
+/ `D1c` placement. RFC 0004 (`NBL-013`, diagnostics contract) is authored on
+disk, audited, and **not yet committed**; it escalates `D3` (character versus
+visual columns) and open item 13 (non-ASCII module directories skipped silently)
+as §10.4. The
 P0 set is not yet complete: `NBL-012` (inference and error propagation),
-`NBL-013` (diagnostics contract), `NBL-014` (AIS capability set), `NBL-015`
+`NBL-014` (AIS capability set), `NBL-015`
 (`Aura.toml` / `aura init` / `std::os`), `NBL-016` (Host database capability),
 `NBL-017` (`entity struct` and metadata), `NBL-018` (CRUD and transactions),
 `NBL-019` (AQL/0.1), `NBL-020` (Repository in traits), `NBL-021` (SQLGuard/0.1
 SG-01…SG-08), `NBL-022` (driver contract), and `NBL-030` (prelude/`Result`
-placement, blocked by §10.2) remain unauthored.
+placement, blocked by §10.2) remain unauthored. Nine of the twelve P0 RFCs are
+still unwritten.
 
-**Three human decisions are outstanding, and each blocks a downstream wave:**
+**Five human decisions are outstanding, and each blocks a downstream wave:**
 §10.1 MSRV versus database drivers (blocks G07 onward); §10.2 `Result` versus
 enum-tag **scope** — a genuine spec contradiction (`D1a`) that must be answered
 before the placement choice (`D1c`), plus `D1b`, the `E2013` message text
 (blocks `NBL-030`, G03, and every `Result` API in G07–G17); §10.3 `try` as an expression and the tail-`try` checker repair
-(blocks `NBL-011`, `NBL-031`, and G03).
+(blocks `NBL-011`, `NBL-031`, and G03); §10.4 `D3` visual columns and its open
+item 13 non-ASCII module discovery (blocks G18's snapshot work, and the
+format-injection repair `R-12`).
 
-**Next exact action:** continue **G02** by authoring the remaining P0 RFCs
-(`NBL-012`…`NBL-022`) under `docs/rfcs/`, using
+**Next exact action:** commit the RFC 0004 batch — the RFC itself, the
+`docs/rfcs/README.md` index, the campaign §10.4 / `R-12` / header annotations,
+the five escaped-pipe fixes in this campaign's own docs, and this state refresh
+— then run the validation floor, open the PR, reach 21/21, and merge. After
+that, continue **G02** by authoring the remaining P0 RFCs
+(`NBL-012`, `NBL-014`…`NBL-022`) under `docs/rfcs/`, using
 `docs/rfcs/0001-exception-catch-selection.md` as the structural template and
 the §2.2 section list as the required shape, and carrying the same explicit
 provenance note that the nominal source document was absent and no approval is
 implied. **Do not code** any surface those RFCs describe, and do not resolve
-§10.1, §10.2, or §10.3. G02 is documentation-only and is **not** blocked by the
-§10.1 MSRV decision, which first bites at G07.
+§10.1, §10.2, §10.3, or §10.4. G02 is documentation-only and is **not** blocked
+by the §10.1 MSRV decision, which first bites at G07.
+
+**Known documentation hygiene debt, deliberately not absorbed here.** A
+repo-wide census found **26 Markdown table rows with an unescaped `|` inside a
+code span, across 10 files**. GFM splits such rows mid-expression, so they
+render visibly wrong. This batch fixed the **5** that sit in its own surface;
+the remaining **21** are in `docs/LANGUAGE_SPEC.md` (5), `docs/grammar.md` (5),
+`website/content/reference-grammar.md` (5), `docs/archive/CONFORMANCE_PHASE1.md`
+(2), `docs/OOP.md` (1), `docs/archive/LANGUAGE_SPEC_CONFORMANCE_REPORT.md` (1),
+`docs/engineering/EMBEDDED_PYTHON_ARCHITECTURE.md` (1) and
+`docs/engineering/DX_AIX.md` (1). They need their own bounded hygiene batch.
 
 **Campaign 003 remains closed** under Directive 005. Release-candidate
 preparation and stable promotion are still human decisions, and Directive 008
