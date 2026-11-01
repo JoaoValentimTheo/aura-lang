@@ -6,9 +6,9 @@ Active task: **G02**, the P0 RFC reconstruction. `G00` and `G01` are closed.
 No implementation is authorized before `G02` accepts the P0 RFC set.
 
 ```
-WAVE: G02 -> IN_PROGRESS (5 of 13 P0 RFCs merged, twelve outstanding decision
-      items across six decision packages)
-STATUS: G02 IN_PROGRESS (twelve decision items outstanding, see DECISOES)
+WAVE: G02 -> IN_PROGRESS (6 of 13 P0 RFCs authored: 5 merged, RFC 0007
+      authored; fifteen outstanding decision items across seven packages)
+STATUS: G02 IN_PROGRESS (fifteen decision items outstanding, see DECISOES)
 HEAD: d03d271892285d3953577f9e497396d2fe98454f (merge of PR #55)
 PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb;
      #44 MERGED (G00 closure + G01 authorisation, head 5cf4f8d9) -> 390f763c;
@@ -92,7 +92,7 @@ RISCOS: R-01 try-as-expression ambiguity (gates G03 and every Result API);
         tests/ais_differential.mjs asserts it runs in CI while nothing invokes
         it, the CLI exposes 3 of 7 operations, and aura://schema advertises 6 of
         7 tools and 3 of 7 delivery operations from one hardcoded literal
-DECISOES: NONE TAKEN. Twelve open decision items across six decision packages,
+DECISOES: NONE TAKEN. Fifteen open decision items across seven decision packages,
         all recorded as decision packages in the campaign document, none
         resolved by the agent.
         10.1 MSRV 1.83 versus the required DB drivers: three lawful outcomes
@@ -881,42 +881,105 @@ suite at `1477 passed / 0 failed` and clippy at 0. It is **not committed**: gate
 G02 forbids coding the surface before acceptance. `src/ais.rs` and `src/mcp.rs`
 are byte-identical to baseline.
 
+### RFC 0007 evidence — project structure, `aura init`, and the `os` capability (`NBL-015`)
+
+`docs/rfcs/0007-project-structure-init-and-os.md` is **authored and
+probe-verified, not yet merged** — 439 lines, 3 tables (28 rows), zero fences, no
+inconsistent rows, `## 3. Grammar delta` = **None**. Merging would record the
+proposal only; §10.7 `D1`/`D2`/`D3` are unanswered and gate G02 still forbids
+coding any surface described.
+
+**The central finding is that `G06` is largely vacuous.** Three of its five
+clauses are green *by absence* rather than by construction:
+
+| `G06` clause | Status | Basis |
+|---|---|---|
+| deterministic, reversible loading | **green** | discovery is extension- and shape-filtered (`module_graph.rs:948-957`) |
+| module compatibility | **green** | nothing reads `Aura.toml`, so nothing can be made incompatible |
+| Host can deny environment access | **vacuously green** | no environment surface exists to deny |
+| no secrets in output | **vacuously green** | same reason |
+| cross-OS tests where relevant | **unevaluable** | blocked on `D3` (open item 5) |
+
+**The backlog spelling `std::os` is unsound.** There is no `Std` module at all:
+`use std::os`, `use Std::os`, and `use Std::Math` each fail with
+`E2019: unknown module` (exit 1), and `grep -rn '"Std"' src/` is **empty**. The
+stdlib is a flat prelude of **91** builtin functions (`grep -c 'name: "'
+src/stdlib/signatures.rs` → 91) injected by name through `builtin_names()`
+(`src/stdlib/mod.rs:20`), not a module namespace. `D2`'s option of a real module
+namespace is rejected on that evidence rather than offered as viable.
+
+**No environment access exists.** `grep 'name: "env"'` / `"getenv"` / `"var"`
+in `src/stdlib/signatures.rs` returns nothing. Every `std::env` use in `src/` is
+Rust-side (`native_source.rs:43` `current_dir`; `main.rs:151` `args`;
+`main.rs:259` and `diagnostic.rs:50` colour override; `mcp.rs:59`, `:66` `PATH`).
+`docs/security/TRUST_BOUNDARIES.md:30` confines environment variables to the `py`
+feature, which `:38` records as verified-absent in CI. `args()` already covers
+the common need (`src/stdlib/signatures.rs:533-539`, arity 0, `list<string>`).
+
+**Nothing was coded, and `aura init` does not exist.** `grep -rn 'create_dir'
+src/ playground/runtime/src/` is **empty**, so `init` would be the compiler's
+first write path; `aura init` exits **2** with an unknown-command diagnostic.
+`COMMANDS` is duplicated — 7 entries at `src/main.rs:28-36` and 5 at `:39-45`
+under `not(feature = "json")` — so any future `init` must be added to **both**.
+
+**`Aura.toml` at the source root is harmless today** — probed `RC=0`, because
+discovery filters by extension and shape. `D1` is therefore the **root
+decision**: `D2` and `D3` are both downstream of what `Aura.toml` is allowed to
+mean.
+
+**Six provenance corrections**, two of them mine: a fabricated cross-reference to
+"RFC 0006 §1.5" (that is Finding D; the resolver-skip evidence is **§1.13**),
+and a claim that `Aura.toml` had four repository mentions — a bare total that
+became twenty-seven once this RFC existed. §1.3 now names the three files and
+pins an at-baseline frame instead of printing a self-falsifying count. `E2019` is
+not a literal; it is `UNKNOWN_MODULE: u16 = 2019` (`src/error.rs:374`) rendered
+through `format!("E{:04}: ...")` (`:103`, `:109`).
+
 ### Next exact action
 
-Author `NBL-015` (`Aura.toml` / `aura init` / `std::os`) as
-`docs/rfcs/0007-*.md`, escalating whatever decision it uncovers in a
-`### §10.7` block in the campaign document. The RFC 0006 batch is closed:
-authored, citation-audited, merged via **PR #55 → `d03d2718`** (head
-`d4f38101`) with **21/21** checks green, and both post-merge runs
-(`41286373383` CI 21/21, `41286373385` Pages 2/2) are green on that commit. This
-record batch carries the merge into the three state documents and touches no
-source file.
+Author `NBL-016` (Host database capability and the protected profile) as
+`docs/rfcs/0008-*.md`, escalating whatever decision it uncovers in a
+`### §10.8` block in the campaign document. The RFC 0007 batch is **open**: RFC
+0007 is authored and probe-verified at
+`docs/rfcs/0007-project-structure-init-and-os.md`, its index row is added, and
+§10.7 `D1`/`D2`/`D3` are escalated. This record batch carries RFC 0007 into the
+three state documents and touches no source file.
 
 **Wave position.** `NBL-010` (RFC 0002), `NBL-011` (RFC 0003), `NBL-013`
 (RFC 0004), `NBL-012` (RFC 0005) and `NBL-014` (RFC 0006) are authored **and
-merged**. Still unauthored: `NBL-015` `Aura.toml` / `aura init` / `std::os`;
-`NBL-016` Host database capability and protected profile; `NBL-017`
+merged**; `NBL-015` (RFC 0007) is authored and **pending merge**. Still
+unauthored: `NBL-016` Host database capability and protected profile; `NBL-017`
 `entity struct` and metadata; `NBL-018` CRUD and transactions; `NBL-019`
 AQL/0.1; `NBL-020` Repository in traits; `NBL-021` SQLGuard/0.1 SG-01…SG-08;
-`NBL-022` SQL and Mongo driver contract. That is **eight** of the thirteen P0
+`NBL-022` SQL and Mongo driver contract. That is **seven** of the thirteen P0
 RFCs still to author, plus `NBL-030` (prelude `Result` placement), which is
 blocked by §10.2 and must not be authored as if the decision were taken.
+`NBL-015` is now RFC 0007 (`docs/rfcs/0007-project-structure-init-and-os.md`,
+439 lines, 3 tables), authored and probe-verified but not yet merged; its three decisions
+are escalated at §10.7.
 
-**Twelve outstanding decision items across six decision packages:** §10.1
+**Fifteen outstanding decision items across seven decision packages:** §10.1
 MSRV dependency direction — **1** item, unlabelled; §10.2 (`D1a` which
 contradictory spec clause governs `E2013`, `D1b` its message text, `D1c`
 placement — answer `D1a` before `D1c`) — **3** items; §10.3 (`D1` the grammar of
 `try`-as-expression, `D2` authorize the three-part tail-`try` checker repair) —
 **2** items; §10.4 (`D3` plus open item 13) — **2** items; §10.5 (`D1` authorize
-the two-part generic-instantiation repair) — **1** item; and §10.6 (`D1` the
-`range` contract, `D2` `Slice.diagnostics`, `D3` the resolver gap) — **3** items.
-Total **12**. The former "seven decisions" figure was incremental drift and
-matched neither convention.
+the two-part generic-instantiation repair) — **1** item; §10.6 (`D1` the
+`range` contract, `D2` `Slice.diagnostics`, `D3` the resolver gap) — **3** items;
+and §10.7 (`D1` what `Aura.toml` may contain, `D2` whether an `os` surface
+exists, `D3` what `aura init` writes — answer `D1` first, because `D2` and `D3`
+are both downstream of it) — **3** items.
+Total **15**. The former "seven decisions" figure was incremental drift and
+matched neither convention. This count was **validated by re-deriving the
+pre-§10.7 totals** `1 + 3 + 2 + 2 + 1 + 3` = 12 from the same rule before the
+§10.7 row was added, so the rule is the one the table has always encoded.
 
 **Do not code any surface these RFCs describe, and do not resolve §10.1 through
 §10.6.** Specifically: do not wire `tests/ais_differential.mjs` into CI, do not
 widen `Symbol.range`, do not populate `Slice.diagnostics`, do not route AIS
-through the resolver, and do not repair the `E2018`/`E2023` mis-coding. G02 is
+through the resolver, do not repair the `E2018`/`E2023` mis-coding, do not add
+an `aura init` command, do not teach the loader to read `Aura.toml`, and do not
+add any environment surface. G02 is
 documentation-only and is **not** blocked by the §10.1 MSRV decision, which first
 bites at G07. `GATE G02` requires the P0 RFCs to be accepted first.
 
