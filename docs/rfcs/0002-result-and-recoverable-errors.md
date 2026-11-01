@@ -77,7 +77,7 @@ Source: `enum Result<T, E> { Ok(T), Err(E) }`, then
 `let r = Ok(7)`, matched with `Ok(v) -> { print(v) }` / `Err(_) -> { print(0) }`.
 Bare, unqualified tags work because no module wraps the enum.
 
-**P2 — variant tags are unique program-wide, unconditionally.**
+**P2 — variant tags are unique *per module*; `E2013` fires within one scope.**
 
 ```console
 $ aura check q.aura       # enum Result { Ok(T), Err(E) } plus enum MyThing { Ok(int) }
@@ -87,11 +87,91 @@ $ echo $?
 1
 ```
 
-`docs/LANGUAGE_SPEC.md:2407`: "A variant tag MUST be unique **across the whole
-program** (`E2013`)". `:3281`: "declaring two variants with the same tag
-anywhere is `E2013`".
+**The message text is wrong, and so is the clause it quotes.** The checker keys
+`self.variants` by tag within a single resolution scope, so `E2013` fires for
+two tags in the *same* module — never across modules. The diagnostic string
+"unique across the program" is a stale literal that contradicts both the
+implementation and three normative passages of the spec (see §1.1.1).
 
-**P3 — module scope exempts a tag from programme-wide uniqueness.**
+Same-module duplicate, including inside a nested module (both rejected):
+
+```console
+$ aura check dup.aura      # module M { enum A { Ok(int) }  enum B { Ok(string) } }
+dup.aura:3:12: error[E2013]: variant `M::Ok` is already declared by enum `M::A`; variant names must be unique across the program
+$ aura check dup2.aura     # enum A { Ok(int) }  enum B { Ok(string) }   (root scope)
+dup2.aura:2:10: error[E2013]: variant `Ok` is already declared by enum `A`; variant names must be unique across the program
+```
+
+Both transcripts are reproduced exactly, including the message tail. Note that
+the trailing clause asserts the programme-wide rule **in the very sentence that
+reports a module-qualified tag** — the contradiction is visible in a single line
+of output.
+
+Cross-module duplicate, in every arrangement probed (all exit `0`):
+
+| Arrangement | Result |
+|---|---|
+| `enum R { Ok(int) }` at root **+** `module M { Ok(string) }` | `0` |
+| `module M { Ok }` declared **before** a root `enum R { Ok }` | `0` |
+| sibling `module M { Ok }` and `module N { Ok }` | `0` |
+| nested `module M { enum A { Ok } module N { enum B { Ok } } }` | `0` |
+| root `Ok(1)` and `M::Ok("s")` both constructed in one program | `0`, prints `Ok(1) M::Ok("s")` |
+
+### 1.1.1 A spec-internal contradiction on tag scope
+
+`docs/LANGUAGE_SPEC.md` states both rules, normatively, in different sections.
+
+**Programme-wide** (the two passages RFC 0002 originally relied on):
+
+- `:2407` §18.1 — "A variant tag MUST be unique **across the whole program**
+  (`E2013`); tags are global."
+- `:3281` §26 — "declaring two variants with the same tag anywhere is `E2013`."
+
+**Per-module** (three passages, including the frozen-design list):
+
+- `:3399` §27 — "**Normative rule (variant scope, CONF-RESOLVE-6).** Variant
+  tags are unique **per module**. Two modules may each declare an `Ok`. Within
+  one module, conflicting tags remain invalid. The canonical variant identity is
+  the module path plus the tag."
+- `:1556` §12 — "Variant tags are unique **per module**, and the canonical tag
+  is the module path plus the tag …"
+- `:3897` §33.14 — "**Enum variant tags are unique per module**, not globally.
+  … so two modules may each declare an `Ok`."
+
+**The implementation agrees with the per-module reading**, and the mechanism is
+explicit: `src/resolve.rs:1452-1455` rewrites each variant tag with the module
+prefix —
+
+```rust
+// Variant tags are canonicalized so two modules may each declare a
+// variant with the same local name without collision (`E2013`).
+tag: join(prefix, &v.tag),
+```
+
+— and the canonical diagnostic proves the prefixing is live: the same-module
+case above reports the tag as `M::Ok`, not `Ok`.
+
+So `:2407` and the `:3281` clause are **incorrect**, `E2013`'s message text is
+incorrect, and `:3399`/`:1556`/`:3897` describe the shipped behaviour. This is a
+specification defect, not a design choice, and **this RFC does not resolve it**;
+§2.1 records the consequence for D1.
+
+**This is not a new discovery in this repository, and this RFC does not claim
+it as one.** `docs/engineering/EXCEPTION_SYNTAX_DECISION_PACKAGE.md:192`
+(verification pass 2026-10-06) already records the same finding with its own
+bidirectional execution evidence: "the resolver prefixes module paths
+(`shapes::Color::Red`), and duplicate tags *within one scope* are rejected
+(`E2013` …). Two same-named variants in different modules are correctly
+distinguished — executed in both directions". That package's scope was the
+exception system, so the contradiction in `LANGUAGE_SPEC.md` was noted there but
+never raised as a specification question.
+
+What is new here is narrower and worth stating precisely: the **two normative
+clauses that disagree were never reconciled**, and `E2013`'s message still
+repeats the losing side. The per-module *behaviour* is settled and tested; the
+*wording* of the specification and of the diagnostic is not.
+
+**P3 — a tag in one module does not collide with the same tag in another.**
 
 ```console
 $ aura run t.aura         # module M { pub enum Thing { Ok(int) } } + top-level Result{Ok,Err}
@@ -100,8 +180,9 @@ $ echo $?
 0
 ```
 
-The module-scoped `Ok` and the top-level `Ok` coexist. So E2013 is a rule about
-*tag position in the namespace tree*, not about spelling globally.
+The module-scoped `Ok` and the top-level `Ok` coexist. `E2013` is therefore a
+rule about *tag position in the namespace tree*, not about spelling globally —
+which is exactly what `:3399`/`:1556`/`:3897` say and `:2407`/`:3281` deny.
 
 **P4 — a module-scoped tag is never reachable unqualified.**
 
@@ -145,10 +226,23 @@ so they are not reintroduced:
    requirement**. If no arm matches, the result is `E4029` at runtime." A
    non-exhaustive `match` over a `Result` compiles (probe: exit `0`) and fails
    only when it runs (probe: `E4029: no match arm matched the value`, exit `1`).
-3. **"A local `Result` shadows a prelude one."** It cannot. P2 shows that a
-   second declaration of the tag `Ok` is `E2013` regardless of the enum name.
-   Shadowing is a *variable* rule — `LANGUAGE_SPEC.md:3282` says a variable
-   binding "shadows rather than redeclares" — not a tag rule.
+3. **"A local `Result` shadows a prelude one."** It cannot, but *not* for the
+   reason first given here. Shadowing is a *variable* rule —
+   `LANGUAGE_SPEC.md:3282` says a variable binding "shadows rather than
+   redeclares" — not a tag rule, so "shadowing" never applied to tags at all.
+   The real obstacle is narrower than originally stated: an in-scope duplicate
+   of the tag `Ok` with the prelude `Result` is `E2013`, but a duplicate in a
+   *different module* is not (§1.1.1). The original wording of this item claimed
+   programme-wide uniqueness and was wrong.
+4. **"Variant tags are unique across the whole program."** False as stated, and
+   the error propagated into §2.1's cost analysis. `LANGUAGE_SPEC.md:3399`
+   (§27), `:1556` (§12) and `:3897` (§33.14) all specify **per-module**
+   uniqueness; the implementation implements per-module uniqueness by prefixing
+   tags with the module path (`src/resolve.rs:1452-1455`); probes confirm it
+   (§1.1.1). Two clauses — `:2407` (§18.1) and `:3281` (§26) — say the opposite,
+   and `E2013`'s message text repeats the wrong one. **The specification
+   contradicts itself.** This RFC records the defect and escalates it; it does
+   not pick a winner.
 
 ## 2. Decision
 
@@ -171,13 +265,22 @@ not choose between them.
 
 **Option A — top-level `Result`, bare `Ok(7)` / `Err(e)`.**
 
-Exactly the spelling Directive 008 §2.4 mandates. Cost: because tags are unique
-programme-wide (P2), `Ok` and `Err` become **permanently unusable as variant
-tags in any user enum in the same compilation unit**. A user writing
-`enum Parsed { Ok(int) }` alongside a program that mentions `Result` gets
-`E2013`. A user writing it alongside a program that *does not* mention `Result`
-does not — so the rule would appear to depend on unrelated code, which is a
-notable DX hazard.
+Exactly the spelling Directive 008 §2.4 mandates. Cost: `Ok` and `Err` become
+**unusable as variant tags in the root scope of any program that mentions
+`Result`**. A user writing `enum Parsed { Ok(int) }` at the root gets `E2013` —
+but only if their `Ok` is also at the root; a module-scoped `enum Parsed { Ok }`
+coexists fine (§1.1.1). So the original framing of this cost — "permanently
+unusable in any user enum in the same compilation unit" — **overstated it**.
+
+Two honest residual costs remain, and they are smaller but real:
+
+- the rule is **scope-dependent, not import-dependent**, so a root-level
+  `enum Parsed { Ok(int) }` breaks because `Result` merely *exists*, even if
+  the program never constructs one — a coherence surprise rather than a
+  usability wall;
+- `E2013`'s current message says "unique across the program", so the diagnostic
+  a user receives will **misdescribe the rule that rejected their code** until
+  the message is fixed (§2.1.1).
 
 Verified neutral fact: **no `.aura` file in this repository currently declares
 an `Ok` or `Err` variant tag**
@@ -204,9 +307,31 @@ using a library type; Option B pays a permanent qualifier tax at every call site
 and needs a follow-on grammar RFC before it can read like the directive's
 example.
 
-**Required human input:** choose A or B, or authorise a third path (e.g. an
-`@must_use`-style attribute, which is currently impossible because `@` is
-unlexable — `E1001`). Until chosen, G03 must not implement `Result`.
+### 2.1.1 The decision is now partly a spec question, not only a placement one
+
+The A/B choice above assumes a settled tag-scope rule. It is not settled: §1.1.1
+documents that `LANGUAGE_SPEC.md` asserts both programme-wide (`:2407`, `:3281`)
+and per-module (`:3399`, `:1556`, `:3897`) uniqueness, that the implementation
+is per-module, and that `E2013`'s message text claims the programme-wide rule.
+
+That changes what a human is being asked. Three sub-decisions are entangled, and
+**the agent takes none of them**:
+
+| # | Question | Why it is not mechanical |
+|---|---|---|
+| D1a | Which clause is normative — `:2407`/`:3281` (global) or `:3399`/`:1556`/`:3897` (per-module)? | The implementation already implements per-module, so declaring global normative would make the *spec* right and the *compiler* wrong; declaring per-module right makes two normative passages obsolete. Either way a normative document changes. |
+| D1b | Should `E2013`'s message be corrected? | It currently asserts a rule the compiler does not enforce (`src/check/mod.rs:1378`). No test matches the message text — `tests/grammar.rs` matches on the code `codes::DUPLICATE_VARIANT`, and `docs/errors.md:37` gives only the code, a title ("Duplicate enum variant tag") and a trigger example, not the message — so the change is low-risk. It is still **not** decidable by the agent, because the correct wording depends on D1a. |
+| D1c | Where does `Result` live — Option A or Option B? | Only decidable **after** D1a. Under per-module uniqueness, Option A's cost is a root-scope reservation; under global uniqueness it is a whole-program reservation. The two answers give materially different DX. |
+
+**Recommended sequencing, not a recommendation of outcome:** answer D1a first. It
+is a pure specification question with probe evidence already attached, and it
+collapses D1c into a normal cost comparison. Answering D1c first risks choosing a
+placement whose stated cost is an artefact of the wrong clause.
+
+**Required human input:** D1a (which clause governs), D1b (message wording), then
+A or B for D1c — or authorise a third path (e.g. an `@must_use`-style attribute,
+currently impossible because `@` is unlexable — `E1001`). Until D1c is answered,
+G03 must not implement `Result`.
 
 ### 2.2 What is deliberately absent
 
@@ -259,11 +384,13 @@ mechanism requires the `@` token class (campaign risk R-02) and is out of scope.
 
 ## 5. Migration
 
-- **Option A:** programs declaring their own `Result` with `Ok`/`Err` keep
-  working only if they are the *only* declaration of those tags in the
-  compilation unit — which they already are, since a second one is `E2013`
-  today. Programs declaring `Ok`/`Err` on a *different* enum name and also using
-  `Result` would newly fail with `E2013`. No in-tree `.aura` file does this.
+- **Option A:** programs declaring their own root-scope `Result` with `Ok`/`Err`
+  keep working only if those are the *only* root-scope declarations of those
+  tags — which they already are, since a duplicate in one scope is `E2013`
+  today. Programs declaring `Ok`/`Err` at root scope on a *different* enum name
+  and also declaring `Result` would newly fail with `E2013`, **even if they
+  never construct a `Result`**. Programs doing this inside a module are
+  unaffected (§1.1.1). No in-tree `.aura` file does either.
 - **Option B:** no existing program changes, because no unqualified `Ok`/`Err`
   tag exists in-tree and the module form is opt-in.
 - **R6 (both options):** can reject a program that compiles today — one that

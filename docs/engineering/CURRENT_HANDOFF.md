@@ -8,18 +8,21 @@ No implementation is authorized before `G02` accepts the P0 RFC set.
 ```
 WAVE: G02 -> IN_PROGRESS (2 of 12 P0 RFCs authored, three decisions outstanding)
 STATUS: G02 IN_PROGRESS (three human decisions outstanding, see DECISÕES)
-HEAD: 6cc96bf5c0794a51972f3fd90c77b8d2456bdbc8 (merge of PR #46)
+HEAD: fe0e731286b272f8a77a89f3c5c8753357c23504 (merge of PR #47)
 PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb;
      #44 MERGED (G00 closure + G01 authorisation, head 5cf4f8d9) -> 390f763c;
      #45 MERGED (G01 dependency record, head 1ce88863) -> 6f075882;
      #46 MERGED (G02 RFCs 0002+0003, head 66d90635) -> 6cc96bf5;
+     #47 MERGED (G02 RFC record, head f35b9b90) -> fe0e7312;
      0 open PRs
 CHECKS: PR #43 21/21 pass; PR #44 21/21 pass; PR #45 21/21 pass;
-        PR #46 21/21 pass;
+        PR #46 21/21 pass; PR #47 21/21 pass;
         post-merge CI 41248873353 on 7bd1d6fb = completed/success;
         Pages 41248873720 = completed/success;
         post-merge CI 41251300785 on 6f075882 = completed/success;
-        Pages 41251300794 on 6f075882 = completed/success
+        Pages 41251300794 on 6f075882 = completed/success;
+        post-merge Pages 41257608935 on fe0e7312 = completed/success;
+        post-merge CI 41257609033 on fe0e7312 = in_progress at record time
 TESTS_REALMENTE_EXECUTADOS: see "Commands actually executed" below
 PROVAS: baseline reconciled; G00+G01+G01-record diffs are docs/script files
         only; src/, playground/runtime/, Cargo.toml, Cargo.lock,
@@ -45,11 +48,14 @@ DECISÕES: NONE TAKEN. Three open HUMAN decisions, all recorded as decision
         (SQLite-only with documented NO_GO / authorised MSRV bump /
         feature-gated drivers with an amended 18.2 floor); two require approval
         under 2.5. G07 onward is gated on this.
-        10.2 Result<T,E> versus global enum-tag uniqueness E2013: three lawful
-        outcomes (top-level Result + programme-wide reservation of Ok/Err, which
-        needs an ADR; module-scoped qualified Std::Result::Ok; or amending the
-        global tag rule, which changes what E2013 means). Blocks NBL-030, G03
-        and every Result API in G07-G17.
+        10.2 Result<T,E> versus enum-tag SCOPE, E2013: the spec contradicts
+        itself (18.1/26 say programme-wide; 12/27/33.14 say per module; the
+        compiler is per module). Answer D1a (which clause is normative) FIRST,
+        then D1b (E2013 message wording) and D1c (placement): top-level Result
+        reserving Ok/Err at ROOT scope only (needs an ADR); module-scoped
+        qualified Std::Result::Ok; or declaring per-module normative and
+        retiring the global clauses. Blocks NBL-030, G03 and every Result API
+        in G07-G17.
         10.3 try-as-expression (D1 grammar: add try_expr to atom / use a block /
         defer) and D2, the validated three-part tail-try checker repair. Blocks
         NBL-011, NBL-031 and G03.
@@ -265,17 +271,49 @@ Three claims in the first draft were falsified by probe and retracted:
 no `std/` directory exists); matching is **not** exhaustive
 (`LANGUAGE_SPEC.md:2471–2472`: "no exhaustiveness requirement … if no arm
 matches, the result is `E4029` at runtime"); and enum tags are **not** scoped to
-their enum (`LANGUAGE_SPEC.md:2407`, `:3281`).
+their enum.
 
-The blocker is `R-10`: `enum A { Ok(int) }` alongside `enum B { Ok(string) }`
-is `E2013` — "variant names must be unique across the program" — so a top-level
-`Result` permanently claims `Ok` and `Err` for every user enum in the
-compilation unit. Modules escape the rule (`module M { pub enum Thing { Ok(int) } }`
-next to a top-level `Result` is exit 0), but a `use`-imported module enum does
-**not** bring its tags into unqualified scope (`E3002`), and braced variant
-import (`use Std::Result::{Ok, Err}`) is a parse error (`E1006`). Qualified
-construction works: `Std::Ok(7)`, `Std::Result::Ok(7)`, and `Result::Ok(7)`
-after `use Std::Result` all print `7`. No ADR governs the tag rule.
+**Correction — the tag-scope premise was wrong, and the spec contradicts
+itself.** The first version of this section said tags are unique
+"programme-wide" and that a top-level `Result` "permanently claims `Ok` and
+`Err` for every user enum in the compilation unit". Both statements are false.
+`LANGUAGE_SPEC.md` asserts **both** rules: `:2407` (§18.1) and `:3281` (§26) say
+programme-wide; `:3399` (§27, `CONF-RESOLVE-6`), `:1556` (§12) and `:3897`
+(§33.14, a *Frozen Design Decision*) say **per module**. The compiler implements
+per module and prefixes tags with the module path
+(`src/resolve.rs:1452-1455`), so the diagnostic for a duplicate inside
+`module M` reports the tag as **`M::Ok`**.
+
+Probes (one `.aura` file per directory): duplicate tags at root scope → `E2013`;
+duplicate tags inside one module → `E2013` reported as `M::Ok`; root `Ok` plus
+`module M { Ok }` in **both declaration orders** → exit 0; sibling modules →
+exit 0; nested modules → exit 0; root `Ok(1)` and `M::Ok("s")` printed together
+→ exit 0, prints `Ok(1) M::Ok("s")`. A root-scope `enum Result { Ok, Err }` plus
+a root-scope `enum Parsed { Ok }` is `E2013` **even though `Result` is never
+constructed**.
+
+`E2013`'s message text also misdescribes the rule: `src/check/mod.rs:1378` emits
+"variant names must be unique across the program" for a scope-local check. No
+test matches the string (`tests/grammar.rs` matches `codes::DUPLICATE_VARIANT`)
+and `docs/errors.md:37` records only the code, a title and a trigger, so fixing
+the wording is low-risk — but it is escalated as `D1b` because the correct
+wording depends on `D1a`.
+
+The blocker is therefore `R-10`, but its shape changed. A top-level `Result`
+claims `Ok`/`Err` for the **root scope only**; modules escape the rule. A
+`use`-imported module enum still does **not** bring its tags into unqualified
+scope (`E3002`), and braced variant import (`use Std::Result::{Ok, Err}`) is a
+parse error (`E1006`). Qualified construction works: `Std::Ok(7)`,
+`Std::Result::Ok(7)`, and `Result::Ok(7)` after `use Std::Result` all print `7`.
+No ADR governs the tag rule.
+
+**Prior art, recorded so this is not claimed as a discovery:**
+`docs/engineering/EXCEPTION_SYNTAX_DECISION_PACKAGE.md:192` (verification pass
+2026-10-06) already documented the per-module behaviour with bidirectional
+execution evidence, including sibling modules each declaring an `Ok`. That
+package's scope was the exception system, so it recorded the behaviour without
+raising the spec contradiction. What is new is that the two normative clauses
+were never reconciled and the diagnostic still asserts the losing one.
 
 **RFC 0003 — `try` as a value expression.** Two independent results.
 
@@ -350,7 +388,11 @@ structural template and campaign doc §2.2 as the required section list. Each
 RFC carries an explicit provenance note stating that its nominal source
 document was absent and that no approval is implied.
 
-`NBL-010` (RFC 0002) and `NBL-011` (RFC 0003) are authored. Still unauthored:
+`NBL-010` (RFC 0002) and `NBL-011` (RFC 0003) are authored. RFC 0002 was
+corrected at `fe0e7312` after its tag-scope premise was falsified: the campaign
+now escalates `D1a` (which of the two contradictory spec clauses governs
+`E2013`), `D1b` (`E2013`'s message text) and `D1c` (placement). Answer `D1a`
+before `D1c`. Still unauthored:
 `NBL-012` inference and error propagation; `NBL-013` diagnostics contract and
 `aura explain`; `NBL-014` AIS capability set; `NBL-015` `Aura.toml` / `aura
 init` / `std::os`; `NBL-016` Host database capability and protected profile;
