@@ -56,8 +56,9 @@ reachable) and §30.3 (`E4999` must not be reachable) plus a stale citation in
 directories are skipped silently) are escalated in §10.4.
 
 G02 has also authored **RFC 0005 — Inference and Error-Propagation Rules**
-(`docs/rfcs/0005-inference-and-error-propagation.md`, `NBL-012`), **authored but
-not yet merged**. It documents a fourth blocking finding — generic instantiation
+(`docs/rfcs/0005-inference-and-error-propagation.md`, `NBL-012`), now **merged
+as PR #53 → `87cea70e`**. Merge records the proposal; §10.5 `D1` remains
+unanswered. It documents a fourth blocking finding — generic instantiation
 is never propagated to the call site, in two independent parts (§1.7.3, risk
 `R-13`) — plus two unrelated, generic-independent holes found while probing it:
 indexing is never type-checked (`R-14`) and, more seriously, **equality is never
@@ -633,7 +634,7 @@ Current wave status:
 |---|---|
 | G00 | `PASS` — PR #43, merge `7bd1d6fb`, 21/21 checks |
 | G01 | `PASS` — PR #45, merge `6f075882`, 21/21 checks; dependency table and MSRV blocker disclosed (§1.5.1, §10.1) |
-| G02 | `IN_PROGRESS` — RFC 0002 (`Result`) and RFC 0003 (`try` as expression) authored, probe-verified and merged as PR #46 → `6cc96bf5`; RFC 0002 tag-scope premise corrected via PR #47 → `fe0e7312` and PR #48 → `73a35d9b` (both 21/21), and recorded as PR #49 → `85de5945` (21/21); that record itself recorded as PR #50 → `fc49c5ee` (21/21). RFC 0004 (diagnostics contract) plus the RFC index merged as PR #51 → `2df1c322` (21/21). A fourth finding — generic instantiation is never propagated to the call site, so `check` accepts programs `run` rejects — is characterised and carried as evidence for `NBL-012`. Four blocking language findings are escalated: `R-10`/`E2013` vs. `Result` (§10.2), `R-11`/tail-`try` typing plus the grammar question (§10.3), `R-12`/diagnostic format injection (§10.4), and `R-13`/generic instantiation plus the two generic-independent holes `R-14`/indexing and `R-15`/equality (§10.5). RFC 0005 is authored and **not yet merged**. Nine of the thirteen G02 P0 RFCs remain unauthored (`NBL-014`…`NBL-022`) |
+| G02 | `IN_PROGRESS` — RFC 0002 (`Result`) and RFC 0003 (`try` as expression) authored, probe-verified and merged as PR #46 → `6cc96bf5`; RFC 0002 tag-scope premise corrected via PR #47 → `fe0e7312` and PR #48 → `73a35d9b` (both 21/21), and recorded as PR #49 → `85de5945` (21/21); that record itself recorded as PR #50 → `fc49c5ee` (21/21). RFC 0004 (diagnostics contract) plus the RFC index merged as PR #51 → `2df1c322` (21/21). A fourth finding — generic instantiation is never propagated to the call site, so `check` accepts programs `run` rejects — is characterised and carried as evidence for `NBL-012`. Four blocking language findings are escalated: `R-10`/`E2013` vs. `Result` (§10.2), `R-11`/tail-`try` typing plus the grammar question (§10.3), `R-12`/diagnostic format injection (§10.4), and `R-13`/generic instantiation plus the two generic-independent holes `R-14`/indexing and `R-15`/equality (§10.5). RFC 0005 (inference and error propagation) is merged as PR #53 → `87cea70e`. Nine of the thirteen G02 P0 RFCs remain unauthored (`NBL-014`…`NBL-022`) |
 | G03–G19 | `NOT_STARTED` |
 
 A `PASS` requires observed evidence. An environment that was not executed is
@@ -1051,8 +1052,9 @@ acceptance; the concrete fix sites are enumerated in RFC 0004 §6.2.
 RFC 0005 was authored from a defect found while opening `NBL-012`. It carries
 one decision (**D1**), a 21-row probe matrix re-executed end-to-end against two
 saved, sha-pinned binaries, a mutation table, and ten required regression tests.
-**Grammar delta: none.** It is authored but **not yet merged**; gate G02 forbids
-coding the surface first, so the validated patch is held as a file, not a commit.
+**Grammar delta: none.** It is **merged as PR #53 → `87cea70e`**; merge records
+the proposal only, and gate G02 still forbids coding the surface, so the
+validated patch is held as a file, not a commit.
 
 **D1 — authorize the two-part checker repair.** `instantiate_return_ty`
 discards the substitution it computes, so every `Ty::Param` in a generic return
