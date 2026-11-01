@@ -6,10 +6,10 @@ Active task: **G02**, the P0 RFC reconstruction. `G00` and `G01` are closed.
 No implementation is authorized before `G02` accepts the P0 RFC set.
 
 ```
-WAVE: G02 -> IN_PROGRESS (4 of 13 P0 RFCs merged, RFC 0006 authored, seven
-      decisions outstanding across six decision packages)
-STATUS: G02 IN_PROGRESS (seven human decisions outstanding, see DECISOES)
-HEAD: 422c7a9e048266f08f26eb428997de40b24c1238 (merge of PR #54)
+WAVE: G02 -> IN_PROGRESS (5 of 13 P0 RFCs merged, twelve outstanding decision
+      items across six decision packages)
+STATUS: G02 IN_PROGRESS (twelve decision items outstanding, see DECISOES)
+HEAD: d03d271892285d3953577f9e497396d2fe98454f (merge of PR #55)
 PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb;
      #44 MERGED (G00 closure + G01 authorisation, head 5cf4f8d9) -> 390f763c;
      #45 MERGED (G01 dependency record, head 1ce88863) -> 6f075882;
@@ -22,11 +22,13 @@ PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb;
      #52 MERGED (PR #51 record, head 2de7b86f) -> 3832a4b9;
      #53 MERGED (RFC 0005, head c4ad338f) -> 87cea70e;
      #54 MERGED (PR #53 record, head 70757c3b) -> 422c7a9e;
+     #55 MERGED (RFC 0006, head d4f38101) -> d03d2718;
      0 open PRs
 CHECKS: PR #43 21/21 pass; PR #44 21/21 pass; PR #45 21/21 pass;
         PR #46 21/21 pass; PR #47 21/21 pass; PR #48 21/21 pass;
         PR #49 21/21 pass; PR #50 21/21 pass; PR #51 21/21 pass;
         PR #52 21/21 pass; PR #53 21/21 pass; PR #54 21/21 pass;
+        PR #55 21/21 pass;
         post-merge CI 41248873353 on 7bd1d6fb = completed/success;
         Pages 41248873720 = completed/success;
         post-merge CI 41251300785 on 6f075882 = completed/success;
@@ -47,7 +49,9 @@ CHECKS: PR #43 21/21 pass; PR #44 21/21 pass; PR #45 21/21 pass;
         post-merge CI 41274260409 on 87cea70e = completed/success (21/21);
         post-merge Pages 41274260387 on 87cea70e = completed/success;
         post-merge CI 41276131621 on 422c7a9e = completed/success (21/21);
-        post-merge Pages 41276131720 on 422c7a9e = completed/success (2/2)
+        post-merge Pages 41276131720 on 422c7a9e = completed/success (2/2);
+        post-merge CI 41286373383 on d03d2718 = completed/success (21/21);
+        post-merge Pages 41286373385 on d03d2718 = completed/success (2/2)
 TESTS_REALMENTE_EXECUTADOS: see "Commands actually executed" below
 PROVAS: baseline reconciled; G00+G01+G01-record diffs are docs/script files
         only; src/, playground/runtime/, Cargo.toml, Cargo.lock,
@@ -88,7 +92,7 @@ RISCOS: R-01 try-as-expression ambiguity (gates G03 and every Result API);
         tests/ais_differential.mjs asserts it runs in CI while nothing invokes
         it, the CLI exposes 3 of 7 operations, and aura://schema advertises 6 of
         7 tools and 3 of 7 delivery operations from one hardcoded literal
-DECISOES: NONE TAKEN. Seven open HUMAN decisions across six decision packages,
+DECISOES: NONE TAKEN. Twelve open decision items across six decision packages,
         all recorded as decision packages in the campaign document, none
         resolved by the agent.
         10.1 MSRV 1.83 versus the required DB drivers: three lawful outcomes
@@ -759,8 +763,9 @@ residual that survives the repair — `fn make<T>() -> T { throw "x" }` bound to
 
 ### RFC 0006 evidence — the AIS agent-native capability set (`NBL-014`)
 
-`docs/rfcs/0006-ais-agent-native-capabilities.md` is **authored and unmerged**;
-it awaits this batch's PR. **1110 lines, 23 tables, 20 fences**, backtick parity
+`docs/rfcs/0006-ais-agent-native-capabilities.md` is **merged as PR #55 →
+`d03d2718`**, 21/21 checks green; merging records the proposal, it does not
+accept it. **1110 lines, 23 tables, 20 fences**, backtick parity
 even, and `## 3. Grammar delta` is `None` (the specification ends at §36 and
 never governs AIS — `grep -n "AIS" docs/LANGUAGE_SPEC.md` yields one prose hit at
 `:2578`). §0 carries nine recorded self-corrections. **Merge is not acceptance**:
@@ -878,48 +883,35 @@ are byte-identical to baseline.
 
 ### Next exact action
 
-Commit this batch and open its PR. The tree carries **four** changes for
-`NBL-014`/RFC 0006 and nothing else: the new
-`docs/rfcs/0006-ais-agent-native-capabilities.md` (untracked), the new index row
-in `docs/rfcs/README.md`, and the RFC 0006 records in
-`docs/engineering/NEBULA_CAMPAIGN.md` (header paragraph, §4 G02 row, annotated
-`NBL-014` backlog row, `R-16` risk row, `### §10.6` decision block) and
-`AGENT_STATE.md`.
-
-**Already green on this tree:** `cargo fmt --all -- --check` → `0`;
-`cargo test --locked --all-targets --all-features` → `0`, **1477 passed / 0
-failed** across 66 suites. Eight floor gates remain and must run before the PR
-body claims them: clippy, the no-default-features test, `+1.83.0 check`, the
-nightly fuzz check, `node playground/tests/node/run-all.mjs`,
-`node playground/build.mjs --check`, `node website/build.mjs`, and
-`node website/tests/run-all.mjs`.
-
-**Citation audit is complete.** Every `src/*.rs:NNN` and
-`docs/engineering/*.md:NNN` reference in RFC 0006 was verified line-by-line
-against the source, and five were wrong and are fixed: `src/main.rs:498` → `:497`,
-`:396-400` → `:395-400`, `:396-540` → `:395-527`, `src/mcp.rs:500` → `:503`, and
-FINDING `I`'s `src/parse/mod.rs:1427`/`:1430` → `:1426`/`:1427`. Cited file line
-counts were re-measured: `src/ais.rs` 1440, `src/mcp.rs` 718, `src/main.rs` 612,
-`AIS.md` 198, `MCP.md` 120, `AIS_AGENT_NATIVE_RFC.md` 243.
+Author `NBL-015` (`Aura.toml` / `aura init` / `std::os`) as
+`docs/rfcs/0007-*.md`, escalating whatever decision it uncovers in a
+`### §10.7` block in the campaign document. The RFC 0006 batch is closed:
+authored, citation-audited, merged via **PR #55 → `d03d2718`** (head
+`d4f38101`) with **21/21** checks green, and both post-merge runs
+(`41286373383` CI 21/21, `41286373385` Pages 2/2) are green on that commit. This
+record batch carries the merge into the three state documents and touches no
+source file.
 
 **Wave position.** `NBL-010` (RFC 0002), `NBL-011` (RFC 0003), `NBL-013`
-(RFC 0004) and `NBL-012` (RFC 0005) are authored **and merged**. `NBL-014`
-(RFC 0006) is authored and awaiting this PR. Still unauthored: `NBL-015`
-`Aura.toml` / `aura init` / `std::os`; `NBL-016` Host database capability and
-protected profile; `NBL-017` `entity struct` and metadata; `NBL-018` CRUD and
-transactions; `NBL-019` AQL/0.1; `NBL-020` Repository in traits; `NBL-021`
-SQLGuard/0.1 SG-01…SG-08; `NBL-022` SQL and Mongo driver contract. That is
-**eight** of the thirteen P0 RFCs still to author, plus `NBL-030` (prelude
-`Result` placement), which is blocked by §10.2 and must not be authored as if the
-decision were taken.
+(RFC 0004), `NBL-012` (RFC 0005) and `NBL-014` (RFC 0006) are authored **and
+merged**. Still unauthored: `NBL-015` `Aura.toml` / `aura init` / `std::os`;
+`NBL-016` Host database capability and protected profile; `NBL-017`
+`entity struct` and metadata; `NBL-018` CRUD and transactions; `NBL-019`
+AQL/0.1; `NBL-020` Repository in traits; `NBL-021` SQLGuard/0.1 SG-01…SG-08;
+`NBL-022` SQL and Mongo driver contract. That is **eight** of the thirteen P0
+RFCs still to author, plus `NBL-030` (prelude `Result` placement), which is
+blocked by §10.2 and must not be authored as if the decision were taken.
 
-**Seven human decisions are outstanding across six decision packages:** §10.1
-MSRV dependency direction; §10.2 (`D1a` which contradictory spec clause governs
-`E2013`, `D1b` its message text, `D1c` placement — answer `D1a` before `D1c`);
-§10.3 (`D1` authorize the three-part tail-`try` repair, `D2` whether to require
-exhaustiveness); §10.4 (`D3` plus open item 13); §10.5 (`D1` authorize the
-two-part generic-instantiation repair); and §10.6 (`D1` the `range` contract,
-`D2` `Slice.diagnostics`, `D3` the resolver gap).
+**Twelve outstanding decision items across six decision packages:** §10.1
+MSRV dependency direction — **1** item, unlabelled; §10.2 (`D1a` which
+contradictory spec clause governs `E2013`, `D1b` its message text, `D1c`
+placement — answer `D1a` before `D1c`) — **3** items; §10.3 (`D1` the grammar of
+`try`-as-expression, `D2` authorize the three-part tail-`try` checker repair) —
+**2** items; §10.4 (`D3` plus open item 13) — **2** items; §10.5 (`D1` authorize
+the two-part generic-instantiation repair) — **1** item; and §10.6 (`D1` the
+`range` contract, `D2` `Slice.diagnostics`, `D3` the resolver gap) — **3** items.
+Total **12**. The former "seven decisions" figure was incremental drift and
+matched neither convention.
 
 **Do not code any surface these RFCs describe, and do not resolve §10.1 through
 §10.6.** Specifically: do not wire `tests/ais_differential.mjs` into CI, do not
