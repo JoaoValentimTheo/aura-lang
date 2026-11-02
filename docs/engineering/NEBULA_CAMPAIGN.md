@@ -111,6 +111,23 @@ of **91** builtin functions rather than a module namespace. `D1` (what
 (what `init` writes and how it refuses) are escalated in §10.7. `D1` is the root
 decision: `D2` and `D3` are blocked on it.
 
+G02 has also authored **RFC 0008 — Host Database Capability and the Protected
+Profile** (`docs/rfcs/0008-host-database-capability.md`, `NBL-016`). Its finding
+is that `G07` is **structurally ready and functionally greenfield**: the `Host`
+boundary that a driver would plug into already exists as one trait with ten
+methods (eight required, two defaulted), and the `http-api`/`http` feature split
+already demonstrates the exact shape a database capability needs — a builtin
+surface that type-checks in every build and is denied at run time with `E5002`
+when the host lacks the capability. Aura's answer to "how do we add a capability
+without breaking the sandbox" is therefore not to be invented; it is to be
+copied. What does not exist is everything else: no `PendingEffect` variant can
+carry a connection handle (`Http` is its only variant), no `Value` or `TypeExpr`
+variant can represent an opaque handle, `Returns::Dynamic` resolves to
+`Ty::Unknown` and is never consulted by the checker, there is no resource model,
+`CRITICAL_SYSTEM_PROFILE.md` §4 has no HTTP row, `CAPABILITY_MODEL.md`'s
+network row is stale, and `docs/adr/` has no MSRV or TLS ADR. Three decisions
+`D1`–`D3` are escalated in §10.8.
+
 Baseline: `c4f769077c769483963a0f2b51a789b00472e4cf` on `rewrite/v3-rust`
 (local == `origin/rewrite/v3-rust`, tree clean at campaign start). G00 landed
 on top of it as `7bd1d6fb`; G00 closure landed as `390f763c`.
@@ -679,7 +696,7 @@ Current wave status:
 |---|---|
 | G00 | `PASS` — PR #43, merge `7bd1d6fb`, 21/21 checks |
 | G01 | `PASS` — PR #45, merge `6f075882`, 21/21 checks; dependency table and MSRV blocker disclosed (§1.5.1, §10.1) |
-| G02 | `IN_PROGRESS` — RFC 0002 (`Result`) and RFC 0003 (`try` as expression) authored, probe-verified and merged as PR #46 → `6cc96bf5`; RFC 0002 tag-scope premise corrected via PR #47 → `fe0e7312` and PR #48 → `73a35d9b` (both 21/21), and recorded as PR #49 → `85de5945` (21/21); that record itself recorded as PR #50 → `fc49c5ee` (21/21). RFC 0004 (diagnostics contract) plus the RFC index merged as PR #51 → `2df1c322` (21/21). A fourth finding — generic instantiation is never propagated to the call site, so `check` accepts programs `run` rejects — is characterised and carried as evidence for `NBL-012`. Five blocking language findings are escalated: `R-10`/`E2013` vs. `Result` (§10.2), `R-11`/tail-`try` typing plus the grammar question (§10.3), `R-12`/diagnostic format injection (§10.4), `R-13`/generic instantiation plus the two generic-independent holes `R-14`/indexing and `R-15`/equality (§10.5), and `R-16`/the AIS protocol surface (§10.6). RFC 0005 (inference and error propagation) is merged as PR #53 → `87cea70e` and recorded as PR #54 → `422c7a9e`. RFC 0006 (AIS agent-native capabilities, `NBL-014`) is merged as PR #55 → `d03d2718` (21/21) and recorded as PR #56 → `4406c873`; the merge records the proposal only — its three decisions remain escalated in §10.6 and no protocol surface is coded. RFC 0007 (project structure, `aura init`, the `os` capability, `NBL-015`) is authored, probe-verified and merged as PR #57 → `6f5bca98` (21/21); §10.7 `D1`/`D2`/`D3` are escalated and no command or configuration surface is coded. RFC 0007's record and the `G06` clause-arithmetic errata merged as PR #58 → `8e6107a9` (21/21). Seven of the thirteen G02 P0 RFCs remain unauthored (`NBL-016`…`NBL-022`) |
+| G02 | `IN_PROGRESS` — RFC 0002 (`Result`) and RFC 0003 (`try` as expression) authored, probe-verified and merged as PR #46 → `6cc96bf5`; RFC 0002 tag-scope premise corrected via PR #47 → `fe0e7312` and PR #48 → `73a35d9b` (both 21/21), and recorded as PR #49 → `85de5945` (21/21); that record itself recorded as PR #50 → `fc49c5ee` (21/21). RFC 0004 (diagnostics contract) plus the RFC index merged as PR #51 → `2df1c322` (21/21). A fourth finding — generic instantiation is never propagated to the call site, so `check` accepts programs `run` rejects — is characterised and carried as evidence for `NBL-012`. Five blocking language findings are escalated: `R-10`/`E2013` vs. `Result` (§10.2), `R-11`/tail-`try` typing plus the grammar question (§10.3), `R-12`/diagnostic format injection (§10.4), `R-13`/generic instantiation plus the two generic-independent holes `R-14`/indexing and `R-15`/equality (§10.5), and `R-16`/the AIS protocol surface (§10.6). RFC 0005 (inference and error propagation) is merged as PR #53 → `87cea70e` and recorded as PR #54 → `422c7a9e`. RFC 0006 (AIS agent-native capabilities, `NBL-014`) is merged as PR #55 → `d03d2718` (21/21) and recorded as PR #56 → `4406c873`; the merge records the proposal only — its three decisions remain escalated in §10.6 and no protocol surface is coded. RFC 0007 (project structure, `aura init`, the `os` capability, `NBL-015`) is authored, probe-verified and merged as PR #57 → `6f5bca98` (21/21); §10.7 `D1`/`D2`/`D3` are escalated and no command or configuration surface is coded. RFC 0007's record and the `G06` clause-arithmetic errata merged as PR #58 → `8e6107a9` (21/21). RFC 0008 (Host database capability, `NBL-016`) is authored and probe-verified with §10.8 `D1`/`D2`/`D3` escalated and no driver, capability, or resource surface coded. Six of the thirteen G02 P0 RFCs remain unauthored (`NBL-017`…`NBL-022`) |
 | G03–G19 | `NOT_STARTED` |
 
 A `PASS` requires observed evidence. An environment that was not executed is
@@ -707,7 +724,7 @@ block reserves space inside a wave, so there are 35 identifiers here, not 190.
 | NBL-013 | G02 | RFC: diagnostics contract and `aura explain` — **RFC 0004 merged (PR #51 → `2df1c322`); blocked by §10.4 D3 and §10.4 item 13** | P0 |
 | NBL-014 | G02 | RFC: AIS Agent-Native 0.2 capability set — **authored as RFC 0006, merged via PR #55 → `d03d2718`, still Proposed; blocked by §10.6 D1/D2/D3** | P0 |
 | NBL-015 | G02 | RFC: `Aura.toml`, `aura init`, `std::os` — **authored as RFC 0007, merged as PR #57**; `std::os` shown unresolvable, `G06` shown largely greenfield | P0 |
-| NBL-016 | G02 | RFC: Host database capability and protected profile | P0 |
+| NBL-016 | G02 | RFC: Host database capability and protected profile — **authored as RFC 0008**; `G07` shown structurally ready and functionally greenfield, the `http-api`/`http` split shown to be the proven template, two stale capability documents found and a third mis-cited | P0 |
 | NBL-017 | G02 | RFC: `entity struct`, metadata, relations, cardinality | P0 |
 | NBL-018 | G02 | RFC: CRUD surface and transactions | P0 |
 | NBL-019 | G02 | RFC: AQL/0.1 grammar, plans, result shapes | P0 |
@@ -757,6 +774,7 @@ block reserves space inside a wave, so there are 35 identifiers here, not 190.
 | R-15 | **Equality is never type-checked and does not fail at run time** (§1.7.3). `==`/`!=` accept operands of any two types and evaluate to a boolean. Ordered comparison *is* checked, so the hole is specific to equality | `print(1 == "s")` is exit 0 under `check` **and** `run` and prints `false`; `print(1 != "s")` prints `true`. A **silent wrong answer**, not a loud runtime failure — strictly worse than `R-14` | Out of scope for RFC 0005 (§7.2). Arguably the highest-severity open defect in this ledger; deferred only because it is a different subsystem, and called out as such rather than folded into D1 |
 | R-16 | **The AIS/0.1 protocol over-promises on eighteen distinct points** (§1.1–§1.14 of RFC 0006, findings A–R). Load-bearing: (a) `Symbol.range` carries only the leading keyword's span — 6.4× aggregate understatement, with `pub` fields and `mut` params affected too (`A`, `I`); (b) three of eleven `SymbolKind` variants are unconstructible while `AIS.md:99-101` documents all eleven (and `Variant`/`Field`/`TypeParameter` can never appear as a `kind`), which breaks the minor-version promise at `AIS.md:53-55` twice (`H`, `F`); (c) `Slice.diagnostics` is promised at `src/ais.rs:848-853` and `:868` and populated nowhere — all three construction sites pass `Vec::new()` — so a slice over a failing program is indistinguishable from a clean one (`L`); (d) the AIS document path never runs the resolver, so `E2019` is dropped at exit 0 while `E2018` and `E2023` survive carrying the wrong code `E2003` (`M`, `N`, `O`); (e) the CLI exposes 3 of 7 operations and `aura://schema` advertises 6 of 7 tools and 3 of 7 delivery operations, both from one hardcoded literal (`B`, `D`); (f) `tests/ais_differential.mjs` asserts in its own docstring that it "runs in CI" while nothing invokes it (`E`) | Any agent trusting AIS as its semantic authority is misled about location, capability, slice completeness, and program validity — and the wrongness is invisible, because every defect is a passing exit code. `L` and `M` compound: a rejected program yields a clean, diagnostics-free document. `E` means the one harness built to detect this class has never run in CI, which is the rule-7/rule-8 failure this campaign exists to catch | Escalated as RFC 0006 (`NBL-014`, merged via PR #55 → `d03d2718`) with three decisions still open in §10.6. The `range` extent repair is validated by mutation and **withheld, not committed**; `src/ais.rs` and `src/mcp.rs` are byte-identical to baseline |
 | R-17 | **An `os`/environment surface would remove a security property the project currently holds unconditionally** (§10.7 `D2`). `G06`'s "Host can deny env" and "no secrets in output" are green **only by absence** today: `grep 'name: "env"' src/stdlib/signatures.rs` returns nothing and `docs/security/TRUST_BOUNDARIES.md:30` confines environment variables to the `py` feature, which `:38` records as verified-absent in CI. Any Aura-visible `env` makes both clauses live obligations across four output surfaces — diagnostics, AIS documents, MCP responses, and the Playground — and RFC 0006 §1.13 proved the AIS path runs a reduced pipeline, so a value that reaches a diagnostic message can reach that pipeline too | 3 of the 5 `G06` clauses are green only because the surface does not exist; a fourth holds on evidence and the fifth is unevaluable, so introducing the surface can only narrow the guarantee | Do not choose `D2` by default; if `D2` is anything but "nothing", treat secret redaction as a new contract with its own RFC, and never let `env` reach a diagnostic message |
+| R-18 | **A database capability cannot be represented in any existing IR.** `PendingEffect` has exactly one variant, `Http(HttpRequest)` (`src/host.rs:39-42`), so a resumable connection requires a breaking enum change; `pub enum Value` (`src/run/value.rs:172-206`, 15 variants) and `pub enum TypeExpr` (`src/ast/mod.rs:18-53`, 14 variants) have no opaque or handle form, so a connection cannot cross the stdlib boundary as a value at all; and `Returns::Dynamic` resolves to `Ty::Unknown` (`src/stdlib/signatures.rs:210`) with zero consumers in `src/check/mod.rs`, so a dynamically returning builtin is entirely unchecked | A driver cannot be prototyped behind the current boundary without either a new `Value` variant, a new `TypeExpr` variant, or a handle-free API restricted to opaque integer ids — and the third option silently discards the type safety §8.3 assumes | Do not choose `D1` by default; if a driver is authorized, the `PendingEffect`/`Value`/`TypeExpr` extension is a separate accepted RFC with its own ABI review, and no driver may ship while `E5002` remains a hard fatal rather than a catchable result |
 
 ## 7. Evidence criteria
 
@@ -910,9 +928,9 @@ regression, or a failing security test. Replacing a problem with a `TODO` and
 marking the wave `PASS` is forbidden. A genuine specification choice produces a
 decision package rather than a silent resolution.
 
-**Census — fifteen outstanding decision items across seven decision packages.**
-Each package is a `### §10.N` block and a package may carry more than one
-question, so package count and item count differ:
+**Census — eighteen outstanding decision items across eight decision
+packages.** Each package is a `### §10.N` block and a package may carry more
+than one question, so package count and item count differ:
 
 | Package | Lettered labels | Unlabelled | Items |
 |---|---|---|---|
@@ -923,13 +941,15 @@ question, so package count and item count differ:
 | §10.5 | `D1` | — | 1 |
 | §10.6 | `D1`, `D2`, `D3` | — | 3 |
 | §10.7 | `D1`, `D2`, `D3` | — | 3 |
-| **Total** | **13** | **2** | **15** |
+| §10.8 | `D1`, `D2`, `D3` | — | 3 |
+| **Total** | **16** | **2** | **18** |
 
 The figure "seven human decisions" that appeared in earlier state documents was
 incremental drift. At the time it was first written the tree carried ten
 lettered labels and two unlabelled items, twelve in all, and it matched neither
 figure; with §10.7 added the census is thirteen lettered plus two, fifteen in
-all. It is retired here. Fifteen is not a target; the census is
+all, and with §10.8 it is sixteen lettered plus two, eighteen in all. It is
+retired here. Eighteen is not a target; the census is
 derived mechanically from the `D`-labels actually present, and it must be
 recomputed the same way whenever a `§10.N` block is added.
 
@@ -1342,6 +1362,109 @@ are recorded in its §0: a fabricated cross-reference to "RFC 0006 §1.5" (the
 `Std::Math` evidence is §1.13), and the observation that `E2019` is not a
 literal in `src/error.rs` but `UNKNOWN_MODULE: u16 = 2019` rendered through
 `format!("E{:04}: ...")`. Both are cited correctly in the merged text.
+
+### §10.8 — RFC 0008: Host database capability and the protected profile
+(`NBL-016`)
+
+`G07` is a five-clause acceptance line and, like `G06`, most of it is satisfied
+by absence rather than by construction. The RFC's per-clause reading:
+
+| Clause | Status today | Why |
+|---|---|---|
+| `ADR per driver/MSRV/TLS` | Absent | `docs/adr/` holds 6 ADRs; no MSRV ADR and no TLS ADR. ADR-0005 is missing from the index table and appears only in a bullet list |
+| `Host boundary compiles without drivers` | Greenfield, structurally ready | The `Host` boundary is one trait, `src/host.rs:157-228`, with 10 methods (8 required, 2 defaulted) and 10 implementors |
+| `equivalent E5002 capability probes` | Template exists and is proven | The `http-api`/`http` feature split is exactly this shape, proven end-to-end |
+| `resource and attack-surface tests` | Absent | No resource model exists; `CRITICAL_SYSTEM_PROFILE.md` §4 has no HTTP row |
+| `no real database without authorized test credentials` | Vacuously true, needs an owner | No database code exists — there is nothing to guard yet |
+
+**The template is the finding.** Building with
+`--no-default-features --features cli,json,http-api` succeeds, exposes
+`http_get`/`http_request` to the checker, and then denies them at run time with
+`main.aura:1:19: error[E5002]: this host has no network capability (HTTP is
+unavailable)`. `cargo tree --no-default-features --features http-api -e
+features | grep -ci ureq` returns `0`, so `http-api` adds a signature surface
+without adding a native dependency; `http = ["http-api", "dep:ureq"]` is what
+adds the real implementation, and `StdHost::http_request` is itself
+`#[cfg(feature = "http")]`, so an `http-api`-only build inherits the trait
+default denial even in `StdHost`. A database capability should be built the same
+way and not invented from scratch.
+
+**What blocks a driver today.** Four independent representation gaps in the IR,
+all verified by probe rather than by reading:
+
+1. `PendingEffect` (`src/host.rs:39`) has exactly one variant,
+   `Http(HttpRequest)`, so a resumable database operation requires a breaking
+   enum change;
+2. `Ty` (`src/types.rs:68`, 17 variants) has no bytes member;
+3. `Value` (15 variants, `src/run/value.rs:172-206`) has no `Bytes`, so binary
+   crosses as `[int]` (`src/stdlib/ext.rs:651-663`);
+4. `TypeExpr` (14 variants, `src/ast/mod.rs:18-53`) has no opaque or handle
+   form, so a connection cannot cross the stdlib boundary as a value.
+
+Two further constraints lie outside the IR. `Returns::Dynamic` maps to
+`Ty::Unknown` and has zero consumers in `src/check/mod.rs`, so a dynamically
+returning builtin is unchecked — and a probe confirmed it:
+`let x: int = read_file("a.txt")` passes `check` with `CHK=0` and then fails at
+run time with `E3001`. Separately, `E5002` is a **hard fatal** diagnostic, not a
+catchable value; `tests/session.rs:393` documents that it behaves like any
+other fatal diagnostic — `finally` runs, `catch` does not — so a database API
+whose `Result<T, DbError>` (§8.3) is meant to be consumed cannot route a
+*capability denial* through that same `Result`. The denial is always fatal.
+This is the single most consequential constraint on §8.3 and it is carried as
+`R-18`.
+
+**The document drift.** Two capability documents are stale, and a third is
+mis-cited rather than stale:
+
+- `CAPABILITY_MODEL.md` §2's 13-row table has no `http_request` row, and its
+  `network` row still reads "not exposed"; it also cites `src/host.rs:78` as
+  "the `Host` trait" when `:78` is inside `HostError::into_diag` (the trait is
+  `:157`).
+- `CRITICAL_SYSTEM_PROFILE.md` §4's 15-row resource inventory has no HTTP row.
+- `PERFORMANCE.md` is **not** stale — it is a 131-line timing-budget document
+  containing **zero** occurrences of `resource` at any casing. The mis-citation
+  is in `CRITICAL_SYSTEM_PROFILE.md:19`, whose "Bounded resources" row points at
+  "the resource inventory in `docs/engineering/PERFORMANCE.md` and §4 below";
+  only the second half of that reference resolves.
+
+**`D1` — what a database capability is allowed to be.** Four options: A, a
+feature-gated builtin surface mirroring `http-api`, denied by default at run
+time; B, a `Host` trait extension only, with no Aura-visible builtins until a
+driver lands; C, a driver-agnostic connection abstraction in `std`; D, defer
+entirely. The RFC recommends **A**, because it is the only option whose
+authority model has already been proven in this repository and whose blast
+radius is a signature table plus a `#[cfg]`, both under the `E5002` template.
+
+**`D2` — the isolation, credential, and resource boundary.** Three readings:
+(a) the protected profile means the capability is denied unless a host opts in,
+with no Aura-visible configuration; (b) it means an `Aura.toml`-declared
+allow-list; (c) it means a separate binary mode. Recommendation is **(a)** —
+it needs no configuration parser (`grep -rn 'struct .*Config\|Config::' src/` is
+empty) and no file format (there is no `toml` dependency), and it preserves the
+property that a default build has no database surface at all.
+
+**`D3` — what the capability tests must prove.** Three readings: (a) `E5002`
+equivalence probes only, matching the HTTP precedent; (b) those plus
+attack-surface tests for injection and resource exhaustion; (c) those plus a
+cross-OS matrix. Recommendation is **(a)** for the same reason `G06`'s cross-OS
+clause is unevaluable today: there is no driver to test.
+
+**Dependency between the decisions.** `D2` and `D3` are both downstream of `D1`:
+there is no boundary to describe until it is decided what shape the capability
+takes. **`D1` is the root decision.**
+
+**What is withheld.** No production source was modified. No driver, no
+capability signature, no `PendingEffect` variant, no resource model, and no ADR
+was written — every one of those is downstream of `D1` and forbidden by `G02`
+until the RFC is accepted.
+
+**Corrections to the record.** Nine drafting errors were caught in the RFC's own
+text and are recorded in its §0 rather than silently fixed, including the two
+published claims this campaign is most likely to have propagated: that
+`PERFORMANCE.md` contains two occurrences of `resource` (it contains zero, at
+baseline and in all six commits that ever touched it) and that `http_request` is
+the only defaulted `Host` method (`should_cancel` is the other). Neither figure
+escaped this RFC.
 
 ## 11. Wave checkpoint format
 

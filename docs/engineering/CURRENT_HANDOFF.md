@@ -6,11 +6,11 @@ Active task: **G02**, the P0 RFC reconstruction. `G00` and `G01` are closed.
 No implementation is authorized before `G02` accepts the P0 RFC set.
 
 ```
-WAVE: G02 -> IN_PROGRESS (7 of 13 P0 RFCs authored, all 7 merged — RFC 0007
-      merged as PR #57; fifteen outstanding decision items across seven
-      packages)
-STATUS: G02 IN_PROGRESS (fifteen decision items outstanding, see DECISOES)
-HEAD: 8e6107a9b4c49fe4404add5c7db81a4b59ca159c (merge of PR #58)
+WAVE: G02 -> IN_PROGRESS (8 of 13 P0 RFCs authored — 7 merged, RFC 0008
+      authored and probe-verified on disk awaiting its PR; eighteen outstanding
+      decision items across eight packages)
+STATUS: G02 IN_PROGRESS (eighteen decision items outstanding, see DECISOES)
+HEAD: edcce6c7a587f8f47cdcf2057c9df400c9b93420 (merge of PR #59)
 PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb;
      #44 MERGED (G00 closure + G01 authorisation, head 5cf4f8d9) -> 390f763c;
      #45 MERGED (G01 dependency record, head 1ce88863) -> 6f075882;
@@ -62,7 +62,9 @@ CHECKS: PR #43 21/21 pass; PR #44 21/21 pass; PR #45 21/21 pass;
         post-merge CI 41297723580 on 6f5bca98 = completed/success (21/21);
         post-merge Pages 41297723527 on 6f5bca98 = completed/success (2/2);
         post-merge CI 41301686829 on 8e6107a9 = completed/success (21/21);
-        post-merge Pages 41301686892 on 8e6107a9 = completed/success (2/2)
+        post-merge Pages 41301686892 on 8e6107a9 = completed/success (2/2);
+        post-merge CI 41368198863 on edcce6c7 = completed/success (21/21);
+        post-merge Pages 41368198812 on edcce6c7 = completed/success
 TESTS_REALMENTE_EXECUTADOS: see "Commands actually executed" below
 PROVAS: baseline reconciled; G00+G01+G01-record diffs are docs/script files
         only; src/, playground/runtime/, Cargo.toml, Cargo.lock,
@@ -110,10 +112,17 @@ RISCOS: R-01 try-as-expression ambiguity (gates G03 and every Result API);
         TRUST_BOUNDARIES.md:30 confines env to py, which :38 records as
         verified-absent in CI), so introducing one makes both clauses live
         obligations across four output surfaces, including the reduced AIS
-        pipeline RFC 0006 1.13 proved exists
-DECISOES: NONE TAKEN. Fifteen open decision items across seven decision packages,
-        all recorded as decision packages in the campaign document, none
-        resolved by the agent.
+        pipeline RFC 0006 1.13 proved exists; R-18 a DB capability has no
+        representation to travel through today - PendingEffect has exactly one
+        variant (Http(HttpRequest)), Ty has no bytes variant, and neither
+        15-variant Value nor 14-variant TypeExpr has an opaque handle (binary
+        crosses as [int]) - while Returns::Dynamic
+        degrades to Ty::Unknown with zero checker consumers and E5002 is a hard
+        fatal diagnostic rather than a catchable value, so the boundary must be
+        chosen before any driver work can start
+DECISOES: NONE TAKEN. Eighteen open decision items across eight decision
+        packages, all recorded as decision packages in the campaign document,
+        none resolved by the agent.
         10.1 MSRV 1.83 versus the required DB drivers: three lawful outcomes
         (SQLite-only with documented NO_GO / authorised MSRV bump /
         feature-gated drivers with an amended 18.2 floor); two require approval
@@ -981,49 +990,134 @@ pins an at-baseline frame instead of printing a self-falsifying count. `E2019` i
 not a literal; it is `UNKNOWN_MODULE: u16 = 2019` (`src/error.rs:374`) rendered
 through `format!("E{:04}: ...")` (`:103`, `:109`).
 
+### RFC 0008 evidence — Host database capability and protected profile
+(`NBL-016`)
+
+`docs/rfcs/0008-host-database-capability.md` is **authored and probe-verified on
+disk**, not yet merged. 752 lines / 41 261 bytes (`wc -l -c`), 6 tables, 6
+fences, no inconsistent rows, `## 3. Grammar delta` = **None**, 10 provenance
+corrections, 36 distinct citation anchors (45 occurrences) all resolving, and an
+`E####` audit clean against the 50 codes declared in `src/error.rs`. Merging it records the proposal only; §10.8 `D1`/`D2`/`D3` are
+unanswered and gate G02 still forbids coding any surface it describes.
+
+**`G07` is structurally ready and functionally greenfield.** Its five clauses,
+verbatim from the gate line, and how each stands today:
+
+| `G07` clause | Status today | Why |
+|---|---|---|
+| `ADR per driver/MSRV/TLS` | **absent** | `docs/adr/` holds 6 ADRs; no MSRV ADR and no TLS ADR. ADR-0005 is missing from the index table and appears only in a bullet list |
+| `Host boundary compiles without drivers` | **greenfield, structurally ready** | one trait, `src/host.rs:157-228`, 10 methods (8 required, 2 defaulted), 10 implementors |
+| `equivalent E5002 capability probes` | **template exists and is proven** | the `http-api`/`http` split is exactly this shape, proven end-to-end |
+| `resource and attack-surface tests` | **absent** | no resource model exists; `CRITICAL_SYSTEM_PROFILE.md` §4 has no HTTP row |
+| `no real database without authorized test credentials` | **vacuously true, needs an owner** | no database code exists — nothing to guard yet |
+
+**The template is the finding.** `cargo tree --no-default-features --features
+http-api -e features | grep -ci ureq` → **0**, and that build compiles
+(`BUILD_RC=0`). In it, `http_get` type-checks (`CHK_RC=0`) and then fails at
+runtime with `main.aura:1:19: error[E5002]: this host has no network capability
+(HTTP is unavailable)`, exit **1**. Two signatures are gated
+(`src/stdlib/signatures.rs:602`, `:615`), the installer is gated
+(`src/stdlib/mod.rs:89`), and `StdHost::http_request` itself is
+`#[cfg(feature = "http")]` (`src/host.rs:486`) — so with `http-api` alone,
+`StdHost` inherits the trait's default denial. That is exactly the shape a
+database capability should take, and it is the only precedent in the tree.
+
+**Four IR representation gaps block any driver today.** `PendingEffect`
+(`src/host.rs:39`) has exactly **one** variant, `Http(HttpRequest)`; `Ty`
+(`src/types.rs:68`, 17 variants) has no bytes member; `Value` (15 variants,
+`src/run/value.rs:172-206`) has no `Bytes` — binary crosses as `[int]`;
+`TypeExpr` (14 variants, `src/ast/mod.rs:18-53`) has no opaque handle. A
+resumable or streaming DB capability therefore needs a breaking enum change,
+not an additive one.
+
+**`E5002` is fatal, not catchable.** Inside a function body the diagnostic
+aborts the program; `src/host.rs:71-80` maps both `Unavailable` and `Pending` to
+`codes::CAPABILITY_UNAVAILABLE` (5002) while `Io` maps to `codes::IO` (4020).
+`tests/session.rs:393` states it verbatim — `finally` runs, `catch` does not
+— and `:512-513` asserts the code on the `Pending` path. This narrows `G07`'s
+"equivalent `E5002` probes" requirement: the probes exist, they are just about
+the wrong capability.
+
+**`Returns::Dynamic` is not a type-checking escape hatch.** It is one of exactly
+two `Returns` variants (`src/stdlib/signatures.rs:196-202`), resolves to
+`Ty::Unknown` at `:210`, and has **zero** consumers in `src/check/mod.rs`.
+Probed: `let x: int = read_file("a.txt")` passes `check` (exit **0**) and dies
+at run with ``expected a number, found none`` (exit **1**). So §8.3's typed
+`Result<T, DbError>` cannot be enforced by the checker alone.
+
+**No `eval` surface needs to be touched, and none was.**
+`grep -rn 'impl Host for'` returns 9 by simple pattern but **10** in fact —
+`tests/session.rs:474` is nested inside a `mod` and is invisible to an
+`^impl`-anchored search. Of the 10 implementors, **5 override** `http_request`
+and **5 inherit** the default; 6 `fn http_request` sites = 1 default + 5
+overrides. `BrowserHost` (`src/host.rs:1089-1162`) inherits the denial, while
+the WASM `SuspendHost` (`playground/runtime/src/lib.rs:1148-1157`) returns
+`Pending` instead — a real asymmetry to resolve before any browser-side DB
+story.
+
+**Two stale documents and one mis-cited third.** `CAPABILITY_MODEL.md:23` cites
+`src/host.rs:78` as "the `Host` trait" — `:78` is inside
+`HostError::into_diag`; the trait is `:157`. Its §2 table has 13 rows and still
+describes `network` as "not exposed", and it never mentions `http_request`,
+`HTTP_METHODS`, `MAX_HTTP_BODY_BYTES`, `MAX_HTTP_TIMEOUT_MS`, or
+`PendingEffect`. `CRITICAL_SYSTEM_PROFILE.md` §4 is a 15-row resource inventory
+with no HTTP row. `PERFORMANCE.md` is **mis-cited**, not stale:
+`CRITICAL_SYSTEM_PROFILE.md` names it twice (`:19` in §1, `:53` in §3 —
+**not** §4), and it contains **zero** case-insensitive occurrences of
+`resource`; it is a 131-line timing-budget document. That falsification is
+verified five ways and against all six commits that ever touched the file.
+`docs/adr/` also has six ADRs of which exactly **one**
+(`0005-keystone-collection-model.md`) is missing from the index table — a
+wrong "two" was corrected.
+
 ### Next exact action
 
-Author `NBL-016` (Host database capability and the protected profile) as
-`docs/rfcs/0008-*.md`, escalating whatever decision it uncovers in a
-`### §10.8` block in the campaign document. The RFC 0007 batch is **closed**:
-RFC 0007 is merged as PR #57 → `6f5bca983fda1924b6ca1f0b7a1017159d360609`
-(2026-11-01T10:29:41Z, 21/21 green) at
-`docs/rfcs/0007-project-structure-init-and-os.md`, its index row is in place,
-and §10.7 `D1`/`D2`/`D3` are escalated. The record batch that carried RFC
-0007's merge into the three state documents is itself merged as PR #58 →
-`8e6107a9`, and touched no source file.
+Land RFC 0008 (`NBL-016`, Host database capability and the protected profile):
+commit `docs/rfcs/0008-host-database-capability.md` with its index row and the
+three state documents, open the PR, get remote CI green, merge, then record the
+merge. The RFC is authored and probe-verified on disk;
+§10.8 `D1`/`D2`/`D3` are escalated in the campaign document. The RFC 0007 batch
+is **closed**: RFC 0007 is merged as PR #57 →
+`6f5bca983fda1924b6ca1f0b7a1017159d360609` (2026-11-01T10:29:41Z, 21/21
+green), and the record batch that carried its merge into the three state
+documents is itself merged as PR #58 → `8e6107a9`, touching no source file.
 
 **Wave position.** `NBL-010` (RFC 0002), `NBL-011` (RFC 0003), `NBL-013`
 (RFC 0004), `NBL-012` (RFC 0005) and `NBL-014` (RFC 0006) are authored **and
 merged**; `NBL-015` (RFC 0007) is authored **and merged** (PR #57). Still
-unauthored: `NBL-016` Host database capability and protected profile; `NBL-017`
-`entity struct` and metadata; `NBL-018` CRUD and transactions; `NBL-019`
-AQL/0.1; `NBL-020` Repository in traits; `NBL-021` SQLGuard/0.1 SG-01…SG-08;
-`NBL-022` SQL and Mongo driver contract. That is **seven** of the thirteen P0
-RFCs still to author, plus `NBL-030` (prelude `Result` placement), which is
-blocked by §10.2 and must not be authored as if the decision were taken.
+unauthored: `NBL-017` `entity struct` and metadata; `NBL-018` CRUD and
+transactions; `NBL-019` AQL/0.1; `NBL-020` Repository in traits; `NBL-021`
+SQLGuard/0.1 SG-01…SG-08; `NBL-022` SQL and Mongo driver contract. `NBL-016`
+(Host database capability) is authored as RFC 0008 and awaiting its PR. That is
+**six** of the thirteen P0 RFCs still to author, plus `NBL-030` (prelude
+`Result` placement), which is G03 rather than G02 and is blocked by §10.2; it
+must not be authored as if the decision were taken.
 `NBL-015` is RFC 0007 (`docs/rfcs/0007-project-structure-init-and-os.md`,
 439 lines as merged, 3 tables), merged as PR #57 and recorded as PR #58; its
 three decisions are escalated at §10.7 and remain unanswered.
 
-**Fifteen outstanding decision items across seven decision packages:** §10.1
+**Eighteen outstanding decision items across eight decision packages:** §10.1
 MSRV dependency direction — **1** item, unlabelled; §10.2 (`D1a` which
 contradictory spec clause governs `E2013`, `D1b` its message text, `D1c`
-placement — answer `D1a` before `D1c`) — **3** items; §10.3 (`D1` the grammar of
-`try`-as-expression, `D2` authorize the three-part tail-`try` checker repair) —
-**2** items; §10.4 (`D3` plus open item 13) — **2** items; §10.5 (`D1` authorize
-the two-part generic-instantiation repair) — **1** item; §10.6 (`D1` the
-`range` contract, `D2` `Slice.diagnostics`, `D3` the resolver gap) — **3** items;
-and §10.7 (`D1` what `Aura.toml` may contain, `D2` whether an `os` surface
-exists, `D3` what `aura init` writes — answer `D1` first, because `D2` and `D3`
-are both downstream of it) — **3** items.
-Total **15**. The former "seven decisions" figure was incremental drift and
-matched neither convention. This count was **validated by re-deriving the
-pre-§10.7 totals** `1 + 3 + 2 + 2 + 1 + 3` = 12 from the same rule before the
-§10.7 row was added, so the rule is the one the table has always encoded.
+placement — answer `D1a` before `D1c`) — **3** items; §10.3 (`D1` the
+grammar of `try`-as-expression, `D2` authorize the three-part tail-`try` checker
+repair) — **2** items; §10.4 (`D3` plus open item 13) — **2** items; §10.5
+(`D1` authorize the two-part generic-instantiation repair) — **1** item;
+§10.6 (`D1` the `range` contract, `D2` `Slice.diagnostics`, `D3` the resolver
+gap) — **3** items; §10.7 (`D1` what `Aura.toml` may contain, `D2` whether an
+`os` surface exists, `D3` what `aura init` writes — answer `D1` first, because
+`D2` and `D3` are both downstream of it) — **3** items; and §10.8 (`D1` what
+shape the database capability takes, `D2` its isolation and credential model,
+`D3` what its tests must prove — answer `D1` first, because there is no
+boundary to describe until the shape is chosen) — **3** items. Total **18**.
+The former "seven decisions" figure was incremental drift and matched neither
+convention. This count was **validated by re-deriving the pre-§10.7 totals**
+`1 + 3 + 2 + 2 + 1 + 3` = 12, and the post-§10.7 total of 15, from the same
+rule before each new row was added, so the rule is the one the table has always
+encoded.
 
 **Do not code any surface these RFCs describe, and do not resolve §10.1 through
-§10.6.** Specifically: do not wire `tests/ais_differential.mjs` into CI, do not
+§10.8.** Specifically: do not wire `tests/ais_differential.mjs` into CI, do not
 widen `Symbol.range`, do not populate `Slice.diagnostics`, do not route AIS
 through the resolver, do not repair the `E2018`/`E2023` mis-coding, do not add
 an `aura init` command, do not teach the loader to read `Aura.toml`, and do not

@@ -444,10 +444,9 @@ audit. `py` is a full CPython process, not a sandbox.
 **Campaign plan published:** `docs/engineering/NEBULA_CAMPAIGN.md` — baseline,
 scope, P0/P1/P2 classification, G00–G19 wave table with verbatim gates, status
 vocabulary, ID'd backlog (`NBL-001`…`NBL-190`, sparse — 35 distinct IDs),
-risks `R-01`…`R-17` (incl. `R-03a`), decision packages §10.1–§10.7, evidence
-criteria,
-architecture constraints, delegation, blocking policy, checkpoint format, and
-the mandatory STOP.
+risks `R-01`…`R-18` (incl. `R-03a`), decision packages §10.1–§10.8,
+evidence criteria, architecture constraints, delegation, blocking policy,
+checkpoint format, and the mandatory STOP.
 
 **Blocking risk.** `try`-as-expression versus the catch-mandatory `try_stmt` is
 the top grammar ambiguity (R-01), now recorded with its two alternatives in
@@ -1986,10 +1985,10 @@ feature-gating of the typed-decode path.
 ## Exact Next Action
 
 **Directive 008 — NEBULA: G00 and G01 are complete and integrated; G02 is
-`IN_PROGRESS` with seven of thirteen P0 RFCs authored and merged — RFCs
-0002–0007 all merged, RFC 0007 as PR #57 → `6f5bca98` and recorded as PR #58
-→ `8e6107a9` — and fifteen outstanding decision items across seven decision
-packages (§10.1–§10.7: 1 + 3 + 2 + 2 + 1 + 3 + 3).**
+`IN_PROGRESS` with eight of thirteen P0 RFCs authored — RFCs 0002–0007
+merged, and RFC 0008 authored and probe-verified but not yet merged — and
+eighteen outstanding decision items across eight decision packages
+(§10.1–§10.8: 1 + 3 + 2 + 2 + 1 + 3 + 3 + 3).**
 
 Wave `G00` is `PASS`: PR #43 merged as `7bd1d6fb` (21/21 green) and its closure
 landed as PR #44 → `390f763c` (21/21 green). Wave `G01` is `PASS` and
@@ -2031,42 +2030,51 @@ defects `A`–`R`, three decisions `D1`–`D3`, §3 `Grammar delta — None`, an
 mutation-proved `range`-extent repair withheld under gate G02. The
 P0 set is not yet complete: `NBL-015` is now RFC 0007, authored and merged as
 PR #57 → `6f5bca98` (§10.7 escalates `D1`/`D2`/`D3`; see below), recorded as
-PR #58 → `8e6107a9`, and `NBL-016`
-(Host database capability),
+PR #58 → `8e6107a9`. `NBL-016` (Host database capability) is now RFC 0008,
+authored and probe-verified on disk with §10.8 escalating `D1`/`D2`/`D3`.
 `NBL-017` (`entity struct` and metadata), `NBL-018` (CRUD and transactions),
 `NBL-019` (AQL/0.1), `NBL-020` (Repository in traits), `NBL-021` (SQLGuard/0.1
-SG-01…SG-08), `NBL-022` (driver contract), and `NBL-030` (prelude/`Result`
-placement, blocked by §10.2) remain unauthored. Seven of the thirteen G02 P0 RFCs
-are still unwritten.
+SG-01…SG-08), and `NBL-022` (driver contract) remain unauthored. Six of the
+thirteen G02 P0 RFCs are still unwritten. `NBL-030` (prelude/`Result`
+placement, blocked by §10.2) is G03, not G02.
 
-**Fifteen outstanding decision items across seven decision packages, and each
-blocks a downstream wave** — seven packages, because a package can carry more
+**Eighteen outstanding decision items across eight decision packages, and each
+blocks a downstream wave** — eight packages, because a package can carry more
 than one question (the earlier "seven decisions" figure was incremental drift
 and is retired; the census below is exhaustive and derived from the `D`-labels
-actually present in §10.1–§10.7, and was validated by re-deriving the
-pre-§10.7 totals `1 + 3 + 2 + 2 + 1 + 3` = 12 before it was trusted):
-§10.1 MSRV versus database drivers — **1** item, unlabelled (blocks G07
-onward); §10.2 `Result` versus enum-tag **scope** — a genuine spec contradiction
-(`D1a`) that must be answered before the placement choice (`D1c`), plus `D1b`,
-the `E2013` message text — **3** items (blocks `NBL-030`, G03, and every `Result`
-API in G07–G17); §10.3 `try` as an expression and the tail-`try` checker
-repair — **2** items (blocks `NBL-011`, `NBL-031`, and G03); §10.4 `D3` visual
-columns and its open item 13 non-ASCII module discovery — **2** items (blocks
-G18's snapshot work, and the format-injection repair `R-12`); §10.5 `D1`,
-authorizing the two-part generic-instantiation repair — **1** item (blocks
-`NBL-012` and every later surface whose types assume a checked generic return);
-and §10.6 `D1`/`D2`/`D3`, the AIS protocol surface — extent contract,
-`Slice.diagnostics`, and the resolver gap — **3** items (blocks `NBL-014` and
-every agent-facing integration in G18 onward); and §10.7 `D1`/`D2`/`D3`, the
-project-structure and `os` capability surface — what `Aura.toml` may contain,
-whether an `os` surface exists at all, and what `aura init` writes — **3**
-items (blocks `NBL-015` and every cross-OS or environment-dependent contract;
-`D1` is the root decision because `D2` and `D3` are both downstream of it).
+actually present in §10.1–§10.8, and was validated by re-deriving the
+pre-§10.7 totals `1 + 3 + 2 + 2 + 1 + 3` = 12 and the post-§10.7 total of 15
+before it was trusted): §10.1 MSRV versus database drivers — **1** item,
+unlabelled (blocks G07 onward); §10.2 `Result` versus enum-tag **scope** — a
+genuine spec contradiction (`D1a`) that must be answered before the placement
+choice (`D1c`), plus `D1b`, the `E2013` message text — **3** items (blocks
+`NBL-030`, G03, and every `Result` API in G07–G17); §10.3 `try` as an
+expression and the tail-`try` checker repair — **2** items (blocks `NBL-011`,
+`NBL-031`, and G03); §10.4 `D3` visual columns and its open item 13 non-ASCII
+module discovery — **2** items (blocks G18's snapshot work, and the
+format-injection repair `R-12`); §10.5 `D1`, authorizing the two-part
+generic-instantiation repair — **1** item (blocks `NBL-012` and every later
+surface whose types assume a checked generic return); and §10.6 `D1`/`D2`/`D3`,
+the AIS protocol surface — extent contract, `Slice.diagnostics`, and the
+resolver gap — **3** items (blocks `NBL-014` and every agent-facing
+integration in G18 onward); and §10.7 `D1`/`D2`/`D3`, the project-structure and
+`os` capability surface — what `Aura.toml` may contain, whether an `os`
+surface exists at all, and what `aura init` writes — **3** items (blocks
+`NBL-015` and every cross-OS or environment-dependent contract; `D1` is the root
+decision because `D2` and `D3` are both downstream of it); and §10.8
+`D1`/`D2`/`D3`, the database capability boundary — what shape the capability
+takes, what isolation and credential model guards it, and what its tests must
+prove — **3** items (blocks `NBL-016` and every driver, resource, and
+attack-surface contract in G07 onward; `D1` is the root decision because there
+is no boundary to describe until the shape is chosen).
 
-**Next exact action:** author `NBL-016` (Host database capability) as RFC 0008,
-escalating any decision it uncovers in a `### §10.8` block. Six of the thirteen
-G02 P0 RFCs are authored **and all six merged** (RFC 0002, 0003, 0004, 0005,
-0006, and 0007), and seven remain unauthored (`NBL-016`…`NBL-022`).
+**Next exact action:** land RFC 0008 (`NBL-016`, Host database capability) —
+commit, open the PR, get remote CI green, merge, then record it. Seven of the
+thirteen G02 P0 RFCs are merged (0002–0007); RFC 0008 is authored on disk with
+§10.8 `D1`/`D2`/`D3` escalated. The six unauthored G02 items are `NBL-017`
+(`entity struct`), `NBL-018` (CRUD and transactions), `NBL-019` (AQL/0.1),
+`NBL-020` (Repository in traits), `NBL-021` (SQLGuard/0.1), and `NBL-022`
+(driver contract). `NBL-030` is G03, not G02, and remains blocked by §10.2.
 Each RFC is authored under the same explicit provenance note — the nominal source
 documents (`AQL_Nebula_RFC_Draft.md`, `NEBULA_SQLGUARD_CONTRACT.md`,
 `Aura_0.3.2_Nebula_Inventario_Geral.md`) never existed in this repository, so no
@@ -2117,7 +2125,7 @@ at **§1.13**, and a claim that `Aura.toml` had four repository mentions when th
 count became twenty-seven once my own RFC existed — §1.3 now names the files and
 pins an at-baseline frame instead of printing a self-falsifying total.
 
-After that, author the remaining P0 RFCs (`NBL-016`…`NBL-022`) under
+After that, author the remaining G02 P0 RFCs (`NBL-017`…`NBL-022`) under
 `docs/rfcs/`, carrying the same explicit provenance note. **Do not code** any
 surface those RFCs describe — this includes wiring the orphaned
 `tests/ais_differential.mjs` into CI, and repairing the `range` extent, and
