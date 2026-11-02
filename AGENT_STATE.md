@@ -2,8 +2,19 @@
 
 ## Directive 008 — NEBULA 0.3.2 campaign (`G02`, `IN_PROGRESS`)
 
-**PR #58 integrated; the PR #57 record and the `G06` errata are merged.**
-PR **#58** (`docs/nebula-pr57-record`, head `e865ead3`) merged into
+**PR #60 integrated; RFC 0008 is merged and eight of the thirteen G02 P0 RFCs
+are authored and merged.** PR **#60** (`docs/nebula-g02-rfc0008`,
+head `d0e05e46`) merged into `rewrite/v3-rust` as
+**`a70651cc816308b2c792e789f0602940fecb0b43`** at 2026-11-02T02:44:01Z —
+5 files / +1064 / −86, all documentation: the new
+`docs/rfcs/0008-host-database-capability.md`, the RFC index, the campaign `R-18`
+and its `§10.8`, and the two state documents. Post-merge runs `41379283596`
+(CI, **21/21** jobs `success`) and `41379283575` (Pages, 2/2) both reached
+`completed/success`. Immediately before it, PR **#59**
+(`docs/nebula-pr58-record`, head `96187252`) merged as
+**`edcce6c7a587f8f47cdcf2057c9df400c9b93420`** at 2026-11-02T00:38:02Z —
+3 files / +51 / −24, all documentation. Before that, PR **#58**
+(`docs/nebula-pr57-record`, head `e865ead3`) merged into
 `rewrite/v3-rust` as
 **`8e6107a9b4c49fe4404add5c7db81a4b59ca159c`** at 2026-11-01T11:23:37Z —
 4 files / +202 / −85, all documentation. It records the RFC 0007 batch:
@@ -1985,9 +1996,9 @@ feature-gating of the typed-decode path.
 ## Exact Next Action
 
 **Directive 008 — NEBULA: G00 and G01 are complete and integrated; G02 is
-`IN_PROGRESS` with eight of thirteen P0 RFCs authored — RFCs 0002–0007
-merged, and RFC 0008 authored and probe-verified but not yet merged — and
-eighteen outstanding decision items across eight decision packages
+`IN_PROGRESS` with eight of thirteen P0 RFCs authored and merged — RFCs
+0002–0008, the last of them merged as PR #60 → `a70651cc` — and eighteen
+outstanding decision items across eight decision packages
 (§10.1–§10.8: 1 + 3 + 2 + 2 + 1 + 3 + 3 + 3).**
 
 Wave `G00` is `PASS`: PR #43 merged as `7bd1d6fb` (21/21 green) and its closure
@@ -2031,7 +2042,8 @@ mutation-proved `range`-extent repair withheld under gate G02. The
 P0 set is not yet complete: `NBL-015` is now RFC 0007, authored and merged as
 PR #57 → `6f5bca98` (§10.7 escalates `D1`/`D2`/`D3`; see below), recorded as
 PR #58 → `8e6107a9`. `NBL-016` (Host database capability) is now RFC 0008,
-authored and probe-verified on disk with §10.8 escalating `D1`/`D2`/`D3`.
+merged as PR #60 → `a70651cc` (21/21, authored at `d0e05e46`) with §10.8
+escalating `D1`/`D2`/`D3`.
 `NBL-017` (`entity struct` and metadata), `NBL-018` (CRUD and transactions),
 `NBL-019` (AQL/0.1), `NBL-020` (Repository in traits), `NBL-021` (SQLGuard/0.1
 SG-01…SG-08), and `NBL-022` (driver contract) remain unauthored. Six of the
@@ -2068,13 +2080,16 @@ prove — **3** items (blocks `NBL-016` and every driver, resource, and
 attack-surface contract in G07 onward; `D1` is the root decision because there
 is no boundary to describe until the shape is chosen).
 
-**Next exact action:** land RFC 0008 (`NBL-016`, Host database capability) —
-commit, open the PR, get remote CI green, merge, then record it. Seven of the
-thirteen G02 P0 RFCs are merged (0002–0007); RFC 0008 is authored on disk with
-§10.8 `D1`/`D2`/`D3` escalated. The six unauthored G02 items are `NBL-017`
-(`entity struct`), `NBL-018` (CRUD and transactions), `NBL-019` (AQL/0.1),
-`NBL-020` (Repository in traits), `NBL-021` (SQLGuard/0.1), and `NBL-022`
-(driver contract). `NBL-030` is G03, not G02, and remains blocked by §10.2.
+**Next exact action:** author `NBL-017` (`entity struct` and metadata) as the
+next G02 RFC, using the proven batch shape — one RFC file, one index row, one
+escalation section only if the research surfaces a decision, the three state
+documents updated, one PR, one record PR. Eight of the thirteen G02 P0 RFCs are
+merged (0002–0008); RFC 0008 landed as PR #60 → `a70651cc` (21/21, authored at
+`d0e05e46`) with §10.8 `D1`/`D2`/`D3` escalated and unanswered. The six
+unauthored G02 items are `NBL-017` (`entity struct`), `NBL-018` (CRUD and
+transactions), `NBL-019` (AQL/0.1), `NBL-020` (Repository in traits), `NBL-021`
+(SQLGuard/0.1), and `NBL-022` (driver contract). `NBL-030` is G03, not G02, and
+remains blocked by §10.2.
 Each RFC is authored under the same explicit provenance note — the nominal source
 documents (`AQL_Nebula_RFC_Draft.md`, `NEBULA_SQLGUARD_CONTRACT.md`,
 `Aura_0.3.2_Nebula_Inventario_Geral.md`) never existed in this repository, so no
