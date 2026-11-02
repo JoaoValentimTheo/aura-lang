@@ -6,11 +6,11 @@ Active task: **G02**, the P0 RFC reconstruction. `G00` and `G01` are closed.
 No implementation is authorized before `G02` accepts the P0 RFC set.
 
 ```
-WAVE: G02 -> IN_PROGRESS (8 of 13 P0 RFCs authored — 7 merged, RFC 0008
-      authored and probe-verified on disk awaiting its PR; eighteen outstanding
-      decision items across eight packages)
+WAVE: G02 -> IN_PROGRESS (8 of 13 P0 RFCs authored, all 8 merged — RFC 0008
+      merged as PR #60; eighteen outstanding decision items across eight
+      decision packages)
 STATUS: G02 IN_PROGRESS (eighteen decision items outstanding, see DECISOES)
-HEAD: edcce6c7a587f8f47cdcf2057c9df400c9b93420 (merge of PR #59)
+HEAD: a70651cc816308b2c792e789f0602940fecb0b43 (merge of PR #60)
 PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb;
      #44 MERGED (G00 closure + G01 authorisation, head 5cf4f8d9) -> 390f763c;
      #45 MERGED (G01 dependency record, head 1ce88863) -> 6f075882;
@@ -27,13 +27,15 @@ PRs: #43 MERGED (G00, head ab9d5ae1) -> 7bd1d6fb;
      #56 MERGED (PR #55 record, head 8e362edc) -> 4406c873;
      #57 MERGED (RFC 0007, head 90bcdbfe) -> 6f5bca98;
      #58 MERGED (PR #57 record + G06 errata, head e865ead3) -> 8e6107a9;
+     #59 MERGED (PR #58 record, head 96187252) -> edcce6c7;
+     #60 MERGED (RFC 0008, head d0e05e46) -> a70651cc;
      0 open PRs
 CHECKS: PR #43 21/21 pass; PR #44 21/21 pass; PR #45 21/21 pass;
         PR #46 21/21 pass; PR #47 21/21 pass; PR #48 21/21 pass;
         PR #49 21/21 pass; PR #50 21/21 pass; PR #51 21/21 pass;
         PR #52 21/21 pass; PR #53 21/21 pass; PR #54 21/21 pass;
         PR #55 21/21 pass; PR #56 21/21 pass; PR #57 21/21 pass;
-        PR #58 21/21 pass;
+        PR #58 21/21 pass; PR #59 21/21 pass; PR #60 21/21 pass;
         post-merge CI 41248873353 on 7bd1d6fb = completed/success;
         Pages 41248873720 = completed/success;
         post-merge CI 41251300785 on 6f075882 = completed/success;
@@ -64,7 +66,9 @@ CHECKS: PR #43 21/21 pass; PR #44 21/21 pass; PR #45 21/21 pass;
         post-merge CI 41301686829 on 8e6107a9 = completed/success (21/21);
         post-merge Pages 41301686892 on 8e6107a9 = completed/success (2/2);
         post-merge CI 41368198863 on edcce6c7 = completed/success (21/21);
-        post-merge Pages 41368198812 on edcce6c7 = completed/success
+        post-merge Pages 41368198812 on edcce6c7 = completed/success (2/2);
+        post-merge CI 41379283596 on a70651cc = completed/success (21/21);
+        post-merge Pages 41379283575 on a70651cc = completed/success (2/2)
 TESTS_REALMENTE_EXECUTADOS: see "Commands actually executed" below
 PROVAS: baseline reconciled; G00+G01+G01-record diffs are docs/script files
         only; src/, playground/runtime/, Cargo.toml, Cargo.lock,
@@ -993,12 +997,14 @@ through `format!("E{:04}: ...")` (`:103`, `:109`).
 ### RFC 0008 evidence — Host database capability and protected profile
 (`NBL-016`)
 
-`docs/rfcs/0008-host-database-capability.md` is **authored and probe-verified on
-disk**, not yet merged. 752 lines / 41 261 bytes (`wc -l -c`), 6 tables, 6
-fences, no inconsistent rows, `## 3. Grammar delta` = **None**, 10 provenance
-corrections, 36 distinct citation anchors (45 occurrences) all resolving, and an
-`E####` audit clean against the 50 codes declared in `src/error.rs`. Merging it records the proposal only; §10.8 `D1`/`D2`/`D3` are
-unanswered and gate G02 still forbids coding any surface it describes.
+`docs/rfcs/0008-host-database-capability.md` is **merged** as PR #60 →
+`a70651cc` (head `d0e05e46`, 21/21 green, 2026-11-02T02:44:01Z). 752 lines /
+41 261 bytes (`wc -l -c`), 6 tables, 6 fences, no inconsistent rows, `## 3.
+Grammar delta` = **None**, 10 provenance corrections, 36 distinct citation
+anchors (45 occurrences) all resolving, and an `E####` audit clean against the
+50 codes declared in `src/error.rs`. Merging it recorded the proposal only;
+§10.8 `D1`/`D2`/`D3` are unanswered and gate G02 still forbids coding any
+surface it describes.
 
 **`G07` is structurally ready and functionally greenfield.** Its five clauses,
 verbatim from the gate line, and how each stands today:
@@ -1072,29 +1078,25 @@ wrong "two" was corrected.
 
 ### Next exact action
 
-Land RFC 0008 (`NBL-016`, Host database capability and the protected profile):
-commit `docs/rfcs/0008-host-database-capability.md` with its index row and the
-three state documents, open the PR, get remote CI green, merge, then record the
-merge. The RFC is authored and probe-verified on disk;
-§10.8 `D1`/`D2`/`D3` are escalated in the campaign document. The RFC 0007 batch
-is **closed**: RFC 0007 is merged as PR #57 →
-`6f5bca983fda1924b6ca1f0b7a1017159d360609` (2026-11-01T10:29:41Z, 21/21
-green), and the record batch that carried its merge into the three state
-documents is itself merged as PR #58 → `8e6107a9`, touching no source file.
+Author `NBL-017` (`entity struct` and metadata) as the next RFC, following the
+proven batch shape: one RFC file, one index row, one `### §10.N` escalation
+block only if the research uncovers a decision, the three state documents
+updated, one PR, one record PR. RFCs 0002–0008 are all merged; the RFC 0008
+batch is **closed**: RFC 0008 is merged as PR #60 →
+`a70651cc816308b2c792e789f0602940fecb0b43` (2026-11-02T02:44:01Z, 21/21
+green), authored at `d0e05e46` and touching no source file. §10.8 `D1`/`D2`/`D3`
+are escalated and unanswered, so no database surface may be coded.
 
 **Wave position.** `NBL-010` (RFC 0002), `NBL-011` (RFC 0003), `NBL-013`
-(RFC 0004), `NBL-012` (RFC 0005) and `NBL-014` (RFC 0006) are authored **and
-merged**; `NBL-015` (RFC 0007) is authored **and merged** (PR #57). Still
-unauthored: `NBL-017` `entity struct` and metadata; `NBL-018` CRUD and
-transactions; `NBL-019` AQL/0.1; `NBL-020` Repository in traits; `NBL-021`
-SQLGuard/0.1 SG-01…SG-08; `NBL-022` SQL and Mongo driver contract. `NBL-016`
-(Host database capability) is authored as RFC 0008 and awaiting its PR. That is
-**six** of the thirteen P0 RFCs still to author, plus `NBL-030` (prelude
-`Result` placement), which is G03 rather than G02 and is blocked by §10.2; it
-must not be authored as if the decision were taken.
-`NBL-015` is RFC 0007 (`docs/rfcs/0007-project-structure-init-and-os.md`,
-439 lines as merged, 3 tables), merged as PR #57 and recorded as PR #58; its
-three decisions are escalated at §10.7 and remain unanswered.
+(RFC 0004), `NBL-012` (RFC 0005), `NBL-014` (RFC 0006), `NBL-015` (RFC 0007)
+and `NBL-016` (RFC 0008) are authored **and merged**. Still unauthored:
+`NBL-017` `entity struct` and metadata; `NBL-018` CRUD and transactions;
+`NBL-019` AQL/0.1; `NBL-020` Repository in traits; `NBL-021` SQLGuard/0.1
+SG-01…SG-08; `NBL-022` SQL and Mongo driver contract. That is **six** of the
+thirteen P0 RFCs still to author, plus `NBL-030` (prelude `Result` placement),
+which is G03 rather than G02 and is blocked by §10.2; it must not be authored as
+if the decision were taken. Every merged RFC's decisions are recorded in its own
+`### §10.N` block and none of them has been answered.
 
 **Eighteen outstanding decision items across eight decision packages:** §10.1
 MSRV dependency direction — **1** item, unlabelled; §10.2 (`D1a` which

@@ -111,22 +111,24 @@ of **91** builtin functions rather than a module namespace. `D1` (what
 (what `init` writes and how it refuses) are escalated in §10.7. `D1` is the root
 decision: `D2` and `D3` are blocked on it.
 
-G02 has also authored **RFC 0008 — Host Database Capability and the Protected
-Profile** (`docs/rfcs/0008-host-database-capability.md`, `NBL-016`). Its finding
-is that `G07` is **structurally ready and functionally greenfield**: the `Host`
-boundary that a driver would plug into already exists as one trait with ten
-methods (eight required, two defaulted), and the `http-api`/`http` feature split
-already demonstrates the exact shape a database capability needs — a builtin
-surface that type-checks in every build and is denied at run time with `E5002`
-when the host lacks the capability. Aura's answer to "how do we add a capability
-without breaking the sandbox" is therefore not to be invented; it is to be
-copied. What does not exist is everything else: no `PendingEffect` variant can
-carry a connection handle (`Http` is its only variant), no `Value` or `TypeExpr`
-variant can represent an opaque handle, `Returns::Dynamic` resolves to
-`Ty::Unknown` and is never consulted by the checker, there is no resource model,
-`CRITICAL_SYSTEM_PROFILE.md` §4 has no HTTP row, `CAPABILITY_MODEL.md`'s
-network row is stale, and `docs/adr/` has no MSRV or TLS ADR. Three decisions
-`D1`–`D3` are escalated in §10.8.
+G02 has also authored and merged **RFC 0008 — Host Database Capability and the
+Protected Profile** (`docs/rfcs/0008-host-database-capability.md`, `NBL-016`,
+merged as PR #60 → `a70651cc`). Its finding is that `G07` is **structurally
+ready and functionally greenfield**: the `Host` boundary that a driver would
+plug into already exists as one trait with ten methods (eight required, two
+defaulted), and the `http-api`/`http` feature split already demonstrates the
+exact shape a database capability needs — a builtin surface that type-checks in
+every build and is denied at run time with `E5002` when the host lacks the
+capability. Aura's answer to "how do we add a capability without breaking the
+sandbox" is therefore not to be invented; it is to be copied. What does not
+exist is everything else: no `PendingEffect` variant can carry a connection
+handle (`Http` is its only variant), no `Value` or `TypeExpr` variant can
+represent an opaque handle, `Returns::Dynamic` resolves to `Ty::Unknown` and is
+never consulted by the checker, there is no resource model,
+`CRITICAL_SYSTEM_PROFILE.md` §4 has no HTTP row, `CAPABILITY_MODEL.md`'s network
+row is stale, and `docs/adr/` has no MSRV or TLS ADR. Three decisions `D1`–`D3`
+are escalated in §10.8 and unanswered, so merging the RFC records the proposal
+only and codes nothing.
 
 Baseline: `c4f769077c769483963a0f2b51a789b00472e4cf` on `rewrite/v3-rust`
 (local == `origin/rewrite/v3-rust`, tree clean at campaign start). G00 landed
@@ -696,7 +698,7 @@ Current wave status:
 |---|---|
 | G00 | `PASS` — PR #43, merge `7bd1d6fb`, 21/21 checks |
 | G01 | `PASS` — PR #45, merge `6f075882`, 21/21 checks; dependency table and MSRV blocker disclosed (§1.5.1, §10.1) |
-| G02 | `IN_PROGRESS` — RFC 0002 (`Result`) and RFC 0003 (`try` as expression) authored, probe-verified and merged as PR #46 → `6cc96bf5`; RFC 0002 tag-scope premise corrected via PR #47 → `fe0e7312` and PR #48 → `73a35d9b` (both 21/21), and recorded as PR #49 → `85de5945` (21/21); that record itself recorded as PR #50 → `fc49c5ee` (21/21). RFC 0004 (diagnostics contract) plus the RFC index merged as PR #51 → `2df1c322` (21/21). A fourth finding — generic instantiation is never propagated to the call site, so `check` accepts programs `run` rejects — is characterised and carried as evidence for `NBL-012`. Five blocking language findings are escalated: `R-10`/`E2013` vs. `Result` (§10.2), `R-11`/tail-`try` typing plus the grammar question (§10.3), `R-12`/diagnostic format injection (§10.4), `R-13`/generic instantiation plus the two generic-independent holes `R-14`/indexing and `R-15`/equality (§10.5), and `R-16`/the AIS protocol surface (§10.6). RFC 0005 (inference and error propagation) is merged as PR #53 → `87cea70e` and recorded as PR #54 → `422c7a9e`. RFC 0006 (AIS agent-native capabilities, `NBL-014`) is merged as PR #55 → `d03d2718` (21/21) and recorded as PR #56 → `4406c873`; the merge records the proposal only — its three decisions remain escalated in §10.6 and no protocol surface is coded. RFC 0007 (project structure, `aura init`, the `os` capability, `NBL-015`) is authored, probe-verified and merged as PR #57 → `6f5bca98` (21/21); §10.7 `D1`/`D2`/`D3` are escalated and no command or configuration surface is coded. RFC 0007's record and the `G06` clause-arithmetic errata merged as PR #58 → `8e6107a9` (21/21). RFC 0008 (Host database capability, `NBL-016`) is authored and probe-verified with §10.8 `D1`/`D2`/`D3` escalated and no driver, capability, or resource surface coded. Six of the thirteen G02 P0 RFCs remain unauthored (`NBL-017`…`NBL-022`) |
+| G02 | `IN_PROGRESS` — RFC 0002 (`Result`) and RFC 0003 (`try` as expression) authored, probe-verified and merged as PR #46 → `6cc96bf5`; RFC 0002 tag-scope premise corrected via PR #47 → `fe0e7312` and PR #48 → `73a35d9b` (both 21/21), and recorded as PR #49 → `85de5945` (21/21); that record itself recorded as PR #50 → `fc49c5ee` (21/21). RFC 0004 (diagnostics contract) plus the RFC index merged as PR #51 → `2df1c322` (21/21). A fourth finding — generic instantiation is never propagated to the call site, so `check` accepts programs `run` rejects — is characterised and carried as evidence for `NBL-012`. Five blocking language findings are escalated: `R-10`/`E2013` vs. `Result` (§10.2), `R-11`/tail-`try` typing plus the grammar question (§10.3), `R-12`/diagnostic format injection (§10.4), `R-13`/generic instantiation plus the two generic-independent holes `R-14`/indexing and `R-15`/equality (§10.5), and `R-16`/the AIS protocol surface (§10.6). RFC 0005 (inference and error propagation) is merged as PR #53 → `87cea70e` and recorded as PR #54 → `422c7a9e`. RFC 0006 (AIS agent-native capabilities, `NBL-014`) is merged as PR #55 → `d03d2718` (21/21) and recorded as PR #56 → `4406c873`; the merge records the proposal only — its three decisions remain escalated in §10.6 and no protocol surface is coded. RFC 0007 (project structure, `aura init`, the `os` capability, `NBL-015`) is authored, probe-verified and merged as PR #57 → `6f5bca98` (21/21); §10.7 `D1`/`D2`/`D3` are escalated and no command or configuration surface is coded. RFC 0007's record and the `G06` clause-arithmetic errata merged as PR #58 → `8e6107a9` (21/21), and that record as PR #59 → `edcce6c7` (21/21). RFC 0008 (Host database capability, `NBL-016`) is merged as PR #60 → `a70651cc` (21/21, authored at `d0e05e46`) with §10.8 `D1`/`D2`/`D3` escalated and no driver, capability, or resource surface coded. Eight of the thirteen G02 P0 RFCs are authored and merged; six remain unauthored (`NBL-017`…`NBL-022`) |
 | G03–G19 | `NOT_STARTED` |
 
 A `PASS` requires observed evidence. An environment that was not executed is
@@ -724,7 +726,7 @@ block reserves space inside a wave, so there are 35 identifiers here, not 190.
 | NBL-013 | G02 | RFC: diagnostics contract and `aura explain` — **RFC 0004 merged (PR #51 → `2df1c322`); blocked by §10.4 D3 and §10.4 item 13** | P0 |
 | NBL-014 | G02 | RFC: AIS Agent-Native 0.2 capability set — **authored as RFC 0006, merged via PR #55 → `d03d2718`, still Proposed; blocked by §10.6 D1/D2/D3** | P0 |
 | NBL-015 | G02 | RFC: `Aura.toml`, `aura init`, `std::os` — **authored as RFC 0007, merged as PR #57**; `std::os` shown unresolvable, `G06` shown largely greenfield | P0 |
-| NBL-016 | G02 | RFC: Host database capability and protected profile — **authored as RFC 0008**; `G07` shown structurally ready and functionally greenfield, the `http-api`/`http` split shown to be the proven template, two stale capability documents found and a third mis-cited | P0 |
+| NBL-016 | G02 | RFC: Host database capability and protected profile — **authored as RFC 0008 and merged as PR #60**; `G07` shown structurally ready and functionally greenfield, the `http-api`/`http` split shown to be the proven template, two stale capability documents found and a third mis-cited | P0 |
 | NBL-017 | G02 | RFC: `entity struct`, metadata, relations, cardinality | P0 |
 | NBL-018 | G02 | RFC: CRUD surface and transactions | P0 |
 | NBL-019 | G02 | RFC: AQL/0.1 grammar, plans, result shapes | P0 |
